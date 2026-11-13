@@ -50,6 +50,7 @@ type Props = {
   blocks: Block[];
   busy: boolean;
   pendingQuestion: boolean;
+  pendingOwnerApproval?: boolean;
   /** A visible question form already owns its status; keep only additional activity here. */
   questionPresented?: boolean;
   /** The previous turn ended, but a queued send still has no delivery acknowledgement. */
@@ -85,6 +86,7 @@ export const ActivityDock = memo(function ActivityDock({
   blocks,
   busy,
   pendingQuestion,
+  pendingOwnerApproval,
   questionPresented = false,
   deliveryUnconfirmed = false,
   backgroundTasks,
@@ -136,6 +138,7 @@ export const ActivityDock = memo(function ActivityDock({
     blocks,
     busy,
     pendingQuestion,
+    pendingOwnerApproval,
     backgroundTasks,
     backgroundAgents,
     delegatedAgents,
@@ -156,6 +159,7 @@ export const ActivityDock = memo(function ActivityDock({
   const questionOnlyNotice =
     questionPresented &&
     pendingQuestion &&
+    !pendingOwnerApproval &&
     dock.state === "needs-input" &&
     !hasPendingApproval(blocks) &&
     dock.agents.length === 0 &&
@@ -252,7 +256,7 @@ function DockBody({
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
       {...surfaceAttributes(
-        { radius: "card" },
+        { radius: "card", variant: "activity-dock" },
         `activity-dock mb-1.5 overflow-hidden  font-sans ${
           dock.state === "done" ? "activity-dock-done" : ""
         }`,
@@ -551,7 +555,7 @@ function DockAgentRow({
   );
 }
 
-function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
+export function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
   useLocale();
   if (status === "running") return <WorkingIndicator size="xs" />;
   if (status === "done")

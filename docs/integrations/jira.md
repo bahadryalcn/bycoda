@@ -49,7 +49,9 @@ to move it, or onto another card to rank it before that card. Dropping into empt
 space ranks it after the last card when every page has loaded. **Move** provides
 a keyboard-accessible alternative for status, sprint and ranking changes. Open a card to
 use the existing issue details and agent actions. Ranking is disabled while searching
-or while any section has more pages; use **Load more issues** to finish loading.
+or while any section has more pages. Scroll near the end of a column or planning
+section to fetch its next page. Middle-button dragging pans the board horizontally
+and the column vertically. Failed reads retain existing cards and offer **Retry**.
 
 Moves are written to Jira using the connected account's permissions. Available
 workflow transitions are checked again before writing. Multiple transitions into
@@ -79,3 +81,8 @@ option above. The project-key filter uses values such as
 **Disconnect** removes the saved credentials and clears cached Jira content.
 Credentials are stored in the app's local data directory; on Unix the file is
 created with owner-only permissions.
+
+The issue list also fetches its next page near the scroll end. Counts use Jira totals
+when supplied. Otherwise a trailing `+` marks the current lower bound until the last
+page arrives. Search filters the available items; it does not trigger background
+loading. Project choices open without a redundant working-folder tooltip.

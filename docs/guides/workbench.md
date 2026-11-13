@@ -1,5 +1,14 @@
 # Workbench navigation
 
+Application operation approvals mark their conversation as needing approval in
+session lists and as waiting for input beside the composer. The exact operation
+stays in its approval card with Approve and Cancel actions. Waiting ends when the
+last pending approval is answered, expires or is revoked.
+
+Title-bar project and conversation actions stay icon-only on hover and focus.
+Their tooltips show command names and configured shortcuts, with project details where available.
+Window caption controls, including Close, use the same neutral tone.
+
 Transient toast messages, including errors, close automatically after ten seconds
 while the Bycoda window is focused. Switching away or hiding the window pauses the
 countdown; returning resumes the remaining time. Hovering over a toast or focusing
@@ -19,8 +28,9 @@ The footer places the voice companion first, followed by GitHub and available up
 then Settings and Account. Development builds place a small blue wrench in this
 same action group, horizontally in the expanded footer and vertically in the compact
 rail. Hover it for the Development build label; production builds omit it.
-Hover or focus the GitHub star to reveal its corner dismiss
-button. Dismissal applies to both compact and expanded footers for the current version.
+Hover or focus the GitHub star to reveal its upper-right dismiss button. It stays
+transparent on hover and press, with a focus ring for keyboard navigation.
+Dismissal applies to both compact and expanded footers for the current version.
 The docked voice companion and GitHub icon have transparent idle backgrounds like Settings
 and Account; the floating voice companion keeps its raised surface.
 In an expanded footer with enough room, hovering or focusing the update icon reveals
@@ -233,6 +243,11 @@ conversations for recovery without replacing another window's records. A local
 conversation enters recovery only after its original process has stopped; unknown
 process state stays protected.
 
+Detached tool windows, including **All tools in one window**, wait for session
+owner storage before displaying their tools. They do not restore the main window's
+tabs or consume its recovery state. If storage cannot load, the startup retry
+screen remains available.
+
 Click **Last sessions** in the project rail to open a combined workspace list. It
 shows conversations active during the last seven days, newest first, with each
 project's saved icon, color and background. This view stays open when a conversation
@@ -346,19 +361,22 @@ with tooltips; a failed copy or save shows the reason and a retry icon in place.
 The notifications sheet lists pending requests and **Recent**, the common log of
 what the app announced (the last 100): questions, approvals, finished and failed
 turns, reminders, background work, assistant messages and account notices. Each
-row carries a colored kind badge and icon: failed turns use red, finished turns
+row has a prominent title, a quieter two-line preview and a plain status icon.
+The project, event label and relative time sit below the preview. Expand a row
+to read its full title and message, inspect its path, open its destination or
+remove it. Status icons use semantic colors: failed turns use red, finished turns
 green, questions/approvals/reminders amber, assistant messages the accent color,
 background work blue and account notices a neutral tone. An event is logged when its notification
 setting allows it, even if no desktop banner was shown because bycoda was in the
 foreground or banners are off; a muted project is not logged, and a locked group
 is logged without its text. A pending approval is decided in place with Allow or
 Deny, which show their progress and any error on the request itself; a pending
-question opens its conversation with **Answer**. Clicking a recent row opens its
-conversation, or for background work, the assistant and account notices the view
-they belong to; if that conversation no longer exists, the row says so and the
-sheet stays open. A recent request that is still unanswered is marked **Waiting
-for you**. Each row can be removed on its own, and **Clear all** opposite **Recent**
-removes them all. Removing and clearing happen only after the change is saved; if
+question opens its conversation with **Answer**. The expanded row's **Open** action
+opens its conversation, or for background work, assistant and account notices,
+the view they belong to. If that conversation no longer exists, the row says so
+and the sheet stays open. Unanswered requests stay in the pending section.
+Each recent row can be removed on its own. **Clear all** in the header asks for
+confirmation before removing history. Removing and clearing happen only after the change is saved; if
 saving fails, the list stays and says so.
 
 Desktop banners appear only while bycoda is in the background. While any bycoda
@@ -435,8 +453,33 @@ click a selected tag again, or All tags, to clear that filter. Filtering keeps t
 current note and its draft open.
 
 Document is the default editable view: click a paragraph to edit, then Read document
-to return to reading. Heading, list, checklist and link commands sit beside bold and
-italic while editing. Source and Split remain available for exact Markdown work.
+to return to reading. All formatting commands appear directly in the toolbar while
+editing, including strikethrough, numbered list, quote, code block, table and divider.
+The toolbar wraps in narrow panes. Source and Split remain available for exact Markdown work.
 
 Add to chat prepares context in the note's project. Its adjacent menu selects another
 project without moving or relinking the note. The message remains unsent.
+
+## Models and providers
+
+**Settings > Models** contains **Model order**, **Assignments**,
+**Chat defaults** and **Subagents**. Configure shared priority, automation limits,
+pools, role bindings and delegation there. **Settings > Providers** contains
+**Accounts**, **CLI**, **Catalog** and **Decision models**. The Grok account row
+reports the local Grok Build CLI sign-in. See [Models](models.md) for selection,
+inheritance and running-session behavior.
+
+### Adding project actions
+
+Save action keeps the Add action dialog open and clears the form for another action.
+Saved actions appear in the dialog and the Project actions menu. Detected scripts
+stay in place and become disabled with a check mark once their command is saved.
+Close dismisses the dialog; saving edits or deleting an action closes it.
+
+### Development server controls
+
+The start form places server name, command, working directory and expected port
+side by side when space allows. Set the port in the command as well. No flags
+are added automatically. Preview, browser, copy, process details, stop and restart
+share one toolbar. Process controls retain their confirmation and identity checks.
+The details footer groups confirmation and log actions together.

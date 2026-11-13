@@ -9,12 +9,14 @@ import {
   asClient,
   bodyText,
   buttonByText,
-  clientMock,
   clickButton,
+  clientMock,
   fieldByLabel,
   flush,
   mountHost,
   person,
+  pickOption,
+  selectedLabel,
   setFieldValue,
   type ClientMock,
   type MountedHost,
@@ -91,11 +93,10 @@ describe("PersonPanel consent", () => {
   it("shows the stored IYS status and saves a new one with the time it was checked", async () => {
     const mock = detailMock({}, { commercialConsent: { iys: "rejected", checkedAt: 5 } });
     const props = await open(mock);
-    const field = fieldByLabel("IYS status") as HTMLSelectElement;
-    expect(field.value).toBe("rejected");
+    expect(selectedLabel("IYS status")).toBe("Rejected");
 
     const before = Date.now();
-    setFieldValue(field, "approved");
+    pickOption("IYS status", "Approved");
     await flush();
     expect(mock.people.update).toHaveBeenCalledWith({
       personId: "p1",
@@ -110,7 +111,7 @@ describe("PersonPanel consent", () => {
 
   it("treats a person without a recorded IYS status as not checked", async () => {
     await open(detailMock());
-    expect((fieldByLabel("IYS status") as HTMLSelectElement).value).toBe("unknown");
+    expect(selectedLabel("IYS status")).toBe("Not checked");
     expect(bodyText()).toContain("Commercial messages (Turkey)");
   });
 
@@ -124,7 +125,7 @@ describe("PersonPanel edits", () => {
   it("does not save a stage that did not change", async () => {
     const mock = detailMock({}, { stage: "contacted" });
     await open(mock);
-    setFieldValue(fieldByLabel("Change stage"), "contacted");
+    pickOption("Change stage", "Contacted");
     await flush();
     expect(mock.people.update).not.toHaveBeenCalled();
   });
@@ -189,7 +190,7 @@ describe("PersonPanel edits", () => {
     const mock = detailMock();
     mock.people.update.mockRejectedValueOnce(new Error("Person is locked."));
     const props = await open(mock);
-    setFieldValue(fieldByLabel("Change stage"), "interested");
+    pickOption("Change stage", "Interested");
     await flush();
     expect(bodyText()).toContain("Person is locked.");
     expect(props.onChanged).not.toHaveBeenCalled();

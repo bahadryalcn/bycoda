@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
@@ -339,7 +340,10 @@ export function WorkspaceSourceControl({
               {repositories.map((path) => (
                 <div
                   key={path}
-                  className={childNames.has(projectKey(path)) ? styles.nested : undefined}
+                  {...surfaceAttributes(
+                    { separator: "block" },
+                    childNames.has(projectKey(path)) ? styles.nested : undefined,
+                  )}
                   onPointerDownCapture={() => setLastUsed(path)}
                   onFocusCapture={() => setLastUsed(path)}
                 >

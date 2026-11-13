@@ -36,9 +36,6 @@
   min-inline-size: 0;
   overflow: hidden;
 }
-.list > * + * {
-  border-block-start: 1px solid var(--ui-pane-border);
-}
 .entry {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -74,7 +71,6 @@
 .quote {
   margin: 0;
   padding-inline-start: 10px;
-  border-inline-start: 2px solid var(--ui-pane-border);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

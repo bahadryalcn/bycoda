@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { NativeSelect } from "../../../shared/ui/Select";
+import { Select } from "../../../shared/ui/Select";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
@@ -28,7 +28,7 @@ import {
   repositorySelectionHidden,
 } from "../model/inboxRepositoryFilters";
 
-export const INBOX_FILTER_MENU_WIDTH = 228;
+export const INBOX_FILTER_MENU_WIDTH = 280;
 
 type ProjectOption = {
   path: string;
@@ -176,9 +176,9 @@ export function InboxFiltersMenu({
       role="dialog"
       aria-label={t("Filter inbox")}
       onContextMenu={(event) => event.preventDefault()}
-      className="overflow-y-auto overscroll-none p-1"
+      className="overflow-y-auto overscroll-none p-3"
     >
-      <div className="flex h-8 items-center justify-between gap-2 ps-2">
+      <div className="mbs-2 flex items-center justify-between gap-2">
         <Text size="caption" tone="secondary" weight="medium">
           {t("Filter inbox")}
         </Text>
@@ -200,242 +200,247 @@ export function InboxFiltersMenu({
           </Button>
         ) : null}
       </div>
-      <FilterItem
-        label={
-          source === "gitlab" || source === "azuredevops"
-            ? t("Needs attention")
-            : t("Assigned to me")
-        }
-        checked={filters.assignedToMe}
-        onClick={toggleAssigned}
-      />
-
-      {source === "jira" ? (
-        <>
-          <SectionLabel variant="menu">{t("Assignee")}</SectionLabel>
+      <div className="grid min-w-0 gap-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <FilterItem
-            label={t("Unassigned")}
-            checked={filters.jiraUnassigned === true}
-            onClick={() => onChange({ ...filters, jiraUnassigned: !filters.jiraUnassigned })}
+            label={
+              source === "gitlab" || source === "azuredevops"
+                ? t("Needs attention")
+                : t("Assigned to me")
+            }
+            checked={filters.assignedToMe}
+            onClick={toggleAssigned}
           />
-          <SearchableSelect
-            hideLabel
-            side="right"
-            multiple
-            label={t("Assignee")}
-            options={[
-              ...jiraOptions.assignees.map((option) => ({
-                ...option,
-                label: t("Assigned to {name}", { name: option.label }),
-              })),
-              ...(filters.jiraAssignees ?? [])
-                .filter((id) => !jiraOptions.assignees.some((option) => option.value === id))
-                .map((value) => ({ value, label: t("Assigned to {name}", { name: value }) })),
-            ]}
-            value={filters.jiraAssignees ?? []}
-            onChange={(jiraAssignees) => onChange({ ...filters, jiraAssignees })}
-          />
-          <SectionLabel variant="menu">{t("Board status")}</SectionLabel>
-          <SearchableSelect
-            hideLabel
-            side="right"
-            multiple
-            label={t("Board status")}
-            options={[
-              ...jiraOptions.statuses,
-              ...(filters.jiraStatuses ?? [])
-                .filter((value) => !jiraOptions.statuses.some((option) => option.value === value))
-                .map((value) => ({ value, label: value })),
-            ]}
-            value={filters.jiraStatuses ?? []}
-            onChange={(jiraStatuses) => onChange({ ...filters, jiraStatuses })}
-          />
-        </>
-      ) : null}
-      <SectionLabel variant="menu">{t("Status")}</SectionLabel>
-      <FilterItem
-        label={t("Open")}
-        checked={filters.status.open}
-        onClick={() => toggleStatus("open")}
-      />
-      {!tracker ? (
-        <FilterItem
-          label={t("Draft")}
-          checked={filters.status.draft}
-          onClick={() => toggleStatus("draft")}
-        />
-      ) : null}
-      <FilterItem
-        label={t("Closed")}
-        checked={filters.status.closed}
-        onClick={() => toggleStatus("closed")}
-      />
-      {!tracker ? (
-        <FilterItem
-          label={t("Merged")}
-          checked={filters.status.merged}
-          onClick={() => toggleStatus("merged")}
-        />
-      ) : null}
 
-      <SectionLabel variant="menu">{t("Time")}</SectionLabel>
-      <NativeSelect
-        aria-label={t("Time")}
-        value={filters.time}
-        onChange={(event) => setTime(event.target.value as InboxTimeFilter)}
-      >
-        {TIME_OPTIONS.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </NativeSelect>
-
-      {!tracker ? (
-        <>
-          <SectionLabel variant="menu">{t("Type")}</SectionLabel>
-          {KIND_OPTIONS.map((option) => (
+          {source === "jira" ? (
             <FilterItem
-              key={option.id}
-              label={source === "gitlab" && option.id === "pr" ? t("Merge requests") : option.label}
-              checked={!hiddenKinds.has(option.id)}
-              icon={option.icon}
-              onClick={() => toggleKind(option.id)}
+              label={t("Unassigned")}
+              checked={filters.jiraUnassigned === true}
+              onClick={() => onChange({ ...filters, jiraUnassigned: !filters.jiraUnassigned })}
             />
-          ))}
-        </>
-      ) : null}
-
-      {source === "linear" && linearTeams.length > 0 ? (
-        <>
-          <SectionLabel variant="menu">{t("Teams")}</SectionLabel>
-          <SearchableSelect
-            hideLabel
-            side="right"
-            multiple
-            label={t("Teams")}
-            options={linearTeams.map((item) => ({
-              value: item.id,
-              label: item.name || item.key,
-              keywords: item.id,
-            }))}
-            value={linearTeams
-              .filter((item) => !hiddenLinearTeamIds.includes(item.id))
-              .map((item) => item.id)}
-            onChange={(values) => {
-              const keys = linearTeams.map((item) => item.id);
-              const next = hiddenAfterSelection(keys, values, hiddenLinearTeamIds);
-              onLinearTeamsChange(next);
-            }}
-          />
-        </>
-      ) : null}
-
-      {source === "linear" && linearProjects.length > 0 ? (
-        <>
-          <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
-          <SearchableSelect
-            hideLabel
-            side="right"
-            multiple
-            label={t("Projects")}
-            options={linearProjects.map((item) => ({
-              value: item.id,
-              label: item.name,
-              keywords: item.id,
-            }))}
-            value={linearProjects
-              .filter((item) => !filters.hiddenLinearProjects.includes(item.id))
-              .map((item) => item.id)}
-            onChange={(values) => {
-              const keys = linearProjects.map((item) => item.id);
-              const next = hiddenAfterSelection(keys, values, filters.hiddenLinearProjects);
-              onChange({ ...filters, hiddenLinearProjects: next });
-            }}
-          />
-        </>
-      ) : null}
-
-      {source === "jira" && jiraProjects.length > 0 ? (
-        <>
-          <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
-          <SearchableSelect
-            hideLabel
-            side="right"
-            multiple
-            label={t("Projects")}
-            options={jiraProjects.map((item) => ({
-              value: item.id,
-              label: item.name || item.key,
-              keywords: item.id,
-            }))}
-            value={jiraProjects
-              .filter((item) => !hiddenJiraProjectIds.includes(item.id))
-              .map((item) => item.id)}
-            onChange={(values) => {
-              const keys = jiraProjects.map((item) => item.id);
-              const next = hiddenAfterSelection(keys, values, hiddenJiraProjectIds);
-              onJiraProjectsChange(next);
-            }}
-          />
-        </>
-      ) : null}
-
-      {source === "gitlab" || source === "azuredevops" ? (
-        <>
-          {codeHostError ? <Alert tone="danger">{codeHostError}</Alert> : null}
-          {codeHostProjects.length ? (
-            <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
           ) : null}
-          <SearchableSelect
-            hideLabel
-            side="right"
-            multiple
-            label={t("Projects")}
-            options={codeHostProjects.map((item) => ({
-              value: item.id,
-              label: item.name,
-              keywords: item.id,
-            }))}
-            value={codeHostProjects
-              .filter((item) => !hiddenCodeHostProjects.includes(item.id))
-              .map((item) => item.id)}
-            onChange={(values) => {
-              const keys = codeHostProjects.map((item) => item.id);
-              const next = hiddenAfterSelection(keys, values, hiddenCodeHostProjects);
-              onCodeHostProjectsChange?.(next);
-            }}
-          />
-        </>
-      ) : null}
+        </div>
+        {source === "jira" ? (
+          <div className="grid min-w-0 gap-3">
+            <div className="grid min-w-0 gap-1.5">
+              <SearchableSelect
+                multiple
+                label={t("Assignee")}
+                placeholder={t("Anyone")}
+                options={[
+                  ...jiraOptions.assignees,
+                  ...(filters.jiraAssignees ?? [])
+                    .filter((id) => !jiraOptions.assignees.some((option) => option.value === id))
+                    .map((value) => ({ value, label: value })),
+                ]}
+                value={filters.jiraAssignees ?? []}
+                onChange={(jiraAssignees) => onChange({ ...filters, jiraAssignees })}
+              />
+            </div>
+            <div className="grid min-w-0 gap-1.5">
+              <SearchableSelect
+                multiple
+                label={t("Board status")}
+                placeholder={t("All statuses")}
+                options={[
+                  ...jiraOptions.statuses,
+                  ...(filters.jiraStatuses ?? [])
+                    .filter(
+                      (value) => !jiraOptions.statuses.some((option) => option.value === value),
+                    )
+                    .map((value) => ({ value, label: value })),
+                ]}
+                value={filters.jiraStatuses ?? []}
+                onChange={(jiraStatuses) => onChange({ ...filters, jiraStatuses })}
+              />
+            </div>
+          </div>
+        ) : null}
+        <div className="grid min-w-0 gap-1.5">
+          <SectionLabel variant="menu">{t("Status")}</SectionLabel>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+            <FilterItem
+              label={t("Open")}
+              checked={filters.status.open}
+              onClick={() => toggleStatus("open")}
+            />
+            <FilterItem
+              label={t("Closed")}
+              checked={filters.status.closed}
+              onClick={() => toggleStatus("closed")}
+            />
+            {!tracker ? (
+              <FilterItem
+                label={t("Draft")}
+                checked={filters.status.draft}
+                onClick={() => toggleStatus("draft")}
+              />
+            ) : null}
+            {!tracker ? (
+              <FilterItem
+                label={t("Merged")}
+                checked={filters.status.merged}
+                onClick={() => toggleStatus("merged")}
+              />
+            ) : null}
+          </div>
+        </div>
+        <Select
+          label={t("Time")}
+          value={filters.time}
+          options={TIME_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
+          onValueChange={(value) => setTime(value as InboxTimeFilter)}
+        />
 
-      {!tracker &&
-      !((source === "gitlab" || source === "azuredevops") && filters.assignedToMe) &&
-      projects.length > 0 ? (
-        <>
-          <SectionLabel variant="menu">
-            {source === "github" ? t("Local repositories") : t("Projects")}
-          </SectionLabel>
-          <SearchableSelect
-            hideLabel
-            side="right"
-            multiple
-            label={source === "github" ? t("Local repositories") : t("Projects")}
-            options={projects.map((item) => ({
-              value: item.path,
-              label: item.name,
-              keywords: [item.path, ...(item.aliases ?? [])].join(" "),
-            }))}
-            value={projects
-              .filter((item) => !repositorySelectionHidden(item, filters.hiddenProjects))
-              .map((item) => item.path)}
-            onChange={(values) => {
-              const next = hiddenAfterRepositorySelection(projects, values, filters.hiddenProjects);
-              onChange({ ...filters, hiddenProjects: next });
-            }}
-          />
-        </>
-      ) : null}
+        {!tracker ? (
+          <div className="grid min-w-0 gap-1.5">
+            <SectionLabel variant="menu">{t("Type")}</SectionLabel>
+            {KIND_OPTIONS.map((option) => (
+              <FilterItem
+                key={option.id}
+                label={
+                  source === "gitlab" && option.id === "pr" ? t("Merge requests") : option.label
+                }
+                checked={!hiddenKinds.has(option.id)}
+                icon={option.icon}
+                onClick={() => toggleKind(option.id)}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {source === "linear" && linearTeams.length > 0 ? (
+          <div className="grid min-w-0 gap-1.5">
+            <SectionLabel variant="menu">{t("Teams")}</SectionLabel>
+            <SearchableSelect
+              hideLabel
+              side="right"
+              multiple
+              label={t("Teams")}
+              options={linearTeams.map((item) => ({
+                value: item.id,
+                label: item.name || item.key,
+                keywords: item.id,
+              }))}
+              value={linearTeams
+                .filter((item) => !hiddenLinearTeamIds.includes(item.id))
+                .map((item) => item.id)}
+              onChange={(values) => {
+                const keys = linearTeams.map((item) => item.id);
+                const next = hiddenAfterSelection(keys, values, hiddenLinearTeamIds);
+                onLinearTeamsChange(next);
+              }}
+            />
+          </div>
+        ) : null}
+
+        {source === "linear" && linearProjects.length > 0 ? (
+          <div className="grid min-w-0 gap-1.5">
+            <SearchableSelect
+              multiple
+              label={t("Projects")}
+              options={linearProjects.map((item) => ({
+                value: item.id,
+                label: item.name,
+                keywords: item.id,
+              }))}
+              value={linearProjects
+                .filter((item) => !filters.hiddenLinearProjects.includes(item.id))
+                .map((item) => item.id)}
+              onChange={(values) => {
+                const keys = linearProjects.map((item) => item.id);
+                const next = hiddenAfterSelection(keys, values, filters.hiddenLinearProjects);
+                onChange({ ...filters, hiddenLinearProjects: next });
+              }}
+            />
+          </div>
+        ) : null}
+
+        {source === "jira" && jiraProjects.length > 0 ? (
+          <div className="grid min-w-0 gap-1.5">
+            <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
+            <SearchableSelect
+              hideLabel
+              side="right"
+              multiple
+              label={t("Projects")}
+              options={jiraProjects.map((item) => ({
+                value: item.id,
+                label: item.name || item.key,
+                keywords: item.id,
+              }))}
+              value={jiraProjects
+                .filter((item) => !hiddenJiraProjectIds.includes(item.id))
+                .map((item) => item.id)}
+              onChange={(values) => {
+                const keys = jiraProjects.map((item) => item.id);
+                const next = hiddenAfterSelection(keys, values, hiddenJiraProjectIds);
+                onJiraProjectsChange(next);
+              }}
+            />
+          </div>
+        ) : null}
+
+        {source === "gitlab" || source === "azuredevops" ? (
+          <div className="grid min-w-0 gap-1.5">
+            {codeHostError ? <Alert tone="danger">{codeHostError}</Alert> : null}
+            {codeHostProjects.length ? (
+              <SectionLabel variant="menu">{t("Projects")}</SectionLabel>
+            ) : null}
+            <SearchableSelect
+              hideLabel
+              side="right"
+              multiple
+              label={t("Projects")}
+              options={codeHostProjects.map((item) => ({
+                value: item.id,
+                label: item.name,
+                keywords: item.id,
+              }))}
+              value={codeHostProjects
+                .filter((item) => !hiddenCodeHostProjects.includes(item.id))
+                .map((item) => item.id)}
+              onChange={(values) => {
+                const keys = codeHostProjects.map((item) => item.id);
+                const next = hiddenAfterSelection(keys, values, hiddenCodeHostProjects);
+                onCodeHostProjectsChange?.(next);
+              }}
+            />
+          </div>
+        ) : null}
+
+        {!tracker &&
+        !((source === "gitlab" || source === "azuredevops") && filters.assignedToMe) &&
+        projects.length > 0 ? (
+          <div className="grid min-w-0 gap-1.5">
+            <SectionLabel variant="menu">
+              {source === "github" ? t("Local repositories") : t("Projects")}
+            </SectionLabel>
+            <SearchableSelect
+              hideLabel
+              side="right"
+              multiple
+              label={source === "github" ? t("Local repositories") : t("Projects")}
+              options={projects.map((item) => ({
+                value: item.path,
+                label: item.name,
+                keywords: [item.path, ...(item.aliases ?? [])].join(" "),
+              }))}
+              value={projects
+                .filter((item) => !repositorySelectionHidden(item, filters.hiddenProjects))
+                .map((item) => item.path)}
+              onChange={(values) => {
+                const next = hiddenAfterRepositorySelection(
+                  projects,
+                  values,
+                  filters.hiddenProjects,
+                );
+                onChange({ ...filters, hiddenProjects: next });
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
     </Popover>
   );
 }

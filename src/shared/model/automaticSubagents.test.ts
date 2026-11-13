@@ -43,6 +43,12 @@ it("round trips Automatic and carries the ceiling without exposing either to pro
   ).toEqual({ crossSubagents: "[]" });
 });
 
+it.each(["none", "minimal"])("migrates legacy %s ceiling to low", (value) => {
+  expect(carryCrossDelegation({ crossSubagentMaxEffort: value }, {})).toEqual({
+    crossSubagentMaxEffort: "low",
+  });
+});
+
 it.each([
   ["claude:fable-6", "best"],
   ["claude:mythos-6", "best"],

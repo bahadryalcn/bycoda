@@ -171,7 +171,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
           <ul className="max-h-[min(10rem,20vh)] overflow-y-auto pb-1">
             {entries.map((entry) => (
               <li key={entry.sha}>
-                <ActionHost className="mx-1 min-h-(--ui-control-height-compact) pe-1">
+                <ActionHost controlMinHeight="compact" padding={{ end: "xs" }} className="mx-1">
                   <Button
                     variant="item"
                     size="sm"

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Badge } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
 import { Row } from "../../settings/ui/settingsControls";
@@ -93,7 +95,21 @@ export function MicrophonePermissionSettings() {
                 "Microphone permission is requested only when you start dictation, voice or a microphone check.",
               ));
   return (
-    <Row id="speech-microphone" label={t("Microphone access")} description={message}>
+    <Row
+      id="speech-microphone"
+      label={t("Microphone access")}
+      description={blocked || error || (requestPending && !busy) ? message : undefined}
+      info={
+        !blocked && !error && !(requestPending && !busy) ? (
+          <InfoPopover label={`${t("Microphone access")}: ${t("Help")}`}>{message}</InfoPopover>
+        ) : undefined
+      }
+    >
+      {!blocked && !error && !requestPending && (
+        <Badge size="xs" tone={permission === "granted" ? "success" : "neutral"}>
+          {permission === "granted" ? t("Microphone allowed") : t("Not checked")}
+        </Badge>
+      )}
       <Button
         onClick={() =>
           void check().catch((cause) => {

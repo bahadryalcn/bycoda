@@ -2,16 +2,17 @@ import { useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
-import { InlineError } from "../../../../shared/ui/InlineError";
-import { Modal, ModalActions } from "../../../../shared/ui/Modal";
+import { Plus } from "../../../../shared/ui/icons";
+import { Modal } from "../../../../shared/ui/Modal";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialList } from "../../model/audience";
 import type { EmailAccount, Sequence, SequenceStep } from "../../model/outreach";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason } from "../common/DisabledReason";
+import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { LabeledSelect } from "./LabeledSelect";
 import { errorMessage } from "./audienceModel";
+import { useFormFooter, useTouched } from "./formFooter";
 import { SequenceStepEditor, newStepDraft, type StepDraft } from "./SequenceStepEditor";
 
 export type SequenceEditorProps = {
@@ -57,6 +58,7 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
   const [emailAccounts, setEmailAccounts] = useState<EmailAccount[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const { touched, touch } = useTouched();
 
   useEffect(() => {
     let active = true;
@@ -107,7 +109,8 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
                   "Pacing needs whole numbers: at least 1 per hour and per day, 0 or more warm-up days.",
                 )
               : undefined;
-  const saveState = reason ? { disabled: true as const, reason } : { disabled: false as const };
+  const nameReason = name.trim() ? undefined : t("Enter a name for the sequence.");
+  const listReason = listId ? undefined : t("Choose the list of people it runs for.");
 
   function updateStep(index: number, next: StepDraft) {
     setSteps((current) => current.map((step, position) => (position === index ? next : step)));
@@ -153,6 +156,15 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
     }
   }
 
+  const footer = useFormFooter({
+    saving,
+    error,
+    blockedReason: reason,
+    saveLabel: t("Save sequence"),
+    onSave: () => void save().catch((err: unknown) => setError(errorMessage(err))),
+    onCancel: onClose,
+  });
+
   return (
     <Modal
       title={sequence ? t("Edit sequence") : t("New sequence")}
@@ -161,41 +173,35 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
         if (!saving) onClose();
       }}
       size="lg"
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
-      footer={
-        <ModalActions>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <DisabledReason
-            variant="primary"
-            loading={saving}
-            {...saveState}
-            onClick={() => void save().catch((err: unknown) => setError(errorMessage(err)))}
-          >
-            {t("Save sequence")}
-          </DisabledReason>
-        </ModalActions>
-      }
+      {...footer}
     >
       <div className="audience-stack">
-        <TextField
-          label={t("Sequence name")}
-          value={name}
-          disabled={saving}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <LabeledSelect
-          label={t("People")}
-          value={listId}
-          disabled={saving}
-          options={[
-            { value: "", label: t("Choose a list") },
-            ...staticLists.map((list) => ({ value: list.id, label: list.name })),
-          ]}
-          onChange={setListId}
-        />
+        <div className="audience-pair">
+          <TextField
+            label={t("Sequence name")}
+            value={name}
+            disabled={saving}
+            error={touched("name") ? nameReason : undefined}
+            onBlur={() => touch("name")}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <LabeledSelect
+            label={t("People")}
+            value={listId}
+            disabled={saving}
+            error={touched("list") ? listReason : undefined}
+            options={[
+              { value: "", label: t("Choose a list") },
+              ...staticLists.map((list) => ({ value: list.id, label: list.name })),
+            ]}
+            onChange={(value) => {
+              touch("list");
+              setListId(value);
+            }}
+          />
+        </div>
 
+        <SectionLabel count={steps.length}>{t("Steps")}</SectionLabel>
         {steps.map((step, index) => (
           <SequenceStepEditor
             key={step.id}
@@ -213,6 +219,7 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
           <Button
             variant="secondary"
             size="sm"
+            startIcon={<Plus className="icon-sm" aria-hidden="true" />}
             disabled={saving || steps.length >= MAX_STEPS}
             onClick={() => setSteps((current) => [...current, newStepDraft(newId("step"))])}
           >
@@ -220,28 +227,33 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
           </Button>
         </div>
 
-        <FieldGroup legend={t("Pace")} variant="card">
-          <NumberField
-            label={t("Most messages per hour")}
-            min={1}
-            value={perHour}
-            disabled={saving}
-            onChange={(event) => setPerHour(event.target.value)}
-          />
-          <NumberField
-            label={t("Most messages per day")}
-            min={1}
-            value={perDay}
-            disabled={saving}
-            onChange={(event) => setPerDay(event.target.value)}
-          />
-          <NumberField
-            label={t("Warm-up days")}
-            min={0}
-            value={warmupDays}
-            disabled={saving}
-            onChange={(event) => setWarmupDays(event.target.value)}
-          />
+        <FieldGroup legend={t("Pace")} variant="card" layout="row">
+          <div className="audience-triple">
+            <NumberField
+              label={t("Most messages per hour")}
+              min={1}
+              value={perHour}
+              disabled={saving}
+              error={hourValid ? undefined : t("Enter a whole number, 1 or more.")}
+              onChange={(event) => setPerHour(event.target.value)}
+            />
+            <NumberField
+              label={t("Most messages per day")}
+              min={1}
+              value={perDay}
+              disabled={saving}
+              error={dayValid ? undefined : t("Enter a whole number, 1 or more.")}
+              onChange={(event) => setPerDay(event.target.value)}
+            />
+            <NumberField
+              label={t("Warm-up days")}
+              min={0}
+              value={warmupDays}
+              disabled={saving}
+              error={warmupValid ? undefined : t("Enter a whole number, 0 or more.")}
+              onChange={(event) => setWarmupDays(event.target.value)}
+            />
+          </div>
         </FieldGroup>
       </div>
     </Modal>

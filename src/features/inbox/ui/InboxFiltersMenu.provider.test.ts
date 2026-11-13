@@ -43,6 +43,13 @@ it("shows Jira assignment and workflow selectors and clears every persisted filt
       ),
     );
     expect(host.querySelector('button[aria-label^="Assignee:"]')).toBeTruthy();
+    const assignee = host.querySelector<HTMLButtonElement>('button[aria-label^="Assignee:"]')!;
+    await act(async () => assignee.click());
+    const person = host.querySelector<HTMLButtonElement>('[role="option"][data-value="ada"]')!;
+    expect(person.textContent).toContain("ada");
+    expect(person.textContent).not.toContain("{name}");
+    await act(async () => person.click());
+    expect(onChange).toHaveBeenLastCalledWith({ ...filters, jiraAssignees: [] });
     expect(host.querySelector('button[aria-label^="Board status:"]')).toBeTruthy();
     const unassigned =
       host.querySelector<HTMLInputElement>('input[type="checkbox"][aria-label="Unassigned"]') ??

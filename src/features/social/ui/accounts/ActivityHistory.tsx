@@ -53,7 +53,7 @@ function reviewReasonText(reason: string | undefined): string {
 function aiStatus(status: AiAction["status"]): StatusTextStatus {
   switch (status) {
     case "done":
-      return "succeeded";
+      return "completed";
     case "queued":
       return "queued";
     case "failed":

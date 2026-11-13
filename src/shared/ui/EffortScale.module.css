@@ -1,0 +1,66 @@
+.scale {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.value {
+  display: block;
+  text-align: end;
+  margin-block-end: var(--space-1);
+  overflow-wrap: anywhere;
+}
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-1);
+  block-size: 3.25rem;
+}
+button.bar {
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  block-size: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: var(--ui-control-radius) var(--ui-control-radius) 0 0;
+}
+.fill {
+  display: block;
+  inline-size: 100%;
+  block-size: var(--effort-height);
+  border-radius: inherit;
+  background: var(--ui-fill-subtle);
+}
+.bar[data-filled] > .fill {
+  background: var(--ui-effort-fill);
+}
+.bar[data-filled][data-ultra] > .fill {
+  background: var(--ui-effort-ultra-fill);
+}
+.bar[aria-checked="true"] {
+  background: var(--ui-tone-accent-subtle);
+}
+.bar:focus-visible {
+  outline: 2px solid var(--ui-tone-accent-border);
+  outline-offset: 2px;
+}
+.bar:active > .fill {
+  opacity: 0.8;
+}
+.bar:disabled {
+  opacity: 0.55;
+}
+.ends {
+  display: flex;
+  justify-content: space-between;
+  padding-block-start: var(--space-1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .bar:not(:disabled):hover {
+    background: var(--ui-surface-hover);
+  }
+}

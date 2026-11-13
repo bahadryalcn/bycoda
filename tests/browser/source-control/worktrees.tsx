@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { VisualCaller } from "./visual-callers";
 import { ToastRegion } from "../../../src/shared/ui/ToastRegion";
 import { invoke } from "@tauri-apps/api/core";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
@@ -241,6 +242,8 @@ const populatedTrees = [
 ];
 const trees = populated ? populatedTrees : baseTrees;
 mockIPC((command, args = {}) => {
+  if (query.has("visual-loading") && !command.startsWith("plugin:event|"))
+    return new Promise(() => {});
   if (command === "managed_worktree_removal_plan" || command === "managed_worktree_removal_apply") {
     const method =
       command === "managed_worktree_removal_plan"
@@ -260,6 +263,8 @@ mockIPC((command, args = {}) => {
       params?: Record<string, unknown>;
     };
     workspaceCalls.push({ method, params: structuredClone(params) });
+    if (query.has("visual-policy-error") && method === "projects.workspacePolicy.get")
+      throw new Error("Fixture policy read unavailable");
     if (method === "environment.describe")
       return {
         capabilities: managed
@@ -423,7 +428,9 @@ void Promise.all([
     <>
       {/* The app mounts one toast region per window; background removals report through it. */}
       <ToastRegion />
-      {populated ? (
+      {query.has("visualCaller") ? (
+        <VisualCaller view={query.get("visualCaller")!} />
+      ) : populated ? (
         // Mirrors the Settings workspace track: category rail, then the wide presentation scroller.
         // The app shell locks the document, so the track scrolls inside itself as in Settings.
         <main

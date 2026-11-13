@@ -3,13 +3,17 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
+import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { Heading } from "../../../../shared/ui/Heading";
 
 import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import { openExternal } from "../../../../platform/tauri/openExternal";
 import { CapabilityList } from "../common/CapabilityList";
-import type { Capability, SocialAccount } from "../../model/social";
+import { operationText } from "../common/capabilityText";
+import type { Capability, SocialAccount, SocialOperation } from "../../model/social";
 import { TOKEN_PLATFORMS } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { TelegramChannelConnect } from "./platform/TelegramChannelConnect";
@@ -59,6 +63,13 @@ export function AccountConnection({
   const [resourceId, setResourceId] = useState("");
   const [browser, setBrowser] = useState<BrowserState>();
   const [oauth, setOAuth] = useState<OAuthState>();
+  const [operations, setOperations] = useState<SocialOperation[]>(["publish"]);
+  const operationOptions = capabilities.length
+    ? capabilities.filter((item) => item.status !== "unsupported").map((item) => item.operation)
+    : ["publish" as const];
+  const requestedOperations = operations.filter((operation) =>
+    operationOptions.includes(operation),
+  );
   const { error, is, write } = useAccountWrite(
     t("The connection could not be started. Try again."),
   );
@@ -70,20 +81,33 @@ export function AccountConnection({
 
   const startBrowser = () =>
     write("connect:browser", async () => {
-      setBrowser(await client.browserBegin(account.id, resourceId || undefined));
+      const result = await client.browserBegin(account.id, resourceId || undefined);
+      setBrowser(result);
+      if (result.status === "connected") onChanged();
     });
   const checkBrowser = () =>
-    write("check:browser", async () => setBrowser(await client.browserStatus(account.id)));
+    write("check:browser", async () => {
+      const result = await client.browserStatus(account.id);
+      setBrowser(result);
+      if (result.status === "connected") onChanged();
+    });
   const startOAuth = () =>
     write("connect:oauth", async () => {
-      const begin = await client.oauthBegin(account.id, isOrganization ? resourceId : undefined, [
-        "publish",
-      ]);
+      if (!requestedOperations.length || (isOrganization && !/^\d+$/.test(resourceId))) return;
+      const begin = await client.oauthBegin(
+        account.id,
+        isOrganization ? resourceId : undefined,
+        requestedOperations,
+      );
       setOAuth({ status: "waiting", candidates: [] });
       await openExternal(begin.url);
     });
   const checkOAuth = () =>
-    write("check:oauth", async () => setOAuth(await client.oauthStatus(account.id)));
+    write("check:oauth", async () => {
+      const result = await client.oauthStatus(account.id);
+      setOAuth(result);
+      if (result.status === "connected") onChanged();
+    });
   const chooseCandidate = (candidateId: string) =>
     write(`candidate:${candidateId}`, () => client.oauthSelect(account.id, candidateId)).then(
       (result) => result !== undefined && onChanged(),
@@ -93,15 +117,6 @@ export function AccountConnection({
       (result) => result !== undefined && onChanged(),
     );
 
-  // A capability row's Connect button starts the flow this account uses. Telegram has no one-click
-  // flow: its channel review is the connection, so the row offers none.
-  const onConnect = isTelegram
-    ? undefined
-    : () => {
-        if (usesBrowser) startBrowser();
-        else if (isToken) connectToken();
-        else startOAuth();
-      };
   const connectLabel = account.connected ? t("Reconnect") : t("Connect");
 
   return (
@@ -111,11 +126,13 @@ export function AccountConnection({
     >
       <Heading size="item">{t("Connection")}</Heading>
       <Text as="p" tone="muted" leading="snug" className="social-muted">
-        {onThisComputer
-          ? t("This account is connected on the selected computer.")
-          : t("This account is connected on another computer.")}
+        {!account.connected
+          ? t("Connection needed")
+          : onThisComputer
+            ? t("This account is connected on the selected computer.")
+            : t("This account is connected on another computer.")}
       </Text>
-      <CapabilityList capabilities={capabilities} onConnect={disabled ? undefined : onConnect} />
+      <CapabilityList capabilities={capabilities} grouped />
       {usesBrowser ? (
         <div className="social-field-row">
           <Button
@@ -144,35 +161,70 @@ export function AccountConnection({
         </div>
       ) : null}
       {!usesBrowser && !isToken && !isTelegram ? (
-        <div className="social-field-row">
-          {isOrganization ? (
-            <TextField
-              label={t("Organization ID")}
-              numeric
-              value={resourceId}
-              disabled={locked}
-              onChange={(event) => setResourceId(event.currentTarget.value)}
-            />
+        <>
+          <Disclosure summary={t("Permissions")} variant="row" size="sm">
+            <FieldGroup legend={t("What this account can do")} hideLegend layout="row">
+              {operationOptions.map((operation) => (
+                <Checkbox
+                  key={operation}
+                  label={operationText(operation)}
+                  checked={operations.includes(operation)}
+                  disabled={locked}
+                  onChange={(event) =>
+                    setOperations((current) =>
+                      event.target.checked
+                        ? [...current, operation]
+                        : current.filter((item) => item !== operation),
+                    )
+                  }
+                />
+              ))}
+            </FieldGroup>
+          </Disclosure>
+          {!requestedOperations.length ? (
+            <Text as="p" size="caption" tone="secondary">
+              {t("Choose at least one permission.")}
+            </Text>
           ) : null}
-          <Button
-            variant="primary"
-            size="sm"
-            loading={is("connect:oauth")}
-            disabled={locked || (isOrganization && !/^\d+$/.test(resourceId))}
-            onClick={() => void startOAuth().catch(() => undefined)}
-          >
-            {account.connected ? t("Reconnect in browser") : t("Connect in browser")}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            loading={is("check:oauth")}
-            disabled={disabled || is("check:oauth")}
-            onClick={() => void checkOAuth().catch(() => undefined)}
-          >
-            {t("Check connection")}
-          </Button>
-        </div>
+          <div className="social-field-row">
+            {isOrganization ? (
+              <TextField
+                label={t("Organization ID")}
+                numeric
+                value={resourceId}
+                disabled={locked}
+                onChange={(event) => setResourceId(event.currentTarget.value)}
+              />
+            ) : null}
+            <Button
+              variant="primary"
+              size="sm"
+              loading={is("connect:oauth")}
+              disabled={
+                locked ||
+                !requestedOperations.length ||
+                (isOrganization && !/^\d+$/.test(resourceId))
+              }
+              onClick={() => void startOAuth().catch(() => undefined)}
+            >
+              {account.connected ? t("Reconnect in browser") : t("Connect in browser")}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={is("check:oauth")}
+              disabled={disabled || is("check:oauth")}
+              onClick={() => void checkOAuth().catch(() => undefined)}
+            >
+              {t("Check connection")}
+            </Button>
+            {oauth ? (
+              <Text as="span" size="caption" tone="secondary">
+                {browserStatusText(oauth.status)}
+              </Text>
+            ) : null}
+          </div>
+        </>
       ) : null}
       {oauth?.candidates.length ? (
         <div

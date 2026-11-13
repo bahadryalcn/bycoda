@@ -136,7 +136,7 @@ test("selection, middle truncation, action groups and actual activity header sup
   await hint(page, phase, "Searched");
 });
 
-test("date range keeps its direct-child keyboard focus contract", async ({ page }) => {
+test("date range keeps its keyboard focus ring contract", async ({ page }) => {
   const trigger = page.getByTestId("date-range").locator("button").first();
   await reset(page);
   await trigger.focus();
@@ -144,18 +144,9 @@ test("date range keeps its direct-child keyboard focus contract", async ({ page 
   await page.keyboard.press("Shift+Tab");
   await expect(trigger).toBeFocused();
   expect(
-    await trigger.evaluate((element) => {
-      const parent = element.parentElement!;
-      return (
-        parent.matches(":has(> button:focus-visible)") &&
-        parent.classList.contains("bycoda-arc-date-range")
-      );
-    }),
+    await trigger.evaluate((element) => element.matches("button.bycoda-arc-select:focus-visible")),
   ).toBe(true);
-  const ring = await trigger.evaluate(
-    (element) =>
-      getComputedStyle(element.parentElement!.querySelector('[class*="surface"]')!).boxShadow,
-  );
+  const ring = await trigger.evaluate((element) => getComputedStyle(element).boxShadow);
   expect(ring).not.toBe("none");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -224,3 +215,38 @@ for (const width of [1280, 800])
       }
     });
   }
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`activity row density ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/shared-ui/tooltip-policy.html");
+      await page.evaluate(
+        (theme) => document.documentElement.classList.toggle("theme-light", theme),
+        light,
+      );
+      await page.getByRole("button", { name: /Show the steps for/ }).click();
+      const row = page.locator('[data-control-min-height="compact"]').first();
+      await expect(row).toBeVisible();
+      const heights: number[] = [];
+      for (const density of ["compact", "comfortable", "touch"]) {
+        await page.evaluate((value) => {
+          document.documentElement.dataset.controlDensity = value;
+        }, density);
+        const measured = await row.evaluate((node) => ({
+          height: node.getBoundingClientRect().height,
+          minimum: parseFloat(getComputedStyle(node).minBlockSize),
+          scroll: node.scrollHeight,
+          client: node.clientHeight,
+        }));
+        expect(measured.height).toBeGreaterThanOrEqual(measured.minimum);
+        expect(measured.scroll).toBeLessThanOrEqual(measured.client + 1);
+        heights.push(measured.height);
+      }
+      expect(heights[0]).toBeGreaterThanOrEqual(28);
+      expect(heights[1]).toBeGreaterThanOrEqual(heights[0]!);
+      expect(heights[2]).toBeGreaterThanOrEqual(heights[1]!);
+      await row.screenshot({
+        path: `temp/verification/feature-controls/activity-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });

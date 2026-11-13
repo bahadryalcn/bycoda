@@ -119,14 +119,12 @@ it("routes replacement preview and reviewed writes to each owning machine", asyn
   };
   await replaceProject(options);
   expect(invoke).toHaveBeenLastCalledWith("replace_project", { options });
-  const remote = vi
-    .fn()
-    .mockResolvedValue({
-      filesChanged: 1,
-      replacements: 2,
-      failures: [],
-      revisions: { "a.txt": "hash" },
-    });
+  const remote = vi.fn().mockResolvedValue({
+    filesChanged: 1,
+    replacements: 2,
+    failures: [],
+    revisions: { "a.txt": "hash" },
+  });
   setRemoteCommandRunner(remote);
   const reviewed = {
     ...options,

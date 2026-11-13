@@ -1,5 +1,148 @@
 import { expect, test } from "@playwright/test";
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`browser annotation disclosure surface ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/chat/artifact-formats.html?annotation-chip");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const disclosure = page.locator(".browser-annotation-chip");
+      await expect(disclosure).toBeVisible();
+      const actual = await disclosure.evaluate((node) => {
+        const s = getComputedStyle(node);
+        const probe = document.createElement("span");
+        probe.style.border = "1px solid var(--ui-card-border)";
+        probe.style.borderRadius = "var(--ui-radius-card)";
+        node.appendChild(probe);
+        const p = getComputedStyle(probe);
+        const result = {
+          width: s.borderTopWidth,
+          color: s.borderTopColor,
+          expectedColor: p.borderTopColor,
+          radius: s.borderTopLeftRadius,
+          expectedRadius: p.borderTopLeftRadius,
+        };
+        probe.remove();
+        return result;
+      });
+      expect(actual.width).toBe("1px");
+      expect(actual.color).toBe(actual.expectedColor);
+      expect(actual.radius).toBe(actual.expectedRadius);
+      const summary = disclosure.locator(":scope > summary");
+      await summary.hover();
+      const hover = await summary.evaluate((node) => {
+        const s = getComputedStyle(node);
+        const probe = document.createElement("span");
+        probe.style.color = "var(--ui-tone-accent-fg)";
+        node.appendChild(probe);
+        const accent = getComputedStyle(probe).color;
+        probe.remove();
+        return { color: s.color, accent };
+      });
+      expect(hover.color).toBe(hover.accent);
+      await page.keyboard.press("Tab");
+      await summary.focus();
+      await expect(summary).toHaveCSS("outline-style", "solid");
+      await summary.click();
+      await expect(disclosure).toHaveAttribute("open", "");
+      await expect(disclosure).toContainText("Review spacing");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/annotation-chip-${theme}-${width}.png`,
+      });
+    });
 import { writeFile } from "node:fs/promises";
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`work item avatar surface ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/chat/artifact-formats.html?work-item-avatar");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const chip = page.locator('[data-github-work-item-chip="pr"]');
+      await chip.focus();
+      const card = page.locator("[data-hover-card]");
+      await expect(card.getByText("Fixture review")).toBeVisible();
+      const avatar = card.locator("img").first();
+      await expect(avatar).toBeVisible();
+      const actual = await avatar.evaluate((node) => {
+        const s = getComputedStyle(node);
+        const probe = document.createElement("span");
+        probe.style.border = "1px solid var(--ui-tone-neutral-border)";
+        probe.style.background = "var(--ui-surface-raised)";
+        node.parentElement!.appendChild(probe);
+        const p = getComputedStyle(probe);
+        const result = {
+          width: s.borderTopWidth,
+          radius: s.borderTopLeftRadius,
+          border: s.borderTopColor,
+          background: s.backgroundColor,
+          expectedBorder: p.borderTopColor,
+          expectedBackground: p.backgroundColor,
+        };
+        probe.remove();
+        return result;
+      });
+      expect(actual.width).toBe("1px");
+      expect(actual.radius === "50%" || parseFloat(actual.radius) >= 9).toBe(true);
+      expect(actual.border).toBe(actual.expectedBorder);
+      expect(actual.background).toBe(actual.expectedBackground);
+      const branch = card.getByText("main ← feature").locator("..");
+      const footer = card.getByText("Click the chip to open on GitHub");
+      const paints = await branch.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.background =
+          "color-mix(in oklab, var(--ui-tone-neutral-solid) 4.5%, transparent)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { actual: getComputedStyle(node).backgroundColor, expected };
+      });
+      expect(paints.actual).toBe(paints.expected);
+      const footerPaint = await footer.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.borderTop =
+          "1px solid color-mix(in oklab, var(--ui-tone-neutral-border) 7%, transparent)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).borderTopColor;
+        probe.remove();
+        const style = getComputedStyle(node);
+        return { actual: style.borderTopColor, width: style.borderTopWidth, expected };
+      });
+      expect(footerPaint.width).toBe("1px");
+      expect(footerPaint.actual).toBe(footerPaint.expected);
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/work-item-avatar-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`generated image caller visual ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/chat/artifact-formats.html?generated-images&shape=wide");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const trigger = page.getByRole("button", { name: "Open wide.png full screen", exact: true });
+      await expect(trigger.locator("img")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/generated-image-${theme}-${width}.png`,
+      });
+      await trigger.click();
+      await expect(page.getByRole("dialog").locator("img")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/generated-image-open-${theme}-${width}.png`,
+      });
+    });
 
 test("attachment opening, reference and removal stay distinct at narrow widths", async ({
   page,
@@ -420,4 +563,176 @@ test("owned video reaches metadata and plays with native controls", async ({
   await video.evaluate((element) => (element as HTMLVideoElement).pause());
   expect(await video.evaluate((element) => (element as HTMLVideoElement).paused)).toBe(true);
   await page.screenshot({ path: info.outputPath("actual-video-preview.png") });
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`user text expanded surface ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/chat/artifact-formats.html?chat-overflow");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Show full long text", exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      await expect(dialog.locator("pre")).toContainText("unbroken");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/user-text-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`attachment preview floating surface ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/chat/artifact-formats.html?attachment-surfaces");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const chip = page.getByRole("button", { name: "Open report.txt full screen" });
+      await chip.click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
+      const colors = await dialog.evaluate((node) => {
+        const probe = document.createElement("span");
+        node.appendChild(probe);
+        probe.style.background = "var(--ui-surface-floating)";
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { actual: getComputedStyle(node).backgroundColor, expected };
+      });
+      expect(colors.actual).toBe(colors.expected);
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/attachment-preview-${theme}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(chip).toBeFocused();
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`attachment kind surface ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/chat/artifact-formats.html?attachment-surfaces&theme=${theme}`,
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const chips = page.locator("[data-attachment-chip]");
+      await expect(chips.first()).toBeVisible();
+      const colors = await chips.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const style = getComputedStyle(node);
+          const probe = document.createElement("span");
+          node.appendChild(probe);
+          probe.style.background =
+            "color-mix(in srgb, var(--ui-attachment-ink, var(--ui-tone-accent-fg)) 14%, transparent)";
+          const expected = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return {
+            kind: node.getAttribute("data-attachment-kind"),
+            actual: style.backgroundColor,
+            expected,
+          };
+        }),
+      );
+      expect(new Set(colors.map((color) => color.kind)).size).toBeGreaterThan(1);
+      expect(colors.every((color) => color.actual === color.expected)).toBe(true);
+      console.log("ATTACHMENT_SURFACES", theme, JSON.stringify(colors));
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/attachment-surface-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`shared work item chip interaction ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/chat/artifact-formats.html?work-item-avatar");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const attachment = page.locator("[data-inline-attachment] button [data-name]");
+      await expect(attachment).toHaveCSS("text-decoration-line", "none");
+      await attachment.hover();
+      await expect(attachment).toHaveCSS("text-decoration-line", "underline");
+      await expect(attachment).toHaveCSS("text-underline-offset", "2px");
+      await page.locator("[data-inline-attachment]").screenshot({
+        path: `temp/verification/session-interactions/attachment-${theme}-${width}.png`,
+      });
+      const chip = page.locator('[data-github-work-item-chip="pr"]');
+      await expect(chip).toHaveAttribute("href", "https://github.com/acme/widgets/pull/73");
+      await expect(chip).toHaveCSS("border-top-width", "0px");
+      await chip.focus();
+      await expect(chip).not.toHaveCSS("box-shadow", "none");
+      await expect(page.locator("[data-hover-card]")).toContainText("Fixture review");
+      await chip.hover();
+      await page.mouse.down();
+      await expect(chip).toHaveCSS("scale", "0.98");
+      await page.mouse.move(0, 0);
+      await page.mouse.up();
+      await expect(chip).toHaveCSS("scale", "none");
+      await page.screenshot({
+        path: `temp/verification/session-interactions/link-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`shared attachment action reveal ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/chat/artifact-formats.html?attachment-actions");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const card = page.locator("[data-attachment-chip]");
+      const insert = card.getByRole("button", { name: /Insert .* into the message/ });
+      const remove = card.getByRole("button", { name: /Remove 15-/ });
+      await page.mouse.move(0, 0);
+      await expect(insert).toHaveCSS("opacity", "0");
+      const before = await insert.boundingBox();
+      await card.hover();
+      await expect(insert).toHaveCSS("opacity", "1");
+      expect(await insert.boundingBox()).toEqual(before);
+      await insert.click();
+      await expect(page.getByLabel("Draft", { exact: true })).toHaveText("[file1]");
+      await page.mouse.move(0, 0);
+      await remove.focus();
+      await expect(insert).toHaveCSS("opacity", "1");
+      await expect(remove).toHaveCSS("opacity", "1");
+      await page.screenshot({
+        path: `temp/verification/session-last-interactions/attachment-${theme}-${width}.png`,
+      });
+      await remove.click();
+      await expect(card).toHaveCount(0);
+    });
+
+test.describe("coarse attachment actions", () => {
+  test.use({ hasTouch: true });
+  test("shared attachment actions stay visible on coarse pointer", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.goto("/tests/browser/chat/artifact-formats.html?attachment-actions");
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+    const card = page.locator("[data-attachment-chip]");
+    const insert = card.getByRole("button", { name: /Insert .* into the message/ });
+    await expect(insert).toHaveCSS("opacity", "1");
+    await insert.tap();
+    await expect(page.getByLabel("Draft", { exact: true })).toHaveText("[file1]");
+    await page.screenshot({
+      path: "temp/verification/session-last-interactions/attachment-touch-dark-800.png",
+    });
+  });
 });

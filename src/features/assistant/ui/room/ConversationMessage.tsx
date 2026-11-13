@@ -1,4 +1,5 @@
 import { Text } from "../../../../shared/ui/Text";
+import { Divider } from "../../../../shared/ui/Divider";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
 import { formatRelativeTime } from "../../../../shared/i18n/format";
@@ -7,7 +8,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { Trash2 } from "../../../../shared/ui/icons";
 import { Tooltip } from "../../../../shared/ui/Tooltip";
-import { ActionHost, InlineAction } from "../../../../shared/ui/ActionHost";
+import { AssistantChatMessage } from "./AssistantChat";
 import styles from "./Conversation.module.css";
 import { date } from "./assistantRoomHelpers";
 
@@ -21,11 +22,13 @@ export function ConversationDayLabel({ at }: { at: number }) {
   const days = Math.round((start(now) - start(at)) / DAY);
   return (
     <Text as="div" size="caption" tone="secondary" leading="inherit" className={styles.dayDivider}>
+      <Divider decorative className={styles.dayLine} />
       {days === 0
         ? t("Today")
         : days === 1
           ? t("Yesterday")
           : formatDate(at, { day: "numeric", month: "long", year: "numeric" })}
+      <Divider decorative className={styles.dayLine} />
     </Text>
   );
 }
@@ -63,79 +66,72 @@ export function ConversationMessage({
   onDelete: (message: AssistantMessage) => void;
 }) {
   return (
-    <article className={styles.message} data-author={message.role}>
-      <div className={styles.bubble}>
-        {message.ownerQuestionId && (
-          <Text size="caption" tone="secondary" leading="inherit" className={styles.note}>
-            {t(message.ownerQuestionAction === "snooze" ? "Question postponed" : "Answer recorded")}
-          </Text>
-        )}
-        <Text as="p" size="body" tone="inherit" leading="relaxed" className={styles.bubbleText}>
-          {message.text}
-        </Text>
-        {!!message.toolActions?.length && (
-          <Disclosure size="sm" summary={t("Recorded actions")} count={message.toolActions.length}>
-            <ul className={styles.detailsList}>
-              {message.toolActions.map((action) => (
-                <li key={action.id}>
-                  {action.family} · {action.action} —{" "}
-                  {t(action.status === "completed" ? "Completed" : "Outcome unknown")}
-                </li>
-              ))}
-            </ul>
-          </Disclosure>
-        )}
-        {message.sessionId && onOpenSession && (
-          <Button variant="link" onClick={() => onOpenSession(message.sessionId!)}>
-            {t("Open session")}
-          </Button>
-        )}
-        {!!message.jobIds.length && (
-          <Disclosure size="sm" summary={t("Jobs")} count={message.jobIds.length}>
-            <div className={styles.links}>
-              {message.jobIds.map((id) => {
-                const job = jobs.find((item) => item.id === id);
-                return job ? (
-                  <Button key={id} variant="link" onClick={() => onJob(id)}>
-                    {job.title}
-                  </Button>
-                ) : (
-                  <Text
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                    key={id}
-                    className={styles.note}
-                  >
-                    {id}
-                  </Text>
-                );
-              })}
-            </div>
-          </Disclosure>
-        )}
-      </div>
-      <ActionHost className={styles.meta}>
-        <Text
-          as="div"
-          size="micro"
-          tone="secondary"
-          leading="inherit"
-          className={styles.metaContent}
-        >
-          {message.role !== "user" && <span>{authorName}</span>}
+    <AssistantChatMessage
+      role={message.role}
+      text={message.text}
+      author={message.role === "user" ? undefined : authorName}
+      metadata={
+        <>
           {message.via === "voice" && <span>{t("Voice")}</span>}
           <ConversationMessageTime at={message.createdAt} />
-          <InlineAction
-            reveal="always"
-            label={t("Delete message")}
-            disabled={clearing}
-            onClick={() => onDelete(message)}
-          >
-            <Trash2 className="icon-xs" />
-          </InlineAction>
+        </>
+      }
+      actions={[
+        {
+          id: "delete",
+          label: t("Delete message"),
+          icon: <Trash2 className="icon-xs" />,
+          disabled: clearing,
+          onSelect: () => onDelete(message),
+        },
+      ]}
+    >
+      {message.ownerQuestionId && (
+        <Text size="caption" tone="secondary" leading="inherit" className={styles.note}>
+          {t(message.ownerQuestionAction === "snooze" ? "Question postponed" : "Answer recorded")}
         </Text>
-      </ActionHost>
-    </article>
+      )}
+      {!!message.toolActions?.length && (
+        <Disclosure size="sm" summary={t("Recorded actions")} count={message.toolActions.length}>
+          <ul className={styles.detailsList}>
+            {message.toolActions.map((action) => (
+              <li key={action.id}>
+                {action.family} · {action.action} —{" "}
+                {t(action.status === "completed" ? "Completed" : "Outcome unknown")}
+              </li>
+            ))}
+          </ul>
+        </Disclosure>
+      )}
+      {message.sessionId && onOpenSession && (
+        <Button variant="link" onClick={() => onOpenSession(message.sessionId!)}>
+          {t("Open session")}
+        </Button>
+      )}
+      {!!message.jobIds.length && (
+        <Disclosure size="sm" summary={t("Jobs")} count={message.jobIds.length}>
+          <div className={styles.links}>
+            {message.jobIds.map((id) => {
+              const job = jobs.find((item) => item.id === id);
+              return job ? (
+                <Button key={id} variant="link" onClick={() => onJob(id)}>
+                  {job.title}
+                </Button>
+              ) : (
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  key={id}
+                  className={styles.note}
+                >
+                  {id}
+                </Text>
+              );
+            })}
+          </div>
+        </Disclosure>
+      )}
+    </AssistantChatMessage>
   );
 }

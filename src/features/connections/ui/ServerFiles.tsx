@@ -23,6 +23,7 @@ import {
   RefreshCw,
 } from "../../../shared/ui/icons";
 import { formatNumber, t } from "../../../shared/i18n";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import {
   cancelSftp,
   downloadSftp,
@@ -236,7 +237,9 @@ export function ServerFiles({
             </Text>
           ) : null}
           {upload ? (
-            <div className="flex flex-col gap-2 border-y border-stroke py-3">
+            <div
+              {...surfaceAttributes({ frame: "stroke", edge: "block" }, "flex flex-col gap-2 py-3")}
+            >
               <TextField
                 label={t("Remote filename")}
                 value={upload.name}
@@ -300,7 +303,9 @@ export function ServerFiles({
             </div>
           ) : null}
           {recoveries.length ? (
-            <div className="flex flex-col gap-2 border-y border-stroke py-2">
+            <div
+              {...surfaceAttributes({ frame: "stroke", edge: "block" }, "flex flex-col gap-2 py-2")}
+            >
               <SectionLabel count={recoveries.length}>{t("Paused transfers")}</SectionLabel>
               <div className="flex flex-col gap-2">
                 {recoveries.map((item) => (
@@ -357,7 +362,10 @@ export function ServerFiles({
               as="section"
               size="caption"
               tone="inherit"
-              className="flex flex-col gap-2 border-b border-stroke pb-3"
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "bottom" },
+                "flex flex-col gap-2 pb-3",
+              )}
               aria-label={t("Resume transfer review")}
             >
               <p className="break-all">
@@ -423,7 +431,10 @@ export function ServerFiles({
                 key={entry.name}
                 as="div"
                 tone="inherit"
-                className="flex items-center gap-2 border-b border-stroke py-1.5"
+                {...surfaceAttributes(
+                  { frame: "stroke", edge: "bottom" },
+                  "flex items-center gap-2 py-1.5",
+                )}
               >
                 {entry.kind === "directory" ? (
                   <Folder className="icon-sm shrink-0" />

@@ -85,6 +85,77 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("lists nested running and past subagents and expands their live trails", () => {
+  const nested = (status: string, text: string): Block =>
+    ({
+      id: "child",
+      role: "tool",
+      text: "Child",
+      tool: { kind: "subagent", status: "in_progress" },
+      agentRun: {
+        name: "Child",
+        steps: [
+          {
+            id: "native",
+            kind: "tool",
+            toolKind: "subagent",
+            text: "Review",
+            status,
+            agentRun: {
+              name: "Native reviewer",
+              model: "claude-sonnet-4-6",
+              steps: [{ id: "result", kind: "message", text }],
+            },
+          },
+          {
+            id: "past",
+            kind: "tool",
+            toolKind: "subagent",
+            text: "Earlier",
+            status: "failed",
+            agentRun: { name: "Earlier reviewer", steps: [] },
+          },
+        ],
+      },
+    }) as Block;
+  const render = (block: Block, busy = true) =>
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          { "data-session-drop": "" },
+          createElement(SubagentSheet, {
+            block,
+            busy,
+            visible: true,
+            onClose: vi.fn(),
+          }),
+        ),
+      ),
+    );
+  render(nested("in_progress", "Checking parser"));
+  expect(container.textContent).toContain("Subagents · 1 running · 1 past");
+  const disclosure = container.querySelector<HTMLDetailsElement>("[data-nested-subagent='native']");
+  expect(disclosure).not.toBeNull();
+  expect(disclosure?.querySelector("summary")?.textContent).toContain("Native reviewer");
+  expect(disclosure?.querySelector("summary")?.textContent).toContain("Sonnet");
+  expect(disclosure?.querySelector("summary")?.textContent).toContain("Running");
+  act(() => {
+    disclosure!.open = true;
+    disclosure!.dispatchEvent(new Event("toggle"));
+  });
+  expect(disclosure?.textContent).toContain("Checking parser");
+  render(nested("completed", "Parser verified"), false);
+  expect(container.textContent).toContain("Subagents · 0 running · 2 past");
+  expect(disclosure?.open).toBe(true);
+  expect(disclosure?.textContent).toContain("Parser verified");
+  expect(disclosure?.querySelector("summary")?.textContent).toContain("Done");
+  expect(container.querySelector("[data-nested-subagent='past'] summary")?.textContent).toContain(
+    "Failed",
+  );
+  expect(container.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+});
+
 it("names an advisor correctly and keeps its request form outside the message form", () => {
   const advisor: Block = {
     id: "advisor",

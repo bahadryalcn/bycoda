@@ -20,11 +20,16 @@ function PhraseField({
   save: (text: string | undefined) => void;
 }) {
   const [draft, setDraft] = useState(value);
+  const [previousValue, setPreviousValue] = useState(value);
+  if (value !== previousValue) {
+    setPreviousValue(value);
+    if (draft === previousValue || draft.trim() === value) setDraft(value);
+  }
   const text = draft.trim();
   const invalid =
     text !== "" && (text.length < WAKE_PHRASE_LIMITS.min || text.length > WAKE_PHRASE_LIMITS.max);
   const commit = () => {
-    if (!invalid) save(text || undefined);
+    if (!invalid && text !== value) save(text || undefined);
   };
   return (
     <Row id={id} label={label}>

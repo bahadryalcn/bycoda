@@ -1,5 +1,6 @@
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT, formatDate } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -327,7 +328,13 @@ function OwnerQuestionCard({
     held = !!model?.intentPending;
   if (!creation.model)
     return (
-      <Text as="article" size="inherit" tone="inherit" leading="normal" className={styles.card}>
+      <Text
+        as="article"
+        size="inherit"
+        tone="inherit"
+        leading="normal"
+        {...surfaceAttributes({ variant: "card", frame: "card", radius: "card" }, styles.card)}
+      >
         <Heading size="section" level={3} className={styles.title}>
           {question.prompt.title ?? t("Question")}
         </Heading>
@@ -351,7 +358,12 @@ function OwnerQuestionCard({
       size="inherit"
       tone="inherit"
       leading="normal"
-      className={styles.card}
+      {...surfaceAttributes(
+        ready && !snoozed && !stale
+          ? { variant: "transparent", frame: "none", radius: "none" }
+          : { variant: "card", frame: "card", radius: "card" },
+        styles.card,
+      )}
       data-question-form={(ready && !snoozed && !stale) || undefined}
       aria-label={question.prompt.title ?? t("Question")}
     >

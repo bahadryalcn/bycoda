@@ -1,5 +1,6 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text, textAttributes } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { useT } from "../../../shared/i18n";
@@ -159,7 +160,10 @@ export function ContextMeter({
         </Text>
       </section>
       {agents.size > 0 ? (
-        <section className="context-meter-agents" aria-label={t("Subagents")}>
+        <section
+          {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "context-meter-agents")}
+          aria-label={t("Subagents")}
+        >
           <Text
             as="div"
             size="inherit"
@@ -194,7 +198,10 @@ export function ContextMeter({
         </section>
       ) : null}
       {sessionUsage ? (
-        <DescriptionList size="sm" className="context-meter-stats">
+        <DescriptionList
+          size="sm"
+          {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "context-meter-stats")}
+        >
           <DescriptionItem term={t("Cost")}>{formatCost(sessionUsage.costUsd)}</DescriptionItem>
           {sessionUsage.apiMs > 0 ? (
             <DescriptionItem term={t("API time")}>
@@ -204,7 +211,9 @@ export function ContextMeter({
         </DescriptionList>
       ) : null}
       {onCompact ? (
-        <div className="context-meter-actions">
+        <div
+          {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "context-meter-actions")}
+        >
           <Button
             fullWidth
             size="sm"

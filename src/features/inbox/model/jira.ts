@@ -108,6 +108,9 @@ export function knownJiraFilterIssues(): JiraIssue[] {
 }
 
 let cacheGeneration = 0;
+export function jiraReadGeneration() {
+  return cacheGeneration;
+}
 
 export function clearJiraCache() {
   cacheGeneration += 1;
@@ -192,6 +195,11 @@ export async function listJiraIssues(query: {
     for (const issue of issues) boundedSet(knownFilterIssues, issue.id, issue, 512);
   }
   return issues;
+}
+
+/** Cursor reads feed the same bounded filter catalog as legacy reads. */
+export function rememberJiraFilterIssues(issues: readonly JiraIssue[]) {
+  for (const issue of issues) boundedSet(knownFilterIssues, issue.id, issue, 512);
 }
 
 /** Detail payloads are bounded LRU entries: get refreshes recency, set evicts the oldest past the cap. */

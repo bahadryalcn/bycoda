@@ -6,7 +6,6 @@ import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Text } from "../../../../shared/ui/Text";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
-import { Heading } from "../../../../shared/ui/Heading";
 
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import type { HostProject } from "../../../connections/public/protocol";
@@ -92,7 +91,6 @@ export function AccountPermissions({
       {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
       aria-label={t("Who can use this account")}
     >
-      <Heading size="item">{t("Who can use this account")}</Heading>
       <Text as="p" tone="muted" leading="snug" className="social-card-description">
         {t(
           "Access applies only to this account and can be revoked here. Sending still requires the autonomy level below.",

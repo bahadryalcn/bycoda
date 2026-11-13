@@ -253,7 +253,7 @@ The shared Button implements the independent tone prop. Existing seven variants
 remain compatible; legacy aliases normalize at the public adapter boundary.
 Hover and keyboard hints, shortcut key caps and disabled reasons all go through the shared
 Tooltip (`tooltip`, `shortcut`, `tooltipDetails`, `disabledReason`); a native `title=` on an
-action is drift, and optional rich previews use HoverCard.
+action is drift, and optional rich previews use useHoverCard.
 Do not repeat a fully visible label in a hint. Remove plain duplicate hints;
 use `tooltipWhen="overflow"` on Button, `when="overflow"` on Tooltip/useTooltip,
 or `OverflowTooltip` for text that may be clipped or hidden in an icon-only mode.
@@ -298,14 +298,10 @@ Features continue to own asynchronous operations; no new implicit persistence.
 
 ### Quiet, complete operation feedback
 
-`src/shared/ui/CapabilityStatus.tsx` presents three independent observations as a
-wrapping definition list. Supply `permission` (`enabled`, `disabled`, `unknown`),
-`readiness` (`ready`, `unavailable`, `checking`, `unknown`) and `activity`
-(`running`, `idle`, `unknown`). Domain owners provide evidence, invalidate stale
-runtime observations after failed reads, and retain saved permission separately.
-Inventory, picker visibility and credentials alone never prove readiness or
-activity. The component has no callbacks or activation effects. See ControlSpecimen
-for the real reference consumer.
+Keep permission, readiness and activity distinct. Domain owners provide evidence,
+invalidate stale runtime observations after failed reads, and retain saved permission
+separately. Inventory, picker visibility and credentials alone never prove readiness
+or activity.
 
 Every asynchronous action exposes pending state on its initiating Button (`loading`)
 or on the affected row/card. Track the actual action and target, not a shared busy
@@ -421,14 +417,6 @@ returns focus to the same input and emits native input; uncontrolled form reset
 synchronizes after the default action, including canceled-reset handling. Bare
 editor/menu searches retain their explicit native focus owner.
 
-`NativeSearchableSelect` composes searchable presentation around a real native
-single select. Keep name/form/FormData, required/defaultValue or controlled value,
-native change/ref, reset, disabled option metadata and external label relationships.
-Validation focuses the visible trigger and exposes the browser message, including
-custom validity; imperative native focus routes there too. Do not replace it with
-hidden-input-only serialization. Six initial growing form choices use this bridge;
-that pilot count does not establish all consumer acceptance.
-
 Native menu/tree controllers may use public `MenuRow`, `ContextMenu` and
 `TreeRow` rather than duplicate presentation or direct registry imports. MenuRow
 forwards the native row contract; ContextMenu preserves extracted ExplorerMenu
@@ -462,7 +450,7 @@ The main composer keeps its own implementation for now but follows the same cont
 Selection owners, smallest first: Select (short stable list) -> MorphSelect (inline property) ->
 SearchableSelect (form/long/async/multiple) -> picker kit (custom toolbar/composer pickers).
 Popover headers with search use PopoverSearchHeader; never hand-roll a `border-b` search row with
-`SearchInput`. Date and time values use `DateTimeField` / `DateTimePicker` (`mode` date, time or
+`SearchInput`. Date and time values use `DatePicker` / `TimePicker` / `DateTimePicker` (for date, time or
 datetime), not native date inputs.
 
 ### Style ownership: caller className sets placement only
@@ -519,14 +507,15 @@ glass and Main pane glass are effective; then the owning `.body-glass` paints
 the user's opacity once and child canvases stay clear. The app root must not
 add a second translucent fill. Sidebar opacity remains independently owned.
 
-Navigation chrome, quiet cards, joined controls and selected-row layers use the
+Navigation chrome, quiet cards and selected-row layers use the
 central `--ui-navigation-*` roles. Their glass gate follows dark native window
 glass independently of Main pane glass. Navigation tab strips inside an existing
 sidebar canvas stay clear; an outer title bar owns its canvas fill, while a title
 bar nested inside a painted pane does not paint the opacity again. Bounded
 status chips, code fragments and field focus/press states retain their readable
-semantic fills. `ButtonGroup surface="navigation"` selects the navigation control
-role through the shared adapter; callers do not restyle the primitive locally.
+semantic fills. `ButtonGroup surface="navigation"` paints no fill: joined navigation
+tools share their bar's ground in every theme and keep only the group outline;
+callers do not restyle the primitive locally.
 
 Opt-in workspace artwork is separate from native window glass and the saved
 Pure/Tinted canvas choice. `has-workspace-background` paints one root image through
@@ -796,7 +785,7 @@ Pages compose these; they never reskin them or add page-local surfaces.
   that always asks for confirmation and affects only that page. No handler, no action.
 - **Interface scale and time:** interface scale is a Slider that applies on release (zoom reflows
   the window, so a live drag would move the thumb under the pointer). The daily summary time is
-  `DateTimeField mode="time"`; the stored value can be any valid minute.
+  `TimePicker`; the stored value can be any valid minute.
 - **Tile choices:** one exclusive choice shown as tiles (Appearance mode, onboarding mode and crew) uses
   `RadioTiles` (`src/features/settings/ui/RadioTiles.tsx`); the selected tile gets `--ui-border-accent`.
 - **AdvancedSettings:** a disclosure row with the same title x as row titles, chevron on the

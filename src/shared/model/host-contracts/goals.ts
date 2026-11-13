@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ModelRoutingItemChoiceSchema, ModelRoutingTargetSchema } from "./model-routing";
 import { SafeCounterSchema } from "./schemas";
 import { SessionProviderSchema, SessionRuntimeModeSchema } from "./session-commands";
 
@@ -39,6 +40,7 @@ export const HostGoalInputSchema = z.strictObject({
   prompt: z.string(),
   projectIds: z.array(z.string()),
   leadProjectId: z.string(),
+  modelChoice: ModelRoutingItemChoiceSchema.optional(),
   harness: SessionProviderSchema,
   providerAccountId: z.string().optional(),
   model: z.string(),
@@ -120,6 +122,11 @@ export const GoalFinalAcceptanceSchema = z.strictObject({
   acceptance: GoalAcceptanceReportSchema.optional(),
 });
 export const HostGoalSchema = HostGoalInputSchema.extend({
+  modelRoutingWait: z
+    .strictObject({ reason: z.string(), retryAt: SafeCounterSchema.optional() })
+    .optional(),
+  plannerTarget: ModelRoutingTargetSchema.optional(),
+  finalReviewTarget: ModelRoutingTargetSchema.optional(),
   awaitingOwnerRestart: z.boolean().optional(),
   modelSettings: z.record(z.string(), z.string()),
   maxRunMinutes: z.number(),

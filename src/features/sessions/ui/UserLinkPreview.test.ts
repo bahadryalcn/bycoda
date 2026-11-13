@@ -143,8 +143,7 @@ describe("GitHub work item link preview", () => {
     expect(chip.getAttribute("data-compact")).toBe("true");
     expect(chip.querySelector("span")?.getAttribute("data-size")).toBe("caption");
     expect(chip.className).toContain("align-middle");
-    expect(chip.className).toContain("border-0");
-    expect(chip.className).toContain("p-0");
+    expect(chip.getAttribute("data-link-appearance")).toBe("chip");
     expect(chip.className).toContain("gap-1");
     expect(chip.querySelector("span")?.className).toContain("h-4.5");
   });

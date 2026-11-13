@@ -1,3 +1,5 @@
+import { TriggerRow } from "../../../src/features/automations/ui/TriggerEditor";
+import { createAutomationTrigger } from "../../../src/features/automations/model/automations";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AutomationsView } from "../../../src/features/automations/ui/AutomationsView";
@@ -26,6 +28,12 @@ let automation: Automation = {
   createdAt: 1,
   updatedAt: 1,
 };
+if (new URLSearchParams(location.search).has("multiTriggers")) {
+  automation.triggers = [
+    createAutomationTrigger("tasks", "task_blocked"),
+    createAutomationTrigger("tasks", "task_completed"),
+  ];
+}
 // ?runs=mixed fills the run history with every status, ?runs=error fails the first
 // read (Retry succeeds) and ?runs=slow keeps it loading until releaseRuns() is called.
 const runsMode = new URLSearchParams(location.search).get("runs");
@@ -192,18 +200,29 @@ void languageReady
       >
         <ModelSourceContext.Provider value={source}>
           <div className="flex h-dvh min-h-0 min-w-0 flex-col bg-background-base text-content">
-            <AutomationsView
-              besideRail
-              cwd="C:/fixture/project"
-              recents={[]}
-              onClose={() => {}}
-              onLaunch={() => {}}
-              onLaunchAssistant={async (launch) => {
-                (window as unknown as { assistantLaunch: unknown }).assistantLaunch = launch;
-              }}
-              onOpenSession={() => {}}
-              onOpenBackgroundSession={() => {}}
-            />
+            {new URLSearchParams(location.search).has("triggerDensity") ? (
+              <div className="p-3">
+                <TriggerRow
+                  trigger={createAutomationTrigger("tasks", "task_blocked")}
+                  cwd=""
+                  onChange={() => {}}
+                  onRemove={() => {}}
+                />
+              </div>
+            ) : (
+              <AutomationsView
+                besideRail
+                cwd="C:/fixture/project"
+                recents={[]}
+                onClose={() => {}}
+                onLaunch={() => {}}
+                onLaunchAssistant={async (launch) => {
+                  (window as unknown as { assistantLaunch: unknown }).assistantLaunch = launch;
+                }}
+                onOpenSession={() => {}}
+                onOpenBackgroundSession={() => {}}
+              />
+            )}
           </div>
         </ModelSourceContext.Provider>
       </QueryClientProvider>,

@@ -8,7 +8,7 @@ import {
   encodeSubagents,
 } from "../../../shared/model/host-contracts/delegation";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { SubagentModeControl } from "../../sessions/public/SubagentModeControl";
 import {
   DelegationOptionIcon,
   delegationSelectChoice,
@@ -28,31 +28,21 @@ export function ProviderDefaultSubagents({
   const [picking, setPicking] = useState<{ value: string | undefined } | null>(null);
   const selection = decodeSubagentSelection(value ?? AUTOMATIC_SUBAGENTS);
   const selected = selection === AUTOMATIC_SUBAGENTS ? [] : selection;
-  const mode =
-    picking && picking.value === value
-      ? "custom"
-      : selection === AUTOMATIC_SUBAGENTS
-        ? "auto"
-        : selected.length
-          ? "custom"
-          : "off";
+  const pickingCustom = !!picking && picking.value === value;
+  const custom = pickingCustom || (selection !== AUTOMATIC_SUBAGENTS && selected.length > 0);
   return (
     <div className="flex min-w-0 flex-col items-end gap-2">
-      <SegmentedControl
+      <SubagentModeControl
         label={t(setting.label)}
-        value={mode}
-        options={[
-          { value: "auto", label: t("Automatic") },
-          { value: "custom", label: t("Custom") },
-          { value: "off", label: t("Off") },
-        ]}
-        onValueChange={(next) => {
-          setPicking(next === "custom" ? { value } : null);
-          // Custom is a picker action; persist only when a model is chosen.
-          if (next !== "custom") onChange(next === "auto" ? AUTOMATIC_SUBAGENTS : "[]");
+        value={value}
+        picking={pickingCustom}
+        onCustom={() => setPicking({ value })}
+        onChange={(next) => {
+          setPicking(null);
+          onChange(next);
         }}
       />
-      {mode === "custom" ? (
+      {custom ? (
         <SearchableSelect
           multiple
           label={t(setting.label)}

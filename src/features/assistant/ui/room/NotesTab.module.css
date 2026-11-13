@@ -1,7 +1,10 @@
 /* Notes tab: note list on the left, reader on the right; stacks in a narrow content area. */
 
-.layout {
+.container {
   container-type: inline-size;
+  min-inline-size: 0;
+}
+.layout {
   display: grid;
   grid-template-columns: clamp(220px, 28%, 300px) minmax(0, 1fr);
   gap: 24px;
@@ -10,7 +13,6 @@
 }
 .layout > .listPane {
   padding-inline-end: 12px;
-  border-inline-end: 1px solid var(--ui-pane-border);
 }
 @container (max-width: 640px) {
   .layout {
@@ -19,7 +21,7 @@
   }
   .layout > .listPane {
     padding-inline-end: 0;
-    border-inline-end: 0;
+    --surface-frame-visible: 0;
   }
 }
 
@@ -55,18 +57,6 @@
 }
 .check {
   flex: none;
-  opacity: 0;
-}
-.item:hover .check,
-.item:focus-within .check,
-.check:checked,
-.check[data-visible] {
-  opacity: 1;
-}
-@media (hover: none), (pointer: coarse) {
-  .check {
-    opacity: 1;
-  }
 }
 .row {
   display: flex;
@@ -157,11 +147,7 @@
   gap: 12px;
   min-inline-size: 0;
   padding-block: 6px;
-  border-block-end: 1px solid var(--ui-pane-border);
   overflow-wrap: anywhere;
-}
-.entry:last-child {
-  border-block-end: 0;
 }
 .entryTime {
   font-variant-numeric: tabular-nums;

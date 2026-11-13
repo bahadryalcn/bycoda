@@ -16,6 +16,7 @@ export const themePalette = {
   orchestrationDark: "#f0abfc",
   orchestrationLight: "#a21caf",
   solidInk: "#ffffff",
+  svgDefaultFill: "#000000",
   scrim: "#000000",
   search: "#93c5fd",
   accent: "#a3acb8",

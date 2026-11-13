@@ -212,23 +212,17 @@ unique among library members you can see together and unique within the crew.
 live preview; **Shuffle** picks a random complete look and **Reset** returns to the
 look drawn from the profile.
 
-Automatic selection uses a searchable allowed-model list with owner cost and
-quality ratings. Groups help find library members and require a host that
-supports member groups. Inspecting capabilities does not establish verified
-runtime access.
+Members choose **Default**, **Pool** or **Fixed**. Default follows the Crew member
+role in **Settings > Models**; Pool follows a named subset of the shared order;
+Fixed uses the selected model. **Manage in Models** opens the shared model order,
+limits and pools. The former Crew Models tab and cost/quality ranking are removed.
+Running work keeps its concrete model
+and team snapshot. See [Models](models.md) for eligibility and waiting behavior.
 
-The **Models** tab (hosts with model pools) defines named **model pools**: one
-set of automatic candidates with cost, quality, effort and mode, shared by every
-library profile and crew member that uses the pool. Saving a pool updates those
-members; deleting it leaves them with their last models and no pool.
-
-**Advanced** holds model eligibility (highest cost and lowest quality allowed,
-unrated cost), automatic ranking (**Economy**, **Balanced**, **Quality**),
-execution limits (**Members working at once** 1–4, **Assignments per work** 1–20,
-**Minutes per assignment** 1–240), appearance and copy/delete. Cost is a relative
-owner rating, not money. On hosts that support crew identity, the crew's icon and
-color are saved with the crew and shown on every device; older hosts keep them on
-this device. **Show crews** for the rail is always a setting of this device.
+Groups help find library members. Inspecting capabilities does not establish
+verified runtime access. **Advanced** holds execution limits, appearance and
+copy/delete. The crew's supported icon and color follow it across devices;
+**Show crews** for the rail remains a setting of this device.
 
 A saved crew saves itself shortly after each valid change; the footer shows
 **Saving…** or **All changes saved**, or the error with **Retry**. An invalid crew

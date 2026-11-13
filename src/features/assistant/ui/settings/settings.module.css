@@ -42,14 +42,3 @@
   padding: 0;
   list-style: none;
 }
-.chip {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--ui-radius-control);
-  background: var(--ui-surface-muted);
-}
-.chip strong {
-  font-variant-numeric: tabular-nums;
-}

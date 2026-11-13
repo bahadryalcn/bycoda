@@ -3,8 +3,6 @@ import { defaultCrewPolicy, type CrewAgent, type CrewDefinition, type CrewRun } 
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import {
   candidateDetailLabel,
-  candidatePassesPolicy,
-  crewPolicyImpact,
   crewRosterIssues,
   crewRosterValid,
   crewRunTitle,
@@ -118,54 +116,19 @@ describe("crew roster", () => {
         catalog,
         agent("a", "specialist", { selection: "automatic", candidates: pool }),
       ),
-    ).toBe("Automatic: 2 candidates");
+    ).toBe("Default");
     expect(
       memberModelSummary(
         catalog,
         agent("a", "specialist", { selection: "automatic", candidates: [candidate] }),
       ),
-    ).toBe("Automatic: 1 candidate");
+    ).toBe("Default");
   });
 
   it("qualifies a candidate with its provider and keeps unknown models readable", () => {
     expect(candidateDetailLabel(catalog, candidate)).toBe("Model M · codex");
     expect(candidateDetailLabel(catalog, { ...candidate, model: "gone" })).toBe("Gone · codex");
     expect(candidateDetailLabel(catalog, undefined)).toBe("");
-  });
-
-  it("lists the members the eligibility guards affect, fixed pins included", () => {
-    const rated = (id: string, cost?: number, quality?: number) => ({
-      ...candidate,
-      id,
-      model: id,
-      cost,
-      quality,
-    });
-    const policy = { allowUnknownCost: false, maxEstimatedCost: 2, minimumQuality: 70 };
-    expect(candidatePassesPolicy(rated("a", 2, 70), policy)).toBe(true);
-    expect(candidatePassesPolicy(rated("a", 3, 90), policy)).toBe(false);
-    expect(candidatePassesPolicy(rated("a", undefined, 90), policy)).toBe(false);
-    expect(candidatePassesPolicy(rated("a", 1, 40), policy)).toBe(false);
-    expect(candidatePassesPolicy(rated("a"), { allowUnknownCost: true })).toBe(true);
-
-    const impact = crewPolicyImpact(
-      [
-        // A pin that fails the guard is blocked, not exempted.
-        agent("pinned", "specialist", { candidates: [rated("x", 3, 90), rated("y", 1, 90)] }),
-        agent("ok", "reviewer", { candidates: [rated("y", 1, 90)] }),
-        agent("auto", "specialist", {
-          selection: "automatic",
-          candidates: [rated("x", 3, 90), rated("y", 1, 90)],
-        }),
-        agent("none", "specialist", { selection: "automatic", candidates: [rated("x", 3, 90)] }),
-        agent("empty", "advisor", { candidates: [] }),
-      ],
-      policy,
-    );
-    expect(impact.blocked.map((item) => item.agent.id)).toEqual(["pinned", "none"]);
-    expect(impact.narrowed.map((item) => [item.agent.id, item.eligible, item.pool])).toEqual([
-      ["auto", 1, 2],
-    ]);
   });
 
   it("tells a started member draft from an untouched one and shortens name lists", () => {

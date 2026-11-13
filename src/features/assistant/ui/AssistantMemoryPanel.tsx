@@ -89,7 +89,7 @@ export function AssistantMemoryPanel(props: Props) {
                 <ActionHost
                   as="article"
                   key={entry.id}
-                  className={styles.entry}
+                  {...surfaceAttributes({ separator: "pane-block" }, styles.entry)}
                   aria-label={entry.text}
                 >
                   <div className={styles.text}>
@@ -134,7 +134,11 @@ export function AssistantMemoryPanel(props: Props) {
                       <Timestamp className={styles.time} value={entry.createdAt} />
                     </Text>
                     {entry.quote && entry.quote !== entry.text && (
-                      <Text as="blockquote" leading="normal" className={styles.quote}>
+                      <Text
+                        as="blockquote"
+                        leading="normal"
+                        {...surfaceAttributes({ bar: "pane" }, styles.quote)}
+                      >
                         {entry.quote}
                       </Text>
                     )}

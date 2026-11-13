@@ -4,13 +4,23 @@ import type { AssistantFoldersResponse } from "../../../../../shared/model/assis
 import type { assistantRequest } from "../../../model/assistantClient";
 
 type OwnerRequest = typeof assistantRequest;
-export type FoldersDraftState = { dirty: boolean; pending: boolean };
-export type FoldersDraft = { paths: string[]; runWithoutAsking: boolean };
+export type FoldersDraftState = {
+  dirty: boolean;
+  pending: boolean;
+  runWithoutAsking?: boolean;
+  allowChangesWithoutAsking?: boolean;
+};
+export type FoldersDraft = {
+  paths: string[];
+  runWithoutAsking: boolean;
+  allowChangesWithoutAsking: boolean;
+};
 
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 const fromSaved = (saved: AssistantFoldersResponse): FoldersDraft => ({
   paths: saved.folders.map((folder) => folder.path),
   runWithoutAsking: saved.runWithoutAsking,
+  allowChangesWithoutAsking: saved.allowChangesWithoutAsking === true,
 });
 
 /**
@@ -24,7 +34,11 @@ export function useAssistantFolders(
   onDraftStateChange?: (state: FoldersDraftState) => void,
 ) {
   const [saved, setSaved] = useState<AssistantFoldersResponse | null>(null);
-  const [draft, setDraft] = useState<FoldersDraft>({ paths: [], runWithoutAsking: false });
+  const [draft, setDraft] = useState<FoldersDraft>({
+    paths: [],
+    runWithoutAsking: false,
+    allowChangesWithoutAsking: false,
+  });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [pending, setPending] = useState(false);
@@ -75,8 +89,14 @@ export function useAssistantFolders(
         expectedVersion: saved.version,
         paths: draft.paths,
         runWithoutAsking: draft.runWithoutAsking,
+        allowChangesWithoutAsking: draft.allowChangesWithoutAsking,
       });
       if (!result.assistantFolders)
+        throw new Error(t("The folder list save was not confirmed. Check before retrying."));
+      if (
+        draft.allowChangesWithoutAsking &&
+        result.assistantFolders.allowChangesWithoutAsking !== true
+      )
         throw new Error(t("The folder list save was not confirmed. Check before retrying."));
       setSaved(result.assistantFolders);
       setDraft(fromSaved(result.assistantFolders));
@@ -110,8 +130,20 @@ export function useAssistantFolders(
     [saveRef],
   );
   useEffect(() => {
-    onDraftStateChange?.({ dirty, pending });
-  }, [onDraftStateChange, dirty, pending]);
+    onDraftStateChange?.({
+      dirty,
+      pending,
+      runWithoutAsking: saved ? draft.runWithoutAsking : undefined,
+      allowChangesWithoutAsking: saved ? draft.allowChangesWithoutAsking : undefined,
+    });
+  }, [
+    onDraftStateChange,
+    dirty,
+    pending,
+    saved,
+    draft.runWithoutAsking,
+    draft.allowChangesWithoutAsking,
+  ]);
 
   return {
     saved,

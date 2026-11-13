@@ -5,6 +5,7 @@ export type StatusTextStatus =
   | "queued"
   | "running"
   | "succeeded"
+  | "completed"
   | "failed"
   | "review"
   | "cancelled"
@@ -15,6 +16,8 @@ function statusWord(status: StatusTextStatus): string {
   switch (status) {
     case "succeeded":
       return t("Sent");
+    case "completed":
+      return t("Completed");
     case "queued":
       return t("Scheduled");
     case "running":
@@ -34,6 +37,7 @@ function statusWord(status: StatusTextStatus): string {
 function statusTone(status: StatusTextStatus): BadgeTone {
   switch (status) {
     case "succeeded":
+    case "completed":
       return "success";
     case "queued":
       return "info";

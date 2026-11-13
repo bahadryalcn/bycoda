@@ -335,7 +335,7 @@ export function InboxCommentForm({
   return (
     <form
       onSubmit={onFormSubmit}
-      className="flex flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-5"
+      {...surfaceAttributes({ frame: "neutral", edge: "top" }, "flex flex-col gap-2 pt-5")}
     >
       {replyTo ? (
         <Text as="div" size="caption" tone="secondary" className="flex items-center gap-2">
@@ -414,7 +414,7 @@ export function InboxCommentForm({
 function CommentsPending() {
   useLocale();
   return (
-    <LoadingText className="border-t border-(--ui-tone-neutral-border) pt-5">
+    <LoadingText {...surfaceAttributes({ frame: "neutral", edge: "top" }, "pt-5")}>
       {t("Loading comments")}
     </LoadingText>
   );
@@ -456,9 +456,15 @@ function InboxComment({
     <>
       <Text
         as="header"
-        className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${
-          nested ? "" : timeline ? "min-h-9 px-3 py-1.5" : "px-3 py-2"
-        } ${!nested && (hasBody || hasReplies) ? "border-b border-(--ui-tone-neutral-border)" : ""}`}
+        {...surfaceAttributes(
+          {
+            frame: !nested && (hasBody || hasReplies) ? "neutral" : undefined,
+            edge: !nested && (hasBody || hasReplies) ? "bottom" : undefined,
+          },
+          `flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${
+            nested ? "" : timeline ? "min-h-9 px-3 py-1.5" : "px-3 py-2"
+          }`,
+        )}
       >
         <InboxCommentPerson
           avatar={!timeline}
@@ -546,7 +552,13 @@ function InboxComment({
           {comment.replies.map((reply, index) => (
             <div
               key={reply.id}
-              className={`py-2.5 ${index > 0 ? "border-t border-(--ui-tone-neutral-border)" : ""}`}
+              {...surfaceAttributes(
+                {
+                  frame: index > 0 ? "neutral" : undefined,
+                  edge: index > 0 ? "top" : undefined,
+                },
+                "py-2.5",
+              )}
             >
               <InboxComment
                 comment={reply}
@@ -622,9 +634,16 @@ function TimelineRail({
   useLocale();
   return (
     <div aria-hidden className="flex w-5 shrink-0 flex-col items-center">
-      <span className={`w-px shrink-0 ${lead} ${first ? "" : "bg-(--ui-tone-neutral-border)"}`} />
+      <span
+        {...surfaceAttributes(
+          { variant: first ? undefined : "neutral-boundary" },
+          `w-px shrink-0 ${lead}`,
+        )}
+      />
       <div className="flex icon-lg shrink-0 items-center justify-center">{children}</div>
-      {last ? null : <span className="w-px flex-1 bg-(--ui-tone-neutral-border)" />}
+      {last ? null : (
+        <span {...surfaceAttributes({ variant: "neutral-boundary" }, "w-px flex-1")} />
+      )}
     </div>
   );
 }
@@ -755,9 +774,13 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
     <li className="flex gap-3">
       {/* The rail runs through commit dots, so a push reads as one stretch. */}
       <div aria-hidden className="flex w-5 shrink-0 flex-col items-center">
-        <span className="h-1.5 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
-        <span className="size-2 shrink-0 rounded-full border-[1.5px] border-(--ui-tone-neutral-border)" />
-        {last ? null : <span className="w-px flex-1 bg-(--ui-tone-neutral-border)" />}
+        <span {...surfaceAttributes({ variant: "neutral-boundary" }, "h-1.5 w-px shrink-0")} />
+        <span
+          {...surfaceAttributes({ radius: "pill", frame: "neutral-marker" }, "size-2 shrink-0")}
+        />
+        {last ? null : (
+          <span {...surfaceAttributes({ variant: "neutral-boundary" }, "w-px flex-1")} />
+        )}
       </div>
       <div className={`min-w-0 flex-1 ${last ? "" : TIMELINE_GAP}`}>
         <Button
@@ -769,17 +792,7 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
           onClick={() => openUrlSafely(commit.url)}
           className="w-full min-w-0 text-left"
         >
-          <Text
-            as="span"
-            size="inherit"
-            tone="secondary"
-            truncate
-            className={
-              commit.url
-                ? "min-w-0 flex-1 group-hover:text-(--ui-tone-neutral-fg)!"
-                : "min-w-0 flex-1"
-            }
-          >
+          <Text as="span" size="inherit" tone="secondary" truncate className="min-w-0 flex-1">
             {commit.messageHeadline}
           </Text>
           <Text as="span" size="micro" tone="secondary" className="shrink-0 font-mono">

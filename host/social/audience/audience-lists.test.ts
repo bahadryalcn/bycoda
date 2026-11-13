@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AI, OWNER, fixture } from "./audience-test-support";
+import { AI, NOW, OWNER, fixture } from "./audience-test-support";
 import { deleteList, saveList } from "./audience-lists";
 import { deleteRule, saveRule, setRuleEnabled } from "./audience-capture-rules";
 import {
@@ -44,6 +44,49 @@ describe("lists", () => {
     await expect(
       saveList(f.ctx(OWNER), { id: SYSTEM_COMMENTERS_LIST_ID, name: "Renamed", kind: "static" }),
     ).rejects.toThrow("System lists cannot be changed");
+  });
+});
+
+describe("deleting a list that other work uses", () => {
+  const sequence = (patch: Record<string, unknown> = {}) => ({
+    id: "seq-1",
+    name: "Welcome",
+    listId: "team",
+    steps: [],
+    status: "draft" as const,
+    stopOnReply: true as const,
+    pacing: { perHour: 1, perDay: 1, warmupDays: 0 },
+    createdAt: NOW,
+    ...patch,
+  });
+
+  it("refuses while a capture rule fills the list and keeps the list and its members", async () => {
+    const f = await fixture();
+    await saveList(f.ctx(OWNER), { id: "team", name: "Team", kind: "static" });
+    await saveRule(f.ctx(OWNER), ruleInput());
+    await expect(deleteList(f.ctx(OWNER), { id: "team" })).rejects.toThrow(
+      'The capture rule "Commenters of post" adds people to this list.',
+    );
+    expect(await f.store.getList("team")).toBeDefined();
+    await deleteRule(f.ctx(OWNER), { id: "rule-1" });
+    expect(await deleteList(f.ctx(OWNER), { id: "team" })).toEqual({ deleted: true });
+  });
+
+  it("refuses while a sequence that has not finished runs for the list", async () => {
+    const f = await fixture();
+    await saveList(f.ctx(OWNER), { id: "team", name: "Team", kind: "static" });
+    await f.store.putRecord("sequence", "seq-1", sequence({ status: "active" }));
+    await expect(deleteList(f.ctx(OWNER), { id: "team" })).rejects.toThrow(
+      'The sequence "Welcome" sends to this list.',
+    );
+    expect(await f.store.getList("team")).toBeDefined();
+  });
+
+  it("allows deleting after the sequence finished", async () => {
+    const f = await fixture();
+    await saveList(f.ctx(OWNER), { id: "team", name: "Team", kind: "static" });
+    await f.store.putRecord("sequence", "seq-1", sequence({ status: "done" }));
+    expect(await deleteList(f.ctx(OWNER), { id: "team" })).toEqual({ deleted: true });
   });
 });
 

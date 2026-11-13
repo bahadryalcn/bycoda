@@ -1,3 +1,4 @@
+import { resolveAutomationLaunch } from "../../../features/automations/model/automationRouting";
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { monotonicNow } from "../../../shared/lib/time/timestamps";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
@@ -91,7 +92,7 @@ export function useAutomationLaunch({
         automationSessionReservations.current.delete(reservationId);
         reservationId = undefined;
       };
-      const limits = automationLimits(automation);
+      let limits = automationLimits(automation);
       const earlier = automationStartGate.current.get(automation.id) ?? Promise.resolve();
       let started = () => undefined as void;
       automationStartGate.current.set(
@@ -106,8 +107,23 @@ export function useAutomationLaunch({
       try {
         await earlier;
         // Claim before session side effects, including retries after a lost reply.
-        await updateAutomationRun(run.id, "running");
+        const resolved = await resolveAutomationLaunch(automation, run);
+        const claimed = await updateAutomationRun(run.id, "running", {
+          execution: resolved.execution,
+          maxRunMinutes: resolved.maxRunMinutes,
+        });
         admitted = true;
+        if (resolved.skip && !claimed.execution) {
+          await updateAutomationRun(run.id, "skipped", { error: resolved.skip });
+          return;
+        }
+        automation = claimed.execution
+          ? { ...resolved.automation, ...claimed.execution }
+          : resolved.automation;
+        limits = automationLimits({
+          ...automation,
+          maxRunMinutes: claimed.maxRunMinutes ?? resolved.maxRunMinutes,
+        });
         const skip = isProjectPasswordLocked(automation.cwd)
           ? LOCKED_PROJECT_SKIP
           : run.trigger === "manual"
@@ -130,6 +146,8 @@ export function useAutomationLaunch({
                 (entry) =>
                   entry.id === automation.lastSessionId &&
                   entry.harness === automation.harness &&
+                  (!automation.providerAccountId ||
+                    entry.providerAccountId === automation.providerAccountId) &&
                   !entry.busy &&
                   !entry.worktreeRemoved &&
                   !automationSessionReservations.current.has(entry.id) &&
@@ -152,6 +170,10 @@ export function useAutomationLaunch({
               automation.runtimeMode,
               automation.modelSettings,
             ),
+            modelSettings: automation.modelSettings ?? {},
+            ...(automation.providerAccountId === undefined
+              ? {}
+              : { providerAccountId: automation.providerAccountId }),
             title: eventRun
               ? HARNESS_LABEL[automation.harness]
               : formatSessionTitle(automation.harness, automation.name),
@@ -178,6 +200,9 @@ export function useAutomationLaunch({
           const stamped = {
             ...session,
             automationId: automation.id,
+            ...(automation.providerAccountId === undefined
+              ? {}
+              : { providerAccountId: automation.providerAccountId }),
             model: automation.model,
             modelSettings: automation.modelSettings ?? {},
             runtimeMode: automation.runtimeMode,

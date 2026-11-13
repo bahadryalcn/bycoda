@@ -4,6 +4,7 @@ import type { AssistantJob } from "../../../../shared/model/host-contracts/assis
 import { formatNumber, t } from "../../../../shared/i18n";
 import {
   ActionHost,
+  actionContentAttributes,
   InlineAction,
   InlineMoreAction,
   InlineTextAction,
@@ -117,7 +118,16 @@ export function JobRow({
   return (
     <ActionHost className={styles.row} selected={selected}>
       <Checkbox
-        {...motionAttributes({ transition: "opacity", easing: "standard" }, styles.check)}
+        {...motionAttributes({ transition: "opacity", easing: "standard" })}
+        {...actionContentAttributes(
+          {
+            phase: selectionMode || selected ? "always" : "interaction",
+            hide: "opacity",
+            focus: "within",
+          },
+          styles.check,
+        )}
+        data-action-inline=""
         data-visible={selectionMode || selected || undefined}
         aria-label={t("Select {p0}", { p0: job.title })}
         checked={selected}

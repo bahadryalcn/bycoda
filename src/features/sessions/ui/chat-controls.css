@@ -8,71 +8,12 @@
   padding-block-end: 0.25rem;
 }
 
-.attachment-token-overlay {
-  position: absolute;
-  inset-inline: 0;
-  inset-block-end: 0;
-  overflow: clip;
-  padding-inline: 0.125rem;
-  border-end-start-radius: var(--radius-control);
-  border-end-end-radius: var(--radius-control);
-  background: var(--ui-surface);
-  text-align: center;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 [data-composer] {
   container: chat-composer / inline-size;
 }
 
 /* The composer box surface, edge and shadow are owned by bycoda.css
    ([data-composer-box]); nothing here repaints it. */
-/* The turn activity band and the message queue sit on the composer as one frosted glass pane
-   over the transcript; the composer surface is the opaque fallback. */
-html [data-activity-dock],
-html [data-message-queue-card] {
-  background: var(--ui-composer-surface);
-}
-
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  html [data-activity-dock],
-  html [data-message-queue-card] {
-    background: var(--ui-activity-dock-glass);
-    box-shadow: var(--ui-activity-dock-edge);
-    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
-    backdrop-filter: var(--ui-activity-dock-filter);
-  }
-}
-
-html[data-performance-no-blur] [data-activity-dock],
-html[data-performance-no-blur] [data-message-queue-card] {
-  background: var(--ui-composer-surface);
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-/* While a reply streams the transcript repaints every frame; sampling it through a blur
-   behind the dock and composer is the costliest paint, so use the opaque surface. */
-html [data-session-streaming="true"] [data-activity-dock],
-html [data-session-streaming="true"] [data-message-queue-card] {
-  background: var(--ui-composer-surface);
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  html [data-activity-dock],
-  html [data-message-queue-card] {
-    background: var(--ui-composer-surface);
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
 /* Transcript activity is part of the reading flow: no frame, fill or stripe. */
 .transcript-activity-group {
   margin-block: 0;
@@ -83,13 +24,6 @@ html [data-session-streaming="true"] [data-message-queue-card] {
 }
 .zen-phase-body[data-open="true"] > .zen-phase-summary:has([data-tool-inspection]) {
   max-block-size: none;
-}
-
-.session-header-title > [data-session-agent] {
-  flex: 0 1 auto;
-  max-inline-size: 48%;
-  border-inline-start: 1px solid var(--color-stroke);
-  padding-inline-start: 0.625rem;
 }
 
 [data-composer] .composer-field {
@@ -164,11 +98,6 @@ html [data-session-streaming="true"] [data-message-queue-card] {
 
 [data-composer] .composer-toolbar > div {
   row-gap: 0.375rem;
-}
-
-/* One quiet context row under the writing surface: no fill, edge or frame. */
-[data-composer] [data-composer-workspace] {
-  background: none;
 }
 
 [data-jump-to-bottom] {
@@ -275,7 +204,6 @@ html [data-session-streaming="true"] [data-message-queue-card] {
 .context-meter-actions {
   margin-block-start: 0.75rem;
   padding-block-start: 0.75rem;
-  border-block-start: 1px solid var(--color-stroke);
 }
 
 .context-meter-agent-list {
@@ -357,58 +285,6 @@ html [data-session-streaming="true"] [data-message-queue-card] {
   block-size: var(--ui-icon-sm);
 }
 
-/* Output toggles (Wrap lines) sit in the bare icon row beside Copy, like the message
-   actions: no filled box. "On" is a small dot on the icon (the same cue as an active
-   search filter), so it reads in every accent, including the neutral default. */
-[data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected],
-[data-tool-inspection]
-  .bycoda-arc[data-fbg-item][data-button-selected]:hover:not([aria-disabled="true"]) {
-  border-color: transparent;
-  background: transparent;
-  color: var(--color-content);
-}
-[data-tool-inspection] .bycoda-arc[data-fbg-item][data-button-selected]::after {
-  content: "";
-  position: absolute;
-  inset-block-start: 3px;
-  inset-inline-end: 3px;
-  inline-size: 3px;
-  block-size: 3px;
-  border-radius: var(--radius-pill);
-  background: var(--ui-tone-accent-fg);
-  pointer-events: none;
-}
-
-/* Sibling input and queue surfaces sample the same background without nested filters. A
-   question docked on the composer is one pane with the writing box, in every state. */
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  html:not([data-performance-no-blur]) [data-composer-box],
-  html:not([data-performance-no-blur]) [data-composer-box]:hover,
-  html:not([data-performance-no-blur]) [data-composer-box]:focus-within,
-  html:not([data-performance-no-blur]) [data-composer] > [data-question-form] > form {
-    background: var(--ui-activity-dock-glass);
-    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
-    backdrop-filter: var(--ui-activity-dock-filter);
-  }
-}
-html [data-session-streaming="true"] [data-composer-box],
-html [data-session-streaming="true"] [data-composer-box]:hover,
-html [data-session-streaming="true"] [data-composer-box]:focus-within,
-html [data-session-streaming="true"] [data-composer] > [data-question-form] > form {
-  background: var(--ui-composer-surface);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  html [data-composer-box],
-  html [data-composer-box]:hover,
-  html [data-composer-box]:focus-within,
-  html [data-composer] > [data-question-form] > form {
-    background: var(--ui-composer-surface);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
 .delivery-accepted {
   animation: delivery-accepted-enter var(--motion-notice-duration) var(--motion-ease-out) both;
 }

@@ -218,6 +218,7 @@ describe("goal client", () => {
       approvePlan: true,
       review: false,
       maxRunMinutes: 30,
+      modelSettings: { effort: "high", custom: "retained" },
     };
     expect(hostGoalFromDraft(draft, "id-1", ["p-app", "p-api"], "p-api")).toEqual({
       finalReview: true,
@@ -228,7 +229,7 @@ describe("goal client", () => {
       leadProjectId: "p-api",
       harness: "claude",
       model: "claude:test",
-      modelSettings: {},
+      modelSettings: { effort: "high", custom: "retained" },
       runtimeMode: "auto",
       maxRunMinutes: 30,
       verifyDefaults: { review: false },

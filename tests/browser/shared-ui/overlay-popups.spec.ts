@@ -177,10 +177,11 @@ test.describe("modal surface and hierarchy", () => {
     });
   }
 
-  test("title hierarchy follows size and placement", async ({ page }) => {
+  test("dialog and sheet titles keep the shared page role across sizes", async ({ page }) => {
     await setup(page, "dark");
     const size = async (scene: string) => {
       await page.getByTestId(`open-${scene}`).click();
+      await expect(page.getByRole("heading", { level: 2 })).toHaveAttribute("data-size", "page");
       const value = await page
         .getByRole("heading", { level: 2 })
         .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
@@ -193,7 +194,8 @@ test.describe("modal surface and hierarchy", () => {
     const sheet = await size("sheet");
     expect(sm).toBe(sheet);
     expect(md).toBe(lg);
-    expect(sm).toBeLessThan(md);
+    expect(sm).toBe(md);
+    expect(sm).toBe(16);
   });
 
   test("footer actions stay visible while a long body scrolls at 1280x420", async ({ page }) => {
@@ -409,6 +411,77 @@ test.describe("confirm dialog", () => {
 });
 
 test.describe("nested overlays", () => {
+  for (const theme of THEMES)
+    for (const [width, height] of SIZES) {
+      test(`acceptance plate and nested modal ${theme} ${width}`, async ({ page }) => {
+        await setup(page, theme, width, height);
+        const group = page.getByRole("group", { name: "Acceptance tools" });
+        for (const name of ["Files", "Settings"]) {
+          const button = group.getByRole("button", { name: `${name}, Unseen items` });
+          await button.click();
+          const plate = button.locator("[data-button-group-selection]");
+          await expect(plate).toBeVisible();
+          await expect
+            .poll(async () => {
+              const control = (await button.boundingBox())!;
+              const selected = (await plate.boundingBox())!;
+              return Math.abs(selected.width - (control.width - 4));
+            })
+            .toBeLessThan(1);
+          // Selection's static wrapper must not unanchor the sibling notification dot.
+          expect(
+            await button.locator("span.relative").evaluate((el) => getComputedStyle(el).position),
+          ).toBe("relative");
+        }
+        await shot(page, "plate-acceptance", theme, String(width));
+        await page.getByTestId("open-nested").click();
+        await page.getByTestId("nested-trigger").click();
+        await expect(page.getByRole("dialog", { name: "Branches" })).toBeFocused();
+        await shot(page, "popover-nested-acceptance", theme, String(width));
+        await page.keyboard.press("Escape");
+        await expect(page.getByTestId("nested-trigger")).toBeFocused();
+        await page.keyboard.press("Escape");
+        const opener = page.getByTestId("open-modal-pair");
+        await opener.focus();
+        await page.keyboard.press("Enter");
+        const child = page.getByRole("dialog", { name: "Child dialog", exact: true });
+        const parent = page.getByRole("dialog", { name: "Parent dialog", exact: true });
+        await expect(child).toBeVisible();
+        await expect(child.getByRole("button", { name: "Child action" })).toBeFocused();
+        // Both mount in one commit. Child's backdrop must paint above the parent.
+        expect(
+          await child.evaluate((el) => {
+            const layers = Array.from(document.querySelectorAll("body > [data-modal-layer]"));
+            return layers.at(-1) === el.closest("[data-modal-layer]");
+          }),
+        ).toBe(true);
+        expect(
+          await child.evaluate((el) => {
+            const backdrop = el.closest("[data-modal-layer]")!.querySelector(".modal-backdrop")!;
+            return getComputedStyle(backdrop).backdropFilter;
+          }),
+        ).toContain("blur(4px)");
+        for (let index = 0; index < 6; index++) {
+          await page.keyboard.press("Tab");
+          expect(await child.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+        }
+        await shot(page, "modal-pair-acceptance", theme, String(width));
+        await page.keyboard.press("Escape");
+        await expect(child).toHaveCount(0);
+        await expect(parent).toBeVisible();
+        expect(await parent.evaluate((el) => el.contains(document.activeElement))).toBe(true);
+        const reopen = page.getByTestId("reopen-child");
+        await reopen.focus();
+        await page.keyboard.press("Enter");
+        await expect(child).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(reopen).toBeFocused();
+        await page.keyboard.press("Escape");
+        await expect(parent).toHaveCount(0);
+        await expect(opener).toBeFocused();
+      });
+    }
+
   test("Escape closes only the top layer and focus returns down the chain", async ({ page }) => {
     await setup(page, "dark");
     const opener = page.getByTestId("open-nested");

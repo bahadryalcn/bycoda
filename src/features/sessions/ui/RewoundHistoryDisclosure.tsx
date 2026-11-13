@@ -1,7 +1,7 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { Surface } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { useT } from "../../../shared/i18n";
@@ -19,7 +19,10 @@ export function RewoundHistoryDisclosure({
       data-rewind-history=""
       size="sm"
       summary={t("Rewound history ({p0})", { p0: history.length })}
-      className="mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto border-b border-(--ui-tone-neutral-border) px-3 py-2"
+      {...surfaceAttributes(
+        { frame: "neutral", edge: "bottom" },
+        "mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto px-3 py-2",
+      )}
     >
       {truncated ? (
         <Text as="p" size="inherit" tone="disabled" className="mt-1">

@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -143,7 +144,12 @@ export function ScanSettings({
           onChange={(event) => setFolders(event.target.value)}
         />
       </Row>
-      <div className="flex min-w-0 flex-col gap-2 border-t border-(--ui-settings-hairline) px-4 py-2.5">
+      <div
+        {...surfaceAttributes(
+          { frame: "settings", edge: "top" },
+          "flex min-w-0 flex-col gap-2 px-4 py-2.5",
+        )}
+      >
         {saveError !== null ? <ErrorNotice error={saveError} /> : null}
         <div className="flex justify-end">
           <Button

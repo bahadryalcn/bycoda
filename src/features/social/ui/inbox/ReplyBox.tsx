@@ -9,6 +9,7 @@ import { PromptField } from "../../../../shared/ui/PromptField";
 import type { ActionGate } from "../common/DisabledReason";
 import type { SocialThread } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
+import { socialQueryScope } from "../../model/socialQuery";
 import { inboxApi } from "./inboxApi";
 import { replyBlockedText } from "./inboxModel";
 import { useInboxInvalidate, useInboxReplyOptions, useInboxSnapshot } from "./useInboxData";
@@ -23,13 +24,38 @@ type Busy = "" | "suggest" | "send";
  * Reply editor for one conversation. The Host decides whether a reply is allowed (replyOptions);
  * a blocked reply shows its reason next to the disabled Send button. AI text lands in the editor.
  */
-export function ReplyBox({ client, thread }: { client: SocialClient; thread: SocialThread }) {
+type ReplyDraft = { text: string; factIds: string[] };
+// Client identity owns unsent drafts; a thread id alone must never cross Hosts.
+const drafts = new WeakMap<SocialClient, Map<string, ReplyDraft>>();
+
+export function ReplyBox(props: { client: SocialClient; thread: SocialThread }) {
+  return (
+    <ThreadReplyBox
+      key={socialQueryScope(props.client).join(":") + ":" + props.thread.id}
+      {...props}
+    />
+  );
+}
+
+function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: SocialThread }) {
   const api = inboxApi(client);
   const options = useInboxReplyOptions(client, thread.id);
   const snapshot = useInboxSnapshot(client);
   const invalidate = useInboxInvalidate(client);
-  const [text, setText] = useState("");
-  const [factIds, setFactIds] = useState<string[]>([]);
+  const [draft, setDraft] = useState<ReplyDraft>(
+    () => drafts.get(client)?.get(thread.id) ?? { text: "", factIds: [] },
+  );
+  const { text, factIds } = draft;
+  const changeDraft = (next: ReplyDraft) => {
+    let byThread = drafts.get(client);
+    if (!byThread) {
+      byThread = new Map();
+      drafts.set(client, byThread);
+    }
+    if (next.text || next.factIds.length) byThread.set(thread.id, next);
+    else byThread.delete(thread.id);
+    setDraft(next);
+  };
   const [busy, setBusy] = useState<Busy>("");
   const [error, setError] = useState("");
   const [queued, setQueued] = useState(false);
@@ -60,7 +86,7 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
   const sendGate: ActionGate = blockedReason
     ? { disabled: true, disabledReason: blockedReason }
     : busy
-      ? { disabled: true, disabledReason: t("Sending…") }
+      ? { disabled: true, disabledReason: busy === "send" ? t("Sending…") : t("Working…") }
       : !text.trim()
         ? { disabled: true, disabledReason: t("Write a reply first.") }
         : { disabled: false };
@@ -74,8 +100,7 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
         thread.id,
         facts.slice(0, MAX_FACTS).map((fact) => fact.id),
       );
-      setText(result.text);
-      setFactIds(result.factIds);
+      changeDraft({ text: result.text, factIds: result.factIds });
     } catch {
       setError(t("Could not prepare a suggestion. Try again."));
     } finally {
@@ -108,10 +133,15 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
     setQueued(false);
     try {
       await api.sendReply({ threadId: thread.id, text: text.trim(), factIds });
-      setText("");
-      setFactIds([]);
+      changeDraft({ text: "", factIds: [] });
       setQueued(true);
-      await invalidate();
+      await invalidate().catch(() => {
+        setError(
+          t(
+            "Reply queued, but the conversation could not refresh. Reload it before sending again.",
+          ),
+        );
+      });
     } catch {
       setError(t("The reply was not sent. Check the conversation and try again."));
     } finally {
@@ -119,8 +149,9 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
     }
   };
 
-  // One short line for a real prerequisite; every other reason lives in the button's tooltip.
-  const prerequisite = blockedReason ?? aiPrerequisite;
+  // Every blocked action has a visible reason, including empty drafts and AI prerequisites.
+  const prerequisite = sendGate.disabled ? sendGate.disabledReason : undefined;
+  const suggestReason = suggestGate.disabled ? suggestGate.disabledReason : undefined;
 
   return (
     <div className="inbox-reply">
@@ -129,11 +160,10 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
         minRows={3}
         maxRows={10}
         value={text}
-        disabled={!!blocked || busy === "send"}
+        disabled={!!blocked || busy !== ""}
         placeholder={t("Write a reply")}
         onChange={(event) => {
-          setText(event.target.value);
-          setFactIds([]);
+          changeDraft({ text: event.target.value, factIds: [] });
         }}
         toolbarTrailing={
           <>
@@ -142,6 +172,8 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
               size="sm"
               startIcon={<Sparkles className="icon-sm" strokeWidth={1.75} />}
               onClick={requestSuggestion}
+              loading={busy === "suggest"}
+              loadingLabel={t("Working…")}
               {...suggestGate}
             >
               {t("Fill with AI")}
@@ -150,6 +182,8 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
               variant="primary"
               size="sm"
               onClick={() => void send().catch(() => undefined)}
+              loading={busy === "send"}
+              loadingLabel={t("Sending…")}
               {...sendGate}
             >
               {t("Send")}
@@ -161,6 +195,23 @@ export function ReplyBox({ client, thread }: { client: SocialClient; thread: Soc
         <Text as="p" size="caption" tone="muted" leading="inherit" className="inbox-note">
           {prerequisite}
         </Text>
+      ) : null}
+      {suggestReason && suggestReason !== prerequisite ? (
+        <Text as="p" size="caption" tone="muted" className="inbox-note">
+          {suggestReason}
+        </Text>
+      ) : null}
+      {options.isError ? (
+        <Button
+          variant="link"
+          layout="text"
+          loading={options.isFetching}
+          onClick={() => {
+            void options.refetch().catch(() => undefined);
+          }}
+        >
+          {t("Try again")}
+        </Button>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
       {queued ? <InlineMessage tone="success">{t("Reply queued.")}</InlineMessage> : null}

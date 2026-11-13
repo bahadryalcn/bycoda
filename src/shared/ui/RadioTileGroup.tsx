@@ -5,7 +5,15 @@ import { Button, type ButtonProps } from "./Button";
 type TileButtonProps = Partial<
   Pick<
     Extract<ButtonProps, { iconOnly?: false }>,
-    "variant" | "size" | "layout" | "fullWidth" | "motion" | "tooltipWhen"
+    | "variant"
+    | "frame"
+    | "size"
+    | "shape"
+    | "layout"
+    | "fullWidth"
+    | "motion"
+    | "tooltipWhen"
+    | "selectionIndicator"
   >
 >;
 
@@ -51,6 +59,9 @@ export interface RadioTileGroupProps {
  * Owns roving focus: the selected (or first enabled) tile is the only tab stop; arrows, Home and End
  * move focus and choice together. Reached through `RadioGroup variant="tiles"`.
  * @status internal
+ * @group choice
+ * @use Internal tile presentation for RadioGroup variant="tiles".
+ * @avoid Public exclusive-choice control: RadioGroup.
  */
 export function RadioTileGroup({
   label,

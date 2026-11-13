@@ -663,8 +663,8 @@ describe("settings navigation", () => {
     ]);
     expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["account"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(22);
-    expect(new Set(ids).size).toBe(22);
+    expect(ids).toHaveLength(23);
+    expect(new Set(ids).size).toBe(23);
     expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);
@@ -687,6 +687,7 @@ describe("settings navigation", () => {
     ]);
     expect(byGroup.agents).toEqual([
       "providers",
+      "models",
       "crews",
       "skills",
       "mcp",

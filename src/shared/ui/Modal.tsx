@@ -1,4 +1,5 @@
 import { optionalTextAttributes, type TextRoles } from "./Text";
+import { surfaceAttributes } from "./Surface";
 import { useLocale, useT, type LanguageDomain } from "../i18n";
 import { useT as useGitT } from "../i18n/git";
 import { useT as useTechnicalT } from "../i18n/technical";
@@ -93,6 +94,8 @@ type Props = {
   minimalHeader?: boolean;
   /** Extra classes on the panel (fixed height, etc). */
   className?: string;
+  /** Opt into the existing floating surface for preview content. */
+  surface?: "floating";
   /** Keep taller dialogs inside the viewport, scrolling their content. */
   fitViewport?: boolean;
   /**
@@ -150,6 +153,8 @@ export type ModalProps = Props;
  * by Modal and by native popup hosts.
  * @group overlay
  * @status internal
+ * @use Dialog body inside Modal or NativePopupHost.
+ * @avoid A complete modal layer with focus and dismissal: Modal.
  */
 export function ModalPanel({
   languageDomain,
@@ -161,6 +166,7 @@ export function ModalPanel({
   size = "md",
   minimalHeader = false,
   className,
+  surface,
   fitViewport = true,
   placement = "center",
   panelStyle,
@@ -289,7 +295,10 @@ export function ModalPanel({
               aria-labelledby={titleId}
               aria-describedby={descriptionId}
               onMouseDown={(event) => event.stopPropagation()}
-              className={`relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
+              {...surfaceAttributes(
+                { variant: surface },
+                `relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${expanded ? "h-full rounded-none border-0" : sheet ? "h-full rounded-none border-s" : bottom ? "max-h-[calc(100dvh-40px)] rounded-t-(--ui-radius-popup) border border-b-0" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`,
+              )}
             >
               {/* The shared raised popup surface, so the dialog reads apart from the work beneath. */}
               <GlassBackdrop />

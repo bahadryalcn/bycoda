@@ -105,8 +105,12 @@ export function ModelBrowser({
           {" "}
           {(item as AccountModelChoice).accountColor ? (
             <span
-              {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0")}
-              style={{ backgroundColor: (item as AccountModelChoice).accountColor }}
+              {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-1.5 shrink-0")}
+              style={
+                {
+                  "--surface-user-color": (item as AccountModelChoice).accountColor,
+                } as React.CSSProperties
+              }
               aria-hidden
             />
           ) : null}

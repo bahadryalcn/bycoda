@@ -1,3 +1,5 @@
+import { SkillMachinesPanel } from "../../../src/features/skills/ui/SkillMachinesPanel";
+import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { SkillsPage } from "../../../src/features/skills/ui/SkillsPage";
@@ -66,10 +68,43 @@ mockIPC((command, args = {}) => {
 });
 applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
 initAppearancePreferences();
+function MachinePanelFixture() {
+  const [off, setOff] = useState(false);
+  const skill = {
+    name: "project-guide",
+    description: "Project conventions",
+    scope: "project" as const,
+    source: "agents" as const,
+    path: "/fixture/.agents/skills/project-guide/SKILL.md",
+  };
+  return (
+    <div style={{ padding: 16, width: "100%" }}>
+      <SkillMachinesPanel
+        shown={{ skill, machine: null }}
+        lists={[
+          { machine: null, skills: [skill], error: null, policyKnown: true },
+          {
+            machine: { environmentId: "fixture-other", name: "Other computer", cwd: "/other" },
+            skills: [],
+            error: null,
+            policyKnown: true,
+          },
+        ]}
+        isOff={() => off}
+        policyTarget={null}
+        busy={false}
+        transferBlocked={null}
+        onToggle={(_, enabled) => setOff(!enabled)}
+        onView={() => {}}
+        onCopy={() => {}}
+      />
+    </div>
+  );
+}
 void setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en").then(() => {
   createRoot(window.document.getElementById("root")!).render(
     <main style={{ display: "flex", height: "100dvh" }}>
-      <SkillsPage cwd="/fixture" />
+      {params.has("machinePanel") ? <MachinePanelFixture /> : <SkillsPage cwd="/fixture" />}
     </main>,
   );
 });

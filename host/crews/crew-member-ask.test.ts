@@ -152,16 +152,13 @@ describe("askCrewMember", () => {
     await expect(ask(f, { handle: "dev" })).rejects.toThrow();
   });
 
-  it("asks the existing selection for the member alone with the default policy", async () => {
+  it("asks the existing selection for the member alone", async () => {
     const f = await setup([member("dev")]);
     await ask(f);
     expect(f.candidateFor).toHaveBeenCalledTimes(1);
     const [definition, id] = f.candidateFor.mock.calls[0]!;
     expect(id).toBe("dev");
     expect(definition.agents.map((a) => a.id)).toEqual(["dev"]);
-    expect((definition as unknown as { policy: { preset: string } }).policy.preset).toBe(
-      "balanced",
-    );
   });
 
   it("takes the runtime mode and delegation link from the parent session", async () => {

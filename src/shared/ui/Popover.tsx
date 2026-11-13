@@ -1,4 +1,11 @@
 import { NativePopupHost, PopupBackdrop } from "./NativePopupHost";
+/**
+ * Shared frame and host context for content inside an existing OS popup window.
+ * @group overlay
+ * @use Native popup roots whose caller owns window creation, fitting and dismissal.
+ * @avoid Anchored content in the current window: Popover.
+ */
+export { NativePopover } from "./NativePopupHost";
 import {
   useCallback,
   useContext,
@@ -39,6 +46,11 @@ export type PopoverAnchor =
   | null;
 
 export type PopoverDismissReason = "outside" | "escape";
+
+/** True inside an OS popup, where the window itself replaces the in-app trigger. */
+export function useNativePopoverHost(): boolean {
+  return useContext(NativePopupHost) !== null;
+}
 
 /**
  * How a popover's content meets its height bound.
@@ -553,6 +565,7 @@ function WebPopover({
         {
           ...placed,
           ...(minWidth != null ? { "--popup-max-width": `${POPUP_MAX_WIDTH}px` } : null),
+          ...(rest.role === "tooltip" ? { pointerEvents: "none" } : null),
           zIndex: effectiveLayer,
         } as CSSProperties
       }

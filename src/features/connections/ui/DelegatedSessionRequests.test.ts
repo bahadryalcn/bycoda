@@ -5,10 +5,13 @@ import { expect, it, vi } from "vitest";
 import type { Session } from "../../sessions/model/session";
 import { useApprovalDecisionContext } from "../../sessions/ui/ApprovalDecisionContext";
 import { DelegatedSessionRequests } from "./DelegatedSessionRequests";
+import { getSessions, resetSessionsStore } from "../../sessions/model/sessionsStore";
+import type { HostSession } from "../model/protocol";
 
 const state = vi.hoisted(() => ({
   remote: {} as Record<string, unknown>,
   shell: undefined as unknown,
+  publish: undefined as ((id: string, snapshot?: HostSession) => void) | undefined,
   approve: vi.fn(),
   answer: vi.fn(),
   machines: [{ id: "machine", environmentId: "env" }],
@@ -23,8 +26,13 @@ vi.mock("../model/sessionExecutionBinding", () => ({
   hostExecutionProject: () => undefined,
 }));
 vi.mock("./RemoteSession", () => ({
-  RemoteSession: (props: { shell: unknown; render: (value: unknown) => unknown }) => {
+  RemoteSession: (props: {
+    shell: unknown;
+    onSnapshot?: typeof state.publish;
+    render: (value: unknown) => unknown;
+  }) => {
     state.shell = props.shell;
+    state.publish = props.onSnapshot;
     return props.render(state.remote);
   },
 }));
@@ -70,6 +78,62 @@ it("uses the child's Host owner and removes answered requests", () => {
   expect(container.querySelectorAll("button")).toHaveLength(0);
   act(() => root.unmount());
 });
+
+it.each([true, false])(
+  "publishes streamed tool steps and the final reply (renderRequests=%s)",
+  (renderRequests) => {
+    const prompt = { id: "prompt", role: "user", text: "Work" };
+    const child = { id: "child", cwd: "/project", blocks: [prompt], modelSettings: {} } as Session;
+    state.machines = [{ id: "machine", environmentId: "env" }];
+    state.remote = {};
+    resetSessionsStore([child]);
+    const root = createRoot(document.createElement("div"));
+    try {
+      act(() =>
+        root.render(
+          createElement(DelegatedSessionRequests, { child, visible: true, renderRequests }),
+        ),
+      );
+      expect(state.publish).toBeTypeOf("function");
+      const tool = { id: "tool", role: "tool", text: "", tool: { name: "Read", input: "file" } };
+      const snapshot = {
+        revision: 2,
+        status: "running",
+        session: { ...child, cwd: "/worktree", blocks: [prompt, tool] },
+      } as unknown as HostSession;
+      act(() => state.publish!("child", snapshot));
+      expect(getSessions()[0].blocks).toEqual([prompt, tool]);
+      expect(getSessions()[0].cwd).toBe("/project");
+      expect(getSessions()[0].continuingElsewhere).toBe(true);
+      const reply = { id: "reply", role: "assistant", text: "Done" };
+      act(() =>
+        state.publish!("child", {
+          ...snapshot,
+          revision: 3,
+          status: "idle",
+          session: { ...snapshot.session, blocks: [prompt, tool, reply] },
+        } as HostSession),
+      );
+      expect(getSessions()[0].blocks).toEqual([prompt, tool, reply]);
+      expect(getSessions()[0].continuingElsewhere).toBeUndefined();
+      act(() => state.publish!("child", undefined));
+      expect(getSessions()[0].blocks).toEqual([prompt, tool, reply]);
+      act(() =>
+        state.publish!("child", {
+          ...snapshot,
+          session: { ...snapshot.session, id: "another-child", blocks: [] },
+        }),
+      );
+      expect(getSessions()[0].blocks).toEqual([prompt, tool, reply]);
+      resetSessionsStore([]);
+      act(() => state.publish!("child", snapshot));
+      expect(getSessions()).toEqual([]);
+    } finally {
+      act(() => root.unmount());
+      resetSessionsStore([]);
+    }
+  },
+);
 
 it("does not mount a Host owner when machine identity is ambiguous", () => {
   const child = { id: "child", cwd: "/project", blocks: [] } as unknown as Session;

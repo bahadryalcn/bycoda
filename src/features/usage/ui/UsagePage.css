@@ -50,12 +50,6 @@
 
   cursor: pointer;
 }
-@media (hover: hover) and (pointer: fine) {
-  .usage-display-toggle:hover {
-    background: var(--ui-surface-hover);
-  }
-}
-
 .usage-accounts {
   display: grid;
   min-inline-size: 0;
@@ -68,10 +62,6 @@
   gap: 12px 24px;
   min-inline-size: 0;
   padding: 12px;
-}
-
-.usage-account + .usage-account {
-  border-block-start: 1px solid var(--ui-settings-group-border);
 }
 
 .usage-account-heading {

@@ -29,6 +29,42 @@ Screen state is retained across navigation. Drafts, forms and per-conversation r
 text are independent. Switching hosts clears that host's private data. A failed refresh
 keeps the last data and shows a retry action.
 
+AI activity uses **Completed** when an action finishes, including draft creation.
+**Sent** remains the delivery status for successfully sent jobs.
+
+### Social conversation panel
+
+**AI chat** opens a resizable conversation beside the workspace. At narrow widths it
+uses a sheet. It renders the existing session transcript and composer, including
+model/account options, approvals, send, queue, steer and stop. Repository and worktree
+controls are hidden. Closing the panel preserves its conversation and unsent draft.
+Each Host/project/folder scope reopens its own conversation. A remote Host requires
+a selected project so execution has an explicit remote working folder.
+
+**Open live view** in the panel lets the owner choose a browser account and use its
+existing account-bound browser view. Closing that view does not stop the browser.
+The conversation uses existing Social tools. Account access, autonomy, external
+sending approvals and global stops remain authoritative.
+
+Remote sends carry the initial scope context separately from the visible user
+message through `contextReplay`. The Host validates its size, retains it until
+provider acceptance and advertises `sessions.contextReplay.v1`. An older Host
+keeps the draft and asks for an update before sending. Opening the same conversation
+from history moves its mounted pane to that workspace location; it never creates
+a second composer or execution owner.
+
+The decision-model suggestion dismisses immediately on **Set up** or **Not now**.
+Dismissal belongs to the selected Host; cancelling setup does not bring it back.
+A configured decision model suppresses the suggestion as well.
+
+In **Accounts & Settings**, model selection uses the selected Host's catalog and
+provider accounts. The saved selection includes supported model options such as
+effort and the chosen provider account. Platform overrides show the effective model
+when they inherit the all-accounts choice. Account details group capabilities by
+state and keep permissions, autonomy and browser settings in expandable sections.
+An empty reply-rule list explains the disabled review action once. If the Host is
+offline, its connection requirement remains visible alongside the empty state.
+
 ## Account modes and driver selection
 
 Each account has one connection mode per platform: **API** (official developer app
@@ -435,6 +471,8 @@ cannot start in hidden mode, the operation fails without opening a visible windo
 A live view streams frames while the
 owner has it open. It is capped in frame rate and size and stops after idle. Pointer and key input from
 the live view goes to the account's page.
+The compact live-view panel separates its status, text input and keyboard actions;
+closing the view hides the panel without stopping the account's browser.
 
 ## Accounts registration and browser workspace
 

@@ -1,21 +1,17 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
-import { LoadingText } from "../../../shared/ui/LoadingText";
-import { PaneHeader } from "../../../shared/ui/PaneHeader";
-import { Sash } from "../../../shared/ui/Sash";
-import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
-import { X, RotateCcw } from "../../../shared/ui/icons";
-
-import { useDragResize } from "../../../shared/hooks/useDragResize";
+import { t } from "../../../shared/i18n";
+import {
+  SessionDiscussionPanel,
+  type PanelSessionPortal,
+} from "../../sessions/public/SessionDiscussionPanel";
 import { inboxItemRef, type InboxItem } from "../model/githubTasks";
 import { inboxAskKey } from "../model/inboxAsk";
 
-export type InboxSessionPortal = { sessionId: string; host: HTMLElement };
-let rememberedWidth = 440;
+export type InboxSessionPortal = PanelSessionPortal;
 
-/** Only a destination for the regular session pane; it owns no chat state. */
+let rememberedWidth = 440;
+const maxDiscussionWidth = () => Math.max(360, window.innerWidth - 650);
+
+/** Inbox supplies context; the shared panel hosts the same real SessionPane used by Social. */
 export function InboxDiscussionPanel({
   item,
   onClose,
@@ -29,111 +25,30 @@ export function InboxDiscussionPanel({
   onRestart: (item: InboxItem) => Promise<string>;
   onMount: (portal: InboxSessionPortal | null) => void;
 }) {
-  useLocale();
-  const host = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [revision, setRevision] = useState(0);
-  const request = useRef(0);
-  const resize = useDragResize({
-    min: 360,
-    max: () => Math.max(360, window.innerWidth - 650),
-    initial: rememberedWidth,
-    defaultWidth: 440,
-    direction: "left",
-    onCommit: (width) => {
-      rememberedWidth = width;
-    },
-  });
-  const key = inboxAskKey(item);
-  useEffect(() => {
-    const generation = ++request.current;
-    setError(null);
-    setLoading(true);
-    void onOpen(item)
-      .then((sessionId) => {
-        if (generation === request.current && host.current)
-          onMount({ sessionId, host: host.current });
-      })
-      .catch((reason) => {
-        if (generation === request.current) setError(String(reason));
-      })
-      .finally(() => {
-        if (generation === request.current) setLoading(false);
-      });
-    return () => {
-      ++request.current;
-      onMount(null);
-    };
-    // Metadata refreshes for the same item must not remount its composer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, onOpen, onMount, revision]);
-
   return (
-    <aside
-      ref={resize.setPaneRef}
-      aria-label={t("Ask about {p0}", { p0: inboxItemRef(item) })}
-      {...surfaceAttributes(
-        { frame: "pane", edge: "left" },
-        "inbox-discussion-panel relative flex min-h-0 shrink-0 flex-col",
-      )}
-    >
-      <Sash
-        {...resize.sashProps}
-        appearance="hidden"
-        label={t("Resize discussion")}
-        className="inbox-discussion-resizer absolute inset-y-0 -left-px"
-      />
-      <PaneHeader
-        titleAs="div"
-        title={
-          <>
-            {t("Ask · ")}
-            {inboxItemRef(item)}
-          </>
-        }
-        actions={
-          <>
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Restart conversation")}
-              disabled={loading}
-              onClick={() => {
-                const generation = ++request.current;
-                setLoading(true);
-                setError(null);
-                void onRestart(item)
-                  .then((sessionId) => {
-                    if (generation === request.current && host.current)
-                      onMount({ sessionId, host: host.current });
-                  })
-                  .catch((reason) => {
-                    if (generation === request.current) setError(String(reason));
-                  })
-                  .finally(() => {
-                    if (generation === request.current) setLoading(false);
-                  });
-              }}
-            >
-              <RotateCcw className="icon-sm" />
-            </Button>
-            <Button variant="ghost" iconOnly label={t("Close panel")} onClick={onClose}>
-              <X className="icon-sm" />
-            </Button>
-          </>
-        }
-      />
-      {error ? (
-        <Alert tone="danger">
-          <p>{error}</p>
-          <Button variant="ghost" type="button" onClick={() => setRevision((value) => value + 1)}>
-            {t("Retry")}
-          </Button>
-        </Alert>
-      ) : null}
-      {loading ? <LoadingText className="p-3" /> : null}
-      <div ref={host} className="flex min-h-0 min-w-0 flex-1 flex-col" />
-    </aside>
+    <SessionDiscussionPanel
+      className="inbox-discussion-panel"
+      adaptiveBase
+      scopeKey={inboxAskKey(item)}
+      minWidth={360}
+      maxWidth={maxDiscussionWidth}
+      widthPreference={{
+        initial: rememberedWidth,
+        onCommit: (width) => {
+          rememberedWidth = width;
+        },
+      }}
+      title={
+        <>
+          {t("Ask · ")}
+          {inboxItemRef(item)}
+        </>
+      }
+      label={t("Ask about {p0}", { p0: inboxItemRef(item) })}
+      onOpen={() => onOpen(item)}
+      onRestart={() => onRestart(item)}
+      onClose={onClose}
+      onMount={onMount}
+    />
   );
 }

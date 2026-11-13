@@ -28,6 +28,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ContinuousList, CollectionFooter } from "../../../shared/ui/ContinuousList";
+import { Surface } from "../../../shared/ui/Surface";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -156,14 +157,14 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
   );
   if (project.startsWith("remote://")) {
     return (
-      <div className="grid min-w-0 gap-7">
+      <div className="grid min-w-0 gap-8">
         {projectPicker()}
         <SettingsFeedback state="warning">{t(MCP_LOCAL_ONLY_ERROR)}</SettingsFeedback>
       </div>
     );
   }
   return (
-    <div className="grid min-w-0 gap-7">
+    <div className="grid min-w-0 gap-8">
       <McpConnections
         key={`${project}:${view}`}
         cwd={project}
@@ -600,106 +601,115 @@ function McpConnections({
         </SettingsFeedback>
       ) : visible.length > 0 ? (
         <div role="region" aria-label={t("MCP connections")}>
-          <ContinuousList
-            className={styles.list}
-            items={visible}
-            itemKey={serverRowKey}
-            stateKey={`${stateKey}:${effectiveFilter}:${scopeFilter}`}
-            estimateSize={40}
-            renderItem={(server) => {
-              // Until Claude reports health, a configured Claude row is unknown, not signed out.
-              const checking =
-                claudeChecking && server.provider === "claude" && server.status === "Configured";
-              return (
-                <div key={serverRowKey(server)} className={styles.row}>
-                  <McpCapabilityStatus
-                    server={server}
-                    checking={loading || checking}
-                    failed={!!error || (server.provider === "claude" && !!claudeError)}
-                    ambiguous={
-                      server.provider === "claude" &&
-                      servers.filter(
-                        (entry) => entry.provider === "claude" && entry.name === server.name,
-                      ).length > 1
-                    }
-                  />
-                  <span className={styles.providerIcon}>
-                    <ProviderIcon provider={server.provider} />
-                  </span>
-                  <OverflowTooltip label={server.name}>
+          <Surface
+            variant="card"
+            frame="card"
+            radius="card"
+            padding="none"
+            className={styles.listFrame}
+          >
+            <ContinuousList
+              rowAppearance="settings"
+              className={styles.list}
+              items={visible}
+              itemKey={serverRowKey}
+              stateKey={`${stateKey}:${effectiveFilter}:${scopeFilter}`}
+              estimateSize={40}
+              renderItem={(server) => {
+                // Until Claude reports health, a configured Claude row is unknown, not signed out.
+                const checking =
+                  claudeChecking && server.provider === "claude" && server.status === "Configured";
+                return (
+                  <div key={serverRowKey(server)} className={styles.row}>
+                    <McpCapabilityStatus
+                      server={server}
+                      checking={loading || checking}
+                      failed={!!error || (server.provider === "claude" && !!claudeError)}
+                      ambiguous={
+                        server.provider === "claude" &&
+                        servers.filter(
+                          (entry) => entry.provider === "claude" && entry.name === server.name,
+                        ).length > 1
+                      }
+                    />
+                    <span className={styles.providerIcon}>
+                      <ProviderIcon provider={server.provider} />
+                    </span>
+                    <OverflowTooltip label={server.name}>
+                      <Text
+                        as="span"
+                        size="secondary"
+                        tone="inherit"
+                        weight="medium"
+                        leading="inherit"
+                        truncate
+                      >
+                        {server.name}
+                      </Text>
+                    </OverflowTooltip>
                     <Text
                       as="span"
-                      size="secondary"
-                      tone="inherit"
-                      weight="medium"
+                      size="caption"
+                      tone="muted"
                       leading="inherit"
-                      truncate
+                      className={styles.scope}
                     >
-                      {server.name}
+                      {scopeLabel(server.scope)}
                     </Text>
-                  </OverflowTooltip>
-                  <Text
-                    as="span"
-                    size="caption"
-                    tone="muted"
-                    leading="inherit"
-                    className={styles.scope}
-                  >
-                    {scopeLabel(server.scope)}
-                  </Text>
-                  {!checking && needsMcpSignIn(server) ? (
+                    {!checking && needsMcpSignIn(server) ? (
+                      <Button
+                        stableWidth
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={styles.signIn}
+                        textTone="warning"
+                        loading={busy?.server === serverRowKey(server) && busy.action === "login"}
+                        disabled={loading || busy !== null}
+                        onClick={() => void login(server)}
+                      >
+                        {t("Sign in")}
+                      </Button>
+                    ) : null}
+                    <Tooltip
+                      label={
+                        !canToggle(server)
+                          ? globalOnly && server.provider === "claude"
+                            ? t("Select a project to change Claude Code permissions.")
+                            : t("Edit in provider config")
+                          : server.provider === "claude"
+                            ? t("Applies to this project for Claude Code.")
+                            : undefined
+                      }
+                    >
+                      <span className={styles.toggle}>
+                        <Toggle
+                          label={`${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`}
+                          on={server.enabled !== false}
+                          disabled={loading || busy !== null || !canToggle(server)}
+                          onChange={() => void setEnabled(server)}
+                        />
+                      </span>
+                    </Tooltip>
                     <Button
-                      stableWidth
+                      className={styles.rowMenu}
                       type="button"
                       variant="ghost"
-                      size="sm"
-                      className={styles.signIn}
-                      textTone="warning"
-                      loading={busy?.server === serverRowKey(server) && busy.action === "login"}
+                      iconOnly
+                      label={t("Actions for {p0}", { p0: server.name })}
+                      aria-haspopup="menu"
+                      aria-expanded={menu?.server === server}
                       disabled={loading || busy !== null}
-                      onClick={() => void login(server)}
+                      loading={busy?.server === serverRowKey(server) && busy.action !== "login"}
+                      onClick={(event) => setMenu({ server, anchor: event.currentTarget })}
                     >
-                      {t("Sign in")}
+                      <MoreHorizontal className="icon-sm" />
                     </Button>
-                  ) : null}
-                  <Tooltip
-                    label={
-                      !canToggle(server)
-                        ? globalOnly && server.provider === "claude"
-                          ? t("Select a project to change Claude Code permissions.")
-                          : t("Edit in provider config")
-                        : server.provider === "claude"
-                          ? t("Applies to this project for Claude Code.")
-                          : undefined
-                    }
-                  >
-                    <span className={styles.toggle}>
-                      <Toggle
-                        label={`${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}`}
-                        on={server.enabled !== false}
-                        disabled={loading || busy !== null || !canToggle(server)}
-                        onChange={() => void setEnabled(server)}
-                      />
-                    </span>
-                  </Tooltip>
-                  <Button
-                    className={styles.rowMenu}
-                    type="button"
-                    variant="ghost"
-                    iconOnly
-                    label={t("Actions for {p0}", { p0: server.name })}
-                    aria-haspopup="menu"
-                    aria-expanded={menu?.server === server}
-                    disabled={loading || busy !== null}
-                    loading={busy?.server === serverRowKey(server) && busy.action !== "login"}
-                    onClick={(event) => setMenu({ server, anchor: event.currentTarget })}
-                  >
-                    <MoreHorizontal className="icon-sm" />
-                  </Button>
-                </div>
-              );
-            }}
-          />
+                  </div>
+                );
+              }}
+            />
+          </Surface>
         </div>
       ) : null}
       <CollectionFooter loading={loading && servers.length > 0} />

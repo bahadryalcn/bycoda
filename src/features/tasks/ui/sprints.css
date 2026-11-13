@@ -101,13 +101,10 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.375rem 0.75rem;
-  border-bottom: 1px solid var(--ui-pane-border);
 }
-.sprint-row:last-child {
-  border-bottom: 0;
-}
-.sprint-row:hover {
-  background: var(--ui-surface-hover);
+.sprint-row > :last-child {
+  grid-column: 3;
+  justify-self: end;
 }
 .sprint-row-main {
   min-width: 0;
@@ -165,10 +162,6 @@
   padding: 0.625rem 0;
 }
 /* In bulk selection the planning controls sit in the board's own column, aligned with the toolbar. */
-.bycoda-tasks > .sprint-planning {
-  padding-inline: 0.75rem;
-  border-block-end: 1px solid var(--ui-pane-border);
-}
 .sprint-planning p {
   margin: 0.375rem 0 0;
 }
@@ -249,6 +242,9 @@
   }
   .sprint-row {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .sprint-row > :last-child {
+    grid-column: 2;
   }
   .sprint-row-projects {
     grid-column: 1 / -1;

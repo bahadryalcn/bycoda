@@ -1,3 +1,5 @@
+import { actionHostAttributes } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
@@ -8,6 +10,7 @@ import { settingDomId, Toggle } from "../../settings/ui/settingsControls";
 export function UsageDisplaySettings() {
   useLocale();
   const showRemainingUsage = useShowRemainingUsage();
+  const appearance = surfaceAttributes({ radius: "none" }, "usage-display-toggle");
   return (
     <Tooltip
       label={t("Fill usage meters with what is left in each limit instead of what has been used.")}
@@ -20,7 +23,11 @@ export function UsageDisplaySettings() {
         leading="inherit"
         id={settingDomId("show-remaining-usage")}
         data-setting-id="show-remaining-usage"
-        className="usage-display-toggle"
+        {...appearance}
+        {...actionHostAttributes(
+          { pressFeedback: false, size: "caption", tone: "secondary" },
+          appearance.className,
+        )}
       >
         <span>{t("Show remaining usage")}</span>
         <Toggle

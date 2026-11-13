@@ -122,10 +122,21 @@ function Fixture() {
     if (theme) document.documentElement.classList.toggle("theme-light", theme === "light");
   }, [theme]);
   const reviewer = params.has("layout") ? layoutAgent : agent;
+  const command: Block = {
+    id: "command-fixture",
+    role: "tool",
+    text: "echo focused-command",
+    tool: {
+      callId: "command-fixture",
+      kind: "execute",
+      status: "completed",
+      output: "command output fixture",
+    },
+  };
   const sheet = useSubagentSheet(
     statusColors
       ? statusBlocks
-      : [reviewer, { ...agent, id: "agent-2", agentRun: { name: "Explorer", steps: [] } }],
+      : [reviewer, command, { ...agent, id: "agent-2", agentRun: { name: "Explorer", steps: [] } }],
     true,
   );
   const [submitted, setSubmitted] = useState<string[]>([]);
@@ -198,6 +209,7 @@ function Fixture() {
           >
             Open explorer
           </Button>
+          <Button onClick={() => sheet.open("command-fixture")}>Open command</Button>
           <output data-testid="submission-count">{submitted.length}</output>
           <pre data-testid="last-submission">{submitted.at(-1)}</pre>
         </div>

@@ -1,6 +1,7 @@
 import { type KeyboardEvent, type PointerEvent } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Text } from "../../../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import styles from "./GradientStrip.module.css";
 
 export function AngleDial({
@@ -42,7 +43,10 @@ export function AngleDial({
         aria-valuetext={`${value}°`}
         aria-disabled={disabled || undefined}
         tabIndex={disabled ? -1 : 0}
-        className={styles.dial}
+        {...surfaceAttributes(
+          { frame: "pane", radius: "circle", variant: "plain", focusRing: "outer" },
+          styles.dial,
+        )}
         onKeyDown={onKeyDown}
         onPointerDown={(event) => {
           if (disabled || event.button !== 0) return;
@@ -55,7 +59,10 @@ export function AngleDial({
             updatePointer(event);
         }}
       >
-        <span className={styles.needle} style={{ transform: `rotate(${value}deg)` }} />
+        <span
+          {...surfaceAttributes({ radius: "circle" }, styles.needle)}
+          style={{ "--dial-angle": `${value}deg` } as React.CSSProperties}
+        />
       </div>
       <span>{value}°</span>
     </Text>

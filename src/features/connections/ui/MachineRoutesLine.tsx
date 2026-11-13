@@ -115,12 +115,7 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
           </div>
         ) : null}
       </div>
-      <Surface
-        as="ul"
-        variant="outline"
-        padding="none"
-        className="flex flex-col divide-y divide-stroke"
-      >
+      <Surface as="ul" variant="outline" padding="none" dividers="stroke" className="flex flex-col">
         {routes.routes.map((route) => {
           const inUse = route.address === routes.active;
           const reachable = checks?.[route.address];

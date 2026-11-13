@@ -18,7 +18,6 @@ import {
 import { runHarnessTextPrompt } from "./registry";
 import {
   pickTextHarness,
-  automaticGitChoice,
   type GitGenerationChoice,
 } from "../../../features/source-control/model/gitGenerationChoice";
 export { pickTextHarness } from "../../../features/source-control/model/gitGenerationChoice";
@@ -45,7 +44,7 @@ async function selectedGitPrompt(
     modelSettings: mergeModelSettings(model, choice.modelSettings),
     providerAccountId:
       choice.harness === "claude" || choice.harness === "codex"
-        ? defaultProviderAccountId(choice.harness)
+        ? (choice.providerAccountId ?? defaultProviderAccountId(choice.harness))
         : undefined,
     intent: "plan",
     prompt,
@@ -58,7 +57,7 @@ export function warmupText(cwd: string, preferred?: HarnessId): Promise<void> {
   return warmupHarnessText(pickTextHarness(preferred), cwd);
 }
 
-export function generateCommitMessage(
+export async function generateCommitMessage(
   cwd: string,
   preferred?: HarnessId,
   signal?: AbortSignal,
@@ -66,7 +65,7 @@ export function generateCommitMessage(
   operationContext?: HarnessOperationContext,
 ): Promise<string> {
   const captured = captureTextInput({ operationContext }).operationContext;
-  const selected = choice ?? automaticGitChoice(preferred);
+  const selected = choice;
   if (selected) return generateSelectedCommit(cwd, selected, signal, captured);
   return captured
     ? generateHarnessCommitMessage(pickTextHarness(preferred), cwd, signal, captured)
@@ -101,14 +100,14 @@ async function generateSelectedCommit(
   return formatCommitMessage(parsed);
 }
 
-export function generatePrContent(
+export async function generatePrContent(
   cwd: string,
   preferred?: HarnessId,
   choice?: GitGenerationChoice,
   operationContext?: HarnessOperationContext,
 ): Promise<(PrContent & { base: string; head: string }) | null> {
   const captured = captureTextInput({ operationContext }).operationContext;
-  const selected = choice ?? automaticGitChoice(preferred);
+  const selected = choice;
   if (selected) return generateSelectedPr(cwd, selected, captured);
   return captured
     ? generateHarnessPrContent(pickTextHarness(preferred), cwd, captured)

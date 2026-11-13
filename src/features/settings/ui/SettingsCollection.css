@@ -4,9 +4,6 @@
    separated by hairline dividers. Roles live in styles/index.css. */
 .settings-collection {
   min-inline-size: 0;
-  border: 1px solid var(--ui-settings-group-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-settings-group-surface);
   overflow: clip;
 }
 
@@ -17,9 +14,6 @@
   gap: 8px 12px;
   padding: 8px 16px;
   min-inline-size: 0;
-}
-.settings-collection-toolbar + .settings-collection-list {
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 
 .settings-collection-search {
@@ -63,21 +57,6 @@
   min-inline-size: 0;
   min-block-size: 2.5rem;
   padding: 8px 16px;
-  border-radius: 0;
-}
-.settings-collection-row + .settings-collection-row {
-  border-block-start: 1px solid var(--ui-settings-hairline);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .settings-collection-row:hover {
-    background: var(--ui-settings-row-hover);
-  }
-}
-
-.settings-collection-row:focus-visible {
-  outline: var(--ui-focus-width, 2px) solid var(--ui-focus-ring-color);
-  outline-offset: -2px;
 }
 
 .settings-collection-main {

@@ -108,6 +108,7 @@ export function sessionPhase(session: Session): SessionPhase {
     blocks: session.blocks,
     busy: !!session.busy,
     pendingQuestion: session.pendingQuestion != null,
+    pendingOwnerApproval: session.pendingOwnerApproval,
     backgroundTasks: session.backgroundTasks,
     backgroundAgents: session.backgroundAgents,
     unseenDone: false,

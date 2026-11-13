@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import { Button } from "../../../src/shared/ui/Button";
 import { Checkbox } from "../../../src/shared/ui/Checkbox";
 import { ControlSpecimen } from "../../../src/shared/ui/ControlSpecimen";
-import { NativeSearchableSelect } from "../../../src/shared/ui/NativeSearchableSelect";
 import { Badge } from "../../../src/shared/ui/Badge";
 import { Alert } from "../../../src/shared/ui/Alert";
 import { EmptyState } from "../../../src/shared/ui/EmptyState";
@@ -138,69 +137,6 @@ function SearchClearFixture() {
       <div className="bycoda-arc">
         <Combobox label="Focus combobox" options={[{ value: "one", label: "First" }]} />
       </div>
-    </section>
-  );
-}
-
-function NativeSelectionFormFixture() {
-  const native = useRef<HTMLSelectElement>(null);
-  const [controlled, setControlled] = useState("");
-  const [submitted, setSubmitted] = useState("");
-  const [changes, setChanges] = useState(0);
-  const options = [
-    { value: "", label: "Choose project" },
-    { value: "locked", label: "Restricted project", disabled: true },
-    ...Array.from({ length: 24 }, (_, index) => ({
-      value: `project-${index + 1}`,
-      label: `Project ${index + 1} with a long descriptive name`,
-    })),
-  ];
-  return (
-    <section aria-label="Native searchable forms" className="my-4 grid gap-2">
-      <form
-        id="native-searchable-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const data = new FormData(event.currentTarget);
-          setSubmitted(`${data.get("project")}/${data.get("controlled")}`);
-        }}
-        onReset={() => setControlled("")}
-      >
-        <label htmlFor="native-project">Project for form</label>
-        <NativeSearchableSelect
-          hideLabel
-          id="native-project"
-          label="Project for form"
-          ref={native}
-          name="project"
-          defaultValue=""
-          required
-          options={options}
-          triggerProps={{ "aria-label": "Search form projects" }}
-          onChange={() => setChanges((count) => count + 1)}
-        />
-        <NativeSearchableSelect
-          hideLabel
-          label="Controlled project for form"
-          name="controlled"
-          value={controlled}
-          required
-          options={options}
-          triggerProps={{ "aria-label": "Search controlled form projects" }}
-          onChange={(event) => setControlled(event.currentTarget.value)}
-        />
-        <Button type="submit">Submit selection form</Button>
-        <Button type="reset">Reset selection form</Button>
-      </form>
-      <Button onClick={() => native.current?.focus()}>Focus native selection ref</Button>
-      <Button onClick={() => native.current?.setCustomValidity("Choose an allowed project")}>
-        Set native selection error
-      </Button>
-      <Button onClick={() => native.current?.setCustomValidity("")}>
-        Clear native selection error
-      </Button>
-      <output aria-label="Submitted selection form">{submitted}</output>
-      <output aria-label="Native selection changes">{changes}</output>
     </section>
   );
 }
@@ -385,7 +321,6 @@ function Fixture() {
           />
         </section>
         <ControlSpecimen expanded />
-        <NativeSelectionFormFixture />
         <FeedbackFixture />
         <FieldFamiliesFixture />
         <AsyncActionGroupFixture />

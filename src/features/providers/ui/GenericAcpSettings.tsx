@@ -95,10 +95,15 @@ function AcpSettingsShell({
       padding="none"
       id={settingDomId("acp-agents")}
       data-setting-id="acp-agents"
-      className="mt-7 min-w-0 overflow-hidden"
+      className="mt-8 min-w-0 overflow-hidden"
       aria-label={t("ACP agents")}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
+      <div
+        {...surfaceAttributes(
+          { frame: "neutral", edge: "bottom" },
+          "flex flex-wrap items-center justify-between gap-2 px-3 py-2",
+        )}
+      >
         <div className="min-w-0">
           <Text as="p" size="caption" tone="secondary" leading="snug">
             {scope}
@@ -320,7 +325,10 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
         {configs.map((config) => (
           <div
             key={config.id}
-            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-(--ui-tone-neutral-border) px-3 py-2 last:border-b-0"
+            {...surfaceAttributes(
+              { frame: "neutral", edge: "block-end" },
+              "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2",
+            )}
           >
             <div className="min-w-0 flex-1">
               <OverflowTooltip label={config.name}>
@@ -351,7 +359,12 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               >
                 {t("Edit")}
               </Button>
-              <span className="ms-1 shrink-0 border-s border-stroke ps-2">
+              <span
+                {...surfaceAttributes(
+                  { frame: "stroke", edge: "inline-start" },
+                  "ms-1 shrink-0 ps-2",
+                )}
+              >
                 <ConfirmMorph
                   label={t("Remove")}
                   tone="danger"
@@ -574,7 +587,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 <Alert tone="info">{t("Loading ACP registry…")}</Alert>
               ) : registryState === "error" ? null : registryState === "loaded" &&
                 registry.length > 0 ? (
-                <div className="divide-y divide-stroke">
+                <div {...surfaceAttributes({ dividers: "stroke" })}>
                   {registry.map((entry) => (
                     <div
                       key={`${entry.id}:${entry.version}`}

@@ -18,6 +18,11 @@ pub(super) struct ProcessReceipts {
 }
 
 impl ProcessReceipts {
+    pub(super) fn has_pending(&self, route: &str) -> bool {
+        self.records
+            .iter()
+            .any(|record| record.route == route && !record.exit.settled())
+    }
     /// Called under HarnessInner before lease admission or OS process creation.
     /// Any settled original (succeeded or failed) may make room; only still-pending
     /// owners are kept, so failed cleanups cannot exhaust capacity and block spawns.

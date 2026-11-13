@@ -87,11 +87,7 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
         ) : null}
       </Text>
       {summary.failed.length > 0 ? (
-        <Surface
-          variant="card"
-          padding="sm"
-          className="border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)"
-        >
+        <Surface variant="card" frame="danger" tone="danger" padding="sm">
           <Text as="p" size="inherit" tone="danger">
             {plural(formatNumber, summary.failed.length, "conversation")}
             {t(" could not be imported")}

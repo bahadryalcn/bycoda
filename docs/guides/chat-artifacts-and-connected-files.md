@@ -10,7 +10,18 @@ Operator is hidden from the composer mode menu and command suggestions, includin
 Quick Composer. Typing `/operator` still works, and existing Operator-enabled
 conversations keep their access.
 
+In narrow chat panes, the access selector shows its mode icon instead of its label.
+The same access menu and keyboard controls remain available.
+
 ## Image attachments
+
+Recognized skills, attached images and files, quotes, file references and MCP
+references show compact inline tokens with leading type icons while composing.
+Quick Composer uses the same skill, attachment and link treatment. Tracker
+references retain their Jira, GitHub, GitLab or other provider mark; web links
+show a link icon or a recognized provider mark. These decorations preserve the
+original draft text, selection and copied references. Sent skills retain their
+skill icon alongside attachment and tracker identities.
 
 Image attachments show small previews in the conversation, including saved images
 from earlier messages. Previews load as their cards approach the visible area.
@@ -65,6 +76,9 @@ Remove takes a message out immediately. A small **Message removed · Undo** noti
 below the queue restores its text, attachments, saved target and original position.
 The notice closes after five seconds; keyboard focus or a pending/failed restore
 keeps the recovery action available. Removing several messages gives each its own Undo.
+
+If the provider refuses a queued follow-up before accepting it, the message returns
+to the queue without a turn-specific delegation notice in the conversation.
 
 When the AI asks a question with a free-text answer, use **Attach files**, paste copied files or images, or drop files onto the question card. Attached items appear below the answer; remove an item before sending if needed. You can send files without adding text. Unfinished attachments stay with that question when you leave and return, and failed delivery keeps them for retry.
 

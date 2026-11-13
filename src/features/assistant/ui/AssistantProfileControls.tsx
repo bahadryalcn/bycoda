@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import { Field } from "../../../shared/ui/Field";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -16,11 +16,14 @@ export function AssistantPresetNumber({
   presets,
   unit,
   description,
+  info,
   onChange,
 }: {
   label: string;
   /** One line under the settings row label. */
   description?: string;
+  /** Optional help shown beside the settings row label. */
+  info?: ReactNode;
   value: unknown;
   min: number;
   max: number;
@@ -87,7 +90,7 @@ export function AssistantPresetNumber({
   // The settings dialog's row owns the visible label; the setup form keeps the field label.
   if (useProfileRows())
     return (
-      <ProfileRow label={label} description={description}>
+      <ProfileRow label={label} description={description} info={info}>
         {() => body()}
       </ProfileRow>
     );

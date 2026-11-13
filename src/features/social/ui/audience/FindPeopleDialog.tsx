@@ -14,6 +14,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { DisabledReason } from "../common/DisabledReason";
 import { TechnicalDetails } from "../common/TechnicalDetails";
 import { LabeledSelect } from "./LabeledSelect";
+import { PlatformIcon } from "../common/PlatformIcon";
 import { errorMessage } from "./audienceModel";
 import {
   FIND_PEOPLE_KINDS,
@@ -119,7 +120,11 @@ export function FindPeopleDialog({
           label={t("Account")}
           value={form.accountId}
           disabled={running || !accounts.length}
-          options={accounts.map((account) => ({ value: account.id, label: accountLabel(account) }))}
+          options={accounts.map((account) => ({
+            value: account.id,
+            label: accountLabel(account),
+            icon: <PlatformIcon platform={account.platform} />,
+          }))}
           onChange={(accountId) => setForm({ ...form, accountId })}
         />
         <LabeledSelect

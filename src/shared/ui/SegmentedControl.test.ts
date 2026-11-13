@@ -1,9 +1,30 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { SegmentedControl } from "./SegmentedControl";
+
+it("keeps option names when a tooltip adds a different keyboard hint", () => {
+  const markup = renderToStaticMarkup(
+    createElement(SegmentedControl, {
+      label: "Translation",
+      value: "original",
+      onValueChange: vi.fn(),
+      options: [
+        {
+          value: "original",
+          label: "Original text",
+          tooltip: "After applying: up original, down translation.",
+        },
+        { value: "translation", label: "Translation" },
+      ],
+    }),
+  );
+  expect(markup).toContain('aria-label="Original text"');
+  expect(markup).not.toContain('aria-label="After applying:');
+});
 
 it.each(["claude", "opencode"])(
   "renders real %s effort options with longest locale labels outside cells and keyboard selection",

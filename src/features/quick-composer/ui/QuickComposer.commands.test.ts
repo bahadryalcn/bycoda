@@ -117,6 +117,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("highlights a link after a mode without changing the draft", () => {
+  input("/plan Review https://example.com/path");
+  expect(prompt.value).toBe("/plan Review https://example.com/path");
+  expect(container.querySelector("[data-composer-link-token]")).not.toBeNull();
+});
+
 it("shows launch progress once and preserves a newer draft after completion", async () => {
   let finish!: () => void;
   vi.mocked(invoke).mockImplementation(async (command, args) => {

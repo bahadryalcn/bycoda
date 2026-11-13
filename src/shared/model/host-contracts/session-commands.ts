@@ -103,6 +103,8 @@ export const SendCommandSchema = z.strictObject({
   ...queued,
   type: z.literal("send"),
   ...prompt,
+  /** Owner-supplied context for this turn, kept outside the visible user message. */
+  contextReplay: text.optional(),
   resumeAtReset: z.boolean().optional(),
   intent: z.enum(["default", "plan", "build"]).optional(),
   draftBlockId: IdentifierSchema.optional(),

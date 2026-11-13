@@ -234,6 +234,7 @@ let inlineSyncSupported = false;
 let inlineDelta: SessionSync | undefined;
 let conversationRewindSupported = false;
 let managedCreationSupported = true;
+let contextReplaySupported = true;
 let workspaceDefaultMode: "current" | "worktree" = "current";
 let workspacePreparationFailure: string | undefined;
 let machineSessionDeleted = false;
@@ -308,6 +309,7 @@ beforeEach(() => {
   lazyHistorySupported = false;
   conversationRewindSupported = false;
   managedCreationSupported = true;
+  contextReplaySupported = true;
   workspaceDefaultMode = "current";
   workspacePreparationFailure = undefined;
   machineSessionDeleted = false;
@@ -409,6 +411,7 @@ beforeEach(() => {
           ...(attachmentOwnershipSupported ? ["attachments.ownership.v1"] : []),
           "sessions.plan",
           "sessions.draft",
+          ...(contextReplaySupported ? ["sessions.contextReplay.v1"] : []),
           "workspaces.managed.v1",
           "workspaces.policy.v1",
           ...(managedCreationSupported ? ["sessions.managedCreation.v1"] : []),
@@ -907,11 +910,11 @@ async function render(session = shell(), extra: Partial<SessionPaneProps> = {}) 
   await settle();
 }
 let remoteOverrides: RemoteSessionOverrides;
-async function renderRemoteProbe(visible = true) {
+async function renderRemoteProbe(visible = true, session = shell()) {
   await act(async () =>
     root.render(
       createElement(RemoteSession, {
-        shell: shell(),
+        shell: session,
         visible,
         onOpenFile: vi.fn(),
         onOpenDiff: vi.fn(),
@@ -944,6 +947,33 @@ it("holds the composer while durable outbox storage is unavailable and recovers 
   await act(async () => retry!.click());
   await settle();
   expect(transportProbe.current).toBeDefined();
+});
+
+it("delivers pending Social context with the remote send outside its visible text", async () => {
+  await renderRemoteProbe(true, {
+    ...shell(),
+    pendingContextReplay: "Use existing bycoda-social tools in this workspace.",
+  });
+  await act(async () => remoteOverrides.onSubmit!("shell", "Plan the week", []));
+  await settle();
+  expect(commands.find((command) => command.type === "send")).toMatchObject({
+    text: "Plan the week",
+    contextReplay: "Use existing bycoda-social tools in this workspace.",
+  });
+});
+
+it("keeps pending Social context and the draft when the remote Host cannot preserve it", async () => {
+  contextReplaySupported = false;
+  await renderRemoteProbe(true, { ...shell(), pendingContextReplay: "Social workspace context" });
+  await act(async () =>
+    expect(remoteOverrides.onSubmit!("shell", "Keep my draft", [])).toBe(false),
+  );
+  expect(commands.some((command) => command.type === "send" || command.type === "create")).toBe(
+    false,
+  );
+  expect(remoteOverrides.session).toBeDefined();
+  expect(remoteOverrides.session!.retryMessage).toBeUndefined();
+  expect(container.textContent).toContain("Update the Host");
 });
 const byLabel = (prefix: string) =>
   container.querySelector<HTMLButtonElement>(`button[aria-label^="${prefix}"]`);
@@ -1252,8 +1282,10 @@ async function chooseEffort(label: string) {
   await act(async () => trigger.click());
   const option = [
     ...document.body.querySelectorAll<HTMLButtonElement>('[data-setting-id] [role="radio"]'),
-  ].find((button) => button.textContent === label)!;
-  await act(async () => option.click());
+  ].find((button) => button.getAttribute("aria-label") === label);
+  expect(option, `Expected effort option ${label}`).toBeDefined();
+  await act(async () => option!.click());
+  expect(option!.getAttribute("aria-checked")).toBe("true");
   if (trigger.getAttribute("aria-expanded") === "true") await act(async () => trigger.click());
   await settle();
 }

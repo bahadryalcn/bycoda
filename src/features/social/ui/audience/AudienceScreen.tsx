@@ -8,11 +8,12 @@ import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { SearchInput } from "../../../../shared/ui/SearchInput";
 import { TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
 import { MoreHorizontal } from "../../../../shared/ui/icons";
-import type { SocialPerson } from "../../model/audience";
+import type { SocialList, SocialPerson } from "../../model/audience";
 import type { SocialScreenProps } from "../shell/screens";
 import { DisabledReason, type ActionGate } from "../common/DisabledReason";
 import { EmptyHint } from "../common/EmptyHint";
 import { BulkBar } from "./BulkBar";
+import { CollectionHeader } from "./CollectionHeader";
 import { CaptureRules } from "./CaptureRules";
 import { BulkDialog, type BulkAction } from "./BulkDialogs";
 import { FindPeopleDialog } from "./FindPeopleDialog";
@@ -24,7 +25,8 @@ import { PeopleTable } from "./PeopleTable";
 import { PersonPanel } from "./PersonPanel";
 import { SegmentBuilder } from "./SegmentBuilder";
 import { removeFromList, suppressPeople } from "./audienceBulk";
-import { errorMessage } from "./audienceModel";
+import { deleteCollection } from "./collectionDelete";
+import { collectionKind, errorMessage, listDisplayName } from "./audienceModel";
 import { useAudienceData } from "./useAudienceData";
 import "./audience.css";
 
@@ -34,6 +36,8 @@ type Dialog =
   | { kind: "import" }
   | { kind: "newList" }
   | { kind: "segment" }
+  | { kind: "editList"; list: SocialList }
+  | { kind: "editSegment"; list: SocialList }
   | { kind: "bulk"; action: BulkAction };
 
 /** Audience: who you reach, the lists they belong to, the rules that collect them and the outreach sequences. */
@@ -45,7 +49,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
   const [activePersonId, setActivePersonId] = useState<string>();
   const [dialog, setDialog] = useState<Dialog>();
   const [notice, setNotice] = useState<string>();
-  const [noticeTone, setNoticeTone] = useState<"success" | "warning">("success");
+  const [noticeTone, setNoticeTone] = useState<"success" | "warning" | "info">("success");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [aiBusy, setAiBusy] = useState(false);
@@ -59,13 +63,55 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
   const selectedIds = [...selected];
   const people: SocialPerson[] = data.people;
 
-  function selectList(next: string | null) {
-    setListId(next);
+  /** Empties the selection and says so, so people never lose a selection without being told why. */
+  function dropSelection(reason: string) {
+    if (!selected.size) return;
     setSelected(new Set());
+    setNoticeTone("info");
+    setNotice(reason);
+  }
+
+  function selectList(next: string | null) {
+    if (next !== listId) dropSelection(t("Selection cleared because you opened another list."));
+    setListId(next);
     setActivePersonId(undefined);
   }
 
+  function changeQuery(next: string) {
+    if (next.trim() !== query.trim())
+      dropSelection(t("Selection cleared because the search changed."));
+    setQuery(next);
+  }
+
+  function editCollection(list: SocialList) {
+    if (list.system) return;
+    setDialog(
+      collectionKind(list) === "segment"
+        ? { kind: "editSegment", list }
+        : { kind: "editList", list },
+    );
+  }
+
+  async function removeCollection(list: SocialList) {
+    setError(undefined);
+    try {
+      const outcome = await deleteCollection(client, confirm, list);
+      if (outcome !== "deleted") return;
+      if (list.id === listId) {
+        setListId(null);
+        setSelected(new Set());
+        setActivePersonId(undefined);
+      }
+      setNoticeTone("success");
+      setNotice(t("Deleted {p0}.", { p0: listDisplayName(list) }));
+      data.reload();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
   function toggle(personId: string) {
+    setNotice(undefined);
     setSelected((current) => {
       const next = new Set(current);
       if (next.has(personId)) next.delete(personId);
@@ -75,6 +121,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
   }
 
   function toggleAll(personIds: readonly string[], checked: boolean) {
+    setNotice(undefined);
     setSelected((current) => {
       const next = new Set(current);
       for (const id of personIds) {
@@ -140,10 +187,12 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
       const result = await suppressPeople(client, selectedIds);
       setNoticeTone(result.failed.length ? "warning" : "success");
       setNotice(
-        t("{p0} people opted out, {p1} could not be updated", {
-          p0: formatNumber(result.done),
-          p1: formatNumber(result.failed.length),
-        }),
+        result.failed.length
+          ? t("{p0} people opted out, {p1} could not be updated", {
+              p0: formatNumber(result.done),
+              p1: formatNumber(result.failed.length),
+            })
+          : t("{p0} people opted out", { p0: formatNumber(result.done) }),
       );
       setSelected(new Set());
       data.reload();
@@ -196,7 +245,30 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
     else if (id === "segment") setDialog({ kind: "segment" });
   }
 
-  const emptyPeople = !data.loading && !data.error && !people.length && !query && !listId;
+  const searching = query.trim() !== "";
+  const emptyPeople = !data.loading && !data.error && !people.length && !searching && !listId;
+  const emptyOpenList = activeList && !searching ? activeList : undefined;
+  const noMatchHint = searching
+    ? {
+        message: t("No one matches this search."),
+        action: { label: t("Clear search"), onClick: () => changeQuery("") },
+      }
+    : emptyOpenList && collectionKind(emptyOpenList) === "segment"
+      ? {
+          message: t("No one matches this segment yet. It fills itself as people match."),
+          action: { label: t("Edit segment"), onClick: () => editCollection(emptyOpenList) },
+        }
+      : emptyOpenList && collectionKind(emptyOpenList) === "commenters"
+        ? {
+            message: t("No commenters yet. The Commenters rule adds them once it is on."),
+            action: { label: t("Open capture rules"), onClick: () => setSection("rules") },
+          }
+        : emptyOpenList
+          ? {
+              message: t("This list is empty. Add people from All people, or fill it with a rule."),
+              action: { label: t("Show all people"), onClick: () => selectList(null) },
+            }
+          : { message: t("No people to show.") };
 
   return (
     <section className="audience-screen" aria-label={t("Audience")}>
@@ -257,8 +329,15 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
               onSelect={selectList}
               onNewList={() => setDialog({ kind: "newList" })}
               onNewSegment={() => setDialog({ kind: "segment" })}
+              onEdit={editCollection}
+              onDelete={(list) => void removeCollection(list)}
             />
             <div className="audience-main">
+              <CollectionHeader
+                list={activeList}
+                onEdit={editCollection}
+                onDelete={(list) => void removeCollection(list)}
+              />
               <div className="audience-row">
                 <SearchInput
                   containerClassName="audience-search"
@@ -266,10 +345,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
                   aria-label={t("Search people")}
                   placeholder={t("Search by name")}
                   value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value);
-                    setSelected(new Set());
-                  }}
+                  onChange={(event) => changeQuery(event.target.value)}
                   clearable
                 />
               </div>
@@ -333,7 +409,7 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
                     onLoadMore={data.loadMore}
                   />
                 ) : (
-                  <EmptyHint message={t("No one matches this list or search.")} />
+                  <EmptyHint {...noMatchHint} />
                 )
               ) : null}
             </div>
@@ -398,22 +474,24 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
           onImported={() => data.reload()}
         />
       ) : null}
-      {dialog?.kind === "newList" ? (
+      {dialog?.kind === "newList" || dialog?.kind === "editList" ? (
         <ListDialog
           client={client}
+          list={dialog.kind === "editList" ? dialog.list : undefined}
           onClose={() => setDialog(undefined)}
-          onCreated={(list) => {
-            selectList(list.id);
+          onSaved={(list) => {
+            if (dialog.kind === "newList") selectList(list.id);
             data.reload();
           }}
         />
       ) : null}
-      {dialog?.kind === "segment" ? (
+      {dialog?.kind === "segment" || dialog?.kind === "editSegment" ? (
         <SegmentBuilder
           client={client}
+          list={dialog.kind === "editSegment" ? dialog.list : undefined}
           onClose={() => setDialog(undefined)}
-          onCreated={(list) => {
-            selectList(list.id);
+          onSaved={(list) => {
+            if (dialog.kind === "segment") selectList(list.id);
             data.reload();
           }}
         />

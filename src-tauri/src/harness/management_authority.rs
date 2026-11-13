@@ -485,14 +485,20 @@ pub(super) fn spawn_input_policy(
         _ => Err("NATIVE_MANAGEMENT_GRANT_INVALID".into()),
     }
 }
-/// Accept exactly one bounded JSON frame and only methods used by management
-/// discovery. Never include the frame in diagnostics: auth material may occur.
+/// Accept exactly one bounded JSON frame. Discovery keeps its smaller allowance;
+/// isolated utilities carry prompts, matching the owned OpenCode body allowance.
+/// Never include the frame in diagnostics: auth material may occur.
 pub(super) fn validate_input(
     policy: InputPolicy,
     line: &str,
     cwd: &std::path::Path,
 ) -> Result<(), String> {
-    if line.len() > 65536 || line.contains('\n') || line.contains('\r') {
+    let max_bytes = if matches!(policy, InputPolicy::Utility) {
+        1024 * 1024 + 4096
+    } else {
+        65536
+    };
+    if line.len() > max_bytes || line.contains('\n') || line.contains('\r') {
         return Err("NATIVE_MANAGEMENT_FRAME_REJECTED".into());
     }
     let value: serde_json::Value =
@@ -638,6 +644,35 @@ pub(super) fn validate_input(
 #[cfg(test)]
 mod tests {
     use super::{validate_input, InputPolicy};
+
+    #[test]
+    fn utility_accepts_large_skill_catalog_but_keeps_frame_and_resume_guards() {
+        let cwd = std::path::Path::new(".");
+        let skills: Vec<_> = (0..171)
+            .map(|index| {
+                serde_json::json!({
+                    "name": format!("skill-{index}"),
+                    "description": "workflow description ".repeat(40)
+                })
+            })
+            .collect();
+        let frame = serde_json::json!({
+            "id": 1, "method": "turn/start",
+            "params": {"input": [{"type": "text", "text": serde_json::to_string(&skills).unwrap()}]}
+        })
+        .to_string();
+        assert!(frame.len() > 65536);
+        assert_eq!(validate_input(InputPolicy::Utility, &frame, cwd), Ok(()));
+        let discovery = frame.replace("turn/start", "model/list");
+        assert!(validate_input(InputPolicy::Codex, &discovery, cwd).is_err());
+        for frame in [
+            format!("{frame}\n{frame}"),
+            serde_json::json!({"method":"thread/resume", "params":{}}).to_string(),
+            serde_json::json!({"method":"turn/start", "params":{"text":"x".repeat(1024 * 1024 + 4096)}}).to_string(),
+        ] {
+            assert!(validate_input(InputPolicy::Utility, &frame, cwd).is_err());
+        }
+    }
 
     #[test]
     fn codex_management_allows_usage_requests() {

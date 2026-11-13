@@ -11,6 +11,8 @@ import {
   globalProviderSessionDefaults,
   providerSessionDefaults,
   saveGlobalSessionDefaults,
+  mergeProviderExtras,
+  applySessionDefaults,
 } from "./providerSessionDefaults";
 import { rebaseProjectProviders, setProjectSessionDefaults } from "./projectProviders";
 import {
@@ -23,6 +25,20 @@ import {
 } from "./models";
 
 describe("provider session defaults", () => {
+  it("explicit Automatic removes an inherited and recent subagent ceiling", () => {
+    const extras = mergeProviderExtras(
+      "codex",
+      { crossSubagentMaxEffort: "max" },
+      { crossSubagentMaxEffort: "" },
+    );
+    expect(extras).toEqual({ crossSubagentMaxEffort: "" });
+    const settings = applySessionDefaults(
+      resolveModel("codex", "codex:gpt-6.1-sol"),
+      { crossSubagentMaxEffort: "high", reasoningEffort: "medium" },
+      { extras },
+    );
+    expect(settings).toEqual({ reasoningEffort: "medium" });
+  });
   beforeEach(() => {
     localStorage.clear();
     setHarnessModels("codex", [
@@ -90,10 +106,7 @@ describe("provider session defaults", () => {
     setProjectSessionDefaults("/repo", "codex", {
       extras: { crossAdvisor: "null", crossSubagents: "[]" },
     });
-    saveLastModelSettings({ crossAdvisor: advisor, crossSubagents: subagents }, "overwrite", [
-      "crossAdvisor",
-      "crossSubagents",
-    ]);
+    saveLastModelSettings({ crossAdvisor: advisor, crossSubagents: subagents });
     expect(newSession("codex", "/repo").modelSettings).toMatchObject({
       crossAdvisor: "null",
       crossSubagents: "[]",
@@ -114,7 +127,7 @@ describe("provider session defaults", () => {
         nativeId: "claude-opus-5-5",
       },
     ]);
-    saveLastModelSettings({ autoCompact: "on", advisor: "fable" }, "overwrite", ["advisor"]);
+    saveLastModelSettings({ autoCompact: "on", advisor: "fable" });
     saveGlobalSessionDefaults("claude", {
       extras: { autoCompact: "off", autoCompactWindow: "500000" },
     });
@@ -130,7 +143,6 @@ describe("provider session defaults", () => {
     expect(global.modelSettings).toMatchObject({
       autoCompact: "off",
       autoCompactWindow: "500000",
-      advisor: "fable",
     });
     const project = newSession("claude", "/repo", "claude:opus-5-5");
     expect(project.modelSettings).toMatchObject({
@@ -292,11 +304,14 @@ describe("provider session defaults carry cross-provider delegation", () => {
     );
   });
 
-  it("keeps the delegation choices when last-used settings are saved", () => {
-    saveLastModelSettings({ crossSubagents: subagents }, "overwrite", ["crossSubagents"]);
-    expect(newSession("claude", "/repo", "claude:sonnet-5-5").modelSettings).toMatchObject({
-      crossSubagents: subagents,
-    });
+  it("does not apply last-used delegation choices to a new session", () => {
+    localStorage.setItem(
+      "bycoda.lastModelSettings",
+      JSON.stringify({ crossSubagents: subagents, crossAdvisor: advisor }),
+    );
+    const settings = newSession("claude", "/repo", "claude:sonnet-5-5").modelSettings;
+    expect(settings.crossSubagents).not.toBe(subagents);
+    expect(settings.crossAdvisor).not.toBe(advisor);
   });
 });
 

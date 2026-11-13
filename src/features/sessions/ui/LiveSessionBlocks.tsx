@@ -23,7 +23,7 @@ export function LiveSessionBlocks({
   visible: boolean;
   enabled: boolean;
   fallback: Block[];
-  /** The transcript shows this session's Crew member asks as cards in their turns. */
+  /** The transcript shows this session's delegated runs as cards. */
   delegatedCards?: boolean;
   children: (blocks: Block[]) => ReactNode;
 }) {

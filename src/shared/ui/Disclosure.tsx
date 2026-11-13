@@ -1,3 +1,4 @@
+import { surfaceAttributes, type SurfaceAppearance } from "./Surface";
 import { Badge } from "./Badge";
 import {
   type ComponentPropsWithRef,
@@ -14,6 +15,8 @@ import styles from "./Disclosure.module.css";
 const NATIVE_ACTIVATABLE = 'a[href],button,input,label,select,textarea,[role="button"]';
 
 export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" | "onToggle"> & {
+  /** Use accent ink on hover and press for an annotation disclosure. */
+  interactionTone?: "accent";
   /** The always-visible row label. */
   summary: ReactNode;
   /**
@@ -45,6 +48,8 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   /** Shared `name` makes sibling disclosures exclusive (native accordion). */
   name?: string;
   children?: ReactNode;
+  /** Hairlines between the existing body children; no wrapper or mount change. */
+  bodyDividers?: SurfaceAppearance["dividers"];
 };
 
 /**
@@ -53,13 +58,14 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
  * Owns summary row height, body spacing, focus ring and the card frame.
  * @group layout
  * @use Show or hide supporting detail inside a page or dialog.
- * @avoid Switching views: Tabs. Group heading over a list: SectionLabel collapsible. One hint: Popover or InfoPopover.
+ * @avoid Switching views: Tabs. Group heading over a list: SectionLabel collapsible. One hint: Popover or InfoPopover. Static grouped content: Surface.
  * @replaces details summary
  *
  * @example
  * <Disclosure summary={t("Details")} count={items.length}>{body}</Disclosure>
  */
 export function Disclosure({
+  interactionTone,
   summary,
   summaryActions,
   count,
@@ -77,6 +83,7 @@ export function Disclosure({
   name,
   className,
   children,
+  bodyDividers,
   ref,
   ...props
 }: DisclosureProps) {
@@ -129,6 +136,7 @@ export function Disclosure({
         reassert((tick) => tick + 1);
       }}
       data-variant={variant}
+      data-interaction-tone={interactionTone}
       data-size={size}
       data-chevron={chevron}
       className={[styles.root, className].filter(Boolean).join(" ")}
@@ -155,7 +163,7 @@ export function Disclosure({
         ) : null}
         {chevron === "end" ? mark : null}
       </summary>
-      <div className={styles.body}>{children}</div>
+      <div {...surfaceAttributes({ dividers: bodyDividers }, styles.body)}>{children}</div>
     </details>
   );
 }

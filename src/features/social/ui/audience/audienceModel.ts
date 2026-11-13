@@ -3,12 +3,14 @@ import { formatNumber, t } from "../../../../shared/i18n";
 import type { BadgeTone } from "../../../../shared/ui/Badge";
 import type {
   AudienceFilter,
+  CaptureRule,
   InteractionKind,
   PersonStage,
   SocialList,
   SocialPerson,
 } from "../../model/audience";
-import type { OutreachChannel } from "../../model/outreach";
+import type { OutreachChannel, Sequence } from "../../model/outreach";
+import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
 import type { PeopleListInput } from "../../model/socialActions";
 
 /** Order of the stage line. `closed` and `opted_out` end the line instead of continuing it. */
@@ -106,6 +108,77 @@ export function peopleScope(list: SocialList | undefined): PeopleListInput {
 
 export function isCommentersList(list: SocialList): boolean {
   return list.system === "commenters";
+}
+
+/** Name shown for a list: the system Commenters list is always named in the current language. */
+export function listDisplayName(list: SocialList): string {
+  return isCommentersList(list) ? t("Commenters") : list.name;
+}
+
+/** What a list is, for the sidebar groups and the collection header. */
+export type CollectionKind = "list" | "segment" | "commenters";
+
+export function collectionKind(list: SocialList): CollectionKind {
+  if (isCommentersList(list)) return "commenters";
+  return list.kind === "dynamic" ? "segment" : "list";
+}
+
+/** The conditions of a segment as short phrases, in the order the segment form asks for them. */
+export function filterSummary(filter: AudienceFilter | undefined): string[] {
+  if (!filter) return [];
+  const parts: string[] = [];
+  if (filter.tags?.length) parts.push(t("Tagged {p0}", { p0: filter.tags.join(", ") }));
+  if (filter.language) parts.push(t("Language {p0}", { p0: filter.language }));
+  if (filter.minScore !== undefined)
+    parts.push(t("Interest score at least {p0}", { p0: formatNumber(filter.minScore) }));
+  if (filter.query) parts.push(t("Name or text contains {p0}", { p0: filter.query }));
+  if (filter.platforms?.length)
+    parts.push(
+      t("Accounts on {p0}", {
+        p0: filter.platforms.map((platform) => SOCIAL_PLATFORM_NAMES[platform]).join(", "),
+      }),
+    );
+  if (filter.stages?.length)
+    parts.push(t("Stage {p0}", { p0: filter.stages.map(stageLabel).join(", ") }));
+  if (filter.sources?.length)
+    parts.push(t("Came in through {p0}", { p0: filter.sources.map(interactionLabel).join(", ") }));
+  return parts;
+}
+
+/** The optional conditions of a capture rule as short phrases. Empty means "everyone who matches the source". */
+export function ruleConditionSummary(filter: CaptureRule["filter"]): string[] {
+  const parts: string[] = [];
+  if (filter.keywords?.length) parts.push(t("Text has {p0}", { p0: filter.keywords.join(", ") }));
+  if (filter.language) parts.push(t("Language {p0}", { p0: filter.language }));
+  if (filter.minFollowers !== undefined)
+    parts.push(t("At least {p0} followers", { p0: formatNumber(filter.minFollowers) }));
+  if (filter.sentiment) parts.push(t("Tone {p0}", { p0: sentimentLabel(filter.sentiment) }));
+  return parts;
+}
+
+export function sentimentLabel(sentiment: NonNullable<CaptureRule["filter"]["sentiment"]>): string {
+  switch (sentiment) {
+    case "positive":
+      return t("Positive");
+    case "neutral":
+      return t("Neutral");
+    case "negative":
+      return t("Negative");
+  }
+}
+
+/** Capture rules and unfinished sequences that point at a list. Deleting the list would break them. */
+export function listUses(
+  list: SocialList,
+  rules: readonly CaptureRule[],
+  sequences: readonly Sequence[],
+): { rules: CaptureRule[]; sequences: Sequence[] } {
+  return {
+    rules: rules.filter((rule) => rule.targetListId === list.id),
+    sequences: sequences.filter(
+      (sequence) => sequence.listId === list.id && sequence.status !== "done",
+    ),
+  };
 }
 
 /** Trims, drops empty values and removes duplicates while keeping the first spelling. */

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
-  for (const width of [390, 768, 1024, 1440]) {
+  for (const width of [390, 768, 800, 1024, 1280, 1440]) {
     test(`Servers workspace sections and drafts ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });

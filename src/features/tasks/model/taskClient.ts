@@ -1,3 +1,5 @@
+import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
+import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
 import { remoteRequest as sendHostRequest } from "../../connections/public/connections";
 import { subscribeRemoteMachineChannel } from "../../connections/public/remoteMachineChannel";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
@@ -87,6 +89,7 @@ export type TaskDraft = {
   cwd: string;
   harness: HarnessId;
   providerAccountId?: string;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -160,7 +163,12 @@ export function todoUnsupportedMessage(
   } to add to-do items`;
 }
 
-export function newTaskDraft(cwd: string, harness: HarnessId, model: string): TaskDraft {
+export function newTaskDraft(
+  cwd: string,
+  harness: HarnessId,
+  model: string,
+  routingSupported = false,
+): TaskDraft {
   return {
     creation: { id: crypto.randomUUID() },
     title: "",
@@ -173,7 +181,8 @@ export function newTaskDraft(cwd: string, harness: HarnessId, model: string): Ta
     defaultProviderAccountId(harness) !== "default"
       ? { providerAccountId: defaultProviderAccountId(harness) }
       : {}),
-    modelSettings: {},
+    ...(routingSupported ? { modelChoice: { kind: "default" as const } } : {}),
+    modelSettings: defaultModelSettings(resolveModel(harness, model)),
     runtimeMode: "auto",
     maxRunMinutes: 0,
 
@@ -201,6 +210,7 @@ export function draftFromTask(task: BoardTask): TaskDraft {
     cwd: task.cwd,
     harness: task.harness,
     providerAccountId: task.providerAccountId,
+    ...(task.modelChoice ? { modelChoice: task.modelChoice } : {}),
     model: task.model,
     modelSettings: task.modelSettings,
     runtimeMode: task.runtimeMode,
@@ -276,6 +286,7 @@ export function hostTaskFromDraft(
     ...(draft.providerAccountId === undefined
       ? {}
       : { providerAccountId: draft.providerAccountId }),
+    ...(draft.modelChoice ? { modelChoice: draft.modelChoice } : {}),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,

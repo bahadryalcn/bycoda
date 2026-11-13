@@ -26,11 +26,11 @@
   gap: 4px;
   padding: 8px 16px;
   min-inline-size: 0;
-  border-block-start: 1px solid var(--ui-settings-hairline);
+  --surface-frame-stacked: 1;
 }
 .notices:not(:has(:not(:empty))) {
   padding-block: 0;
-  border-block-start: 0;
+  --surface-frame-visible: 0;
 }
 .footerAction {
   display: flex;

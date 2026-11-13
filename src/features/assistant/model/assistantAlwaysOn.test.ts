@@ -38,6 +38,10 @@ it("flags each missing setting", () => {
   expect(state(withProfile({ enabled: false }), "enabled")).toBe("todo");
   expect(state(withProfile({ setupComplete: false }), "enabled")).toBe("todo");
   expect(state(withProfile({ autonomy: "report" }), "autonomy")).toBe("todo");
+  expect(
+    deriveAlwaysOnItems(withProfile({ autonomy: "report" })).find((item) => item.id === "autonomy")
+      ?.target,
+  ).toBe("access");
   expect(state(withProfile({ autonomy: "chief" }), "autonomy")).toBe("done");
   expect(state(withProfile({ dailyTokenBudget: 0 }), "budget")).toBe("todo");
   expect(state(withProfile({ dailyTokenBudget: 19_999 }), "budget")).toBe("todo");
@@ -48,7 +52,7 @@ it("flags each missing setting", () => {
 });
 
 it("reads the worker model from the pool, falling back to the profile, else unknown", () => {
-  expect(state({ ...ready, poolRows: [{ roles: ["chief"] }] }, "model")).toBe("todo");
+  expect(state({ ...ready, poolRows: [{ roles: ["chief"] }] }, "model")).toBe("done");
   expect(state({ ...ready, poolRows: [] }, "model")).toBe("todo");
   expect(state({ ...ready, poolRows: null }, "model")).toBe("unknown");
   const execution = { harness: "codex", model: "m" } as never;

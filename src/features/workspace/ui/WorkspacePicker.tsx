@@ -14,10 +14,9 @@ import {
   type PickerOption,
 } from "../../../shared/ui/picker";
 import { t, useLocale } from "../../../shared/i18n";
-import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
+import { useNativePopoverHost } from "../../../shared/ui/Popover";
 import {
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useId,
@@ -194,7 +193,7 @@ function WorkspaceModePicker({
   popoverSide?: "top" | "bottom";
 }) {
   useLocale();
-  const host = useContext(NativePopupHost);
+  const host = useNativePopoverHost();
   const [open, setOpen] = useState(initialOpen);
   useEffect(() => {
     onOpenChange?.(open);

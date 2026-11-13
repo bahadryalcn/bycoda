@@ -1,3 +1,7 @@
+import {
+  actionContentAttributes,
+  actionContentScopeAttributes,
+} from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -111,8 +115,20 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
             look.darkLightness ?? THEME_DARK_LIGHTNESS_DEFAULT,
             look.accent ?? ACCENT_COLOR_DEFAULT,
           );
+          const cardSurface = surfaceAttributes(
+            { frame: "pane", radius: "preview" },
+            "theme-saved-card",
+          );
+          const actionSurface = surfaceAttributes(
+            { radius: "row", variant: "base" },
+            "theme-saved-actions",
+          );
           return (
-            <li key={theme.id} className="theme-saved-card">
+            <li
+              key={theme.id}
+              {...cardSurface}
+              {...actionContentScopeAttributes(cardSurface.className)}
+            >
               <Button
                 variant="item"
                 className="theme-saved-apply"
@@ -124,7 +140,11 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
               >
                 <span className="theme-palette-swatches" aria-hidden="true">
                   {swatches.map((color, index) => (
-                    <span key={index} style={{ background: color }} />
+                    <span
+                      key={index}
+                      {...surfaceAttributes({ variant: "user-color" })}
+                      style={{ "--surface-user-color": color } as React.CSSProperties}
+                    />
                   ))}
                   {image ? <img src={libraryImageSrc(image)} alt="" draggable={false} /> : null}
                 </span>
@@ -140,7 +160,11 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
                 </Text>
               </Button>
               <span
-                {...surfaceAttributes({ radius: "row", variant: "base" }, "theme-saved-actions")}
+                {...actionSurface}
+                {...actionContentAttributes(
+                  { phase: "interaction", hide: "opacity", focus: "within", display: "flex" },
+                  actionSurface.className,
+                )}
               >
                 <Button
                   iconOnly
@@ -173,7 +197,10 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
             </li>
           );
         })}
-        <li className="theme-saved-card" data-add>
+        <li
+          {...surfaceAttributes({ frame: "pane", borderStyle: "dashed" }, "theme-saved-card")}
+          data-add
+        >
           <SaveLookButton appearance={appearance} card />
         </li>
       </ul>

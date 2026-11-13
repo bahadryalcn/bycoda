@@ -1,6 +1,7 @@
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { linkContentAttributes } from "../../../shared/ui/Link";
 import { Button } from "../../../shared/ui/Button";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -56,7 +57,7 @@ function TokenPill({ token, label, attachment }: PillProps) {
         size="inherit"
         tone="inherit"
         truncate
-        className={styles.name}
+        {...linkContentAttributes(styles.name)}
         aria-hidden="true"
         data-name={attachment.name}
       />

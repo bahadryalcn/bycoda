@@ -4,11 +4,14 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { AutoGroupDialog } from "./AutoGroupDialog";
 import { autoGroupSkills, createSkillGroup, listSkillGroups } from "../index";
+import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
+
+vi.mock("../../settings/public/modelsSettingsLink", () => ({ openModelsSettings: vi.fn() }));
 
 vi.mock("../index", async (original) => ({
   ...(await original<typeof import("../index")>()),
   autoGroupSkills: vi.fn(),
-  useSkillGroupingModel: () => ({ harness: "codex", model: "gpt-5" }),
+  resolveSkillGroupingModel: async () => ({ harness: "codex", model: "gpt-5" }),
 }));
 vi.mock("../../sessions", () => ({ loadModelPicker: async () => ({ ModelPicker: () => null }) }));
 let root: Root;
@@ -17,6 +20,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   vi.mocked(autoGroupSkills).mockReset();
+  vi.mocked(openModelsSettings).mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -48,6 +52,17 @@ async function render() {
     ),
   );
 }
+it("keeps one direct model-settings action without instructional copy", async () => {
+  await render();
+  expect(container.textContent).not.toContain("Model set in Settings");
+  const settings = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Manage in Models"]',
+  );
+  expect(settings).not.toBeNull();
+  await act(async () => settings!.click());
+  expect(openModelsSettings).toHaveBeenCalledExactlyOnceWith("roles");
+  expect(autoGroupSkills).not.toHaveBeenCalled();
+});
 it.each(["Cancel", "Replace my groups", "Add as new groups"])(
   "previews before explicit %s",
   async (action) => {
@@ -83,4 +98,15 @@ it("aborts generation and ignores its late proposal", async () => {
   await act(async () => resolve([]));
   expect(document.body.textContent).not.toContain("Review skill groups");
   expect(listSkillGroups().map((group) => group.name)).toEqual(["Existing"]);
+});
+it("keeps existing groups after a generation failure and allows retry", async () => {
+  await render();
+  vi.mocked(autoGroupSkills).mockRejectedValueOnce(new Error("Provider unavailable"));
+  await click("Group with AI");
+  expect(container.textContent).toContain("Provider unavailable");
+  expect(container.textContent).not.toContain("Error: Provider unavailable");
+  expect(listSkillGroups().map((group) => group.name)).toEqual(["Existing"]);
+  await click("Group with AI");
+  expect(document.body.textContent).toContain("Review skill groups");
+  expect(container.textContent).not.toContain("Provider unavailable");
 });

@@ -5,6 +5,7 @@ import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { Surface } from "../../../shared/ui/Surface";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
@@ -455,9 +456,10 @@ function CommandDetails({
           density="comfortable"
           frame="card"
           scroll
-          className={`break-words bg-(--ui-card-surface) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color) ${
-            commandOpen || !longCommand ? "max-h-[min(16rem,32dvh)]" : "max-h-20"
-          }`}
+          {...surfaceAttributes(
+            { focusRing: "inset", variant: "card" },
+            `break-words ${commandOpen || !longCommand ? "max-h-[min(16rem,32dvh)]" : "max-h-20"}`,
+          )}
         >
           {command.text}
         </OutputBlock>
@@ -487,8 +489,8 @@ function CommandDetails({
             ref={scroller}
             tabIndex={0}
             {...surfaceAttributes(
-              { frame: "card", edge: "all", variant: "card" },
-              "min-h-0 flex-1 overflow-auto overscroll-none rounded-(--ui-radius-card)  border-(--ui-card-border)  focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)",
+              { frame: "card", edge: "all", variant: "card", focusRing: "inset" },
+              "min-h-0 flex-1 overflow-auto overscroll-none rounded-(--ui-radius-card) border-(--ui-card-border)",
             )}
           >
             <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
@@ -657,6 +659,37 @@ const SheetStep = memo(function SheetStep({
   onOpenDiff?: (path: string) => void;
 }) {
   useLocale();
+  const nestedBlock = blockForStep(step);
+  const nestedModel = useSubagentModelName(nestedBlock);
+  if (step.agentRun) {
+    const nestedRunning = blockLifecycle(nestedBlock, live) === "running";
+    return (
+      <Disclosure
+        data-nested-subagent={step.id}
+        variant="row"
+        summary={
+          <span className="flex min-w-0 flex-col gap-1">
+            <Text weight="medium">{subagentName(nestedBlock)}</Text>
+            <SubagentStateLine
+              block={nestedBlock}
+              busy={live}
+              steps={step.agentRun.steps}
+              model={nestedModel}
+            />
+          </span>
+        }
+      >
+        <SubagentTrail
+          block={nestedBlock}
+          steps={step.agentRun.steps}
+          running={nestedRunning}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
+        />
+      </Disclosure>
+    );
+  }
   if (step.kind === "message") {
     return (
       <div className="min-w-0 py-1">
@@ -701,7 +734,11 @@ function SubagentTrail({
   // demand, so rather than virtualise them the newest page is rendered and the
   // older ones sit behind a button.
   const [shown, setShown] = useState(STEP_PAGE);
-  const trail = report ? steps.filter((step) => !isReportStep(step, report)) : steps;
+  const subagents = steps.filter((step) => step.agentRun);
+  const activeSubagents = subagents.filter(
+    (step) => blockLifecycle(blockForStep(step), running) === "running",
+  ).length;
+  const trail = steps.filter((step) => !step.agentRun && (!report || !isReportStep(step, report)));
   const visible = trail.length > shown ? trail.slice(trail.length - shown) : trail;
   const hidden = trail.length - visible.length;
 
@@ -716,7 +753,27 @@ function SubagentTrail({
     >
       <div className="flex min-w-0 flex-col gap-1 px-4 py-3">
         {prompt ? <PromptCard prompt={prompt} /> : null}
-        {visible.length === 0 && !report ? (
+        {subagents.length > 0 ? (
+          <section aria-label={t("Subagents")}>
+            <SectionLabel>
+              {t("Subagents · {p0} running · {p1} past", {
+                p0: activeSubagents,
+                p1: subagents.length - activeSubagents,
+              })}
+            </SectionLabel>
+            {subagents.map((step) => (
+              <SheetStep
+                key={step.id}
+                step={step}
+                live={running}
+                cwd={cwd}
+                onOpenFile={onOpenFile}
+                onOpenDiff={onOpenDiff}
+              />
+            ))}
+          </section>
+        ) : null}
+        {visible.length === 0 && !report && subagents.length === 0 ? (
           <Text as="p" size="caption" tone="secondary" className="pt-1">
             {running ? t("Waiting for the first step.") : t("This agent did not report any steps.")}
           </Text>

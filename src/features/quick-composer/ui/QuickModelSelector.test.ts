@@ -175,9 +175,7 @@ it("resets reasoning and fast mode to saved user defaults", () => {
       model: "test-claude",
       providerAccountId: "default",
     }),
-    crossSubagents: JSON.stringify([
-      { harness: "claude", model: "test-claude", providerAccountId: "default" },
-    ]),
+    crossSubagents: "auto",
   });
 });
 

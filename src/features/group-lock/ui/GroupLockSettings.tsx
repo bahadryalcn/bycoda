@@ -1,3 +1,5 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { recoverRoomPrivacyProjection } from "../model/roomPrivacyProjection";
@@ -299,7 +301,10 @@ export function GroupLockSettings({
         {listedGroups.length === 0 ? (
           <EmptyState
             size="inline"
-            className="settings-collection settings-collection-empty privacy-empty"
+            {...surfaceAttributes(
+              { variant: "card", frame: "none", radius: "none" },
+              "settings-collection settings-collection-empty privacy-empty",
+            )}
             descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
             title={lock.groups.length === 0 ? t("No groups yet") : t("All groups are hidden")}
             description={
@@ -309,7 +314,12 @@ export function GroupLockSettings({
             }
           />
         ) : (
-          <div className="settings-collection privacy-group-collection">
+          <div
+            {...surfaceAttributes(
+              { variant: "card", frame: "none", radius: "none" },
+              "settings-collection privacy-group-collection",
+            )}
+          >
             {searchable ? (
               <CollectionToolbar
                 label={t("Search groups")}
@@ -351,7 +361,10 @@ export function GroupLockSettings({
             </Text>
             <ScrollArea
               gutter="stable"
-              className="settings-collection-list privacy-group-list"
+              {...surfaceAttributes(
+                { separator: "block" },
+                "settings-collection-list privacy-group-list",
+              )}
               role="list"
             >
               {visibleGroups.length === 0 ? (
@@ -368,10 +381,13 @@ export function GroupLockSettings({
               {visibleGroups.map((group) => {
                 const locked = lock.lock.lockedGroupIds.has(group.id);
                 return (
-                  <div
+                  <ActionHost
                     key={group.id}
                     role="listitem"
-                    className="settings-collection-row privacy-group-row"
+                    {...surfaceAttributes(
+                      { radius: "none", separator: "block" },
+                      "settings-collection-row privacy-group-row",
+                    )}
                   >
                     <span className="privacy-group-name">
                       <Text
@@ -416,7 +432,7 @@ export function GroupLockSettings({
                       />
                     </span>
                     {unsavedNote(`lockable:${group.id}`, false)}
-                  </div>
+                  </ActionHost>
                 );
               })}
             </ScrollArea>

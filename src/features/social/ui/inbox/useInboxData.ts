@@ -57,11 +57,13 @@ export function useInboxReplyOptions(client: SocialClient, threadId: string | un
 }
 
 /** Shared snapshot: auto-refresh state, accounts (for names) and project facts for AI replies. */
-export function useInboxSnapshot(client: SocialClient) {
+export function useInboxSnapshot(client: SocialClient, active = true) {
   return useQuery({
     queryKey: keyOf(client, "snapshot"),
     queryFn: () => client.snapshot(),
-    staleTime: 30_000,
+    // Reopening the retained Inbox must reflect account/settings changes made elsewhere.
+    staleTime: 0,
+    enabled: active,
   });
 }
 

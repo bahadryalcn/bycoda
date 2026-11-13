@@ -1,4 +1,5 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -396,7 +397,10 @@ export function SshRunbooks({
               size="caption"
               tone="inherit"
               aria-label={t("SSH execution status")}
-              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3"
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "top" },
+                "flex min-w-0 flex-col gap-2 pbs-3",
+              )}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="min-w-0 break-all">
@@ -648,7 +652,10 @@ export function SshRunbooks({
               size="caption"
               tone="inherit"
               aria-label={t("SSH execution review")}
-              className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3"
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "top" },
+                "flex min-w-0 flex-col gap-2 pbs-3",
+              )}
             >
               <p>{t(selectedIntent ? "Pending review" : "Manual execution")}</p>
               <Text as="p" size="inherit" tone="inherit" weight="medium">

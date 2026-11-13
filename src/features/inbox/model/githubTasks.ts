@@ -1,3 +1,4 @@
+import { fetchJiraInboxPage, type JiraListContinuation } from "./jiraInboxPage";
 import type { GithubStatus } from "./githubStatus";
 import { formatGithubRelativeTime as formatRelativeTime } from "../../../shared/i18n/format";
 import { invoke } from "@tauri-apps/api/core";
@@ -16,15 +17,7 @@ import {
   readHiddenLinearTeamIds,
   requireHiddenLinearTeamIds,
 } from "./linear";
-import {
-  clearJiraCache,
-  jiraConnected,
-  jiraProjectIdsForFetch,
-  listJiraIssues,
-  listJiraProjects,
-  readHiddenJiraProjectIds,
-  requireHiddenJiraProjectIds,
-} from "./jira";
+import { clearJiraCache, jiraConnected, readHiddenJiraProjectIds } from "./jira";
 import {
   clearGitlabCache,
   gitlabConnected,
@@ -49,7 +42,6 @@ import { recordInboxSelfActivity } from "./inboxSelfActivity";
 import {
   azureDevOpsWorkItemToInboxItem,
   gitlabWorkItemToInboxItem,
-  jiraIssueToInboxItem,
   linearIssueToInboxItem,
 } from "./inboxItemMappers";
 
@@ -198,10 +190,10 @@ export type InboxListResult = {
   items: InboxItem[];
   errors: InboxProviderErrors;
   pendingProviders?: InboxProvider[];
+  jiraPage?: JiraListContinuation;
   /**
-   * Providers whose list read returned as many rows as it asked for. The
-   * list RPCs have no cursor or total, so a full page means older items may
-   * exist that were not loaded; it never means there are more.
+   * Jira marks a verified next cursor. Other providers mark a full finite
+   * response as incomplete without claiming a next page or a total.
    */
   limited?: InboxProvider[];
 };
@@ -407,8 +399,19 @@ export function peekInboxList(
   return {
     items: inboxListCache.items,
     errors: inboxListCache.errors,
+    jiraPage: inboxListCache.jiraPage,
     ...(inboxListCache.limited?.length ? { limited: inboxListCache.limited } : {}),
   };
+}
+
+export function cacheInboxContinuation(
+  projects: readonly { path: string }[],
+  query: InboxQuery,
+  result: InboxListResult,
+) {
+  const key = inboxListCacheKey(projects, query);
+  const current = inboxListCaches.get(key);
+  if (current) inboxListCaches.set(key, { ...current, ...result });
 }
 
 export function peekInboxItems(
@@ -1142,6 +1145,7 @@ async function fetchInboxItems(
     items: InboxItem[];
     error?: string;
     limited?: boolean;
+    jiraPage?: JiraListContinuation;
   }> => {
     if (query.jiraEnabled === false) return { items: [] };
     try {
@@ -1161,6 +1165,7 @@ async function fetchInboxItems(
       : { items: [] };
 
   type ProviderRead = {
+    jiraPage?: JiraListContinuation;
     items: InboxItem[];
     error?: string;
     limited?: boolean;
@@ -1182,6 +1187,7 @@ async function fetchInboxItems(
           ? {
               items: previous.items.filter((item) => item.provider === provider),
               error: previous.errors[provider],
+              ...(provider === "jira" ? { jiraPage: previous.jiraPage } : {}),
               ...(previous.limited?.includes(provider) ? { limited: true } : {}),
             }
           : await work().catch((reason) => ({
@@ -1207,6 +1213,7 @@ async function fetchInboxItems(
         options?.onProgress?.({
           items,
           errors,
+          jiraPage: ready.get("jira")?.jiraPage,
           pendingProviders: jobs.map(([name]) => name).filter((name) => !ready.has(name)),
           ...(limited.length ? { limited } : {}),
         });
@@ -1223,6 +1230,7 @@ async function fetchInboxItems(
   const limited = jobs.map(([name]) => name).filter((name) => ready.get(name)?.limited);
 
   return {
+    jiraPage: jira.jiraPage ?? (jira.error ? previous?.jiraPage : undefined),
     githubSources: github.sources,
     items: dedupeInboxItems(
       [...github.items, ...linear.items, ...jira.items, ...gitlab.items, ...azuredevops.items],
@@ -1318,31 +1326,8 @@ async function fetchLinearInboxItems(query: InboxQuery): Promise<InboxItem[]> {
     .map(linearIssueToInboxItem);
 }
 
-async function fetchJiraInboxItems(
-  query: InboxQuery,
-): Promise<{ items: InboxItem[]; limited?: boolean }> {
-  const hiddenIds = query.jiraHiddenProjectIds ?? requireHiddenJiraProjectIds();
-  let projectIds: string[] | null = null;
-  if (hiddenIds.length > 0) {
-    projectIds = jiraProjectIdsForFetch(await listJiraProjects(), hiddenIds);
-    if (projectIds?.length === 0) return { items: [] };
-  }
-  const issues = await listJiraIssues({
-    assignedToMe: query.assignedToMe,
-    assigneeIds: query.jiraAssignees,
-    unassigned: query.jiraUnassigned,
-    statuses: query.jiraStatuses,
-    state: query.state,
-    projectIds: projectIds ?? [],
-    limit: query.state === "all" ? INBOX_ALL_LIMIT : undefined,
-  });
-  const hidden = new Set(hiddenIds);
-  return {
-    items: issues
-      .filter((issue) => hidden.size === 0 || !hidden.has(issue.teamId))
-      .map(jiraIssueToInboxItem),
-    ...(inboxReadReachedLimit(issues.length, query) ? { limited: true } : {}),
-  };
+async function fetchJiraInboxItems(query: InboxQuery) {
+  return fetchJiraInboxPage(query);
 }
 
 export function inboxProjectsForRail(recents: RecentProject[], cwd: string): RecentProject[] {
@@ -1544,61 +1529,5 @@ export function inboxItemRef(item: {
   return `#${item.number}`;
 }
 
-export function inboxStartDraft(item: InboxItem, body?: string): string {
-  if (item.provider === "linear" || item.provider === "jira") {
-    const provider = item.provider === "jira" ? "Jira" : "Linear";
-    const id = item.identifier?.trim() || `${provider} #${item.number}`;
-    const title = item.title.trim() || id;
-    const lines = [`Work on this ${provider} issue:`, "", `${id} ${title}`];
-    const url = item.url.trim();
-    if (url) lines.push(url);
-    const description = body?.trim();
-    if (description) {
-      lines.push("", description);
-    }
-    return `${lines.join("\n")}\n`;
-  }
-  const kind = item.kind === "pr" ? "pull request" : "issue";
-  const provider =
-    item.provider === "gitlab" ? "GitLab" : item.provider === "azuredevops" ? "ADO" : "GitHub";
-  const providerKind = item.provider === "gitlab" && item.kind === "pr" ? "merge request" : kind;
-  const title = item.title.trim() || `${provider} ${providerKind} #${item.number}`;
-  const lines = [`Work on this ${provider} ${providerKind}:`, "", `#${item.number} ${title}`];
-  const url = item.url.trim();
-  if (url) lines.push(url);
-  return `${lines.join("\n")}\n`;
-}
-
-/** Compact chip shown above the composer when starting from Inbox. */
-export type InboxComposerCard = {
-  provider: InboxProvider;
-  kind: InboxKind;
-  identifier: string;
-  title: string;
-  url: string;
-  source: string;
-  labels: GithubLabel[];
-  prompt: string;
-};
-
-export function inboxComposerCard(item: InboxItem, body?: string): InboxComposerCard {
-  const tracker = item.provider === "linear" || item.provider === "jira";
-  return {
-    provider: item.provider,
-    kind: item.kind,
-    identifier: inboxItemRef(item),
-    title: item.title.trim() || inboxItemRef(item),
-    url: item.url.trim(),
-    source: tracker ? item.teamName || item.repo : item.repo,
-    labels: item.labels.slice(0, 2),
-    prompt: inboxStartDraft(item, body).trimEnd(),
-  };
-}
-
-export function composeInboxMessage(card: InboxComposerCard | undefined, text: string): string {
-  const prompt = card?.prompt.trim() ?? "";
-  const note = text.trim();
-  if (!prompt) return note;
-  if (!note) return prompt;
-  return `${prompt}\n\n${note}`;
-}
+export { inboxStartDraft, inboxComposerCard, composeInboxMessage } from "./inboxComposer";
+export type { InboxComposerCard } from "./inboxComposer";

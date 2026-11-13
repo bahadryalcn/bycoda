@@ -1,5 +1,6 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { formatBytes } from "../../../shared/i18n/format";
 import { Folder, RotateCcw } from "../../../shared/ui/icons";
@@ -129,7 +130,10 @@ function LargeTextFileView({
         as="div"
         size="micro"
         tone="muted"
-        className="flex min-h-[var(--ui-control-height-compact)] shrink-0 flex-wrap items-center gap-1 border-b border-stroke px-2.5"
+        {...surfaceAttributes(
+          { frame: "stroke", edge: "bottom" },
+          "flex min-h-[var(--ui-control-height-compact)] shrink-0 flex-wrap items-center gap-1 px-2.5",
+        )}
       >
         <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
           {t("Read-only preview, too large to edit · {p0}–{p1} of {p2}", {

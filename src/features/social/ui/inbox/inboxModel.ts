@@ -33,10 +33,12 @@ export function statusTone(status: InboxStatus): "warning" | "accent" | "info" |
 
 /** Why the reply box is blocked, in plain words. Undefined when a reply can be sent. */
 export function replyBlockedText(options: InboxReplyOptions): string | undefined {
+  if (options.templatesOnly)
+    return t("This conversation requires a template. Template replies are unavailable here.");
   if (options.canReply) return undefined;
   switch (options.reasonCode) {
     case "window.expired":
-      return t("The 24-hour window has passed. Only a template can be sent.");
+      return t("The reply window has closed. Replies are unavailable here.");
     case "platform.reply_not_allowed":
       return t("The platform does not allow replies to this conversation.");
     case undefined:

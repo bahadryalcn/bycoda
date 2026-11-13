@@ -1,6 +1,7 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useRef, useState, type ReactNode } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -102,7 +103,12 @@ function TextCard({
       ))}
       {open ? (
         <Modal padding="none" title={label} size="lg" onClose={dismiss}>
-          <div className="sticky top-0 z-1 flex flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-4 py-3">
+          <div
+            {...surfaceAttributes(
+              { frame: "neutral", edge: "bottom", variant: "floating" },
+              "sticky top-0 z-1 flex flex-wrap items-center gap-2 px-4 py-3",
+            )}
+          >
             {renderActions(dismiss, true)}
           </div>
           <OutputBlock
@@ -110,7 +116,10 @@ function TextCard({
             size="body"
             tone="neutral"
             face={part.kind === "json" ? "mono" : "sans"}
-            className="m-4 max-h-[65dvh] overflow-auto rounded-lg bg-(--ui-surface-raised) p-4"
+            {...surfaceAttributes(
+              { variant: "raised", radius: "card" },
+              "m-4 max-h-[65dvh] overflow-auto p-4",
+            )}
           >
             <AttachmentTokenText text={part.text} attachments={attachments} citations={citations} />
           </OutputBlock>

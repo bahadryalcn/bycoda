@@ -1,3 +1,4 @@
+import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -272,7 +273,8 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
             {t("{p0} selected entries", { p0: selectedFiles.length })}
           </Text>
         ) : null}
-        <ul
+        <PickerListRoot
+          as="ul"
           ref={listRef}
           style={virtualized ? { position: "relative", height: virtual.getTotalSize() } : undefined}
           onFocusCapture={(event) => {
@@ -280,9 +282,9 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
               ?.dataset.gitFile;
             if (path) setFocusedPath(path);
           }}
-          role="listbox"
-          aria-label={rest.kind === "staged" ? t("Staged Changes") : t("Changes")}
-          aria-multiselectable="true"
+
+          label={rest.kind === "staged" ? t("Staged Changes") : t("Changes")}
+          multiple
           onKeyDown={(event) => {
             const row = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-git-file]");
             if (!row) return;
@@ -334,7 +336,7 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
           }}
         >
           {content}
-        </ul>
+        </PickerListRoot>
       </li>
     </ChangeSelectionCtx.Provider>
   );
@@ -357,20 +359,25 @@ function ChangeDirRow({
 }) {
   useLocale();
   return (
-    <li style={style}>
-      <ActionHost
-        style={{ "--git-row-depth": depth } as CSSProperties}
-        className="flex w-full items-center gap-1 pl-[calc(0.5rem+var(--git-row-depth)*0.75rem)]"
-      >
+    <li
+      style={
+        {
+          ...style,
+          "--control-padding-start": `calc(0.5rem + ${depth} * 0.75rem)`,
+        } as CSSProperties
+      }
+    >
+      <ActionHost padding={{ start: "md" }} className="flex w-full items-center gap-1">
         <Button
           size="sm"
+          controlHeight="fill"
           variant="ghost"
           motion="none"
           type="button"
           tooltip={dir.path}
           aria-expanded={open}
           onClick={() => onToggle(dir.path)}
-          className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
           <Text size="inherit" tone="secondary" className="grid size-4 shrink-0 place-items-center">
             {open ? (

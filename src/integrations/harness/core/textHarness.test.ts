@@ -24,7 +24,15 @@ vi.mock("../../../features/providers/model/providerAccounts", () => ({
   defaultProviderAccountId: (provider: string) => `${provider}-account`,
 }));
 import { runHarnessTextPrompt, generateHarnessCommitMessage } from "./registry";
-import { generateCommitMessage, generatePrContent } from "./textHarness";
+const routing = vi.hoisted(() => ({ resolve: vi.fn() }));
+vi.mock("../../../features/model-routing/public/helpers", async (original) => ({
+  ...(await original<typeof import("../../../features/model-routing/public/helpers")>()),
+  resolveHelperModel: routing.resolve,
+}));
+import {
+  generateCommitMessage,
+  generatePrContent,
+} from "../../../features/source-control/model/gitTextGeneration";
 import {
   setHarnessModels,
   resetHarnessModelOverlays,
@@ -32,6 +40,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  routing.resolve.mockResolvedValue(undefined);
   resetHarnessModelOverlays();
 });
 it("passes the selected native model, account and advisor to isolated Git generation", async () => {
@@ -129,6 +138,7 @@ it("rejects malformed output and cancelled requests", async () => {
     "Could not generate",
   );
   vi.clearAllMocks();
+  routing.resolve.mockResolvedValue(undefined);
   const controller = new AbortController();
   controller.abort();
   await expect(
@@ -205,4 +215,18 @@ it("passes a captured original naming job through selected text generation", asy
   const input = vi.mocked(runHarnessTextPrompt).mock.calls[0][0];
   expect(input.operationContext?.operation).toBe(operation);
   expect(input.operationContext?.hostRun).toBe(hostRun);
+});
+
+it("uses the Git role model and account for commit generation", async () => {
+  routing.resolve.mockResolvedValue({
+    harness: "codex",
+    model: "codex:gpt-6.1",
+    providerAccountId: "routing-account",
+    modelSettings: {},
+  });
+  vi.mocked(runHarnessTextPrompt).mockResolvedValue('{"subject":"Use role","body":""}');
+  await generateCommitMessage("/repo", "claude");
+  expect(runHarnessTextPrompt).toHaveBeenCalledWith(
+    expect.objectContaining({ harness: "codex", providerAccountId: "routing-account" }),
+  );
 });

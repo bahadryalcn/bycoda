@@ -1,6 +1,7 @@
 import c0 from "./app-shell/compact-navigation.playwright.config.ts";
 import attachmentCards from "./chat/attachment-cards.playwright.config.ts";
 import sessionRowLayout from "./sessions/session-row-layout.playwright.config.ts";
+import folderPicker from "./projects/folder-picker.playwright.config.ts";
 import c1 from "./chat/composer-host-compatibility.playwright.config.ts";
 import c2 from "./chat/edit-from-here.playwright.config.ts";
 import c3 from "./shared-ui/playwright.arc-controls.config.ts";
@@ -30,6 +31,7 @@ import c26 from "./terminal/playwright.servers.config.ts";
 import c27 from "./sessions/playwright.session-usability.config.ts";
 import c28 from "./chat/playwright.sessions.config.ts";
 import c29 from "./settings/playwright.settings.config.ts";
+import settingsCollectionVisual from "./settings/playwright.collection-visual.config.ts";
 import c30 from "./social/playwright.social.config.ts";
 import c31 from "./tasks/playwright.sprints.config.ts";
 import c32 from "./chat/playwright.subagent-relay.config.ts";
@@ -72,6 +74,7 @@ import messagingIntegrations from "./messaging/messaging-integrations.playwright
 import canvasPaired from "./crews/playwright.canvas-paired.config.ts";
 
 export const fixtureConfigs = {
+  "tests/browser/projects/folder-picker.playwright.config.ts": folderPicker,
   "tests/browser/crews/playwright.canvas-paired.config.ts": canvasPaired,
   "tests/browser/chat/playwright.inline-visuals.config.ts": inlineVisuals,
   "tests/browser/chat/playwright.chat-citations.config.ts": chatCitations,
@@ -112,6 +115,7 @@ export const fixtureConfigs = {
   "tests/browser/sessions/playwright.session-usability.config.ts": c27,
   "tests/browser/chat/playwright.sessions.config.ts": c28,
   "tests/browser/settings/playwright.settings.config.ts": c29,
+  "tests/browser/settings/playwright.collection-visual.config.ts": settingsCollectionVisual,
   "tests/browser/social/playwright.social.config.ts": c30,
   "tests/browser/tasks/playwright.sprints.config.ts": c31,
   "tests/browser/chat/playwright.subagent-relay.config.ts": c32,

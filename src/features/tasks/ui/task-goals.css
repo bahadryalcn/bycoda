@@ -155,9 +155,6 @@
   display: grid;
   min-inline-size: 0;
 }
-.goal-section-rows > * + * {
-  border-block-start: 1px solid var(--ui-card-border);
-}
 .goal-section-pad {
   display: grid;
   min-inline-size: 0;
@@ -204,10 +201,6 @@
   min-inline-size: 0;
   gap: 0.375rem;
   padding-block: 0.75rem;
-  border-block-end: 1px solid var(--ui-pane-border);
-}
-.goal-session-task:last-child {
-  border-block-end: 0;
 }
 .goal-session-head {
   display: flex;

@@ -184,6 +184,7 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
           label={t("Kind of feedback")}
           className={styles.kinds}
           tileClassName={styles.kind}
+          tile={{ selectionIndicator: "subtle-ring" }}
           value={draft.kind}
           options={FEEDBACK_KINDS.map((value) => ({
             value,

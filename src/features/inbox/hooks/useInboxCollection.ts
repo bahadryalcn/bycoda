@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useJiraListContinuation } from "./useJiraListContinuation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { INBOX_VISIBLE_POLL_MS } from "../model/inboxPolling";
@@ -166,7 +167,15 @@ export function useInboxCollection({
   }, []);
 
   const data = query.data;
+  const jiraContinuation = useJiraListContinuation(
+    queryKey,
+    projects,
+    fetchQuery,
+    data,
+    enabled && !query.isFetching,
+  );
   return {
+    jiraContinuation,
     items: data?.items ?? NO_ITEMS,
     providerErrors: data?.errors ?? NO_ERRORS,
     limited: (data?.limited ?? null) as readonly InboxProvider[] | null,

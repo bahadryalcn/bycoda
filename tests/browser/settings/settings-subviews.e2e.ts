@@ -1,6 +1,69 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`Models work limit usage feedback ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      mkdirSync("temp/verification/models-work-limits", { recursive: true });
+      for (const state of ["normal", "reached", "uncertain", "unlimited"]) {
+        const flags =
+          state === "normal" ? "" : state === "unlimited" ? "&unlimited&uncertain" : `&${state}`;
+        await page.goto(
+          `/tests/browser/settings/settings.html?modelLimits&theme=${theme}&lang=en${flags}`,
+        );
+        await expect(
+          page.getByText(
+            state === "reached"
+              ? "Used today: 2h 5m of 2h 0m"
+              : state === "unlimited"
+                ? "Used today: 1h 15m"
+                : "Used today: 1h 15m of 2h 0m",
+            { exact: true },
+          ),
+        ).toBeVisible();
+        await expect(page.getByText("Limit reached", { exact: true })).toHaveCount(
+          state === "reached" ? 1 : 0,
+        );
+        if (state === "reached")
+          expect(
+            (await page.getByText("Limit reached", { exact: true }).boundingBox())!.width,
+          ).toBeLessThan(200);
+        await expect(page.getByRole("meter")).toHaveCount(
+          state === "normal" || state === "reached" ? 1 : 0,
+        );
+        if (state === "uncertain" || state === "unlimited")
+          await expect(
+            page.getByText(
+              state === "uncertain"
+                ? "Today's agent time is incomplete. New work waits until tomorrow while a daily limit is set."
+                : "Today's agent time is incomplete.",
+              { exact: true },
+            ),
+          ).toBeVisible();
+        await page
+          .getByRole("spinbutton", { name: "Daily agent minutes", exact: true })
+          .fill("2880");
+        await expect(
+          page.getByText(
+            state === "reached"
+              ? "Used today: 2h 5m of 2h 0m"
+              : state === "unlimited"
+                ? "Used today: 1h 15m"
+                : "Used today: 1h 15m of 2h 0m",
+            { exact: true },
+          ),
+        ).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await page.screenshot({
+          path: `temp/verification/models-work-limits/${state}-${theme}-${width}.png`,
+        });
+      }
+    });
+
 // Real template controls with memory-only settings persistence.
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])

@@ -9,7 +9,7 @@ import { useMaskEmails } from "../../features/settings/model/displayPrefs";
  * truncating text with an overflow tooltip when off. Reveal resets when masking is turned back on.
  * @group text
  * @use Any account or user email shown in settings, provider or account rows.
- * @avoid Other secrets: PasswordField. Emails in editable fields or copy that must stay readable.
+ * @avoid Other secrets: PasswordField. Emails in editable fields or copy that must stay readable. Readable public copy without masking: Text.
  */
 export function PrivateEmail({ email }: { email: string }) {
   const t = useT();

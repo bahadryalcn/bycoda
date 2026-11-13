@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { surfaceCaptureRules, surfaceSequences } from "./social-surface-data";
 import { createRoot } from "react-dom/client";
 import {
   LOCAL_MODEL_SOURCE,
@@ -308,6 +309,16 @@ const aiActions: AiAction[] = [
   },
 ];
 const audienceLists: SocialList[] = [];
+if (new URLSearchParams(location.search).has("automatic-list")) {
+  audienceLists.push({
+    id: "commenters",
+    name: "Commenters",
+    kind: "static",
+    system: "commenters",
+    projectIds: ["demo"],
+    createdAt: 1,
+  });
+}
 // Owner writes of the redesigned shell. None reaches a platform; each only changes fixture state.
 const shellWrites: Record<string, (input: Record<string, unknown>) => unknown> = {
   "ai.command": (input) => ({
@@ -347,6 +358,22 @@ const shellWrites: Record<string, (input: Record<string, unknown>) => unknown> =
     return { autoRefresh: snapshot.pollingEnabled, intervals: {} };
   },
 };
+const extraPerson = {
+  id: "contact",
+  name: "Demo kişi",
+  handles: new URLSearchParams(location.search).has("audience-surfaces")
+    ? [{ accountId: "x", platform: "x" as const, platformId: "demo", contactId: "contact" }]
+    : [],
+  emails: [],
+  tags: ["ürün"],
+  notes: "Demo not",
+  stage: "new",
+  source: "manual",
+  projectIds: ["demo"],
+  consent: { basis: "none" },
+  createdAt: 1,
+  updatedAt: 1,
+};
 // Read-only actions of the redesigned shell. Lists start empty unless a test seeds them.
 const shellReads: Record<string, (input: Record<string, unknown>) => unknown> = {
   "ai.summary": () => ({
@@ -357,22 +384,78 @@ const shellReads: Record<string, (input: Record<string, unknown>) => unknown> = 
     waitingForYou: 0,
   }),
   "ai.actions.list": () => ({ items: structuredClone(aiActions) }),
-  "browser.needsHuman.list": () => ({ items: [] }),
+  "ai.report": () =>
+    new URLSearchParams(location.search).has("extra-empty")
+      ? { done: [], results: [], suggestions: [] }
+      : { done: ["Demo görev tamamlandı"], results: ["Demo sonuç"], suggestions: ["Demo öneri"] },
+  "browser.needsHuman.list": () => {
+    if (new URLSearchParams(location.search).has("extra-error"))
+      throw new Error("Fixture read failure");
+    return { items: [] };
+  },
   "browser.recipeSuggestions.list": () => ({ items: [] }),
   "browser.settings.get": (input) => ({
     accountId: input.accountId,
     visibility: "hidden",
     desktopControl: { allowed: false },
   }),
-  "people.list": () => ({ items: [] }),
+  "people.list": () => ({
+    items: new URLSearchParams(location.search).has("extra-seeded") ? [extraPerson] : [],
+  }),
+  "people.matchSuggestions": () => ({ suggestions: [] }),
+  "people.get": () => ({
+    person: extraPerson,
+    interactions: [],
+    enrollments: [],
+    suppressed: false,
+  }),
   "lists.list": () => ({ items: structuredClone(audienceLists) }),
-  "captureRules.list": () => ({ items: [] }),
-  "sequences.list": () => ({ items: [] }),
+  "captureRules.list": () => ({
+    items: new URLSearchParams(location.search).has("audience-surfaces") ? surfaceCaptureRules : [],
+  }),
+  "sequences.list": () => ({
+    items: new URLSearchParams(location.search).has("audience-surfaces") ? surfaceSequences : [],
+  }),
   "sequences.stats": () => ({ sent: 0, replied: 0, positive: 0, optedOut: 0, failed: 0 }),
   "enrollments.list": () => ({ items: [] }),
   "email.accounts.list": () => ({ items: [] }),
   "suppressions.list": () => ({ items: [] }),
-  "inbox.unified": () => ({ items: [], unreadable: [] }),
+  "inbox.unified": () => ({
+    items:
+      new URLSearchParams(location.search).has("extra-seeded") &&
+      !new URLSearchParams(location.search).has("extra-inbox-empty")
+        ? [
+            {
+              threadId: "first",
+              accountId: "x",
+              platform: "x",
+              kind: "message",
+              person: { id: "contact", name: "Demo kişi" },
+              title: "Demo kişi",
+              preview: "Demo ürün sorusu",
+              at: 1,
+              status: "unread",
+              tags: [],
+            },
+          ]
+        : [],
+    unreadable: [],
+  }),
+  "thread.read": () => structuredClone(snapshot.threads[0]),
+  "inbox.timeline": () => ({
+    personId: "contact",
+    events: new URLSearchParams(location.search).has("inbox-surfaces")
+      ? snapshot.threads[0].events.map((event) => ({
+          ...event,
+          platform: "x",
+          accountId: "x",
+          threadId: "first",
+          kind: "message",
+        }))
+      : [],
+    truncated: false,
+  }),
+  "inbox.replyOptions": () => ({ canReply: false, reason: "Fixture" }),
   "autonomy.get": (input) => ({
     ...DEFAULT_AUTONOMY,
     accountId: input.accountId,
@@ -1152,6 +1235,48 @@ Object.assign(window, {
       if (command === "plugin:event|listen") return 1;
       if (command === "social_authority_status") return null;
       if (command === "remote_request") {
+        if (args.method === "environment.describe")
+          return {
+            protocolVersion: 1,
+            environmentId: "fixture",
+            name: "Demo host",
+            providers: [
+              "codex",
+              "claude",
+              "cursor",
+              "grok",
+              "opencode",
+              "pi",
+              "omp",
+              "fx",
+              "hermes",
+              "antigravity",
+              "acp",
+            ],
+            capabilities: ["social.v1", "sessions.contextReplay.v1"],
+          };
+        if (args.method === "models.list")
+          return {
+            models: Object.fromEntries(
+              (
+                [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp",
+                ] as const
+              ).map((provider) => [provider, fixtureModelSource.modelsFor(provider)]),
+            ),
+            errors: {},
+            accounts: {},
+          };
         if (args.method === "social.token.inspect" && telegramChannelFixture) {
           const input = args.params as { accountId: string; target: string };
           if (
@@ -1842,7 +1967,19 @@ Object.assign(window, {
               return { dates: [Date.now() + 86400000] };
           }
           const shellRead = shellReads[params.action];
-          if (shellRead) return shellRead(params.input ?? {});
+          const extraOnly = [
+            "ai.report",
+            "people.matchSuggestions",
+            "people.get",
+            "thread.read",
+            "inbox.timeline",
+            "inbox.replyOptions",
+          ];
+          const extraFixture =
+            new URLSearchParams(location.search).has("extra-seeded") ||
+            new URLSearchParams(location.search).has("extra-empty");
+          if (shellRead && (!extraOnly.includes(params.action) || extraFixture))
+            return shellRead(params.input ?? {});
           const shellWrite = shellWrites[params.action];
           if (shellWrite) return shellWrite(params.input ?? {});
           if (params.action === "programs.list") return structuredClone(programRecords);
@@ -2245,6 +2382,41 @@ const fixtureModelSource: ModelSource = {
   probed: () => true,
   refresh: () => {},
 };
+if (new URLSearchParams(location.search).has("extra-seeded")) {
+  (window as unknown as { socialFixtureSeed: () => void }).socialFixtureSeed();
+}
+if (new URLSearchParams(location.search).has("inbox-surfaces")) {
+  snapshot.threads[0].events.push({
+    id: "surface-reply",
+    platformId: "surface-reply",
+    text: "Demo yanıt gönderildi",
+    at: 2,
+    direction: "outbound",
+  });
+}
+if (new URLSearchParams(location.search).has("audience-surfaces")) {
+  aiActions.push({ ...aiActions[0], id: "surface-action", summary: "İkinci demo etkinliği" });
+}
+if (new URLSearchParams(location.search).has("calendar-seeded")) {
+  snapshot.jobs = [
+    {
+      id: "calendar-job",
+      operationId: "calendar-operation",
+      dedupeKey: "calendar-key",
+      accountId: "x",
+      projectIds: ["demo"],
+      provider: "x",
+      campaignId: "campaign",
+      kind: "publish",
+      payload: { text: "Demo takvim gönderisi", media: [] },
+      status: "queued",
+      scheduledAt: Date.now(),
+      attempts: 0,
+      createdAt: Date.now(),
+      actorId: "fixture",
+    },
+  ];
+}
 const fixtureQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={fixtureQueryClient}>

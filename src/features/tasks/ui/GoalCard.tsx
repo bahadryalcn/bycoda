@@ -1,3 +1,5 @@
+import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -86,6 +88,10 @@ export function GoalCard({
             </Tooltip>
             <GoalStatusBadge status={goal.status} />
           </div>
+          <Text as="p" size="caption" tone="secondary">
+            <TaskModelChoiceLabel choice={goal.modelChoice} machineId={goal.machineId} /> ·{" "}
+            <ModelLabel harness={goal.harness} model={goal.model} />
+          </Text>
           <Text
             as="div"
             size="caption"

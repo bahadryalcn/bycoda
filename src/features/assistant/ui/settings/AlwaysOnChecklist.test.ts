@@ -18,7 +18,11 @@ const profile = {
   quietStart: 22,
   quietEnd: 8,
 };
-async function mount(request: (input: any) => Promise<any>, onOpen?: (target: string) => void) {
+async function mount(
+  request: (input: any) => Promise<any>,
+  onOpen?: (target: string) => void,
+  profileOverrides: Partial<typeof profile> = {},
+) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
   document.body.append(container);
@@ -28,7 +32,10 @@ async function mount(request: (input: any) => Promise<any>, onOpen?: (target: st
     root!.render(
       createElement(AlwaysOnChecklist, {
         request: wrapped as any,
-        snapshot: { profile, keepAwake: { supported: true } } as any,
+        snapshot: {
+          profile: { ...profile, ...profileOverrides },
+          keepAwake: { supported: true },
+        } as any,
         onOpen: onOpen as any,
       }),
     ),
@@ -39,6 +46,32 @@ afterEach(async () => {
   await act(async () => root?.unmount());
   container?.remove();
   vi.unstubAllGlobals();
+});
+
+it("summarizes ready checks and keeps the complete checklist behind a disclosure", async () => {
+  await mount(
+    async (input) =>
+      input.op === "alwaysOn.get"
+        ? { alwaysOn: { pushPhones: 1, assistantPushPhones: 1 } }
+        : { modelPool: { rows: [{ roles: ["worker"] }] } },
+    undefined,
+    {
+      enabled: true,
+      setupComplete: true,
+      autonomy: "jobs",
+      dailyTokenBudget: 100000,
+      keepAwakeWhileWorking: true,
+      observationTaskDone: true,
+      observationTaskNeedsInput: true,
+    },
+  );
+  expect(container.textContent).toContain("8 of 10 checks ready");
+  const details = container.querySelector("details")!;
+  expect(details.open).toBe(false);
+  expect(details.textContent).toContain("Assistant is turned on");
+  expect(details.textContent).toContain("The Host keeps running after you sign out");
+  await act(async () => details.querySelector("summary")!.click());
+  expect(details.open).toBe(true);
 });
 
 it("only reads on mount and shows unknown when the reads fail", async () => {
@@ -66,6 +99,6 @@ it("offers a fix button only through onOpen and never changes settings itself", 
     (b) => b.textContent === "Open settings",
   )!;
   await act(async () => open.click());
-  expect(onOpen).toHaveBeenCalledWith("work");
+  expect(onOpen).toHaveBeenCalledWith("access");
   expect(request.mock.calls.every(([input]) => input.op.endsWith(".get"))).toBe(true);
 });

@@ -176,7 +176,11 @@ export function PersonPanel({
                   leading="inherit"
                   key={stage}
                   data-current={stage === person.stage ? "true" : undefined}
-                  {...surfaceAttributes({ radius: "control" })}
+                  {...surfaceAttributes({
+                    radius: "control",
+                    frame: stage === person.stage ? "accent" : "pane",
+                    tone: stage === person.stage ? "accent" : undefined,
+                  })}
                 >
                   {stageLabel(stage)}
                 </Text>
@@ -194,7 +198,10 @@ export function PersonPanel({
             />
           </section>
 
-          <section className="audience-panel-section" aria-labelledby="person-accounts-heading">
+          <section
+            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "audience-panel-section")}
+            aria-labelledby="person-accounts-heading"
+          >
             <SectionLabel labelId="person-accounts-heading">{t("Accounts")}</SectionLabel>
             {person.handles.length ? (
               <ul className="audience-list">
@@ -226,12 +233,18 @@ export function PersonPanel({
             ) : null}
           </section>
 
-          <section className="audience-panel-section" aria-labelledby="person-details-heading">
+          <section
+            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "audience-panel-section")}
+            aria-labelledby="person-details-heading"
+          >
             <SectionLabel labelId="person-details-heading">{t("Details")}</SectionLabel>
             <PersonDetailsFields person={person} disabled={busy} save={save} />
           </section>
 
-          <section className="audience-panel-section" aria-labelledby="person-consent-heading">
+          <section
+            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "audience-panel-section")}
+            aria-labelledby="person-consent-heading"
+          >
             <SectionLabel labelId="person-consent-heading">
               {t("Commercial messages (Turkey)")}
             </SectionLabel>
@@ -255,7 +268,10 @@ export function PersonPanel({
             />
           </section>
 
-          <section className="audience-panel-section" aria-labelledby="person-activity-heading">
+          <section
+            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "audience-panel-section")}
+            aria-labelledby="person-activity-heading"
+          >
             <SectionLabel labelId="person-activity-heading">{t("Activity")}</SectionLabel>
             {person.score ? (
               <Text as="p" size="caption" tone="muted" leading="inherit" className="audience-muted">
@@ -291,7 +307,10 @@ export function PersonPanel({
             )}
           </section>
 
-          <section className="audience-panel-section" aria-labelledby="person-merge-heading">
+          <section
+            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "audience-panel-section")}
+            aria-labelledby="person-merge-heading"
+          >
             <SectionLabel labelId="person-merge-heading">{t("Same person?")}</SectionLabel>
             <MergeSection
               client={client}
@@ -304,7 +323,10 @@ export function PersonPanel({
             />
           </section>
 
-          <section className="audience-panel-section" aria-labelledby="person-data-heading">
+          <section
+            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "audience-panel-section")}
+            aria-labelledby="person-data-heading"
+          >
             <SectionLabel labelId="person-data-heading">{t("Their data")}</SectionLabel>
             <PersonDataSection
               client={client}

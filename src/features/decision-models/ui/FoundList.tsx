@@ -1,6 +1,8 @@
 import { connectedCandidate } from "../model/presentation";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Badge } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -64,7 +66,10 @@ export function FoundList({
           {items.map((candidate) => (
             <li
               key={candidate.id}
-              className="flex min-w-0 items-center justify-between gap-3 border-t border-(--ui-settings-hairline) px-4 py-2.5 first:border-t-0"
+              {...surfaceAttributes(
+                { separator: "block" },
+                "flex min-w-0 items-center justify-between gap-3 px-4 py-2.5",
+              )}
             >
               <div className="flex min-w-0 items-center gap-3">
                 <CandidateKindIcon kind={candidate.kind} />
@@ -72,10 +77,16 @@ export function FoundList({
                   <Text size="body" tone="inherit" weight="medium" truncate>
                     {candidate.label}
                   </Text>
-                  <Text size="caption" tone="secondary" truncate>
-                    {candidateKindLabel(candidate.kind)}
-                    {candidate.detail ? ` · ${candidate.detail}` : ""}
-                  </Text>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Text size="caption" tone="secondary" className="shrink-0">
+                      {candidateKindLabel(candidate.kind)}
+                    </Text>
+                    {candidate.detail ? (
+                      <MiddleTruncate size="caption" tone="secondary" className="min-w-0">
+                        {candidate.detail}
+                      </MiddleTruncate>
+                    ) : null}
+                  </div>
                 </div>
               </div>
               {connectedCandidate(candidate, sources) ? (

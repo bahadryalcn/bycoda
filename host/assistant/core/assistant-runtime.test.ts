@@ -555,3 +555,38 @@ it("reports a goal whose running work waits on a usage limit as waiting for limi
   record.status = "running";
   expect(await ports.goalStatus!("assistant-j1")).not.toHaveProperty("waitingReason");
 });
+
+it("keeps profile execution on notConfigured and never resolves an existing goal again", async () => {
+  const f = fixture();
+  const selector = vi.fn(async () => null);
+  const ports = assistantExecutionPorts(f.store, f.goals, f.tasks, undefined, undefined, selector);
+  const job = {
+    id: "legacy-routing",
+    projectId: "p1",
+    title: "Job",
+    request: "Work",
+  } as AssistantJob;
+  const profile = {
+    execution: {
+      harness: "codex",
+      model: "legacy",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      maxRunMinutes: 25,
+    },
+  } as AssistantProfile;
+  await ports.createGoal!({ job, profile });
+  expect(f.create.mock.calls[0][0]).toMatchObject({
+    model: "legacy",
+    runtimeMode: "supervised",
+    maxRunMinutes: 25,
+  });
+  expect(f.create.mock.calls[0][0]).not.toHaveProperty("plannerExecution");
+  f.list.mockResolvedValue([
+    { id: "assistant-legacy-routing", projectIds: ["p1"], leadProjectId: "p1" },
+  ] as never);
+  selector.mockClear();
+  await ports.createGoal!({ job, profile });
+  expect(selector).not.toHaveBeenCalled();
+  expect(f.create).toHaveBeenCalledOnce();
+});

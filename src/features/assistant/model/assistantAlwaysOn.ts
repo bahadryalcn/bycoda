@@ -8,7 +8,7 @@ import {
 } from "../../../shared/model/host-contracts/assistant";
 
 /** Where the owner changes the item: a Room settings page, or the setup wizard. */
-export type AlwaysOnTarget = "setup" | "work" | "schedule";
+export type AlwaysOnTarget = "setup" | "work" | "schedule" | "access";
 export type AlwaysOnState = "done" | "todo" | "unknown" | "unsupported" | "review";
 export type AlwaysOnItem = {
   id:
@@ -71,10 +71,10 @@ export function deriveAlwaysOnItems(input: AlwaysOnInput): AlwaysOnItem[] {
     label: t("Jobs may start on their own"),
     state: profile.autonomy === "report" ? "todo" : "done",
     detail: t("Report only never starts jobs. Choose Run jobs or Supervise assigned jobs."),
-    target: "work",
+    target: "access",
   });
   const hasModel = poolRows
-    ? poolRows.some((row) => row.roles.includes("worker"))
+    ? poolRows.length > 0 || !!profile.execution
     : profile.execution
       ? true
       : null;
@@ -82,7 +82,7 @@ export function deriveAlwaysOnItems(input: AlwaysOnInput): AlwaysOnItem[] {
     id: "model",
     label: t("A worker model is chosen"),
     state: hasModel === null ? "unknown" : hasModel ? "done" : "todo",
-    detail: t("Jobs run on the first worker model in the list."),
+    detail: t("Jobs follow the assistant worker role in Settings > Models."),
     target: "work",
   });
   add({

@@ -9,12 +9,13 @@ vi.mock("../../../../shared/i18n", () => ({
 vi.mock("../../../settings/public/settingsControls", async () => {
   const { createElement } = await import("react");
   return {
-    Row: ({ label, description, children }: any) =>
+    Row: ({ label, description, info, children }: any) =>
       createElement(
         "div",
         { role: "group", "aria-label": label },
         createElement("span", null, label),
         description ? createElement("p", null, description) : null,
+        info,
         children,
       ),
   };
@@ -64,8 +65,15 @@ it("renders profile controls as settings rows when the dialog turns rows on", as
     group.getAttribute("aria-label"),
   );
   expect(groups).toEqual(["Tone", "Allow profanity"]);
-  expect(container.textContent).toContain("One short line.");
-  expect(container.textContent).toContain("Style only.");
+  expect(container.textContent).not.toContain("One short line.");
+  expect(container.textContent).not.toContain("Style only.");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Tone: Help"]')!.click(),
+  );
+  expect(document.body.textContent).toContain("One short line.");
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
   // The row owns the visible label, so the control keeps it only as its accessible name.
   expect(container.querySelector('button[aria-label^="Tone:"]')).toBeTruthy();
   const toggle = container.querySelector<HTMLButtonElement>(

@@ -375,3 +375,122 @@ for (const theme of ["light", "dark"]) {
     });
   }
 }
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`terminal overlay interaction policy: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/terminal/terminal-tools.html?theme=${theme}`);
+      await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
+      const terminal = page.locator(".xterm-helper-textarea");
+      const overlay = page.locator(
+        '.bycoda-terminal > [data-open], .bycoda-terminal > [data-typing], .bycoda-terminal > [data-surface-variant="floating"]',
+      );
+      await page.mouse.move(width - 1, 799);
+      await terminal.focus();
+      await expect(overlay).toHaveCSS("opacity", "0");
+      await expect(overlay).toHaveCSS("pointer-events", "none");
+      await page.locator(".bycoda-terminal").hover({ position: { x: 20, y: 100 } });
+      await expect(overlay).toHaveCSS("opacity", "1");
+      await terminal.type("echo ");
+      await expect(overlay).toHaveCSS("opacity", "0");
+      await page.mouse.move(50, 150);
+      await expect(overlay).toHaveCSS("opacity", "1");
+      await page.getByRole("button", { name: "Find in terminal", exact: true }).click();
+      const search = page.getByRole("textbox", { name: "Find in terminal", exact: true });
+      await search.fill("target");
+      await page.mouse.move(width - 1, 799);
+      await expect(overlay).toHaveCSS("opacity", "1");
+      await expect(search).toBeFocused();
+      mkdirSync("temp/verification/automation-terminal", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/automation-terminal/terminal-${theme}-${width}.png`,
+      });
+      await search.press("Escape");
+      await expect(terminal).toBeFocused();
+      await expect(overlay).toHaveCSS("opacity", "0");
+    });
+  }
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`terminal split frame geometry: ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/terminal/terminal-tools.html?dock&theme=${theme}`);
+      const panes = page.locator(".terminal-split-pane");
+      await expect(panes).toHaveCount(2);
+      await expect(panes.nth(0)).toHaveCSS("border-inline-start-width", "0px");
+      await expect(panes.nth(1)).toHaveCSS("border-inline-start-width", "1px");
+      const boxes = await panes.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const r = node.getBoundingClientRect();
+          return { x: r.x, width: r.width, right: r.right };
+        }),
+      );
+      expect(Math.abs(boxes[0]!.width - boxes[1]!.width)).toBeLessThanOrEqual(1);
+      expect(boxes[0]!.right).toBeCloseTo(boxes[1]!.x, 0);
+      expect(boxes[1]!.right).toBeLessThanOrEqual(width);
+      await expect(panes.nth(0).locator(".xterm-helper-textarea")).toHaveCount(1);
+      await expect(panes.nth(1).locator(".xterm-helper-textarea")).toHaveCount(1);
+      await panes.nth(1).click({ position: { x: 30, y: 100 } });
+      await expect(page.getByRole("tab", { name: /Terminal 2/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await mkdirSync("temp/verification/automation-terminal", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/automation-terminal/terminal-split-${theme}-${width}.png`,
+      });
+    });
+  }
+
+test.describe("terminal coarse overlay policy", () => {
+  test.use({ hasTouch: true });
+  for (const theme of ["light", "dark"])
+    for (const width of [800, 1280]) {
+      test(`typing and search ${theme} ${width}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(`/tests/browser/terminal/terminal-tools.html?theme=${theme}`);
+        await expect(page.locator("html")).toHaveAttribute("data-terminal-prompt", /^ready>\s*$/);
+        const overlay = page.locator('[data-action-content="hover-overlay"]');
+        const terminal = page.locator(".xterm-helper-textarea");
+        await expect(overlay).toHaveCSS("opacity", "1");
+        await terminal.focus();
+        await terminal.type("echo ");
+        await expect(overlay).toHaveCSS("opacity", "0");
+        await expect(overlay).toHaveCSS("pointer-events", "none");
+        await terminal.press("Meta+f");
+        await expect(
+          page.getByRole("textbox", { name: "Find in terminal", exact: true }),
+        ).toBeFocused();
+        await expect(overlay).toHaveCSS("opacity", "1");
+        await expect(overlay).toHaveCSS("pointer-events", "auto");
+      });
+    }
+});
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`remote shell suggestions caller ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/terminal/terminal-tools.html?remote&theme=${theme}`);
+      const terminal = page.locator(".xterm-helper-textarea");
+      await terminal.pressSequentially("cl");
+      const list = page.getByRole("listbox", { name: "Remote command suggestions" });
+      await expect(list.getByRole("option")).toHaveCount(3);
+      await terminal.press("Alt+ArrowDown");
+      await expect(list.locator('[aria-selected="true"]')).toHaveText("clear previous");
+      await page.screenshot({ path: info.outputPath(`remote-suggestions-${theme}-${width}.png`) });
+      await page.goto(
+        `/tests/browser/terminal/terminal-tools.html?remote&failed&waiting&theme=${theme}`,
+      );
+      const nextTerminal = page.locator(".xterm-helper-textarea");
+      await nextTerminal.pressSequentially("cl");
+      await nextTerminal.press("Control+Space");
+      await expect(page.getByText("Fixture shell unavailable")).toBeVisible();
+      await expect(page.getByText("Waiting for the shell prompt…")).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`remote-error-${theme}-${width}.png`) });
+    });

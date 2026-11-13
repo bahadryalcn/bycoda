@@ -7,16 +7,16 @@ import tailwindcss from "@tailwindcss/vite";
  * page (a cold scan outlasts the 300 s warm-up), so the suite builds them once and serves the result.
  */
 const pages = [
-  "chat-chrome",
-  "crew-scene",
-  "editor-selection",
-  "git-workspace",
-  "localization",
-  "quick-composer",
-  "shared-controls",
-  "transcript",
-  "upstream-011",
-  "workspace-layout",
+  "chat/chat-chrome",
+  "crews/crew-scene",
+  "files/editor-selection",
+  "source-control/git-workspace",
+  "settings/localization",
+  "quick-composer/quick-composer",
+  "shared-ui/shared-controls",
+  "chat/transcript",
+  "chat/upstream-011",
+  "workspace/workspace-layout",
 ];
 
 export default defineConfig({

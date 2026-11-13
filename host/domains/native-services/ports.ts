@@ -1,6 +1,8 @@
 export type NativeServiceKind = "conversation" | "runtime-logs" | "social";
 export type NativeAssistantPresence = {
   state: "present" | "idle" | "away" | "dnd";
+  /** The owner's own choice; `state` also reflects this computer's idle or away reading. */
+  choice?: "present" | "away" | "dnd";
   assistantName?: string;
   setupComplete: boolean;
 };

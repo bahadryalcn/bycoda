@@ -301,7 +301,7 @@ describe("agents.delegate model selection", () => {
     await expect(delegate("req-invalid")).rejects.toThrow("The selected model is unavailable");
     expect(host.commandsOf("create")).toHaveLength(0);
   });
-  it("rejects signed-out or unverifiable exact accounts before creating a child", async () => {
+  it("rejects signed-out accounts but starts when sign-in is unknown", async () => {
     setup({ subagents: [{ ...codexFive, providerAccountId: "work" }] });
     const checks: Array<[string, string | undefined]> = [];
     deps.authStatus = async (provider, account) => {
@@ -314,8 +314,8 @@ describe("agents.delegate model selection", () => {
     expect(checks).toEqual([["codex", "work"]]);
     expect(host.commandsOf("create")).toHaveLength(0);
     deps.authStatus = async () => "unknown";
-    await expect(delegate("req-unknown")).rejects.toThrow("Could not verify sign-in");
-    expect(host.commandsOf("create")).toHaveLength(0);
+    await expect(delegate("req-unknown")).resolves.toMatchObject({ status: "running" });
+    expect(host.commandsOf("create")).toHaveLength(1);
   });
   it("uses the only selected subagent model without a model field", async () => {
     setup({ subagents: [codexFive] });
@@ -362,6 +362,18 @@ describe("agents.delegate model selection", () => {
       "Field model is not one of the selected subagent models.",
     );
     expect(host.commandsOf("create")).toHaveLength(0);
+  });
+
+  it("lists exact account-qualified refs for missing and invalid models", async () => {
+    setup({
+      subagents: [
+        { harness: "claude", model: "haiku", providerAccountId: "account-one" },
+        { harness: "claude", model: "haiku", providerAccountId: "account-two" },
+      ],
+    });
+    const refs = "Use one of: claude:haiku@account-one, claude:haiku@account-two";
+    await expect(delegate("missing")).rejects.toThrow(refs);
+    await expect(delegate("invalid", { model: "claude:haiku" })).rejects.toThrow(refs);
   });
 
   it("accepts a ref key read from agents.options and starts that model", async () => {
@@ -770,13 +782,22 @@ describe("continuations and multi-wait", () => {
     expect(await call("agents.options")).toMatchObject({ running: { advisors: 1 } });
   });
 
-  it.each(["signedOut", "unknown"] as const)("rechecks %s sign-in", async (auth) => {
+  it("rechecks signed-out sign-in", async () => {
     setup({ subagents: [codexFive] });
     const first = await delegate("first");
     host.finish(String(first.sessionId), "Question?");
-    deps.authStatus = async () => auth;
+    deps.authStatus = async () => "signedOut";
     await expect(reply(first.runId)).rejects.toThrow("sign-in");
     expect(host.commandsOf("send")).toHaveLength(1);
+  });
+
+  it("allows a reply when sign-in status is unknown", async () => {
+    setup({ subagents: [codexFive] });
+    const first = await delegate("first");
+    host.finish(String(first.sessionId), "Question?");
+    deps.authStatus = async () => "unknown";
+    await reply(first.runId);
+    expect(host.commandsOf("send")).toHaveLength(2);
   });
 
   it.each(["subagent", "advisor"])("counts replies against the %s running limit", async (kind) => {

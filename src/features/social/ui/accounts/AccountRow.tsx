@@ -38,7 +38,8 @@ export function AccountRow({
   return (
     <Surface
       as="li"
-      variant="card"
+      variant="canvas"
+      frame="pane"
       padding="md"
       className="social-account-item"
       data-selected={selected || undefined}

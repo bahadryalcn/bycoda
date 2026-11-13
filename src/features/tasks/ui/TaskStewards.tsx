@@ -43,6 +43,7 @@ function StewardsPanel({
   draft,
   recents,
   machine,
+  target,
   saving,
   error,
   acting,
@@ -61,6 +62,7 @@ function StewardsPanel({
   recents: RecentProject[];
   /** The machine that would run the draft's steward, when it is connected. */
   machine?: string;
+  target?: RemoteMachine;
   saving: boolean;
   /** Why the last save of the open draft failed. */
   error: string | null;
@@ -70,7 +72,7 @@ function StewardsPanel({
   onEdit: (steward: BoardSteward) => void;
   onChange: (draft: StewardDraft) => void;
   onCancel: () => void;
-  onSubmit: (event: FormEvent) => void;
+  onSubmit: (event: FormEvent, draft: StewardDraft) => void;
   onToggle: (steward: BoardSteward) => void;
   onRunNow: (steward: BoardSteward) => void;
   onDelete: (steward: BoardSteward) => void;
@@ -119,6 +121,7 @@ function StewardsPanel({
           draft={draft}
           recents={recents}
           machine={machine}
+          target={target}
           saving={saving}
           error={error}
           onChange={onChange}
@@ -127,7 +130,13 @@ function StewardsPanel({
         />
       ) : null}
       {stewards.length > 0 ? (
-        <ul aria-label={t("Steward list")} className="task-ops-frame">
+        <ul
+          aria-label={t("Steward list")}
+          {...surfaceAttributes(
+            { frame: "card", radius: "card", dividers: "card" },
+            "task-ops-frame",
+          )}
+        >
           {stewards.map((steward) => {
             const key = `${steward.machineId}:${steward.id}`;
             return (
@@ -235,13 +244,13 @@ export function useTaskStewards({
     setDraft(newStewardDraft(project, harness, model));
   };
 
-  const save = async (event: FormEvent) => {
+  const save = async (event: FormEvent, resolvedDraft = draft) => {
     event.preventDefault();
-    if (saving || !draft) return;
+    if (saving || !resolvedDraft) return;
     setSaving(true);
     setSaveError(null);
     try {
-      putSteward(await saveSteward(capable, draft));
+      putSteward(await saveSteward(capable, resolvedDraft));
       setDraft(null);
       setError(null);
       void refresh();
@@ -332,6 +341,7 @@ export function StewardsSection({
       <StewardsPanel
         stewards={stewards.stewards}
         draft={draft}
+        target={draft ? backgroundMachineFor(capable, draft.cwd) : undefined}
         recents={recents}
         machine={draft ? machineName(capable, draft.cwd) : undefined}
         saving={saving}

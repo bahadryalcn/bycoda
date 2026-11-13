@@ -16,10 +16,6 @@
   min-width: 0;
 }
 
-.needs-human-row + .needs-human-row {
-  border-top: 1px solid var(--ui-pane-border);
-}
-
 .needs-human-text {
   display: flex;
   flex: 1 1 8rem;

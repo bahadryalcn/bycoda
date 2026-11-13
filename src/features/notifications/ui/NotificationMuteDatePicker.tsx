@@ -12,6 +12,7 @@ import {
   parseLocalDateTime,
   toLocalDateTime,
 } from "../../../shared/ui/DateTimePicker";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 type Props = {
   projectIds: readonly string[];
@@ -76,7 +77,12 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
           {error}
         </Alert>
       ) : null}
-      <div className="mt-3 flex items-center justify-between gap-2 border-t border-stroke pt-2.5">
+      <div
+        {...surfaceAttributes(
+          { frame: "stroke", edge: "top" },
+          "mt-3 flex items-center justify-between gap-2 pt-2.5",
+        )}
+      >
         <Button type="button" onClick={onCancel} aria-label={t("Cancel")} variant="ghost">
           {t("Cancel")}
         </Button>

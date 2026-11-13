@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TimePicker } from "../TimePicker";
 import { DatePicker } from "../DatePicker";
-import { DateTimePicker, DateTimeField } from "../DateTimePicker";
+import { DateTimePicker } from "../DateTimePicker";
 import { DateRangePicker } from "../DateRangePicker";
 
 let container: HTMLDivElement;
@@ -148,8 +148,8 @@ it("parses typed 12-hour entry on commit and blocks malformed drafts", async () 
   expect(change).toHaveBeenCalledExactlyOnceWith("17:00");
 });
 
-it("uses the same field and calendar for date, datetime and compatibility mode", async () => {
-  for (const component of [DatePicker, DateTimePicker, DateTimeField]) {
+it("uses the same field and calendar for date and datetime", async () => {
+  for (const component of [DatePicker, DateTimePicker]) {
     const value = component === DatePicker ? "2028-02-20" : "2028-02-20T13:07";
     await act(async () =>
       root.render(createElement(component, { label: "When", value, onChange: vi.fn() })),

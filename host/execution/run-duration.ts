@@ -16,6 +16,27 @@ export function forgetRunSamples(store: HostStore, sessionId?: string, runId?: s
   if (sessionId && runId) stores.get(store)?.delete(JSON.stringify([sessionId, runId]));
 }
 
+/**
+ * Withdraws an admitted run that never dispatched (a crew waiting for an eligible model), so
+ * the wait is not charged as run time. A later dispatch admits the same run again from zero.
+ */
+export async function retractRunDuration(
+  store: HostStore,
+  sessionId: string,
+  runId: string,
+): Promise<void> {
+  forgetRunSamples(store, sessionId, runId);
+  for (const table of ["run_duration_checkpoints", "run_duration_daily"]) {
+    const exists = await store.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
+      .get(table);
+    if (exists)
+      await store.db
+        .prepare(`DELETE FROM ${table} WHERE session_id=? AND run_id=?`)
+        .run(sessionId, runId);
+  }
+}
+
 /** Called only when the Host creates a new exact run, before dispatch. */
 export async function admitRunDuration(
   store: HostStore,

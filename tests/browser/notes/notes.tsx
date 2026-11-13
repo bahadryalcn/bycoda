@@ -31,6 +31,7 @@ const notes: Note[] = Array.from({ length: count }, (_, index) => ({
   createdAt: Date.now() - index * 120000,
   updatedAt: Date.now() - index * 60000,
 }));
+let failSave = parameters.has("saveError");
 const calls: { command: string; id?: string; query?: string; bytes?: number }[] = [];
 const imagePickerControl = { finish: null as null | (() => void) };
 Object.assign(window, {
@@ -54,6 +55,8 @@ Object.assign(window, {
       }
       if (command === "notes_list") return structuredClone(notes);
       if (command === "notes_list_summaries") {
+        if (parameters.has("pendingNotes")) return new Promise(() => {});
+        if (parameters.has("failedNotes")) throw new Error("Fixture notes unavailable");
         const summaries = notes.map(summarizeNote);
         calls.at(-1)!.bytes = new TextEncoder().encode(JSON.stringify(summaries)).byteLength;
         return summaries;
@@ -69,6 +72,10 @@ Object.assign(window, {
           .map((note) => note.id);
       }
       if (command === "notes_upsert") {
+        if (failSave) {
+          failSave = false;
+          throw new Error("Fixture save unavailable");
+        }
         const index = notes.findIndex((note) => note.id === args.note!.id);
         const saved = {
           ...(index >= 0 ? notes[index] : { createdAt: Date.now(), slug: args.note!.id }),

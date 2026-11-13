@@ -1,12 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetHarnessModelOverlays, setHarnessModels } from "./models";
-import {
-  defaultTitleChoice,
-  loadDefaultTitleChoice,
-  saveDefaultTitleChoice,
-  titleGenerationChoice,
-  TITLE_CHOICE_KEY,
-} from "./titlePreferences";
+import { defaultTitleChoice, titleGenerationChoice } from "./titlePreferences";
 
 beforeEach(() => {
   const values = new Map<string, string>();
@@ -60,44 +54,20 @@ it("does not silently select an expensive model when no economical catalog entry
   expect(titleGenerationChoice("codex")).toBeUndefined();
 });
 
-it("retains explicit model/account/settings across conversations and resets independently", () => {
-  saveDefaultTitleChoice({
-    harness: "codex",
-    model: "codex:selected",
-    providerAccountId: "account",
-    modelSettings: { effort: "high" },
-  });
-  expect(titleGenerationChoice("claude")).toEqual({
-    harness: "codex",
-    model: "codex:selected",
-    providerAccountId: "account",
-    modelSettings: { effort: "high" },
-  });
-  saveDefaultTitleChoice(undefined);
-  expect(loadDefaultTitleChoice()).toBeUndefined();
-  expect(titleGenerationChoice("claude")?.model).toBe("claude:haiku-4.5");
-});
-
-it("reports failed storage without reporting saved preference", () => {
-  vi.stubGlobal("localStorage", {
-    getItem: () => null,
-    setItem: () => {
-      throw new Error("quota");
-    },
-  });
-  expect(() => saveDefaultTitleChoice({ harness: "claude", model: "claude:haiku-4.5" })).toThrow(
-    "quota",
-  );
-  expect(loadDefaultTitleChoice()).toBeUndefined();
-});
-
-it("ignores invalid persisted data and removes unsupported account pins", () => {
-  localStorage.setItem(TITLE_CHOICE_KEY, JSON.stringify({ harness: "fake", model: "fake" }));
-  expect(loadDefaultTitleChoice()).toBeUndefined();
-  saveDefaultTitleChoice({
-    harness: "antigravity",
-    model: "antigravity:flash",
-    providerAccountId: "wrong",
-  });
-  expect(titleGenerationChoice("claude")?.providerAccountId).toBeUndefined();
+const routing = vi.hoisted(() => ({ resolve: vi.fn() }));
+vi.mock("../../model-routing/public/helpers", async (original) => ({
+  ...(await original<typeof import("../../model-routing/public/helpers")>()),
+  resolveHelperModel: routing.resolve,
+}));
+import { resolveTitleGenerationChoice } from "./titlePreferences";
+it("uses bound title role and preserves account identity", async () => {
+  const target = {
+    harness: "codex" as const,
+    model: "role-model",
+    providerAccountId: "role-account",
+    modelSettings: { effort: "low" },
+  };
+  routing.resolve.mockResolvedValueOnce(target);
+  expect(await resolveTitleGenerationChoice("claude")).toEqual(target);
+  expect(routing.resolve).toHaveBeenCalledWith("text.title", { cwd: undefined });
 });

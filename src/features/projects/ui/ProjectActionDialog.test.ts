@@ -178,8 +178,12 @@ it("suggests the project's package.json scripts instead of generic examples", as
     );
     const texts = [...document.querySelectorAll("button")].map((item) => item.textContent);
     expect(document.body.textContent).toContain("Scripts from package.json");
-    expect(texts).toEqual(expect.arrayContaining(["dev", "test", "build", "e2e"]));
-    expect(texts).not.toContain("lint");
+    expect(texts).toEqual(expect.arrayContaining(["dev", "test", "build", "lint"]));
+    expect(
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (item) => item.textContent === "lint",
+      )!.disabled,
+    ).toBe(true);
     expect(texts).not.toContain("Dev server");
     await act(async () =>
       [...document.querySelectorAll<HTMLButtonElement>("button")]

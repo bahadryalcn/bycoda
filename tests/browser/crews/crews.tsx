@@ -8,6 +8,11 @@ import { CrewSidebar } from "../../../src/features/crews/ui/CrewSessions";
 import { CrewRailSection } from "../../../src/features/crews/ui/CrewRailSection";
 import { OPEN_CREWS_PAGE_EVENT } from "../../../src/features/crews/model/crewsPage";
 import { CrewTaskPicker } from "../../../src/features/crews/ui/CrewTaskPicker";
+import { CrewFaces } from "../../../src/features/crews/ui/CrewFaces";
+import { SourceKindIcon } from "../../../src/features/decision-models/ui/SourceIcon";
+import { AccountColorDot } from "../../../src/features/providers/ui/AccountColorDot";
+import { GenericAcpSettings } from "../../../src/features/providers/ui/GenericAcpSettings";
+import { ScanSettings } from "../../../src/features/decision-models/ui/ScanSettings";
 import {
   defaultCrewPolicy,
   type CrewDefinition,
@@ -483,6 +488,11 @@ Object.assign(window, {
   crewFixtureReleaseOperation: () => releaseOperation(),
 });
 mockIPC(async (command, args) => {
+  if (command === "generic_acp_list")
+    return [
+      { id: "a", name: "Fixture agent A", command: "agent-a", args: [], envKeys: [] },
+      { id: "b", name: "Fixture agent B", command: "agent-b", args: [], envKeys: [] },
+    ];
   if (command === "remote_machines")
     return [
       {
@@ -864,4 +874,26 @@ function Fixture() {
     </QueryProvider>
   );
 }
-createRoot(document.getElementById("root")!).render(<Fixture />);
+createRoot(document.getElementById("root")!).render(
+  params.has("shared-settings-fixture") ? (
+    <main style={{ padding: 24, maxWidth: 720 }}>
+      <GenericAcpSettings cwd="/fixture" embedded />
+      <ScanSettings
+        client={
+          {
+            discovery: { settings: { get: async () => ({ extraPorts: [], extraFolders: [] }) } },
+          } as never
+        }
+        onScan={async () => {}}
+      />
+    </main>
+  ) : params.has("shared-static-fixture") ? (
+    <main style={{ padding: 24, display: "flex", gap: 16, alignItems: "center" }}>
+      <CrewFaces members={[...agents, { ...agents[0], id: "fixture-extra" }]} max={2} />
+      <SourceKindIcon kind="api" />
+      <AccountColorDot account={{ id: "fixture", provider: "codex", color: "orange" }} />
+    </main>
+  ) : (
+    <Fixture />
+  ),
+);

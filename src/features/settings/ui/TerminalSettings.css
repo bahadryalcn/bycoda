@@ -3,7 +3,7 @@
 .terminal-settings {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 32px;
   min-inline-size: 0;
 }
 
@@ -16,10 +16,6 @@
 
 .terminal-host {
   min-inline-size: 0;
-}
-
-.terminal-host[data-revealed] {
-  background: var(--ui-surface-selected);
 }
 
 .terminal-host-row {

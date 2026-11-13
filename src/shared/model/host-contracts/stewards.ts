@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ModelRoutingItemChoiceSchema } from "./model-routing";
 import { AutomationScheduleSchema } from "./automations";
 import { SafeCounterSchema } from "./schemas";
 import {
@@ -33,6 +34,8 @@ export const HostStewardInputSchema = z.strictObject({
   id: z.string(),
   projectId: z.string(),
   enabled: z.boolean().optional(),
+  modelChoice: ModelRoutingItemChoiceSchema.optional(),
+  providerAccountId: z.string().min(1).max(200).optional(),
   harness: SessionProviderSchema,
   model: z.string(),
   modelSettings: ModelSettingsSchema.optional(),
@@ -45,6 +48,9 @@ export const HostStewardInputSchema = z.strictObject({
   isolate: z.boolean().optional(),
 });
 export const StewardConfigurationSchema = HostStewardInputSchema.extend({
+  modelRoutingWait: z
+    .strictObject({ reason: z.string(), retryAt: SafeCounterSchema.optional() })
+    .optional(),
   deliveryApprovalRequired: z.boolean().optional(),
   nextRunAt: SafeCounterSchema.optional(),
   lastRunAt: SafeCounterSchema.optional(),

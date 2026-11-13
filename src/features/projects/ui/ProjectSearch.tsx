@@ -266,7 +266,12 @@ function ProjectSearchContent({
     <div className="flex min-h-0 flex-1 flex-col">
       {confirmation.dialog}
       {showHeader ? (
-        <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-1.5 py-1">
+        <div
+          {...surfaceAttributes(
+            { frame: "stroke", edge: "bottom" },
+            "flex shrink-0 items-center gap-1 px-1.5 py-1",
+          )}
+        >
           <Button variant="ghost" iconOnly label={t("Back to files")} onClick={onClose}>
             <ChevronLeft className="icon-md" strokeWidth={1.75} />
           </Button>
@@ -275,7 +280,12 @@ function ProjectSearchContent({
           </Text>
         </div>
       ) : null}
-      <div className="min-w-0 shrink-0 space-y-1 border-b border-stroke p-2">
+      <div
+        {...surfaceAttributes(
+          { frame: "stroke", edge: "bottom" },
+          "min-w-0 shrink-0 space-y-1 p-2",
+        )}
+      >
         <div className="flex min-w-0 items-stretch gap-1">
           <Button
             variant="ghost"
@@ -455,7 +465,7 @@ function ProjectSearchContent({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {groups.map((group) => (
-          <section key={group.path} className="border-b border-stroke">
+          <section key={group.path} {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "")}>
             {/* One line per file: name, then its folder (full path on hover when it is cut). */}
             <div className="flex min-w-0 items-center gap-1.5 px-2 py-1">
               <FileTypeIcon name={group.name} isDir={false} size="md" />
@@ -582,7 +592,7 @@ function MatchPreview({
         as="mark"
         size="inherit"
         tone="primary"
-        {...surfaceAttributes({ radius: "sm" }, "bg-[var(--ui-tone-accent-subtle)]")}
+        {...surfaceAttributes({ radius: "sm", tone: "accent" })}
       >
         {preview.slice(start, end)}
       </Text>

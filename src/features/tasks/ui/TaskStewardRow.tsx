@@ -1,3 +1,5 @@
+import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
@@ -57,6 +59,10 @@ export function StewardRow({
           </Tooltip>
           {!steward.enabled ? <Badge size="xs">{t("Paused")}</Badge> : null}
         </div>
+        <Text as="p" size="caption" tone="secondary">
+          <TaskModelChoiceLabel choice={steward.modelChoice} machineId={steward.machineId} /> ·{" "}
+          <ModelLabel harness={steward.harness} model={steward.model} />
+        </Text>
         <Text as="p" size="caption" tone="secondary" leading="inherit" className="task-ops-caption">
           {t("on ")}
           {steward.machineName}

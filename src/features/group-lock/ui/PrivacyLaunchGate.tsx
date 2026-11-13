@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -23,7 +24,7 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
       as="main"
       size="inherit"
       tone="primary"
-      className="flex h-dvh flex-col bg-background-base"
+      {...surfaceAttributes({ variant: "base" }, "flex h-dvh flex-col")}
     >
       <div data-tauri-drag-region className="h-10 shrink-0" />
       <div className="flex flex-1 items-center justify-center px-6 pb-10">

@@ -1,4 +1,5 @@
 import { Text } from "../../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useState } from "react";
 import { PlatformIcon, type SocialChannel } from "./PlatformIcon";
 import "./common.css";
@@ -62,7 +63,15 @@ export function SocialAvatar({
         </Text>
       )}
       {platform ? (
-        <Text size="inherit" tone="primary" leading="inherit" className="social-avatar-platform">
+        <Text
+          size="inherit"
+          tone="primary"
+          leading="inherit"
+          {...surfaceAttributes(
+            { radius: "pill", variant: "raised", frame: "base-cutout" },
+            "social-avatar-platform",
+          )}
+        >
           <PlatformIcon platform={platform} className="social-avatar-platform-glyph" />
         </Text>
       ) : null}

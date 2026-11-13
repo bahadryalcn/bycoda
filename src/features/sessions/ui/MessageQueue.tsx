@@ -1,4 +1,6 @@
+import { actionDragAttributes } from "../../../shared/ui/ActionHost";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { activeQueueFeedback, type QueueFeedback } from "./queueFeedback";
 import { canSendQueueMessage } from "../model/queueAction";
 import { useAcceptedQueueDeparture, type MessageQueueProps } from "./useAcceptedQueueDeparture";
@@ -352,7 +354,14 @@ export function MessageQueue({
       {queueClosed ? (
         <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
       ) : null}
-      <div className="relative z-0 rounded-t-xl px-2 py-1" data-message-queue-card ref={card}>
+      <div
+        {...surfaceAttributes(
+          { radius: "dock-top", variant: "activity-dock" },
+          "relative z-0 px-2 py-1",
+        )}
+        data-message-queue-card
+        ref={card}
+      >
         {paused ? (
           <Text as="div" size="caption" tone="inherit" className="mb-1 flex h-7 items-center gap-2">
             <Pause className="icon-sm" />
@@ -547,7 +556,10 @@ export function MessageQueue({
                 as="div"
                 size="caption"
                 tone="inherit"
-                className="reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg"
+                {...actionDragAttributes(
+                  { appearance: "lifted" },
+                  "reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2",
+                )}
               >
                 <Button
                   iconOnly

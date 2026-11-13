@@ -1,3 +1,5 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { recoverRoomPrivacyProjection } from "../model/roomPrivacyProjection";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -80,12 +82,20 @@ export function HiddenGroupsSettings({
       ) : groups.length === 0 ? (
         <EmptyState
           size="inline"
-          className="settings-collection settings-collection-empty privacy-empty"
+          {...surfaceAttributes(
+            { variant: "card", frame: "none", radius: "none" },
+            "settings-collection settings-collection-empty privacy-empty",
+          )}
           descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
           description={t("No hidden groups")}
         />
       ) : (
-        <div className="settings-collection privacy-hidden-collection">
+        <div
+          {...surfaceAttributes(
+            { variant: "card", frame: "none", radius: "none" },
+            "settings-collection privacy-hidden-collection",
+          )}
+        >
           {searchable ? (
             <CollectionToolbar
               label={t("Search hidden groups")}
@@ -99,7 +109,10 @@ export function HiddenGroupsSettings({
           ) : null}
           <ScrollArea
             gutter="stable"
-            className="settings-collection-list privacy-hidden-list"
+            {...surfaceAttributes(
+              { separator: "block" },
+              "settings-collection-list privacy-hidden-list",
+            )}
             role="list"
           >
             {visibleGroups.length === 0 ? (
@@ -114,7 +127,14 @@ export function HiddenGroupsSettings({
               />
             ) : null}
             {visibleGroups.map((group) => (
-              <div key={group.id} role="listitem" className="settings-collection-row">
+              <ActionHost
+                key={group.id}
+                role="listitem"
+                {...surfaceAttributes(
+                  { radius: "none", separator: "block" },
+                  "settings-collection-row",
+                )}
+              >
                 <div className="settings-collection-main">
                   <Text
                     as="p"
@@ -161,7 +181,7 @@ export function HiddenGroupsSettings({
                     {t("Make visible")}
                   </Button>
                 </div>
-              </div>
+              </ActionHost>
             ))}
           </ScrollArea>
         </div>

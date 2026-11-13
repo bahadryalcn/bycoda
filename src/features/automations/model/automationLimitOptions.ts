@@ -37,7 +37,7 @@ export const RUN_TIME_LIMIT_OPTIONS = [
   {
     value: "0",
     get label() {
-      return t("No limit");
+      return t("Default run time limit");
     },
   },
   {

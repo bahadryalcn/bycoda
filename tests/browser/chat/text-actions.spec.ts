@@ -1,6 +1,25 @@
 import { test, expect } from "@playwright/test";
 import type {} from "./text-actions";
 
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`translation result caller visual ${light ? "light" : "dark"} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/chat/text-actions.html?target=en${light ? "&light" : ""}`);
+      const dialog = page.getByRole("dialog", { name: "Translate to English", exact: true });
+      await expect(dialog).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/translation-pending-${light ? "light" : "dark"}-${width}.png`,
+      });
+      await page.evaluate(() => window.__textActionsFixture.resolve("Translated fixture result."));
+      await expect(dialog.getByText("Translated fixture result.")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/translation-ready-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });
+
 const variants = [
   { width: 1000, light: false },
   { width: 390, light: false },

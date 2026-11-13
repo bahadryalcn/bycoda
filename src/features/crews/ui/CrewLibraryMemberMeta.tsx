@@ -91,7 +91,7 @@ export function CrewMemberMeta({
       <span aria-hidden="true">·</span>
       <Text size="inherit" tone="inherit" truncate className="min-w-0">
         {[
-          poolName && agent.pool
+          poolName && agent.modelChoice?.kind === "pool"
             ? t("Automatic: {p0}", { p0: poolName })
             : memberModelSummary(catalog, agent),
           memberScopeLabel(agent, shortScope),

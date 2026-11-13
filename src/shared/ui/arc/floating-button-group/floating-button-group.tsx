@@ -12,7 +12,7 @@ import {
 } from "motion/react";
 import type { TargetAndTransition } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
-import { Button, type ButtonTone } from "../../Button";
+import { Button, type ButtonTone, type ButtonProps } from "../../Button";
 import styles from "./floating-button-group.module.css";
 
 export type FloatingButtonGroupVariant = "muted" | "floating";
@@ -43,6 +43,8 @@ export interface FloatingButtonGroupAction {
   tooltip?: string;
   /** Semantic intent of the item, such as success for a confirmed result or danger for a failed one. */
   tone?: ButtonTone;
+  /** Shared selected appearance; pressed state and toolbar activation stay independent. */
+  selectionIndicator?: ButtonProps["selectionIndicator"];
   onSelect?: () => void;
   disabled?: boolean;
   /** Pending state stays owned by the consumer. */
@@ -385,6 +387,7 @@ export function FloatingButtonGroup({
       tone,
       loading = false,
       pressed,
+      selectionIndicator,
       shortcut,
       reserveLabels = [],
     } = item;
@@ -400,6 +403,7 @@ export function FloatingButtonGroup({
         tone={tone}
         loading={loading}
         selected={pressed}
+        selectionIndicator={selectionIndicator}
         iconOnly={iconOnly}
         label={name}
         tooltip={tooltip}

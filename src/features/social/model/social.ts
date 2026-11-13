@@ -7,7 +7,12 @@ import type {
   WhatsAppInteractive,
   WhatsAppTemplateMessage,
 } from "../../../integrations/social/adapters/whatsapp";
-export type SocialAgent = { provider: RemoteProvider; model?: string };
+export type SocialAgent = {
+  provider: RemoteProvider;
+  model?: string;
+  providerAccountId?: string;
+  modelSettings?: Record<string, string>;
+};
 export type SocialPolicy = {
   agent?: SocialAgent;
   maxContentCharacters?: number;

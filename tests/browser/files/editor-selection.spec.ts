@@ -1,6 +1,95 @@
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+for (const mode of ["file", "inline", "split"]) {
+  test(`blame column resizes without changing code in ${mode}`, async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("bycoda.inlineBlame", "1");
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        configurable: true,
+        value: {
+          transformCallback: () => 0,
+          invoke: async (command: string) =>
+            command === "git_blame"
+              ? Array.from({ length: 500 }, (_, index) => ({
+                  line: index + 1,
+                  sha: "a".repeat(40),
+                  shortSha: "aaaaaaa",
+                  author: "bahadryalcn",
+                  timestamp: Math.floor(Date.now() / 1000) - 3600,
+                  summary: "Keep blame details and code available",
+                }))
+              : null,
+        },
+      });
+    });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/tests/browser/files/editor-selection.html?readability=large&search=${mode}`);
+    const editor = page.locator(".cm-editor").last();
+    const handle = editor.getByRole("separator", { name: "Blame", exact: true });
+    const gutter = editor.locator(".cm-blameGutter");
+    await expect(handle).toBeVisible();
+    await expect(gutter).toContainText("bahadryalcn");
+    const original = await editor.locator(".cm-content").textContent();
+    const drag = async (delta: number, cancel = false) => {
+      const box = (await handle.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + 40);
+      await page.mouse.down();
+      await page.mouse.move(box.x + delta, box.y + 40, { steps: 5 });
+      if (cancel) await page.keyboard.press("Escape");
+      await page.mouse.up();
+    };
+    await drag(-80);
+    await expect(handle).toHaveAttribute("aria-valuenow", "102");
+    expect((await gutter.boundingBox())!.width).toBeCloseTo(102, 0);
+    const bounds = (await gutter.boundingBox())!;
+    expect((await handle.boundingBox())!.x).toBeCloseTo(bounds.x + bounds.width, 0);
+    await drag(64);
+    await expect(handle).toHaveAttribute("aria-valuenow", "166");
+    await drag(-50, true);
+    await expect(handle).toHaveAttribute("aria-valuenow", "166");
+    await handle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(handle).toHaveAttribute("aria-valuenow", "150");
+    expect(await editor.locator(".cm-content").textContent()).toBe(original);
+    await page.keyboard.press("Enter");
+    await expect(handle).toHaveAttribute("aria-valuenow", "182");
+    await handle.press("Shift+ArrowRight");
+    await expect(handle).toHaveAttribute("aria-valuenow", "246");
+    await page.setViewportSize({ width: 420, height: 800 });
+    await expect
+      .poll(async () => Number(await handle.getAttribute("aria-valuenow")))
+      .toBeLessThanOrEqual(168);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(handle).toHaveAttribute("aria-valuenow", "246");
+    await handle.press("Enter");
+    await handle.press("Shift+ArrowLeft");
+    await expect(handle).toHaveAttribute("aria-valuenow", "118");
+    await editor.locator(".cm-blameCommit").first().hover();
+    await expect(page.getByRole("tooltip")).toContainText("Keep blame details and code available");
+    await handle.hover();
+    const captureDir = "temp/verification/blame-resize";
+    mkdirSync(captureDir, { recursive: true });
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const light of [false, true]) {
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          light,
+        );
+        await page.screenshot({
+          path: `${captureDir}/${mode}-${width}-${light ? "light" : "dark"}.png`,
+        });
+      }
+    }
+    // A long, vertically scrolled document keeps the divider pinned to the viewport.
+    await editor.locator(".cm-scroller").evaluate((element) => {
+      element.scrollTop = 1200;
+    });
+    await expect(handle).toBeInViewport();
+  });
+}
+
 test("editor scrollbar reveals on hover and focus without moving content", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
@@ -499,4 +588,31 @@ test("split search keeps independent compact toolbars and keyboard focus", async
   await left.locator(".cm-content").focus();
   await page.keyboard.type("unexpected edit");
   expect(await originalDocument()).toBe(original);
+});
+
+test("plan editor field preserves geometry and draft", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.goto("/tests/browser/files/editor-selection.html?plan");
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  const editor = page.getByRole("textbox", { name: "Plan markdown", exact: true });
+  await expect(editor).toBeVisible();
+  const metrics = await editor.evaluate((node) => {
+    const e = node as HTMLTextAreaElement;
+    const cs = getComputedStyle(e);
+    const field = e.closest("[data-fill]") ?? e.parentElement?.parentElement?.parentElement;
+    return {
+      min: cs.minHeight,
+      max: cs.maxHeight,
+      line: cs.lineHeight,
+      padding: cs.padding,
+      height: e.getBoundingClientRect().height,
+      fieldHeight: field?.getBoundingClientRect().height,
+      scrollHeight: e.scrollHeight,
+      clientHeight: e.clientHeight,
+    };
+  });
+  console.log("PLAN_GEOMETRY", JSON.stringify(metrics));
+  await editor.fill(Array.from({ length: 100 }, (_, i) => `Changed line ${i}`).join("\n"));
+  await expect(editor).toHaveValue(/Changed line 99/);
+  expect(metrics.scrollHeight).toBeGreaterThan(metrics.clientHeight);
 });

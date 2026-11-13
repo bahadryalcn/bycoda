@@ -30,7 +30,7 @@ export interface FileFieldProps {
  * again after a failure. The caller owns validation, upload, progress and the list of attachments.
  * @group fields
  * @use Attaching images, documents or an import file from the user's computer inside a form.
- * @avoid Choosing a path on the Host or a folder: the native path picker dialog. A text input with `type="file"`: never.
+ * @avoid Choosing a path on the Host or a folder: the native path picker dialog. A text input with `type="file"`: never. A typed path string instead of a local file: TextField.
  * @example
  * <FileField
  *   label={t("Images or one video")}

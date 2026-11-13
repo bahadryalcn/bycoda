@@ -279,7 +279,7 @@ function WorkspaceMainAreaComponent({
                 </div>
               );
             })}
-            <div className="relative flex min-h-0 min-w-0 flex-col" style={{ gridArea: "main" }}>
+            <div className="relative flex min-h-0 min-w-0 flex-col [grid-area:main]">
               <div className="relative min-h-0 min-w-0 flex-1">
                 {tabs.map((tab) => (
                   <div

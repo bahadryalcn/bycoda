@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
@@ -17,7 +18,11 @@ export function FacebookReelFields({ value, media, disabled, onChange }: Platfor
     ? undefined
     : t("Enter the frame rate, at least {p0} fps.", { p0: REEL_MIN_FPS });
   return (
-    <FieldGroup legend={t("Reel")} className="content-platform" disabled={disabled}>
+    <FieldGroup
+      legend={t("Reel")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
+      disabled={disabled}
+    >
       <Text as="p" size="caption" tone="muted" leading="inherit" className="content-platform-note">
         {probe?.durationSeconds
           ? t("Video length {p0} seconds.", { p0: Math.round(probe.durationSeconds) })

@@ -112,6 +112,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
     scopeEpoch,
     setDetail,
     setNoteEdit,
+    setView,
     pending,
     error,
     run,
@@ -169,6 +170,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
                     throw new Error(t("The saved note is no longer available."));
                   setDetail(null);
                   setNoteEdit(result.note);
+                  setView("Notes");
                 })
               }
             >
@@ -320,6 +322,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
               onOpenNote={(note) => {
                 setDetail(null);
                 setNoteEdit(note);
+                setView("Notes");
               }}
             />
           )}

@@ -71,3 +71,19 @@ for (const light of [false, true])
       );
     });
   }
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`noncollapsible agent card ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        `/tests/browser/workspace/working-project-summary.html?noncollapsible${light ? "&light" : ""}`,
+      );
+      const card = page.locator('[data-fixture="rail"] [data-live-agents-preview]');
+      await expect(card.getByText("3 working in this project")).toBeVisible();
+      await expect(card.locator("[data-live-agent-card]")).toHaveCount(2);
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/agents-card-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });

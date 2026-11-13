@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { withGitOperation, useGitPanelState } from "../model/gitPanelState";
@@ -437,7 +438,7 @@ export function BranchPicker({
             />
           }
           footer={
-            <div className="shrink-0 border-t border-stroke p-1 px-1.5">
+            <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "shrink-0 p-1 px-1.5")}>
               {createRow ? (
                 <Button
                   variant="item"
@@ -487,7 +488,12 @@ export function BranchPicker({
             emptyLabel={query.trim() ? t("No matching branches") : t("No branches")}
           />
           {error ? (
-            <InlineError className="max-h-16 shrink-0 overflow-y-auto whitespace-pre-wrap border-t border-stroke px-2.5 py-2">
+            <InlineError
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "top" },
+                "max-h-16 shrink-0 overflow-y-auto whitespace-pre-wrap px-2.5 py-2",
+              )}
+            >
               {error}
             </InlineError>
           ) : null}

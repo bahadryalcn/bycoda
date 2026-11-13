@@ -40,8 +40,9 @@ export function InboxList({
             <li key={item.threadId}>
               <Button
                 variant="item"
-                layout="media"
+                layout="inline"
                 className="inbox-row"
+                selected={selected}
                 aria-current={selected ? "true" : undefined}
                 onClick={() => onSelect(item.threadId)}
               >

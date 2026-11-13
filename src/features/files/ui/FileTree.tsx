@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 /** Different job: Explorer hierarchy owns rename, drag/drop and range selection; TreeRow owns each interactive row. */
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
@@ -1664,8 +1665,8 @@ export function NameRow({
     >
       {/* Same grid as TreeRow: depth indent, toggle slot, icon slot, then the field. */}
       <div
-        style={{ paddingInlineStart: `calc(8px + ${depth} * 12px)` }}
-        className="flex w-full min-w-0 items-center gap-2"
+        style={{ "--layout-padding-inline-start": `calc(8px + ${depth} * 12px)` } as CSSProperties}
+        className="flex w-full min-w-0 items-center gap-2 [padding-inline-start:var(--layout-padding-inline-start)]"
       >
         <TreeRowToggle>
           {isDir ? <ChevronRight className="icon-sm" strokeWidth={1.75} /> : null}
@@ -1716,8 +1717,12 @@ export function NameRow({
             }
           }}
           onBlur={() => finish(issue === null || issue.severity !== "error")}
-          style={{ minHeight: "calc(var(--ui-control-height-compact) - 0.25rem)" }}
-          className="min-w-0 flex-1"
+          style={
+            {
+              "--layout-min-height": "calc(var(--ui-control-height-compact) - 0.25rem)",
+            } as CSSProperties
+          }
+          className="min-w-0 flex-1 [min-height:var(--layout-min-height)]"
           leading="none"
         />
         {busy ? <Spinner size="sm" className="shrink-0" /> : null}
@@ -1749,8 +1754,8 @@ function NameCaption({ depth, children }: { depth: number; children: ReactNode }
       truncate
       aria-hidden="true"
       data-name-caption
-      className="pe-2 pb-1"
-      style={{ paddingInlineStart: nameFieldInset(depth) }}
+      className="pe-2 pb-1 [padding-inline-start:var(--layout-padding-inline-start)]"
+      style={{ "--layout-padding-inline-start": nameFieldInset(depth) } as CSSProperties}
     >
       {children}
     </Text>
@@ -1813,8 +1818,8 @@ function NameIssueView({
     <InlineMessage
       id={id}
       tone={error ? "danger" : "warning"}
-      className="min-w-0 break-words pe-2 pb-1"
-      style={{ paddingInlineStart: nameFieldInset(depth) }}
+      className="min-w-0 break-words pe-2 pb-1 [padding-inline-start:var(--layout-padding-inline-start)]"
+      style={{ "--layout-padding-inline-start": nameFieldInset(depth) } as CSSProperties}
     >
       {body}
     </InlineMessage>

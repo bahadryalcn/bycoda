@@ -48,14 +48,14 @@ function firstCandidate(data: ProjectCrews) {
 export function starterRoster(data: ProjectCrews): CrewAgent[] {
   const candidate = firstCandidate(data);
   return [
-    newCrewMember("coordinator", t("Project lead"), candidate),
-    newCrewMember("specialist", t("Developer"), candidate),
-    newCrewMember("reviewer", t("Code reviewer"), candidate),
+    newCrewMember("coordinator", t("Project lead"), candidate, data.modelPoolsSupported),
+    newCrewMember("specialist", t("Developer"), candidate, data.modelPoolsSupported),
+    newCrewMember("reviewer", t("Code reviewer"), candidate, data.modelPoolsSupported),
   ];
 }
 
 export function blankMember(data: ProjectCrews, role: CrewRole = "specialist"): CrewAgent {
-  return newCrewMember(role, "", firstCandidate(data));
+  return newCrewMember(role, "", firstCandidate(data), data.modelPoolsSupported);
 }
 
 export function policyErrors(policy: CrewPolicy) {

@@ -80,11 +80,13 @@
 }
 .terminal-canvas {
   display: grid;
+  grid-template-columns: repeat(var(--layout-terminal-columns, 1), minmax(0, 1fr));
   background: var(--terminal-canvas);
   overflow: hidden;
 }
 .terminal-split-pane {
   grid-row: 1;
+  grid-column: var(--layout-terminal-column, auto);
   position: relative;
   min-inline-size: 0;
   min-block-size: 0;

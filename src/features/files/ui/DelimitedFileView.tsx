@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { useCallback, useState, type ComponentProps } from "react";
@@ -41,7 +42,12 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
   }
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center border-b border-stroke px-3 py-1.5">
+      <div
+        {...surfaceAttributes(
+          { frame: "stroke", edge: "bottom" },
+          "flex shrink-0 items-center px-3 py-1.5",
+        )}
+      >
         <TabStrip
           label={t("Table view")}
           value={mode}

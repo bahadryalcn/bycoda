@@ -1,3 +1,4 @@
+import { openModelsSettings } from "../../../features/settings/ui/models/modelsSettingsLink";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -86,6 +87,12 @@ it("opens Settings at Providers when Decision models asks for it", () => {
       window.dispatchEvent(new Event(OPEN_DECISION_MODELS_SETTINGS_EVENT));
     });
     expect(deps.setSettingsSection).toHaveBeenLastCalledWith("providers");
+    for (const tab of ["order", "roles", "chat", "delegation"] as const) {
+      act(() => openModelsSettings(tab));
+      expect(deps.setSettingsSection).toHaveBeenLastCalledWith("models");
+      expect(deps.setSettingsAnchor).toHaveBeenLastCalledWith(`models-${tab}`);
+    }
+
     expect(deps.setSettingsOpen).toHaveBeenLastCalledWith(true);
   } finally {
     act(() => root.unmount());

@@ -1,0 +1,20 @@
+.chip {
+  border: 0;
+  border-radius: var(--ui-radius-row);
+  background: transparent;
+  padding: 0;
+  padding-block-end: calc(var(--space-1) / 2);
+  text-decoration: none;
+  box-shadow: none;
+}
+.chip:focus-visible {
+  box-shadow: 0 0 0 var(--ui-focus-width) var(--ui-focus-ring-color);
+}
+.chip:active {
+  scale: 0.98;
+}
+:global(a:hover) .label,
+:global(button:hover) .label {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

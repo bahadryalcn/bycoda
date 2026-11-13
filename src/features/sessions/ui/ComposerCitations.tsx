@@ -108,7 +108,10 @@ export function ComposerCitations({
               as="span"
               size="inherit"
               tone="accent"
-              {...surfaceAttributes({ radius: "control" }, styles.token)}
+              {...surfaceAttributes(
+                { radius: "control", tone: "accent", ring: "tone-accent" },
+                styles.token,
+              )}
             >
               {tokenLabel(chatCitationToken(index))}
             </Text>
@@ -192,7 +195,12 @@ export function ComposerCitations({
           flow="scroll"
         >
           <div className={styles.editor}>
-            <Text as="blockquote" size="caption" leading="relaxed" className={styles.quote}>
+            <Text
+              as="blockquote"
+              size="caption"
+              leading="relaxed"
+              {...surfaceAttributes({ bar: "info" }, styles.quote)}
+            >
               {editingCitation.text}
             </Text>
             <TextareaField

@@ -44,6 +44,7 @@ export function AppearancePage({
   // A hairline marks the generator only while it is pinned: a sentinel above it scrolls out of view
   // beneath the sticky offset exactly then.
   const sentinel = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
   useLayoutEffect(() => {
     const marker = sentinel.current;
     const element = generator.current;
@@ -52,10 +53,7 @@ export function AppearancePage({
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry) return;
-        element.toggleAttribute(
-          "data-stuck",
-          !entry.isIntersecting && entry.boundingClientRect.top < top,
-        );
+        setStuck(!entry.isIntersecting && entry.boundingClientRect.top < top);
       },
       { rootMargin: `-${Math.ceil(top)}px 0px 0px 0px` },
     );
@@ -126,7 +124,19 @@ export function AppearancePage({
       {/* The tabs lead the page; generation edits every topic, so its toolbar stays pinned with them. */}
       <div ref={sentinel} aria-hidden="true" className="appearance-generator-sentinel" />
       <Tabs value={section} onValueChange={select}>
-        <div ref={generator} {...surfaceAttributes({ variant: "base" }, "appearance-generator")}>
+        <div
+          ref={generator}
+          data-stuck={stuck ? "" : undefined}
+          {...surfaceAttributes(
+            {
+              variant: "base",
+              frame: stuck ? "pane" : "transparent",
+              edge: "block-end",
+              elevation: "sticky-mask",
+            },
+            "appearance-generator",
+          )}
+        >
           <TabList label={t("Appearance")} scrollbar="hidden">
             {sections.map(({ id, label }) => (
               <Tab key={id} value={id}>

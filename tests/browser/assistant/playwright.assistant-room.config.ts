@@ -8,6 +8,8 @@ export default defineConfig({
     "assistant-history.e2e.ts",
     "assistant-memory.e2e.ts",
     "assistant-room-dialogs.e2e.ts",
+    "interview-redesign.e2e.ts",
+    "notes-redesign.e2e.ts",
   ],
   outputDir: "../../../temp/test-results/assistant-room",
   workers: 1,

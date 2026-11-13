@@ -29,16 +29,77 @@ export type ButtonVariant = ArcButtonVariant | "link" | "item" | "tab";
 export type ButtonShape = "default" | "pill";
 export type ButtonTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
 
+/** Token spacing for control-owned padding: none 0, xxs 2, xs 4, sm 6, md 8, lg 10, xl 12px. */
+export type ControlSpace = "none" | "xxs" | "xs" | "sm" | "md" | "lg" | "xl";
+export type ControlPadding = Partial<
+  Record<"inline" | "block" | "start" | "end" | "top" | "bottom", ControlSpace>
+>;
+const CONTROL_SPACE = {
+  none: "0px",
+  xxs: "calc(var(--space-1) / 2)",
+  xs: "var(--space-1)",
+  sm: "var(--space-2)",
+  md: "calc(var(--space-1) * 2)",
+  lg: "var(--space-3)",
+  xl: "calc(var(--space-1) * 3)",
+} as const;
+/** @internal Shared by Button, ActionHost and labeled selection controls; callers supply roles, never arbitrary CSS. */
+export function controlPaddingStyle(padding?: ControlPadding): import("react").CSSProperties {
+  return {
+    ...(padding?.inline
+      ? { paddingInline: `var(--control-padding-inline, ${CONTROL_SPACE[padding.inline]})` }
+      : {}),
+    ...(padding?.block ? { paddingBlock: CONTROL_SPACE[padding.block] } : {}),
+    ...(padding?.start
+      ? { paddingInlineStart: `var(--control-padding-start, ${CONTROL_SPACE[padding.start]})` }
+      : {}),
+    ...(padding?.end
+      ? { paddingInlineEnd: `var(--control-padding-end, ${CONTROL_SPACE[padding.end]})` }
+      : {}),
+    ...(padding?.top ? { paddingTop: CONTROL_SPACE[padding.top] } : {}),
+    ...(padding?.bottom ? { paddingBottom: CONTROL_SPACE[padding.bottom] } : {}),
+  };
+}
+
 type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: ButtonVariant;
   /** Semantic intent, independent of hierarchy. `error` is a legacy danger alias. */
   tone?: ButtonTone | "error";
   size?: ButtonSize;
+  /** Opt-in padding roles; logical inline variables may be set by an ancestor container layout. */
+  padding?: ControlPadding;
+  /** Space for an overlaid end action: inline 20px action plus 8px gap; control uses compact control height. */
+  reserveEndAction?: "inline" | "control" | "interaction";
+  /** Compact icon target (24px); independent from glyph size and typography. */
+  iconTarget?: "compact";
+  /** Coarse-pointer controls may opt into the density-aware full control hit target. */
+  touchTarget?: "control";
+  /** Preserve ghost feedback while underlining a file/title action on hover. */
+  hoverUnderline?: boolean;
+  /** Recovery actions can remain underlined until pointer hover, retaining their hierarchy and hit area. */
+  textDecoration?: "rest-underline";
+  /** File/image chooser edge (populated data-has-image stays solid); immediate native-drop wrapper may expose data-over.
+   * Preview keeps a pane hairline and preview-card radius; normal hover/selection feedback stays in control. */
+  frame?: "dropzone" | "preview";
+  /** Auto height retains the size minimum; content removes it; fill occupies a bounded row. */
+  controlHeight?: "auto" | "content" | "fill";
+  /** Density-aware minimum height for a multi-line row; never fixes its content height. */
+  controlMinHeight?: "compact" | "control" | "large";
+
   shape?: ButtonShape;
   /** Fill the parent row height, including a disclosure rail beside multiple input rows. */
   stretch?: boolean;
   /** Visual selection only. The owning interaction supplies its appropriate ARIA state. */
   selected?: boolean;
+  /** Interactive previews use accent/focus outer rings or an accent inset. `dot` keeps a selected toolbar toggle
+   * transparent; `border-ring` keeps the existing fill; `subtle-ring` pairs that 2px accent-border ring with accent-subtle fill. */
+  selectionIndicator?:
+    | "accent-ring"
+    | "focus-ring"
+    | "accent-inset"
+    | "dot"
+    | "subtle-ring"
+    | "border-ring";
   loading?: boolean;
   loadingLabel?: string;
   /** Confirmed by the operation owner; clear when the draft or target changes. Pending wins. */
@@ -89,8 +150,9 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   layout?: "inline" | "stacked" | "text" | "media";
   /** Compact icon action inside a row, tab or card that owns the highlight
    *  (`ActionHost`): about 20px, transparent overlay hover/press, secondary ink.
+   *  Use `bare` for an icon that changes ink only, with no state fill.
    *  Prefer `InlineAction`, which also handles reveal and event isolation. */
-  inset?: boolean | "icon" | "text";
+  inset?: boolean | "icon" | "text" | "bare";
   /** Toggle state: sets `aria-pressed` and the selected look. Use for on/off tools;
    *  `selected` stays visual only. An explicit `aria-pressed` still wins. */
   pressed?: boolean;
@@ -157,7 +219,7 @@ const isTrue = (value: unknown) => value === true || value === "true";
  * Icon-only buttons need `iconOnly` and a `label`.
  * For confirmed async results, set `success` and translated `successLabel`; the action owns its check, label and announcement. Clear success when its draft or target changes.
  * @group actions
- * @use Any click that runs an action, opens something or navigates.
+ * @use Any click that runs an action, opens something or navigates. Use padding roles and reserveEndAction for row geometry; controlHeight and controlMinHeight preserve content and density.
  * @avoid Choosing between modes: SegmentedControl or RadioGroup. Navigation to an external page: Button variant="link" with openExternal. Icon action inside a row/tab host: InlineAction. Joined related actions: ButtonGroup.
  */
 export function Button({
@@ -166,8 +228,18 @@ export function Button({
   tone,
   size = "sm",
   shape = "default",
+  padding,
+  reserveEndAction,
+  iconTarget,
+  touchTarget,
+  hoverUnderline,
+  textDecoration,
+  frame,
+  controlHeight,
+  controlMinHeight,
   type = "button",
   selected,
+  selectionIndicator,
   loading: loadingProp,
   loadingLabel,
   success = false,
@@ -314,6 +386,7 @@ export function Button({
     stretch ? styles.stretch : "",
     inset ? styles.inset : "",
     insetText ? styles.insetText : "",
+    inset === "bare" ? styles.insetBare : "",
     fullWidth ? styles.fullWidth : "",
     className,
   ]
@@ -409,11 +482,20 @@ export function Button({
     "data-button-tone": resolvedTone,
     "data-button-shape": shape,
     "data-button-selected": active || undefined,
+    "data-selection-indicator": selectionIndicator,
     "data-button-loading": loading || undefined,
     "data-button-structural": structural || undefined,
     "data-button-layout":
       structural || variant === "link" || layout === "media" ? layout : undefined,
     "data-button-size": size,
+    "data-reserve-end-action": reserveEndAction,
+    "data-icon-target": iconTarget,
+    "data-touch-target": touchTarget,
+    "data-button-hover-underline": hoverUnderline || undefined,
+    "data-button-text-decoration": textDecoration,
+    "data-button-frame": frame,
+    "data-control-height": controlHeight,
+    "data-control-min-height": controlMinHeight,
     "data-button-reveal-label": revealLabel || undefined,
     // Any explicit alignment is authoritative over structural (item/tab) defaults.
     "data-button-align": align,
@@ -422,9 +504,16 @@ export function Button({
     "data-tone": textTone,
     "data-weight": weight,
     "data-lines": lines || undefined,
-    style: lines
-      ? ({ ...props.style, "--clamp-lines": lines } as import("react").CSSProperties)
-      : props.style,
+    style: {
+      ...props.style,
+      ...controlPaddingStyle(padding),
+      ...(reserveEndAction
+        ? {
+            paddingInlineEnd: `var(--control-padding-end, ${reserveEndAction === "inline" ? "calc(var(--space-1) * 7)" : reserveEndAction === "interaction" ? "var(--button-interaction-end, 0px)" : "var(--ui-control-height-compact)"})`,
+          }
+        : {}),
+      ...(lines ? { "--clamp-lines": lines } : {}),
+    } as import("react").CSSProperties,
     "data-truncate": typed ? typeData["data-truncate"] : undefined,
     "data-leading": typed ? leading : undefined,
     // Controls that do not scale on press (native renderer, popup anchors) step their tone instead.

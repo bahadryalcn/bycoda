@@ -1,3 +1,4 @@
+import { useAutomationRoutingHost } from "./useAutomationRoutingHost";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { t } from "../../../shared/i18n";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
@@ -36,6 +37,7 @@ export function useAutomationDraftStart({
   setCompactListOpen,
   setDraft,
 }: Params) {
+  const routingHost = useAutomationRoutingHost();
   const defaultDraftTarget = () => {
     const project = cwd && looksLikeProject(cwd) ? cwd : (recents[0]?.path ?? "~");
     const preferred = defaultSessionChoice(project);
@@ -59,20 +61,24 @@ export function useAutomationDraftStart({
     if (savingRef.current) return;
     const { project, harness, model } = defaultDraftTarget();
     setPickerOpen(false);
-    setDraft(newAutomationDraft(project, harness, model));
+    setDraft({
+      ...newAutomationDraft(project, harness, model),
+      ...(routingHost.supported ? { modelChoice: { kind: "default" as const } } : {}),
+    });
   };
 
   const beginFromTemplate = (template: AutomationTemplate) => {
     if (savingRef.current) return;
     const { project, harness, model } = defaultDraftTarget();
     setPickerOpen(false);
-    setDraft(
-      draftFromTemplate(project, harness, model, {
+    setDraft({
+      ...draftFromTemplate(project, harness, model, {
         ...template,
         name: t(template.name),
         prompt: t(template.prompt),
       }),
-    );
+      ...(routingHost.supported ? { modelChoice: { kind: "default" as const } } : {}),
+    });
   };
 
   return { beginCreate, beginBlank, beginFromTemplate };

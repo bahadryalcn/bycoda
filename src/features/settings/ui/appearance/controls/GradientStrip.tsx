@@ -30,7 +30,11 @@ function ColorStop({
   const [open, setOpen] = useState(false);
   const label = t("Color {p0}", { p0: index + 1 });
   return (
-    <div ref={anchor} className={styles.stop} style={{ left: `${index * 46 + 4}%` }}>
+    <div
+      ref={anchor}
+      className={styles.stop}
+      style={{ "--stop-position": `${index * 46 + 4}%` } as React.CSSProperties}
+    >
       <Button
         variant="ghost"
         size="sm"
@@ -39,7 +43,14 @@ function ColorStop({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        <span className={styles.stopDot} style={{ backgroundColor: color }} aria-hidden />
+        <span
+          {...surfaceAttributes(
+            { frame: "content-strong", radius: "circle", variant: "user-color" },
+            styles.stopDot,
+          )}
+          style={{ "--surface-user-color": color } as React.CSSProperties}
+          aria-hidden
+        />
       </Button>
       {open && (
         <Popover
@@ -95,7 +106,7 @@ export function GradientStrip({
     <div className={styles.editor}>
       <div
         {...surfaceAttributes({ radius: "card", frame: "pane", edge: "all" }, styles.gradient)}
-        style={{ backgroundImage: workspaceBackgroundImage(value) }}
+        style={{ "--gradient-image": workspaceBackgroundImage(value) } as React.CSSProperties}
       >
         {value.colors.map((color, index) => (
           <ColorStop
@@ -158,13 +169,15 @@ export function GradientStrip({
               key={preset.id}
               variant="secondary"
               size="sm"
-              className={styles.preset}
+              shape="pill"
               startIcon={
                 <span
-                  className={styles.presetDot}
-                  style={{
-                    backgroundImage: `linear-gradient(135deg, ${preset.value.colors[0]}, ${preset.value.colors[1]})`,
-                  }}
+                  {...surfaceAttributes({ radius: "circle", frame: "pane" }, styles.presetDot)}
+                  style={
+                    {
+                      "--gradient-image": `linear-gradient(135deg, ${preset.value.colors[0]}, ${preset.value.colors[1]})`,
+                    } as React.CSSProperties
+                  }
                   aria-hidden
                 />
               }

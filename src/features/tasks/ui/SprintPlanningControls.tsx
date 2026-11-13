@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -87,7 +88,10 @@ export function SprintPlanningControls({
       as="section"
       size="secondary"
       leading="inherit"
-      className="task-planning"
+      {...surfaceAttributes(
+        layout === "bar" ? { frame: "pane", edge: "bottom" } : {},
+        "task-planning",
+      )}
       data-layout={layout}
       aria-label={t("Planning")}
     >

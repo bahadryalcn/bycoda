@@ -10,6 +10,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { RefreshCw, Search } from "../../../shared/ui/icons";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 export type BufferReportDisplay = {
   windowLabel: string | null;
@@ -149,7 +150,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             </Text>
           )}
         </div>
-        <div className="recovery-footer border-t border-stroke">
+        <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "recovery-footer")}>
           <Text as="p" size="caption" tone="secondary">
             {t(
               "Check recovery copies or the original window for edited text. Matching file names alone do not settle this report.",
@@ -339,7 +340,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           />
         )}
       </div>
-      <div className="recovery-footer border-t border-stroke">
+      <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "recovery-footer")}>
         <Text as="p" size="caption" tone="secondary">
           {t("Inspect earlier file reports without changing files or removing their protection.")}
         </Text>

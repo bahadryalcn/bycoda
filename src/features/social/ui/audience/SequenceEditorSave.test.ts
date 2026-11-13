@@ -9,12 +9,15 @@ import {
   asClient,
   bodyText,
   buttonByText,
-  clientMock,
   clickButton,
+  clientMock,
   deferred,
   fieldByLabel,
   flush,
   mountHost,
+  optionLabels,
+  pickOption,
+  selectedLabel,
   setFieldValue,
   type ClientMock,
   type MountedHost,
@@ -66,7 +69,7 @@ async function renderEditor(mock: ClientMock, overrides: Partial<SequenceEditorP
 /** Name, list and one message: the smallest sequence the editor lets the owner save. */
 function fillMinimum() {
   setFieldValue(fieldByLabel("Sequence name"), "  Spring follow-up  ");
-  setFieldValue(fieldByLabel("People"), "l1");
+  pickOption("People", "Buyers");
   setFieldValue(fieldByLabel("Message"), "  Hello again  ");
 }
 
@@ -84,7 +87,7 @@ describe("SequenceEditor requirements", () => {
     setFieldValue(fieldByLabel("Sequence name"), "Spring");
     expect(bodyText()).toContain("Choose the list of people it runs for.");
 
-    setFieldValue(fieldByLabel("People"), "l1");
+    pickOption("People", "Buyers");
     expect(bodyText()).toContain(STEP_REASON);
 
     setFieldValue(fieldByLabel("Message"), "Hello");
@@ -97,8 +100,7 @@ describe("SequenceEditor requirements", () => {
 
   it("offers only static lists, since a sequence runs over a fixed list", async () => {
     await renderEditor(clientMock());
-    const people = fieldByLabel("People") as HTMLSelectElement;
-    const labels = Array.from(people.options).map((option) => option.textContent);
+    const labels = optionLabels("People");
     expect(labels).toContain("Buyers");
     expect(labels).not.toContain("Turkish");
   });
@@ -283,16 +285,13 @@ describe("SequenceEditor email steps", () => {
     const mock = withEmail([ops]);
     await renderEditor(mock);
     fillMinimum();
-    setFieldValue(fieldByLabel("Channel"), "email");
+    pickOption("Channel", "Email");
     await flush();
 
     expect(buttonByText("Save sequence")?.disabled).toBe(true);
     expect(bodyText()).toContain(STEP_REASON);
-    const sendFrom = fieldByLabel("Send from") as HTMLSelectElement;
-    expect(Array.from(sendFrom.options).map((option) => option.textContent)).toContain(
-      "Ops <ops@example.test>",
-    );
-    setFieldValue(sendFrom, "e1");
+    expect(optionLabels("Send from")).toContain("Ops <ops@example.test>");
+    pickOption("Send from", "Ops <ops@example.test>");
     expect(buttonByText("Save sequence")?.disabled).toBe(false);
     expect(bodyText()).not.toContain("Email steps need an unsubscribe link.");
 
@@ -305,13 +304,18 @@ describe("SequenceEditor email steps", () => {
   });
 
   it("blocks saving an email step whose account has no unsubscribe link, and says why", async () => {
-    const noLink = { ...ops, id: "e2", unsubscribeUrl: undefined } as EmailAccount;
+    const noLink = {
+      ...ops,
+      id: "e2",
+      name: "Ops no link",
+      unsubscribeUrl: undefined,
+    } as EmailAccount;
     const mock = withEmail([noLink]);
     await renderEditor(mock);
     fillMinimum();
-    setFieldValue(fieldByLabel("Channel"), "email");
+    pickOption("Channel", "Email");
     await flush();
-    setFieldValue(fieldByLabel("Send from"), "e2");
+    pickOption("Send from", "Ops no link <ops@example.test>");
     await flush();
 
     expect(buttonByText("Save sequence")?.disabled).toBe(true);
@@ -338,10 +342,10 @@ describe("SequenceEditor email steps", () => {
     const mock = withEmail([ops]);
     await renderEditor(mock);
     fillMinimum();
-    setFieldValue(fieldByLabel("Channel"), "email");
+    pickOption("Channel", "Email");
     await flush();
-    setFieldValue(fieldByLabel("Send from"), "e1");
-    setFieldValue(fieldByLabel("Channel"), "comment");
+    pickOption("Send from", "Ops <ops@example.test>");
+    pickOption("Channel", "Comment");
     await flush();
     clickButton("Save sequence");
     await flush();
@@ -391,7 +395,7 @@ describe("SequenceEditor editing", () => {
     await renderEditor(mock, { sequence: existing });
     expect(bodyText()).toContain("Edit sequence");
     expect(fieldByLabel("Sequence name").value).toBe("Spring follow-up");
-    expect(fieldByLabel("People").value).toBe("l1");
+    expect(selectedLabel("People")).toBe("Buyers");
     expect(fieldByLabel("Message").value).toBe("Thanks for the comment");
     expect(fieldByLabel("Wait before this step (hours)").value).toBe("12");
     expect(fieldByLabel("Variant B").value).toBe("Thank you");

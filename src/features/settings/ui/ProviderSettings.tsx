@@ -7,13 +7,7 @@ import type { HarnessVersionCheck } from "../model/providerCliChecks";
 import { Text } from "../../../shared/ui/Text";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import {
-  Group,
-  RevealedSetting,
-  SettingsFeedback,
-  settingDomId,
-  useSettingsPageReset,
-} from "./settingsControls";
+import { Group, RevealedSetting, SettingsFeedback, settingDomId } from "./settingsControls";
 import { t, useLocale } from "../../../shared/i18n";
 import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
 import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -22,7 +16,6 @@ import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import "./ProviderSettings.css";
 import { Button } from "../../../shared/ui/Button";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
-import { TabDirtyDot } from "../../../shared/ui/TabLabel";
 import {
   getHarnessAvailabilitySnapshot,
   hasProbedHarnessAvailability,
@@ -42,10 +35,7 @@ import {
 import { HARNESSES, HARNESS_TITLE } from "../../sessions";
 import type { HarnessId } from "../../sessions/public/session";
 import {
-  loadProjectProviderSettings,
-  projectProviderSettingsPersisted,
   projectProvidersRevision,
-  resetProjectSessionPreferences,
   subscribeProjectProviders,
 } from "../../sessions/public/projectProviders";
 import {
@@ -79,43 +69,21 @@ import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/ra
 import { GenericAcpSettings } from "../../providers/ui/GenericAcpSettings";
 import type { RecentProject } from "../../projects/public/recents";
 import { loadClaudeHooks, saveClaudeHooks, subscribeClaudeHooks } from "../model/settings";
-import { EMPTY_DRAFT, draftSize, type DefaultsDraft } from "../model/providerDefaultsDraft";
-import { saveDefaultsTargets } from "../model/providerDefaultsSave";
-import { selectedTargetValues } from "../model/providerDefaultsDraft";
-import { prepareDefaultsDraft } from "../model/providerDefaultsSupport";
 import { providersTabForSetting, type ProvidersTab } from "../model/providerSettingsTabs";
 import { ProviderAccountsSettings } from "./ProviderAccountsSettings";
 import { ProviderDecisionModels } from "./ProviderDecisionModels";
-import { ProviderDefaultsPanel, storedDefaultProvider } from "./ProviderDefaultsPanel";
-import {
-  ProviderDefaultsSaveBar,
-  useDefaultsTargets,
-  type DefaultsSaveState,
-} from "./ProviderDefaultsSaveBar";
+import { storedDefaultProvider } from "./ProviderDefaultsPanel";
 import { ProviderModelsGroup } from "./ProviderModelsGroup";
 import { ProviderCliTab } from "./ProviderCliTab";
 import { ProviderRuntimeGroup } from "./ProviderRuntimeGroup";
-import { hasProjectOverrides } from "./providerDefaultsScope";
 
-// Window-local, unsaved defaults survive Settings navigation, like template drafts.
-const retained: { tab: ProvidersTab; draft: DefaultsDraft; target: string } = {
-  tab: "providers",
-  draft: EMPTY_DRAFT,
-  target: "global",
-};
+let retainedTab: ProvidersTab = "providers";
 
-const retain = (patch: Partial<typeof retained>) => {
-  Object.assign(retained, patch);
-};
-
-/** Test seam: start the next page from the first tab with no pending defaults. */
 export function resetRetainedProvidersPage() {
-  retained.tab = "providers";
-  retained.draft = EMPTY_DRAFT;
-  retained.target = "global";
+  retainedTab = "providers";
 }
 
-export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: RecentProject[] }) {
+export function ProvidersPage({ cwd }: { cwd?: string; recents?: RecentProject[] }) {
   useLocale();
   const modelsVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   useSyncExternalStore(
@@ -149,24 +117,11 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   const [selectedProvider, setSelectedProvider] = useState<HarnessId | null>(
     () => loadLastModelChoice()?.harness ?? null,
   );
-  const [tab, setTabState] = useState<ProvidersTab>(retained.tab);
+  const [tab, setTabState] = useState<ProvidersTab>(retainedTab);
   const setTab = (next: ProvidersTab) => {
-    retain({ tab: next });
+    retainedTab = next;
     setTabState(next);
   };
-  const [draft, setDraftState] = useState(retained.draft);
-  const [targetChoice, setTargetChoice] = useState(retained.target);
-  const [saveState, setSaveState] = useState<DefaultsSaveState>({ state: "idle" });
-  const setDraft = (next: DefaultsDraft) => {
-    retain({ draft: next });
-    setDraftState(next);
-    setSaveState({ state: "idle" });
-  };
-  const targets = useDefaultsTargets(cwd, recents);
-  const parsedTarget = targets.parse(targetChoice);
-  // A target that left the options (project closed, group deleted) falls back to Global.
-  const target = targets.has(parsedTarget) ? parsedTarget : ({ kind: "global" } as const);
-  const pending = draftSize(draft);
   const [accountBusy, setAccountBusy] = useState(false);
   const [standaloneSignIn, setStandaloneSignIn] = useState<HarnessId | null>(null);
   // When this window last finished a version check; the snapshot itself carries no time.
@@ -220,63 +175,6 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
       visible ? prev.filter((id) => id !== harness) : [...new Set([...prev, harness])],
     );
   };
-
-  const saveDraft = () => {
-    const selected = selectedTargetValues(targetChoice).map(targets.parse).filter(targets.has);
-    const destinations =
-      saveState.state === "error" && saveState.failed
-        ? saveState.failed.map(targets.parse).filter(targets.has)
-        : selected;
-    const prepared = activeProvider
-      ? prepareDefaultsDraft(
-          draft,
-          activeProvider,
-          orderedHarnesses.filter(
-            (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
-          ),
-        )
-      : { draft };
-    const outcome = saveDefaultsTargets(
-      prepared.draft,
-      destinations.length ? destinations : [{ kind: "global" }],
-    );
-    if (outcome.failed.length) {
-      setSaveState({
-        state: "error",
-        failed: outcome.failed.map(({ target }) =>
-          target.kind === "global"
-            ? "global"
-            : target.kind === "project"
-              ? `project:${target.path}`
-              : `group:${target.id}`,
-        ),
-        message: outcome.failed
-          .map(({ target, message }) => `${targets.label(target)}: ${message}`)
-          .join("; "),
-      });
-      return;
-    }
-    setDraft(EMPTY_DRAFT);
-    setSaveState({ state: "saved", target: outcome.saved.map(targets.label).join(", ") });
-  };
-
-  const project = target.kind === "project" ? target.path : null;
-  // The settings shell offers "Restore defaults" for a project; visibility and accounts stay.
-  useSettingsPageReset(
-    project && tab === "defaults" && hasProjectOverrides(loadProjectProviderSettings(project))
-      ? () => {
-          const outcome = persistProviderPreference(
-            () => resetProjectSessionPreferences(project),
-            projectProviderSettingsPersisted,
-          );
-          setSaveState(
-            outcome.state === "saved"
-              ? { state: "saved", target: targets.label(target) }
-              : { state: "error", message: outcome.message },
-          );
-        }
-      : null,
-  );
 
   // Installed CLIs come first. Stable sorting keeps Claude before Codex and
   // preserves the catalog order within each availability group.
@@ -333,11 +231,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     }
   }, [revealedSetting, modelsVersion, activeProvider, accountBusy]);
 
-  // The list marks the default of the target being edited on Defaults, else the global one.
-  const listDefault =
-    tab === "defaults"
-      ? (draft.defaultProvider ?? storedDefaultProvider(target))
-      : storedDefaultProvider({ kind: "global" });
+  const listDefault = storedDefaultProvider({ kind: "global" });
   const probed = hasProbedHarnessAvailability();
   const entryFor = (harness: HarnessId): ProviderListEntry => {
     const check = updateSnapshot.checks?.find((entry) => entry.harness === harness);
@@ -357,11 +251,9 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
             signedOut ? t("{p0} signed out", { p0: signedOut }) : "",
           ]
             .filter(Boolean)
-            .join(" · ")
+            .join(", ")
         : accounts.length === 1
-          ? [accounts[0].label === "Default account" ? "" : accounts[0].label, auth?.label]
-              .filter(Boolean)
-              .join(" · ")
+          ? auth?.label
           : undefined;
     return {
       harness,
@@ -425,8 +317,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   const tabs: { id: ProvidersTab; label: string }[] = [
     { id: "providers", label: t("Accounts") },
     { id: "cli", label: t("CLI") },
-    { id: "defaults", label: t("Defaults") },
-    { id: "models", label: t("Models") },
+    { id: "models", label: t("Catalog") },
     { id: "decision", label: t("Decision models") },
   ];
 
@@ -440,12 +331,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
       >
         <TabList label={t("Providers")} className="provider-tabs">
           {tabs.map((item) => (
-            <Tab
-              key={item.id}
-              value={item.id}
-              disabled={accountBusy && item.id !== tab}
-              accessory={item.id === "defaults" && pending > 0 ? <TabDirtyDot /> : undefined}
-            >
+            <Tab key={item.id} value={item.id} disabled={accountBusy && item.id !== tab}>
               {item.label}
             </Tab>
           ))}
@@ -612,42 +498,12 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
                     </div>
                   ))}
                 </div>
-                {tab === "defaults" && activeProvider ? (
-                  <ProviderDefaultsPanel
-                    harness={activeProvider}
-                    target={target}
-                    draft={draft}
-                    onDraftChange={setDraft}
-                  />
-                ) : null}
                 {tab === "models" && activeProvider ? (
                   <ProviderModelsGroup key={activeProvider} harness={activeProvider} />
                 ) : null}
               </div>
             </div>
           </div>
-          {tab === "defaults" ? (
-            <ProviderDefaultsSaveBar
-              selection={targetChoice}
-              draft={draft}
-              activeProvider={activeProvider ?? undefined}
-              providers={orderedHarnesses.filter(
-                (harness) => isHarnessAvailable(harness) && !hiddenGlobally.includes(harness),
-              )}
-              onDraftChange={setDraft}
-              target={target}
-              options={targets.options}
-              onTargetChange={(value) => {
-                retain({ target: value });
-                setTargetChoice(value);
-                setSaveState({ state: "idle" });
-              }}
-              pending={pending}
-              saveState={saveState}
-              onSave={saveDraft}
-              onDiscard={() => setDraft(EMPTY_DRAFT)}
-            />
-          ) : null}
         </TabPanel>
       </Tabs>
     </div>

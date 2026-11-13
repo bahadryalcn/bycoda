@@ -1,4 +1,5 @@
 import { Code } from "../../../shared/ui/Code";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
@@ -125,12 +126,17 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
         id="setting-antigravity-account"
         data-setting-id="antigravity-account"
         variant="card"
-        className="provider-antigravity-box"
+        {...surfaceAttributes({ variant: "card" }, "provider-antigravity-box")}
         open={expanded}
         onOpenChange={setExpanded}
         summary={
           <span className="flex min-w-0 items-center gap-2.5 py-3">
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-stroke">
+            <span
+              {...surfaceAttributes(
+                { variant: "inset", radius: "card", ring: "stroke" },
+                "grid size-7 shrink-0 place-items-center",
+              )}
+            >
               <HarnessIcon harness="antigravity" className="icon-md" />
             </span>
             <span className="min-w-0">

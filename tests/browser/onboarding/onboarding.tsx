@@ -1,3 +1,6 @@
+import { FeatureHighlightMarkers } from "../../../src/features/onboarding/ui/FeatureHighlightMarkers";
+import GuideHub from "../../../src/features/onboarding/ui/GuideHub";
+import GuidedTour from "../../../src/features/onboarding/ui/GuidedTour";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
@@ -66,7 +69,39 @@ mockIPC(
       command === "generic_acp_list"
     )
       return [];
-    if (command === "import_discover") return { candidates: [], warnings: [], truncated: false };
+    if (command === "import_discover") {
+      const base = {
+        provider: "claude",
+        path: "C:/fixture/a.jsonl",
+        providerSessionId: "a",
+        cwd: "C:/fixture/alpha",
+        cwdExists: true,
+        resumable: true,
+        firstPrompt: "Fixture",
+        startedAt: 1700000000000,
+        lastAt: 1700000000000,
+        sizeBytes: 100,
+        kind: "interactive",
+        model: null,
+        archived: false,
+      };
+      return {
+        candidates: new URLSearchParams(location.search).has("projects")
+          ? [
+              base,
+              {
+                ...base,
+                path: "C:/fixture/b.jsonl",
+                providerSessionId: "b",
+                cwd: "C:/fixture/beta",
+              },
+            ]
+          : [],
+        filesScanned: 2,
+        filesSkipped: 0,
+        elapsedMs: 5,
+      };
+    }
     if (command.startsWith("resolve_")) throw new Error("Not installed in the browser fixture");
     if (command.startsWith("plugin:")) return null;
     throw new Error(`Unexpected fixture command: ${command}`);
@@ -89,17 +124,59 @@ applyThemePreference(
   new URLSearchParams(location.search).get("theme") === "light" ? "light" : loadThemePreference(),
 );
 
+if (new URLSearchParams(location.search).has("highlight")) {
+  localStorage.setItem("bycoda.highlights.v1", JSON.stringify({ baseline: "0.0.0", seen: [] }));
+}
 function Fixture() {
   const [open, setOpen] = useState(true);
   useEffect(() => {
-    if (!new URLSearchParams(location.search).has("agents")) return;
+    const params = new URLSearchParams(location.search);
+    if (!params.has("agents") && !params.has("projects")) return;
     const frame = requestAnimationFrame(() => {
       [...document.querySelectorAll<HTMLButtonElement>("button")]
-        .find((button) => /^3\s*(Agents|Ajanlar)/.test(button.textContent ?? ""))
+        .find((button) =>
+          (params.has("projects") ? /^5\s*(Projects|Projeler)/ : /^3\s*(Agents|Ajanlar)/).test(
+            button.textContent ?? "",
+          ),
+        )
         ?.click();
     });
     return () => cancelAnimationFrame(frame);
   }, []);
+  if (new URLSearchParams(location.search).has("highlight")) {
+    return (
+      <main style={{ padding: 48 }}>
+        <button data-usage-guide="project-navigation">Fixture project</button>
+        <FeatureHighlightMarkers />
+      </main>
+    );
+  }
+  if (new URLSearchParams(location.search).has("guideHub")) {
+    return (
+      <main>
+        <GuideHub projectCwd="/fixture" onClose={() => {}} onStartTour={() => {}} />
+      </main>
+    );
+  }
+  if (new URLSearchParams(location.search).has("compactTour")) {
+    return (
+      <main>
+        <button data-usage-guide="project-navigation">Fixture project</button>
+        <GuidedTour
+          steps={[
+            {
+              id: "fixture",
+              title: "Fixture tour",
+              body: "Fixture description",
+              targets: ["project-navigation"],
+            },
+          ]}
+          projectCwd="/fixture"
+          onEnd={() => {}}
+        />
+      </main>
+    );
+  }
   if (new URLSearchParams(location.search).has("guide")) {
     return (
       <main className="min-h-screen bg-background-base p-5 text-content">

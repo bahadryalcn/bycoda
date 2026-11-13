@@ -2,8 +2,7 @@ import { t } from "../../../shared/i18n";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import type { CrewAgent } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
-import { applyCandidate, applyPool, commonCandidate } from "../model/crewBulk";
-import { useCrewModelPools } from "../model/crewModelPools";
+import { applyCandidate, applyChoice, commonCandidate } from "../model/crewBulk";
 import { CrewBulkModelBar } from "./CrewBulkModelBar";
 
 /**
@@ -28,7 +27,6 @@ export function CrewEditorBulkBar({
   onAgentsChange: (agents: CrewAgent[]) => void;
   disabled: boolean;
 }) {
-  const modelPools = useCrewModelPools(data.machine.id, data.modelPoolsSupported === true);
   const allSelected = agents.length > 0 && selected.length === agents.length;
   return (
     <CrewBulkModelBar
@@ -38,8 +36,9 @@ export function CrewEditorBulkBar({
       suggested={commonCandidate(agents, selected)}
       targetCount={selected.length || agents.length}
       disabled={disabled}
-      pools={data.modelPoolsSupported === true ? modelPools.pools : undefined}
-      onApplyPool={(pool) => onAgentsChange(applyPool(agents, selected, pool))}
+      machineId={data.machine.id}
+      supported={data.modelPoolsSupported}
+      onApplyChoice={(choice) => onAgentsChange(applyChoice(agents, selected, choice))}
       leading={
         <Checkbox
           aria-label={t("Select all")}

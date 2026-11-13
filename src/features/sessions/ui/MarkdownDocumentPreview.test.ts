@@ -83,7 +83,8 @@ describe("MarkdownDocumentPreview images", () => {
     expect(html).toMatch(/<p align="center">/);
     expect(html).toContain('data-document-image="/repo/.github/readme/hero.png"');
     expect(html).toContain('aria-label="Hero"');
-    expect(html).toContain("inline-size:600px");
+    expect(html).toContain("--document-image-width:600px");
+    expect(html).toContain("inline-size:var(--document-image-width,auto)");
   });
 
   it("shows Markdown images in a table, relative to the document's folder", () => {

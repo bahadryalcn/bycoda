@@ -1,4 +1,5 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { EditorBlameResize } from "./EditorBlameResize";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -266,6 +267,7 @@ function StandardCodeMirrorEditor({
   useLocale();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const [blameView, setBlameView] = useState<EditorView | null>(null);
   const leftViewRef = useRef<EditorView | null>(null);
   const savedDocumentRef = useRef<Text | null>(null);
   const dirtyRef = useRef(false);
@@ -879,6 +881,7 @@ function StandardCodeMirrorEditor({
       markDirty();
     }
     viewRef.current = view;
+    setBlameView(view);
     captureObserverRef.current?.attach({
       setClosed(closed) {
         inputGate.setClosed(closed);
@@ -965,6 +968,7 @@ function StandardCodeMirrorEditor({
         focused: view.hasFocus || Boolean(split?.a.hasFocus),
       };
       viewRef.current = null;
+      setBlameView(null);
       leftViewRef.current = null;
       splitRef.current = null;
       scrollerRef.current = null;
@@ -1222,6 +1226,7 @@ function StandardCodeMirrorEditor({
 
   return (
     <>
+      <EditorBlameResize view={blameView} enabled={blameOn} />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {showDiff ? (
           <DiffChunkNav

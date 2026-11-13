@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { ProviderStatusGroup } from "./ProviderStatusGroup";
+const updateState = vi.hoisted(() => ({ catalogRefresh: "unchanged" }));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   hasProbedHarnessAvailability: () => true,
 }));
@@ -10,8 +11,17 @@ vi.mock("../model/harnessUpdateActions", () => ({
   subscribeHarnessUpdates: () => () => {},
   getHarnessUpdateSnapshot: () => ({
     checking: false,
-    runs: {},
-    checks: [{ harness: "codex", installed: "0.94.0", latest: "0.95.0", status: "behind" }],
+    runs: {
+      codex: { status: "updated", version: "0.95.0", catalogRefresh: updateState.catalogRefresh },
+    },
+    checks: [
+      {
+        harness: "codex",
+        installed: "0.94.0",
+        latest: "0.95.0",
+        status: updateState.catalogRefresh === "initial" ? "behind" : "current",
+      },
+    ],
   }),
   runHarnessUpdate: vi.fn(),
 }));
@@ -20,6 +30,7 @@ vi.mock("../../settings/ui/ProviderBinarySettings", () => ({
     createElement("button", null, missing ? "Set up" : "CLI path"),
 }));
 it("shows one compact status and an accent update action with version columns", () => {
+  updateState.catalogRefresh = "initial";
   const html = renderToStaticMarkup(
     createElement(ProviderStatusGroup, {
       harness: "codex",
@@ -35,6 +46,22 @@ it("shows one compact status and an accent update action with version columns", 
   expect(html).toContain("Update available");
   expect(html).toContain('aria-label="Update Codex to 0.95.0"');
   expect(html).not.toContain("settings-row");
+});
+it("keeps unchanged catalogs quiet and preserves genuine refresh failures", () => {
+  const render = () =>
+    renderToStaticMarkup(
+      createElement(ProviderStatusGroup, {
+        harness: "codex",
+        available: true,
+        checkedAt: null,
+        onCheck: vi.fn(),
+        onSetup: vi.fn(),
+      }),
+    );
+  updateState.catalogRefresh = "unchanged";
+  expect(render()).not.toContain("The model list did not change");
+  updateState.catalogRefresh = "failed";
+  expect(render()).toContain("Model refresh failed");
 });
 it("offers setup without a meaningless update check for missing CLIs", () => {
   const html = renderToStaticMarkup(
@@ -62,7 +89,7 @@ it("omits repeated bulk-check times and explains unavailable release feeds", () 
       onSetup: vi.fn(),
     }),
   );
-  expect(html).toContain("Update check unavailable");
+  expect(html).toContain("Unavailable");
   expect(html).not.toContain("Unknown");
   expect(html).not.toContain("Check for updates");
   expect(html).not.toContain("now");

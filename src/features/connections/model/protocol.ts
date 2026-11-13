@@ -486,6 +486,8 @@ type HostCommandBody =
       noteCard?: import("../../notes/notes").NoteComposerCard;
       /** Exact reviewed base; when present, text is the explicitly approved edited plan. */
       expectedPlanText?: string;
+      /** Context delivered to the provider separately from the visible user prompt. */
+      contextReplay?: string;
     }
   | {
       type: "draft";

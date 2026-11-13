@@ -40,6 +40,163 @@ const scroller = (page: Page) => page.locator(".agent-transcript");
 const reading = (page: Page) => page.locator("[data-composer][data-composer-reading]");
 const field = (page: Page) => page.locator("[data-composer] textarea");
 
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`composer workspace stays transparent ${light ? "light" : "dark"} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({}, light));
+      const workspace = page.locator("[data-composer-workspace]");
+      await expect(workspace).toBeVisible();
+      await expect(workspace).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await expect(workspace).toHaveCSS("background-image", "none");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/composer-workspace-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`composer and question glass fallback ${light ? "light" : "dark"} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(url({ "docked-question": "" }, light));
+      const box = page.locator("[data-composer-box]");
+      const question = page.locator("[data-question-form] > form");
+      await expect(question).toBeVisible();
+      await field(page).fill("Retained composer draft");
+      for (const mode of ["glass", "no-blur", "streaming", "forced-colors"] as const) {
+        await page.emulateMedia({ forcedColors: mode === "forced-colors" ? "active" : "none" });
+        await page.evaluate((state) => {
+          document.documentElement.toggleAttribute("data-performance-no-blur", state === "no-blur");
+          const session = document.querySelector("[data-composer]");
+          session?.toggleAttribute("data-session-streaming", state === "streaming");
+          if (state === "streaming") session?.setAttribute("data-session-streaming", "true");
+        }, mode);
+        for (const node of [box, question]) {
+          const actual = await node.evaluate((element) => {
+            const s = getComputedStyle(element);
+            const probe = document.createElement("span");
+            element.appendChild(probe);
+            probe.style.background = "var(--ui-composer-surface)";
+            const opaque = getComputedStyle(probe).backgroundColor;
+            probe.style.background = "var(--ui-activity-dock-glass)";
+            const glass = getComputedStyle(probe).backgroundColor;
+            probe.remove();
+            return { background: s.backgroundColor, filter: s.backdropFilter, opaque, glass };
+          });
+          expect(actual.background).toBe(mode === "glass" ? actual.glass : actual.opaque);
+          if (mode !== "glass") expect(actual.filter).toBe("none");
+        }
+        await expect(field(page)).toHaveValue("Retained composer draft");
+        await page.screenshot({
+          animations: "disabled",
+          path: `temp/verification/feature-controls/composer-question-${mode}-${light ? "light" : "dark"}-${width}.png`,
+        });
+      }
+    });
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`context section dividers ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ "context-sections": "" }, light));
+      await page.getByRole("button").first().click();
+      const dialog = page.getByRole("dialog", { name: "Context usage" });
+      for (const section of ["agents", "stats", "actions"]) {
+        const node = dialog.locator(`.context-meter-${section}`);
+        await expect(node).toBeVisible();
+        const actual = await node.evaluate((element) => {
+          const s = getComputedStyle(element);
+          const probe = document.createElement("span");
+          probe.style.borderTop = "1px solid var(--color-stroke)";
+          element.appendChild(probe);
+          const expected = getComputedStyle(probe).borderTopColor;
+          probe.remove();
+          return { width: s.borderTopWidth, color: s.borderTopColor, expected };
+        });
+        expect(actual.width).toBe("1px");
+        expect(actual.color).toBe(actual.expected);
+      }
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/context-sections-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });
+
+for (const light of [true, false])
+  for (const width of [480, 800, 1280])
+    test(`session notes responsive divider ${light ? "light" : "dark"} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ notes: "" }, light));
+      const panel = page.locator("[data-notes-panel]");
+      await expect(panel).toBeVisible();
+      const values = await panel.evaluate((node) => {
+        const style = getComputedStyle(node);
+        const probe = document.createElement("span");
+        node.appendChild(probe);
+        probe.style.borderTop = "1px solid var(--color-stroke)";
+        const stroke = getComputedStyle(probe).borderTopColor;
+        probe.style.borderTop = "1px solid var(--ui-pane-border)";
+        const pane = getComputedStyle(probe).borderTopColor;
+        probe.remove();
+        return {
+          topWidth: style.borderTopWidth,
+          leftWidth: style.borderLeftWidth,
+          topColor: style.borderTopColor,
+          leftColor: style.borderLeftColor,
+          stroke,
+          pane,
+        };
+      });
+      console.log("NOTES_DIVIDER", light, width, JSON.stringify(values));
+      if (width < 600) {
+        expect(values.topWidth).toBe("1px");
+        expect(values.leftWidth).toBe("0px");
+        expect(values.topColor).toBe(values.stroke);
+      } else {
+        expect(values.topWidth).toBe("0px");
+        expect(values.leftWidth).toBe("1px");
+        expect(values.leftColor).toBe(values.pane);
+      }
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/notes-divider-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`split session header divider ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(url({ split: "" }, light));
+      const header = page.locator("[data-session-header]");
+      await expect(header).toBeVisible();
+      await expect(page.getByText("Cannot read properties of null (reading 'files')")).toHaveCount(
+        0,
+      );
+      const result = await header.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.borderBottom = "1px solid var(--ui-tone-neutral-border)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).borderBottomColor;
+        probe.remove();
+        const style = getComputedStyle(node);
+        return { width: style.borderBottomWidth, color: style.borderBottomColor, expected };
+      });
+      expect(result.width).toBe("1px");
+      expect(result.color).toBe(result.expected);
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/session-header-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });
+
 for (const turns of [0, 2]) {
   test(`saved draft opens in composer with ${turns} history turns`, async ({ page }) => {
     await page.goto(url({ savedDraft: "", turns: String(turns) }));
@@ -523,3 +680,25 @@ test.describe("touch input", () => {
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
   });
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`shared pane drag affordance ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/chat/composer-compact.html?split&pane-grab${theme === "light" ? "&light" : ""}`,
+      );
+      const header = page.locator("[data-session-header]").first();
+      await expect(header).toHaveCSS("cursor", "grab");
+      const box = await header.boundingBox();
+      if (!box) throw new Error("Missing pane header");
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height - 2);
+      await page.mouse.down();
+      await expect(header).toHaveCSS("cursor", "grabbing");
+      await expect.poll(() => page.evaluate(() => window.compactFixture.events.paneDrags)).toBe(1);
+      await page.mouse.up();
+      await page.screenshot({
+        path: `temp/verification/session-last-interactions/pane-${theme}-${width}.png`,
+      });
+    });

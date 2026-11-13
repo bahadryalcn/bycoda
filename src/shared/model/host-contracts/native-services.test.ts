@@ -17,6 +17,46 @@ import {
   HOST_RPC_METHOD_ALIASES,
 } from "./index";
 
+it.each(["secrets.input.authorize", "servers.ssh.execute.permission"])(
+  "accepts the native owner authorization request for %s",
+  (action) => {
+    const params = { id: "original-request", action };
+    expect(parseHostRpcParams("native.services.conversation.desktop.authorize", params)).toEqual(
+      params,
+    );
+    expect(() =>
+      parseHostRpcParams("native.services.conversation.desktop.authorize", {
+        ...params,
+        fullAccess: true,
+      }),
+    ).toThrow();
+  },
+);
+
+it("preserves native SSH permission replies without accepting forged or malformed policy", () => {
+  const schema =
+    NATIVE_SERVICES_RPC_SCHEMAS["native.services.conversation.desktop.authorize"].result;
+  for (const result of [
+    { authorized: false },
+    { authorized: true },
+    { authorized: true, fullAccess: false },
+    { authorized: true, fullAccess: true },
+  ])
+    expect(schema.parse(result)).toEqual(result);
+  for (const result of [
+    { authorized: false, fullAccess: true },
+    { authorized: true, fullAccess: "true" },
+    { authorized: true, fullAccess: true, owner: "forged" },
+  ])
+    expect(schema.safeParse(result).success).toBe(false);
+  expect(() =>
+    parseHostRpcParams("native.services.conversation.desktop.authorize", {
+      id: "request",
+      action: "unknown.authorize",
+    }),
+  ).toThrow();
+});
+
 it("accepts only known legacy formatter metadata for formatter recovery", () => {
   const schema = NATIVE_SERVICES_RPC_SCHEMAS["native.services.workspace.format"].result;
   const result = { formatted: "const x = 1;\n", cursorOffset: 0 };

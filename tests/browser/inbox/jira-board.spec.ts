@@ -49,22 +49,22 @@ test("pointer drag changes Jira status and ranks in the destination column", asy
   });
 });
 test("pointer drag moves backlog issues to the active sprint and back", async ({ page }) => {
-  await page.getByRole("button", { name: "Backlog & sprints", exact: true }).click();
+  await page.getByRole("tab", { name: "Backlog & sprints", exact: true }).click();
   const backlog = page.getByRole("region", { name: "Backlog", exact: true });
   const active = page.getByRole("region", { name: "Sprint 21", exact: true });
   // Only the first group opens by default; expand Backlog to load and show its issues.
-  await backlog.getByRole("button", { name: "Backlog", exact: true }).click();
+  await backlog.locator("summary").first().click();
   await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
   await drag(
     page,
     backlog.locator(".jira-board-card").filter({ hasText: "ENG-1" }),
-    active.locator("header"),
+    active.locator("summary").first(),
   );
   await expect(active.locator(".jira-board-card")).toHaveCount(2);
   await drag(
     page,
     active.locator(".jira-board-card").filter({ hasText: "ENG-1" }),
-    backlog.locator("header"),
+    backlog.locator("summary").first(),
   );
   await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
   await page.screenshot({
@@ -157,7 +157,7 @@ for (const variant of [
       document.documentElement.dataset.theme = theme;
       document.documentElement.classList.toggle("theme-light", theme === "light");
     }, variant.theme);
-    const input = page.getByRole("searchbox", { name: "Filter loaded issues" });
+    const input = page.getByRole("searchbox", { name: "Filter issues" });
     await input.focus();
     await input.pressSequentially("ENG-1");
     await expect(page.locator(".jira-board-card")).toHaveCount(1);
@@ -183,6 +183,95 @@ for (const variant of [
 }
 
 const shotDir = "temp/verification/vis-dnd-3";
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`Jira UI demand paging and layout ${theme} ${width}`, async ({ page }) => {
+      const directory = "temp/verification/2026-11-13-jira-ui";
+      await page.setViewportSize({ width, height: 800 });
+      const setTheme = async () => {
+        await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+        await page.evaluate(
+          (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
+          theme,
+        );
+      };
+      await page.goto("/tests/browser/inbox/jira-board.html?dense");
+      await setTheme();
+      await expect(page.locator(".jira-board-card")).toHaveCount(40);
+      const board = page.locator(".jira-board-columns");
+      const box = (await board.boundingBox())!;
+      await page.mouse.move(box.x + 80, box.y + 80);
+      await page.mouse.down({ button: "middle" });
+      await page.mouse.move(box.x - 120, box.y + 50, { steps: 4 });
+      await page.mouse.up({ button: "middle" });
+      expect(await board.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+      await board.evaluate((element) => {
+        element.scrollLeft = 0;
+      });
+      await page.screenshot({ path: `${directory}/board-${theme}-${width}.png` });
+      const column = page.locator(".jira-board-column [data-continuous-list]").first();
+      await column.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+        element.dispatchEvent(new Event("scroll"));
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as unknown as {
+                  jiraFixtureCalls: { command: string; args: Record<string, unknown> }[];
+                }
+              ).jiraFixtureCalls.filter(
+                (call) =>
+                  call.command === "jira_board_issues" && call.args.nextPageToken === "second",
+              ).length,
+          ),
+        )
+        .toBe(1);
+      await page.getByRole("tab", { name: "Backlog & sprints", exact: true }).click();
+      await page.screenshot({ path: `${directory}/planning-${theme}-${width}.png` });
+      await page.goto("/tests/browser/inbox/jira-board.html?inbox&dense");
+      await setTheme();
+      const list = page.locator('[data-continuous-list^="inbox:"]');
+      await expect(list).toBeVisible();
+      await list.locator("button").first().click();
+      await expect(page.getByRole("heading", { name: "Bulgu", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${directory}/inbox-${theme}-${width}.png` });
+      const picker = page.getByRole("button", { name: /^Choose project:/ });
+      await picker.hover();
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await picker.click();
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await page.screenshot({ path: `${directory}/project-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: /^Filter inbox/ }).click();
+      await expect(page.getByRole("dialog", { name: "Filter inbox", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${directory}/filters-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
+      await list.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+        element.dispatchEvent(new Event("scroll"));
+      });
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as unknown as {
+                  jiraFixtureCalls: { command: string; args: Record<string, unknown> }[];
+                }
+              ).jiraFixtureCalls.filter(
+                (call) =>
+                  call.command === "jira_list_issue_page" && call.args.nextPageToken === "second",
+              ).length,
+          ),
+        )
+        .toBe(1);
+    });
+  }
+}
 for (const light of [false, true]) {
   const theme = light ? "light" : "dark";
   test(`drag shows one badge with the issue, a column mark, a rank line, and cancels cleanly (${theme})`, async ({
@@ -251,14 +340,14 @@ for (const light of [false, true]) {
       (light) => document.documentElement.classList.toggle("theme-light", light),
       light,
     );
-    await page.getByRole("button", { name: "Backlog & sprints", exact: true }).click();
+    await page.getByRole("tab", { name: "Backlog & sprints", exact: true }).click();
     const backlog = page.getByRole("region", { name: "Backlog", exact: true });
     const active = page.getByRole("region", { name: "Sprint 21", exact: true });
-    await backlog.getByRole("button", { name: "Backlog", exact: true }).click();
+    await backlog.locator("summary").first().click();
     await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
     const card = backlog.locator(".jira-board-card").filter({ hasText: "ENG-1" });
     const from = (await card.boundingBox())!;
-    const to = (await active.locator("header").boundingBox())!;
+    const to = (await active.locator("summary").first().boundingBox())!;
     await page.mouse.move(from.x + 30, from.y + 15);
     await page.mouse.down();
     await page.mouse.move(from.x + 45, from.y + 25, { steps: 3 });
@@ -271,3 +360,214 @@ for (const light of [false, true]) {
     await page.mouse.up();
   });
 }
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`inbox filter layout and assignee names - ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/inbox/jira-board.html?uiControls");
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Filters", exact: true }).click();
+      const panel = page.getByRole("dialog", { name: "Filter inbox", exact: true });
+      const open = panel.getByRole("checkbox", { name: "Open", exact: true });
+      const closed = panel.getByRole("checkbox", { name: "Closed", exact: true });
+      const openBox = (await open.boundingBox())!;
+      const closedBox = (await closed.boundingBox())!;
+      expect(Math.abs(openBox.y - closedBox.y)).toBeLessThan(2);
+      expect(closedBox.x).toBeGreaterThan(openBox.x);
+      await open.check();
+      await closed.check();
+      await expect(open).toBeChecked();
+      await expect(closed).toBeChecked();
+      const time = panel.getByRole("button", { name: /^Time:/ });
+      await time.click();
+      await page.getByRole("option", { name: "Last 7 days", exact: true }).click();
+      await expect(time).toContainText("Last 7 days");
+      const assignee = panel.getByRole("button", { name: /^Assignee:/ });
+      await assignee.click();
+      const ada = page.getByRole("option", { name: "Ada Lovelace", exact: true });
+      await expect(ada).toBeVisible();
+      await expect(page.getByText("Assigned to {name}", { exact: true })).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/inbox-filters-20261113/assignees-${theme}-${width}.png`,
+      });
+      await ada.click();
+      await page.keyboard.press("Escape");
+      await expect(panel).toBeVisible();
+      await expect(assignee).toContainText("Ada Lovelace");
+      await page.screenshot({
+        path: `temp/verification/inbox-filters-20261113/filters-${theme}-${width}.png`,
+      });
+      const panelBox = (await panel.boundingBox())!;
+      expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(width);
+      expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(800);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`changes glance rows ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.addInitScript(
+        (mode) => document.documentElement.classList.toggle("theme-light", mode === "light"),
+        theme,
+      );
+      await page.goto("/tests/browser/inbox/jira-board.html?changes-fixture");
+      await page.evaluate(
+        (mode) => document.documentElement.classList.toggle("theme-light", mode === "light"),
+        theme,
+      );
+      const rows = page.locator("[data-inbox-pr-glance] ul > li");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first()).toHaveCSS("border-bottom-width", "1px");
+      await expect(rows.last()).toHaveCSS("border-bottom-width", "0px");
+      await page.screenshot({
+        path: `temp/verification/2026-11-04-session-tools/inbox-changes-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [480, 800, 1280]) {
+    test(`inbox collection responsive frame ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/inbox/jira-board.html?inbox&dense");
+      await page.evaluate(
+        (mode) => document.documentElement.classList.toggle("theme-light", mode === "light"),
+        theme,
+      );
+      const panel = page.locator(".inbox-list-panel");
+      await expect(panel).toBeVisible();
+      await expect(panel).toHaveCSS("border-right-width", width === 480 ? "0px" : "1px");
+      await page.screenshot({
+        path: `temp/verification/2026-11-04-session-tools/inbox-frame-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [480, 800, 1280]) {
+    test(`jira board detail frame ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/inbox/jira-board.html?inbox&dense");
+      await page.evaluate(
+        (mode) => document.documentElement.classList.toggle("theme-light", mode === "light"),
+        theme,
+      );
+      await page.getByRole("button", { name: "Board", exact: true }).click();
+      await page.locator(".jira-board-card").first().click();
+      const detail = page.locator(".jira-board-detail");
+      await expect(detail).toBeVisible();
+      await expect(detail).toHaveCSS("border-left-width", width === 480 ? "0px" : "1px");
+      await page.screenshot({
+        path: `temp/verification/2026-11-04-session-tools/board-frame-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`inbox activity rail ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/inbox/jira-board.html?timeline-fixture");
+      await page.evaluate(
+        (mode) => document.documentElement.classList.toggle("theme-light", mode === "light"),
+        theme,
+      );
+      await expect(page.getByText("Review message")).toBeVisible();
+      await expect(page.getByText("First commit")).toBeVisible();
+      await expect(page.getByText("Second commit")).toBeVisible();
+      const title = page.getByText("First commit");
+      const before = await title.evaluate((node) => getComputedStyle(node).color);
+      await title.hover();
+      const hover = await title.evaluate((node) => getComputedStyle(node).color);
+      console.log("COMMIT_HOVER", before, hover);
+      await page.screenshot({
+        path: `temp/verification/2026-11-04-session-tools/inbox-rail-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`inbox evidence and title hover ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/inbox/jira-board.html?evidence-fixture");
+      await page.evaluate(
+        (mode) => document.documentElement.classList.toggle("theme-light", mode === "light"),
+        theme,
+      );
+      await expect(page.getByText("expect(first).toBe(2);")).toBeVisible();
+      const marked = page.getByText("expect(first).toBe(2);").locator("..");
+      await expect(marked).toHaveCSS("border-left-width", "2px");
+      const title = page.getByText("Update sidebar activity", { exact: true });
+      await expect(title).toHaveCSS("text-decoration-line", "none");
+      await title.hover();
+      await expect(title).toHaveCSS("text-decoration-line", "underline");
+      await page.screenshot({
+        path: `temp/verification/2026-11-04-session-tools/inbox-evidence-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [1000, 1280]) {
+    test(`narrow inbox discussion ground ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/inbox/jira-board.html?inbox&dense");
+      await page.evaluate(
+        (mode) => document.documentElement.classList.toggle("theme-light", mode === "light"),
+        theme,
+      );
+      await page.locator(".bycoda-inbox").evaluate((node) => {
+        (node as HTMLElement).style.width = "760px";
+      });
+      await page.getByRole("button", { name: "Ask", exact: true }).click();
+      const panel = page.locator(".inbox-discussion-panel");
+      await expect(panel).toBeVisible();
+      await expect(panel).toHaveCSS("position", "absolute");
+      const colors = await panel.evaluate((node) => [
+        getComputedStyle(node).backgroundColor,
+        getComputedStyle(node).getPropertyValue("--color-background-base").trim(),
+      ]);
+      console.log("DISCUSSION_GROUND", JSON.stringify(colors));
+      await page.screenshot({
+        path: `temp/verification/2026-11-04-session-tools/discussion-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await page.locator(".bycoda-inbox").evaluate((node) => {
+        (node as HTMLElement).style.width = "900px";
+      });
+      await expect(panel).toHaveCSS("position", "relative");
+      const wideColor = await panel.evaluate((node) => getComputedStyle(node).backgroundColor);
+      expect(wideColor === "rgba(0, 0, 0, 0)" || wideColor.includes("/ 0)")).toBe(true);
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`pull request checks visual ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/inbox/jira-board.html?checks-fixture");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const checks = page.locator("[data-inbox-pr-checks]");
+      await expect(checks).toBeVisible();
+      await expect(checks).toContainText("Build");
+      await expect(checks).toContainText("Tests");
+      await page.screenshot({
+        path: `temp/verification/component-families/pr-checks-${theme}-${width}.png`,
+      });
+    });

@@ -15,7 +15,7 @@ test("usage surfaces stay compact in both themes and show hour context on hover"
       );
       await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
       for (const view of ["Overview", "Projects", "Time analysis", "Limits"]) {
-        await page.getByRole("radio", { name: view, exact: true }).click();
+        await page.getByRole("tab", { name: view, exact: true }).click();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,
         );
@@ -162,7 +162,7 @@ for (const [theme, width] of [
     await select(page, "Resolution", "Hourly");
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-usage-chart="trend"] details table tbody tr')).toHaveCount(4);
-    await page.getByRole("radio", { name: "Time analysis", exact: true }).click();
+    await page.getByRole("tab", { name: "Time analysis", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Day and hour activity" })).toBeVisible();
     await expect(page.locator('[data-usage-chart="trend"]')).toHaveCount(0);
     await expect(page.locator(".usage-metrics")).toHaveCount(0);
@@ -181,7 +181,7 @@ for (const [theme, width] of [
     await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Filters (1)", exact: true })).toBeVisible();
-    await page.getByRole("radio", { name: "Projects", exact: true }).click();
+    await page.getByRole("tab", { name: "Projects", exact: true }).click();
     await expect(page.locator('[data-usage-chart="trend"]')).toHaveCount(0);
     await expect(page.locator(".usage-metrics")).toHaveCount(0);
     await openFilters(page);
@@ -199,7 +199,7 @@ for (const [theme, width] of [
     await openFilters(page);
     await page.getByRole("button", { name: "Reset filters", exact: true }).click();
     await page.keyboard.press("Escape");
-    await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    await page.getByRole("tab", { name: "Limits", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Limit history", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -209,7 +209,7 @@ for (const [theme, width] of [
 }
 test("usage analytics and exact date/time controls are localized in Turkish", async ({ page }) => {
   await page.goto("/tests/browser/usage/usage-budgets.html?page=1&analytics=1&lang=tr");
-  await expect(page.getByRole("radio", { name: "Genel bakış", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Genel bakış", exact: true })).toBeVisible();
   const trend = page.locator('[data-usage-chart="trend"]');
   const series = trend.locator('button[aria-pressed="true"]');
   await expect(series.first()).toBeVisible();
@@ -260,7 +260,7 @@ test("uses the full settings width, distinguishes views and follows configured a
     fullPage: true,
     animations: "disabled",
   });
-  await page.getByRole("radio", { name: "Projects", exact: true }).click();
+  await page.getByRole("tab", { name: "Projects", exact: true }).click();
   await expect(page.locator('[data-usage-chart="trend"]')).toHaveCount(0);
   await openFilters(page);
   await expect(page.getByRole("button", { name: "Group by: Project", exact: true })).toBeVisible();
@@ -271,7 +271,7 @@ test("uses the full settings width, distinguishes views and follows configured a
     fullPage: true,
     animations: "disabled",
   });
-  await page.getByRole("radio", { name: "Time analysis", exact: true }).click();
+  await page.getByRole("tab", { name: "Time analysis", exact: true }).click();
   await expect(page.locator(".usage-hour-cell")).toHaveCount(168);
   const grid = page.getByRole("grid", { name: "Day and hour activity", exact: true });
   expect(await grid.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
@@ -307,3 +307,129 @@ test("uses the full settings width, distinguishes views and follows configured a
     animations: "disabled",
   });
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`shared usage quota hover and account dividers ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/usage/usage-budgets.html?page=1&analytics=1&theme=${theme}`);
+      await page.getByRole("tab", { name: "Limits", exact: true }).click();
+      const row = page.locator('[data-setting-id="show-remaining-usage"]');
+      const toggle = row.getByRole("switch", { name: "Show remaining usage", exact: true });
+      const initial = await toggle.getAttribute("aria-checked");
+      await expect(row).toHaveAttribute("data-press-feedback", "false");
+      await expect(row).toHaveCSS("border-top-left-radius", "0px");
+      const accounts = page.locator(".usage-accounts > .usage-account");
+      await expect(accounts).toHaveCount(4);
+      await expect(accounts.first()).toHaveCSS("border-bottom-width", "1px");
+      await expect(accounts.last()).toHaveCSS("border-bottom-width", "0px");
+      const colors = await accounts.first().evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.borderTop = "1px solid var(--ui-settings-group-border)";
+        node.append(probe);
+        const expected = getComputedStyle(probe).borderTopColor;
+        probe.remove();
+        return { expected, actual: getComputedStyle(node).borderBottomColor };
+      });
+      expect(colors.actual).toBe(colors.expected);
+      await page.mouse.move(width - 2, 2);
+      await page.screenshot({
+        path: `temp/verification/usage-surfaces/limits-${theme}-${width}.png`,
+        fullPage: true,
+      });
+      await row.locator("span").first().hover();
+      const hover = await row.evaluate((node) => getComputedStyle(node).backgroundImage);
+      expect(hover).toContain("linear-gradient");
+      await page.mouse.down();
+      expect(await row.evaluate((node) => getComputedStyle(node).backgroundImage)).toBe(hover);
+      await expect(toggle).toHaveAttribute("aria-checked", initial!);
+      await page.screenshot({
+        path: `temp/verification/usage-surfaces/inert-press-${theme}-${width}.png`,
+      });
+      await page.mouse.up();
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-checked", initial === "true" ? "false" : "true");
+      await toggle.focus();
+      await expect(toggle).toBeFocused();
+      await page.screenshot({
+        path: `temp/verification/usage-surfaces/toggled-focus-${theme}-${width}.png`,
+      });
+      await page.reload();
+      await page.getByRole("tab", { name: "Limits", exact: true }).click();
+      await expect(
+        page.getByRole("switch", { name: "Show remaining usage", exact: true }),
+      ).toHaveAttribute("aria-checked", initial === "true" ? "false" : "true");
+    });
+  }
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`usage paint geometry ${theme} ${width}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 960 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/usage/usage-budgets.html?page=1&analytics=1&stress=1&theme=${theme}`,
+      );
+      await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
+      await page.getByRole("tab", { name: "Projects", exact: true }).click();
+      const bars = page.locator(".usage-rank-track > span");
+      await expect(bars.first()).toBeVisible();
+      expect(
+        await bars.evaluateAll((nodes) =>
+          nodes.every((node) => {
+            const width = node.getBoundingClientRect().width;
+            return width > 0 && width <= node.parentElement!.getBoundingClientRect().width;
+          }),
+        ),
+      ).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("rank.png"), animations: "disabled" });
+      await page.getByRole("tab", { name: "Time analysis", exact: true }).click();
+      await expect(page.locator(".usage-hour-cell")).toHaveCount(168);
+      const grid = page.getByRole("grid", { name: "Day and hour activity", exact: true });
+      await grid.getByRole("gridcell").first().focus();
+      await page.keyboard.press("ArrowDown");
+      await expect(grid.getByRole("gridcell").nth(7)).toBeFocused();
+      await page.mouse.move(0, 0);
+      await page.screenshot({ path: testInfo.outputPath("time.png"), animations: "disabled" });
+      await grid.getByRole("gridcell").nth(7).click();
+      await expect(page.locator(".usage-hour-cell")).toHaveCount(24);
+      expect(
+        await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").length),
+      ).toBe(2);
+      // Hour drilldown narrows the shared window; reset it before testing the seeded quota history.
+      await page.goto(
+        `/tests/browser/usage/usage-budgets.html?page=1&analytics=1&stress=1&theme=${theme}`,
+      );
+      await page.getByRole("tab", { name: "Limits", exact: true }).click();
+      const plot = page.locator(".usage-quota-plot");
+      await expect(plot).toBeVisible();
+      await plot.scrollIntoViewIfNeeded();
+      await expect(plot).toHaveCSS("margin-left", "36px");
+      await expect(page.locator(".usage-quota-point").first()).toBeVisible();
+      const points = await page.locator(".usage-quota-point").evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const style = getComputedStyle(node);
+          return [style.backgroundColor, style.left, style.bottom];
+        }),
+      );
+      expect(
+        points.every(
+          ([color, left, bottom]) =>
+            color !== "rgba(0, 0, 0, 0)" && parseFloat(left) >= 0 && parseFloat(bottom) >= 0,
+        ),
+      ).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("quota.png"), animations: "disabled" });
+      await page.getByRole("button", { name: "Account actions", exact: true }).first().click();
+      await expect(page.getByRole("menu", { name: "Account color", exact: true })).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath("account-colors.png"),
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+  }
+}

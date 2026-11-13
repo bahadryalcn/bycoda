@@ -14,7 +14,7 @@ type Stored = {
   version: number;
   createdAt: number;
   updatedAt: number;
-  value: { paths?: unknown; runWithoutAsking?: unknown };
+  value: { paths?: unknown; runWithoutAsking?: unknown; allowChangesWithoutAsking?: unknown };
 };
 type Deps = {
   repository: Pick<AssistantRepository, "get" | "put">;
@@ -139,6 +139,7 @@ export async function getAssistantFolders(deps: Deps): Promise<AssistantFoldersR
       .slice(0, ASSISTANT_FOLDERS_MAX)
       .map((value) => ({ id: assistantFolderId(value), path: value })),
     runWithoutAsking: row?.value.runWithoutAsking === true,
+    allowChangesWithoutAsking: row?.value.allowChangesWithoutAsking === true,
     version: row?.version ?? 0,
     updatedAt: row?.updatedAt ?? 0,
   };
@@ -150,6 +151,7 @@ export async function setAssistantFolders(
   paths: string[],
   runWithoutAsking: boolean,
   context = defaults(),
+  allowChangesWithoutAsking?: boolean,
 ): Promise<AssistantFoldersResponse> {
   if (paths.length > ASSISTANT_FOLDERS_MAX)
     throw new Error(`At most ${ASSISTANT_FOLDERS_MAX} Assistant folders are allowed.`);
@@ -169,7 +171,12 @@ export async function setAssistantFolders(
       version: old?.version ?? 0,
       createdAt: old?.createdAt ?? now,
       updatedAt: now,
-      value: { paths: [...canonical.values()], runWithoutAsking },
+      value: {
+        paths: [...canonical.values()],
+        runWithoutAsking,
+        allowChangesWithoutAsking:
+          allowChangesWithoutAsking ?? old?.value.allowChangesWithoutAsking === true,
+      },
     },
     expectedVersion,
   );
@@ -180,7 +187,13 @@ export async function setAssistantFolders(
 export async function assistantFoldersOp(
   input:
     | { op: "folders.get" }
-    | { op: "folders.set"; expectedVersion: number; paths: string[]; runWithoutAsking: boolean },
+    | {
+        op: "folders.set";
+        expectedVersion: number;
+        paths: string[];
+        runWithoutAsking: boolean;
+        allowChangesWithoutAsking?: boolean;
+      },
   principal: string,
   deps: Deps,
 ): Promise<{ assistantFolders: AssistantFoldersResponse }> {
@@ -192,6 +205,8 @@ export async function assistantFoldersOp(
       input.expectedVersion,
       input.paths,
       input.runWithoutAsking,
+      undefined,
+      input.allowChangesWithoutAsking,
     ),
   };
 }

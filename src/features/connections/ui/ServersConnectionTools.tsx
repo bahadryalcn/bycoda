@@ -18,6 +18,7 @@ import { useOpenAgentServerTerminal, useOpenServerTerminal } from "./ServersTerm
 import { ServerFiles } from "./ServerFiles";
 import { ServerSnippets } from "./ServerSnippets";
 import { sshEndpointPreview, sshJumpChain } from "../model/sshEndpointReview";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ServerForwards } from "./ServerForwards";
 import { ServerActivity } from "./ServerActivity";
 import { ServerOrganization } from "./ServerOrganization";
@@ -98,7 +99,12 @@ export function ServersConnectionTools({
           {sshEndpointPreview(endpoint.httpProxy)}
         </Text>
       ) : null}
-      <div className="sticky inset-bs-0 z-1 flex flex-wrap gap-2 bg-(--ui-workspace-reading-base) pbe-2">
+      <div
+        {...surfaceAttributes(
+          { variant: "reading-base" },
+          "sticky inset-bs-0 z-1 flex flex-wrap gap-2 pbe-2",
+        )}
+      >
         {(server.kind === "ssh" || server.machine?.ssh) && openTerminal ? (
           <Button variant="primary" onClick={() => openTerminal(currentServer)} disabled={busy}>
             <Terminal aria-hidden className="icon-sm" />

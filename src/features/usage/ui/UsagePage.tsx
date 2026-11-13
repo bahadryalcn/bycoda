@@ -5,7 +5,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import "./UsagePage.css";
 import { RefreshCw, MoreHorizontal } from "../../../shared/ui/icons";
 import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
@@ -82,7 +82,12 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                 <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
               </Button>
             </div>
-            <Surface variant="card" padding="none" className="usage-accounts">
+            <Surface
+              variant="card"
+              padding="none"
+              dividers="settings-group"
+              className="usage-accounts"
+            >
               {accounts
                 .filter(
                   (account) =>
@@ -226,8 +231,8 @@ function AccountLimits({
                   checked: account.color === option.id,
                   icon: (
                     <span
-                      {...surfaceAttributes({ radius: "pill" }, "size-2.5")}
-                      style={{ background: option.value }}
+                      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-2.5")}
+                      style={{ "--surface-user-color": option.value } as CSSProperties}
                     />
                   ),
                 })),

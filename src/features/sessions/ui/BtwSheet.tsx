@@ -548,7 +548,10 @@ export function BtwSheet({
                   <ActionHost
                     key={tab.id}
                     selected={selected}
-                    className="flex max-w-[15rem] shrink-0 items-center rounded-md"
+                    {...surfaceAttributes(
+                      { radius: "row" },
+                      "flex max-w-[15rem] shrink-0 items-center",
+                    )}
                   >
                     <Tab value={tab.id} tooltip={tab.question} className="min-w-0">
                       {tab.status ? <BtwStatusDot status={tab.status} /> : null}

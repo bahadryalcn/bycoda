@@ -1,3 +1,4 @@
+import { HOST_MODEL_ROUTING } from "../../../shared/model/host-contracts/model-routing";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
@@ -23,7 +24,6 @@ import {
   HOST_CREW_ACCESS,
   HOST_CREW_IDENTITY,
   HOST_CREW_TOOLS,
-  HOST_CREW_MODEL_POOLS,
   type CrewDefinition,
   type CrewRun,
   type SavedCrewAgent,
@@ -52,7 +52,7 @@ export type ProjectCrews = {
   identitySupported?: boolean;
   /** Older hosts drop member tool profiles, so the Tools section stays hidden. */
   toolsSupported?: boolean;
-  /** Older hosts have no model pools, so the Models tab and pool pickers stay hidden. */
+  /** Whether this Host supports shared model routing choices. */
   modelPoolsSupported?: boolean;
   machine: RemoteMachine;
   project: HostProject;
@@ -134,7 +134,7 @@ export function useProjectCrews(cwd: string, enabled = true) {
         accessSupported: capabilities.includes(HOST_CREW_ACCESS),
         identitySupported: capabilities.includes(HOST_CREW_IDENTITY),
         toolsSupported: capabilities.includes(HOST_CREW_TOOLS),
-        modelPoolsSupported: capabilities.includes(HOST_CREW_MODEL_POOLS),
+        modelPoolsSupported: capabilities.includes(HOST_MODEL_ROUTING),
       };
     },
     staleTime: 3000,

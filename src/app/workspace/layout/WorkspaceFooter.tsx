@@ -14,6 +14,7 @@ import { WorkspaceControls } from "../../shell/WorkspaceControls";
 import { t } from "../../../shared/i18n";
 import { requestBackgroundTarget } from "../input/backgroundTargets";
 import type { WorkspaceNoticesProps } from "./WorkspaceNotices";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 type UsageFooterProps = ComponentProps<typeof UsageFooter>;
 type UsageFooterTools = NonNullable<UsageFooterProps["tools"]>;
@@ -86,7 +87,12 @@ function WorkspaceFooterComponent({
   onApproval,
 }: WorkspaceFooterProps) {
   return (
-    <div className="flex h-8 min-w-0 shrink-0 items-center border-t border-stroke">
+    <div
+      {...surfaceAttributes(
+        { frame: "stroke", edge: "top" },
+        "flex h-8 min-w-0 shrink-0 items-center",
+      )}
+    >
       {searchViewOpen ||
       inboxViewOpen ||
       notesViewOpen ||

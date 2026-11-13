@@ -1,38 +1,43 @@
+import type { AssistantRepository } from "../repository";
 import type { AssistantModelPoolRole } from "../../../src/shared/model/assistantModelPool";
 import type {
   AssistantExecution,
   AssistantProfile,
 } from "../../../src/shared/model/host-contracts/assistant";
-import type { AssistantRepository } from "../repository";
-import { getAssistantModelPool } from "./assistant-model-pool";
-import { selectPoolRow } from "./assistant-model-selector";
-import type { AssistantQuotaReader } from "./assistant-quota-reader";
+import { assistantRoleExecution } from "../../../src/shared/model/assistantRoles";
+import { resolveModelChoice, type ModelRoutingService } from "../../model-routing/service";
 
-/** Execution chosen from the pool; `providerAccountId` is omitted for the default account. */
+/** Concrete routing target plus the assistant profile execution policy. */
 export type AssistantPoolExecution = AssistantExecution & {
   providerAccountId?: string;
 };
 
 export type AssistantExecutionChoice =
   | { execution: AssistantPoolExecution; rowId: string; reason: string }
-  | { held: "limits"; nextResetAt?: number }
+  | { held: "limits"; nextResetAt?: number; reason?: "noEligibleEntry" }
   | { held: "noRow" };
 
-/** `null` means no pool was saved: the caller keeps using the profile's own role fields unchanged. */
-export type AssistantModelSelector = (
-  role: AssistantModelPoolRole,
-  profile: AssistantProfile,
-) => Promise<AssistantExecutionChoice | null>;
+/** `null` means routing is unconfigured: the caller keeps using the profile's own role fields unchanged. */
+type SelectedExecution = Extract<AssistantExecutionChoice, { execution: unknown }>;
+export type AssistantModelSelector = {
+  (
+    role: AssistantModelPoolRole,
+    profile: AssistantProfile,
+    threadId?: string,
+  ): Promise<AssistantExecutionChoice | null>;
+  rememberThread?: (threadId: string, choice: SelectedExecution) => Promise<void>;
+};
 
 /** Raised when no pool row can serve a role right now. Callers keep work queued instead of failing it. */
 export class AssistantModelsHeldError extends Error {
   constructor(
     readonly held: "limits" | "noRow",
     readonly nextResetAt?: number,
+    readonly reason?: "noEligibleEntry",
   ) {
     super(
       held === "limits"
-        ? "Every model in the assistant pool is below its remaining-limit threshold."
+        ? "No eligible model is available for this assistant role."
         : "No model in the assistant pool serves this role.",
     );
     this.name = "AssistantModelsHeldError";
@@ -40,43 +45,53 @@ export class AssistantModelsHeldError extends Error {
 }
 
 export function createAssistantModelSelector(deps: {
-  repository: Pick<AssistantRepository, "get" | "put">;
-  quota: Pick<AssistantQuotaReader, "reading">;
-  now?: () => number;
+  routing: () => ModelRoutingService;
+  repository?: Pick<AssistantRepository, "get" | "put">;
 }): AssistantModelSelector {
-  return async (role, profile) => {
-    const pool = await getAssistantModelPool({
-      repository: deps.repository,
-      profile: async () => profile,
-      now: deps.now ?? Date.now,
-    });
-    if (pool.derived) return null;
-    const picked = selectPoolRow(role, pool, (row) =>
-      deps.quota.reading(row.harness, row.providerAccountId, row.model),
-    );
-    if (!picked.row)
-      return picked.reason === "noRowForRole"
-        ? { held: "noRow" }
-        : {
-            held: "limits",
-            ...(picked.nextResetAt === undefined ? {} : { nextResetAt: picked.nextResetAt }),
-          };
-    const { row } = picked;
+  const selector: AssistantModelSelector = async (role, profile, threadId) => {
+    if (threadId) {
+      const saved = await deps.repository?.get<{ value: SelectedExecution }>(
+        "runtime",
+        `model-thread:${threadId}`,
+      );
+      // A pre-routing thread keeps its profile identity; never resolve a live provider thread.
+      return saved?.value ?? null;
+    }
+    const resolution = await resolveModelChoice(deps.routing(), { role: `assistant.${role}` });
+    if (!resolution.ok) {
+      if (resolution.reason === "notConfigured") return null;
+      return { held: "limits", nextResetAt: resolution.nextResetAt, reason: "noEligibleEntry" };
+    }
+    const policy = role === "worker" ? profile.execution : assistantRoleExecution(profile, role);
+    // Routing chooses identity, never execution authority or the profile's run deadline.
+    if (!policy) return { held: "noRow" };
     return {
       execution: {
-        harness: row.harness,
-        model: row.model,
-        modelSettings: { ...row.modelSettings },
-        runtimeMode: row.runtimeMode,
-        maxRunMinutes: row.maxRunMinutes,
-        ...(row.providerAccountId && row.providerAccountId !== "default"
-          ? { providerAccountId: row.providerAccountId }
-          : {}),
+        ...resolution.target,
+        runtimeMode: policy.runtimeMode,
+        maxRunMinutes: policy.maxRunMinutes,
       },
-      rowId: row.id,
-      reason: picked.reason,
+      rowId: resolution.source.kind === "fixed" ? "fixed" : resolution.source.entryId,
+      reason: resolution.skipped.length
+        ? `skipped:${resolution.skipped.map((entry) => entry.entryId).join(",")}`
+        : "first",
     };
   };
+  selector.rememberThread = async (threadId, choice) => {
+    if (!deps.repository) return;
+    const id = `model-thread:${threadId}`;
+    const old = await deps.repository.get<{ value: SelectedExecution }>("runtime", id);
+    if (old) return;
+    const now = Date.now();
+    await deps.repository.put("runtime", {
+      id,
+      version: 0,
+      createdAt: now,
+      updatedAt: now,
+      value: choice,
+    });
+  };
+  return selector;
 }
 
 /** Resolve a role to an execution, throwing the typed hold error when nothing is usable. */
@@ -84,13 +99,15 @@ export async function chooseAssistantExecution(
   selector: AssistantModelSelector | undefined,
   role: AssistantModelPoolRole,
   profile: AssistantProfile,
+  threadId?: string,
 ): Promise<Extract<AssistantExecutionChoice, { execution: unknown }> | null> {
-  const choice = await selector?.(role, profile);
+  const choice = await selector?.(role, profile, threadId);
   if (!choice) return null;
   if ("held" in choice)
     throw new AssistantModelsHeldError(
       choice.held,
       (choice as { nextResetAt?: number }).nextResetAt,
+      "reason" in choice ? choice.reason : undefined,
     );
   return choice;
 }

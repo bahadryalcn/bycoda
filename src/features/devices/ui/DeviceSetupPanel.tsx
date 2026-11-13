@@ -92,6 +92,7 @@ export function DeviceSetupPanel({
       >
         {status.platforms.map((item) => (
           <Text
+            {...surfaceAttributes({ separator: "pane-block" })}
             as="li"
             size="caption"
             tone="inherit"

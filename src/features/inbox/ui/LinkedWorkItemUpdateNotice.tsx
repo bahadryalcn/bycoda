@@ -157,14 +157,7 @@ export function LinkedWorkItemUpdateNotice({
         >
           <span className="flex min-w-0 items-center gap-1.5">
             <KindIcon tone="secondary" className="icon-sm shrink-0" strokeWidth={1.75} />
-            <Text
-              as="span"
-              size="secondary"
-              weight="medium"
-              tone="inherit"
-              truncate
-              className="hover:underline"
-            >
+            <Text as="span" size="secondary" weight="medium" tone="inherit" truncate hoverUnderline>
               {card.title}
             </Text>
           </span>
@@ -174,7 +167,12 @@ export function LinkedWorkItemUpdateNotice({
         </Text>
 
         {card.entries.length > 0 ? (
-          <div className="max-h-52 overflow-y-auto border-t border-(--ui-tone-neutral-border) divide-y divide-stroke">
+          <div
+            {...surfaceAttributes(
+              { frame: "neutral", edge: "top", dividers: "stroke" },
+              "max-h-52 overflow-y-auto",
+            )}
+          >
             {card.entries.slice(0, 3).map((entry) => (
               <Button
                 variant="ghost"

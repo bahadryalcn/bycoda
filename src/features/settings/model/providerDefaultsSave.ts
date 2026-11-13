@@ -1,5 +1,10 @@
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import {
+  MODEL_ROUTING_DELEGATION_KEYS,
+  type ModelRoutingState,
+} from "../../../shared/model/host-contracts/model-routing";
+import { refreshRendererDelegation } from "../../model-routing/public/delegation";
+import {
   persistProviderPreference,
   type ProviderPreferenceOutcome,
 } from "../../providers/public/providerPreferenceOutcome";
@@ -163,6 +168,39 @@ export function saveDefaultsTargets(
   for (const target of targets) {
     try {
       const outcome = save(draft, target);
+      if (outcome.state === "saved") saved.push(target);
+      else failed.push({ target, message: outcome.message });
+    } catch (error) {
+      failed.push({ target, message: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { saved, failed };
+}
+
+/** Global delegation commits to the Host first; each refused destination remains retryable. */
+export async function saveDefaultsTargetsWithDelegation(
+  draft: DefaultsDraft,
+  targets: readonly DefaultsTarget[],
+  host?: { saveChanges: (draft: DefaultsDraft) => Promise<ModelRoutingState> },
+  save = saveDefaultsDraft,
+) {
+  const saved: DefaultsTarget[] = [];
+  const failed: { target: DefaultsTarget; message: string }[] = [];
+  const editsDelegation = [
+    ...Object.values(draft.providers),
+    ...Object.values(draft.accounts),
+  ].some((change) =>
+    MODEL_ROUTING_DELEGATION_KEYS.some((key) => change?.extras?.[key] !== undefined),
+  );
+  for (const target of targets) {
+    try {
+      const state =
+        host && target.kind === "global" && editsDelegation
+          ? await host.saveChanges(draft)
+          : undefined;
+      const outcome = save(draft, target);
+      // writeGlobal applies resets against renderer values; restore authoritative inheritance afterwards.
+      if (state) refreshRendererDelegation(state.delegation);
       if (outcome.state === "saved") saved.push(target);
       else failed.push({ target, message: outcome.message });
     } catch (error) {

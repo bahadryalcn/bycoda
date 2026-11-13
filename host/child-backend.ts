@@ -1,3 +1,4 @@
+import { withoutConversationBridge } from "../src/integrations/harness/core/conversationBridgeConfig";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn } from "node:child_process";
 import { createProbeGrantWarningFilter } from "./security/probe-grant-warning";
@@ -89,6 +90,7 @@ type TextWorkspaceSlot = {
   preparing: boolean;
 };
 type ToolPreparation = {
+  conversationSpawn?: Promise<PreparedTool | undefined>;
   live: boolean;
   owner?: object;
   groups: Map<SessionToolGroup, Promise<PreparedTool | undefined>>;
@@ -250,14 +252,25 @@ export class HostChildBackend implements ChildBackend {
     }
     const toolGroup = bridgeToolGroup(command);
     if (toolGroup) {
-      const tools = this.preparation(id);
-      const tool = await this.prepareTool(id, tools, toolGroup);
-      if (toolGroup === "conversation" && args.checkReady === true)
+      if (toolGroup === "conversation" && args.checkReady === true) {
+        const active = this.activeTools.get(id);
+        const tools = active ?? (args.prepareSpawn === true ? this.preparation(id) : undefined);
+        if (!active && tools && !tools.conversationSpawn)
+          tools.conversationSpawn = this.prepareTool(id, tools, "conversation");
+        const tool = await (tools?.conversationSpawn ?? tools?.groups.get("conversation"));
+        const ready =
+          !!tools?.live &&
+          !!tool?.mcpUrl &&
+          (await mcpReady(tool.mcpUrl, tool.env.BYCODA_CONVERSATION_TOKEN ?? ""));
         return {
           ready:
-            !!tool?.mcpUrl &&
-            (await mcpReady(tool.mcpUrl, tool.env.BYCODA_CONVERSATION_TOKEN ?? "")),
+            ready &&
+            tools?.live === true &&
+            (this.activeTools.get(id) ?? this.preparedTools.get(id)) === tools,
         } as T;
+      }
+      const tools = this.preparation(id);
+      const tool = await this.prepareTool(id, tools, toolGroup);
       return (
         tool
           ? {
@@ -850,6 +863,11 @@ export class HostChildBackend implements ChildBackend {
           Object.assign(env, opencodeLaunchEnv(launch.command, launch.args, published));
         }
       }
+      const conversationGranted = !!env.BYCODA_CONVERSATION_TOKEN;
+      console.warn(
+        `[session tools] provider=${String(args.binaryProvider ?? "generic")} session=${id} conversation grant=${conversationGranted ? "ok" : "failed"} reason=${conversationGranted ? "issued" : sessionless ? "sessionless child" : "grant unavailable"}`,
+      );
+      if (!conversationGranted) launch.args = withoutConversationBridge(launch.args);
       for (const key of account?.remove ?? []) delete env[key];
       check();
       if (beforeSpawn || runPreparation) await restrict();
@@ -1133,6 +1151,11 @@ export class HostChildBackend implements ChildBackend {
       if (this.closing || !tools.live)
         throw new ProviderStartupCancelled("Provider startup cancelled");
     };
+    if (group === "conversation" && tools.conversationSpawn) {
+      const value = await tools.conversationSpawn;
+      check();
+      return value;
+    }
     const existing = tools.groups.get(group);
     if (existing) {
       const value = await existing;

@@ -1,4 +1,5 @@
 import { Code } from "../../../shared/ui/Code";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -364,7 +365,10 @@ export function SshGroupSettings({
         {draft ? (
           <section
             aria-label={t("Group defaults")}
-            className="flex min-w-0 flex-col gap-2 border-t border-stroke pbs-3"
+            {...surfaceAttributes(
+              { frame: "stroke", edge: "top" },
+              "flex min-w-0 flex-col gap-2 pbs-3",
+            )}
           >
             <TextField
               label={t("Group name")}

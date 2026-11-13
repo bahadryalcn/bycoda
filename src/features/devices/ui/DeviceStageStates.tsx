@@ -74,13 +74,21 @@ function DeviceRow({
   item,
   facts,
   action,
+  framed = false,
 }: {
   item: DeviceSummary;
   facts: string;
   action: ReactNode;
+  framed?: boolean;
 }) {
   return (
-    <div className="device-panel-device-row" data-booted={item.booted}>
+    <div
+      {...surfaceAttributes(
+        framed ? { frame: "card", radius: "card", variant: "card" } : { separator: "pane-block" },
+        "device-panel-device-row",
+      )}
+      data-booted={item.booted}
+    >
       <Text
         size="inherit"
         tone="secondary"
@@ -179,6 +187,7 @@ export function DeviceWaitingState({
         role="status"
       >
         <DeviceRow
+          framed
           item={device}
           facts={facts(device)}
           action={

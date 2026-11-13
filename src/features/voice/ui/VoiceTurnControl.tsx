@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { DropdownMenu, popupNativeDropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Check, ChevronDown, MoreHorizontal } from "../../../shared/ui/icons";
-import { popupNativeActionMenu } from "../../../shared/ui/nativeActionMenu";
 import { t } from "../../../shared/i18n";
 
 export type VoiceTurnAction = {
@@ -73,13 +72,8 @@ export function VoiceTurnControl({
   ) : null;
   const open = (button: HTMLButtonElement) => {
     if (menuSurface === "native")
-      void popupNativeActionMenu(
-        button,
-        actions.map((action) => ({
-          ...action,
-          label: `${action.label} — ${action.description}`,
-        })),
-        (id) => actions.find((action) => action.id === id)?.onSelect(),
+      void popupNativeDropdownMenu(button, actions, (id) =>
+        actions.find((action) => action.id === id)?.onSelect(),
       ).catch(onMenuError ?? (() => undefined));
     else setAnchor(button);
   };

@@ -492,8 +492,9 @@ it("tests all models and keeps each result visible after stale list refresh", as
   const list = document.querySelector('[aria-label="Connected decision models"]')!;
   expect(list.textContent).toContain("Test: 12 ms");
   expect(list.textContent).toContain("Test: 42 ms");
-  expect(bodyText()).toContain("1 working");
-  expect(bodyText()).toContain("1 failed");
+  const rows = list.querySelectorAll("li");
+  expect(rows[0].textContent).toContain("Working");
+  expect(rows[1].textContent).toContain("Failed");
 });
 
 it("keeps local runtime Stop available after a failed connection test", async () => {
@@ -507,4 +508,36 @@ it("keeps local runtime Stop available after a failed connection test", async ()
   await settleDecisionUi();
   expect(bodyText()).toContain("Stop");
   expect(bodyText()).toContain("Failed");
+});
+
+it("keeps full model paths available through Details without repeating them in each row", async () => {
+  const modelPath = "C:/Models/Clef/clef-model.gguf";
+  await renderSettings({ sources: [source({ local: { modelPath } })] });
+  const list = document.querySelector('[aria-label="Connected decision models"]')!;
+  expect(list.textContent).not.toContain(modelPath);
+  clickIconButton("More actions");
+  await settleDecisionUi();
+  act(() => menuItemByText("Details")!.click());
+  await settleDecisionUi();
+  expect(list.textContent).toContain(modelPath);
+});
+
+it("keeps scan settings collapsed and preserves drafts across disclosure toggles", async () => {
+  await renderSettings();
+  const disclosure = Array.from(document.querySelectorAll("details")).find(
+    (item) => item.querySelector("summary")?.textContent === "Scan settings",
+  )!;
+  expect(disclosure.open).toBe(false);
+  const ports = disclosure.querySelector<HTMLInputElement>('input[placeholder="8080, 9000"]')!;
+  act(() => {
+    disclosure.open = true;
+  });
+  setInputValue(ports, "9001");
+  act(() => {
+    disclosure.open = false;
+  });
+  act(() => {
+    disclosure.open = true;
+  });
+  expect(ports.value).toBe("9001");
 });

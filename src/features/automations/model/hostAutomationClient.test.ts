@@ -144,3 +144,19 @@ it.each([true, false])(
     expect(hostAutomationFromDraft(draft, stored.id, stored.projectId).isolate).toBe(isolate);
   },
 );
+
+it("preserves routing choice and account through Host cards, editing and save payloads", () => {
+  const original = {
+    ...stored,
+    modelChoice: { kind: "pool" as const, poolId: "pool" },
+    providerAccountId: "account",
+  };
+  const draft = draftFromAutomation(
+    automationFromHost(mac, "remote://env-mac/Users/me/app", original),
+  );
+  expect(draft).toMatchObject({ modelChoice: original.modelChoice, providerAccountId: "account" });
+  expect(hostAutomationFromDraft(draft, original.id, original.projectId)).toMatchObject({
+    modelChoice: original.modelChoice,
+    providerAccountId: "account",
+  });
+});

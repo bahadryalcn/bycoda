@@ -1,4 +1,5 @@
 import { Text as UiText } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Folder, Save } from "../../../shared/ui/icons";
@@ -1264,7 +1265,10 @@ export function FileEditor({
           as="div"
           size="caption"
           tone="primary"
-          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1"
+          {...surfaceAttributes(
+            { frame: "stroke", edge: "bottom" },
+            "flex shrink-0 flex-wrap items-center gap-2 px-2.5 py-1",
+          )}
         >
           <span className="min-w-0 flex-1">
             {t(
@@ -1361,7 +1365,7 @@ export function FileEditor({
           as="p"
           size="secondary"
           tone="secondary"
-          className="shrink-0 border-b border-stroke px-3 py-1"
+          {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-1")}
         >
           {gitDiff.kind === "staged" ? t("Staged") : t("Unstaged")}
           {t(" line-ending changes. Line breaks are normalized in this view.")}
@@ -1425,7 +1429,9 @@ export function FileEditor({
         />
       )}
       {chromeError ? (
-        <InlineError className="shrink-0 border-t border-stroke px-2.5 py-1">
+        <InlineError
+          {...surfaceAttributes({ frame: "stroke", edge: "top" }, "shrink-0 px-2.5 py-1")}
+        >
           {chromeError}
         </InlineError>
       ) : null}
@@ -1433,7 +1439,10 @@ export function FileEditor({
         as="footer"
         size="micro"
         tone="muted"
-        className={`flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 border-t border-stroke px-2.5 ${saveState.status === "error" ? "flex-wrap" : ""}`}
+        {...surfaceAttributes(
+          { frame: "stroke", edge: "top" },
+          `flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 px-2.5 ${saveState.status === "error" ? "flex-wrap" : ""}`,
+        )}
       >
         <Tooltip label={path} when={path === relativePath ? "overflow" : "always"}>
           <UiText size="inherit" tone="inherit" truncate className="min-w-0 flex-1 font-mono">

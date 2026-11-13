@@ -311,7 +311,10 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                   <Text
                     size="micro"
                     tone="primary"
-                    className="max-w-[80%] rounded-sm bg-(--ui-surface-selected) px-2 py-0.5"
+                    {...surfaceAttributes(
+                      { radius: "sm", variant: "selected" },
+                      "max-w-[80%] px-2 py-0.5",
+                    )}
                   >
                     {t("Conversation")}
                   </Text>

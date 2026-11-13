@@ -60,7 +60,9 @@ export function GitConflictRows({
           <li key={row.relative} data-conflict={row.relative}>
             <ActionHost
               selected={selected === row.relative}
-              className="h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 pl-2"
+              controlHeight="compact"
+              padding={{ inline: "md" }}
+              className="w-full items-center gap-1"
             >
               <Button
                 variant="item"

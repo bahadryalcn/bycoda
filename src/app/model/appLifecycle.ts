@@ -437,12 +437,13 @@ export function loadResumedWorkspace(): Promise<ResumedWorkspace | null> {
 
 /** Transfer and restore run once; callers share the same promise. */
 export function loadBootWorkspace(): Promise<BootWorkspace> {
-  if (readToolWindow()) {
-    return Promise.resolve({ windowTransfer: null, resumed: null, history: [], historyCwd: null });
-  }
   if (!bootPromise) {
     bootPromise = (async () => {
       await flushHostSessionBindings();
+      // Tool surfaces read session owners too, but must not restore the main workspace.
+      if (readToolWindow()) {
+        return { windowTransfer: null, resumed: null, history: [], historyCwd: null };
+      }
       const windowTransfer = await loadWindowTransfer();
       if (windowTransfer) {
         // The transfer already contains everything needed to paint its tab.

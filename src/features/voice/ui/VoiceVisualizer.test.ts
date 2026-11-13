@@ -5,7 +5,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import type { VoiceVisualState } from "../model/voiceVisualState";
 import type { VoiceVisual } from "../model/voiceSettings";
-import { saveDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import {
+  DECORATIVE_MOTION_KEY,
+  noteDisplayRefreshRate,
+  saveDecorativeMotionEnabled,
+} from "../../settings/model/decorativeMotion";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -60,6 +64,32 @@ async function render(
 ) {
   await act(async () => root.render(createElement(VoiceVisualizer, { state, visual, level })));
 }
+it("keeps bounded voice feedback running on high-refresh displays without a saved choice", async () => {
+  saveDecorativeMotionEnabled(true);
+  localStorage.removeItem(DECORATIVE_MOTION_KEY);
+  window.dispatchEvent(new StorageEvent("storage", { key: DECORATIVE_MOTION_KEY }));
+  noteDisplayRefreshRate(240);
+  try {
+    await render("listening");
+    expect(container.firstElementChild?.getAttribute("data-animating")).toBe("true");
+  } finally {
+    act(() => {
+      noteDisplayRefreshRate(null);
+      saveDecorativeMotionEnabled(true);
+    });
+  }
+});
+
+it("animates every live listening style even while the microphone is quiet", async () => {
+  for (const visual of ["mark", "wave", "dots", "orb"] as const) {
+    await render("listening", visual);
+    frameCallback(0);
+    const first = container.querySelector("svg")!.innerHTML;
+    frameCallback(700);
+    expect(container.querySelector("svg")!.innerHTML, visual).not.toBe(first);
+    expect(container.firstElementChild?.getAttribute("data-hearing")).toBe("false");
+  }
+});
 it("stops frame work for static states, offscreen surfaces and reduced motion", async () => {
   await render("off");
   expect(requestFrame).not.toHaveBeenCalled();

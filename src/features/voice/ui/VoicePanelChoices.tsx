@@ -165,6 +165,7 @@ export function VoiceOptionsMenu({ onFloat }: { onFloat?: () => void } = {}) {
   return (
     <>
       <Button
+        touchTarget="control"
         iconOnly
         label={t("Voice options")}
         aria-haspopup="menu"

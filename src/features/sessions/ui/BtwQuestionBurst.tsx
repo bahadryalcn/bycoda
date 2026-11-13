@@ -58,12 +58,14 @@ export function BtwQuestionBurst({ rect, onDone }: { rect: BurstRect; onDone: ()
     <div
       aria-hidden
       className="btw-burst"
-      style={{
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
-      }}
+      style={
+        {
+          "--btw-burst-left": `${rect.left}px`,
+          "--btw-burst-top": `${rect.top}px`,
+          "--btw-burst-width": `${rect.width}px`,
+          "--btw-burst-height": `${rect.height}px`,
+        } as React.CSSProperties
+      }
     >
       <span className="btw-burst-sheen" />
       {marks.map((mark, index) => (

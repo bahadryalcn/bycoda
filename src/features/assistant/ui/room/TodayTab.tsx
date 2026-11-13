@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { errorText } from "../../../../shared/lib/errors";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { AssistantBriefingCard } from "../AssistantBriefingCard";
@@ -8,7 +9,7 @@ import { TodayGlance } from "./TodayGlance";
 import { TodayNotes } from "./TodayNotes";
 
 /** Today's top: owner questions, the briefing, the glance charts and today's notes. Jobs follow in JobsTab. */
-export function TodayTab({ snapshot }: { snapshot: AssistantSnapshot }) {
+export function TodayTab({ snapshot, jobs }: { snapshot: AssistantSnapshot; jobs?: ReactNode }) {
   const room = useAssistantRoom();
   const {
     environmentId,
@@ -63,6 +64,7 @@ export function TodayTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           onChooseLanguage={() => setSettings(true)}
         />
       )}
+      {jobs}
       <TodayGlance
         jobs={visibleJobs}
         activity={snapshot.activity.filter(

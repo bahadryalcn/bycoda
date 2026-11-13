@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 vi.mock("../../sessions/public/titlePreferences", () => ({
   titleGenerationChoice: () => ({ harness: "codex", model: "utility" }),
 }));
@@ -14,33 +14,25 @@ vi.mock("../../sessions/public/models", () => ({
     { id: "disabled", name: "Disabled" },
   ],
 }));
-import {
-  getSkillGroupingModel,
-  setSkillGroupingModel,
-  listSkillGroupingModels,
-  SKILL_GROUPING_MODEL_KEY,
-} from "./skillGroupingModel";
-beforeEach(() => localStorage.clear());
-it("defaults to title utility and persists model override", () => {
-  expect(getSkillGroupingModel()?.model).toBe("utility");
-  setSkillGroupingModel({ harness: "codex", model: "selected", modelSettings: { effort: "low" } });
-  expect(getSkillGroupingModel()).toMatchObject({
-    model: "selected",
+const routing = vi.hoisted(() => ({ resolve: vi.fn() }));
+vi.mock("../../model-routing/public/helpers", async (original) => ({
+  ...(await original<typeof import("../../model-routing/public/helpers")>()),
+  resolveHelperModel: routing.resolve,
+}));
+import { resolveSkillGroupingModel } from "./skillGroupingModel";
+it("uses bound skillGrouping role and preserves account identity", async () => {
+  const target = {
+    harness: "codex" as const,
+    model: "role-model",
+    providerAccountId: "role-account",
     modelSettings: { effort: "low" },
-  });
-  expect(listSkillGroupingModels()).toEqual([
-    { harness: "codex", model: "utility", name: "Utility" },
-  ]);
-  setSkillGroupingModel(undefined);
-  expect(getSkillGroupingModel()?.model).toBe("utility");
-  localStorage.setItem(SKILL_GROUPING_MODEL_KEY, "corrupt");
-  expect(getSkillGroupingModel()?.model).toBe("utility");
+  };
+  routing.resolve.mockResolvedValueOnce(target);
+  expect(await resolveSkillGroupingModel()).toEqual(target);
+  expect(routing.resolve).toHaveBeenCalledWith("text.skillGrouping");
 });
-it("rejects disabled models and surfaces failed saves", () => {
-  expect(() => setSkillGroupingModel({ harness: "codex", model: "disabled" })).toThrow();
-  const spy = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
-    throw new Error("quota");
-  });
-  expect(() => setSkillGroupingModel({ harness: "codex", model: "selected" })).toThrow("quota");
-  spy.mockRestore();
+
+it("uses automatic title utility when the role is unbound", async () => {
+  routing.resolve.mockResolvedValueOnce(undefined);
+  expect(await resolveSkillGroupingModel()).toEqual({ harness: "codex", model: "utility" });
 });

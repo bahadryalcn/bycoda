@@ -1,5 +1,11 @@
 # Explorer and file content
 
+With Blame enabled, drag the divider at the annotation column's right edge to resize
+it. Focus the divider and use Left/Right arrows (Shift for larger steps), Enter or
+double-click to reset, and Escape to cancel a drag. Narrow editors limit the column
+to 45% of their width; widening the editor restores the chosen width. The choice
+lasts while the editor remains open, including when Blame is toggled off and on.
+
 Files opened from a conversation appear beside the conversation, with the viewer
 chosen for the format: rendered HTML, PDF and Markdown previews, or a source
 editor for text and code. Image links retain their image dialog; video links

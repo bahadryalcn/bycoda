@@ -76,6 +76,7 @@ export function ProviderAccountEditor({
     <form
       id={formId}
       className={adding ? "provider-account-editor" : "provider-account-dialog-editor"}
+      data-settings-part={adding ? "account-editor" : undefined}
       onSubmit={(event) => {
         if (error) {
           event.preventDefault();

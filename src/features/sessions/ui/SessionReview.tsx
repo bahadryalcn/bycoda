@@ -1,6 +1,7 @@
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { DiffStat } from "../../../shared/ui/DiffStat";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { Surface } from "../../../shared/ui/Surface";
@@ -277,7 +278,9 @@ function SessionReviewContent({
               }
               asChild
             >
-              <span className="ms-1.5 border-s border-(--color-stroke) ps-1.5">
+              <span
+                {...surfaceAttributes({ frame: "stroke", edge: "inline-start" }, "ms-1.5 ps-1.5")}
+              >
                 <ConfirmMorph
                   label={t("Undo")}
                   prompt={t("Undo all session changes")}
@@ -293,9 +296,10 @@ function SessionReviewContent({
         <ScrollArea
           as="ul"
           scrollbar="hidden"
-          className={`border-t border-(--ui-tone-neutral-border) py-1 ${
-            expanded ? "max-h-64 overflow-y-auto" : ""
-          }`}
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "top" },
+            `py-1 ${expanded ? "max-h-64 overflow-y-auto" : ""}`,
+          )}
         >
           {visibleFiles.map((file) => (
             <li key={file.relative}>

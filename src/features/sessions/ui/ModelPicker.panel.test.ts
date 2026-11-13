@@ -393,7 +393,8 @@ describe("model panel", () => {
     expect(
       frame.querySelectorAll('[role="tablist"][aria-label="Providers"] [role="tab"]'),
     ).toHaveLength(4);
-    expect(frame.style.height).toBe("460px");
+    expect(frame.style.getPropertyValue("--layout-height")).toBe("460px");
+    expect(frame.className).toContain("[height:var(--layout-height)]");
     expect(frame.dataset.maxHeight).toBe("460");
     expect(frame.dataset.side).toBe("top");
     expect(frame.querySelector("[data-model-settings]")).not.toBeNull();
@@ -444,7 +445,7 @@ describe("model panel", () => {
     ).toBe("Add to favorites");
 
     const settings = container.querySelector("[data-model-settings]")!;
-    await click(optionByText(settings, "radio", "Extra High"));
+    await click(settings.querySelector('[role="radio"][aria-label="Extra High"]')!);
     expect(onSettingsChange).toHaveBeenCalledWith({ effort: "xhigh" });
     expect(onChange).not.toHaveBeenCalled();
     expect(panel()).not.toBeNull();
@@ -536,7 +537,7 @@ describe("model panel", () => {
     ).toEqual(["Auto, Cursor", "Muse Spark 1.3, Cursor", "Muse Spark 1.3, OpenCode Go"]);
   });
 
-  it("keeps all consequential effort options as inline selectable rows", async () => {
+  it("keeps all consequential effort options as named inline choices", async () => {
     setHarnessModels("codex", [
       {
         id: "codex:gpt-5.6",
@@ -563,7 +564,14 @@ describe("model panel", () => {
     await openPanel();
     const block = await settingBlock("reasoningEffort");
     expect(block.querySelectorAll('[role="radio"]')).toHaveLength(4);
-    expect(block.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe("High");
+    expect(
+      [...block.querySelectorAll('[role="radio"]')].map((radio) =>
+        radio.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Low", "High", "Max", "Ultra"]);
+    expect(
+      block.querySelector('[role="radio"][aria-checked="true"]')?.getAttribute("aria-label"),
+    ).toBe("High");
   });
 
   it("returns to the selected model's harness when reopened", async () => {
@@ -612,6 +620,7 @@ describe("model panel settings column", () => {
     await act(async () => root.render(createElement(ControlledColumn)));
     const radio = (text: string) => optionByText(container, "radio", text);
     const picker = () => container.querySelector("[data-model-setting-picker]");
+    expect(radio("Automatic").getAttribute("aria-checked")).toBe("true");
     await act(async () => radio("Automatic").focus());
     await key(radio("Automatic"), "End");
     expect(radio("Off").getAttribute("aria-checked")).toBe("true");
@@ -766,6 +775,30 @@ describe("model panel settings column", () => {
     expect(checked).toHaveLength(1);
     expect(checked[0].getAttribute("aria-label")).toBe("high");
     expect(block.firstElementChild?.textContent).toContain("high");
+  });
+
+  it("separates automatic subagent effort from real levels and preserves manual choice", async () => {
+    const change = vi.fn();
+    await openOrdered({ crossSubagentMaxEffort: "high" }, change);
+    let block = await settingBlock("crossSubagentMaxEffort");
+    expect(
+      [...block.querySelectorAll('[role="radio"]')].map((el) => el.getAttribute("aria-label")),
+    ).toEqual(["Low", "Medium", "High", "Xhigh", "Max", "Ultra"]);
+    const automatic = () => block.querySelector<HTMLButtonElement>('[role="switch"]')!;
+    expect(automatic().getAttribute("aria-checked")).toBe("false");
+    await click(automatic());
+    expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "" });
+    await render({
+      harness: "cursor",
+      model: "cursor:ordered",
+      values: { crossSubagentMaxEffort: "" },
+      onSettingsChange: change,
+    });
+    block = await settingBlock("crossSubagentMaxEffort");
+    expect(automatic().getAttribute("aria-checked")).toBe("true");
+    expect(block.querySelector('[role="radio"][aria-checked="true"]')).toBeNull();
+    await click(automatic());
+    expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "high" });
   });
 
   it("explains the hovered setting in the help strip", async () => {

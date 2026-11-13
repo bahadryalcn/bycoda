@@ -1,6 +1,6 @@
 .setup {
   display: grid;
-  gap: 18px;
+  gap: 16px;
   min-inline-size: 0;
   container-type: inline-size;
 }

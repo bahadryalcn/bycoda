@@ -1,12 +1,16 @@
 // @vitest-environment happy-dom
+import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
+vi.mock("../../settings/public/modelsSettingsLink", () => ({ openModelsSettings: vi.fn() }));
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AssistantSettings } from "./AssistantSettings";
+import { assistantAccessPatch } from "./settings/assistantAccess";
 
 const mock = vi.hoisted(() => ({
   calls: [] as string[],
   failProject: false,
+  full: false,
   request: vi.fn(),
 }));
 
@@ -23,7 +27,14 @@ vi.mock("../../settings/public/settingsControls", async () => {
         children,
       ),
     Group: ({ title, info, action, children }: any) =>
-      createElement("section", null, createElement("h2", null, title), info, action, children),
+      createElement(
+        "section",
+        null,
+        title ? createElement("h2", null, title) : null,
+        info,
+        action,
+        children,
+      ),
     AdvancedSettings: ({ title, children }: any) =>
       createElement("div", null, createElement("button", { type: "button" }, title), children),
   };
@@ -82,12 +93,30 @@ vi.mock("./ManualSessionSupervision", async () => {
 vi.mock("../../host-tools/DesktopControlSettings", async () => {
   const { createElement, useEffect, useState } = await import("react");
   return {
-    DesktopControlSettings: ({ saveRef, onDraftStateChange }: any) => {
+    DesktopControlSettings: ({
+      saveRef,
+      accessRef,
+      onDraftStateChange,
+      showPermissionControls,
+    }: any) => {
+      const [full, setFull] = useState(mock.full);
       const [dirty, setDirty] = useState(false);
       useEffect(() => {
-        onDraftStateChange?.({ dirty, pending: false });
-      }, [dirty, onDraftStateChange]);
+        onDraftStateChange?.({
+          dirty,
+          pending: false,
+          access: {
+            enabled: true,
+            permissionMode: full ? "full" : "ask",
+            allowPhysicalInput: true,
+          },
+        });
+      }, [dirty, full, onDraftStateChange]);
       useEffect(() => {
+        accessRef.current = (choice: string) => {
+          setFull(choice === "full");
+          setDirty(true);
+        };
         saveRef.current = async () => {
           mock.calls.push("computer");
           setDirty(false);
@@ -95,7 +124,11 @@ vi.mock("../../host-tools/DesktopControlSettings", async () => {
       });
       return createElement(
         "button",
-        { type: "button", onClick: () => setDirty(true) },
+        {
+          type: "button",
+          "data-individual-controls": showPermissionControls,
+          onClick: () => setDirty(true),
+        },
         "Change computer controls",
       );
     },
@@ -106,13 +139,28 @@ vi.mock("./settings/folders/AssistantFoldersSettings", async () => {
   const { createElement, useEffect, useState } = await import("react");
   return {
     // Like the real section, it shows its own save error inline and rethrows it.
-    AssistantFoldersSettings: ({ saveRef, onDraftStateChange }: any) => {
+    AssistantFoldersSettings: ({
+      saveRef,
+      accessRef,
+      onDraftStateChange,
+      showPermissionControls,
+    }: any) => {
+      const [full, setFull] = useState(mock.full);
       const [dirty, setDirty] = useState(false);
       const [error, setError] = useState("");
       useEffect(() => {
-        onDraftStateChange?.({ dirty, pending: false });
-      }, [dirty, onDraftStateChange]);
+        onDraftStateChange?.({
+          dirty,
+          pending: false,
+          runWithoutAsking: full,
+          allowChangesWithoutAsking: full,
+        });
+      }, [dirty, full, onDraftStateChange]);
       useEffect(() => {
+        accessRef.current = (value: boolean) => {
+          setFull(value);
+          setDirty(true);
+        };
         saveRef.current = async () => {
           mock.calls.push("folders");
           setError("Folder rejected");
@@ -121,7 +169,7 @@ vi.mock("./settings/folders/AssistantFoldersSettings", async () => {
       });
       return createElement(
         "div",
-        null,
+        { "data-individual-controls": showPermissionControls },
         createElement("button", { type: "button", onClick: () => setDirty(true) }, "Add folder"),
         error ? createElement("p", null, error) : null,
       );
@@ -134,7 +182,25 @@ let container: HTMLDivElement;
 
 function snapshot() {
   return {
-    profile: { version: 3, name: "Arif", setupComplete: true },
+    profile: {
+      version: 3,
+      name: "Arif",
+      setupComplete: true,
+      ...(mock.full
+        ? assistantAccessPatch(
+            {
+              execution: {
+                harness: "codex",
+                model: "gpt-6",
+                runtimeMode: "supervised",
+                modelSettings: {},
+                maxRunMinutes: 60,
+              },
+            },
+            "full",
+          )
+        : {}),
+    },
     capabilities: {},
     conversationRetentionDays: 0,
     usage: {},
@@ -146,6 +212,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mock.calls = [];
   mock.failProject = false;
+  mock.full = false;
   mock.request = vi.fn(async (input: any) => {
     if (input.op === "profile.update") {
       mock.calls.push("profile");
@@ -323,11 +390,13 @@ it("offers four tabs: Personal, Work, Access and Advanced", async () => {
 
 it("groups every setting under the tab that answers its question", async () => {
   await render();
-  expect(titles("personal")).toEqual(["Identity", "Language"]);
+  expect(titles("personal")).toEqual(["Identity", "Conversation"]);
   expect(sections("personal")).toEqual(["language", "personality", "behavior"]);
-  expect(titles("work")).toEqual(["Work mode", "Models", "Presence and hours"]);
-  expect(sections("work")).toEqual(["workmode", "budget", "jobs", "presence", "notifications"]);
+  expect(titles("work")).toEqual(["Models", "Presence and hours"]);
+  expect(sections("work")).toEqual(["budget", "presence", "notifications"]);
   expect(titles("access")).toEqual([
+    "Access",
+    "Customize access",
     "Job permissions",
     "Folders and commands",
     "Computer use",
@@ -336,12 +405,79 @@ it("groups every setting under the tab that answers its question", async () => {
   ]);
   expect(titles("advanced")).toEqual(["Cost and context", "Retention and usage"]);
   // Collapsed disclosures keep their sections mounted, so drafts survive.
-  expect(page("work").textContent).toContain("Customize");
+  expect(page("access").textContent).toContain("Customize access");
+  expect(page("access").textContent).toContain("Ready for 24/7");
   expect(page("personal").textContent).toContain("Personality and conversation");
 });
 
 it("shows the permission picker only once a worker execution exists", async () => {
   await render();
+  expect(sections("access")).toEqual(["jobs"]);
+  expect(page("access").textContent).toContain(
+    "Choose a worker model before enabling job execution.",
+  );
+});
+
+it("links to Models roles without a pool editor or writable pool request", async () => {
+  await render();
+  await press("Manage in Models");
+  expect(openModelsSettings).toHaveBeenCalledWith("roles");
+  expect(mock.request.mock.calls.some(([input]) => input.op === "models.pool.set")).toBe(false);
+  expect(control("Add model")).toBeUndefined();
+});
+
+it("keeps preset grants selected while customizing and preserves the mounted owners", async () => {
+  mock.full = true;
+  await render();
+  await press("Access");
+  const full = control("Full access")!;
+  expect(full.getAttribute("aria-checked")).toBe("true");
   expect(sections("access")).toEqual([]);
-  expect(page("access").textContent).toContain("Pick a work mode first.");
+  expect(page("access").querySelectorAll('[data-individual-controls="false"]')).toHaveLength(2);
+  await press("Custom");
+  expect(full.getAttribute("aria-checked")).toBe("true");
+  expect(sections("access")).toEqual(["jobs", "permissions"]);
+  expect(control("Save profile settings")!.disabled).toBe(true);
+  await press("Done");
+  expect(sections("access")).toEqual([]);
+  await press("Add folder");
+  await press("Save profile settings");
+  expect(page("access").textContent).toContain("Folder rejected");
+  expect(sections("access")).toEqual(["jobs", "permissions"]);
+  expect(mock.calls).toEqual(["folders"]);
+});
+
+it("reveals the hidden tab and nested settings disclosures before focusing an invalid field", async () => {
+  await render();
+  const advanced = document.createElement("section");
+  advanced.dataset.settingsPart = "advanced";
+  advanced.innerHTML =
+    '<h3><button type="button" aria-expanded="false">Technical limits</button></h3><div hidden><details><summary>Additional limits</summary><input type="number" min="1" value="0" required></details></div>';
+  page("advanced").append(advanced);
+  const toggle = advanced.querySelector("button")!;
+  toggle.addEventListener("click", () => {
+    advanced.dataset.open = "true";
+    toggle.setAttribute("aria-expanded", "true");
+    advanced.querySelector("div")!.hidden = false;
+  });
+  const details = advanced.querySelector("details")!;
+  const input = advanced.querySelector("input")!;
+  const focus = vi.spyOn(input, "focus");
+  const report = vi.spyOn(input, "reportValidity").mockReturnValue(false);
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => frames.push(callback));
+  const invalid = new Event("invalid", { cancelable: true });
+  await act(async () => {
+    input.dispatchEvent(invalid);
+  });
+  expect(invalid.defaultPrevented).toBe(true);
+  expect(page("advanced").hidden).toBe(false);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(details.open).toBe(true);
+  expect(frames).toHaveLength(1);
+  await act(async () => {
+    frames[0](0);
+  });
+  expect(focus).toHaveBeenCalledOnce();
+  expect(report).toHaveBeenCalledOnce();
 });

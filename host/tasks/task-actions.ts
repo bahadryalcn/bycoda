@@ -1,3 +1,4 @@
+import { parseHostTask } from "./routing-input";
 import { forEachAsync, mapAsync } from "../async-collections";
 import { assertExpectedConfiguration } from "../configurationConflict";
 
@@ -11,7 +12,6 @@ import {
   hasUnmergedBranch,
   isNewTaskStatus,
   isTaskStatus,
-  parseHostTask,
   type HostTask,
 } from "../../src/features/tasks/model/hostTasks";
 import {
@@ -105,9 +105,10 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
       workspace: _workspace,
       ...kept
     } = previous;
-    return await context.write({
+    const updated = {
       ...kept,
       ...input,
+      modelRoutingWait: undefined,
       projectId: previous.projectId,
       // Work already on a branch stays there.
       ...(hasUnmergedBranch(previous) ? { isolate: true } : {}),
@@ -135,7 +136,8 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
           }
         : {}),
       updatedAt: now,
-    });
+    };
+    return await context.write(updated);
   });
 }
 

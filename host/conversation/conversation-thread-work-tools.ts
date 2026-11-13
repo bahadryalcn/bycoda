@@ -26,16 +26,18 @@ const executionSchema = z.strictObject({
     .max(200)
     .optional()
     .describe(
-      "Id of a row from models.pool.list. Omit to use the first worker model in the pool. Models outside the pool are rejected.",
+      "Id of a main-order entry from models.pool.list. Omit to use the first entry. Models outside the main order are rejected.",
     ),
   harness: SessionProviderSchema.optional(),
   model: z.string().min(1).max(200).optional(),
+  providerAccountId: z.string().min(1).max(200).optional(),
   modelSettings: ModelSettingsSchema.optional(),
   runtimeMode: SessionRuntimeModeSchema.optional(),
 });
 const executionFields = (execution: PoolExecution) => ({
   harness: execution.harness,
   model: execution.model,
+  providerAccountId: execution.providerAccountId,
   modelSettings: execution.modelSettings,
   runtimeMode: execution.runtimeMode,
 });
@@ -353,8 +355,6 @@ export class ConversationThreadWorkTools {
     current: unknown,
     execution?: PoolExecution,
   ): Promise<unknown> {
-    // shortcut: tasks and automations carry no provider account field, so a non-default
-    // pool account applies only to goals; upgrade when those records gain an account.
     const exec = execution ? executionFields(execution) : {};
     if (action.startsWith("tasks.")) {
       const task = current as Awaited<ReturnType<HostTasks["list"]>>[number] | undefined;
@@ -411,9 +411,6 @@ export class ConversationThreadWorkTools {
       if (action === "goals.create")
         return this.goals.create({
           ...exec,
-          ...(execution?.providerAccountId
-            ? { providerAccountId: execution.providerAccountId }
-            : {}),
           expectedAbsent: true,
           id,
           title: input.title,

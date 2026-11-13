@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { HarnessId } from "../../sessions";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { GitChangesPanel } from "./GitChangesPanel";
@@ -53,7 +54,10 @@ export function SourceControl({
         as="div"
         size="caption"
         tone="inherit"
-        className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-stroke px-2 py-0.5"
+        {...surfaceAttributes(
+          { frame: "stroke", edge: "bottom" },
+          "flex shrink-0 flex-wrap items-center gap-x-2 px-2 py-0.5",
+        )}
       >
         <Text role="status" as="p" size="inherit" tone="secondary" className="min-w-0">
           {data

@@ -28,7 +28,7 @@ export function matchPositions(text: string, query: string): number[] {
  * Compute positions with `matchPositions(text, query)` for substring matches, or take them from a fuzzy matcher.
  * @group text
  * @use Highlight why a row matched a search query in file pickers, search results and lists.
- * @avoid Search-in-document highlighting or markdown: do it in the renderer. Plain emphasis: a styled span.
+ * @avoid Search-in-document highlighting or markdown: do it in the renderer. Plain emphasis: a styled span. Plain emphasis without matched positions: Text.
  */
 export function MatchText({ text, positions, active }: Props): ReactNode {
   if (!active || positions.length === 0) return text;

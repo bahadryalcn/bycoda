@@ -1,3 +1,4 @@
+import { actionHostAttributes } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
@@ -286,7 +287,11 @@ export function AdvancedSettings({
       id={id ? settingDomId(id) : undefined}
       data-setting-id={id}
       data-open={open || undefined}
-      className="settings-advanced"
+      data-settings-part="advanced"
+      {...surfaceAttributes(
+        { layout: "settings-advanced", frame: "card", radius: "card" },
+        "settings-advanced",
+      )}
       aria-labelledby={headingId}
       tabIndex={-1}
     >
@@ -304,7 +309,7 @@ export function AdvancedSettings({
           align="start"
           fullWidth
           motion="none"
-          className="settings-advanced-toggle"
+          {...surfaceAttributes({ radius: "none" }, "settings-advanced-toggle")}
           aria-expanded={open}
           aria-controls={keepMounted ? contentId : undefined}
           onClick={() => setOpen((current) => !current)}
@@ -322,6 +327,7 @@ export function AdvancedSettings({
         <div
           id={contentId}
           className="settings-advanced-content"
+          data-settings-part="advanced-content"
           hidden={!open}
           inert={!open}
           aria-hidden={!open || undefined}
@@ -484,7 +490,19 @@ export function Group({
         </div>
         {action ? <div className="settings-group-action">{action}</div> : null}
       </div>
-      <div ref={controls} className="settings-group-content">
+      <div
+        ref={controls}
+        {...surfaceAttributes(
+          {
+            variant: layerEditor ? undefined : "card",
+            frame: layerEditor ? "none" : "card",
+            radius: "card",
+            layout: layerEditor ? "settings-group-flat" : "settings-group",
+            reveal: "group",
+          },
+          "settings-group-content",
+        )}
+      >
         {children}
         {feedback ? (
           <div
@@ -558,6 +576,7 @@ export function Row({
 } & SettingReset &
   SettingDetails) {
   const revealed = useContext(RevealedSetting);
+  const layerEditor = useContext(LayerEditorHeadings);
   const flash = id != null && revealed === id;
   const labelId = useId();
   const descriptionId = useId();
@@ -576,16 +595,22 @@ export function Row({
     describe: false,
   });
 
+  const rowSurface = surfaceAttributes({ radius: "none", reveal: "row" }, "settings-row");
   return (
     <div
       id={id ? settingDomId(id) : undefined}
       data-setting-id={id}
+      data-settings-part="row"
       data-revealed={flash || undefined}
       data-stacked={stacked || undefined}
       data-dependent={dependsOn !== undefined || undefined}
       data-disabled={inactive || undefined}
       tabIndex={-1}
-      className="settings-row"
+      {...rowSurface}
+      {...actionHostAttributes(
+        stacked || layerEditor ? undefined : { variant: "settings" },
+        rowSurface.className,
+      )}
       {...(inactive && disabledReason ? reasonTip.trigger : null)}
     >
       <div className="settings-row-label">

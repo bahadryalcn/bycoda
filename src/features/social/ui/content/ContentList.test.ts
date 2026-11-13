@@ -76,6 +76,7 @@ const names = () =>
   [...element.querySelectorAll(".content-row-name")].map((item) => item.textContent);
 
 beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   element = document.createElement("div");
   document.body.append(element);
   root = createRoot(element);
@@ -84,6 +85,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   element.remove();
+  vi.unstubAllGlobals();
 });
 
 describe("campaignState", () => {
@@ -129,10 +131,16 @@ describe("ContentList", () => {
     expect(names()).toEqual(expected);
   });
 
-  it("treats a cancelled post as failed and a paused one as a draft", () => {
+  it("keeps cancelled posts out of Failed and paused posts in Draft", () => {
     render({
       statusFilter: "failed",
       campaigns: [queuedPost, { ...draftPost, id: "c5", name: "Paused idea", paused: true }],
+      jobs: [job("c2", "cancelled", 10)],
+    });
+    expect(names()).toEqual([]);
+    render({
+      statusFilter: "cancelled",
+      campaigns: [queuedPost],
       jobs: [job("c2", "cancelled", 10)],
     });
     expect(names()).toEqual(["Queued post"]);
@@ -149,25 +157,36 @@ describe("ContentList", () => {
     expect(names()).toEqual(["Sent post", "Failed post"]);
   });
 
+  it("keeps review work discoverable under Needs review", () => {
+    render({
+      statusFilter: "review",
+      campaigns: [queuedPost, sentPost],
+      jobs: [job("c2", "review", 10), job("c3", "succeeded", 10)],
+    });
+    expect(names()).toEqual(["Queued post"]);
+  });
+
   it("combines the account and status filters and says when nothing matches", () => {
     render({ accountFilter: "l1", statusFilter: "scheduled" });
     expect(names()).toEqual([]);
     expect(element.textContent).toContain("No posts match these filters.");
   });
 
-  it("reports the chosen filters and the opened post", () => {
+  it("reports the chosen filters and the opened post", async () => {
     const props = render();
-    const status = element.querySelector<HTMLSelectElement>('select[aria-label="Status"]')!;
-    act(() => {
-      status.value = "failed";
-      status.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const choose = async (label: string, option: string) => {
+      await act(async () =>
+        element.querySelector<HTMLButtonElement>('button[aria-label^="' + label + ':"]')!.click(),
+      );
+      const node = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+        item.textContent?.includes(option),
+      );
+      expect(node).toBeDefined();
+      await act(async () => node!.click());
+    };
+    await choose("Status", "Failed");
     expect(props.onStatusFilter).toHaveBeenCalledWith("failed");
-    const account = element.querySelector<HTMLSelectElement>('select[aria-label="Account"]')!;
-    act(() => {
-      account.value = "l1";
-      account.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    await choose("Account", "Studio LinkedIn");
     expect(props.onAccountFilter).toHaveBeenCalledWith("l1");
     act(() => element.querySelectorAll<HTMLButtonElement>(".content-row")[1]!.click());
     expect(props.onOpen).toHaveBeenCalledWith("c2");

@@ -6,6 +6,8 @@ come from loaded issues in visible projects. Assignment choices are combined wit
 workflow statuses are combined with the existing Open/Closed, Time and Projects filters.
 Assignment and workflow selections narrow Jira's server query before its result limit.
 Selections persist with Inbox filters and **Clear filters** resets them.
+The filter panel groups assignment shortcuts and Open/Closed choices side by side.
+Assignee options show people's names; the closed picker shows selected names.
 
 Settings > **Integrations** holds every external service bycoda connects to. Each card
 shows what the service supplies: **Inbox** (work items) or **Messages** (conversations
@@ -19,6 +21,24 @@ you can reply to).
 
 Discord, Microsoft Teams and Outlook / Hotmail mail are temporarily unavailable for new
 connections. Accounts connected earlier keep appearing in Messages.
+
+## Social Media
+
+Open **Social Media** to manage content, audience, outreach and messages on the
+selected computer. Lists and segments have edit and delete actions. Deleting a
+collection keeps its people; a collection used by a capture rule or unfinished
+sequence must first be removed from that work. The automatic Commenters list is
+managed by its rule.
+
+Use **AI chat** for a conversation dedicated to the selected Social workspace.
+Close and reopen the panel without losing its draft. Select a project before
+opening a conversation on a remote computer. **Open live view** inside the panel
+opens an account's browser for owner interaction. Existing account permissions,
+sending approvals and stop controls still apply.
+
+Account connection status and operation availability are separate. After signing
+in, use **Check connection**; capabilities that remain unavailable explain their
+own state. A browser login does not enable operations the platform does not support.
 
 ## Jira working folders
 

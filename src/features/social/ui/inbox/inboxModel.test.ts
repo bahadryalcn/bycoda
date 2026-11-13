@@ -15,7 +15,7 @@ describe("reply block reasons", () => {
         reasonCode: "window.expired",
         reason: "24-hour window passed; only a template can be sent",
       }),
-    ).toBe("The 24-hour window has passed. Only a template can be sent.");
+    ).toBe("This conversation requires a template. Template replies are unavailable here.");
   });
 
   it("uses the platform wording when the platform forbids replies", () => {
@@ -116,4 +116,16 @@ describe("day grouping", () => {
     expect(dayLabel(at(9, 23), now, "en")).toBe("Yesterday");
     expect(dayLabel(at(2, 12), now, "en")).toContain("2");
   });
+});
+
+it("blocks template-only replies even when a provider reports canReply", () => {
+  expect(replyBlockedText({ canReply: true, templatesOnly: true })).toBe(
+    "This conversation requires a template. Template replies are unavailable here.",
+  );
+});
+
+it("explains an expired window without promising a template action", () => {
+  expect(replyBlockedText({ canReply: false, reasonCode: "window.expired" })).toBe(
+    "The reply window has closed. Replies are unavailable here.",
+  );
 });

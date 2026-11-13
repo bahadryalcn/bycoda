@@ -1,3 +1,4 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
@@ -552,7 +553,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
         )}
       >
         {shownTokens.map((grant) => (
-          <div key={grant.id} className={styles.row}>
+          <ActionHost key={grant.id} variant="settings" separator className={styles.row}>
             <div className={styles.identity}>
               <span>{grant.name}</span>
               <Text size="caption" tone="secondary" leading="inherit" className={styles.metadata}>
@@ -610,7 +611,7 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
                 onConfirm={() => revoke(grant)}
               />
             )}
-          </div>
+          </ActionHost>
         ))}
       </ScrollArea>
       {help && (

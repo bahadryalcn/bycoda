@@ -41,7 +41,7 @@ function styleClass(style: AnsiStyle): string {
  * whitespace-preserving element); it renders inline spans only.
  * @group text
  * @use Command, log or tool output that may carry terminal color codes.
- * @avoid Interactive terminals: TerminalView. Search excerpts: terminalText. Copy text: stripAnsi.
+ * @avoid Interactive terminals: TerminalView. Search excerpts: terminalText. Copy text: stripAnsi. Plain output without escape codes: OutputBlock.
  */
 export function AnsiText({ text }: { text: string }) {
   const parts = parseAnsi(text).map((segment, index) => {

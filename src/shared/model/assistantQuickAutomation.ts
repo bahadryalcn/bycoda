@@ -1,4 +1,5 @@
 import type { AssistantExecution } from "./host-contracts/assistant";
+import type { ModelRoutingItemChoice } from "./host-contracts/model-routing";
 export type AssistantQuickAutomationAction = {
   kind: "automation";
   projectId: string;
@@ -7,6 +8,9 @@ export type AssistantQuickAutomationAction = {
   harness: AssistantExecution["harness"];
   model: string;
   modelSettings: Record<string, string>;
+  /** Absent on actions reviewed before model routing: the stored model is used as is. */
+  modelChoice?: ModelRoutingItemChoice;
+  providerAccountId?: string;
   runtimeMode: AssistantExecution["runtimeMode"];
   scheduleKind: "hourly" | "daily" | "weekdays" | "weekly" | "once";
   /** Absolute run time in epoch ms; present exactly when scheduleKind is "once". */
@@ -33,6 +37,10 @@ export function normalizeAssistantQuickAutomationAction(
     modelSettings: Object.fromEntries(
       Object.entries(action.modelSettings).sort(([left], [right]) => left.localeCompare(right)),
     ),
+    ...(action.modelChoice === undefined ? {} : { modelChoice: action.modelChoice }),
+    ...(action.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: action.providerAccountId }),
     runtimeMode: action.runtimeMode,
     scheduleKind: action.scheduleKind,
     ...(action.runAt === undefined ? {} : { runAt: action.runAt }),

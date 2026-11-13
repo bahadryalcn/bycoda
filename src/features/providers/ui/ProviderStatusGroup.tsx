@@ -28,6 +28,7 @@ import {
 } from "../model/harnessUpdates";
 import { inspectHarnessBinary } from "../../../integrations/harness/core/child";
 import { ProviderBinaryControl } from "../../settings/ui/ProviderBinarySettings";
+import { useGrokSignInState } from "./providerStatus";
 
 import {
   getHarnessUpdateSnapshot,
@@ -38,6 +39,7 @@ import {
 /** Account detail identity; CLI facts live in the CLI tab. */
 export function ProviderDetailHeader({
   harness,
+  available,
   signInCompleted,
 }: {
   harness: HarnessId;
@@ -45,6 +47,7 @@ export function ProviderDetailHeader({
   signInCompleted?: boolean;
 }) {
   useLocale();
+  const grokAuth = useGrokSignInState(harness === "grok" && available, signInCompleted);
   return (
     <header className="provider-detail-header">
       <HarnessIcon harness={harness} className="icon-lg shrink-0" />
@@ -53,7 +56,11 @@ export function ProviderDetailHeader({
       </Heading>
       {harness === "cursor" || harness === "grok" ? (
         <Text as="span" size="caption" tone="secondary">
-          {signInCompleted ? t("CLI sign-in completed") : `${t("Sign-in")}: ${t("Unknown")}`}
+          {harness === "grok"
+            ? `${t("Sign-in")}: ${grokAuth.label}`
+            : signInCompleted
+              ? t("CLI sign-in completed")
+              : `${t("Sign-in")}: ${t("Not checked")}`}
         </Text>
       ) : null}
     </header>
@@ -70,14 +77,6 @@ function updateNotice(
     return {
       state: "warning",
       text: t("CLI updated to {p0}. Model refresh failed. Retry it in Providers.", {
-        p0: state.version,
-      }),
-    };
-  }
-  if (state.catalogRefresh === "unchanged") {
-    return {
-      state: "warning",
-      text: t("CLI updated to {p0}. The model list did not change, so it may be out of date.", {
         p0: state.version,
       }),
     };
@@ -167,7 +166,7 @@ export function ProviderStatusGroup({
               : check?.status === "current"
                 ? t("Up to date")
                 : !canCheck
-                  ? t("Update check unavailable")
+                  ? t("Unavailable")
                   : t("Unknown");
   const StatusIcon =
     busy || run.status === "updating"
@@ -223,17 +222,6 @@ export function ProviderStatusGroup({
             >
               <StatusIcon className="icon-xs shrink-0" aria-hidden />
               {status}
-              {check?.status === "behind" ? (
-                <>
-                  {" "}
-                  · <Code size="inherit">{check.latest}</Code>
-                </>
-              ) : !notFound && version !== "—" ? (
-                <Code size="inherit" className="provider-inventory-inline-version">
-                  {" "}
-                  · {version}
-                </Code>
-              ) : null}
             </Badge>
           </span>
         </Tooltip>,
@@ -247,6 +235,7 @@ export function ProviderStatusGroup({
               loading={run.status === "updating"}
               disabled={run.status === "updating"}
               aria-label={t("Update {p0} to {p1}", { p0: title, p1: check.latest })}
+              tooltip={t("Update {p0} to {p1}", { p0: title, p1: check.latest })}
             >
               {t("Update")}
             </Button>

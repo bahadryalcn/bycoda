@@ -88,7 +88,7 @@ it("shows Connection needed for an expired browser session and starts the sign-i
   expect(element.textContent).toContain("Connection needed");
   expect(element.textContent).not.toContain("Awaiting access");
   const connect = [...element.querySelectorAll("button")].find(
-    (button) => button.textContent === "Connect",
+    (button) => button.textContent === "Sign in again in the browser",
   );
   expect(connect).toBeTruthy();
   await act(async () => connect?.click());
@@ -118,5 +118,5 @@ it("disables the account actions and says why while the Host is offline", () => 
       }),
     ),
   );
-  expect(element.textContent).toContain("Connect to this computer to change this account.");
+  expect(element.textContent).toContain("Could not reach this computer.");
 });

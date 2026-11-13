@@ -60,6 +60,7 @@ beforeEach(() => {
     if (command.endsWith("_status")) return { connected: false };
     if (command === "jira_list_projects") return projects;
     if (command === "jira_list_issues") return [issue];
+    if (command === "jira_list_issue_page") return { issues: [issue], nextPageToken: null };
     if (command === "jira_issue_details") return { body: "Reproduction steps", author: "Ada" };
     if (command === "jira_issue_thread") return { comments: [], truncated: false };
     if (command === "jira_issue_comment") return `${issue.url}?focusedCommentId=7`;
@@ -89,8 +90,11 @@ describe("Jira inbox", () => {
       if (command === "jira_status") return { connected: true };
       if (command.endsWith("_status")) return { connected: false };
       if (command === "jira_list_projects") return projects;
-      if (command === "jira_list_issues")
-        return [{ ...issue, assignees: [{ login: "Ada", avatarUrl }] }];
+      if (command === "jira_list_issue_page")
+        return {
+          issues: [{ ...issue, assignees: [{ login: "Ada", avatarUrl }] }],
+          nextPageToken: null,
+        };
       if (command === "jira_issue_details")
         return { body: "", author: "Ada", authorAvatarUrl: avatarUrl };
       if (command === "jira_issue_thread")
@@ -114,7 +118,7 @@ describe("Jira inbox", () => {
       jiraStatuses: ["Development in progress", "Test approved"],
     });
     expect(invoke).toHaveBeenCalledWith(
-      "jira_list_issues",
+      "jira_list_issue_page",
       expect.objectContaining({
         assignedToMe: false,
         filters: {
@@ -127,7 +131,7 @@ describe("Jira inbox", () => {
     vi.mocked(invoke).mockClear();
     await listInboxItems([], { ...query, assignedToMe: false, jiraAssignees: ["account-2"] });
     expect(invoke).toHaveBeenCalledWith(
-      "jira_list_issues",
+      "jira_list_issue_page",
       expect.objectContaining({
         filters: { assigneeIds: ["account-2"], unassigned: false, statuses: [] },
       }),
@@ -138,18 +142,24 @@ describe("Jira inbox", () => {
     const background = await listInboxItems([], { ...query, jiraEnabled: false }, { force: true });
     expect(background).toEqual({ items: [], errors: {} });
     expect(invoke).not.toHaveBeenCalledWith("jira_status");
-    expect(invoke).not.toHaveBeenCalledWith("jira_list_issues", expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith("jira_list_issue_page", expect.anything());
     const manual = await listInboxItems([], query);
     expect(manual.items).toEqual([issue]);
   });
   it("loads account-wide issues without a local repository", async () => {
     const result = await listInboxItems([], query);
-    expect(result).toEqual({ items: [issue], errors: {} });
-    expect(invoke).toHaveBeenCalledWith("jira_list_issues", {
+    expect(result).toEqual({
+      items: [issue],
+      errors: {},
+      jiraPage: { token: null, total: undefined },
+    });
+    expect(invoke).toHaveBeenCalledWith("jira_list_issue_page", {
       assignedToMe: true,
       state: "open",
       projectIds: [],
-      limit: undefined,
+      limit: 40,
+      filters: { assigneeIds: [], unassigned: false, statuses: [] },
+      nextPageToken: null,
     });
     expect(inboxItemStatus(issue)).toBe("Open");
     expect(inboxItemStatus({ ...issue, stateType: "done" })).toBe("Closed");
@@ -158,7 +168,7 @@ describe("Jira inbox", () => {
   it("filters projects before fetching and skips when every project is hidden", async () => {
     await listInboxItems([], { ...query, jiraHiddenProjectIds: ["10001"] });
     expect(invoke).toHaveBeenCalledWith(
-      "jira_list_issues",
+      "jira_list_issue_page",
       expect.objectContaining({ projectIds: ["10000"] }),
     );
     vi.mocked(invoke).mockClear();
@@ -170,7 +180,7 @@ describe("Jira inbox", () => {
         })
       ).items,
     ).toEqual([]);
-    expect(invoke).not.toHaveBeenCalledWith("jira_list_issues", expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith("jira_list_issue_page", expect.anything());
     expect(jiraProjectIdsForFetch(projects, ["deleted"])).toBeNull();
   });
 
@@ -294,7 +304,7 @@ describe("jira saved project scope", () => {
     const result = await listInboxItems([], query);
     expect(result.items).toEqual([]);
     expect(result.errors.jira).toContain("scope is unavailable");
-    expect(invoke).not.toHaveBeenCalledWith("jira_list_issues", expect.anything());
+    expect(invoke).not.toHaveBeenCalledWith("jira_list_issue_page", expect.anything());
     localStorage.removeItem("bycoda.jiraHiddenProjects");
   });
 

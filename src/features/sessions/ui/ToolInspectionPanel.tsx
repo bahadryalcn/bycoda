@@ -1,7 +1,7 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Surface } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { useMemo, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { storedFlag } from "../../../shared/lib/storedSetting";
@@ -160,6 +160,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
             label: t("Wrap lines"),
             icon: <WrapText />,
             pressed: wrap,
+            selectionIndicator: "dot" as const,
             onSelect: () => toolOutputWrap.save(!wrap),
           },
         ]
@@ -211,7 +212,10 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                 density="comfortable"
                 tone={section.error ? "danger" : "secondary"}
                 wrap={wrap}
-                className="max-h-80 overflow-auto overscroll-contain px-3 py-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)"
+                {...surfaceAttributes(
+                  { focusRing: "inset" },
+                  "max-h-80 overflow-auto overscroll-contain px-3 py-1",
+                )}
               >
                 {section.diff ? (
                   section.text.split("\n").map((line, lineIndex) => (

@@ -1,3 +1,4 @@
+import { AttachmentTokenText } from "../../../src/features/sessions/ui/AttachmentTokenText";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { AttachmentChip } from "../../../src/features/sessions/ui/AttachmentChip";
@@ -5,6 +6,7 @@ import { GeneratedImage } from "../../../src/features/sessions/ui/GeneratedImage
 import { AgentMarkdown } from "../../../src/features/sessions/ui/AgentMarkdown";
 import { ToolDiffPreview } from "../../../src/features/sessions/ui/ToolDiffPreview";
 import { UserTextPreview } from "../../../src/features/sessions/ui/UserTextPreview";
+import { UserLinkPreview } from "../../../src/features/sessions/ui/UserLinkPreview";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { Attachment } from "../../../src/features/sessions/model/session";
 import "../../../src/styles/index.css";
@@ -360,8 +362,124 @@ function AttachmentActionsFixture() {
   );
 }
 
+function AttachmentSurfacesFixture() {
+  return (
+    <main className="flex gap-3 p-4">
+      {[
+        attachment("report.txt", "text/plain", new Uint8Array([1])),
+        attachment(
+          "sheet.xlsx",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          new Uint8Array([1]),
+        ),
+        attachment("clip.mp4", "video/mp4", new Uint8Array([1])),
+      ].map((file) => (
+        <AttachmentChip key={file.id} attachment={file} />
+      ))}
+    </main>
+  );
+}
+
+function BrowserAnnotationFixture() {
+  const item: Attachment = {
+    ...attachment("selection.txt", "text/plain", new Uint8Array([1])),
+    browserAnnotation: {
+      id: "selection",
+      projectId: "fixture",
+      sessionId: "fixture",
+      navigationId: "fixture",
+      capturedAt: "2026-10-12T00:00:00Z",
+      pageUrl: "https://example.test/",
+      viewport: { width: 1280, height: 720, scrollX: 0, scrollY: 0 },
+      devicePixelRatio: 1,
+      trust: "untrusted-page-data",
+      limitations: [],
+      comment: "Review spacing",
+      element: {
+        tag: "button",
+        text: "Continue",
+        selector: "body > button",
+        path: "body > button",
+        bounds: { x: 10, y: 20, width: 50, height: 30 },
+        center: { x: 35, y: 35 },
+        ancestry: [],
+        computedStyle: {},
+      },
+    },
+  };
+  return (
+    <main className="p-4">
+      <AttachmentChip attachment={item} />
+    </main>
+  );
+}
+
+function WorkItemAvatarFixture() {
+  const avatar =
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect width='24' height='24' fill='%23aa5577'/%3E%3C/svg%3E";
+  mockIPC((command) => {
+    if (command === "git_github_work_item")
+      return {
+        kind: "pr",
+        number: 73,
+        title: "Fixture review",
+        url: "https://github.com/acme/widgets/pull/73",
+        state: "open",
+        repo: "acme/widgets",
+        assignees: [{ login: "grace", avatarUrl: avatar }],
+        labels: [],
+        draft: false,
+      };
+    if (command === "git_github_work_item_details")
+      return {
+        body: "Review fixture",
+        author: "ada",
+        authorAvatarUrl: avatar,
+        baseRefName: "main",
+        headRefName: "feature",
+        reviewDecision: "",
+      };
+    if (command.startsWith("plugin:event|")) return 1;
+    throw new Error(`Unsupported fixture command: ${command}`);
+  });
+  return (
+    <main className="p-4">
+      <p data-inline-attachment>
+        <AttachmentTokenText
+          text="Read [file1]"
+          attachments={[
+            {
+              id: "fixture-file",
+              name: "notes.md",
+              kind: "file",
+              mimeType: "text/markdown",
+              size: 128,
+              path: "/fixture/notes.md",
+            },
+          ]}
+        />
+      </p>
+      <UserLinkPreview
+        cwd="/fixture"
+        link={{
+          url: "https://github.com/acme/widgets/pull/73",
+          host: "github.com",
+          displayUrl: "github.com/acme/widgets/pull/73",
+          githubWorkItem: { kind: "pr", repo: "acme/widgets", number: 73 },
+        }}
+      />
+    </main>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("attachment-actions") ? (
+  new URLSearchParams(location.search).has("annotation-chip") ? (
+    <BrowserAnnotationFixture />
+  ) : new URLSearchParams(location.search).has("work-item-avatar") ? (
+    <WorkItemAvatarFixture />
+  ) : new URLSearchParams(location.search).has("attachment-surfaces") ? (
+    <AttachmentSurfacesFixture />
+  ) : new URLSearchParams(location.search).has("attachment-actions") ? (
     <AttachmentActionsFixture />
   ) : new URLSearchParams(location.search).has("chat-overflow") ? (
     <ChatOverflowFixture />

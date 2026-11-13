@@ -1,5 +1,4 @@
 import { useCallback, useRef, type MutableRefObject } from "react";
-import { CROSS_DELEGATION_KEYS } from "../../../shared/model/host-contracts/delegation";
 import {
   bindHarnessSession,
   forgetHarnessSession,
@@ -248,11 +247,7 @@ export function useSessionModelActions({
         flushHarnessEvents();
         return;
       }
-      const current = sessionsRef.current.find((session) => session.id === sessionId);
-      const changed = [...CROSS_DELEGATION_KEYS, "advisor", "subagentModel"].filter(
-        (key) => modelSettings[key] !== current?.modelSettings[key],
-      );
-      saveLastModelSettings(modelSettings, "overwrite", changed);
+      saveLastModelSettings(modelSettings, "overwrite");
       setSessions((prev) =>
         prev.map((s) =>
           s.id === sessionId

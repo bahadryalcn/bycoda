@@ -292,9 +292,18 @@ export function WorkspacePolicyEditor({
           size="caption"
           tone="inherit"
           leading="inherit"
-          {...surfaceAttributes({ radius: "popup", variant: "floating" }, styles.saveBar)}
+          {...surfaceAttributes(
+            { radius: "popup", variant: "floating", frame: "card", elevation: "floating" },
+            styles.saveBar,
+          )}
         >
-          <span className={styles.saveDot} aria-hidden="true" />
+          <span
+            {...surfaceAttributes(
+              { radius: "circle", tone: "warning", toneFill: "solid" },
+              styles.saveDot,
+            )}
+            aria-hidden="true"
+          />
           <span>{t("Unsaved changes")}</span>
           <span className={styles.saveSpacer} />
           <Button variant="ghost" disabled={saving || loading} onClick={discardDraft}>

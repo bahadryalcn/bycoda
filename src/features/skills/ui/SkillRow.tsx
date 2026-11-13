@@ -3,8 +3,9 @@ import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { Check, CloudUpload, MoreHorizontal } from "../../../shared/ui/icons";
+import { Check, CloudUpload } from "../../../shared/ui/icons";
 import type { SkillEntry, SkillMachine, SkillPresence } from "../model/skillLibrary";
 import styles from "./SkillsPage.module.css";
 
@@ -83,15 +84,15 @@ export function SkillRow({
   useLocale();
   const { skill } = entry.primary;
   return (
-    <div
+    <ActionHost
       className={styles.row}
+      selected={selected}
       draggable={!!onDragStart}
       onDragStart={onDragStart}
       onContextMenu={(event) => {
         event.preventDefault();
         onActions(event.currentTarget);
       }}
-      data-selected={selected || undefined}
       data-off={off || undefined}
       aria-busy={busy}
     >
@@ -102,6 +103,7 @@ export function SkillRow({
         asChild
       >
         <Button
+          data-action-primary=""
           variant="item"
           selected={selected}
           className={styles.name}
@@ -184,19 +186,14 @@ export function SkillRow({
           </Tooltip>
         );
       })}
-      <Button
-        variant="ghost"
-        iconOnly
-        size="sm"
-        data-no-drag=""
-        className={styles.rowMenu}
-        label={t("Actions for {p0}", { p0: entry.name })}
-        aria-haspopup="menu"
-        aria-expanded={actionsOpen}
-        onClick={(event) => onActions(event.currentTarget)}
-      >
-        <MoreHorizontal className="icon-sm" aria-hidden="true" />
-      </Button>
-    </div>
+      <span className={styles.menuSlot}>
+        <InlineMoreAction
+          data-no-drag=""
+          label={t("Actions for {p0}", { p0: entry.name })}
+          expanded={actionsOpen}
+          onOpen={onActions}
+        />
+      </span>
+    </ActionHost>
   );
 }

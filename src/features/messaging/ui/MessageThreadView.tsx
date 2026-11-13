@@ -1,4 +1,5 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -21,9 +22,30 @@ import { MessageReplyComposer } from "./MessageReplyComposer";
 import { MessagingProviderMark } from "./MessagingProviderMark";
 import styles from "./messages.module.css";
 
-function MessageBody({ body, onOpenLink }: { body: string; onOpenLink: (url: string) => void }) {
+function MessageBody({
+  body,
+  outbound,
+  onOpenLink,
+}: {
+  body: string;
+  outbound: boolean;
+  onOpenLink: (url: string) => void;
+}) {
   return (
-    <Text as="div" size="body" tone="neutral" className={styles.bubble} dir="auto">
+    <Text
+      as="div"
+      size="body"
+      tone="neutral"
+      {...surfaceAttributes(
+        {
+          variant: "fill-subtle",
+          tone: outbound ? "accent" : undefined,
+          radius: outbound ? "chat-control-end" : "chat-control-start",
+        },
+        styles.bubble,
+      )}
+      dir="auto"
+    >
       {splitMessageText(body).map((part, index) =>
         part.kind === "link" ? (
           <Button
@@ -67,7 +89,9 @@ function MessageItem({
           <Timestamp value={message.at} className="shrink-0" />
         ) : null}
       </Text>
-      {message.body ? <MessageBody body={message.body} onOpenLink={onOpenLink} /> : null}
+      {message.body ? (
+        <MessageBody body={message.body} outbound={message.outbound} onOpenLink={onOpenLink} />
+      ) : null}
       {message.attachments.length > 0 ? (
         <ul className={styles.attachments} aria-label={t("Attachments")}>
           {message.attachments.map((attachment, index) => {
@@ -80,7 +104,10 @@ function MessageItem({
                   tone="secondary"
                   truncate
                   key={`${attachment.name}:${index}`}
-                  className="max-w-full rounded-(--ui-radius-control) border border-(--ui-tone-neutral-border) px-1.5"
+                  {...surfaceAttributes(
+                    { frame: "neutral" },
+                    "max-w-full rounded-(--ui-radius-control) px-1.5",
+                  )}
                 >
                   {size ? t("{p0} ({p1})", { p0: attachment.name, p1: size }) : attachment.name}
                 </Text>
@@ -130,7 +157,12 @@ export function MessageThreadView({
       aria-busy={loading}
       className="flex h-full min-h-0 min-w-0 flex-col"
     >
-      <header className="flex shrink-0 items-start gap-2 border-b border-(--ui-tone-neutral-border) px-4 py-2">
+      <header
+        {...surfaceAttributes(
+          { frame: "neutral", edge: "bottom" },
+          "flex shrink-0 items-start gap-2 px-4 py-2",
+        )}
+      >
         <MessagingProviderMark
           provider={thread.provider}
           tone="secondary"

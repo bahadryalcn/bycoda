@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useId, useState } from "react";
@@ -221,7 +222,7 @@ export function SshServerEditor({
             />
           </div>
         </FieldGroup>
-        <div className="min-w-0 border-t border-stroke pbs-3">
+        <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "min-w-0 pbs-3")}>
           <FieldGroup legend={t("Credentials")}>
             <TextField
               label={t("SSH user")}
@@ -264,7 +265,7 @@ export function SshServerEditor({
             server?.sshEndpoint?.jumpHosts?.length ||
             server?.sshEndpoint?.jumpPolicies?.length,
           )}
-          className="border-t border-stroke pbs-3"
+          {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pbs-3")}
           textSize="caption"
           tone="muted"
           summary={t("Advanced SSH settings")}
@@ -372,7 +373,7 @@ export function SshServerEditor({
                 aria-label={t("Endpoint preview")}
                 as="div"
                 tone="inherit"
-                className="border-t border-stroke pbs-3"
+                {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pbs-3")}
               >
                 <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-all">
                   {sshEndpointPreview(endpoint)}

@@ -156,11 +156,6 @@
   min-width: 0;
 }
 
-.command-frame-header + .command-frame-body,
-.command-frame-header + .sr-only + .command-frame-body {
-  border-top: 1px solid var(--ui-pane-border);
-}
-
 .command-frame-body {
   min-width: 0;
 }

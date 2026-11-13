@@ -1,5 +1,6 @@
+import { parseHostTask } from "./routing-input";
 import { randomUUID } from "node:crypto";
-import { parseHostTask, type HostTask } from "../../src/features/tasks/model/hostTasks";
+import { type HostTask } from "../../src/features/tasks/model/hostTasks";
 import type { TaskContext } from "./context";
 export function invalidateAssistantGeneration(context: TaskContext, task: HostTask): void {
   if (!task.goalId?.startsWith("assistant-")) return;

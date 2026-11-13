@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "./settingsControls";
 import { invoke } from "@tauri-apps/api/core";
@@ -177,7 +178,7 @@ export function TerminalProfileDiscovery({
           side="bottom"
           align="end"
           width={360}
-          className="p-2"
+          className="p-3"
           autoFocus
           onDismiss={(reason) => closePopover(reason === "escape")}
         >
@@ -191,25 +192,8 @@ export function TerminalProfileDiscovery({
             aria-label={t("Terminal account profiles")}
             aria-busy={busy}
           >
-            <Text as="p" size="micro" tone="secondary" leading="relaxed">
-              {t(
-                "Accounts on this machine. The default account belongs to its provider; it does not select the default provider or model.",
-              )}
-            </Text>
-            <Text as="p" size="micro" tone="secondary" leading="relaxed">
-              {t(
-                "Separate sign-ins per provider. New conversations use the default account; each conversation can pick its own account from the composer.",
-              )}
-            </Text>
-            <Text as="p" size="caption" tone="secondary" leading="relaxed">
-              {t(
-                "Uses existing CLI sign-ins. Finds standard and named home profiles; choose a folder for other locations.",
-              )}
-            </Text>
-            <Text as="p" size="caption" tone="secondary" leading="relaxed">
-              {t(
-                "Discovery reads profile folders on this computer. Connecting stores a path, not credentials.",
-              )}
+            <Text as="p" size="secondary" weight="medium">
+              {t("Account profiles")}
             </Text>
             {disabled ? (
               <Text role="status" as="p" size="caption" tone="secondary" leading="relaxed">
@@ -252,11 +236,11 @@ export function TerminalProfileDiscovery({
               </Button>
             </div>
             {providerProfiles?.length === 0 ? (
-              <p role="status">
+              <SettingsFeedback state="empty">
                 {t(
                   "No terminal profiles found. Choose a profile folder or sign in from the terminal first.",
                 )}
-              </p>
+              </SettingsFeedback>
             ) : null}
             <ul className="min-w-0 list-none p-0">
               {providerProfiles?.map((profile) => {
@@ -264,12 +248,18 @@ export function TerminalProfileDiscovery({
                   (account) => account.id === profile.id,
                 );
                 return (
-                  <li key={profile.id} className="mbs-2 flex flex-wrap items-center gap-2">
+                  <li key={profile.id} className="flex min-w-0 items-center gap-3 py-3">
                     <div className="min-w-0 flex-1">
-                      <span>{profile.label}</span>
-                      <Text as="p" size="inherit" tone="secondary" className="break-all">
-                        {profile.path}
-                      </Text>
+                      <OverflowTooltip label={profile.label}>
+                        <Text as="p" size="secondary" weight="medium" truncate tabIndex={0}>
+                          {profile.label}
+                        </Text>
+                      </OverflowTooltip>
+                      <OverflowTooltip label={profile.path} wide>
+                        <Text as="p" size="caption" tone="secondary" truncate tabIndex={0}>
+                          {profile.path}
+                        </Text>
+                      </OverflowTooltip>
                     </div>
                     <Button
                       disabled={(connected && !onConnected) || disabled || busy}
@@ -284,11 +274,7 @@ export function TerminalProfileDiscovery({
                 );
               })}
             </ul>
-            {message ? (
-              <p role="status" className="mbs-2">
-                {message}
-              </p>
-            ) : null}
+            {message ? <SettingsFeedback state="success">{message}</SettingsFeedback> : null}
             {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
           </div>
         </Popover>

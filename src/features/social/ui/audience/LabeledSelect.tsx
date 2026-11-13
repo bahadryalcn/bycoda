@@ -1,7 +1,12 @@
-import { Field } from "../../../../shared/ui/Field";
-import { NativeSelect } from "../../../../shared/ui/Select";
+import type { ReactNode } from "react";
+import { Select } from "../../../../shared/ui/Select";
 
-export type LabeledSelectOption = { value: string; label: string; disabled?: boolean };
+export type LabeledSelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  icon?: ReactNode;
+};
 
 export type LabeledSelectProps = {
   label: string;
@@ -11,9 +16,14 @@ export type LabeledSelectProps = {
   disabled?: boolean;
   hideLabel?: boolean;
   description?: string;
+  /** Validation message under the select. */
+  error?: string;
 };
 
-/** Native select inside the shared Field: label, help text and FormData behave like any form control. */
+/**
+ * The Audience forms keep their values in React state, so their choices use the shared Select
+ * (label, description and error composed by it), the same control as the sibling pickers.
+ */
 export function LabeledSelect({
   label,
   value,
@@ -22,23 +32,18 @@ export function LabeledSelect({
   disabled,
   hideLabel,
   description,
+  error,
 }: LabeledSelectProps) {
   return (
-    <Field label={label} hideLabel={hideLabel} description={description} variant="compact">
-      {(control) => (
-        <NativeSelect
-          {...control}
-          value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value} disabled={option.disabled}>
-              {option.label}
-            </option>
-          ))}
-        </NativeSelect>
-      )}
-    </Field>
+    <Select
+      label={label}
+      value={value}
+      options={[...options]}
+      onValueChange={onChange}
+      disabled={disabled}
+      hideLabel={hideLabel}
+      description={description}
+      error={error}
+    />
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { projectLogoSrc } from "../../projects/model/projectLogos";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
@@ -48,7 +49,7 @@ export function QuickProjectIcon({
       <img
         src={src}
         alt=""
-        className={`rounded-sm object-cover ${className ?? ""}`}
+        {...surfaceAttributes({ radius: "sm" }, `object-cover ${className ?? ""}`)}
         onError={() => setFailure({ src, appearance })}
       />
     );

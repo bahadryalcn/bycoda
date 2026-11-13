@@ -17,6 +17,32 @@ import {
   type DropdownMenuSearch,
 } from "./dropdownMenuModel";
 import styles from "./DropdownMenu.module.css";
+import { popupNativeActionMenu } from "./nativeActionMenu";
+
+/**
+ * Flat action menu for bounded native windows where a Popover would be clipped.
+ * Owns native label presentation; only a real selection invokes onPick. The
+ * returned promise acknowledges opening, not dismissal. Errors reach the caller.
+ */
+export function popupNativeDropdownMenu(
+  anchor: HTMLElement,
+  items: readonly Pick<
+    DropdownMenuAction,
+    "id" | "label" | "description" | "disabled" | "checked"
+  >[],
+  onPick: (id: string) => void,
+): Promise<void> {
+  return popupNativeActionMenu(
+    anchor,
+    items.map(({ id, label, description, disabled, checked }) => ({
+      id,
+      label: description ? `${label} — ${description}` : label,
+      disabled,
+      checked,
+    })),
+    onPick,
+  );
+}
 
 export type {
   DropdownMenuAction,

@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
 import { t } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
@@ -82,8 +82,8 @@ export function ServerItem({
   const accentDot = accent ? (
     <span
       aria-hidden
-      {...surfaceAttributes({ radius: "pill" }, "size-2 shrink-0")}
-      style={{ background: accent }}
+      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-2 shrink-0")}
+      style={{ "--surface-user-color": accent } as CSSProperties}
     />
   ) : null;
 
@@ -127,6 +127,8 @@ export function ServerItem({
       aria-pressed={selectionMode ? checked : selected}
       disabled={busy}
       motion="none"
+      controlHeight="auto"
+      padding={cards ? { inline: "none", block: "none" } : { inline: "md", block: "xs" }}
       data-server-row={server.id}
       aria-keyshortcuts={canConnect && !selectionMode ? "Enter" : undefined}
       aria-description={
@@ -136,8 +138,8 @@ export function ServerItem({
       }
       className={
         cards
-          ? "server-identity h-auto min-w-0 flex-1 flex-col items-stretch gap-0 p-0 text-left"
-          : "server-identity h-auto min-w-0 flex-1 items-center gap-3 px-2 py-1 text-left"
+          ? "server-identity min-w-0 flex-1 flex-col items-stretch gap-0 text-left"
+          : "server-identity min-w-0 flex-1 items-center gap-3 text-left"
       }
       onPointerDown={(event) => {
         cancelPress();

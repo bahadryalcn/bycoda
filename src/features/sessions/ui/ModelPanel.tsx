@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -117,8 +118,12 @@ export function ModelPanel({
       aria-label={t("Model and settings")}
       data-model-picker
       data-model-panel
-      style={{ height: PANEL_HEIGHT }}
-      className="flex min-h-0 flex-col overflow-hidden"
+      style={
+        {
+          "--layout-height": PANEL_HEIGHT === undefined ? undefined : PANEL_HEIGHT + "px",
+        } as CSSProperties
+      }
+      className="flex min-h-0 flex-col overflow-hidden [height:var(--layout-height)]"
     >
       {/* Narrow panels stack the settings under the list instead of squeezing the list. */}
       <div className="@container/model-panel flex min-h-0 min-w-0 flex-1">

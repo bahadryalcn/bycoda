@@ -1,4 +1,10 @@
 import {
+  OPEN_MODELS_SETTINGS_EVENT,
+  MODELS_TABS,
+  modelsTabAnchor,
+  type ModelsTab,
+} from "../../../features/settings/ui/models/modelsSettingsLink";
+import {
   startTransition,
   useCallback,
   useEffect,
@@ -127,6 +133,17 @@ export function useSettingsSurfaceActions({
       setSettingsOpen(true);
     });
   }, []);
+
+  // Feature screens deep-link through this surface so return-view state is preserved.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the Models deep-link window listener attached to the settings surface
+  useEffect(() => {
+    const openModels = (event: Event) => {
+      const tab = (event as CustomEvent<ModelsTab>).detail;
+      if (MODELS_TABS.includes(tab)) openSettings("models", modelsTabAnchor(tab));
+    };
+    window.addEventListener(OPEN_MODELS_SETTINGS_EVENT, openModels);
+    return () => window.removeEventListener(OPEN_MODELS_SETTINGS_EVENT, openModels);
+  }, [openSettings]);
 
   const onOpenSettings = useCallback(() => openSettings(), [openSettings]);
 

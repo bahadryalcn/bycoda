@@ -850,6 +850,7 @@ pub fn run() {
             jira::jira_set_config,
             jira::jira_list_projects,
             jira::jira_list_issues,
+            jira::list_page::jira_list_issue_page,
             jira::jira_issue_details,
             jira::jira_issue_thread,
             jira::jira_issue_comment,

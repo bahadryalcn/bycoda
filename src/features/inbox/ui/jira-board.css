@@ -60,9 +60,3 @@
   align-self: end;
   margin: 8px;
 }
-.jira-board-mode {
-  min-inline-size: 0;
-  margin: 0;
-  border: 0;
-  padding: 0;
-}

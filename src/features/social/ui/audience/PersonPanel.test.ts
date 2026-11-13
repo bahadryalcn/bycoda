@@ -9,7 +9,7 @@ import {
   flush,
   mountHost,
   person,
-  setFieldValue,
+  pickOption,
   type ClientMock,
   type MountedHost,
 } from "./audienceTestKit";
@@ -65,9 +65,7 @@ describe("PersonPanel", () => {
     await flush();
     await flush();
 
-    const stage = document.querySelector("select");
-    expect(stage).toBeTruthy();
-    setFieldValue(stage!, "contacted");
+    pickOption("Change stage", "Contacted");
     await flush();
 
     expect(mock.people.update).toHaveBeenCalledWith({

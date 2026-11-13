@@ -17,14 +17,21 @@ import {
 } from "../../shared/model/host-contracts/desktop-control";
 import { desktopControlRequest } from "./desktopControlClient";
 import { DesktopHelperSetup } from "./DesktopHelperSetup";
+import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { InlineError } from "../../shared/ui/InlineError";
 import styles from "./DesktopControlSettings.module.css";
+
+export type DesktopControlDraftState = {
+  dirty: boolean;
+  pending: boolean;
+  access?: Pick<DesktopControlConfiguration, "enabled" | "permissionMode" | "allowPhysicalInput">;
+};
 
 function permissionModeLabels(mode: DesktopPermissionMode) {
   if (mode === "full")
     return {
       label: t("Full access"),
-      description: t("No questions, on any app. Physical input still needs the switch below."),
+      description: t("No questions, on any app, including physical input."),
     };
   if (mode === "auto")
     return {
@@ -47,11 +54,15 @@ export function DesktopControlSettings({
   onDraftStateChange,
   saveRef,
   refreshRef,
+  accessRef,
+  showPermissionControls = true,
 }: {
-  onDraftStateChange?: (state: { dirty: boolean; pending: boolean }) => void;
+  showPermissionControls?: boolean;
+  onDraftStateChange?: (state: DesktopControlDraftState) => void;
   saveRef?: { current: (() => Promise<void>) | null };
   refreshRef?: { current: (() => void) | null };
-} = {}) {
+  accessRef?: { current: ((mode: "ask" | "full") => void) | null };
+}) {
   const [draft, setDraft] = useState<DesktopControlConfiguration>();
   const [saved, setSaved] = useState<DesktopControlConfiguration>();
   const [status, setStatus] = useState<DesktopControlResponse["status"]>();
@@ -127,8 +138,39 @@ export function DesktopControlSettings({
       JSON.stringify(draft.allowedApps) !== JSON.stringify(saved.allowedApps));
   // Helper preparation runs on the Host and survives closing, so it does not hold the dialog.
   useEffect(() => {
-    onDraftStateChange?.({ dirty, pending: pending || stopping });
-  }, [dirty, pending, stopping, onDraftStateChange]);
+    onDraftStateChange?.({
+      dirty,
+      pending: pending || stopping,
+      access: draft && {
+        enabled: draft.enabled,
+        permissionMode: draft.permissionMode,
+        allowPhysicalInput: draft.allowPhysicalInput,
+      },
+    });
+  }, [dirty, pending, stopping, onDraftStateChange, draft]);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes the shell access callback with the current unsaved computer-control draft.
+  useEffect(() => {
+    if (!accessRef) return;
+    accessRef.current =
+      draft && !pending && !stopping
+        ? (permissionMode) => {
+            setDraft((current) =>
+              current
+                ? {
+                    ...current,
+                    enabled: true,
+                    permissionMode,
+                    allowAllApps: permissionMode === "full",
+                    allowPhysicalInput: true,
+                  }
+                : current,
+            );
+          }
+        : null;
+    return () => {
+      accessRef.current = null;
+    };
+  });
   async function perform(
     op: "configure" | "stop" | "resume" | "status",
     options: { rethrow?: boolean } = {},
@@ -268,10 +310,7 @@ export function DesktopControlSettings({
       {draft && (
         <>
           <Row
-            label={t("Enable computer use")}
-            description={t(
-              "Only on your request. The permission mode below sets when you are asked.",
-            )}
+            label={t(showPermissionControls ? "Enable computer use" : "Status")}
             feedback={
               status?.stopped || computerOn ? (
                 <div className={styles.stopActions}>
@@ -295,70 +334,95 @@ export function DesktopControlSettings({
             }
           >
             {computerBadge}
-            <Toggle
-              label={t("Enable computer use")}
-              on={draft.enabled}
-              disabled={pending}
-              onChange={(enabled) => setDraft({ ...draft, enabled })}
-            />
+            {showPermissionControls && (
+              <Toggle
+                label={t("Enable computer use")}
+                on={draft.enabled}
+                disabled={pending}
+                onChange={(enabled) => setDraft({ ...draft, enabled })}
+              />
+            )}
           </Row>
-          <Row
-            label={t("Permission")}
-            description={permissionModeLabels(draft.permissionMode).description}
-          >
-            <Select
-              hideLabel
-              label={t("Permission")}
-              value={draft.permissionMode}
-              disabled={pending}
-              options={DESKTOP_PERMISSION_MODES.map((value) => ({
-                value,
-                label: permissionModeLabels(value).label,
-              }))}
-              onChange={(value) => {
-                const permissionMode = DESKTOP_PERMISSION_MODES.find((mode) => mode === value);
-                if (permissionMode) setDraft({ ...draft, permissionMode });
-              }}
-            />
-          </Row>
-          {draft.permissionMode === "full" ? (
-            <Alert tone="warning" title={t("Full access asks nothing")}>
-              {t(
-                "The assistant can use any app, launch apps, use the clipboard and use physical input without asking, even while you are away. Stop computer use and the emergency shortcut always work.",
-              )}
-            </Alert>
-          ) : (
-            !!saved?.allowedApps.length && (
+          {showPermissionControls && (
+            <>
               <Row
-                label={t("Approved apps")}
-                description={t(
-                  "Apps you allowed when asked. Remove one to be asked again before it is used.",
-                )}
-                stacked
+                label={t("Permission")}
+                info={
+                  <InfoPopover>
+                    {permissionModeLabels(draft.permissionMode).description}
+                  </InfoPopover>
+                }
               >
-                <SearchableSelect
+                <Select
                   hideLabel
-                  multiple
-                  label={t("Approved apps")}
-                  value={draft.allowedApps}
-                  options={saved.allowedApps.map((value) => ({ value, label: value }))}
-                  onChange={(allowedApps) => setDraft({ ...draft, allowedApps })}
+                  label={t("Permission")}
+                  value={draft.permissionMode}
                   disabled={pending}
+                  options={DESKTOP_PERMISSION_MODES.map((value) => ({
+                    value,
+                    label: permissionModeLabels(value).label,
+                  }))}
+                  onChange={(value) => {
+                    const permissionMode = DESKTOP_PERMISSION_MODES.find((mode) => mode === value);
+                    if (permissionMode)
+                      setDraft({
+                        ...draft,
+                        permissionMode,
+                        ...(permissionMode === "full" ? { allowPhysicalInput: true } : {}),
+                      });
+                  }}
                 />
               </Row>
-            )
+              {draft.permissionMode === "full"
+                ? !embedded && (
+                    <Alert tone="warning" title={t("Full access asks nothing")}>
+                      {t(
+                        "The assistant can use any app, launch apps, use the clipboard and use physical input without asking, even while you are away. Stop computer use and the emergency shortcut always work.",
+                      )}
+                    </Alert>
+                  )
+                : !!saved?.allowedApps.length && (
+                    <Row
+                      label={t("Approved apps")}
+                      info={
+                        <InfoPopover>
+                          {t(
+                            "Apps you allowed when asked. Remove one to be asked again before it is used.",
+                          )}
+                        </InfoPopover>
+                      }
+                      stacked
+                    >
+                      <SearchableSelect
+                        hideLabel
+                        multiple
+                        label={t("Approved apps")}
+                        value={draft.allowedApps}
+                        options={saved.allowedApps.map((value) => ({ value, label: value }))}
+                        onChange={(allowedApps) => setDraft({ ...draft, allowedApps })}
+                        disabled={pending}
+                      />
+                    </Row>
+                  )}
+              {(draft.permissionMode !== "full" || !draft.allowPhysicalInput) && (
+                <Row
+                  label={t("Physical input")}
+                  info={
+                    <InfoPopover>
+                      {t("Allows pointer and focus changes, only on your direct request.")}
+                    </InfoPopover>
+                  }
+                >
+                  <Toggle
+                    label={t("Allow physical input")}
+                    on={draft.allowPhysicalInput}
+                    disabled={pending}
+                    onChange={(allowPhysicalInput) => setDraft({ ...draft, allowPhysicalInput })}
+                  />
+                </Row>
+              )}
+            </>
           )}
-          <Row
-            label={t("Physical input")}
-            description={t("Allows pointer and focus changes, only on your direct request.")}
-          >
-            <Toggle
-              label={t("Allow physical input")}
-              on={draft.allowPhysicalInput}
-              disabled={pending}
-              onChange={(allowPhysicalInput) => setDraft({ ...draft, allowPhysicalInput })}
-            />
-          </Row>
         </>
       )}
     </>
@@ -436,7 +500,7 @@ export function DesktopControlSettings({
   return (
     <div className={styles.settings}>
       <div className={styles.toolbar}>{refresh}</div>
-      <div className={styles.rows}>{rows}</div>
+      <div {...surfaceAttributes({ layout: "settings-rows" }, styles.rows)}>{rows}</div>
       {errorLine}
       {custom}
     </div>

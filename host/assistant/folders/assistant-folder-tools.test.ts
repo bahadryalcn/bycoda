@@ -22,7 +22,11 @@ const yes = async () => true;
 describe("Assistant folder tools", () => {
   let base: string;
   let path: string;
-  let state: { folders: { id: string; path: string }[]; runWithoutAsking: boolean };
+  let state: {
+    folders: { id: string; path: string }[];
+    runWithoutAsking: boolean;
+    allowChangesWithoutAsking?: boolean;
+  };
   let receipts: Map<string, unknown>;
   let approvals: { action: string; input: Record<string, unknown> }[];
   let decision: boolean;
@@ -60,6 +64,34 @@ describe("Assistant folder tools", () => {
   afterEach(() => rm(base, { recursive: true, force: true }));
 
   describe("files", () => {
+    it("requires a separate explicit full-access grant for file changes and reads revocation live", async () => {
+      decision = false;
+      state.runWithoutAsking = true;
+      const tools = make();
+      const input = {
+        root: id(),
+        path: "docs/a.txt",
+        content: "changed",
+        expectedHash: sha("hello world"),
+        requestId: "write-1",
+      };
+      await tools.call("files.write", input, global, yes);
+      expect(approvals).toHaveLength(1);
+      expect(await readFile(join(path, "docs/a.txt"), "utf8")).toBe("hello world");
+      state.allowChangesWithoutAsking = true;
+      await tools.call("files.write", { ...input, requestId: "write-2" }, global, yes);
+      expect(approvals).toHaveLength(1);
+      expect(await readFile(join(path, "docs/a.txt"), "utf8")).toBe("changed");
+      state.allowChangesWithoutAsking = false;
+      await tools.call(
+        "files.write",
+        { ...input, expectedHash: sha("changed"), content: "blocked", requestId: "write-3" },
+        global,
+        yes,
+      );
+      expect(approvals).toHaveLength(2);
+      expect(await readFile(join(path, "docs/a.txt"), "utf8")).toBe("changed");
+    });
     it("lists the roots and the run setting", async () => {
       const result = (await make().call("files.roots", {}, global, yes)) as {
         roots: { id: string; available: boolean }[];

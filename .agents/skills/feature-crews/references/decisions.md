@@ -50,13 +50,13 @@ Owner decision, 2026-11-10, crew look storage, source: owner chat:
 
 Recorded decision: a crew's look (icon and color) and each member's look are stored on the Host and are identical on every device. The "show crews on rail" setting stays device-local.
 
-## Automatic model selection comes from shared model pools
+## Automatic model selection uses shared routing
 
 Owner decision, 2026-11-10, automatic model selection, source: owner chat:
 
 > bu otomatik model seçimi ayrı bir yerden hepsi için hazırlanabilmesi gerekiyor otomatik böyle çalışması gerekiyor yoksa her bir üyeye ayrı bu tanımı yapacaksam hiç bir anlamı yok. Birden fazla automatic model seçimide tanımlayabilmeliyim hatta. Bunlarıda atayabilmem gerekiyor.
 
-Recorded decision: automatic candidates and their cost and quality ratings are defined once in named, host-wide model pools on the Crews page. A member that uses Automatic references one pool; the Host copies that pool's candidates into every member that references it, so a pool edit reaches all of them. A per-member custom list stays available as a fallback.
+Recorded decision: automatic choices use Host-wide routing roles or pools. Pools reference shared ordered entries and their limits; resolve concrete member models at run start.
 
 ## Member tools combine
 
@@ -65,3 +65,11 @@ Owner decision, 2026-11-10, member tool profiles, source: owner chat:
 > Birden fazla tool verebilmemiz gerekiyor sanki.
 
 Recorded decision: a member's tool capabilities (write code, image generation, browser) combine; the allowance is their union on top of read-only.
+
+## One model order and limit definition for every feature
+
+Owner decision, 2026-11-12, model routing, source: owner work package H:
+
+> one priority order and one limit definition for every feature; crew cost/quality scoring and crew-owned pools are removed
+
+Recorded decision: automatic crew members use the Host-wide routing role `crew.member`, main order or a routing pool. Capabilities and independent reviewer identity remain eligibility filters. Running and historical snapshots retain their concrete models.

@@ -19,6 +19,7 @@ afterEach(() => {
 
 it.each<[StatusTextStatus, string]>([
   ["succeeded", "Sent"],
+  ["completed", "Completed"],
   ["queued", "Scheduled"],
   ["running", "Sending"],
   ["failed", "Failed"],

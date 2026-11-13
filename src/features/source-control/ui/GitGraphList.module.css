@@ -1,3 +1,14 @@
+.graphHeader {
+  height: var(--graph-header-height);
+  grid-template-columns: var(--graph-columns);
+  min-width: var(--graph-min-width);
+}
+.graphList {
+  min-width: var(--graph-min-width);
+}
+.graphSpacer {
+  height: var(--graph-spacer-height);
+}
 .workspace {
   container-type: inline-size;
 }
@@ -41,4 +52,15 @@
   .author {
     display: block;
   }
+}
+
+.graphAvatar {
+  width: var(--graph-avatar-size);
+  height: var(--graph-avatar-size);
+}
+.refPill {
+  max-width: var(--graph-pill-max);
+}
+.refGroup {
+  max-width: var(--graph-refs-max);
 }

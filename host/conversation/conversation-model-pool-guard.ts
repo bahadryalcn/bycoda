@@ -2,9 +2,8 @@ import type {
   AssistantModelPoolRole,
   AssistantModelPoolRow,
 } from "../../src/shared/model/assistantModelPool";
-import { selectPoolRow } from "../assistant/models/assistant-model-selector";
 
-/** Reads the owner's current model pool (saved, or derived from the profile). */
+/** Reads the owner's current model pool (main order compatibility view). */
 export type ModelPoolSource = () => Promise<{ rows: AssistantModelPoolRow[] }>;
 
 /** A model-supplied execution: either a pool row id or explicit fields to validate. */
@@ -54,22 +53,18 @@ function canonical(row: AssistantModelPoolRow): PoolExecution {
 export function assertPoolExecution(
   execution: RequestedExecution | undefined,
   pool: { rows: AssistantModelPoolRow[] },
-  role: AssistantModelPoolRole = "worker",
+  _role: AssistantModelPoolRole = "worker",
 ): PoolExecution {
-  const rows = pool.rows.filter((row) => row.roles.includes(role));
+  const rows = pool.rows;
   if (execution?.poolRowId !== undefined) {
     const row = rows.find((entry) => entry.id === execution.poolRowId);
     if (!row) throw refusal(rows);
     return canonical(row);
   }
   if (execution?.model === undefined && execution?.harness === undefined) {
-    // Unknown quota stub: pool order decides; quota-based skipping belongs to the Assistant's own jobs.
-    const picked = selectPoolRow(role, { rows }, () => ({
-      unknown: true,
-      reason: "unchecked",
-    }));
-    if (!picked.row) throw refusal(rows);
-    return canonical(picked.row);
+    const first = rows[0];
+    if (!first) throw refusal(rows);
+    return canonical(first);
   }
   const row = rows.find(
     (entry) =>
@@ -85,9 +80,9 @@ export function assertPoolExecution(
 export function assertPoolModel(
   candidate: { harness?: unknown; model?: unknown },
   pool: { rows: AssistantModelPoolRow[] },
-  role: AssistantModelPoolRole = "worker",
+  _role: AssistantModelPoolRole = "worker",
 ) {
-  const rows = pool.rows.filter((row) => row.roles.includes(role));
+  const rows = pool.rows;
   if (!rows.some((row) => row.harness === candidate.harness && row.model === candidate.model))
     throw refusal(rows);
 }

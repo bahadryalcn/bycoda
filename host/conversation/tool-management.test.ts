@@ -169,9 +169,11 @@ describe("managed tool discovery", () => {
       cursor = part.nextCursor ?? undefined;
     } while (cursor);
     expect(JSON.parse(document).tools[0].inputSchema.properties.id.description).toBe(description);
-    expect(() =>
-      describeManagedTools(entries, { ids: [entries[0].id], maxChars: 12001 }),
-    ).toThrow();
+    // A larger chunk request is capped at 12000, not rejected.
+    expect(
+      describeManagedTools(entries, { ids: [entries[0].id], maxChars: 50000 }).content.length,
+    ).toBeLessThanOrEqual(12000);
+    expect(() => describeManagedTools(entries, { ids: [entries[0].id], maxChars: 255 })).toThrow();
   });
 });
 

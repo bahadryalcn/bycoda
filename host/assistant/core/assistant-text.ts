@@ -35,7 +35,7 @@ export type AssistantTextRunner = (
 ) => Promise<AssistantTextResult>;
 
 /** Isolated text-only reasoning. No session, desktop or publication grant.
- * With a saved model pool the `role` row decides harness, model and provider account (claude and
+ * Routing roles decide harness, model and provider account (claude and
  * codex text prompts both run under a non-default account); without one the profile decides. */
 export function assistantText(
   directory: string,
@@ -49,7 +49,9 @@ export function assistantText(
     context?: AssistantTextContext,
     limits?: AssistantTextLimits,
   ) => {
-    const chosen = role ? await chooseAssistantExecution(models, role, profile) : null;
+    const chosen = role
+      ? await chooseAssistantExecution(models, role, profile, context?.threadId)
+      : null;
     const execution = chosen?.execution ?? profile.execution;
     if (!execution) throw new Error("Choose an execution provider and model first.");
     if (context?.compactBefore && (!context.threadId || !context.onCompacted))
@@ -76,7 +78,12 @@ export function assistantText(
       ...(context
         ? {
             threadId: context.threadId,
-            onThreadId: context.onThreadId,
+            onThreadId: chosen
+              ? async (threadId: string) => {
+                  await models?.rememberThread?.(threadId, chosen);
+                  await context.onThreadId(threadId);
+                }
+              : context.onThreadId,
             compactBefore: context.compactBefore,
             ...(context.compactBefore
               ? {

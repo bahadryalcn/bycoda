@@ -10,6 +10,26 @@
 .composer {
   min-inline-size: 0;
 }
+.discussion {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  min-inline-size: 0;
+}
+.discussionTranscript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-block-size: 24rem;
+  min-inline-size: 0;
+}
+.discussionActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
 .notice {
   margin: 0;
 }
@@ -46,12 +66,6 @@
 }
 .check {
   align-self: center;
-  opacity: 0;
-}
-.row:hover .check,
-.row:focus-within .check,
-.check[data-visible] {
-  opacity: 1;
 }
 .mark {
   display: inline-flex;
@@ -166,11 +180,7 @@
   align-items: start;
   gap: 4px;
   padding-block-end: 8px;
-  border-block-end: 1px solid var(--ui-pane-border);
   min-inline-size: 0;
-}
-.noteHit:last-child {
-  border-block-end: 0;
 }
 
 /* Dialogs */
@@ -199,7 +209,6 @@
 }
 .reviewJob + .reviewJob {
   padding-block-start: var(--space-4);
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 .reviewHead {
   display: flex;

@@ -30,6 +30,7 @@ import { useNativeSkillWarmup } from "../features/sessions/ui/useNativeSkillWarm
 import { useOwnedTimeout } from "../shared/hooks/useOwnedTimeout";
 import { t, useLocale } from "../shared/i18n";
 import { useWorkspaceNavigation } from "./hooks/useWorkspaceNavigation";
+import { SessionPanelTargetsContext } from "../features/sessions/public/SessionPanelTargets";
 import { useWorkspaceActions, type WorkspaceActions } from "./workspace/input/useWorkspaceActions";
 import { useWorkspaceKeyboardShortcuts } from "./workspace/input/useWorkspaceKeyboardShortcuts";
 import { useNativeMenuEvents } from "./workspace/input/useNativeMenuEvents";
@@ -284,6 +285,7 @@ import { useLayoutControl } from "./workspace/layout/useLayoutControl";
 import { useWorkspaceTitleBar } from "./workspace/layout/useWorkspaceTitleBar";
 import { useRecoveryControl } from "./workspace/layout/useRecoveryControl";
 import { WorkspaceAuxSurfaces } from "./workspace/layout/WorkspaceAuxSurfaces";
+import { useSocialSessionPanel } from "./workspace/bridges/useSocialSessionPanel";
 import { WorkspaceMainArea } from "./workspace/layout/WorkspaceMainArea";
 import {
   WorkspaceRecoveryDialogs,
@@ -453,6 +455,14 @@ function Workspace({
     setLinkedWorkItemPanels,
   );
   const { inboxAskPortal, setInboxAskPortal, openingInboxSessions } = useInboxAskPortal();
+  const socialSessionPanel = useSocialSessionPanel();
+  const socialSessionTargets = useMemo(
+    () => ({
+      sessionIds: socialSessionPanel.sessionIds,
+      register: socialSessionPanel.registerTarget,
+    }),
+    [socialSessionPanel.sessionIds, socialSessionPanel.registerTarget],
+  );
   const {
     serversViewOpen,
     setServersViewOpen,
@@ -808,7 +818,11 @@ function Workspace({
 
   const approvalSessionIds = useApprovalSessionIds(sessions);
 
-  const activeSessionId = inboxViewOpen ? inboxAskPortal?.sessionId : active?.id;
+  const activeSessionId = inboxViewOpen
+    ? inboxAskPortal?.sessionId
+    : automationsViewOpen && socialBoardShown && socialSessionPanel.portal
+      ? socialSessionPanel.portal.sessionId
+      : active?.id;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
 
@@ -1332,7 +1346,8 @@ function Workspace({
     activeTabIdRef,
     tabsRef,
     sessionsRef,
-    inboxAskPortal,
+    inboxAskPortal:
+      automationsViewOpen && socialBoardShown ? socialSessionPanel.portal : inboxAskPortal,
     isMovingPane,
     workspaceNavigation,
     setMaximizedPane,
@@ -2869,7 +2884,13 @@ function Workspace({
     [tabVisitNav.canBack, tabVisitNav.canForward, railBack, railForward],
   );
   const inboxAskSessions = useStableValue(
-    useMemo(() => sessions.filter((session) => session.inboxAsk), [sessions]),
+    useMemo(
+      () =>
+        sessions.filter(
+          (session) => session.inboxAsk || socialSessionPanel.sessionIds.includes(session.id),
+        ),
+      [sessions, socialSessionPanel.sessionIds],
+    ),
     shallowArrayEqual,
   );
   // Closed surfaces keep the lists they last showed; they catch up when opened.
@@ -3343,69 +3364,71 @@ function Workspace({
                       ) : null}
                       {compactTitleBar ? null : workspaceTitleBar}
 
-                      <WorkspaceMainArea
-                        dockGridRef={dockGridRef}
-                        projectCwd={projectCwd}
-                        projectTerminals={projectTerminals}
-                        projectTerminalFocused={projectTerminalFocused}
-                        focusProjectTerminal={focusProjectTerminal}
-                        onHideProjectTerminal={onHideProjectTerminal}
-                        onProjectTerminalSide={onProjectTerminalSide}
-                        paintDockSize={paintDockSize}
-                        commitDockSize={commitDockSize}
-                        onNewTerminal={onNewTerminal}
-                        onNewTerminalWithProfile={onNewTerminalWithProfile}
-                        onSplitProjectTerminal={onSplitProjectTerminal}
-                        openSettings={openSettings}
-                        onSelectProjectTerminal={onSelectProjectTerminal}
-                        onCloseProjectTerminal={onCloseProjectTerminal}
-                        onCloseProjectTerminals={onCloseProjectTerminals}
-                        onReorderProjectTerminals={onReorderProjectTerminals}
-                        onTerminalMetaChange={onTerminalMetaChange}
-                        tabs={tabs}
-                        activeTabId={activeTabId}
-                        windowTransferPending={windowTransferPending}
-                        movingWindows={movingWindows}
-                        busySessionIds={busySessionIds}
-                        unseenFinishedIds={unseenFinishedIds}
-                        inboxViewOpen={inboxViewOpen}
-                        dirtyFiles={dirtyFiles}
-                        fileErrorCounts={fileErrorCounts}
-                        activeSessionId={active?.id}
-                        composerFocused={composerFocused}
-                        composerFocusToken={composerFocusToken}
-                        onSelectFileSurface={onSelectFileSurface}
-                        onCloseFile={onCloseFile}
-                        onCloseOtherFiles={onCloseOtherFiles}
-                        onOpenFileInNewWindow={onOpenFileInNewWindow}
-                        onPinFile={onPinFile}
-                        onReorderFiles={onReorderFiles}
-                        onFileDirtyChange={onFileDirtyChange}
-                        onFileErrorCountChange={onFileErrorCountChange}
-                        transcriptPool={transcriptPool}
-                        onRatio={onRatio}
-                        editorNavigation={editorNavigation}
-                        onUpdatePlan={onUpdatePlan}
-                        onMovePane={onMovePane}
-                        onMoveFileBetweenPanes={onMoveFileBetweenPanes}
-                        onDetachPane={onDetachPane}
-                        onPopOutPane={onPopOutPane}
-                        maximizedPane={maximizedPane}
-                        onToggleMaximizePane={onToggleMaximizePane}
-                        sessionPaneProps={sessionPaneProps}
-                        linkedWorkItemPanels={linkedWorkItemPanels}
-                        repairSessions={repairSessions}
-                        onRepairChecks={onRepairChecks}
-                        closeLinkedWorkItemPanel={closeLinkedWorkItemPanel}
-                        onOpenInboxSession={onOpenInboxSession}
-                        visibleRecents={visibleRecents}
-                        searchViewOpen={searchViewOpen}
-                        settingsOpen={settingsPageOpen}
-                        notesViewOpen={notesViewOpen}
-                        serversViewOpen={serversViewOpen}
-                        automationsViewOpen={automationsViewOpen}
-                        activeLinkedWorkItemPanel={activeLinkedWorkItemPanel}
-                      />
+                      <SessionPanelTargetsContext.Provider value={socialSessionTargets}>
+                        <WorkspaceMainArea
+                          dockGridRef={dockGridRef}
+                          projectCwd={projectCwd}
+                          projectTerminals={projectTerminals}
+                          projectTerminalFocused={projectTerminalFocused}
+                          focusProjectTerminal={focusProjectTerminal}
+                          onHideProjectTerminal={onHideProjectTerminal}
+                          onProjectTerminalSide={onProjectTerminalSide}
+                          paintDockSize={paintDockSize}
+                          commitDockSize={commitDockSize}
+                          onNewTerminal={onNewTerminal}
+                          onNewTerminalWithProfile={onNewTerminalWithProfile}
+                          onSplitProjectTerminal={onSplitProjectTerminal}
+                          openSettings={openSettings}
+                          onSelectProjectTerminal={onSelectProjectTerminal}
+                          onCloseProjectTerminal={onCloseProjectTerminal}
+                          onCloseProjectTerminals={onCloseProjectTerminals}
+                          onReorderProjectTerminals={onReorderProjectTerminals}
+                          onTerminalMetaChange={onTerminalMetaChange}
+                          tabs={tabs}
+                          activeTabId={activeTabId}
+                          windowTransferPending={windowTransferPending}
+                          movingWindows={movingWindows}
+                          busySessionIds={busySessionIds}
+                          unseenFinishedIds={unseenFinishedIds}
+                          inboxViewOpen={inboxViewOpen}
+                          dirtyFiles={dirtyFiles}
+                          fileErrorCounts={fileErrorCounts}
+                          activeSessionId={active?.id}
+                          composerFocused={composerFocused}
+                          composerFocusToken={composerFocusToken}
+                          onSelectFileSurface={onSelectFileSurface}
+                          onCloseFile={onCloseFile}
+                          onCloseOtherFiles={onCloseOtherFiles}
+                          onOpenFileInNewWindow={onOpenFileInNewWindow}
+                          onPinFile={onPinFile}
+                          onReorderFiles={onReorderFiles}
+                          onFileDirtyChange={onFileDirtyChange}
+                          onFileErrorCountChange={onFileErrorCountChange}
+                          transcriptPool={transcriptPool}
+                          onRatio={onRatio}
+                          editorNavigation={editorNavigation}
+                          onUpdatePlan={onUpdatePlan}
+                          onMovePane={onMovePane}
+                          onMoveFileBetweenPanes={onMoveFileBetweenPanes}
+                          onDetachPane={onDetachPane}
+                          onPopOutPane={onPopOutPane}
+                          maximizedPane={maximizedPane}
+                          onToggleMaximizePane={onToggleMaximizePane}
+                          sessionPaneProps={sessionPaneProps}
+                          linkedWorkItemPanels={linkedWorkItemPanels}
+                          repairSessions={repairSessions}
+                          onRepairChecks={onRepairChecks}
+                          closeLinkedWorkItemPanel={closeLinkedWorkItemPanel}
+                          onOpenInboxSession={onOpenInboxSession}
+                          visibleRecents={visibleRecents}
+                          searchViewOpen={searchViewOpen}
+                          settingsOpen={settingsPageOpen}
+                          notesViewOpen={notesViewOpen}
+                          serversViewOpen={serversViewOpen}
+                          automationsViewOpen={automationsViewOpen}
+                          activeLinkedWorkItemPanel={activeLinkedWorkItemPanel}
+                        />
+                      </SessionPanelTargetsContext.Provider>
                     </div>
                     <WorkspaceAuxSurfaces
                       searchViewOpen={searchViewOpen}
@@ -3429,6 +3452,10 @@ function Workspace({
                       sessions={inboxAskSessions}
                       inboxViewOpen={inboxViewOpen}
                       inboxAskPortal={inboxAskPortal}
+                      socialSessionIds={socialSessionPanel.sessionIds}
+                      socialWorkspaceTargets={socialSessionPanel.workspaceTargets}
+                      socialSessionPortal={socialSessionPanel.portal}
+                      socialVisible={automationsViewOpen && socialBoardShown}
                       composerFocused={composerFocused}
                       composerFocusToken={composerFocusToken}
                       sessionPaneProps={sessionPaneProps}
@@ -3475,6 +3502,8 @@ function Workspace({
                       onAskInboxItem={onAskInboxItem}
                       onRestartInboxAsk={onRestartInboxAsk}
                       setInboxAskPortal={setInboxAskPortal}
+                      onOpenSocialSession={socialSessionPanel.open}
+                      onSocialSessionMount={socialSessionPanel.setPortal}
                       inboxRelatedSessions={inboxRelatedSessions}
                       repairSessions={repairSessions}
                       onRepairChecks={onRepairChecks}

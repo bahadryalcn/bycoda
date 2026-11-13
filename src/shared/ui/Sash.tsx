@@ -79,7 +79,7 @@ function reportThenEnd(report: () => void, end: () => void) {
  * (e.g. ratio steps with Home/End). Callers keep stored sizes, clamping and persistence.
  * @group layout
  * @use Draggable, keyboard-resizable divider between two panes or a pane and the page.
- * @avoid Hand-rolled resize handles (pointer capture, cursor, keys). Fixed-size layouts need no handle.
+ * @avoid Hand-rolled resize handles (pointer capture, cursor, keys). Fixed-size layouts need no handle. A static separator without resizing: Divider.
  *
  * @example
  * const start = useRef(width);

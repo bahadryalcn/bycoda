@@ -242,12 +242,13 @@ it("marks only the working status dot so the root motion and focus state can pau
       }),
     ),
   );
-  expect(container.querySelector('[role="img"][aria-label="Working"]')?.className).toContain(
-    "working-dot",
+  const working = container.querySelector(
+    '[role="img"][aria-label="Working"] [data-working-variant="dot"]',
   );
-  expect(container.querySelector('[role="img"][aria-label="Done"]')?.className).not.toContain(
-    "working-dot",
-  );
+  expect(working?.className).toContain("working-dot");
+  expect(
+    container.querySelector('[role="img"][aria-label="Done"] [data-working-variant]'),
+  ).toBeNull();
   // The shared stylesheet pauses that class from the root attributes, with no per-row listeners.
   const css = readFileSync("src/styles/index.css", "utf8");
   expect(css).toMatch(

@@ -59,6 +59,7 @@ export function createEnvironmentRuntime(
         ]),
       ],
       capabilities: [
+        "models.routing.v1",
         "browser.sessionScopes.v1",
         "browser.ownerPresentationScopes.v1",
         "assistant.v1",
@@ -122,6 +123,7 @@ export function createEnvironmentRuntime(
         "sessions",
         "sessions.references.v1",
         "sessions.createFirstTurn",
+        "sessions.contextReplay.v1",
         "sessions.pages",
         "sessions.longPoll",
         "sessions.lazyHistory",
@@ -159,7 +161,6 @@ export function createEnvironmentRuntime(
         "crews.active.v1",
         "crews.member.ask.v1",
         "crews.tools.v1",
-        "crews.model-pools.v1",
         "approvals",
         "questions",
         "diff",

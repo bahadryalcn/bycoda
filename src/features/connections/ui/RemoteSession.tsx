@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { setSessions } from "../../sessions/public/sessionsStore";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -368,6 +369,7 @@ function ConnectedRemoteSession({
   useLocale();
   const visibleRef = useRef(visible),
     owner = hostSessionBinding(shell);
+  const consumedContextReplay = useRef<string | undefined>(undefined);
   const displayPath = (path: string) => (owner ? path : remotePath(machine.environmentId, path));
   const executionClient = sessionExecutionClientForMachine(
     machine.id,
@@ -1446,6 +1448,16 @@ function ConnectedRemoteSession({
     recoveredReceipt?: CommandReceipt,
     generation?: number,
   ): Promise<CommandReceipt | undefined> => {
+    const contextReplay =
+      command.type === "send"
+        ? command.contextReplay
+        : command.type === "create" && command.firstTurn?.type === "send"
+          ? command.firstTurn.contextReplay
+          : undefined;
+    if (contextReplay && !descriptor?.capabilities.includes("sessions.contextReplay.v1")) {
+      setError(t("Update the Host to preserve this conversation's context before sending."));
+      return undefined;
+    }
     if (!recoveredReceipt) {
       try {
         assertDesktopControlReceipts(command, descriptor?.capabilities);
@@ -1554,6 +1566,16 @@ function ConnectedRemoteSession({
         }
       }
       if (!receipt) throw new Error(t("The host did not confirm the request."));
+      if (contextReplay) {
+        consumedContextReplay.current = contextReplay;
+        setSessions((sessions) =>
+          sessions.map((session) =>
+            session.id === shell.id && session.pendingContextReplay === contextReplay
+              ? { ...session, pendingContextReplay: undefined }
+              : session,
+          ),
+        );
+      }
       if (owner)
         acknowledgeHostSessionBinding(shell, receipt.sessionId, receipt.authorityGeneration);
       if (owner) await flushHostSessionBindings();
@@ -2127,6 +2149,10 @@ function ConnectedRemoteSession({
           sessionId: id,
           resumeAtReset: loadResumeAtReset(),
           text,
+          ...(shell.pendingContextReplay &&
+          shell.pendingContextReplay !== consumedContextReplay.current
+            ? { contextReplay: shell.pendingContextReplay }
+            : {}),
           attachments,
           intent,
           ...(draftBlockId ? { draftBlockId } : {}),
@@ -2428,6 +2454,14 @@ function ConnectedRemoteSession({
       setRefusal(reason);
       return false;
     };
+    if (
+      !asDraft &&
+      shell.pendingContextReplay &&
+      shell.pendingContextReplay !== consumedContextReplay.current &&
+      descriptor &&
+      !descriptor.capabilities.includes("sessions.contextReplay.v1")
+    )
+      return refused(t("Update the Host to preserve this conversation's context before sending."));
     if (rewindOwner.current) return refused(t("A rewind is in progress. Your message is kept."));
     // Repeated Send must keep its draft while the preceding send is preparing
     // or awaiting acknowledgement. Explicit Queue remains available.

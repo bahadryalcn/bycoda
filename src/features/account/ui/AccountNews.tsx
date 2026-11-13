@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { openExternal } from "../../../platform/tauri/openExternal";
@@ -22,7 +23,7 @@ export function AccountNews() {
       {recent.length === 0 ? (
         <EmptyState size="inline" kind="empty" description={t("No announcements right now.")} />
       ) : null}
-      <ul className={styles.rows}>
+      <ul {...surfaceAttributes({ dividers: "pane" }, styles.rows)}>
         {recent.map((item) => (
           <li key={item.id} className={styles.row}>
             <div className={styles.rowMain}>

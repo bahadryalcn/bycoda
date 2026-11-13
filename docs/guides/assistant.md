@@ -1,5 +1,12 @@
 # Personal assistant
 
+The Room opens on **Today**, with owner questions and current work before activity
+charts. **Work** contains Jobs and Sessions. **Conversations** keeps the typed
+history available alongside the voice assistant. **Records** contains Notes,
+Memory and History. Existing links to those destinations still open the right view.
+Background privacy checks appear in **Assistant status** without moving the page;
+failures that need attention remain visible. Actions show progress where they start.
+
 The Room's **Conversations** starts in **Global** scope. Its management history
 and draft belong to the Assistant, even when no project or coding session is
 open. Name the target project in requests about project work; the global
@@ -73,7 +80,7 @@ source gap require a verified, fully delivered metadata baseline. Pending or
 uncertain completion remains incomplete. Observation never opens the microphone
 or approves a new action.
 
-**Room > Sessions** separates job-created sessions from manual conversation
+**Room > Work > Sessions** separates job-created sessions from manual conversation
 supervision. Search narrows both lists; the status filter applies to job sessions.
 Clear filters when no sessions match, or choose **View jobs** when no job sessions
 exist yet. The supervision panel keeps its current state, project settings and
@@ -81,13 +88,16 @@ refresh action together. An unavailable policy shows **Unknown** until refreshed
 only a confirmed disabled policy shows **Off**. Supervision still requires explicit
 project selection and individual conversation enrollment.
 
-The Room's **History** tab groups activity by day, newest first. Each entry keeps
+The Room's **Records > History** view groups activity by day, newest first. Each entry keeps
 its time, event type and available job/session links together. Search and the
 type filter narrow the visible entries; **Clear history** still requires confirmation.
 
-In the Room's **Jobs** tab, write requests in the input above the job list, one
-request per line, then send them. Jobs start directly unless **Confirm jobs before
-starting** is on in Set up; then each request is reviewed first. The heading shows
+In the Room's **Jobs** tab, discuss the desired outcome before starting work.
+The planning conversation retains its own history and drafts. Its replies can
+clarify and refine a brief but cannot run tools or start work. Choose **Review brief**
+to edit the final job and project, then explicitly start it. **Use a written brief**
+keeps the direct entry flow, one request per line; its saved confirmation setting
+still applies. The heading shows
 the number of matching jobs. Search and filters narrow the list; **Reset** in an empty search
 result clears them without changing your draft.
 
@@ -107,8 +117,14 @@ the information controls beside each group.
 
 **Set up with AI** on the first setup step, and **Create with AI** in Room
 **Settings** → Personal, let a text model you choose interview you about how the
-assistant should look, sound and behave. Answer its questions, pick a quick answer
-or press **Finish and show preview** at any time. The preview lists every proposed
+assistant should look, sound and behave. The editor opens with a question and a
+multiline answer field. Questions follow the assistant's configured language;
+Auto falls back to the application language. The answer area's language control
+changes this interview only, keeping the profile draft unchanged. Model selection
+also lives in the answer toolbar. Answer questions or pick a quick
+answer. After giving an answer, **Finish and show preview** requests a proposal.
+While waiting, **Stop waiting** retains the conversation and ignores a late reply;
+it does not cancel the provider request. The preview lists every proposed
 setting next to its current value; untick what you do not want, edit the persona,
 and optionally draw an avatar with Codex or Gemini. **Apply to settings** only fills
 the form; nothing changes until you save. Jobs and autonomy, execution access,
@@ -129,7 +145,7 @@ assistant may work, and sets the job controls together:
 
 Nothing is selected until you choose one. Models are not asked for: the available
 default model becomes the worker, and you manage the model list later in
-**Settings > Work > Models**. If no default model is available, choose a work mode
+**Settings > Models**. If no default model is available, choose a work mode
 that starts no work, or add a model in Settings first. Rules you want the assistant
 to follow are added in Memory. Opening setup alone does not save a worker or start
 work.
@@ -145,7 +161,7 @@ metadata, then use exact project/session identities for navigation and lifecycle
 actions. Partial or duplicate project names need clarification. Desktop operations
 can use a real assistant conversation without opening a coding session, while
 retaining the owner's per-app approval and computer use permission mode
-(Ask every time, Auto or Full access, set only in **Access > Computer use** settings). A tool's
+(Ask every time, Auto or Full access, managed in **Settings > Access**). A tool's
 authentic response can be usable even when its contents cannot be attributed to a
 project; that content does not become a saved personal rule or trusted memory.
 
@@ -153,19 +169,26 @@ project; that content does not become a saved personal rule or trusted memory.
 
 Room **Settings** has four sections. **Personal** holds identity and language;
 personality and conversation are under **Personality and conversation**. **Work**
-holds the work mode, the daily token budget, the model list, presence and hours,
+holds the daily token budget, a link to Models, presence and hours,
 and notifications. **Access** holds everything the assistant may touch: job
 execution permissions, folders and commands, computer use, manual session
 supervision and the 24/7 readiness list. **Advanced** holds cost and context
 limits and conversation retention.
 
-The work mode shows **Custom** when your job settings match none of the three
-modes. **Customize** under it keeps autonomy, plan approval, job confirmation and
-routine worker questions available individually; picking a mode replaces them.
-Execution permissions are on **Access** and the mode sets them together with the
-rest. Switching sections keeps
+**Access > Permission** applies one choice to jobs, commands and computer use.
+**Full access** also permits changes without another confirmation in the configured
+Assistant folders. **Custom** opens individual controls without changing grants;
+mixed existing grants show **Custom**, not Full access. Selecting a preset changes
+drafts; **Save** applies them through their existing versioned owners. Existing
+command-only grants do not gain permission to write files automatically. Folder
+scope, operating-system permissions, account authorization and project privacy
+remain effective. Stop and revocation remain available.
+
+**Custom** keeps autonomy, plan approval, job confirmation and routine
+worker questions available individually. Picking a permission preset replaces
+the relevant individual grants. Switching sections keeps
 unsaved preferences. **Save** applies changed profile preferences and conversation
-retention, then models, project supervision, computer controls and folders, without
+retention, project supervision, computer controls and folders, without
 closing the dialog. The button shows progress and confirms **Saved** only after
 every changed section succeeds. Errors keep the remaining drafts for retry; editing
 again restores **Save**. Each section retains its own version and permission checks.
@@ -209,6 +232,8 @@ in menus; the settings control and **Stop everything** remain directly available
 
 **Conversations** shows your messages on the right and assistant replies on the
 left, grouped by day. Press **Enter** to send or **Shift+Enter** for a new line.
+Messages use the same Markdown, code, table and link rendering as session chat,
+with copy and message actions. Voice messages retain their source label.
 Unsent drafts stay with their conversation. Message deletion, recorded actions
 and related work remain available beside each message; conversation actions live
 in the chat header. The voice launcher has its own space beside the composer.
@@ -217,7 +242,7 @@ If a draft cannot be saved locally, the Room keeps it in this window and offers
 in memory cannot survive a full app exit. Job priority and replan requests wait
 until their original request can be saved locally before dispatch.
 
-Enter several requests in the Room or say them during voice chat. Jobs start
+Enter several requests through **Use a written brief**, or say them during voice chat. Jobs start
 directly unless **Confirm jobs before starting** is on; then review each request
 and its project before choosing **Start**. Keep the same request when
 retrying an uncertain submission: its saved identity lets the Host reconcile it
@@ -230,7 +255,10 @@ the original request and note identity for inspection rather than creating a
 second note.
 
 Choose **Scheduled automation** for recurring work. Review the project, schedule,
-provider, model and run limits before saving. Creation saves the schedule without
+model choice and run limits before saving. **Default** follows the automation
+role, **Pool** selects a shared pool, and **Fixed** uses the chosen model.
+**Manage in Models** opens shared priority and limits. The model resolves when
+each run starts; running sessions keep their model. Creation saves the schedule without
 starting a run. Open its confirmed result in Automations to inspect or change it.
 An unconfirmed result keeps its original identity for reconciliation.
 
@@ -380,6 +408,10 @@ requires confirmation; **Undo** restores the deleted entry.
 **Notes** shows searchable cards with a title, update time and content excerpt.
 Open a title to read or edit the complete note. **New note** keeps an unfinished
 draft when closed; deleting a card requires confirmation and retains recovery.
+Editing happens inside the Notes page using the main Notes editor: **Document**,
+**Source** and **Split**, with formatting controls and exact Markdown retained.
+**Save** commits the Assistant note; **Close** and tab changes preserve its draft.
+An uncertain save locks editing until the original write is checked, avoiding duplicates.
 Hover a note to show its checkbox, or use **Select all** above the list, then
 **Delete** removes every checked note after one confirmation. Each note keeps its
 own recovery copy, and one **Undo** restores them all. If a note changed or fails
@@ -445,6 +477,12 @@ color. Availability is always one of these states. A computer whose activity
 cannot be read counts as away, and one slow or failed reading keeps the last
 state for up to five minutes instead of changing it.
 
+The check mark in the availability menu shows your own choice. The status mark
+can still read away or idle while you chose **Here**, when the computer saw no
+keyboard or mouse input for your away or idle delay. Using a bycoda window, or
+choosing **Here**, reads the computer again within seconds instead of waiting
+for the next minute check.
+
 Set **Away** or **Do not disturb** when appropriate. Updates remain in History
 and notes; a return briefing can describe completed work and items needing
 attention. Quiet hours and the proactive speech preference control spoken
@@ -490,10 +528,9 @@ turn percentages; it is not a billing rate. Missing cache counters remain
 unavailable. This breakdown does not claim cache measurements for the separate
 Chief or conversational utility calls.
 
-Advanced settings can select separate models for supervision, replies and
-planning. Each inherits the worker model unless you select an override. Planning
-overrides change the planner's model; worker permissions and independent review
-retain their existing settings.
+Configure separate assistant planning, Chief and reply roles in **Settings >
+Models > Assignments**. Worker permissions and independent review retain
+their existing settings.
 
 Advanced context settings separately control when workers compact their context
 or hand work over to a new session. The defaults are 150k/300k estimated tokens
@@ -508,29 +545,17 @@ recovery. Manually enrolled conversations always wait for your review after thei
 limit. Chief context renews at the local briefing time and earlier when it reaches
 80% of a known model window or your saved hard limit.
 
-### Model pool
+### Shared model routing
 
-In Room **Settings** → **Models** you list the models the assistant may use, in
-priority order. Each model has an effort, a provider account and roles: Worker,
-Planning, Chief and Reply. Each also has a **Skip below % remaining** threshold and
-an **If limit unknown** choice for when the limit cannot be read.
+Manage models in **Settings > Models**, using **Model order** for priority,
+accounts, quota reserves and pools, and **Assignments** for Worker,
+Planning, Chief and Reply roles. Room settings link there; the separate assistant
+pool editor is removed. Assistant jobs follow the assistant worker role.
 
-The assistant uses the first model whose remaining limit is above its threshold.
-Running work never switches model. When a running model hits its limit, that work
-resumes on the same model after the limit resets, even with the window closed.
-Tasks that have not started move to the next model. If every model is at its
-limit, jobs wait and you get one notification per reset window.
-
-The voice assistant and Room manager can only use models from this list. Your own
-choices elsewhere in the app are not affected.
-
-Until you save a list, the assistant shows a suggested one. If you never chose
-different models per role, the suggestion ranks the models available for your
-provider by value: the strongest handles Chief and Planning, a mid-tier model
-handles Worker, and the cheapest handles Reply and takes over Worker work when
-the others are limited. With fewer than two models, or if you chose different
-models per role before, the assistant keeps your previous worker, planning, chief
-and reply choices. Saving the list replaces the suggestion.
+New work resolves its model at run start. Running sessions keep their model;
+pending jobs wait when all candidates are skipped. Empty routing keeps the stored
+model. Shared automation limits are independent of the assistant token budget.
+See [Models](models.md) for inheritance, delegation and version-conflict handling.
 
 ## Running around the clock
 

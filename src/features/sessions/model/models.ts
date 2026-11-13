@@ -827,7 +827,15 @@ export function loadLastModelSettings(): Record<string, string> {
   try {
     const raw = modelPreferenceStorage()?.getItem(LAST_MODEL_SETTINGS_KEY);
     if (!raw) return {};
-    return parseStringRecord(JSON.parse(raw));
+    const settings = parseStringRecord(JSON.parse(raw));
+    for (const key of [
+      ...delegation.CROSS_DELEGATION_KEYS,
+      "advisor",
+      "subagentModel",
+      delegation.DELEGATION_PARENT_KEY,
+    ])
+      delete settings[key];
+    return settings;
   } catch (error) {
     console.warn("Model preferences storage failed", error);
     return {};
@@ -837,12 +845,11 @@ export function loadLastModelSettings(): Record<string, string> {
 export function saveLastModelSettings(
   settings: Record<string, string>,
   mode: "overwrite" | "fill" = "overwrite",
-  delegationKeys: readonly string[] = [],
 ) {
   const prev = loadLastModelSettings();
   const { [delegation.DELEGATION_PARENT_KEY]: _parent, ...incoming } = parseStringRecord(settings);
   for (const key of [...delegation.CROSS_DELEGATION_KEYS, "advisor", "subagentModel"])
-    if (!delegationKeys.includes(key)) delete incoming[key];
+    delete incoming[key];
   const next = mode === "fill" ? { ...incoming, ...prev } : { ...prev, ...incoming };
   try {
     modelPreferenceStorage()?.setItem(LAST_MODEL_SETTINGS_KEY, JSON.stringify(next));

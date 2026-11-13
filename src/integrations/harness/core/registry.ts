@@ -719,16 +719,19 @@ export function sendHarnessTurn(
           thread,
           [runtime, fallback].filter(Boolean).join("\n"),
         );
-        if (fallback)
-          input.onEvent({
-            type: "status",
-            key: "delegation-unavailable",
-            text: t(delegationNotice(fallback)),
-          });
         const text =
           input.harness === "codex" ? input.text : withRuntimeHint(input.harness, input.text, hint);
         const deliversHint = turnCarriesRuntimeHint(input.harness, input.text, text, hint);
+        let delegationNoticePending = Boolean(fallback);
         const accepted = () => {
+          if (delegationNoticePending) {
+            delegationNoticePending = false;
+            input.onEvent({
+              type: "status",
+              key: "delegation-unavailable",
+              text: t(delegationNotice(fallback)),
+            });
+          }
           if (deliversHint) markRuntimeHintDelivered(input.sessionId, thread, hint);
           ready();
         };
@@ -1037,7 +1040,9 @@ function createTurnWatchdog(
 ): { arm(): void; observe(event: HarnessEvent): void; stop(): void } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let warned = false;
+  let generation = 0;
   const clear = () => {
+    generation++;
     if (timer !== undefined) clearTimeout(timer);
     timer = undefined;
   };
@@ -1050,12 +1055,24 @@ function createTurnWatchdog(
   };
   const arm = () => {
     clear();
+    const currentGeneration = generation;
     timer = setTimeout(() => {
       timer = undefined;
-      warned = true;
-      notify(
-        `No response from ${harness} in ${formatDuration(warnAfterMs)}. It may still be working. Press Stop to end the turn.`,
-      );
+      void import("../../../shared/model/harnessIdentity")
+        .then(({ HARNESS_TITLE }) => {
+          if (generation !== currentGeneration) return;
+          warned = true;
+          notify(
+            t(
+              "No response from {p0} in {p1}. It may still be working. Press Stop to end the turn.",
+              {
+                p0: HARNESS_TITLE[harness],
+                p1: formatDuration(warnAfterMs),
+              },
+            ),
+          );
+        })
+        .catch((error: unknown) => warnCleanup("turn inactivity notice", error));
     }, warnAfterMs);
   };
   return {

@@ -1,8 +1,17 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { TextField } from "../../../shared/ui/TextField";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
-import { Group, Row, Segmented, Select, Toggle } from "../../settings/public/settingsControls";
+import {
+  AdvancedSettings,
+  Group,
+  Row,
+  Segmented,
+  Select,
+  Toggle,
+} from "../../settings/public/settingsControls";
 import { VoiceActivityRow } from "./VoiceActivityRow";
 import {
   DICTATION_LANGUAGES,
@@ -45,12 +54,14 @@ export function VoiceSettings() {
         <Row
           id="voice-companion"
           label={t("Enable voice companion")}
-          description={
-            settings.mode === "local"
-              ? t(
-                  "Talk to your session while the agent works. Audio is processed on this computer.",
-                )
-              : t("Talk to your session while the agent works.")
+          info={
+            <InfoPopover label={`${t("Enable voice companion")}: ${t("Help")}`}>
+              {settings.mode === "local"
+                ? t(
+                    "Talk to your session while the agent works. Audio is processed on this computer.",
+                  )
+                : t("Talk to your session while the agent works.")}
+            </InfoPopover>
           }
         >
           <Toggle
@@ -60,12 +71,21 @@ export function VoiceSettings() {
             onChange={(enabled) => change({ enabled })}
           />
         </Row>
+        <MicrophonePermissionSettings />
+        {speechEnabled ? <VoiceSetupRow setup={setup} settings={settings} change={change} /> : null}
+      </Group>
+      {companion ? <VoiceEngine settings={settings} change={change} setup={setup} /> : null}
+      <Group title={t("Dictation")}>
         <Row
           id="dictation-enabled"
           label={t("Enable dictation")}
-          description={t(
-            "Speak to insert text in the message box. Works independently of voice companion; nothing is sent automatically.",
-          )}
+          info={
+            <InfoPopover label={`${t("Enable dictation")}: ${t("Help")}`}>
+              {t(
+                "Speak to insert text in the message box. Works independently of voice companion; nothing is sent automatically.",
+              )}
+            </InfoPopover>
+          }
         >
           <Toggle
             label={t("Enable dictation")}
@@ -75,67 +95,15 @@ export function VoiceSettings() {
         </Row>
         {settings.dictationEnabled ? (
           <Row
-            id="dictation-engine"
-            label={t("Dictation recognition")}
-            description={
-              settings.dictationEngine === "local"
-                ? t("Speech is recognized on this computer.")
-                : t("Dictation audio is sent to {p1}. No transcription model is installed.", {
-                    p1: DICTATION_PROVIDER_NAMES[settings.dictationEngine],
-                  })
-            }
-          >
-            <Select
-              hideLabel
-              label={t("Dictation recognition")}
-              value={settings.dictationEngine}
-              options={[
-                { value: "local", label: t("This computer") },
-                // OpenAI and Grok use the Codex / Grok Build sign-in, like voice.
-                { value: "openai", label: DICTATION_PROVIDER_NAMES.openai },
-                { value: "xai", label: DICTATION_PROVIDER_NAMES.xai },
-                { value: "openrouter", label: DICTATION_PROVIDER_NAMES.openrouter },
-              ]}
-              onChange={(value) => change({ dictationEngine: value as DictationEngine })}
-            />
-          </Row>
-        ) : null}
-        {settings.dictationEnabled && settings.dictationEngine !== "local" ? (
-          <Row
-            id="dictation-model"
-            label={t("Dictation model")}
-            description={t("Used for every dictation with this provider.")}
-          >
-            <Select
-              hideLabel
-              label={t("Dictation model")}
-              value={dictationModel(
-                settings.dictationEngine,
-                settings.dictationModels[settings.dictationEngine],
-              )}
-              options={DICTATION_MODELS[settings.dictationEngine].map((model) => ({
-                value: model.id,
-                label: model.label,
-                icon: <ModelLabel model={model.id} iconOnly />,
-              }))}
-              onChange={(value) =>
-                change({
-                  dictationModels: {
-                    ...settings.dictationModels,
-                    [settings.dictationEngine]: value,
-                  },
-                })
-              }
-            />
-          </Row>
-        ) : null}
-        {settings.dictationEnabled ? (
-          <Row
             id="dictation-language"
             label={t("Dictation language")}
-            description={t(
-              "Automatic detects the language you speak. Choose one if dictation translates your speech.",
-            )}
+            info={
+              <InfoPopover label={`${t("Dictation language")}: ${t("Help")}`}>
+                {t(
+                  "Automatic detects the language you speak. Choose one if dictation translates your speech.",
+                )}
+              </InfoPopover>
+            }
           >
             <Select
               hideLabel
@@ -151,23 +119,94 @@ export function VoiceSettings() {
             />
           </Row>
         ) : null}
-        {settings.dictationEnabled && settings.dictationEngine === "openrouter" ? (
-          <VoiceCloudKey provider="openrouter" />
-        ) : null}
-        <MicrophonePermissionSettings />
-        {speechEnabled ? <VoiceSetupRow setup={setup} settings={settings} change={change} /> : null}
-        {speechEnabled && !settings.enabled ? (
-          <ProcessingRow
-            id="dictation-device"
-            setup={setup}
-            value={settings.device}
-            change={change}
-          />
-        ) : null}
+        {settings.dictationEnabled && (
+          <AdvancedSettings
+            title={
+              <>
+                {t("Dictation options")}{" "}
+                <Badge size="xs">
+                  {settings.dictationEngine === "local"
+                    ? t("This computer")
+                    : DICTATION_PROVIDER_NAMES[settings.dictationEngine]}
+                </Badge>
+              </>
+            }
+            settingIds={[
+              "dictation-engine",
+              "dictation-model",
+              "voice-openrouter-key",
+              "dictation-device",
+            ]}
+            keepMounted
+          >
+            {settings.dictationEnabled ? (
+              <Row
+                id="dictation-engine"
+                label={t("Dictation recognition")}
+                description={
+                  settings.dictationEngine === "local"
+                    ? t("Speech is recognized on this computer.")
+                    : t("Dictation audio is sent to {p1}. No transcription model is installed.", {
+                        p1: DICTATION_PROVIDER_NAMES[settings.dictationEngine],
+                      })
+                }
+              >
+                <Select
+                  hideLabel
+                  label={t("Dictation recognition")}
+                  value={settings.dictationEngine}
+                  options={[
+                    { value: "local", label: t("This computer") },
+                    // OpenAI and Grok use the Codex / Grok Build sign-in, like voice.
+                    { value: "openai", label: DICTATION_PROVIDER_NAMES.openai },
+                    { value: "xai", label: DICTATION_PROVIDER_NAMES.xai },
+                    { value: "openrouter", label: DICTATION_PROVIDER_NAMES.openrouter },
+                  ]}
+                  onChange={(value) => change({ dictationEngine: value as DictationEngine })}
+                />
+              </Row>
+            ) : null}
+            {settings.dictationEnabled && settings.dictationEngine !== "local" ? (
+              <Row id="dictation-model" label={t("Dictation model")}>
+                <Select
+                  hideLabel
+                  label={t("Dictation model")}
+                  value={dictationModel(
+                    settings.dictationEngine,
+                    settings.dictationModels[settings.dictationEngine],
+                  )}
+                  options={DICTATION_MODELS[settings.dictationEngine].map((model) => ({
+                    value: model.id,
+                    label: model.label,
+                    icon: <ModelLabel model={model.id} iconOnly />,
+                  }))}
+                  onChange={(value) =>
+                    change({
+                      dictationModels: {
+                        ...settings.dictationModels,
+                        [settings.dictationEngine]: value,
+                      },
+                    })
+                  }
+                />
+              </Row>
+            ) : null}
+            {settings.dictationEnabled && settings.dictationEngine === "openrouter" ? (
+              <VoiceCloudKey provider="openrouter" />
+            ) : null}
+            {speechEnabled && !settings.enabled ? (
+              <ProcessingRow
+                id="dictation-device"
+                setup={setup}
+                value={settings.device}
+                change={change}
+              />
+            ) : null}
+          </AdvancedSettings>
+        )}
       </Group>
       {companion ? (
         <>
-          <VoiceEngine settings={settings} change={change} setup={setup} />
           <VoiceConversationStyle
             settings={settings}
             change={change}
@@ -203,7 +242,7 @@ function VoiceEngine({
   const engine = speakerEngine(settings);
   // Speaker voice for Supertonic and the cloud conversations.
   const speakerRow = engine ? (
-    <Row id="voice-speaker" label={t("Speaker")} description={t("The voice that speaks replies.")}>
+    <Row id="voice-speaker" label={t("Speaker")}>
       <Select
         hideLabel
         label={t("Speaker")}
@@ -218,6 +257,7 @@ function VoiceEngine({
       <Row
         id="voice-mode"
         label={t("Conversation")}
+        stacked
         description={
           local
             ? t("Speech is recognized on this computer; the session's provider writes replies.")
@@ -300,7 +340,9 @@ function VoiceEngine({
         </>
       ) : null}
       {local ? (
-        <ProcessingRow id="voice-device" setup={setup} value={settings.device} change={change} />
+        <AdvancedSettings title={t("Voice options")} settingIds={["voice-device"]} keepMounted>
+          <ProcessingRow id="voice-device" setup={setup} value={settings.device} change={change} />
+        </AdvancedSettings>
       ) : null}
     </Group>
   );
@@ -321,7 +363,11 @@ function ProcessingRow({
     <Row
       id={id}
       label={t("Processing")}
-      description={t("Automatic uses a supported NVIDIA GPU when available.")}
+      info={
+        <InfoPopover label={`${t("Processing")}: ${t("Help")}`}>
+          {t("Automatic uses a supported NVIDIA GPU when available.")}
+        </InfoPopover>
+      }
       disabled={setup.installing}
     >
       <Segmented

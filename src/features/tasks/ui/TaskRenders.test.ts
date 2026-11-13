@@ -2,7 +2,7 @@
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { BoardTask } from "../model/taskClient";
+import type { BoardTask, TaskDraft } from "../model/taskClient";
 import type { TaskColumn } from "../model/hostTasks";
 import { newTaskDraft } from "../model/taskClient";
 import { TaskBoardColumns } from "./TaskBoardColumns";
@@ -29,16 +29,16 @@ vi.mock("./TaskForm", () => ({
     onChange,
     onSubmit,
   }: {
-    draft: { title: string };
-    onChange: (next: { title: string }) => void;
-    onSubmit: (mode: "todo") => void;
+    draft: TaskDraft;
+    onChange: (next: TaskDraft) => void;
+    onSubmit: (mode: "todo", draft: TaskDraft) => void;
   }) =>
     createElement("input", {
       "data-testid": "title",
       value: draft.title,
       onChange: (event: { target: { value: string } }) =>
         onChange({ ...draft, title: event.target.value }),
-      onBlur: () => onSubmit("todo"),
+      onBlur: () => onSubmit("todo", draft),
     }),
 }));
 

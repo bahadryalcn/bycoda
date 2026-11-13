@@ -703,6 +703,28 @@ test("rail polish aligns sections and swaps row actions without losing identity"
         positions.push((await text.boundingBox())!.x);
       }
       expect(Math.max(...positions) - Math.min(...positions)).toBeLessThanOrEqual(1);
+      await expect(project).toHaveCSS("padding-inline-start", "8px");
+      const primary = project.locator("[data-project-primary]");
+      await expect(primary).toHaveCSS("padding-inline-start", "4px");
+      await expect(primary).toHaveCSS("padding-inline-end", "0px");
+      const groupIcon = page
+        .locator(
+          '[data-project-group="product"] > [data-group-row] button[data-icon-target="compact"]',
+        )
+        .first();
+      await expect(groupIcon).toHaveCSS("width", "24px");
+      const rail = page.locator('[data-side-pane="rail"]').first();
+      const originalWidth = await rail.evaluate((node) => (node as HTMLElement).style.width);
+      await rail.evaluate((node) => {
+        (node as HTMLElement).style.width = "128px";
+      });
+      await expect(project).toHaveCSS("padding-inline-start", "0px");
+      await expect(primary).toHaveCSS("padding-inline-start", "0px");
+      await expect(primary).toHaveCSS("padding-inline-end", "0px");
+      await rail.evaluate((node, value) => {
+        (node as HTMLElement).style.width = value;
+      }, originalWidth);
+      await expect(project).toHaveCSS("padding-inline-start", "8px");
       const stats = project.locator("[data-project-git]");
       const options = project.locator("[data-project-options]");
       const pin = project.locator("[data-project-pin]");
@@ -720,6 +742,20 @@ test("rail polish aligns sections and swaps row actions without losing identity"
         10,
       );
       await page.screenshot({ path: testInfo.outputPath(`rail-rest-${theme}-${width}.png`) });
+      const restingGround = await project.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      await project.hover();
+      // Shared ActionHost paints hover above the resting ground, including custom project colours.
+      await expect(project).toHaveCSS("background-color", restingGround);
+      const hoverLayer = await project.evaluate(
+        (element) => getComputedStyle(element).backgroundImage,
+      );
+      expect(hoverLayer).not.toBe("none");
+      await project.evaluate((element) => element.setAttribute("data-dragging", ""));
+      await page.mouse.move(width - 20, 900);
+      await expect(project).toHaveCSS("background-image", hoverLayer);
+      await project.evaluate((element) => element.removeAttribute("data-dragging"));
       await project.hover();
       await expect(stats).toHaveCSS("opacity", "0");
       await expect(options).toHaveCSS("opacity", "1");
@@ -838,3 +874,192 @@ test("rail attention uses red for one failed item and yellow for warnings or sev
     }
   }
 });
+
+for (const theme of ["light", "dark"] as const)
+  for (const width of [800, 1280]) {
+    test(`shared shell control geometry ${theme} ${width}`, async ({ page }) => {
+      await installNavigationFixture(page);
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/tests/browser/app-shell/compact-navigation.html?controlLayout");
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
+        theme,
+      );
+      const get = (name: string) => page.locator(`[data-layout-case="${name}"]`);
+      for (const [name, inline, top, bottom] of [
+        ["rail", 8, 0, 0],
+        ["recovery", 0, 8, 8],
+        ["compact", 10, 4, 4],
+        ["regular", 10, 6, 6],
+        ["expanded-compact", 10, 4, 10],
+        ["expanded-regular", 10, 6, 10],
+        ["folder", 10, 4, 4],
+      ] as const) {
+        const style = await get(name).evaluate((node) => {
+          const s = getComputedStyle(node);
+          return [
+            parseFloat(s.paddingInlineStart),
+            parseFloat(s.paddingTop),
+            parseFloat(s.paddingBottom),
+          ];
+        });
+        expect(style).toEqual([inline, top, bottom]);
+      }
+      await expect(get("group")).toHaveCSS("padding-inline-start", "4px");
+      await expect(get("project")).toHaveCSS("padding-inline-end", "0px");
+      await expect(get("reconnect")).toHaveCSS("padding-inline-end", "28px");
+      await expect(get("icon")).toHaveCSS("width", "24px");
+      await expect(get("icon")).toHaveCSS("height", "24px");
+      await expect(get("content")).toHaveCSS("min-height", "0px");
+      await expect(get("content")).toHaveCSS("padding-inline-start", "12px");
+      await expect(get("content")).toHaveCSS("padding-top", "2px");
+      await expect(get("fill")).toHaveCSS("height", "64px");
+      expect((await get("minimum").boundingBox())!.height).toBeGreaterThanOrEqual(72);
+      for (const [density, height] of [
+        ["compact", 28],
+        ["comfortable", 32],
+        ["touch", 44],
+      ] as const) {
+        await page.evaluate((value) => {
+          document.documentElement.dataset.controlDensity = value;
+        }, density);
+        await expect(get("rail")).toHaveCSS("height", `${height}px`);
+        await expect(get("tab")).toHaveCSS("padding-inline-end", `${height}px`);
+        await expect(get("folder")).toHaveCSS("min-height", `${height}px`);
+        await expect(get("auto")).toHaveCSS("min-height", `${height}px`);
+      }
+      await page.evaluate(() => {
+        document.documentElement.dataset.controlDensity = "compact";
+      });
+      await get("icon").focus();
+      await expect(get("icon")).toBeFocused();
+      await page.screenshot({
+        path: `temp/verification/shell-controls/control-layout-${theme}-${width}.png`,
+        fullPage: true,
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"] as const)
+  for (const width of [800, 1280]) {
+    test(`shared shell interaction slots settings ${theme} ${width}`, async ({
+      page,
+      browserName,
+    }) => {
+      await installNavigationFixture(page);
+      await page.setViewportSize({ width, height: 1400 });
+      await page.goto("/tests/browser/app-shell/compact-navigation.html?controlLayout");
+      await page.evaluate(
+        (value) => document.documentElement.classList.toggle("theme-light", value === "light"),
+        theme,
+      );
+      await page.mouse.move(width - 5, 1390);
+      const swap = page.locator('[data-layout-case="swap"]');
+      const main = swap.getByRole("button", { name: "Swap main", exact: true });
+      const rest = swap.getByRole("button", { name: "Rest child", exact: true });
+      const active = swap.getByRole("button", { name: "Active child", exact: true });
+      await expect(rest).toBeVisible();
+      await expect(active.locator("..")).toHaveCSS("max-inline-size", "0px");
+      await expect(active.locator("..")).toHaveCSS("pointer-events", "none");
+      await main.focus();
+      await expect(rest).toBeHidden();
+      await expect(active).toBeVisible();
+      await page.keyboard.press("Tab");
+      await expect(active).toBeFocused();
+      await expect(swap.getByText("Status preserved", { exact: true })).toHaveCSS(
+        "clip-path",
+        "inset(50%)",
+      );
+      await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+      await swap.evaluate((node) => node.setAttribute("data-action-open", "true"));
+      await expect(active).toBeVisible();
+      await swap.evaluate((node) => node.removeAttribute("data-action-open"));
+      await expect(rest).toBeVisible();
+      const settings = page.locator('[data-layout-case="settings"]');
+      const save = settings.getByRole("button", { name: "Settings save", exact: true });
+      const fill = await save.evaluate((node) => getComputedStyle(node).backgroundColor);
+      await settings.hover();
+      await expect(save).toHaveCSS("background-color", fill);
+      await expect(page.locator('[data-layout-case="settings-peer"]')).toHaveCSS(
+        "border-block-start-width",
+        "1px",
+      );
+      const draft = settings.getByRole("textbox", { name: "Fixture draft", exact: true });
+      await draft.fill("Unsaved draft");
+      await draft.focus();
+      await page.mouse.move(width - 5, 1390);
+      const hovered = await settings.evaluate((node) => getComputedStyle(node).backgroundColor);
+      expect(hovered).not.toBe("rgba(0, 0, 0, 0)");
+      await expect(settings).toHaveCSS("background-image", "none");
+      await expect(draft).toHaveValue("Unsaved draft");
+      const touch = page.locator('[data-layout-case="touch"]');
+      await expect(touch).toHaveCSS("width", "24px");
+      if (browserName === "chromium") {
+        const client = await page.context().newCDPSession(page);
+        await client.send("Emulation.setTouchEmulationEnabled", {
+          enabled: true,
+          maxTouchPoints: 1,
+        });
+        await expect
+          .poll(() => page.evaluate(() => matchMedia("(pointer: coarse)").matches))
+          .toBe(true);
+        await expect(touch).toHaveCSS("min-width", "36px");
+        await expect(touch).toHaveCSS("min-height", "36px");
+        await client.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+        await client.detach();
+      }
+      await page.screenshot({
+        path: `temp/verification/shell-surfaces/shared-interaction-${theme}-${width}.png`,
+        fullPage: true,
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`nested session folder drag ${theme} ${width}`, async ({ page }, info) => {
+      await installNavigationFixture(page);
+      await page.addInitScript(() =>
+        localStorage.setItem(
+          "bycoda.sessionFolders",
+          JSON.stringify({
+            "/fixture/bycoda": [
+              { id: "outer", name: "Outer folder", sessionIds: ["discussion-0"], collapsed: false },
+              {
+                id: "inner",
+                name: "Inner folder",
+                parentId: "outer",
+                sessionIds: ["discussion-1"],
+                collapsed: false,
+              },
+            ],
+          }),
+        ),
+      );
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/app-shell/compact-navigation.html");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const outer = page.locator('[data-session-folder="outer"]');
+      const inner = page.locator('[data-session-folder="inner"]');
+      await expect(inner).toBeVisible();
+      await expect(inner).toHaveCSS("padding-inline-start", "22px");
+      await inner.screenshot({ path: info.outputPath(`folder-nested-${theme}-${width}.png`) });
+      const handle = outer.locator("[data-folder-row]");
+      const box = (await handle.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 8);
+      await expect(outer).toHaveAttribute("data-folder-dragging", "true");
+      await expect(outer).toHaveAttribute("data-dragging", "true");
+      await expect(outer).toHaveCSS("opacity", "0.4");
+      await outer.screenshot({ path: info.outputPath(`folder-drag-${theme}-${width}.png`) });
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await expect(outer).not.toHaveAttribute("data-folder-dragging");
+      await expect(outer).not.toHaveAttribute("data-dragging");
+      await expect(outer).toHaveCSS("opacity", "1");
+    });
+  }

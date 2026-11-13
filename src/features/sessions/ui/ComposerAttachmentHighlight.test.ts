@@ -5,8 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Attachment } from "../model/session";
 import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
 
-vi.mock("../../files/ui/FileTypeIcon", () => ({ FileTypeIcon: () => null }));
-
 const files: Attachment[] = [
   { id: "image", name: "shot.png", mimeType: "image/png", kind: "image", size: 100 },
   { id: "pdf", name: "notes.pdf", mimeType: "application/pdf", kind: "file", size: 200 },
@@ -35,7 +33,7 @@ function render(text: string, attachments = files) {
 }
 
 describe("ComposerAttachmentHighlight", () => {
-  it("keeps every native character and decorates each resolved attachment type", () => {
+  it("keeps every native character and decorates each resolved attachment type", async () => {
     const text = "See [image1], [file1] and [file2].\nKeep draft.";
     render(text);
     expect(container.textContent).toBe(text);
@@ -45,6 +43,13 @@ describe("ComposerAttachmentHighlight", () => {
       ),
     ).toEqual(["image", "pdf", "markdown"]);
     expect(container.querySelector("button, input, textarea")).toBeNull();
+    await act(async () => {
+      await vi.waitFor(() => {
+        for (const token of container.querySelectorAll("[data-composer-attachment-kind]")) {
+          expect(token.querySelector("svg")).not.toBeNull();
+        }
+      });
+    });
   });
 
   it("leaves code, unknown references and index expressions to existing text highlighting", () => {

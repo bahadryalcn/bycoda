@@ -218,7 +218,11 @@ export function CrewMemberPicker({
                                 agent={agent}
                                 catalog={data.catalog}
                                 shortScope
-                                poolName={agent.pool && poolNames.get(agent.pool.id)}
+                                poolName={
+                                  agent.modelChoice?.kind === "pool"
+                                    ? poolNames.get(agent.modelChoice.poolId)
+                                    : undefined
+                                }
                               />
                             </span>
                             {agent.groups?.length ? (

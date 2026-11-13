@@ -26,8 +26,10 @@ async function openWakeCapture(
     stream.getTracks().forEach((track) => track.stop());
     for (const node of nodes) node.disconnect();
   };
+  let audio: AudioContext | undefined;
   try {
-    const audio = new AudioContext({ sampleRate: 16000 });
+    audio = new AudioContext({ sampleRate: 16000 });
+    const context = audio;
     await audio.resume();
     await audio.audioWorklet.addModule(captureUrl);
     const source = audio.createMediaStreamSource(stream);
@@ -40,11 +42,12 @@ async function openWakeCapture(
       close: () => {
         node.port.onmessage = null;
         release(source, node);
-        if (audio.state !== "closed") void audio.close().catch(noop);
+        if (context.state !== "closed") void context.close().catch(noop);
       },
     };
   } catch (cause) {
     release();
+    if (audio && audio.state !== "closed") void audio.close().catch(noop);
     throw cause;
   }
 }
@@ -73,9 +76,8 @@ export function localWakeDeps(options: {
     recognize: async (pcm) => {
       closed = false;
       lease ??= localVoiceBackend.start(options.config, true).then(({ lease: id }) => {
-        if (closed) {
-          void localVoiceBackend.release(id).catch(noop);
-          throw new Error("Wake listening stopped.");
+        if (closed || lease !== pending) {
+          return id;
         }
         heartbeat ??= setInterval(() => {
           void localVoiceBackend.keepAlive(id).catch(noop);
@@ -84,9 +86,11 @@ export function localWakeDeps(options: {
       });
       const pending = lease;
       try {
-        return (await localVoiceBackend.transcribe(await pending, pcm, options.language)).text;
+        const id = await pending;
+        if (closed || lease !== pending) throw new Error("Wake listening stopped.");
+        return (await localVoiceBackend.transcribe(id, pcm, options.language)).text;
       } catch (cause) {
-        if (lease === pending) lease = undefined;
+        if (lease === pending) drop();
         throw cause;
       }
     },

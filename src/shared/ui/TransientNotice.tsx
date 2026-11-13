@@ -1,7 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
-import { createPortal } from "react-dom";
-import { LAYER } from "../lib/layers";
-import { observeResize } from "../lib/observeResize";
+import type { ReactNode } from "react";
 import type { AlertTone } from "./Alert";
 import { ToastCard } from "./ToastCard";
 import { Toast } from "./ToastRegion";
@@ -31,23 +28,13 @@ export interface TransientNoticeProps {
   /** Auto-dismiss delay; defaults to ten seconds of focused window time. `null` keeps the notice until dismissed. */
   durationMs?: number | null;
   /**
-   * Corner stack. Viewport notices without `offset`/`onHeightChange` join the shared corner
+   * Corner stack. Viewport notices join the shared corner
    * stack (see `ToastRegion`): newest in front, older ones tucked behind.
    */
   placement?: "bottom-end" | "top-end";
-  /**
-   * @deprecated Legacy manual offset (px) from the corner for sibling banners. A viewport notice
-   * without it stacks automatically; remove it when the sibling also stacks.
-   */
-  offset?: number;
   width?: "md" | "lg";
   /** `viewport` portals to the body; `container` positions inside the nearest positioned parent. */
   anchor?: "viewport" | "container";
-  /**
-   * @deprecated Reports the rendered height (0 on unmount) for manual stacking. Stacked notices
-   * need no coordination; passing this keeps the legacy fixed position.
-   */
-  onHeightChange?: (height: number) => void;
   "aria-label"?: string;
 }
 
@@ -57,60 +44,16 @@ export interface TransientNoticeProps {
  * stacks in its corner with every other toast.
  * Hand-positioned transient notice cards; the shared ToastCard owns their appearance.
  * @group feedback
- * @use Compatibility placement adapter for a ToastCard inside a positioned container or a legacy measured corner offset.
+ * @use Placement adapter for a ToastCard inside a positioned container or the shared viewport Toast stack.
  * @avoid New background feedback: Toast or useToast. Inline result near a control: InlineMessage. Persistent page notice: Alert.
  */
 export function TransientNotice({
   placement = "bottom-end",
-  offset,
   anchor = "viewport",
-  onHeightChange,
   ...props
 }: TransientNoticeProps) {
-  if (anchor === "viewport" && offset === undefined && !onHeightChange)
-    return <Toast placement={placement} {...props} />;
-  return (
-    <PositionedNotice
-      {...props}
-      placement={placement}
-      offset={offset}
-      anchor={anchor}
-      onHeightChange={onHeightChange}
-    />
-  );
-}
-
-/** The legacy self-positioned notice, kept for callers that still coordinate offsets. */
-function PositionedNotice({
-  placement = "bottom-end",
-  offset,
-  anchor = "viewport",
-  onHeightChange,
-  ...props
-}: TransientNoticeProps) {
-  const frame = useRef<HTMLDivElement>(null);
-  // Keep the legacy offset owner's measured height in sync without a separate observer.
-  useLayoutEffect(() => {
-    const node = frame.current;
-    if (!node || !onHeightChange) return;
-    const measure = () => onHeightChange(node.offsetHeight);
-    measure();
-    const unsubscribe = observeResize(node, measure);
-    return () => {
-      unsubscribe();
-      onHeightChange(0);
-    };
-  }, [onHeightChange]);
-  const inset = offset ?? 12;
+  if (anchor === "viewport") return <Toast placement={placement} {...props} />;
+  const inset = 12;
   const position = placement === "top-end" ? { insetBlockStart: inset } : { insetBlockEnd: inset };
-  const notice = (
-    <ToastCard
-      {...props}
-      frameRef={frame}
-      style={{ zIndex: anchor === "viewport" ? LAYER.toast : undefined, ...position }}
-      position={anchor === "viewport" ? "fixed" : "absolute"}
-      className="end-3"
-    />
-  );
-  return anchor === "viewport" ? createPortal(notice, document.body) : notice;
+  return <ToastCard {...props} style={position} position="absolute" className="end-3" />;
 }

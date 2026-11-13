@@ -1,39 +1,35 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
-import { InlineError } from "../../../../shared/ui/InlineError";
-import { DisabledReason } from "../common/DisabledReason";
-import { Modal, ModalActions } from "../../../../shared/ui/Modal";
+import { Modal } from "../../../../shared/ui/Modal";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { AudienceFilter, SocialList } from "../../model/audience";
 import type { SocialClient } from "../../model/socialClient";
 import { errorMessage, isFilterEmpty } from "./audienceModel";
+import { useFormFooter, useTouched } from "./formFooter";
 import { SegmentFilterFields } from "./SegmentFilterFields";
 
 export type SegmentBuilderProps = {
   client: SocialClient;
+  /** The segment being edited. Omit to create a new one. */
+  list?: SocialList;
   onClose: () => void;
-  onCreated: (list: SocialList) => void;
+  onSaved: (list: SocialList) => void;
 };
 
-/** Builds a dynamic segment: a name and at least one condition. The list keeps updating as people change. */
-export function SegmentBuilder({ client, onClose, onCreated }: SegmentBuilderProps) {
-  const [name, setName] = useState("");
-  const [filter, setFilter] = useState<AudienceFilter>({});
+/**
+ * Builds or edits a dynamic segment: a name and at least one condition. The list keeps updating as
+ * people change. Editing keeps the segment's id and project scope; its members are never stored.
+ */
+export function SegmentBuilder({ client, list: existing, onClose, onSaved }: SegmentBuilderProps) {
+  const [name, setName] = useState(existing?.name ?? "");
+  const [filter, setFilter] = useState<AudienceFilter>(() => ({ ...existing?.filter }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
+  const { touched, touch } = useTouched();
 
-  const nameMissing = !name.trim();
-  const filterMissing = isFilterEmpty(filter);
-  const saveReason = nameMissing
-    ? t("Enter a name for the segment.")
-    : filterMissing
-      ? t("Add at least one condition.")
-      : undefined;
-
-  const saveState = saveReason
-    ? { disabled: true as const, reason: saveReason }
-    : { disabled: false as const };
+  const nameReason = name.trim() ? undefined : t("Enter a name for the segment.");
+  const saveReason =
+    nameReason ?? (isFilterEmpty(filter) ? t("Add at least one condition.") : undefined);
 
   async function save() {
     if (saveReason) return;
@@ -41,12 +37,13 @@ export function SegmentBuilder({ client, onClose, onCreated }: SegmentBuilderPro
     setError(undefined);
     try {
       const list = await client.lists.save({
+        ...(existing ? { id: existing.id } : {}),
         name: name.trim(),
         kind: "dynamic",
         filter,
-        projectIds: [],
+        projectIds: existing?.projectIds ?? [],
       });
-      onCreated(list);
+      onSaved(list);
       onClose();
     } catch (err) {
       setError(errorMessage(err));
@@ -55,9 +52,18 @@ export function SegmentBuilder({ client, onClose, onCreated }: SegmentBuilderPro
     }
   }
 
+  const footer = useFormFooter({
+    saving,
+    error,
+    blockedReason: saveReason,
+    saveLabel: t("Save segment"),
+    onSave: () => void save().catch(() => undefined),
+    onCancel: onClose,
+  });
+
   return (
     <Modal
-      title={t("New segment")}
+      title={existing ? t("Edit segment") : t("New segment")}
       description={t(
         "A segment shows everyone who matches these conditions, and updates by itself.",
       )}
@@ -65,28 +71,15 @@ export function SegmentBuilder({ client, onClose, onCreated }: SegmentBuilderPro
         if (!saving) onClose();
       }}
       size="lg"
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
-      footer={
-        <ModalActions>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <DisabledReason
-            variant="primary"
-            loading={saving}
-            {...saveState}
-            onClick={() => void save().catch(() => undefined)}
-          >
-            {t("Save segment")}
-          </DisabledReason>
-        </ModalActions>
-      }
+      {...footer}
     >
       <div className="audience-stack">
         <TextField
           label={t("Segment name")}
           value={name}
           disabled={saving}
+          error={touched("name") ? nameReason : undefined}
+          onBlur={() => touch("name")}
           onChange={(event) => setName(event.target.value)}
         />
         <SegmentFilterFields value={filter} onChange={setFilter} disabled={saving} />

@@ -10,15 +10,9 @@
 }
 .card {
   padding: 16px;
-  background: var(--ui-card-surface);
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .card[data-question-form] {
   padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
 }
 .footer {
   display: flex;

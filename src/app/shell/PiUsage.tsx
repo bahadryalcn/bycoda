@@ -1,3 +1,4 @@
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -22,17 +23,18 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
   const provider = piUsageProvider(model);
   if (!provider) {
     return (
-      <span
-        className="inline-flex items-center gap-1.5 whitespace-nowrap"
-        title={
+      <Tooltip
+        label={
           !model || model === "pi:default"
             ? t("Send a message so Pi can report its configured provider.")
             : t("Subscription usage is not supported for this Pi provider.")
         }
       >
-        <HarnessIcon harness="pi" className="icon-sm shrink-0" />
-        <span>{t("pi · Usage unavailable")}</span>
-      </span>
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <HarnessIcon harness="pi" className="icon-sm shrink-0" />
+          <span>{t("pi · Usage unavailable")}</span>
+        </span>
+      </Tooltip>
     );
   }
   return <PiProviderUsage key={provider} provider={provider} now={now} />;

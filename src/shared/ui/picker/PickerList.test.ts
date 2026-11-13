@@ -6,7 +6,7 @@ import { PickerPopover } from "./PickerPopover";
 import { usePickerList, type PickerOption } from "./usePickerList";
 import { PopoverSearchHeader } from "../PopoverSearchHeader";
 import { InlineAction } from "../ActionHost";
-import { PickerList } from "./PickerList";
+import { PickerList, PickerListRoot } from "./PickerList";
 import { Select } from "../Select";
 import { SearchableSelect } from "../SearchableSelect";
 
@@ -303,4 +303,54 @@ it("movement pointer mode ignores entry and repeated stationary coordinates afte
   await key(container.querySelector('[role="listbox"]')!, "ArrowUp");
   await move();
   expect(rows[0].hasAttribute("data-active")).toBe(true);
+});
+
+it("keeps the external editor and native list ref while a caller controls active IDs", async () => {
+  const list = createRef<HTMLUListElement>(),
+    onKeyDown = vi.fn();
+  const draw = (active: string) =>
+    createElement(
+      "div",
+      null,
+      createElement("textarea", { defaultValue: "Unsent editor draft" }),
+      createElement(
+        PickerListRoot,
+        {
+          as: "ul",
+          ref: list,
+          label: "Custom paths",
+          multiple: true,
+          id: "path-list",
+          "aria-activedescendant": active,
+          onKeyDown,
+        },
+        createElement(
+          "li",
+          { id: "path-a", role: "option", "aria-selected": active === "path-a" },
+          "Path A",
+        ),
+        createElement(
+          "li",
+          { id: "path-b", role: "option", "aria-selected": active === "path-b" },
+          "Path B",
+        ),
+      ),
+    );
+  await act(async () => root.render(draw("path-a")));
+  const node = list.current!,
+    editor = container.querySelector("textarea")!;
+  editor.value = "Exact unsent draft";
+  editor.focus();
+  await act(async () =>
+    node.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
+  );
+  expect(onKeyDown).toHaveBeenCalledOnce();
+  expect(node.getAttribute("aria-activedescendant")).toBe("path-a");
+  await act(async () => root.render(draw("path-b")));
+  expect(list.current).toBe(node);
+  expect(node.tagName).toBe("UL");
+  expect(node.getAttribute("aria-multiselectable")).toBe("true");
+  expect(node.getAttribute("aria-activedescendant")).toBe("path-b");
+  expect(document.activeElement).toBe(editor);
+  expect(editor.value).toBe("Exact unsent draft");
 });

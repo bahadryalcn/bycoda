@@ -9,18 +9,24 @@ import {
   asClient,
   bodyText,
   buttonByText,
-  clientMock,
   clickButton,
+  clickMenuItem,
+  clientMock,
   fieldByLabel,
   flush,
   mountHost,
+  pickOption,
   setFieldValue,
   type ClientMock,
   type MountedHost,
 } from "./audienceTestKit";
 
 // Deleting a rule waits for a shared confirmation dialog; the test answers it directly.
-const confirm = vi.fn(async (_request: { title: string; danger?: boolean }) => true);
+type ConfirmRequest = { title: string; danger?: boolean; onConfirm?: () => Promise<void> };
+const confirm = vi.fn(async (request: ConfirmRequest) => {
+  await request.onConfirm?.();
+  return true;
+});
 vi.mock("../../../../shared/ui/ConfirmDialog", () => ({
   useConfirm: () => ({ confirm, dialog: null }),
 }));
@@ -30,7 +36,10 @@ let host: MountedHost;
 beforeEach(() => {
   host = mountHost();
   confirm.mockClear();
-  confirm.mockImplementation(async () => true);
+  confirm.mockImplementation(async (request: ConfirmRequest) => {
+    await request.onConfirm?.();
+    return true;
+  });
 });
 
 afterEach(() => {
@@ -71,6 +80,14 @@ async function open(mock: ClientMock, overrides: Partial<CaptureRulesProps> = {}
   return props;
 }
 
+function openRuleMenu(name: string): void {
+  const trigger = document.querySelector<HTMLButtonElement>(
+    `button[aria-label="Actions for ${name}"]`,
+  );
+  if (!trigger) throw new Error(`No actions menu for ${name}`);
+  act(() => trigger.click());
+}
+
 function switches(): HTMLButtonElement[] {
   return Array.from(document.querySelectorAll<HTMLButtonElement>('button[role="switch"]'));
 }
@@ -85,8 +102,10 @@ describe("CaptureRules list", () => {
   it("shows where each rule looks and which list it fills", async () => {
     await open(withRules([launch, { ...launch, id: "r2", name: "Orphan", targetListId: "gone" }]));
     expect(bodyText()).toContain("Launch hashtag");
-    expect(bodyText()).toContain("Hashtag → Buyers");
-    expect(bodyText()).toContain("Hashtag → No list");
+    expect(bodyText()).toContain("Hashtag on Brand");
+    expect(bodyText()).toContain("Adds to Buyers");
+    expect(bodyText()).toContain("The list it adds to no longer exists");
+    expect(bodyText()).toContain("List missing");
   });
 
   it("shows the Host reason when the rules cannot be loaded", async () => {
@@ -142,7 +161,8 @@ describe("CaptureRules delete", () => {
   it("deletes a rule only after the owner confirms and leaves the collected people alone", async () => {
     const mock = withRules([launch]);
     await open(mock);
-    clickButton("Delete rule");
+    openRuleMenu("Launch hashtag");
+    clickMenuItem("Delete rule…");
     await flush();
     expect(confirm).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Delete this rule?", danger: true }),
@@ -156,7 +176,8 @@ describe("CaptureRules delete", () => {
     confirm.mockImplementation(async () => false);
     const mock = withRules([launch]);
     await open(mock);
-    clickButton("Delete rule");
+    openRuleMenu("Launch hashtag");
+    clickMenuItem("Delete rule…");
     await flush();
     expect(mock.captureRules.delete).not.toHaveBeenCalled();
     expect(bodyText()).toContain("Launch hashtag");
@@ -169,7 +190,8 @@ describe("CaptureRules delete", () => {
       }),
     });
     await open(mock);
-    clickButton("Delete rule");
+    openRuleMenu("Launch hashtag");
+    clickMenuItem("Delete rule…");
     await flush();
     expect(bodyText()).toContain("Rule is in use.");
     expect(bodyText()).toContain("Launch hashtag");
@@ -185,7 +207,7 @@ describe("CaptureRules new rule", () => {
     expect(bodyText()).toContain("The rule is saved turned off.");
 
     setFieldValue(fieldByLabel("Rule name"), "Launch hashtag");
-    setFieldValue(fieldByLabel("Add them to"), "l1");
+    pickOption("List", "Buyers");
     clickButton("Save rule");
     await flush();
 
@@ -196,5 +218,59 @@ describe("CaptureRules new rule", () => {
     expect(props.onChanged).toHaveBeenCalledTimes(1);
     expect(buttonByText("Save rule")).toBeUndefined();
     expect(switches()[0]!.getAttribute("aria-checked")).toBe("false");
+  });
+});
+
+describe("CaptureRules edit", () => {
+  it("opens the rule from its menu, saves changes under the same id and keeps it switched on", async () => {
+    const enabled = { ...launch, enabled: true };
+    const mock = withRules([enabled], {
+      save: vi.fn(async (input: Record<string, unknown>) => ({ ...enabled, ...input })),
+    });
+    const props = await open(mock);
+    openRuleMenu("Launch hashtag");
+    clickMenuItem("Edit rule…");
+    await flush();
+    expect(fieldByLabel("Keyword or hashtag").value).toBe("launch");
+
+    setFieldValue(fieldByLabel("Rule name"), "Launch hashtag 2");
+    clickButton("Save rule");
+    await flush();
+
+    expect(mock.captureRules.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "r1", name: "Launch hashtag 2", enabled: true }),
+    );
+    expect(bodyText()).toContain("Launch hashtag 2");
+    expect(bodyText()).not.toContain("Launch hashtag Brand");
+    expect(document.querySelectorAll('button[role="switch"]')).toHaveLength(1);
+    expect(props.onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains in the row what the rule does after it collects someone", async () => {
+    const tagging = {
+      ...launch,
+      filter: { keywords: ["price"] },
+      action: { kind: "tag", tag: "hot" },
+    };
+    await open(withRules([tagging as CaptureRule]));
+    expect(bodyText()).toContain("Text has price");
+    expect(bodyText()).toContain("Then adds the tag hot");
+  });
+
+  it("offers one create action: the header button only once rules exist", async () => {
+    await open(withRules([]));
+    expect(
+      Array.from(document.querySelectorAll("button")).filter(
+        (b) => b.textContent?.trim() === "New rule",
+      ),
+    ).toHaveLength(1);
+    host.unmount();
+    host = mountHost();
+    await open(withRules([launch]));
+    expect(
+      Array.from(document.querySelectorAll("button")).filter(
+        (b) => b.textContent?.trim() === "New rule",
+      ),
+    ).toHaveLength(1);
   });
 });

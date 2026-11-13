@@ -22,7 +22,7 @@ async function open(page: Page) {
 }
 // Sprint dates use the shared calendar picker: step to the month, then pick the day.
 async function pickDate(page: Page, scope: Locator, label: string, date: string) {
-  await scope.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
+  await scope.getByRole("button", { name: label, exact: true }).click();
   const calendar = page.getByRole("dialog", { name: label, exact: true });
   const day = calendar.locator(`[data-date="${date}"]`);
   for (let step = 0; step < 24 && !(await day.count()); step++) {
@@ -234,6 +234,10 @@ test("cross-machine sprint supports planning, inheritance, completion and frozen
 });
 
 for (const { width, theme } of [
+  { width: 800, theme: "light" },
+  { width: 800, theme: "dark" },
+  { width: 1280, theme: "light" },
+  { width: 1280, theme: "dark" },
   { width: 390, theme: "light" },
   { width: 768, theme: "dark" },
   { width: 1024, theme: "dark" },
@@ -259,3 +263,41 @@ for (const { width, theme } of [
     });
   });
 }
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`seeded sprint report visual ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/tasks/tasks.html?sprintSeed");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("tab", { name: "Sprints", exact: true }).click();
+      const collection = page.locator("ul.sprint-collection");
+      await expect(collection).toBeVisible();
+      expect(await collection.locator(":scope > li").count()).toBeGreaterThan(1);
+      await expect(collection.locator(":scope > li").first()).toHaveCSS(
+        "border-bottom-width",
+        "1px",
+      );
+      await expect(collection.locator(":scope > li").last()).toHaveCSS(
+        "border-bottom-width",
+        "0px",
+      );
+      await mkdir("temp/verification/task-surfaces", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/task-surfaces/sprint-list-${theme}-${width}.png`,
+      });
+      await page.getByRole("tab", { name: "Reports", exact: true }).click();
+      await choose(page, "Sprint", "Sprint 42");
+      await expect(page.getByRole("heading", { name: "Burndown", exact: true })).toBeVisible();
+      await mkdir("temp/verification/sprint-report-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/sprint-report-visual/${theme}-${width}.png`,
+        animations: "disabled",
+        fullPage: true,
+      });
+    });
+  }

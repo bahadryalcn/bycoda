@@ -1,4 +1,5 @@
 import { FailureState } from "../../../shared/ui/FailureState";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -131,7 +132,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
               as="p"
               size="caption"
               tone="secondary"
-              className="shrink-0 border-b border-stroke px-4 py-1.5"
+              {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-4 py-1.5")}
             >
               {notes.join(" ")}
             </Text>

@@ -50,6 +50,10 @@ function noFollow(root, target) {
 try {
   const { path, files, ignored, index, head, branch, status, detachedLinks } = workerData;
   const detached = new Map(detachedLinks);
+  // Ignored entries are often gigabytes of build output. Like Git's own stat check, their
+  // size and modification time detect a change without reading every byte; preservation
+  // still copies them whole.
+  const privateFiles = new Set();
   const addPrivateFiles = (file) => {
     const full = resolve(path, file);
     if (!inside(path, full)) throw new Error("Unsafe ignored source path.");
@@ -60,7 +64,10 @@ try {
           throw new Error("Nested repository requires private recovery support.");
         if (name !== "node_modules") addPrivateFiles(join(file, name));
       }
-    else files.push(file);
+    else {
+      files.push(file);
+      privateFiles.add(file);
+    }
   };
   for (const file of ignored) addPrivateFiles(file);
   const hash = createHash("sha256").update(head).update(branch).update(status);
@@ -72,6 +79,8 @@ try {
     const info = lstatSync(full, { throwIfNoEntry: false });
     hash.update(file).update("\0");
     if (info?.isSymbolicLink()) hash.update(readlinkSync(full));
+    else if (info?.isFile() && privateFiles.has(file))
+      hash.update(`private:${info.size}:${info.mtimeMs}:${info.ino}`);
     else if (info?.isFile()) hash.update(readFileSync(full));
     else if (info) throw new Error("Unsupported source entry requires private recovery support.");
     else hash.update(detached.get(file) ?? "missing");

@@ -10,10 +10,7 @@ import { localOffer, recommendationText } from "../model/decisionView";
 
 export type DecisionModelsFirstRunCardProps = {
   client: DecisionModelsClient;
-  /**
-   * Called on "Not now". The caller stores the dismissal: the Host has no RPC for it yet, so the card
-   * can show again after a restart until one exists.
-   */
+  /** Called on "Not now". The caller persists dismissal on its selected Host. */
   onDismiss: () => void;
   /** Opens Providers > Decision models, where the user chooses local install or an API provider. */
   onOpenSettings: () => void;
@@ -30,7 +27,9 @@ export function DecisionModelsFirstRunCard({
 }: DecisionModelsFirstRunCardProps) {
   const [recommendation, setRecommendation] = useState<LocalRecommendation | null>(null);
 
+  // Load the hardware recommendation only for this card's current client.
   useEffect(() => {
+    setRecommendation(null);
     let alive = true;
     void client.local.recommend({}).then(
       (result) => {
@@ -50,7 +49,7 @@ export function DecisionModelsFirstRunCard({
   return (
     <Surface
       as="section"
-      variant="card"
+      variant="canvas"
       padding="lg"
       aria-label={t("Decision models")}
       className="flex min-w-0 flex-col gap-3"

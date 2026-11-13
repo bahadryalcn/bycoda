@@ -1,12 +1,11 @@
 import { LoadingText } from "../../../../shared/ui/LoadingText";
-import { Text } from "../../../../shared/ui/Text";
 import { useCallback, useEffect, useState } from "react";
 import { formatNumber, t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../../shared/ui/DescriptionList";
-import { Meter } from "../../../../shared/ui/Meter";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
+import { Plus } from "../../../../shared/ui/icons";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { InlineError } from "../../../../shared/ui/InlineError";
 import { Surface } from "../../../../shared/ui/Surface";
 import type { SocialList } from "../../model/audience";
 import type { Sequence } from "../../model/outreach";
@@ -15,7 +14,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { EmptyHint } from "../common/EmptyHint";
 import { OutreachSequenceCard } from "./OutreachSequenceCard";
 import { SequenceEditor } from "./SequenceEditor";
-import { errorMessage, rateText } from "./audienceModel";
+import { errorMessage, listDisplayName, rateText } from "./audienceModel";
 import "./audience.css";
 
 export type OutreachBoardProps = {
@@ -35,7 +34,10 @@ export function startBlockReason(sequence: Sequence): string | undefined {
   return undefined;
 }
 
-/** Sequences, their results and Start/Pause. Host refusals (owner rights, autonomy) are shown as they come. */
+/**
+ * Sequences, their results and Start/Pause. Results are the Host's own totals for all sequences
+ * or for the one that is chosen. Host refusals (owner rights, autonomy) are shown as they come.
+ */
 export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) {
   const [sequences, setSequences] = useState<Sequence[]>();
   const [stats, setStats] = useState<SequenceStats>(EMPTY_STATS);
@@ -76,40 +78,54 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
   }
 
   const selected = sequences?.find((sequence) => sequence.id === selectedId);
+  const hasSequences = Boolean(sequences?.length);
   return (
     <div className="audience-stack">
-      <div className="audience-row">
-        <SectionLabel>
-          {selected ? t("Results for {p0}", { p0: selected.name }) : t("Results for all sequences")}
-        </SectionLabel>
-        <Button variant="primary" size="sm" onClick={() => setEditing("new")}>
-          {t("New sequence")}
-        </Button>
-      </div>
+      <SectionLabel
+        actions={
+          <>
+            {selected ? (
+              <Button variant="ghost" size="sm" onClick={() => setSelectedId(undefined)}>
+                {t("Show all sequences")}
+              </Button>
+            ) : null}
+            {hasSequences ? (
+              <Button
+                variant="primary"
+                size="sm"
+                startIcon={<Plus className="icon-sm" aria-hidden="true" />}
+                onClick={() => setEditing("new")}
+              >
+                {t("New sequence")}
+              </Button>
+            ) : null}
+          </>
+        }
+      >
+        {selected ? t("Results for {p0}", { p0: selected.name }) : t("Results for all sequences")}
+      </SectionLabel>
 
-      <DescriptionList columns="auto" className="audience-stats">
-        <DescriptionItem term={t("Sent")}>{formatNumber(stats.sent)}</DescriptionItem>
-        <DescriptionItem term={t("Replied")}>
-          {formatNumber(stats.replied)}
-          <Meter
-            className="audience-stat-meter"
-            label={t("Reply rate")}
-            value={stats.sent > 0 ? (stats.replied / stats.sent) * 100 : null}
-            valueText={rateText(stats.replied, stats.sent)}
-            tone="accent"
-          />
-        </DescriptionItem>
-        <DescriptionItem term={t("Positive replies")}>
-          {formatNumber(stats.positive)}
-        </DescriptionItem>
-        <DescriptionItem term={t("Opt-out rate")}>
-          {rateText(stats.optedOut, stats.sent)}
-        </DescriptionItem>
-      </DescriptionList>
+      {hasSequences ? (
+        <Surface variant="card" padding="none" className="audience-stats">
+          <DescriptionList columns="auto" className="px-3 py-2">
+            <DescriptionItem term={t("Sent")}>{formatNumber(stats.sent)}</DescriptionItem>
+            <DescriptionItem term={t("Replied")}>
+              {formatNumber(stats.replied)}
+              {stats.sent > 0 ? ` (${rateText(stats.replied, stats.sent)})` : ""}
+            </DescriptionItem>
+            <DescriptionItem term={t("Positive replies")}>
+              {formatNumber(stats.positive)}
+            </DescriptionItem>
+            <DescriptionItem term={t("Opt-out rate")}>
+              {rateText(stats.optedOut, stats.sent)}
+            </DescriptionItem>
+          </DescriptionList>
+        </Surface>
+      ) : null}
       {stats.failed > 0 ? (
-        <Text as="p" tone="muted" leading="inherit">
+        <InlineMessage tone="warning">
           {t("{p0} could not be sent.", { p0: formatNumber(stats.failed) })}
-        </Text>
+        </InlineMessage>
       ) : null}
 
       {error ? <InlineError>{error}</InlineError> : null}
@@ -129,18 +145,23 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
 
       {sequences?.length ? (
         <Surface as="ul" variant="card" padding="none" className="audience-frame">
-          {sequences.map((sequence) => (
-            <OutreachSequenceCard
-              key={sequence.id}
-              sequence={sequence}
-              selected={sequence.id === selectedId}
-              busy={busyId === sequence.id}
-              blocked={startBlockReason(sequence)}
-              onSelect={() => setSelectedId(sequence.id)}
-              onSetRunning={(start) => void setRunning(sequence, start).catch(() => undefined)}
-              onEdit={() => setEditing(sequence)}
-            />
-          ))}
+          {sequences.map((sequence, index) => {
+            const list = lists.find((item) => item.id === sequence.listId);
+            return (
+              <OutreachSequenceCard
+                key={sequence.id}
+                sequence={sequence}
+                separated={index > 0}
+                listName={list ? listDisplayName(list) : ""}
+                selected={sequence.id === selectedId}
+                busy={busyId === sequence.id}
+                blocked={startBlockReason(sequence)}
+                onSelect={() => setSelectedId(sequence.id)}
+                onSetRunning={(start) => void setRunning(sequence, start).catch(() => undefined)}
+                onEdit={() => setEditing(sequence)}
+              />
+            );
+          })}
         </Surface>
       ) : null}
 
@@ -151,10 +172,11 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
           lists={lists}
           onClose={() => setEditing(undefined)}
           onSaved={(saved) => {
-            setSequences((current) => {
-              const rest = (current ?? []).filter((item) => item.id !== saved.id);
-              return [...rest, saved];
-            });
+            setSequences((current) =>
+              current?.some((item) => item.id === saved.id)
+                ? current.map((item) => (item.id === saved.id ? saved : item))
+                : [...(current ?? []), saved],
+            );
             setSelectedId(saved.id);
             onChanged();
           }}

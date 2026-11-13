@@ -233,3 +233,40 @@ it("runs reply and Chief under their own pool rows and accounts, and keeps the p
   expect(last).toMatchObject({ harness: "codex", model: "test" });
   expect(last).not.toHaveProperty("providerAccountId");
 });
+
+it("persists the resolved Chief identity before exposing its provider thread", async () => {
+  const path = mkdtempSync(join(tmpdir(), "bycoda-assistant-text-"));
+  paths.push(path);
+  const order: string[] = [];
+  const choice = {
+    execution: {
+      harness: "claude" as const,
+      model: "claude:chosen",
+      providerAccountId: "work",
+      modelSettings: {},
+      runtimeMode: "supervised" as const,
+      maxRunMinutes: 10,
+    },
+    rowId: "entry",
+    reason: "first",
+  };
+  const select = Object.assign(
+    vi.fn(async () => choice),
+    {
+      rememberThread: vi.fn(async () => {
+        order.push("pin");
+      }),
+    },
+  );
+  vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {
+    await input.onThreadId?.("provider-thread");
+    return "Answer";
+  });
+  await assistantText(path, "chief", select)(profile, "Prompt", undefined, {
+    onThreadId: async () => {
+      order.push("context");
+    },
+  });
+  expect(order).toEqual(["pin", "context"]);
+  expect(select.rememberThread).toHaveBeenCalledWith("provider-thread", choice);
+});

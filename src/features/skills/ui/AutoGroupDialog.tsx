@@ -1,35 +1,21 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Settings } from "../../../shared/ui/icons";
+import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
 import {
   autoGroupSkills,
   replaceAllSkillGroups,
   appendSkillGroups,
-  useSkillGroupingModel,
-  setSkillGroupingModel,
-  listSkillGroupingModels,
   type GroupingSkill,
   type SkillGroupInput,
-  type SkillGroupingModel,
 } from "../index";
-import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
-
-const ModelPicker = lazy(() =>
-  import("../../sessions")
-    .then((entry) => entry.loadModelPicker())
-    .then((module) => ({ default: module.ModelPicker })),
-);
-
 export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: GroupingSkill[] }) {
   useLocale();
-  const stored = useSkillGroupingModel();
-  const options = listSkillGroupingModels();
-  const choice = stored ?? options[0];
   const [running, setRunning] = useState(false);
   const [proposal, setProposal] = useState<SkillGroupInput[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,14 +27,6 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
     },
     [],
   );
-  const commit = (next: SkillGroupingModel) => {
-    try {
-      setSkillGroupingModel(next);
-      setError(null);
-    } catch (cause) {
-      setError(String(cause));
-    }
-  };
   const run = async () => {
     const controller = new AbortController();
     request.current = controller;
@@ -58,12 +36,12 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
       const result = await autoGroupSkills({
         cwd,
         skills,
-        model: choice,
         signal: controller.signal,
       });
       if (!controller.signal.aborted) setProposal(result);
     } catch (cause) {
-      if (!controller.signal.aborted) setError(String(cause));
+      if (!controller.signal.aborted)
+        setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (request.current === controller) {
         request.current = null;
@@ -79,57 +57,47 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
       setProposal(null);
       setError(null);
     } catch (cause) {
-      setError(String(cause));
+      setError(cause instanceof Error ? cause.message : String(cause));
     }
   };
   return (
     <>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <Button
+        size="sm"
+        disabled={running || !skills.length}
+        loading={running}
+        onClick={() => {
+          void run();
+        }}
+      >
+        {t("Group with AI")}
+      </Button>
+      {running ? (
         <Button
           size="sm"
-          disabled={running || !skills.length || !choice}
-          loading={running}
           onClick={() => {
-            void run();
+            request.current?.abort();
+            request.current = null;
+            setRunning(false);
           }}
         >
-          {t("Group with AI")}
+          {t("Cancel")}
         </Button>
-        {running ? (
-          <Button
-            size="sm"
-            onClick={() => {
-              request.current?.abort();
-              request.current = null;
-              setRunning(false);
-            }}
-          >
-            {t("Cancel")}
-          </Button>
-        ) : null}
-        {choice ? (
-          <Suspense fallback={<LoadingText />}>
-            <ModelPicker
-              harness={choice.harness}
-              model={choice.model}
-              values={stored?.modelSettings ?? {}}
-              accountId={stored?.providerAccountId}
-              accountChoices
-              allowedHarnesses={[...new Set(options.map((option) => option.harness))]}
-              onChange={(harness, model, accountId) =>
-                commit({
-                  harness,
-                  model,
-                  providerAccountId: accountId,
-                  modelSettings: defaultModelSettings(resolveModel(harness, model)),
-                })
-              }
-              onSettingsChange={(modelSettings) => commit({ ...choice, modelSettings })}
-            />
-          </Suspense>
-        ) : null}
-      </div>
-      {error && !proposal ? <Alert tone="danger">{error}</Alert> : null}
+      ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label={t("Manage in Models")}
+        onClick={() => openModelsSettings("roles")}
+      >
+        <Settings className="icon-sm" aria-hidden="true" />
+      </Button>
+      {error && !proposal ? (
+        <div className="basis-full">
+          <Alert tone="danger">{error}</Alert>
+        </div>
+      ) : null}
       {proposal ? (
         <Modal
           title={t("Review skill groups")}

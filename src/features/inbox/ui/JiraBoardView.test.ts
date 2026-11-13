@@ -224,7 +224,10 @@ it("loads subsequent issue pages and does not duplicate cards", async () => {
       : previous(command, args),
   );
   await click("Refresh");
-  await click("Load more issues");
+  const region = container.querySelector(".jira-board-columns")!;
+  await act(async () => {
+    region.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
   expect(invoke).toHaveBeenCalledWith("jira_board_issues", {
     boardId: 7,
     scope: "board",

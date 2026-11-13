@@ -3,6 +3,61 @@ import { mkdir } from "node:fs/promises";
 
 const captures = "temp/verification/2026-11-04-chat-thumbnails";
 
+test("reference token icons preserve editable text in both themes and widths", async ({ page }) => {
+  const evidence = "temp/verification/2026-11-13-reference-tokens";
+  await mkdir(evidence, { recursive: true });
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 1100 });
+      await page.goto(`/tests/browser/chat/attachment-cards.html?references&theme=${theme}`, {
+        waitUntil: "domcontentloaded",
+      });
+      const section = page.getByRole("region", { name: "Reference tokens", exact: true });
+      const field = section.getByRole("textbox", { name: "Reference token message" });
+      const raw = await field.inputValue();
+      expect(raw).toContain("/frontend-design and $frontend-design before /unknown");
+      expect(raw).toContain("[image1]");
+      expect(raw).toContain("@jira:PFDEV-1196");
+      const overlay = section.locator("[data-reference-overlay]");
+      await expect(overlay.locator("[data-composer-skill-token] svg")).toHaveCount(2);
+      await expect(overlay.locator("[data-composer-attachment-kind] svg")).toHaveCount(3);
+      await expect(overlay.locator("[data-mcp-tag] svg")).toHaveCount(1);
+      await expect(overlay.locator("[data-work-item-mention] svg")).toHaveCount(3);
+      await expect(overlay.locator("[data-composer-link-icon] svg")).toHaveCount(4);
+      const transcript = section.locator("[data-reference-transcript]");
+      await expect(transcript.locator("[data-skill-token] svg")).toHaveCount(2);
+      await expect(transcript.locator("[data-work-item-mention] svg")).toHaveCount(3);
+      await field.fill(`${raw}\nKeep raw references intact.`);
+      await expect(field).toHaveValue(`${raw}\nKeep raw references intact.`);
+      await field.fill(raw);
+      await field.blur();
+      await expect(field).toHaveValue(raw);
+      await field.fill("$frontend-design [image1]");
+      const skill = overlay.locator("[data-composer-skill-token]");
+      const attachment = overlay.locator("[data-composer-attachment-kind]");
+      const skillBox = await skill.boundingBox();
+      const attachmentBox = await attachment.boundingBox();
+      expect(skillBox).not.toBeNull();
+      expect(attachmentBox).not.toBeNull();
+      expect(attachmentBox!.x - (skillBox!.x + skillBox!.width)).toBeGreaterThan(2);
+      await page.screenshot({
+        path: `temp/verification/token-spacing/${theme}-${width}.png`,
+        fullPage: true,
+      });
+      await field.fill(raw);
+      const dimensions = await section.evaluate((element) => ({
+        section: element.scrollWidth <= element.clientWidth,
+        document: document.documentElement.scrollWidth <= window.innerWidth,
+        editor:
+          element.querySelector("textarea")!.scrollWidth <=
+          element.querySelector("textarea")!.clientWidth,
+      }));
+      expect(dimensions).toEqual({ section: true, document: true, editor: true });
+      await page.screenshot({ path: `${evidence}/fixture-${theme}-${width}.png`, fullPage: true });
+    }
+  }
+});
+
 test("attachment cards and inline references retain kind tones and the selected accent", async ({
   page,
 }) => {

@@ -842,10 +842,19 @@ mod tests {
 
     #[test]
     fn jira_public_avatars_allow_only_the_avatar_cdn() {
-        assert!(parse_allowed_media_url("https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/a.png").is_ok());
-        assert!(parse_allowed_media_url("https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net.evil.test/a.png").is_err());
+        assert!(parse_allowed_media_url(
+            "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/a.png"
+        )
+        .is_ok());
+        assert!(parse_allowed_media_url(
+            "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net.evil.test/a.png"
+        )
+        .is_err());
         assert!(parse_allowed_media_url("https://other.prod.public.atl-paas.net/a.png").is_err());
-        assert!(parse_allowed_media_url("https://unconfigured.atlassian.net/secure/useravatar").is_err());
+        assert!(
+            parse_allowed_media_url("https://unconfigured.atlassian.net/secure/useravatar")
+                .is_err()
+        );
     }
 
     #[test]

@@ -39,11 +39,34 @@ vi.mock("@tauri-apps/api/menu", () => ({
   },
 }));
 import { popupNativeActionMenu } from "./nativeActionMenu";
+import { popupNativeDropdownMenu } from "./DropdownMenu";
 let anchor: HTMLButtonElement;
 const choices = [
   { id: "manual", label: "Wait until I finish", checked: false },
   { id: "automatic", label: "Automatic replies", checked: true },
 ];
+it("renders flat dropdown descriptions and disabled checked choices through the native owner", async () => {
+  const pick = vi.fn();
+  await popupNativeDropdownMenu(
+    anchor,
+    [
+      { id: "manual", label: "Manual", description: "Finish explicitly", checked: true },
+      { id: "automatic", label: "Automatic", disabled: true },
+    ],
+    pick,
+  );
+  expect(
+    native.items.map(({ options }) => [options.text, options.enabled, options.checked]),
+  ).toEqual([
+    ["Manual — Finish explicitly", true, true],
+    ["Automatic", false, undefined],
+  ]);
+  expect(pick).not.toHaveBeenCalled();
+  native.items[1].options.action();
+  expect(pick).not.toHaveBeenCalled();
+  native.items[0].options.action();
+  expect(pick).toHaveBeenCalledExactlyOnceWith("manual");
+});
 beforeEach(() => {
   native.available.mockReturnValue(true);
   native.popup.mockResolvedValue(undefined);

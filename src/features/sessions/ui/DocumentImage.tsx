@@ -124,12 +124,10 @@ function ProjectImage({
 
   // Inline, as in GitHub, so `<p align="center">` centers it and badges sit in
   // a row; the base stylesheet would otherwise make every image a block.
-  const style: CSSProperties = {
-    display: "inline",
-    maxInlineSize: "100%",
-    inlineSize: cssSize(width),
-    blockSize: cssSize(height) ?? "auto",
-  };
+  const style = {
+    "--document-image-width": cssSize(width),
+    "--document-image-height": cssSize(height),
+  } as CSSProperties;
   if (!url) {
     return (
       <span
@@ -137,12 +135,8 @@ function ProjectImage({
         data-document-image={path}
         role={alt ? "img" : undefined}
         aria-label={alt || undefined}
-        style={{
-          ...style,
-          display: "inline-block",
-          blockSize: cssSize(height),
-          verticalAlign: "middle",
-        }}
+        className="inline-block [max-inline-size:100%] align-middle [inline-size:var(--document-image-width,auto)] [block-size:var(--document-image-height,auto)]"
+        style={style}
       />
     );
   }
@@ -157,6 +151,7 @@ function ProjectImage({
         {...(align ? { align } : {})}
         data-document-image={path}
         draggable={false}
+        className="inline [max-inline-size:100%] [inline-size:var(--document-image-width,auto)] [block-size:var(--document-image-height,auto)]"
         style={style}
         onError={() => {
           releaseBlob(blobRef);

@@ -31,7 +31,7 @@ mod mcp_auth;
 pub(crate) mod owned_opencode;
 pub(crate) mod process_lifecycle;
 mod process_receipts;
-mod tool_grants;
+pub(crate) mod tool_grants;
 pub(crate) mod turn_writes;
 use launch_env::{apply_launch_env, apply_provider_account};
 use process_lifecycle::{OwnedChild, WriteGate};
@@ -1259,9 +1259,24 @@ impl HarnessHost {
         if let Some(previous) = &prev {
             previous.writers.close();
         }
-        crate::session_tools_bridge::revoke_session(session_id);
         crate::session_tools_bridge::begin_session(session_id, (epoch, kill_all));
         (epoch, kill_all, prev)
+    }
+
+    pub(crate) fn upcoming_tool_spawn(&self, session_id: &str) -> Option<(u64, u64)> {
+        let inner = self.lock_inner();
+        if inner.children.contains_key(session_id) || inner.receipts.has_pending(session_id) {
+            return None;
+        }
+        Some((
+            inner
+                .epochs
+                .get(session_id)
+                .copied()
+                .unwrap_or(0)
+                .checked_add(1)?,
+            self.kill_all_gen.load(Ordering::SeqCst),
+        ))
     }
 
     #[cfg(all(test, unix))]
@@ -2910,8 +2925,7 @@ fn harness_spawn_blocking(
     }
 
     let mut cmd = Command::new(&command);
-    cmd.args(&args)
-        .current_dir(&workdir)
+    cmd.current_dir(&workdir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -2935,7 +2949,7 @@ fn harness_spawn_blocking(
 
     let mut scratch =
         crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
-    tool_grants::configure_optional_tool_grants(
+    let conversation_granted = tool_grants::configure_optional_tool_grants(
         &app,
         &session_id,
         &mut cmd,
@@ -2945,7 +2959,14 @@ fn harness_spawn_blocking(
             &authority_target,
             &source_target,
         ),
+        binary_provider.as_deref().unwrap_or("generic"),
     );
+    let launch_args = if conversation_granted {
+        args.clone()
+    } else {
+        tool_grants::without_conversation_bridge(args.clone())
+    };
+    cmd.args(launch_args);
 
     // Hold this child's redaction values through its final output drain, even
     // after a replacement has revoked and removed its native grant cache.

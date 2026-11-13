@@ -617,7 +617,9 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       await vi.advanceTimersByTimeAsync(119_000);
       expect(events.some((e) => e.type === "status")).toBe(false);
       await vi.advanceTimersByTimeAsync(2_000);
-      expect(events.some((e) => e.type === "status" && /quiet/i.test(e.text))).toBe(true);
+      expect(
+        events.filter((e) => e.type === "status" && /silent for two minutes/i.test(e.text)),
+      ).toHaveLength(1);
       // A pending approval is waiting on the user, not a stalled server: the
       // next turn after cancel must recycle onto a fresh transport.
       await provider.cancel("thread");

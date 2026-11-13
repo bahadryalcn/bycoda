@@ -5,7 +5,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { ProjectQuickActions } from "./ProjectQuickActions";
 import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
 import { listExternalEditors, openInExternalEditor } from "../../../platform/tauri/fs";
-import { saveProjectActions } from "../model/projectActions";
+import { loadProjectActions, saveProjectActions } from "../model/projectActions";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
 
@@ -41,6 +41,70 @@ beforeEach(() => {
       method === "devServers.list" ? { status: "ok", servers: [], scannedAt: 1 } : {},
     );
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+});
+
+it("keeps adding actions in the open dialog and persists each action with a new id", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const button = (text: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent === text,
+    )!;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          NativePopupHost.Provider,
+          { value: null },
+          createElement(ProjectQuickActions, { cwd: "C:/project" }),
+        ),
+      ),
+    );
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="Project actions"]')!.click(),
+    );
+    await act(async () => document.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click());
+    await act(async () => button("test").click());
+    await act(async () => button("Save action").click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(loadProjectActions("C:/project").map((item) => item.name)).toEqual(["test"]);
+    expect(button("test").disabled).toBe(true);
+    expect(button("Save action").disabled).toBe(true);
+    expect(document.querySelector<HTMLInputElement>('input[maxlength="80"]')!.value).toBe("");
+    expect(document.querySelector('[aria-label="Project actions"] ul')?.textContent).toContain(
+      "test",
+    );
+    await act(async () => button("build").click());
+    await act(async () => button("Save action").click());
+    const saved = loadProjectActions("C:/project");
+    expect(saved.map((item) => item.name)).toEqual(["test", "build"]);
+    expect(new Set(saved.map((item) => item.id)).size).toBe(2);
+    await act(async () => button("run").click());
+    const storage = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    try {
+      await act(async () => button("Save action").click());
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        "Could not save actions",
+      );
+      expect(document.querySelector<HTMLTextAreaElement>("textarea")!.value).toBe("cargo run");
+      expect(loadProjectActions("C:/project")).toEqual(saved);
+    } finally {
+      storage.mockRestore();
+    }
+    await act(async () => button("Close").click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="Project actions"]')!.click(),
+    );
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("test");
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain("build");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
 });
 
 it.each(["web", "native"])(
@@ -295,5 +359,41 @@ it("runs a shortcut once and respects the browser-opening preference", async () 
   } finally {
     await act(async () => root.unmount());
     host.remove();
+  }
+});
+
+it("keeps header actions icon-only with named shortcut tooltips", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const onSelect = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(ProjectQuickActions, {
+          cwd: "C:/project",
+          additionalItems: [
+            {
+              id: "notes",
+              label: "Notes",
+              ariaLabel: "Open notes panel",
+              shortcut: "Ctrl+N",
+              icon: "N",
+              onSelect,
+            },
+          ],
+        }),
+      ),
+    );
+    expect(host.querySelector("[data-ebg-item]")).toBeNull();
+    const button = host.querySelector<HTMLButtonElement>('[aria-label="Open notes panel"]')!;
+    expect(button.textContent).toBe("N");
+    const hint = await tooltipText(button);
+    expect(hint).toContain("Notes");
+    expect(hint).toContain("Ctrl");
+    expect(hint).toContain("N");
+    await act(async () => button.click());
+    expect(onSelect).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
   }
 });

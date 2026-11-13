@@ -17,6 +17,8 @@ import { sortNotesForDisplay } from "./assistantNoteDisplay";
 import { useAssistantRoom } from "./assistantRoomContext";
 import { NotesList } from "./NotesList";
 import { NotesReader } from "./NotesReader";
+import { NoteEditor } from "../AssistantNoteEditor";
+import { assistantRequest as ownerRequest } from "../../model/assistantClient";
 import styles from "./NotesTab.module.css";
 
 export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
@@ -33,6 +35,8 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
     setUndo,
     setDeletedNoteWithoutReceipt,
     setNoteEdit,
+    noteEdit,
+    refresh,
     pending,
     errorFor,
     empty,
@@ -109,10 +113,23 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
       },
     });
 
+  if (noteEdit) {
+    return (
+      <NoteEditor
+        key={noteEdit === "new" ? `new:${environmentId}` : `${environmentId}:${noteEdit.id}`}
+        request={ownerRequest}
+        environmentId={environmentId}
+        note={noteEdit}
+        onSaved={refresh}
+        onClose={() => setNoteEdit((current) => (current === noteEdit ? null : current))}
+      />
+    );
+  }
+
   return (
     <>
       {view === "Notes" && (
-        <section>
+        <section className={styles.container}>
           {errorFor("notes.summary")}
           {dailySummary &&
             dailySummary.environmentId === environmentId &&
@@ -172,7 +189,9 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           )}
           {visible.length > 0 && (
             <div className={styles.layout}>
-              <div className={styles.listPane}>
+              <div
+                {...surfaceAttributes({ frame: "pane", edge: "responsive-end" }, styles.listPane)}
+              >
                 <Text
                   as="div"
                   size="caption"

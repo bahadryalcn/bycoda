@@ -2969,6 +2969,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       visualState,
       statusText,
       title: `${identity.title} · ${scopeTitle}`,
+      name: identity.name,
+      avatar: assistantSnapshot?.profile.avatar,
+      chatTurns,
       choice: bodyVisible ? choice : null,
       jobReview: jobReviewVisible ? jobReview : null,
       muted,
@@ -3059,6 +3062,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     );
   const handle = (
     <Button
+      touchTarget="control"
       iconOnly
       variant="ghost"
       label={moveLabel}
@@ -3090,7 +3094,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       leading="inherit"
       ref={panel}
       aria-label={t("Voice companion")}
-      {...surfaceAttributes({ variant: shownError ? "danger-floating" : "floating" }, styles.panel)}
+      {...surfaceAttributes(
+        {
+          variant: shownError ? "danger-floating" : "floating",
+          frame: detaching ? "focus" : shownError ? "danger" : "neutral",
+          radius: compact ? "pill" : "panel",
+        },
+        styles.panel,
+      )}
       data-compact={compact || undefined}
       data-detaching={detaching || undefined}
       data-voice-state={visualState}
@@ -3104,10 +3115,9 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         status={status}
         handle={handle}
         headerDrag={panelDrag.header}
-        resize={<VoicePanelResize panel={panel} position={position} onPosition={setPosition} />}
+        resize={<VoicePanelResize panel={panel} onPosition={setPosition} />}
         panel={panel}
         sideKey={choice?.id ?? jobReview?.id}
-        visual={settings.visual}
         visualState={visualState}
         working={Boolean(target?.busy)}
         audioLevel={audioLevel}
@@ -3123,6 +3133,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         statusText={statusText}
         sessionStatusText={sessionStatusText}
         startDisabled={!target && !props.workspace}
+        engine={realtime ? realtime.name : t("This computer")}
         privacy={
           realtime
             ? t("Voice runs on {p1}. Audio is sent to the provider while voice is on.", {

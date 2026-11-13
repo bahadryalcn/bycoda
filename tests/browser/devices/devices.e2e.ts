@@ -232,3 +232,42 @@ test("device text drafts survive switching targets without carrying control", as
   expect(await actions(page)).toHaveLength(0);
   await capture(page, "device-switch-retained-draft");
 });
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`device loading visual caller state ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/devices/device-stage.html?theme=${theme}`);
+      await expect(page.getByText("Loading devices…", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/automations-devices-visual/${theme}-${width}-device-loading.png`,
+        animations: "disabled",
+      });
+    });
+  }
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`device multi-row selection ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/devices/device-stage.html?multi&theme=${theme}`);
+      const rows = page.locator(".device-panel-device-list .device-panel-device-row");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(0)).toContainText("First emulator");
+      await expect(rows.nth(1)).toContainText("Second emulator");
+      await expect(rows.nth(0)).toHaveCSS("border-block-start-width", "0px");
+      await expect(rows.nth(1)).toHaveCSS("border-block-start-width", "1px");
+      await rows
+        .first()
+        .locator("..")
+        .screenshot({ path: info.outputPath(`devices-list-detail-${theme}-${width}.png`) });
+      await page.screenshot({ path: info.outputPath(`devices-unselected-${theme}-${width}.png`) });
+      await page.getByRole("button", { name: "Select Second emulator" }).click();
+      const selected = page.locator(".device-panel-waiting > .device-panel-device-row");
+      await expect(selected).toContainText("Second emulator");
+      await expect(page.getByRole("button", { name: "Start emulator" })).toBeVisible();
+      await selected.screenshot({
+        path: info.outputPath(`devices-selected-detail-${theme}-${width}.png`),
+      });
+      await page.screenshot({ path: info.outputPath(`devices-selected-${theme}-${width}.png`) });
+    });

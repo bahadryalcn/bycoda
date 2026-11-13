@@ -54,6 +54,7 @@ type Options = {
   store: HostStore;
   social: SocialService;
   conversationAccess: RuntimeLogAccess;
+  isDelegationChild: (sessionId: string) => Promise<boolean>;
   runtimeLogAccess: RuntimeLogAccess;
   runtimeLogs: RuntimeLogsService;
   refreshLogSources: () => void;
@@ -430,16 +431,23 @@ export class McpHttp {
           instructions: current.map((group) => MCP_INSTRUCTIONS[group]).join("\n"),
         };
       else if (message.method === "ping") result = {};
-      else if (message.method === "tools/list")
+      else if (message.method === "tools/list") {
+        const principal = identities.get("conversation")?.principal;
+        const child =
+          principal?.sessionId &&
+          principal.kind !== "assistant-thread" &&
+          (await this.options.isDelegationChild(principal.sessionId));
         result = {
           tools: current.flatMap((group) =>
             (identities.get(group)!.grant
               ? externalMcpCatalog(group, identities.get(group)!.grant!)
               : mcpCatalog(group)
-            ).map(({ action: _action, ...tool }) => tool),
+            )
+              .filter((tool) => !child || !tool.action.startsWith("agents."))
+              .map(({ action: _action, ...tool }) => tool),
           ),
         };
-      else if (message.method === "tools/call") {
+      } else if (message.method === "tools/call") {
         const group = current.find((group) =>
           mcpCatalog(group).some((tool) => tool.name === message.params?.name),
         );

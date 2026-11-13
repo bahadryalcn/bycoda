@@ -29,6 +29,9 @@ it("emphasizes recognized skills alongside attachments without changing copied t
     expect(
       Array.from(container.querySelectorAll("[data-skill-token]"), (node) => node.textContent),
     ).toEqual(["/stitch-design-taste", "$design-taste-frontend"]);
+    expect(container.querySelectorAll('[data-skill-token] svg[aria-hidden="true"]')).toHaveLength(
+      2,
+    );
     expect(container.querySelector("[data-attachment-kind='text']")).not.toBeNull();
     expect(container.querySelector("[title]")).toBeNull();
 

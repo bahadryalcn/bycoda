@@ -14,10 +14,6 @@
 .name::before {
   content: attr(data-name);
 }
-button:hover .name {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 .size::before {
   content: attr(data-size);
   font-size: 0.85em;

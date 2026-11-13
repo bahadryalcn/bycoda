@@ -416,6 +416,9 @@ function parseCommandBody(input: unknown): HostCommand {
         : {}),
       ...resumeAtReset,
       text: v.text,
+      ...(v.type === "send" && v.contextReplay !== undefined
+        ? { contextReplay: text(v.contextReplay, "conversation context", 24_000) }
+        : {}),
       ...(attachments.length ? { attachments } : {}),
       ...(v.type === "send" && v.intent
         ? { intent: v.intent as "default" | "plan" | "build" }
@@ -2842,6 +2845,15 @@ export class HostEngine {
               // Read before the turn's own block lands after them.
               let handoffText: string | undefined;
               let handoffFrom: RemoteProvider | undefined;
+              if (command.type === "send" && command.contextReplay) {
+                const context = [
+                  ...new Set(
+                    [value.session.pendingContextReplay, command.contextReplay].filter(Boolean),
+                  ),
+                ].join("\n\n");
+                if (context.length > 24_000) throw new Error("Conversation context is too long");
+                value = { ...value, session: { ...value.session, pendingContextReplay: context } };
+              }
               const rewindReplay =
                 command.type === "send" ? conversationReplayPrompt(value.session) : "";
               if (command.type === "send" && value.session.pendingSwitch) {

@@ -312,7 +312,7 @@ describe("model picker catalog states", () => {
         ...container.querySelectorAll<HTMLButtonElement>(
           '[data-setting-id="reasoningEffort"] [role="radio"]',
         ),
-      ].find((item) => item.textContent?.trim() === "High");
+      ].find((item) => item.getAttribute("aria-label") === "High");
       expect(high).toBeTruthy();
       await act(async () => high!.click());
       expect(onSettingsChange).toHaveBeenCalledExactlyOnceWith({

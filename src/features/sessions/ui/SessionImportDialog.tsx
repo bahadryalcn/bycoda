@@ -560,9 +560,10 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   </div>
                 ) : (
                   <>
-                    {presentFolders.map((folder) => (
+                    {presentFolders.map((folder, index) => (
                       <FolderSection
                         key={folder.key}
+                        divider={index < presentFolders.length - 1 || missingFolders.length > 0}
                         folder={folder}
                         stored={stored}
                         selected={selected}
@@ -573,7 +574,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                       />
                     ))}
                     {missingFolders.length > 0 ? (
-                      <section className="border-t border-(--ui-tone-neutral-border)">
+                      <section {...surfaceAttributes({ frame: "neutral", edge: "top" })}>
                         <div className="flex items-center gap-2 px-3 py-0.5">
                           <Checkbox
                             aria-label={t("Select all missing folders")}
@@ -608,9 +609,10 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                           </Button>
                         </div>
                         {missingOpen || searching
-                          ? missingFolders.map((folder) => (
+                          ? missingFolders.map((folder, index) => (
                               <FolderSection
                                 key={folder.key}
+                                divider={index < missingFolders.length - 1}
                                 folder={folder}
                                 stored={stored}
                                 selected={selected}
@@ -628,7 +630,12 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
               </div>
             </Surface>
 
-            <div className="flex flex-col gap-2.5 border-t border-(--ui-tone-neutral-border) pt-3">
+            <div
+              {...surfaceAttributes(
+                { frame: "neutral", edge: "top" },
+                "flex flex-col gap-2.5 pt-3",
+              )}
+            >
               <div className="flex min-w-0 items-center gap-2">
                 <Switch
                   label={t("Group new projects in the sidebar by their parent folder")}
@@ -718,9 +725,10 @@ function ToggleRow({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <ActionHost className="rounded-lg">
+    <ActionHost {...surfaceAttributes({ radius: "card" })}>
       <Switch
-        className="w-full min-w-0 flex-1 px-2 py-1.5"
+        className="w-full min-w-0 flex-1"
+        padding={{ inline: "md", block: "sm" }}
         label={label}
         labelPosition="start"
         description={description}
@@ -732,6 +740,7 @@ function ToggleRow({
 }
 
 function FolderSection({
+  divider,
   folder,
   stored,
   selected,
@@ -740,6 +749,7 @@ function FolderSection({
   onToggleKeys,
   selectable,
 }: {
+  divider: boolean;
   folder: FolderGroup;
   stored: ReadonlySet<string>;
   selected: ReadonlySet<string>;
@@ -759,7 +769,12 @@ function FolderSection({
 
   return (
     // Offscreen folders skip layout and paint, so ~3k conversations stay cheap to scroll and filter.
-    <section className="border-b border-(--ui-tone-neutral-border) [contain-intrinsic-size:auto_36px] [content-visibility:auto] last:border-b-0">
+    <section
+      {...surfaceAttributes(
+        { frame: divider ? "neutral" : "none", edge: "bottom" },
+        "[contain-intrinsic-size:auto_36px] [content-visibility:auto]",
+      )}
+    >
       <div className="flex items-center gap-2 px-3 py-0.5">
         <Checkbox
           aria-label={t("Select every conversation in {p0}", { p0: folder.path })}
@@ -818,7 +833,11 @@ function FolderSection({
             const key = candidateKey(item);
             const imported = isAlreadyImported(item, stored);
             return (
-              <ActionHost as="li" key={key} className="rounded-none">
+              <ActionHost
+                as="li"
+                key={key}
+                {...surfaceAttributes({ radius: "none" }, "[--control-padding-start:2.25rem]")}
+              >
                 <Checkbox
                   disabled={imported}
                   checked={imported || selected.has(key)}
@@ -866,7 +885,8 @@ function FolderSection({
                       </Text>
                     </>
                   }
-                  className={`flex min-w-0 flex-1 items-center gap-2.5 py-1.5 pl-9 pr-3 ${
+                  padding={{ block: "sm", start: "md", end: "xl" }}
+                  className={`flex min-w-0 flex-1 items-center gap-2.5 ${
                     imported ? "" : "cursor-pointer"
                   }`}
                 />
@@ -874,7 +894,7 @@ function FolderSection({
             );
           })}
           {folder.items.length > limit ? (
-            <li className="pl-9 pr-3 pt-1">
+            <li className="pl-[calc(2rem+0.25rem)] pr-3 pt-1">
               <Button variant="ghost" type="button" onClick={() => setLimit(limit + ITEM_PAGE)}>
                 {t("Show {p0} more", {
                   p0: Math.min(ITEM_PAGE, folder.items.length - limit).toLocaleString(locale),

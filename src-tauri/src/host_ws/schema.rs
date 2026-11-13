@@ -177,6 +177,41 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn native_secret_and_ssh_authorization_match_the_generated_wire_contract() {
+        let contracts = Contracts::get().unwrap();
+        let method = "native.services.conversation.desktop.authorize";
+        let descriptor = &contracts.methods[method];
+        for action in ["secrets.input.authorize", "servers.ssh.execute.permission"] {
+            let params = json!({"id":"original-request", "action":action});
+            assert!(descriptor.params.is_valid(&params), "{action}");
+            assert!(contracts.request_valid(&json!({
+                "jsonrpc":"2.0", "id":"native-request", "method":method, "params":params
+            })));
+            let mut forged = params;
+            forged["fullAccess"] = json!(true);
+            assert!(!descriptor.params.is_valid(&forged));
+        }
+        for result in [
+            json!({"authorized":false}),
+            json!({"authorized":true}),
+            json!({"authorized":true,"fullAccess":false}),
+            json!({"authorized":true,"fullAccess":true}),
+        ] {
+            assert!(descriptor.result.is_valid(&result), "{result}");
+        }
+        for result in [
+            json!({"authorized":false,"fullAccess":true}),
+            json!({"authorized":true,"fullAccess":"true"}),
+            json!({"authorized":true,"fullAccess":true,"owner":"forged"}),
+        ] {
+            assert!(!descriptor.result.is_valid(&result), "{result}");
+        }
+        assert!(!descriptor.params.is_valid(&json!({
+            "id":"original-request", "action":"unknown.authorize"
+        })));
+    }
+
+    #[test]
     fn goal_alias_keeps_canonical_request_and_hello_grammar() {
         let contracts = Contracts::get().unwrap();
         let legacy = "goals.final-review.recheck";

@@ -1,3 +1,5 @@
+import { ActionHost } from "../../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useRef, useState, type ComponentType, type ReactNode } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
@@ -101,15 +103,34 @@ export function MessagingAccountsCard({
         ) : empty ? (
           <EmptyState
             size="inline"
-            className="settings-collection settings-collection-empty"
+            {...surfaceAttributes(
+              { variant: "card", frame: "settings", radius: "card" },
+              "settings-collection settings-collection-empty",
+            )}
             descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
             description={emptyLabel}
           />
         ) : (
-          <div className="settings-collection">
-            <ScrollArea gutter="stable" className="settings-collection-list" role="list">
+          <div
+            {...surfaceAttributes(
+              { variant: "card", frame: "settings", radius: "card" },
+              "settings-collection",
+            )}
+          >
+            <ScrollArea
+              gutter="stable"
+              {...surfaceAttributes({ separator: "block" }, "settings-collection-list")}
+              role="list"
+            >
               {accounts.map((account) => (
-                <div key={account.id} role="listitem" className="settings-collection-row">
+                <ActionHost
+                  key={account.id}
+                  role="listitem"
+                  {...surfaceAttributes(
+                    { radius: "none", separator: "block" },
+                    "settings-collection-row",
+                  )}
+                >
                   <div className="settings-collection-main">
                     <Text
                       as="p"
@@ -148,7 +169,7 @@ export function MessagingAccountsCard({
                       }}
                     />
                   </div>
-                </div>
+                </ActionHost>
               ))}
             </ScrollArea>
           </div>
@@ -227,7 +248,9 @@ export function AccountFormActions({
 }) {
   return (
     <>
-      <div className="integration-actions">
+      <div
+        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "integration-actions")}
+      >
         {children}
         <Button
           variant="primary"

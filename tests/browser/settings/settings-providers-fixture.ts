@@ -57,6 +57,7 @@ const accounts = {
 /** Explicit opt-in synthetic state. Mutates this fixture bundle's memory only. */
 export function seedProvidersFixture() {
   if (!enabled) return;
+  if (new URLSearchParams(location.search).has("emptyProvider")) accounts.codex.length = 0;
   if (new URLSearchParams(location.search).has("longNames")) {
     HARNESS_TITLE.codex = "Codex with a very long provider display name";
     accounts.codex[0].label = "Personal account with a very long display name";

@@ -188,6 +188,69 @@ for (const width of [1280, 800])
       expect((await calls()).some((call) => call.args.method === "tasks.move")).toBe(false);
     });
   }
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`task operations visual acceptance ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => {
+        localStorage.setItem(
+          "bycoda.tasks.dailySummary.v1",
+          JSON.stringify({
+            since: 1700000000000,
+            until: 1700086400000,
+            autoMerged: 0,
+            finished: [
+              {
+                key: "machine-local:first",
+                machineName: "Local",
+                project: "Project",
+                title: "Completed work",
+              },
+            ],
+            blocked: [
+              {
+                key: "machine-local:second",
+                machineName: "Local",
+                project: "Project",
+                title: "Waiting for review",
+                detail: "Check results",
+              },
+            ],
+            waiting: [],
+            suggestions: [],
+            goals: [{ title: "Ship release", machineName: "Local", done: 2, total: 4 }],
+            goalsFinished: [],
+            usage: [],
+            unreachable: [],
+            outdated: [],
+          }),
+        );
+      });
+      await openTasks(page, `${fixture}?boardControls&visualSteward`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await mkdir("temp/verification/task-ops-visual", { recursive: true });
+      await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+      await page.getByRole("menuitemcheckbox", { name: "Stewards", exact: true }).click();
+      const stewards = page.getByRole("region", { name: "Stewards", exact: true });
+      await expect(stewards.getByRole("article")).toBeVisible();
+      await stewards.screenshot({
+        path: `temp/verification/task-ops-visual/${theme}-${width}-stewards.png`,
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: "More actions", exact: true }).first().click();
+      await page.getByRole("menuitemcheckbox", { name: "Summary", exact: true }).click();
+      const summary = page.getByRole("region", { name: "Summary", exact: true });
+      await expect(summary.getByText("Completed work")).toBeVisible();
+      await summary.screenshot({
+        path: `temp/verification/task-ops-visual/${theme}-${width}-summary.png`,
+        animations: "disabled",
+      });
+    });
+  }
 /** Legacy workflow checks explicitly choose the global board; the product now opens a project backlog. */
 async function openTasks(page: Page, url: string) {
   await page.goto(url);
@@ -1568,7 +1631,150 @@ for (const width of [1280, 800]) {
           path: `temp/verification/d1/${kind}-execution-${theme}-${width}-${testInfo.project.name}.png`,
           animations: "disabled",
         });
+        if (kind === "task") {
+          await form.locator("summary").filter({ hasText: "Agent settings" }).click();
+          const rows = form.locator(".task-form-rows");
+          await rows.scrollIntoViewIfNeeded();
+          await expect(rows).toBeVisible();
+          await expect(rows.locator(":scope > *").first()).toHaveCSS("border-bottom-width", "1px");
+          await expect(rows.locator(":scope > *").last()).toHaveCSS("border-bottom-width", "0px");
+          await page.screenshot({
+            path: `temp/verification/task-surfaces/agent-settings-${theme}-${width}.png`,
+          });
+        }
       }
     });
   }
 }
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`goal and empty visual states ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await openTasks(page, `${fixture}?boardControls`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await mkdir("temp/verification/task-goal-empty-visual", { recursive: true });
+      await expect(page.locator("details.task-goals-disclosure")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/task-goal-empty-visual/${theme}-${width}-goal.png`,
+        animations: "disabled",
+      });
+      await page.getByRole("searchbox", { name: "Search tasks" }).fill("fixture-no-such-task-3927");
+      await expect(page.getByText("No tasks match your search or filters.")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/task-goal-empty-visual/${theme}-${width}-empty.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const width of [800, 1280]) {
+  for (const theme of ["light", "dark"]) {
+    test(`shared task drag cues and detail frame ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await openTasks(page, `${fixture}?boardControls`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const queued = page.locator('[data-task-column="queued"]');
+      const first = queued.getByRole("article", { name: "First queued task", exact: true });
+      const second = queued.getByRole("article", { name: "Second queued task", exact: true });
+      await expect(first).toBeVisible();
+      await expect(first).toHaveCSS("border-top-left-radius", "6px");
+      const firstRow = first.locator("..");
+      const secondRow = second.locator("..");
+      await expect(secondRow).toHaveCSS("cursor", "grab");
+      await page.mouse.move(width - 3, 3);
+      await expect(second.locator(".task-drag-grip")).toHaveCSS("opacity", "0");
+      await second.hover();
+      await expect(second.locator(".task-drag-grip")).toHaveCSS("opacity", "1");
+      const transfer = await page.evaluateHandle(() => new DataTransfer());
+      await secondRow.dispatchEvent("dragstart", { dataTransfer: transfer });
+      await queued.dispatchEvent("dragover", { dataTransfer: transfer });
+      await firstRow.dispatchEvent("dragover", { dataTransfer: transfer });
+      await expect(queued).toHaveCSS("outline-style", "solid");
+      const selectedFill = await queued.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.background = "var(--ui-surface-selected)";
+        node.append(probe);
+        const value = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return value;
+      });
+      await expect(queued).toHaveCSS("background-color", selectedFill);
+      await expect(second).toHaveCSS("outline-style", "dashed");
+      expect(await firstRow.evaluate((node) => getComputedStyle(node, "::before").height)).toBe(
+        "3px",
+      );
+      await mkdir("temp/verification/task-surfaces", { recursive: true });
+      await page.screenshot({ path: `temp/verification/task-surfaces/drag-${theme}-${width}.png` });
+      await firstRow.dispatchEvent("drop", { dataTransfer: transfer });
+      await secondRow.dispatchEvent("dragend", { dataTransfer: transfer });
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as unknown as { taskFixtureCalls: HostCall[] }).taskFixtureCalls.filter(
+                (call) => call.args.method === "tasks.reorder",
+              ).length,
+          ),
+        )
+        .toBe(1);
+      await expect(queued).toHaveCSS("outline-style", "none");
+      await first.click();
+      const detail = page.getByRole("complementary", { name: "Task details", exact: true });
+      await expect(detail).toBeVisible();
+      await expect(detail).toHaveCSS("border-inline-start-width", "1px");
+      await page.screenshot({
+        path: `temp/verification/task-surfaces/detail-wide-${theme}-${width}.png`,
+      });
+      const identity = await detail.getAttribute("aria-label");
+      const area = page.locator('[class*="@container/task-area"]');
+      await area.evaluate((node: HTMLElement) => {
+        node.style.flex = "0 0 600px";
+        node.style.width = "600px";
+      });
+      await expect(detail).toHaveCSS("border-inline-start-width", "0px");
+      await expect(detail).toHaveCSS("border-block-start-width", "0px");
+      expect(await detail.getAttribute("aria-label")).toBe(identity);
+      expect((await detail.boundingBox())!.width).toBe(600);
+      await page.screenshot({
+        path: `temp/verification/task-surfaces/detail-stacked-${theme}-${width}.png`,
+      });
+    });
+  }
+}
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`shared goal session separators ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await openTasks(page, `${fixture}?boardControls`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page
+        .getByRole("article", { name: "Settings goal", exact: true })
+        .getByRole("button", { name: "Task sessions", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog", { name: "Task sessions", exact: true });
+      const rows = dialog.locator(".goal-session-task");
+      await expect(rows).toHaveCount(3);
+      await expect(rows.first()).toHaveCSS("border-bottom-width", "1px");
+      await expect(rows.last()).toHaveCSS("border-bottom-width", "0px");
+      await expect(
+        dialog.getByRole("button", { name: "Open worker session", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/task-surfaces/goal-sessions-${theme}-${width}.png`,
+      });
+    });
+  }

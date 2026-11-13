@@ -146,31 +146,3 @@ export function useHoverCard({
 
   return { trigger, open, close: intent.close, card };
 }
-
-export type HoverCardProps = HoverCardOptions & {
-  /** The card body. A function renders only while the card is open. */
-  content: ReactNode | (() => ReactNode);
-  /** One trigger element. The wrapper adds no box (`display: contents`). */
-  children: ReactNode;
-};
-
-/**
- * Wraps one trigger with a rich, interactive preview card on hover or keyboard focus: opens after 300 ms rest,
- * the pointer can cross into the card, Escape closes, content mounts only while open. Adds no box.
- * Use `useHoverCard` when the trigger must stay a direct child.
- * Hand-written interactive hover previews. Shared useHoverCard consumers include BadgeList, session previews and Git graph rows.
- * @group overlay
- * @use An optional preview of an object (row, chip, avatar) with links or actions. Everything in it needs a focus or tap route too.
- * @avoid Plain text hint on a control: Tooltip. Help behind an icon: InfoPopover. Click-opened panel or menu: Popover or DropdownMenu. Required actions or state never live only in a hover card.
- */
-export function HoverCard({ content, children, ...options }: HoverCardProps) {
-  const { trigger, card } = useHoverCard(options);
-  return (
-    <>
-      <span className="contents" data-tooltip-wrap="" {...trigger}>
-        {children}
-      </span>
-      {card(content)}
-    </>
-  );
-}

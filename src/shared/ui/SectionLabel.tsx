@@ -94,7 +94,7 @@ export type SectionLabelProps = Omit<ComponentPropsWithRef<"div">, "children"> &
  * `labelAction` (collapsible) splits the row: the chevron collapses, the label text opens the section's page.
  * @group text
  * @use Caption for a group of rows, or a collapsible group heading over a list (Pinned, Groups).
- * @avoid Showing or hiding detail content: Disclosure. Pane or panel titles: PanelHeader / PaneHeader.
+ * @avoid Showing or hiding detail content: Disclosure. Pane or panel titles: PanelHeader / PaneHeader. Ordinary body copy without section semantics: Text.
  *
  * @example
  * <SectionLabel variant="inline" size="secondary">{t("Groups")}</SectionLabel>

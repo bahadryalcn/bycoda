@@ -6,6 +6,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { AdvancedSettings, Row } from "../../settings/public/settingsControls";
 import { ProfileSegmented, ProfileSelect } from "./settings/ProfileControls";
 import { ProfileRow, ProfileSwitch, useProfileRows } from "./settings/SettingsProfileRow";
 import { AssistantWorkFields } from "./settings/AssistantWorkFields";
@@ -74,28 +75,17 @@ export function AssistantProfileFields({
             />
           )}
         </ProfileRow>
-        <ProfileSegmented
-          label={t("How often to use your name")}
-          value={value.addressFrequency ?? "sometimes"}
-          options={[
-            ["always", "Always"],
-            ["sometimes", "Sometimes"],
-            ["never", "Never"],
-          ]}
-          onValueChange={(next) =>
-            onChange({ addressFrequency: next as AssistantProfilePatch["addressFrequency"] })
-          }
-        />
-        <ProfileRow
-          label={t("Avatar")}
-          description={t("Pick a portrait, or type an emoji or initials.")}
-          stacked
-        >
-          {(hideLabel) => (
-            <AssistantAvatarPicker value={value.avatar} hideLabel={hideLabel} onChange={onChange} />
+        {!rows && <AddressFrequency value={value} onChange={onChange} />}
+        <AdvancedSettings title={t("Avatar")} keepMounted>
+          {rows ? (
+            <Row label={null} stacked>
+              <AssistantAvatarPicker value={value.avatar} hideLabel onChange={onChange} />
+            </Row>
+          ) : (
+            <AssistantAvatarPicker value={value.avatar} hideLabel={false} onChange={onChange} />
           )}
-        </ProfileRow>
-        <ShowTitle value={value} onChange={onChange} />
+          <ShowTitle value={value} onChange={onChange} />
+        </AdvancedSettings>
       </>
     );
   if (section === "language")
@@ -108,6 +98,7 @@ export function AssistantProfileFields({
   if (section === "personality")
     return (
       <>
+        {rows && <AddressFrequency value={value} onChange={onChange} />}
         <ProfileSelect
           label="Tone"
           value={String(value.tone ?? "friendly")}
@@ -195,6 +186,29 @@ export function AssistantProfileFields({
   return <AssistantCostFields value={value} onChange={onChange} />;
 }
 
+function AddressFrequency({
+  value,
+  onChange,
+}: {
+  value: AssistantProfilePatch;
+  onChange: (patch: AssistantProfilePatch) => void;
+}) {
+  return (
+    <ProfileSegmented
+      label={t("How often to use your name")}
+      value={value.addressFrequency ?? "sometimes"}
+      options={[
+        ["always", "Always"],
+        ["sometimes", "Sometimes"],
+        ["never", "Never"],
+      ]}
+      onValueChange={(next) =>
+        onChange({ addressFrequency: next as AssistantProfilePatch["addressFrequency"] })
+      }
+    />
+  );
+}
+
 /** "Show title" with a preview of how the name reads once the name is set. */
 function ShowTitle({
   value,
@@ -258,7 +272,16 @@ function ProfileLanguage({
   const help = t("Auto follows the language you speak. A selected language overrides it.");
   if (useProfileRows())
     return (
-      <ProfileRow label={t("Language")} description={help}>
+      <ProfileRow
+        label={t("Language")}
+        info={
+          <InfoPopover label={t("About language")}>
+            <Text as="p" size="secondary">
+              {help}
+            </Text>
+          </InfoPopover>
+        }
+      >
         {() => (
           <Select
             hideLabel

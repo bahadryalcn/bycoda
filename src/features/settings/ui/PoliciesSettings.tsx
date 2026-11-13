@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea, scrollAreaAttributes } from "../../../shared/ui/ScrollArea";
 import { SettingsFeedback } from "./settingsControls";
@@ -115,6 +116,10 @@ export function PoliciesSettings() {
         <TabPanel
           ref={reader}
           {...scrollAreaAttributes({ gutter: "stable" }, "policy-reader")}
+          {...surfaceAttributes(
+            { frame: "stroke", edge: "responsive-start" },
+            scrollAreaAttributes({ gutter: "stable" }, "policy-reader").className,
+          )}
           labelledBy={settingDomId(activePolicy.id)}
           key={activePolicy.id}
         >

@@ -52,6 +52,7 @@ export function VoiceCompanionMoreMenu({
   return (
     <>
       <Button
+        touchTarget="control"
         iconOnly
         size="sm"
         variant="ghost"

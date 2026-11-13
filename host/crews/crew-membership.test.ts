@@ -34,7 +34,6 @@ const profile = (id: string, role: CrewAgent["role"], name = id): CrewAgent => (
       model: "codex:fixture",
       modelSettings: {},
       capabilities: {},
-      cost: 1,
     },
   ],
 });

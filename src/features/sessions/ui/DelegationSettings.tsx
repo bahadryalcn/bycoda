@@ -162,7 +162,8 @@ export function DelegationField({
       align="start"
       // The direct layout lets the label fill the field so the chevron sits at its far edge.
       motion="none"
-      className="h-auto py-1.5"
+      padding={{ block: "sm" }}
+      controlHeight="auto"
       disabled={disabled}
       aria-describedby={describedBy}
       aria-haspopup="dialog"
@@ -211,8 +212,8 @@ export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting
   )?.accountColor;
   const dot = color ? (
     <span
-      {...surfaceAttributes({ radius: "pill" }, "size-2 shrink-0 ")}
-      style={{ background: color }}
+      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-2 shrink-0 ")}
+      style={{ "--surface-user-color": color } as React.CSSProperties}
       aria-hidden
     />
   ) : null;
@@ -224,8 +225,8 @@ export function DelegationOptionIcon({ setting, value }: { setting: ModelSetting
       {dot ? (
         <span
           {...surfaceAttributes(
-            { radius: "pill" },
-            "absolute -right-0.5 -bottom-0.5 flex  ring-2 ring-(--color-background-base) [&>span]:size-1.5",
+            { radius: "pill", ring: "base-outer" },
+            "absolute -right-0.5 -bottom-0.5 flex [&>span]:size-1.5",
           )}
         >
           {dot}

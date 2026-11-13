@@ -34,13 +34,21 @@ export function AccountAvatar({
   const photo = user?.avatarUrl && broken !== user.avatarUrl ? user.avatarUrl : null;
   return (
     <span
-      className={styles.root}
+      {...surfaceAttributes(
+        {
+          radius: "circle",
+          variant: user ? undefined : "fill-subtle",
+          tone: user ? "accent" : undefined,
+          toneFill: user ? "solid" : undefined,
+        },
+        styles.root,
+      )}
       data-signed-in={Boolean(user)}
       data-size={size}
       data-account-avatar
       aria-hidden="true"
     >
-      <span className={styles.face}>
+      <span {...surfaceAttributes({ radius: "circle" }, styles.face)}>
         {photo ? (
           <img src={photo} alt="" referrerPolicy="no-referrer" onError={() => setBroken(photo)} />
         ) : initial ? (
@@ -62,7 +70,9 @@ export function AccountAvatar({
         )}
       </span>
       {badge ? (
-        <span {...surfaceAttributes({ variant: "panel" }, styles.badge)}>{badge}</span>
+        <span {...surfaceAttributes({ variant: "panel", radius: "circle" }, styles.badge)}>
+          {badge}
+        </span>
       ) : null}
     </span>
   );

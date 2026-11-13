@@ -1,3 +1,4 @@
+import { actionContentAttributes } from "../../shared/ui/ActionHost";
 import { Text } from "../../shared/ui/Text";
 import { motionAttributes } from "../../shared/ui/Motion";
 import {
@@ -55,6 +56,10 @@ export function FolderRow({
   const count = sessions.length;
   const accent = folderAccent(folder.colorIndex, folder.customColor);
   const actionCount = (onNewSession ? 1 : 0) + (onOpenMenu ? 1 : 0);
+  const disclosureMotion = motionAttributes(
+    { transition: "transform", duration: "standard", easing: "rise" },
+    `icon-sm ${expanded ? "rotate-90" : ""}`,
+  );
   const header = (
     <Button
       variant="item"
@@ -84,7 +89,9 @@ export function FolderRow({
           onOpenMenu(event.currentTarget);
         }
       }}
-      className="group relative flex min-h-7 w-full min-w-0 touch-none items-center gap-1.5 px-2.5 py-1 text-start"
+      size="sm"
+      padding={{ inline: "lg", block: "xs" }}
+      className="group relative flex w-full min-w-0 touch-none items-center gap-1.5 text-start"
     >
       <Text
         as="span"
@@ -94,7 +101,7 @@ export function FolderRow({
         className="relative grid size-4 shrink-0 place-items-center"
         style={accent ? { color: accent } : undefined}
       >
-        <span className="contents group-hover:hidden group-focus-visible:hidden">
+        <span {...actionContentAttributes({ phase: "rest" }, "contents")}>
           {groupIcon ??
             (expanded ? (
               <FolderOpen className="icon-sm" strokeWidth={1.75} />
@@ -105,10 +112,8 @@ export function FolderRow({
         <ChevronRight
           tone="secondary"
           strokeWidth={1.75}
-          {...motionAttributes(
-            { transition: "transform", duration: "standard", easing: "rise" },
-            `hidden icon-sm group-hover:block group-focus-visible:block ${expanded ? "rotate-90" : ""}`,
-          )}
+          {...disclosureMotion}
+          {...actionContentAttributes({ phase: "interaction" }, disclosureMotion.className)}
         />
       </Text>
       <Text
@@ -118,7 +123,10 @@ export function FolderRow({
         tone="secondary"
         weight="medium"
         leading="snug"
-        className="relative min-w-0 flex-1 group-hover:text-content group-focus-visible:text-content"
+        {...actionContentAttributes(
+          { phase: "always", interactionTone: "primary" },
+          "relative min-w-0 flex-1",
+        )}
       >
         {nameNode ?? folder.name}
       </Text>

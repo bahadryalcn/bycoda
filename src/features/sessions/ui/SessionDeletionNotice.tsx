@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Alert } from "../../../shared/ui/Alert";
@@ -65,7 +66,10 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
     worktree: t("Conversation deleted. Removing worktree…"),
   };
   return (
-    <div className="shrink-0 border-b border-stroke px-3 py-2" data-session-deletion-detail>
+    <div
+      {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-2")}
+      data-session-deletion-detail
+    >
       <Alert
         inline
         tone={

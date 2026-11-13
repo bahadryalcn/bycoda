@@ -1,6 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { sshJumpChain } from "../model/sshEndpointReview";
 import type { ServerRecord, SshEndpoint } from "../model/serverInventory";
 type Preview = {
@@ -26,7 +27,9 @@ export function ConfigImportChoices({
   onEdit?: (server: ServerRecord) => void;
 }) {
   return (
-    <div className="flex min-w-0 flex-col gap-2 border-t border-stroke py-2">
+    <div
+      {...surfaceAttributes({ frame: "stroke", edge: "top" }, "flex min-w-0 flex-col gap-2 py-2")}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Text tone="inherit" className="min-w-0 break-words">
           {host.alias} · {host.endpoint.user ? `${host.endpoint.user}@` : ""}

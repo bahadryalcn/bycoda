@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { RadioGroup } from "../../../../../shared/ui/RadioGroup";
 import { Text } from "../../../../../shared/ui/Text";
@@ -41,7 +42,7 @@ export function PaletteCards({ appearance }: { appearance: AppearanceSettings })
       onValueChange={select}
       className="theme-palettes"
       tileClassName="theme-palette-card"
-      tile={{ motion: "none" }}
+      tile={{ motion: "none", selectionIndicator: "focus-ring", frame: "preview" }}
       options={THEME_PALETTE_PRESETS.map((palette) => ({
         value: palette.name,
         ariaLabel: palette.name,
@@ -55,7 +56,11 @@ export function PaletteCards({ appearance }: { appearance: AppearanceSettings })
                 palette.lightness,
                 palette.accent,
               ).map((color, swatch) => (
-                <span key={swatch} style={{ background: color }} />
+                <span
+                  key={swatch}
+                  {...surfaceAttributes({ variant: "user-color" })}
+                  style={{ "--surface-user-color": color } as React.CSSProperties}
+                />
               ))}
             </span>
             <Text as="span" size="secondary" tone="inherit" weight="medium" leading="inherit">

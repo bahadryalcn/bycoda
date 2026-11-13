@@ -4,6 +4,7 @@
   flex-direction: column;
   gap: 0.75rem;
   min-width: 0;
+  container-type: inline-size;
   height: 100%;
 }
 
@@ -26,6 +27,7 @@
   display: inline-flex;
   align-items: center;
   margin-inline-start: auto;
+  gap: var(--space-2);
 }
 
 .inbox-refresh {
@@ -50,8 +52,8 @@
 
 .inbox-body {
   display: grid;
-  grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
-  gap: 1.5rem;
+  grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
+  gap: var(--space-3);
   min-height: 0;
   flex: 1 1 auto;
 }
@@ -63,6 +65,10 @@
   gap: 0.5rem;
   min-width: 0;
   min-height: 0;
+}
+
+.inbox-detail {
+  padding-inline-start: var(--space-3);
 }
 
 /* Conversation list */
@@ -206,13 +212,6 @@
   margin-block: 0.25rem;
 }
 
-.inbox-day::before,
-.inbox-day::after {
-  content: "";
-  flex: 1 1 auto;
-  border-block-start: 1px solid var(--ui-pane-border);
-}
-
 .inbox-line {
   display: flex;
   flex-direction: column;
@@ -229,13 +228,6 @@
 .inbox-bubble {
   max-width: 100%;
   padding: 0.5rem 0.75rem;
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-fill-subtle);
-}
-
-.inbox-line[data-direction="outbound"] .inbox-bubble {
-  border: 1px solid var(--ui-tone-accent-border);
-  background: var(--ui-tone-accent-subtle);
 }
 
 .inbox-line-text {
@@ -253,7 +245,7 @@
 
 /* Narrow: the list and the conversation are two separate sections in one scroll area.
  * Both keep their natural height so neither is squeezed over the other. */
-@media (max-width: 800px) {
+@container (max-width: 48rem) {
   .inbox-body {
     display: flex;
     flex-direction: column;
@@ -269,8 +261,8 @@
 
   .inbox-detail {
     flex: none;
-    padding-block-start: 0.75rem;
-    border-block-start: 1px solid var(--ui-pane-border);
+    padding-block-start: var(--space-3);
+    padding-inline-start: 0;
   }
 
   .inbox-line {

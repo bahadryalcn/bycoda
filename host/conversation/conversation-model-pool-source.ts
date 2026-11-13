@@ -1,7 +1,7 @@
 import type { HostAssistant } from "../assistant/service";
 import { listModelPool, type ModelPoolSource } from "./conversation-model-pool-guard";
 
-/** Reads the pool through the Assistant's own read operation, so saved and derived pools agree. */
+/** Reads the Host main order through the Assistant's compatibility operation. */
 export function assistantModelPoolSource(
   assistant: Pick<HostAssistant, "request">,
 ): ModelPoolSource {

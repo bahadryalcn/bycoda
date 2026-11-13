@@ -529,7 +529,7 @@ function ConversationHostTools({
           tabIndex={0}
         >
           {visited.includes("devices") ? (
-            <div style={{ display: tab === "devices" ? "contents" : "none" }}>
+            <div className={tab === "devices" ? "contents" : "hidden"}>
               <DevicePanel
                 transferScope={transferScope}
                 onMounted={() => onMounted?.({ tab: "devices", machine: targetValue })}
@@ -560,7 +560,7 @@ function ConversationHostTools({
             </div>
           ) : null}
           {visited.includes("browser") ? (
-            <div style={{ display: tab === "browser" ? "contents" : "none" }}>
+            <div className={tab === "browser" ? "contents" : "hidden"}>
               <BrowserPanel
                 onMounted={() => onMounted?.({ tab: "browser", machine: targetValue })}
                 active={active && tab === "browser"}
@@ -576,7 +576,7 @@ function ConversationHostTools({
             </div>
           ) : null}
           {visited.includes("servers") ? (
-            <div style={{ display: tab === "servers" ? "contents" : "none" }}>
+            <div className={tab === "servers" ? "contents" : "hidden"}>
               <DevServersPanel
                 transferScope={transferScope}
                 onMounted={() => onMounted?.({ tab: "servers", machine: targetValue })}
@@ -587,7 +587,7 @@ function ConversationHostTools({
             </div>
           ) : null}
           {visited.includes("logs") ? (
-            <div style={{ display: tab === "logs" ? "contents" : "none" }}>
+            <div className={tab === "logs" ? "contents" : "hidden"}>
               <RuntimeLogsPanel
                 transferScope={transferScope}
                 onMounted={() => onMounted?.({ tab: "logs", machine: targetValue })}
@@ -604,7 +604,7 @@ function ConversationHostTools({
             </div>
           ) : null}
           {visited.includes("resources") ? (
-            <div style={{ display: tab === "resources" ? "contents" : "none" }}>
+            <div className={tab === "resources" ? "contents" : "hidden"}>
               <DiagnosticsPanel
                 transferScope={transferScope}
                 onMounted={() => onMounted?.({ tab: "resources", machine: targetValue })}

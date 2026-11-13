@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
 import { InlineAction } from "../../shared/ui/ActionHost";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
 import { useT } from "../../shared/i18n";
@@ -125,7 +126,10 @@ export function RailSectionHeader({
         "aria-keyshortcuts": drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined,
         title: drag ? t("Drag to reorder") : undefined,
       }}
-      className={`px-2 ${drag ? RAIL_DRAG_HANDLE : ""} rounded-md focus-visible:bg-(--ui-surface-hover) @max-[140px]/rail:px-0`}
+      {...surfaceAttributes(
+        { radius: "row" },
+        `px-2 ${drag ? RAIL_DRAG_HANDLE : ""} @max-[140px]/rail:px-0`,
+      )}
       classNames={{
         count: "ms-auto ps-1",
         actions: "cursor-default",

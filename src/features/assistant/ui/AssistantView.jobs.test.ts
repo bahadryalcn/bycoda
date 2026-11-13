@@ -134,6 +134,136 @@ async function render(props: Parameters<typeof AssistantView>[0] = {}) {
 const jobComposer = () =>
   document.querySelector<HTMLTextAreaElement>('textarea[placeholder="Give Arif a job"]')!;
 
+it("discusses a job through the durable thread and reviews one multiline brief before explicit Start", async () => {
+  mock.snapshot!.profile.confirmJobs = false;
+  mock.snapshot!.jobs = [];
+  const thread = {
+    id: "planning-one",
+    version: 1,
+    createdAt: 1,
+    updatedAt: 1,
+    projectId: "project-one",
+    purpose: "job-planning" as const,
+    summary: "",
+  };
+  const brief = "Update release notes\nScope: public changes only\nCheck: links resolve";
+  const history: any[] = [];
+  let unconfirmed = false;
+  const base = mock.request.getMockImplementation()!;
+  mock.request.mockImplementation(async (input) => {
+    if (input.op === "threads.open" && input.purpose === "job-planning") return { thread };
+    if (input.op === "threads.messages" && input.threadId === thread.id)
+      return { thread, messages: history };
+    if (input.op === "threads.send") {
+      expect(input.threadId).toBe(thread.id);
+      if (unconfirmed) throw new Error("Provider outcome unknown");
+      history.push(
+        ...["user", "assistant"].map((role, index) => ({
+          id: `planning-message-${index}`,
+          version: 1,
+          createdAt: index + 1,
+          updatedAt: index + 1,
+          threadId: thread.id,
+          role,
+          via: "text",
+          text: role === "user" ? input.text : brief,
+          jobIds: [],
+        })),
+      );
+      return { messages: [...history] };
+    }
+    if (input.op === "jobs.create")
+      return {
+        job: {
+          ...job("planned-job"),
+          request: input.request,
+          title: input.title,
+          idempotencyKey: input.idempotencyKey,
+          projectIds: input.projectIds,
+        },
+      };
+    return base(input);
+  });
+  await render();
+  await click("Jobs");
+  await flush();
+  const composer = document.querySelector<HTMLTextAreaElement>(
+    'textarea[placeholder="What should this job achieve?"]',
+  )!;
+  expect(composer).not.toBeNull();
+  setTextareaValue(composer, "Help refine a release notes job");
+  await act(async () =>
+    composer.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    ),
+  );
+  await flush();
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "threads.send")).toHaveLength(1);
+  expect(mock.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(false);
+  await click("Today");
+  await click("Discuss a job");
+  await flush();
+  expect(document.body.textContent).toContain("Scope: public changes only");
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "threads.send")).toHaveLength(1);
+  const retained = {
+    source: brief,
+    frozen: true,
+    environmentId: "room-fixture",
+    rows: ["one", "two"].map((id) => ({
+      id,
+      key: id,
+      title: id,
+      request: id,
+      projectId: "project-one",
+      projectIds: ["project-one"],
+    })),
+  };
+  localStorage.setItem("bycoda.assistant.job-review", JSON.stringify(retained));
+  await click("Review brief");
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(localStorage.getItem("bycoda.assistant.job-review")).toBe(JSON.stringify(retained));
+  await click("Check conversation");
+  localStorage.setItem(
+    "bycoda.assistant.job-review",
+    JSON.stringify({ ...retained, frozen: false }),
+  );
+  await click("Review brief");
+  const review = document.querySelector('[role="dialog"]')!;
+  expect(review.querySelectorAll("textarea")).toHaveLength(1);
+  expect(review.querySelector("textarea")!.value).toBe(brief);
+  expect(mock.request.mock.calls.some(([input]) => input.op === "jobs.create")).toBe(false);
+  const start = [...review.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Start",
+  )!;
+  await act(async () => start.click());
+  await flush();
+  const creates = mock.request.mock.calls.filter(([input]) => input.op === "jobs.create");
+  expect(creates).toHaveLength(1);
+  expect(creates[0][0].request).toBe(brief);
+  unconfirmed = true;
+  const currentComposer = document.querySelector<HTMLTextAreaElement>(
+    'textarea[placeholder="What should this job achieve?"]',
+  )!;
+  setTextareaValue(currentComposer, "Refine another job");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await act(async () =>
+      currentComposer.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      ),
+    );
+    await flush();
+  }
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "threads.send")).toHaveLength(2);
+  expect(currentComposer.value).toBe("Refine another job");
+  expect(JSON.parse(localStorage.getItem("bycoda.assistant.send-intents")!)[thread.id].text).toBe(
+    "Refine another job",
+  );
+  await render({ visibleProjectPaths: [] });
+  await flush();
+  expect(document.body.textContent).not.toContain("Scope: public changes only");
+  expect(mock.request.mock.calls.filter(([input]) => input.op === "jobs.create")).toHaveLength(1);
+});
+
 it("starts a typed job directly with Enter when confirmJobs is off, and Shift+Enter adds a line", async () => {
   mock.snapshot!.profile.confirmJobs = false;
   mock.snapshot!.jobs = [];

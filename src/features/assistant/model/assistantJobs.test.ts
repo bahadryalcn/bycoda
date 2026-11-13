@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import {
   AssistantJobBatch,
+  assistantJobBriefTitle,
   assistantJobDraftIdentity,
   assistantJobDraftRequest,
   assistantJobDraftReady,
@@ -9,6 +10,16 @@ import {
   assistantJobVisible,
   selectAssistantJobProjects,
 } from "./assistantJobs";
+it("uses one substantive line for a multiline brief title and preserves the UTF-16 wire limit", () => {
+  expect(
+    assistantJobBriefTitle(
+      "## Job brief\nUpdate public release notes\n\n### Scope\n- Public changes",
+    ),
+  ).toBe("Update public release notes");
+  expect(assistantJobBriefTitle("## Build the report")).toBe("Build the report");
+  expect(assistantJobBriefTitle(`${"a".repeat(299)}🚀`)).toBe("a".repeat(299));
+  expect(assistantJobBriefTitle("\n ")).toBe("");
+});
 import { AssistantRequestValidationSchema } from "../../../shared/model/host-contracts/assistant";
 const rows = [
   {
@@ -38,10 +49,19 @@ const automationAction = {
   isolate: true,
   enabled: false,
 };
-it("requires an explicit model and retains independent project, note and scheduled-automation drafts", () => {
+it("uses the automatic model choice and retains independent project, note and scheduled-automation drafts", () => {
   const automation = changeAssistantJobDraftKind(rows[0], "automation");
-  expect(assistantJobDraftReady(automation)).toBe(false);
+  expect(assistantJobDraftReady(automation)).toBe(true);
   expect(automation.quickAction).toMatchObject({ model: "", projectId: "a", enabled: false });
+  expect(assistantJobDraftRequest(automation)).toMatchObject({
+    kind: "quick",
+    quickAction: { kind: "automation", model: "", projectId: "a" },
+  });
+  const fixedWithoutModel = {
+    ...automation,
+    quickAction: { ...automation.quickAction!, modelChoice: { kind: "fixed" as const } },
+  };
+  expect(assistantJobDraftReady(fixedWithoutModel)).toBe(false);
   const reviewed = { ...automation, quickAction: automationAction };
   const note = changeAssistantJobDraftKind(reviewed, "quick");
   const project = changeAssistantJobDraftKind(note, "project");

@@ -196,6 +196,46 @@ function eventKey(node: t.Node, computed: boolean) {
   return !computed && t.isIdentifier(node) && EVENT_NAME.test(node.name);
 }
 
+/** A plain useQuery option retains this function; option expressions still run in render. */
+function queryCallbackDeferred(value: NodePath): boolean {
+  const property = value.parentPath;
+  if (
+    !property?.isObjectProperty() ||
+    property.node.computed ||
+    !t.isIdentifier(property.node.key, { name: "queryFn" }) ||
+    property.node.value !== value.node
+  )
+    return false;
+  const options = property.parentPath;
+  const call = options?.parentPath;
+  if (
+    !options?.isObjectExpression() ||
+    !call?.isCallExpression() ||
+    call.node.arguments[0] !== options.node ||
+    !t.isIdentifier(call.node.callee)
+  )
+    return false;
+  // Render prefetch and unknown spreads can change the callback's execution timing.
+  if (
+    options.node.properties.some(
+      (item) =>
+        !t.isObjectProperty(item) ||
+        item.computed ||
+        !t.isIdentifier(item.key) ||
+        ["experimental_prefetchInRender", "suspense"].includes(item.key.name),
+    )
+  )
+    return false;
+  const binding = call.scope.getBinding(call.node.callee.name);
+  const specifier = binding?.path;
+  return (
+    !!specifier?.isImportSpecifier() &&
+    t.isIdentifier(specifier.node.imported, { name: "useQuery" }) &&
+    specifier.parentPath.isImportDeclaration() &&
+    specifier.parentPath.node.source.value === "@tanstack/react-query"
+  );
+}
+
 /** Whether `ref` (a reference to a local function) is in a position that only runs it later. */
 function referenceDeferred(ref: NodePath, component: NodePath, visiting: Set<t.Node>): boolean {
   const holder = ref.parentPath;
@@ -248,6 +288,7 @@ function runsAfterRender(
   visiting.add(inner.node);
   try {
     const parent = inner.parentPath;
+    if (queryCallbackDeferred(inner)) return true;
     // Callbacks of effect-like hooks.
     if (parent?.isCallExpression() && t.isIdentifier(parent.node.callee)) {
       if (DEFERRED_HOOKS.has(parent.node.callee.name) && parent.node.arguments[0] === inner.node)
@@ -328,6 +369,7 @@ function readsHiddenState(
       )
         return;
       const binding = ref.scope.getBinding(name);
+      if (renderOnly && binding?.kind === "module" && queryCallbackDeferred(ref)) return;
       if (!binding) {
         if (STORAGE.has(name)) {
           found = true;

@@ -1,3 +1,4 @@
+import { EffortScale } from "../../../shared/ui/EffortScale";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
@@ -11,7 +12,6 @@ import {
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
-import { motionAttributes } from "../../../shared/ui/Motion";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
@@ -34,10 +34,16 @@ import { settingLabel, settingValue } from "../model/modelPickerData";
 import type { AgentModel, ModelSetting } from "../model/models";
 import { HARNESS_TITLE } from "../model/session";
 import { DelegationField, DelegationOptionIcon } from "./DelegationSettings";
+import { SubagentModeControl } from "./SubagentModeControl";
+import { subagentMode } from "../model/crossDelegation";
 import { ModelSettingPicker } from "./ModelSettingPicker";
+import { SubagentEffortSwitch } from "./SubagentEffortSwitch";
+import {
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+  subagentEffortCeiling,
+} from "../../../shared/model/host-contracts/delegation";
 
-// The effort bars ease their height and fill together.
-const effortBarMotion = motionAttributes({ transition: "all", duration: "standard" });
+const isUltraEffort = (value: string) => /^ultra/i.test(value);
 
 type PanelTab = "settings" | "agents";
 
@@ -68,7 +74,10 @@ export function ModelSettingHelp({
   return (
     <div
       data-model-setting-help
-      className="flex shrink-0 items-start gap-2 border-t border-(--ui-frosted-divider) px-3 py-1.5 ui-caption-text"
+      {...surfaceAttributes(
+        { frame: "frosted", edge: "top" },
+        "flex shrink-0 items-start gap-2 px-3 py-1.5 ui-caption-text",
+      )}
     >
       <CircleHelp className="icon-xs mt-0.5 shrink-0" aria-hidden />
       {/* Two lines are always reserved, so pointing at a setting never resizes the panel. */}
@@ -169,7 +178,10 @@ export function ModelSettingsColumn({
           setExplained(null);
         }
       }}
-      className="flex min-h-0 w-60 shrink-0 flex-col border-l border-(--ui-tone-neutral-border) @max-[32rem]/model-panel:h-1/2 @max-[32rem]/model-panel:w-full @max-[32rem]/model-panel:border-t @max-[32rem]/model-panel:border-l-0"
+      {...surfaceAttributes(
+        { frame: "neutral", edge: "responsive-start" },
+        "flex min-h-0 w-60 shrink-0 flex-col @max-[32rem]/model-panel:h-1/2 @max-[32rem]/model-panel:w-full @max-[32rem]/model-panel:[--surface-frame-stacked:1]",
+      )}
     >
       {agents.length > 0 && model.length > 0 ? (
         <Tabs
@@ -249,7 +261,9 @@ function SettingRow({
   const labels = setting.options.map((option) => t(option.label));
   const kind = settingControlKind(setting, labels);
   const label = t(settingLabel(setting));
-  const value = settingValue(setting, values);
+  const isCeiling = setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY;
+  const rawValue = settingValue(setting, values);
+  const value = isCeiling ? subagentEffortCeiling(rawValue) : rawValue;
   const valueLabel = labels[setting.options.findIndex((option) => option.value === value)] ?? value;
   const help = helpText(setting);
   const describedBy = help ? `model-setting-help-${setting.id}` : undefined;
@@ -306,15 +320,25 @@ function SettingRow({
     return (
       <div data-setting-id={setting.id} className="pb-1">
         {heading(
-          <Text
-            as="span"
-            size="caption"
-            weight="medium"
-            tone={isUltraEffort(value) ? "warning" : "inherit"}
-          >
-            {valueLabel}
-          </Text>,
+          isCeiling ? null : (
+            <Text
+              as="span"
+              size="caption"
+              weight="medium"
+              tone={isUltraEffort(value) ? "warning" : "inherit"}
+            >
+              {valueLabel}
+            </Text>
+          ),
         )}
+        {isCeiling ? (
+          <div className="flex items-center justify-between px-1.5 pb-1.5">
+            <Text as="span" size="caption" tone="secondary">
+              {value ? valueLabel : ""}
+            </Text>
+            <SubagentEffortSwitch value={value} disabled={disabled} onChange={onChoose} />
+          </div>
+        ) : null}
         <EffortBars
           setting={setting}
           labels={labels}
@@ -365,7 +389,7 @@ function SettingRow({
     if (isMultiSetting(setting)) {
       // Subagents pick a mode first: Automatic, a custom list or Off. Custom opens the picker.
       const subagents = isSubagentSetting(setting);
-      const mode = value === "auto" ? "auto" : picked.length ? "custom" : "";
+      const mode = subagentMode(value);
       // Picked subagents read as chips; the full list opens only to add more.
       // Last in the column, the list shrinks and scrolls on its own so the rows above stay put.
       return (
@@ -379,15 +403,12 @@ function SettingRow({
           )}
           {subagents ? (
             <div className="px-1.5 pb-1.5">
-              <SegmentedControl
+              <SubagentModeControl
                 label={label}
-                value={mode}
-                onValueChange={(next) => (next === "custom" ? onPick() : onChoose(next))}
-                options={[
-                  { value: "auto", label: t("Automatic"), disabled },
-                  { value: "custom", label: t("Custom"), disabled },
-                  { value: "", label: t("Off"), disabled },
-                ]}
+                value={value}
+                disabled={disabled}
+                onCustom={onPick}
+                onChange={(next) => onChoose(next === "[]" ? "" : next)}
               />
             </div>
           ) : null}
@@ -649,8 +670,6 @@ function PickButton({
   );
 }
 
-const isUltraEffort = (value: string) => /^ultra/i.test(value);
-
 /**
  * Reasoning as bars that rise with the level; the chosen level is named above them and every
  * bar names itself on hover. Levels past Max are the costly "ultra" zone and turn warm.
@@ -673,64 +692,20 @@ function EffortBars({
   onChoose: (value: string) => void;
 }) {
   const levels = ascendingEffortOptions(
-    setting.options.map((option, index) => ({ value: option.value, label: labels[index] })),
+    setting.options
+      .map((option, index) => ({ value: option.value, label: labels[index] }))
+      .filter((option) => setting.id !== CROSS_SUBAGENT_MAX_EFFORT_KEY || Boolean(option.value)),
   );
-  const current = levels.findIndex((option) => option.value === value);
-  const count = levels.length;
-  const t = useT();
   return (
-    <>
-      <RadioGroup
-        variant="tiles"
-        label={label}
-        aria-describedby={describedBy}
-        value={value}
-        keepFocus
-        disabled={disabled}
-        className="model-effort-bars"
-        tileClassName="model-effort-bar"
-        tile={{ layout: "stacked" }}
-        options={levels.map((option, index) => ({
-          value: option.value,
-          ariaLabel: option.label,
-          tooltip: option.label,
-          data: {
-            "data-filled": index <= current ? "" : undefined,
-            "data-ultra": isUltraEffort(option.value) ? "" : undefined,
-          },
-          content: (
-            <>
-              <i
-                {...effortBarMotion}
-                {...surfaceAttributes(
-                  {
-                    variant:
-                      index <= current
-                        ? isUltraEffort(option.value)
-                          ? "effort-ultra"
-                          : "effort"
-                        : undefined,
-                  },
-                  effortBarMotion.className,
-                )}
-                style={{ height: `${30 + Math.round((index / Math.max(1, count - 1)) * 70)}%` }}
-              />
-              <span className="sr-only">{option.label}</span>
-            </>
-          ),
-        }))}
-        onValueChange={onChoose}
-      />
-      <Text
-        as="div"
-        size="micro"
-        tone="secondary"
-        className="flex justify-between px-1.5 pt-1"
-        aria-hidden
-      >
-        <span>{t("Faster")}</span>
-        <span>{t("Deeper")}</span>
-      </Text>
-    </>
+    <EffortScale
+      options={levels}
+      value={value}
+      label={label}
+      describedBy={describedBy}
+      disabled={disabled}
+      keepFocus
+      showValue={false}
+      onValueChange={onChoose}
+    />
   );
 }

@@ -1,5 +1,6 @@
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
@@ -63,6 +64,7 @@ import { AppearanceSaveFeedback, useAppearanceSettings } from "./useAppearanceSe
 import { AppearancePage } from "./AppearanceSettings";
 import { KeybindingsPage } from "./ShortcutSettings";
 import { TerminalPage } from "./TerminalSettings";
+import { ModelsPage } from "./models/ModelsPage";
 import { ProvidersPageGate } from "./ProvidersPageGate";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { ArchivePage } from "./ArchiveSettings";
@@ -308,7 +310,9 @@ export function SettingsView({
 
   // One header row per page: identity on the left, 28px ghost icon actions on the right.
   const pageBar = (
-    <header className="settings-page-bar bycoda-settings-toolbar">
+    <header
+      {...surfaceAttributes({ variant: "base" }, "settings-page-bar bycoda-settings-toolbar")}
+    >
       <div className="settings-page-bar-inner">
         <div className="bycoda-settings-category-picker">
           <SearchableSelect
@@ -396,7 +400,10 @@ export function SettingsView({
       as="div"
       size="inherit"
       tone="primary"
-      className="bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col"
+      {...surfaceAttributes(
+        { variant: "canvas" },
+        "bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col",
+      )}
     >
       {embedded ? null : (
         <PaneHeader
@@ -437,7 +444,10 @@ export function SettingsView({
         >
           <TabList
             ref={navigationRef}
-            className="bycoda-settings-categories"
+            {...surfaceAttributes(
+              { variant: "workspace-panel", frame: "pane", edge: "inline-end" },
+              "bycoda-settings-categories",
+            )}
             label={t("Settings categories")}
           >
             <SettingsAccountRow section={section} panelId={panelId} onSelect={selectCategory} />
@@ -502,6 +512,7 @@ export function SettingsView({
                 <SkillsPage
                   key={cwd}
                   cwd={cwd}
+                  revealRequest={revealRequest}
                   header={<span className="sr-only">{settingsSectionLabel(section)}</span>}
                 />
               </RevealedSetting.Provider>
@@ -583,6 +594,7 @@ export function SettingsView({
                         {section === "providers" ? (
                           <ProvidersPageGate cwd={cwd} recents={recents} />
                         ) : null}
+                        {section === "models" ? <ModelsPage cwd={cwd} recents={recents} /> : null}
                         {section === "usage" ? <UsagePage /> : null}
                         {section === "limits" ? <UsagePage limitsOnly /> : null}
                         {section === "worktrees" ? (

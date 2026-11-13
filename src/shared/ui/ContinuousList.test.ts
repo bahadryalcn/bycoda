@@ -37,6 +37,56 @@ const props = {
   stateKey: "test:scope",
 };
 
+it("keeps settings row dividers attached to current logical order after filtering", async () => {
+  const options = { ...props, items: ["one", "two", "three"], rowAppearance: "settings" as const };
+  await act(async () => root.render(createElement(ContinuousList<string>, options)));
+  expect(
+    container.querySelector('[data-collection-key="one"]')?.getAttribute("data-row-appearance"),
+  ).toBe("settings");
+  expect(
+    container.querySelector('[data-collection-key="one"]')?.hasAttribute("data-row-divider"),
+  ).toBe(false);
+  expect(
+    container.querySelector('[data-collection-key="two"]')?.hasAttribute("data-row-divider"),
+  ).toBe(true);
+  await act(async () =>
+    root.render(createElement(ContinuousList<string>, { ...options, items: ["two", "three"] })),
+  );
+  expect(
+    container.querySelector('[data-collection-key="two"]')?.hasAttribute("data-row-divider"),
+  ).toBe(false);
+  expect(
+    container.querySelector('[data-collection-key="three"]')?.hasAttribute("data-row-divider"),
+  ).toBe(true);
+  await act(async () =>
+    root.render(createElement(ContinuousList<string>, { ...options, rowAppearance: undefined })),
+  );
+  expect(container.querySelector("[data-row-appearance]")).toBeNull();
+  expect(container.querySelector("[data-row-divider]")).toBeNull();
+});
+
+it("requests the next page only near the end and pauses automatic retries on error", async () => {
+  const onLoadMore = vi.fn();
+  const options = { ...props, items: ["one"], hasMore: true, loadOnScroll: true, onLoadMore };
+  await act(async () => root.render(createElement(ContinuousList<string>, options)));
+  const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
+  Object.defineProperty(scroller, "scrollHeight", { value: 1000, configurable: true });
+  scroller.scrollTop = 0;
+  await act(async () => scroller.dispatchEvent(new Event("scroll")));
+  expect(onLoadMore).not.toHaveBeenCalled();
+  scroller.scrollTop = 500;
+  await act(async () => scroller.dispatchEvent(new Event("scroll")));
+  expect(onLoadMore).toHaveBeenCalledOnce();
+  await act(async () =>
+    root.render(
+      createElement(ContinuousList<string>, { ...options, error: "Offline", onRetry: onLoadMore }),
+    ),
+  );
+  await act(async () => scroller.dispatchEvent(new Event("scroll")));
+  expect(onLoadMore).toHaveBeenCalledOnce();
+  expect(container.textContent).toContain("Offline");
+});
+
 it("bounds mounted rows and retains a selected offscreen record", async () => {
   await act(async () =>
     root.render(createElement(ContinuousList<string>, { ...props, requiredKey: "999" })),

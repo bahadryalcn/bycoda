@@ -1,7 +1,8 @@
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { useEffect, useRef } from "react";
 import {
   prefersReducedMotion,
-  useDecorativeMotionEnabled,
+  useAudioFeedbackMotionEnabled,
 } from "../../settings/public/decorativeMotion";
 import brandGeometry from "../../../shared/lib/brandGeometry.json";
 import type { VoiceVisual } from "../model/voiceSettings";
@@ -41,7 +42,7 @@ export function VoiceVisualizer({
 }: VoiceVisualizerProps) {
   const root = useRef<HTMLSpanElement>(null);
   // The decorative-motion setting stills this like the OS reduce-motion request does.
-  const motion = useDecorativeMotionEnabled();
+  const motion = useAudioFeedbackMotionEnabled();
   useEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -88,8 +89,8 @@ export function VoiceVisualizer({
           scale = 0.7;
           opacity = sequence < 0 ? (index % 2 ? 0.25 : 1) : index % 6 === sequence % 6 ? 1 : 0.25;
         } else if (pose === "listening") {
-          scale = preview ? 0.85 + wave * 0.12 : 0.8;
-          opacity = preview ? 0.35 + wave * 0.5 : 0.45;
+          scale = 0.85 + wave * 0.12;
+          opacity = 0.35 + wave * 0.5;
         } else if (pose === "thinking")
           opacity = index === (still ? 1 : Math.floor(time / 240) % 6) ? 1 : 0.2;
         else if (active)
@@ -110,7 +111,7 @@ export function VoiceVisualizer({
           ? 10 + (pose === "user" ? amplitude * (0.6 + intensity * 0.4) : intensity) * 32
           : 10;
         const lift =
-          pose === "listening" && preview
+          pose === "listening"
             ? still
               ? index % 2
                 ? -1.5
@@ -134,15 +135,7 @@ export function VoiceVisualizer({
       });
       waves.forEach((wave, layer) => {
         const amp =
-          pose === "listening"
-            ? preview
-              ? 3
-              : 0
-            : pose === "thinking"
-              ? 4
-              : active
-                ? 5 + amplitude * 20
-                : 0;
+          pose === "listening" ? 3 : pose === "thinking" ? 4 : active ? 5 + amplitude * 20 : 0;
         const phase = still
           ? 1.3
           : time / (pose === "listening" || pose === "thinking" ? 700 : 170);
@@ -172,7 +165,7 @@ export function VoiceVisualizer({
               ? 22
               : active
                 ? 25 + amplitude * 4
-                : 25 + (pose === "listening" && preview ? pulse : 0),
+                : 25 + (pose === "listening" ? pulse : 0),
         ),
       );
       if (core) core.style.opacity = pose === "connecting" ? String(0.45 + breath * 0.55) : "";
@@ -356,7 +349,9 @@ export function VoiceVisualizer({
           <path className={styles.error} d="M64 58v7M64 69v.1" strokeWidth="3" />
         </g>
       </svg>
-      {working && <span className={styles.working} />}
+      {working && (
+        <StatusDot className={styles.working} tone="warning" shape="diamond" preserveColors />
+      )}
     </span>
   );
 }

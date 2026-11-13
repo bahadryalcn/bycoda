@@ -1,4 +1,3 @@
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import "./decisionModels.css";
 import { testedSources } from "../model/routingEditor";
 import { connectedCandidate } from "../model/presentation";
@@ -8,9 +7,8 @@ import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { Badge } from "../../../shared/ui/Badge";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { RefreshCw, Lock, Check, CircleAlert, Server } from "../../../shared/ui/icons";
+import { RefreshCw, Lock } from "../../../shared/ui/icons";
 import { Switch } from "../../../shared/ui/Switch";
 import { Group } from "../../settings/public/settingsControls";
 import { useDecisionModels } from "../hooks/useDecisionModels";
@@ -134,47 +132,7 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
       className="decision-models-page"
       style={{ "--settings-group-gap": "var(--space-1)" } as React.CSSProperties}
     >
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2">
-        <div className="flex items-center gap-2">
-          {sources === null ? (
-            <LoadingText delay={false}>{t("Loading…")}</LoadingText>
-          ) : (
-            <>
-              <Badge size="xs" icon={<Server />}>
-                {t("{p1} connected", { p1: formatNumber(sources.length) })}
-              </Badge>
-              <Badge size="xs" tone="success" icon={<Check />}>
-                {t("{p1} working", {
-                  p1: formatNumber(sources.filter((source) => source.status === "ready").length),
-                })}
-              </Badge>
-              {sources.some((source) => source.status === "error") ? (
-                <Tooltip
-                  label={t("Use Test to retry. Hover or focus a Failed badge for the reason.")}
-                >
-                  <Badge size="xs" tone="danger" icon={<CircleAlert />} tabIndex={0}>
-                    {t("{p1} failed", {
-                      p1: formatNumber(
-                        sources.filter((source) => source.status === "error").length,
-                      ),
-                    })}
-                  </Badge>
-                </Tooltip>
-              ) : null}
-              {sources.some((source) => source.status === "unknown") ? (
-                <Tooltip label={t("Use Test all to check models that have not been tested.")}>
-                  <Badge size="xs" tabIndex={0}>
-                    {t("{p1} not tested", {
-                      p1: formatNumber(
-                        sources.filter((source) => source.status === "unknown").length,
-                      ),
-                    })}
-                  </Badge>
-                </Tooltip>
-              ) : null}
-            </>
-          )}
-        </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <Lock className="icon-sm shrink-0" aria-hidden="true" />
           <Tooltip
@@ -195,7 +153,6 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
       {topError !== null ? <ErrorNotice error={topError} /> : null}
       <Group
         title={t("Connected models")}
-        description={t("Models and services the app can ask. Test a source before you rely on it.")}
         action={
           <div className="flex shrink-0 items-center justify-end gap-2">
             {(sources?.length ?? 0) > 1 ? (
@@ -262,10 +219,7 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
         variant="row"
       >
         <div className="decision-discovery-body">
-          <Group
-            title={null}
-            description={t("Found by the scan. Nothing is connected until you press Add.")}
-          >
+          <Group title={null}>
             <FoundList
               found={model.found}
               sources={sources ?? []}
@@ -277,15 +231,12 @@ export function DecisionModelsSettings({ client }: { client: DecisionModelsClien
               onAdd={addCandidate}
             />
           </Group>
-          <Group title={t("Scan settings")}>
+          <Disclosure summary={t("Scan settings")} variant="row">
             <ScanSettings client={client} onScan={actions.scan} scanning={model.scanning} />
-          </Group>
+          </Disclosure>
         </div>
       </Disclosure>
-      <Group
-        title={t("Task routing")}
-        description={t("Which source answers each kind of question, in order.")}
-      >
+      <Group title={t("Task routing")}>
         {sources?.length ? (
           <RoutingTable
             routing={model.routing}

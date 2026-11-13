@@ -64,12 +64,12 @@ export function CrewTablePortrait({
     <div
       role="img"
       aria-label={label}
-      className={[
-        "flex h-24 w-full items-end justify-center overflow-hidden rounded-md bg-(--ui-surface-raised)",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
+      {...surfaceAttributes(
+        { radius: "row", variant: "raised" },
+        ["flex h-24 w-full items-end justify-center overflow-hidden", className]
+          .filter(Boolean)
+          .join(" "),
+      )}
     >
       <div aria-hidden className="relative shrink-0" style={SCENE_STYLE}>
         {/* Back row first: later siblings paint over earlier ones, so no z-index is needed. */}
@@ -104,7 +104,7 @@ export function CrewTablePortrait({
           <Text
             tone="muted"
             weight="medium"
-            {...surfaceAttributes({ radius: "sm" }, "absolute bg-(--ui-surface-panel) px-1")}
+            {...surfaceAttributes({ radius: "sm", variant: "panel" }, "absolute px-1")}
             style={SIGN_STYLE}
           >
             {`+${hidden}`}

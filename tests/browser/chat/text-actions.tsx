@@ -10,10 +10,9 @@ import {
   saveLastModelSettings,
   setHarnessModels,
 } from "../../../src/features/sessions/model/models";
-import {
-  saveDefaultRepromptChoice,
-  saveDefaultTranslationChoice,
-} from "../../../src/features/sessions/model/translationPreferences";
+import { mockIPC } from "@tauri-apps/api/mocks";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { EMPTY_MODEL_ROUTING } from "../../../src/shared/model/host-contracts/model-routing";
 import type { TextActionTarget } from "../../../src/features/sessions/model/translation";
 import {
   registerHarness,
@@ -120,15 +119,47 @@ setHarnessModels(
 );
 saveLastModelChoice("codex", "codex:fixture-default");
 saveLastModelSettings({ effort: "high" });
-saveDefaultRepromptChoice(undefined);
-saveDefaultTranslationChoice(undefined);
 const params = new URLSearchParams(location.search);
 const initialTarget = params.get("target") === "en" ? "en" : "reprompt";
-if (params.has("override")) {
-  const save =
-    initialTarget === "reprompt" ? saveDefaultRepromptChoice : saveDefaultTranslationChoice;
-  save({ harness: "codex", model: "codex:fixture-override", modelSettings: { effort: "medium" } });
-}
+const target = {
+  harness: "codex",
+  model: "codex:fixture-override",
+  modelSettings: { effort: "medium" },
+};
+mockIPC((command, args) => {
+  if (command === "remote_machines")
+    return [
+      {
+        id: "fixture",
+        environmentId: "fixture-env",
+        localHost: true,
+        name: "Fixture",
+        endpoint: "http://127.0.0.1:1",
+      },
+    ];
+  if (command === "remote_request") {
+    if (args.method === "environment.describe") return { capabilities: ["models.routing.v1"] };
+    if (args.method === "modelRouting.get")
+      return {
+        state: {
+          ...EMPTY_MODEL_ROUTING,
+          version: 1,
+          updatedAt: 1,
+          roles: params.has("override")
+            ? {
+                [initialTarget === "reprompt" ? "text.reprompt" : "text.translation"]: {
+                  kind: "fixed",
+                  target,
+                },
+              }
+            : {},
+        },
+      };
+    if (args.method === "modelRouting.resolve")
+      return { resolution: { ok: true, target, source: { kind: "fixed" }, skipped: [] } };
+  }
+  return null;
+});
 document.documentElement.classList.toggle("theme-light", params.has("light"));
 const source = {
   modelsFor,
@@ -169,4 +200,10 @@ function Fixture() {
     </ModelSourceContext.Provider>
   );
 }
-void languageReady.then(() => createRoot(document.getElementById("root")!).render(<Fixture />));
+void languageReady.then(() =>
+  createRoot(document.getElementById("root")!).render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Fixture />
+    </QueryClientProvider>,
+  ),
+);

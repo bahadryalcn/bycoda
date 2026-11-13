@@ -33,8 +33,20 @@ pub struct Status {
     pub setup_complete: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assistant_name: Option<String>,
+    /// The owner's own choice; `state` can differ when this computer reads idle or away.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice: Option<Choice>,
 }
 impl Status {
+    /// The choice a menu marks: the owner's own, or the effective state from a Host without it.
+    pub fn selected(&self) -> Option<Choice> {
+        self.choice.or(match self.state {
+            Presence::Present => Some(Choice::Present),
+            Presence::Away => Some(Choice::Away),
+            Presence::Dnd => Some(Choice::Dnd),
+            Presence::Idle => None,
+        })
+    }
     fn parse(value: &serde_json::Value) -> Result<Self, String> {
         let status: Self =
             serde_json::from_value(value.clone()).map_err(|_| "Availability status is invalid")?;
@@ -355,6 +367,7 @@ mod tests {
                     state: Presence::Present,
                     setup_complete: true,
                     assistant_name: Some("Arif".into()),
+                    choice: None,
                 }),
                 ..View::default()
             },
@@ -373,6 +386,7 @@ mod tests {
                 state: Presence::Dnd,
                 setup_complete: true,
                 assistant_name: None,
+                choice: None,
             }),
             false,
         );
@@ -391,6 +405,7 @@ mod tests {
                 state: Presence::Idle,
                 setup_complete: true,
                 assistant_name: None,
+                choice: None,
             }),
             false,
         );
@@ -404,6 +419,7 @@ mod tests {
                 state: Presence::Away,
                 setup_complete: true,
                 assistant_name: None,
+                choice: None,
             }),
             true,
         );
@@ -427,10 +443,22 @@ mod tests {
                 state: Presence::Away,
                 setup_complete: true,
                 assistant_name: None,
+                choice: None,
             }),
             true,
         );
         assert_eq!(core.view.status.unwrap().state, Presence::Away);
+    }
+    #[test]
+    fn menus_mark_the_owner_choice_not_the_automatic_state() {
+        let status =
+            Status::parse(&json!({"state":"away","setupComplete":true,"choice":"present"}))
+                .unwrap();
+        assert_eq!(status.selected(), Some(Choice::Present));
+        let older = Status::parse(&json!({"state":"dnd","setupComplete":true})).unwrap();
+        assert_eq!(older.selected(), Some(Choice::Dnd));
+        let idle = Status::parse(&json!({"state":"idle","setupComplete":true})).unwrap();
+        assert_eq!(idle.selected(), None);
     }
     #[test]
     fn heartbeat_reconnects_lost_source_but_not_over_unconfirmed_write() {
@@ -447,6 +475,9 @@ mod tests {
         );
         assert!(serde_json::from_value::<Choice>(json!("idle")).is_err());
         assert!(serde_json::from_value::<Choice>(json!("unknown")).is_err());
+        assert!(
+            Status::parse(&json!({"state":"away","setupComplete":true,"choice":"idle"})).is_err()
+        );
         assert!(Status::parse(
             &json!({"state":"present","setupComplete":true,"assistantName":"a".repeat(81)})
         )

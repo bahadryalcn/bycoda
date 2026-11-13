@@ -20,11 +20,13 @@ import { SessionToolsRelay } from "../sessions/session-tools-relay";
 import type { SessionGrantScope } from "../sessions/session-authority";
 import { ConversationWorkspaceTools } from "../conversation/conversation-workspace-tools";
 import { parseLocalSessionLink } from "../../src/features/sessions/model/localSessionReference";
+import { DelegationStore } from "../delegation/store";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const fn of cleanup.splice(0)) await fn();
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
 
 async function setup(providers: Parameters<typeof createHostServer>[1] = []) {
@@ -105,6 +107,91 @@ async function setup(providers: Parameters<typeof createHostServer>[1] = []) {
   };
   return { store, engine, project, foreign, server, tokens, grant, rpc, send, url, desktopPath };
 }
+
+it.each(["parent", "store child", "settings child"])(
+  "filters Host agents tools for %s across catalog, discovery and MCP",
+  async (kind) => {
+    const s = await setup();
+    const created = await s.engine.command({
+      type: "create",
+      workspaceMode: "current",
+      commandId: "delegation-catalog",
+      projectId: s.project.id,
+      harness: "codex",
+      model: "fixture",
+      runtimeMode: "supervised",
+      modelSettings:
+        kind === "settings child"
+          ? {
+              delegationParent: JSON.stringify({
+                parentSessionId: "parent",
+                runId: "run",
+                kind: "subagent",
+                model: "fixture",
+                startedAt: 1,
+              }),
+            }
+          : {},
+    });
+    if (kind === "store child")
+      vi.spyOn(DelegationStore.prototype, "isChild").mockImplementation(
+        async (id) => id === created.sessionId,
+      );
+    const token = (await s.server.conversationAccess.issueSessionGrant(created.sessionId)).token;
+    const call = async (action: string, input: object = {}) => {
+      const response = await s.rpc("conversation.tools.call", { action, input }, token);
+      expect(response.body.error).toBeUndefined();
+      return response.body.result;
+    };
+    const expected =
+      kind === "parent"
+        ? [
+            "agents.options",
+            "agents.delegate",
+            "agents.consult",
+            "agents.reply",
+            "agents.wait",
+            "agents.cancel",
+          ].sort()
+        : [];
+    const catalog = await call("tools.list");
+    expect(
+      catalog.tools
+        .filter((tool: any) => tool.action.startsWith("agents."))
+        .map((tool: any) => tool.action)
+        .sort(),
+    ).toEqual(expected);
+    expect(catalog.tools.some((tool: any) => tool.action === "sessions.list")).toBe(true);
+    const found = await call("tools.search", { family: "agents" });
+    expect(found.tools.map((tool: any) => tool.action).sort()).toEqual(expected);
+    for (const action of [
+      "agents.options",
+      "agents.delegate",
+      "agents.consult",
+      "agents.reply",
+      "agents.wait",
+      "agents.cancel",
+    ]) {
+      const described = JSON.parse(
+        (await call("tools.describe", { ids: [`conversation:${action}`] })).content,
+      ).tools[0];
+      if (kind === "parent") expect(described.action).toBe(action);
+      else
+        expect(described).toMatchObject({ supported: false, capability: { state: "unsupported" } });
+      const status = (await call("tools.status", { ids: [`conversation:${action}`] })).tools[0];
+      if (kind === "parent")
+        expect(status).toMatchObject({ id: `conversation:${action}`, supported: true });
+      else expect(status).toMatchObject({ supported: false, capability: { state: "unsupported" } });
+    }
+    const listed = await s.send(token, "tools/list", {}, "/mcp/conversation");
+    expect(
+      listed.body.result.tools
+        .filter((tool: any) => tool.name.startsWith("conversation_agents_"))
+        .map((tool: any) => tool.name)
+        .sort(),
+    ).toEqual(expected.map((action) => `conversation_${action.replaceAll(".", "_")}`).sort());
+  },
+);
 
 it("renews a conversation grant lost after admission through the real Host and relay", async () => {
   const s = await setup();

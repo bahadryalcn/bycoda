@@ -9,7 +9,7 @@ Use for Chat Settings composition, conversation display preferences, continuatio
 
 ## Source starts
 
-- `src/features/settings/ui/ChatSettings.tsx`, `ConversationDisplaySettings.tsx`, `TemplatesSettings.tsx` and `TranslationSettings.tsx` own page controls.
+- `src/features/settings/ui/ChatSettings.tsx`, `ConversationDisplaySettings.tsx`, `TemplatesSettings.tsx` and `HelperModelsSettings.tsx` own page controls.
 - `src/features/sessions/model/promptTemplates.ts`, `translationPreferences.ts` and `src/features/settings/model/settings.ts` own relevant preference data.
 - Read [surfaces](references/surfaces.md) for template/SSH/mobile routing and focused tests.
 

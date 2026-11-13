@@ -43,6 +43,9 @@ import {
 } from "../model/voiceSidePanel";
 import { VoiceTurnControl } from "./VoiceTurnControl";
 import { VoiceVisualizer } from "./VoiceVisualizer";
+import { VoiceCore } from "./companion/VoiceCore";
+import { VoiceChatTranscript } from "./companion/VoiceChatTranscript";
+import parts from "./companion/VoiceCompanionParts.module.css";
 import styles from "./VoiceOverlayWindow.module.css";
 import { VoiceChoiceCard } from "./VoiceChoiceCard";
 import { VoiceJobReview } from "./VoiceJobReview";
@@ -322,7 +325,14 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         size="caption"
         tone="neutral"
         leading="inherit"
-        {...surfaceAttributes({ variant: state?.error ? "danger" : "plain" }, styles.panel)}
+        {...surfaceAttributes(
+          {
+            variant: state?.error ? "danger" : "plain",
+            frame: state?.error ? "danger" : "neutral",
+            radius: compact ? "pill" : "panel",
+          },
+          styles.panel,
+        )}
         aria-label={t("Voice companion")}
         data-compact={compact || undefined}
         data-voice-state={state?.visualState}
@@ -334,8 +344,31 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
             .catch(() => undefined);
         }}
       >
-        <header className={styles.header}>
-          {handle}
+        {/* oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Native title bar supports dragging and arrow-key movement; nested buttons retain their own actions. */}
+        <header
+          className={styles.header}
+          tabIndex={compact ? undefined : 0}
+          aria-label={compact ? undefined : moveLabel}
+          onKeyDown={(event) => {
+            if (!compact && event.target === event.currentTarget) onHandleKey(event);
+          }}
+          onPointerDown={(event) => {
+            if (
+              compact ||
+              event.button !== 0 ||
+              event.detail > 1 ||
+              (event.target as Element).closest("button")
+            )
+              return;
+            void getCurrentWebviewWindow()
+              .startDragging()
+              .catch(() => undefined);
+          }}
+          onDoubleClick={(event) => {
+            if (!compact && !(event.target as Element).closest("button")) setCompact(true);
+          }}
+        >
+          {compact && handle}
           {/* Popovers are clipped by this small window, so the mark expands it to the message. */}
           {state?.error && (
             <Button
@@ -422,10 +455,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           </Button>
         </header>
         <LiveText
-          {...surfaceAttributes(
-            { frame: compact || status === "idle" ? "none" : undefined },
-            compact || status === "idle" ? styles.srOnly : styles.status,
-          )}
+          {...surfaceAttributes({ frame: "none" }, "sr-only")}
           size="secondary"
           weight="medium"
           leading="normal"
@@ -434,6 +464,24 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         {!compact && (
           <>
             <div className={styles.body}>
+              <div className={parts.status}>
+                <VoiceCore
+                  state={state?.visualState ?? "connecting"}
+                  level={level}
+                  name={state?.name ?? ""}
+                  avatar={state?.avatar}
+                />
+                <div className={parts.statusText}>
+                  <Text size="secondary" weight="medium" leading="snug">
+                    {statusText}
+                  </Text>
+                  {state?.working && (
+                    <Text size="caption" tone="secondary" leading="snug">
+                      {state.workingStatus || t("Session working")}
+                    </Text>
+                  )}
+                </div>
+              </div>
               {menuError && (
                 <InlineError
                   className={styles.feedback}
@@ -444,39 +492,23 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 </InlineError>
               )}
               {side === "inline" ? questions : null}
-              {state?.transcript && (
-                <div className={`${styles.turn} ${styles.heard}`}>
-                  <span className="sr-only">{t("You")}: </span>
-                  <Text
-                    as="p"
-                    size="secondary"
-                    tone="inherit"
-                    leading="normal"
-                    className={styles.message}
-                  >
-                    {state.transcript}
-                  </Text>
-                </div>
-              )}
+              <VoiceChatTranscript
+                turns={
+                  state?.chatTurns ?? [
+                    ...(state?.transcript
+                      ? [{ id: 0, role: "owner" as const, text: state.transcript }]
+                      : []),
+                    ...(state?.message
+                      ? [{ id: 1, role: "assistant" as const, text: state.message }]
+                      : []),
+                  ]
+                }
+              />
               {/* Always mounted so each reply is announced when it arrives. */}
               <LiveText
                 className="sr-only"
                 text={state?.message ? `${t("Reply")}: ${state.message}` : ""}
               />
-              {state?.message && (
-                <div className={styles.turn}>
-                  <span className="sr-only">{t("Reply")}: </span>
-                  <Text
-                    as="p"
-                    size="secondary"
-                    tone="inherit"
-                    leading="normal"
-                    className={styles.message}
-                  >
-                    {state.message}
-                  </Text>
-                </div>
-              )}
               {state?.error && (
                 <>
                   <InlineError

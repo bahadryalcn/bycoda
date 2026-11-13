@@ -7,6 +7,7 @@ export {
   providerAccountLabel,
   providerAccountColorValue,
   subscribeProviderAccounts,
+  sessionProviderAccountId,
 } from "../model/providerAccounts";
 export type { ProviderAccount, ProviderAccountProvider } from "../model/providerAccounts";
 

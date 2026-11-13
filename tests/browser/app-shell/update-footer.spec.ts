@@ -11,6 +11,7 @@ const route = "/tests/browser/app-shell/update-footer.html";
 const captureRoot = "temp/verification/2026-10-27-update-footer";
 const nextVersion = "0.6.93";
 const accountCaptureRoot = "temp/verification/2026-11-11-rail-size-reset";
+const toolsCaptureRoot = "temp/verification/2026-11-13-rail-tools-selection";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(
@@ -304,6 +305,66 @@ test("footer star and assistant share the idle Settings surface", async ({ page 
   }
 });
 
+for (const compact of [false, true]) {
+  test(`footer star dismiss stays bare at the upper right (${compact ? "compact" : "wide"})`, async ({
+    page,
+  }) => {
+    const directory = "temp/verification/2026-11-13-star-dismiss";
+    mkdirSync(directory, { recursive: true });
+    await page.goto(`${route}?account${compact ? "&compact" : ""}`);
+    const footer = page.locator("[data-sidebar-account-footer]");
+    const github = footer.getByRole("button", { name: "View bycoda on GitHub", exact: true });
+    const close = footer.getByRole("button", {
+      name: "Dismiss GitHub repository prompt",
+      exact: true,
+    });
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      for (const width of [1280, 800]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.keyboard.press("Escape");
+        await page.evaluate(() => {
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        });
+        await github.hover();
+        await expect(close).toBeVisible();
+        const star = (await github.boundingBox())!;
+        const dismiss = (await close.boundingBox())!;
+        const capture = `${directory}/${compact ? "compact" : "wide"}-${theme}-${width}`;
+        await github.dispatchEvent("keydown", { key: "Escape" });
+        await footer.screenshot({ path: `${capture}-star-hover.png` });
+        expect(dismiss.x).toBeGreaterThanOrEqual(star.x + star.width / 2);
+        expect(dismiss.y).toBeLessThan(star.y);
+        expect(dismiss.y + dismiss.height).toBeLessThanOrEqual(star.y + star.height / 2);
+        expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
+        await close.hover();
+        expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
+        await close.dispatchEvent("keydown", { key: "Escape" });
+        await footer.screenshot({ path: `${capture}-dismiss-hover.png` });
+        for (const attribute of ["data-button-selected", "aria-expanded"]) {
+          await close.evaluate((element, name) => element.setAttribute(name, "true"), attribute);
+          expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
+          await close.evaluate((element, name) => element.removeAttribute(name), attribute);
+        }
+        await page.mouse.down();
+        expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
+        await page.mouse.move(width - 10, 10);
+        await page.mouse.up();
+        await github.focus();
+        await page.keyboard.press("Tab");
+        await expect(close).toBeFocused();
+        expect((await paint(close)).background).toBe("rgba(0, 0, 0, 0)");
+        expect(await close.evaluate((element) => getComputedStyle(element).outlineStyle)).not.toBe(
+          "none",
+        );
+      }
+    }
+  });
+}
+
 test("footer star and corner dismiss retain separate pointer targets", async ({ page }) => {
   await page.goto(`${route}?account&compact`);
   const github = page.getByRole("button", { name: "View bycoda on GitHub", exact: true });
@@ -315,10 +376,12 @@ test("footer star and corner dismiss retain separate pointer targets", async ({ 
   await expect(close).toBeVisible();
   const starBounds = (await github.boundingBox())!;
   const dismissBounds = (await close.boundingBox())!;
-  expect(dismissBounds.x).toBeGreaterThan(starBounds.x + starBounds.width / 2);
-  expect(dismissBounds.y).toBeGreaterThan(starBounds.y + starBounds.height / 2);
+  expect(dismissBounds.x).toBeGreaterThanOrEqual(starBounds.x + starBounds.width / 2);
+  expect(dismissBounds.y).toBeLessThan(starBounds.y);
   expect(dismissBounds.x).toBeLessThan(starBounds.x + starBounds.width);
-  expect(dismissBounds.y).toBeLessThan(starBounds.y + starBounds.height);
+  expect(dismissBounds.y + dismissBounds.height).toBeLessThanOrEqual(
+    starBounds.y + starBounds.height / 2,
+  );
   const targets = await page.evaluate(
     ({ star, dismiss }) => {
       const nameAt = (x: number, y: number) =>
@@ -495,4 +558,64 @@ test("narrow expanded footer retains every action with a long assistant name", a
   expect(await footer.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.mouse.move(700, 10);
   await page.screenshot({ path: `${accountCaptureRoot}/wide-dark-narrow-200-long-name.png` });
+});
+
+test("rail tools share the rail ground and the selected tool shows its plate", async ({ page }) => {
+  mkdirSync(toolsCaptureRoot, { recursive: true });
+  writeFileSync(
+    `${toolsCaptureRoot}/README.md`,
+    "# Rail tools browser evidence\n\nReal RailToolGroup inside a fixture rail; tool selection is browser-local state. These captures do not prove installed-app behavior.\n",
+  );
+  await page.goto(`${route}?tools`);
+  const group = page.getByRole("group", { name: "Workspace tools" });
+  const tool = (name: string) => group.getByRole("button", { name, exact: true });
+  const plate = group.locator("[data-button-group-selection]");
+  // The plate fills its segment (2px inside it), never just the icon's slot.
+  const expectPlateOn = async (segment: Locator) => {
+    await expect(plate).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        const [outer, inner] = [(await segment.boundingBox())!, (await plate.boundingBox())!];
+        return [
+          inner.x - outer.x,
+          inner.y - outer.y,
+          outer.width - inner.width,
+          outer.height - inner.height,
+        ].map(Math.round);
+      })
+      .toEqual([2, 2, 4, 4]);
+  };
+  await expect(tool("Inbox, New items")).toHaveAttribute("aria-current", "page");
+  await expectPlateOn(tool("Inbox, New items"));
+  // The unseen dot stays on the icon whether or not its tool is selected.
+  const dotOffset = async () => {
+    const [icon, dot] = [
+      (await tool("Inbox, New items").locator("svg").first().boundingBox())!,
+      (await tool("Inbox, New items").locator("span[data-appearance]").first().boundingBox())!,
+    ];
+    return [Math.round(dot.x - icon.x), Math.round(dot.y - icon.y)];
+  };
+  const selectedDot = await dotOffset();
+  await tool("Tasks").click();
+  await expectPlateOn(tool("Tasks"));
+  expect(await dotOffset()).toEqual(selectedDot);
+  for (const glass of [false, true]) {
+    await page.evaluate(
+      (on) => document.documentElement.classList.toggle("has-native-glass", on),
+      glass,
+    );
+    for (const theme of ["light", "dark"]) {
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      expect(await group.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
+        "rgba(0, 0, 0, 0)",
+      );
+      await page.mouse.move(1270, 10);
+      await page.screenshot({
+        path: `${toolsCaptureRoot}/tools-${theme}${glass ? "-glass" : ""}.png`,
+      });
+    }
+  }
 });

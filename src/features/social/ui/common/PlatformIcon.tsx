@@ -85,7 +85,10 @@ export function PlatformMark({
   const name = channelName(platform);
   const mark = (
     <span
-      {...surfaceAttributes({ radius: "control", variant: "fill-subtle" }, "social-platform-mark")}
+      {...surfaceAttributes(
+        { radius: size === "xs" ? "field" : "control", variant: "fill-subtle" },
+        "social-platform-mark",
+      )}
       data-size={size}
       role="img"
       aria-label={name}

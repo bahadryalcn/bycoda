@@ -59,15 +59,6 @@
 .row {
   padding: 10px 16px;
 }
-/* Hairline dividers and a quiet hover, like every settings group (V3-013). */
-.row + .row {
-  border-block-start: 1px solid var(--ui-settings-hairline);
-}
-@media (hover: hover) and (pointer: fine) {
-  .row:hover {
-    background: var(--ui-settings-row-hover);
-  }
-}
 .list:empty {
   display: none;
 }

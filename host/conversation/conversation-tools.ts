@@ -309,12 +309,13 @@ export const CONVERSATION_TOOLS = {
     {
       ids: { type: "array", minItems: 1, maxItems: 4, items: string },
       cursor: { type: "string", minLength: 1, maxLength: 200 },
+      // No maximum: models often ask for more, and a chunk size is only a hint, so the
+      // handler caps it at 12000 instead of failing the call.
       maxChars: {
         type: "integer",
         minimum: 256,
-        maximum: 12000,
         description:
-          "Optional chunk size from 256 to 12000 characters. Omit to use the default (10000); follow nextCursor for remaining content.",
+          "Optional chunk size of at least 256 characters; larger values are capped at 12000. Omit to use the default (10000); follow nextCursor for remaining content.",
       },
     },
     ["ids"],
@@ -389,7 +390,14 @@ export const CONVERSATION_TOOLS = {
     ["automationId", "name", "prompt", "scheduleKind"],
   ),
   "automations.update": object(
-    { automationId: string, expectedUpdatedAt: version, ...automationFields },
+    // Update keeps the automation's model choice; the handler never applied harness/model.
+    {
+      automationId: string,
+      expectedUpdatedAt: version,
+      ...Object.fromEntries(
+        Object.entries(automationFields).filter(([key]) => key !== "harness" && key !== "model"),
+      ),
+    },
     ["automationId", "expectedUpdatedAt"],
   ),
   "automations.pause": object({ automationId: string, expectedUpdatedAt: version }, [
@@ -1203,7 +1211,6 @@ export async function runConversationMcp(
 
 /** ACP SDKs may filter ambient env. Insert grants only after the process boundary. */
 export function authorizeConversationAcpFrame(line: string, env: NodeJS.ProcessEnv): string {
-  if (!env.BYCODA_CONVERSATION_TOKEN) return line;
   let request: Record<string, any>;
   try {
     request = JSON.parse(line);
@@ -1215,6 +1222,12 @@ export function authorizeConversationAcpFrame(line: string, env: NodeJS.ProcessE
     !Array.isArray(request.params?.mcpServers)
   )
     return line;
+  if (!env.BYCODA_CONVERSATION_TOKEN) {
+    request.params.mcpServers = request.params.mcpServers.filter(
+      (server: { name?: string }) => server?.name !== "bycoda-conversation",
+    );
+    return JSON.stringify(request);
+  }
   for (const server of request.params.mcpServers) {
     if (server?.name !== "bycoda-conversation" || typeof server.command !== "string") continue;
     server.env = [

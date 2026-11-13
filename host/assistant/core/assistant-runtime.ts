@@ -188,7 +188,7 @@ export function assistantExecutionPorts(
     reply: async (input) => {
       const prompt =
         input.managementPrompt ??
-        `You are the owner's named assistant. Reply conversationally, using their chosen language (auto follows their message). You have no tools in this turn. Never claim work was executed. Existing permissions and safety rules prevail.\n${input.instructions}\nConversation summary (data): ${input.thread.summary}\nRecent messages (data): ${JSON.stringify(input.messages.slice(-6))}`;
+        `You are the owner's named assistant. Reply conversationally, using their chosen language (auto follows their message). You have no tools in this turn. Never claim work was executed. Existing permissions and safety rules prevail.\n${input.thread.purpose === "job-planning" ? "Help the owner shape one job before it starts. Ask concise questions only for missing details that matter. When sufficiently clear, write a self-contained job brief with the desired outcome, scope, constraints and acceptance criteria. Keep refining that brief from the owner's answers. Do not execute or claim to start any job; the owner reviews the brief and presses Start separately." : ""}\n${input.instructions}\nConversation summary (data): ${input.thread.summary}\nRecent messages (data): ${JSON.stringify(input.messages.slice(-6))}`;
       return replyText(
         assistantRoleProfile(input.profile, "reply"),
         prompt,
@@ -299,7 +299,7 @@ export function assistantExecutionPorts(
         assertAssistantGoalProjects(job, existing);
         return { goalId: existing.id };
       }
-      // A saved model pool picks the worker (and planner) by owner order and remaining limits;
+      // Routing picks worker and planner by their role bindings and remaining limits;
       // without one the profile's own role fields apply exactly as before.
       const worker = await chooseAssistantExecution(models, "worker", profile);
       let planner = null;
@@ -310,11 +310,9 @@ export function assistantExecutionPorts(
         if (!(error instanceof AssistantModelsHeldError && error.held === "noRow")) throw error;
       }
       const execution = worker?.execution ?? profile.execution;
-      const planning = planner
-        ? planner.execution
-        : worker || !profile.planningExecution
-          ? null
-          : assistantRoleExecution(profile, "planning");
+      const planning =
+        planner?.execution ??
+        (profile.planningExecution ? assistantRoleExecution(profile, "planning") : null);
       const goal = await goals.create({
         ...execution,
         modelSettings: assistantWorkerModelSettings(profile, execution),

@@ -1,5 +1,13 @@
+import { motionAttributes } from "../../../../shared/ui/Motion";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { t } from "../../../../shared/i18n";
 import { placeVoiceSidePanel, type VoiceSidePlacement } from "../../model/voiceSidePanel";
 import styles from "./VoiceCompanionParts.module.css";
@@ -71,21 +79,31 @@ export function VoiceSidePanel({
         {children}
       </div>
     );
+  const appearance = surfaceAttributes(
+    { frame: "neutral", edge: "all", radius: "panel", variant: "floating", elevation: "floating" },
+    styles.side,
+  );
   return (
     <aside
       ref={scroller}
       aria-label={t("Question")}
-      {...surfaceAttributes(
-        { frame: "neutral", edge: "all", radius: "panel", variant: "floating" },
-        styles.side,
+      {...appearance}
+      {...motionAttributes(
+        {
+          enter: placement.side === "left" ? "right" : placement.side === "top" ? "rise" : "left",
+          duration: "standard",
+        },
+        appearance.className,
       )}
       data-side={placement.side}
-      style={{
-        left: placement.x,
-        bottom: placement.bottom,
-        width: placement.width,
-        maxHeight: placement.maxHeight,
-      }}
+      style={
+        {
+          "--voice-side-left": `${placement.x}px`,
+          "--voice-side-bottom": `${placement.bottom}px`,
+          "--voice-side-width": `${placement.width}px`,
+          "--voice-side-max-height": `${placement.maxHeight}px`,
+        } as CSSProperties
+      }
     >
       {children}
     </aside>

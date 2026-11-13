@@ -38,7 +38,7 @@ export function BrowserStartPage({
             </SectionLabel>
             <ul {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" })}>
               {recents.map((url) => (
-                <li key={url}>
+                <li key={url} {...surfaceAttributes({ separator: "pane-block" })}>
                   <Button
                     variant="item"
                     disabled={disabled}

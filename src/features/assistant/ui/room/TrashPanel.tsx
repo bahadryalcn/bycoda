@@ -65,7 +65,11 @@ export function TrashPanel({
         {entries.length > 0 && (
           <ul {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.list)}>
             {entries.map((entry) => (
-              <ActionHost as="li" className={styles.row} key={entry.id}>
+              <ActionHost
+                as="li"
+                {...surfaceAttributes({ radius: "none", separator: "pane-block" }, styles.row)}
+                key={entry.id}
+              >
                 <div className={styles.text}>
                   <Text as="strong" size="body" tone="inherit" weight="medium" leading="inherit">
                     {entry.title}

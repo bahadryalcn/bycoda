@@ -78,7 +78,8 @@ const header = (action: string) =>
   container.querySelector<HTMLButtonElement>(`[data-explorer-action="${action}"]`)!;
 const nameRowDepth = () => {
   const line = container.querySelector<HTMLElement>("[data-name-row] > div")!;
-  return line.style.paddingInlineStart;
+  expect(line.className).toContain("[padding-inline-start:var(--layout-padding-inline-start)]");
+  return line.style.getPropertyValue("--layout-padding-inline-start");
 };
 
 function contextMenu(el: Element) {

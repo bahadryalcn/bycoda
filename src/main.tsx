@@ -2,6 +2,7 @@ import { QueryProvider } from "./app/QueryProvider";
 // First: later modules read storage while they load.
 import "./app/model/legacyStorageMigration";
 import "./app/model/fileUiAdapters";
+import "./features/model-routing/public/rendererBootstrap";
 import { readToolWindow } from "./app/model/toolWindows";
 import { loadWindowSurface, readHostToolsWindow } from "./app/model/hostToolsWindow";
 import { t, languageReady } from "./shared/i18n";

@@ -6,7 +6,7 @@ import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
-import { Surface } from "../../../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
 import type { AiReport } from "../../model/socialActions";
 import type { ReportState } from "./useCommandScreen";
 
@@ -68,7 +68,12 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
         </div>
       </header>
       {data ? (
-        <div className="command-frame-body command-report-body">
+        <div
+          {...surfaceAttributes(
+            { frame: "pane", edge: "block-start" },
+            "command-frame-body command-report-body",
+          )}
+        >
           <ReportList title={t("Done")} lines={data.done} />
           <ReportList title={t("Results")} lines={data.results} />
           <ReportList title={t("Suggestions")} lines={data.suggestions} />

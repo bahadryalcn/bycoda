@@ -93,7 +93,7 @@ describe("Command screen model", () => {
       (["done", "failed", "queued", "blocked", "undone"] as const).map((status) =>
         activityStatus(action({ status })),
       ),
-    ).toEqual(["succeeded", "failed", "review", "cancelled", "cancelled"]);
+    ).toEqual(["completed", "failed", "review", "cancelled", "cancelled"]);
   });
 
   it("tells the owner what to do for each browser check reason", () => {

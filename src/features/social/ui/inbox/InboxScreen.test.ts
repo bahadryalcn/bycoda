@@ -236,7 +236,7 @@ it("counts failed account checks instead of hiding them", async () => {
   );
 });
 
-it("sends the search text to the Host and explains an empty filtered result without Check now", async () => {
+it("sends the search text to the Host and explains an empty filtered result with reset and toolbar refresh", async () => {
   const fake = fakeClient({
     handlers: {
       "inbox.unified": (input) => {
@@ -258,7 +258,8 @@ it("sends the search text to the Host and explains an empty filtered result with
   const last = fake.of("inbox.unified").at(-1)!;
   expect(last.input).toMatchObject({ filter: { query: "zzz" } });
   expect(element.textContent).toContain("No conversations match these filters.");
-  expect(button("Check now")).toBeUndefined();
+  expect(button("Clear filters")).toBeDefined();
+  expect(button("Check now")!.closest(".inbox-toolbar")).not.toBeNull();
 });
 
 it("names every account the Host cannot read while still listing the rest", async () => {
@@ -318,4 +319,45 @@ it("loads the next page with the Host cursor and appends it", async () => {
     expect.stringContaining("Cy"),
   ]);
   expect(button("Load more")).toBeUndefined();
+});
+
+it("does not show an empty inbox when its list failed and offers retry", async () => {
+  const fake = fakeClient({
+    handlers: {
+      "inbox.unified": () => {
+        throw new Error("offline");
+      },
+    },
+  });
+  await mount(fake.client);
+  expect(element.textContent).toContain("Could not load the inbox. Try again.");
+  expect(element.textContent).not.toContain("No conversations yet.");
+  expect(button("Try again")).toBeDefined();
+});
+
+it("routes an account-free inbox to account setup without syncing", async () => {
+  const fake = fakeClient({
+    accounts: [],
+    handlers: { "inbox.unified": () => ({ items: [], unreadable: [] }) },
+  });
+  const onNavigate = vi.fn();
+  await mount(fake.client, { onNavigate });
+  expect(button("Add account")).toBeDefined();
+  await act(async () => button("Add account")!.click());
+  expect(onNavigate).toHaveBeenCalledWith("accounts");
+  expect(fake.of("inbox.sync")).toEqual([]);
+});
+
+it("reloads Host auto-refresh settings after returning from account settings", async () => {
+  const fake = fakeClient({ pollingEnabled: true });
+  await mount(fake.client);
+  expect(toggle().getAttribute("aria-checked")).toBe("true");
+  await mount(fake.client, { active: false });
+  vi.mocked(fake.client.snapshot).mockResolvedValue({
+    accounts: [account("a1", "Main X")],
+    profiles: [],
+    pollingEnabled: false,
+  } as never);
+  await mount(fake.client, { active: true });
+  expect(toggle().getAttribute("aria-checked")).toBe("false");
 });

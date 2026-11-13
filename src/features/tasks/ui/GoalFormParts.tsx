@@ -24,7 +24,7 @@ export function GoalSection({
       <SectionLabel as="h3">{title}</SectionLabel>
       <div
         {...surfaceAttributes(
-          framed ? { frame: "card", edge: "all", radius: "card" } : {},
+          framed ? { frame: "card", edge: "all", radius: "card", dividers: "card" } : {},
           framed ? "goal-section-rows" : "goal-section-pad",
         )}
       >

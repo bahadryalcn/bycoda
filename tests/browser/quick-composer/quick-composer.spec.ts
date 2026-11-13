@@ -275,3 +275,31 @@ for (const theme of ["light", "dark"] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`quick picker roots preserve IME and draft ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/quick-composer/quick-composer.html?theme=${theme}`);
+      const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
+      await prompt.fill("/");
+      const commands = page.getByRole("listbox", { name: "Commands", exact: true });
+      await expect(commands.getByRole("option").first()).toBeVisible();
+      await prompt.dispatchEvent("keydown", { key: "Enter", isComposing: true });
+      await expect(prompt).toHaveValue("/");
+      await expect(commands).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/picker-roots/quick-commands-${theme}-${width}.png`,
+      });
+      await prompt.fill("Exact retained quick draft");
+      await page.getByRole("button", { name: "alpha", exact: true }).click();
+      const projects = page.getByRole("listbox", { name: "Projects", exact: true });
+      await expect(projects.getByRole("option").first()).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/picker-roots/quick-projects-${theme}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(prompt).toBeFocused();
+      await expect(prompt).toHaveValue("Exact retained quick draft");
+    });

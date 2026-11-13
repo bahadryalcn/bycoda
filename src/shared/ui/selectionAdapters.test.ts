@@ -3,7 +3,7 @@ import { act, createElement, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { Select, NativeSelect } from "./Select";
-import { Checkbox } from "./Checkbox";
+import { Checkbox, CheckboxMark } from "./Checkbox";
 import { Switch } from "./Switch";
 import { SegmentedControl } from "./SegmentedControl";
 import { Slider } from "./Slider";
@@ -54,6 +54,62 @@ it("opts into wrapping virtual choice navigation without changing clamped defaul
 
 let container: HTMLDivElement;
 let root: Root;
+
+it("keeps a decorative selection mark inside its existing action without a nested control", async () => {
+  const select = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        "button",
+        { onClick: select },
+        createElement(CheckboxMark, { checked: true, size: "sm" }),
+        "Select session",
+      ),
+    ),
+  );
+  const mark = container.querySelector<HTMLElement>("[data-checkbox-mark]")!;
+  expect(mark.getAttribute("aria-hidden")).toBe("true");
+  expect(mark.hasAttribute("data-checked")).toBe(true);
+  expect(container.querySelector("input,[role=checkbox]")).toBeNull();
+  expect(container.querySelectorAll("button")).toHaveLength(1);
+  await act(async () => container.querySelector("button")!.click());
+  expect(select).toHaveBeenCalledOnce();
+});
+
+it("keeps padded choice rows interactive without padding the checkbox input", async () => {
+  const checked = vi.fn();
+  const switched = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(Checkbox, {
+          label: "Folder",
+          padding: { inline: "md", block: "sm" },
+          onChange: checked,
+        }),
+        createElement(Switch, {
+          label: "Import",
+          padding: { inline: "md", block: "sm" },
+          onCheckedChange: switched,
+        }),
+      ),
+    ),
+  );
+  const label = container.querySelector<HTMLLabelElement>("label")!;
+  const input = container.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+  const toggle = container.querySelector<HTMLButtonElement>("button[role=switch]")!;
+  expect(label.style.paddingBlock).toBe("var(--space-2)");
+  expect(toggle.style.paddingBlock).toBe("var(--space-2)");
+  expect(input.style.paddingBlock).toBe("");
+  expect(input.hasAttribute("padding")).toBe(false);
+  await act(async () => label.click());
+  await act(async () => toggle.click());
+  expect(input.checked).toBe(true);
+  expect(checked).toHaveBeenCalledOnce();
+  expect(switched).toHaveBeenCalledExactlyOnceWith(true);
+});
 
 it("preserves native uncontrolled form values, validation, reset and mixed checkbox refs", async () => {
   const select = createRef<HTMLSelectElement>();

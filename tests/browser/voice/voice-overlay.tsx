@@ -59,6 +59,8 @@ Object.assign(window, {
     },
     async invoke(cmd: string, args: any) {
       calls.push({ cmd, args });
+      if (cmd === "plugin:window|is_visible" || cmd === "plugin:window|is_focused") return true;
+      if (cmd === "plugin:window|is_minimized") return false;
       if (cmd === "plugin:menu|new") {
         const rid = nativeResourceId++,
           id = args.options?.id ?? `fixture-native-menu-${rid}`;
@@ -178,6 +180,11 @@ const [{ createRoot }, { VoiceOverlayWindow }, settings, i18n] = await Promise.a
   import("../../../src/styles/index.css"),
 ]);
 await i18n.setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
+if (params.has("high-refresh")) {
+  const { noteDisplayRefreshRate } =
+    await import("../../../src/features/settings/model/decorativeMotion");
+  noteDisplayRefreshRate(240);
+}
 settings.saveVoiceSettings({
   ...settings.loadVoiceSettings(),
   enabled: true,

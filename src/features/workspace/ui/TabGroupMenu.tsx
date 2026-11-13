@@ -1,3 +1,4 @@
+import { Divider } from "../../../shared/ui/Divider";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { TextField } from "../../../shared/ui/TextField";
@@ -347,7 +348,7 @@ export function TabGroupMenu({
       ) : null}
       {appearanceItems?.length ? (
         <>
-          <div role="separator" className="my-1 h-px bg-stroke" />
+          <Divider className="my-1" />
           {appearanceItems.map((item) => (
             <MenuRow key={item.id} item={item} onPick={() => pickExtra(item.id)} />
           ))}

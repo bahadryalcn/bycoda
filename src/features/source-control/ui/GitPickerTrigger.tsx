@@ -2,8 +2,7 @@ import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useContext } from "react";
-import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
+import { useNativePopoverHost } from "../../../shared/ui/Popover";
 import type { ComponentPropsWithoutRef } from "react";
 import { ChevronDown, FolderTree, GitBranch } from "../../../shared/ui/icons";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
@@ -24,7 +23,7 @@ export function GitPickerTrigger({
   ...props
 }: Props) {
   useLocale();
-  const host = useContext(NativePopupHost);
+  const host = useNativePopoverHost();
   if (host) return null;
   const Icon = worktree ? FolderTree : GitBranch;
   return (

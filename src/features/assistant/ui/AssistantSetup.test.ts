@@ -130,6 +130,8 @@ vi.mock("../../../shared/i18n", () => ({
   t: (key: string) => key,
   useT: () => (key: string) => key,
   useLocale: () => "en",
+  formatNumber: (value: number, options?: Intl.NumberFormatOptions) =>
+    new Intl.NumberFormat("en", options).format(value),
   translateAt: (_locale: string, key: string) => key,
 }));
 import { AssistantSetup } from "./AssistantSetup";

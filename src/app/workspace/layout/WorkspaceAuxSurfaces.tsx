@@ -38,6 +38,15 @@ export interface WorkspaceAuxSurfacesProps {
   sessions: Session[];
   inboxViewOpen: boolean;
   inboxAskPortal: InboxSessionPortal | null;
+  socialSessionIds?: readonly string[];
+  socialWorkspaceTargets?: Readonly<
+    Record<
+      string,
+      import("../../../features/sessions/public/SessionPanelTargets").SessionPanelTarget
+    >
+  >;
+  socialSessionPortal?: InboxSessionPortal | null;
+  socialVisible?: boolean;
   composerFocused: boolean;
   composerFocusToken: number;
   sessionPaneProps: WorkspaceSessionPaneProps;
@@ -65,6 +74,10 @@ function WorkspaceAuxSurfacesComponent({
   sessions,
   inboxViewOpen,
   inboxAskPortal,
+  socialSessionIds = [],
+  socialWorkspaceTargets = {},
+  socialSessionPortal,
+  socialVisible = false,
   composerFocused,
   composerFocusToken,
   sessionPaneProps,
@@ -97,17 +110,23 @@ function WorkspaceAuxSurfacesComponent({
       ) : null}
       <div className="hidden" aria-hidden>
         {sessions
-          .filter((session) => session.inboxAsk)
+          .filter((session) => session.inboxAsk || socialSessionIds.includes(session.id))
           .map((session) => {
-            const visible = inboxViewOpen && inboxAskPortal?.sessionId === session.id;
+            const social = socialSessionIds.includes(session.id);
+            const portal = social ? socialSessionPortal : inboxAskPortal;
+            const dockVisible =
+              (social ? socialVisible : inboxViewOpen) && portal?.sessionId === session.id;
+            const workspace = social ? socialWorkspaceTargets[session.id] : undefined;
+            const visible = dockVisible || !!workspace?.visible;
             return (
-              <SessionSurface key={session.id} host={visible ? inboxAskPortal.host : undefined}>
+              <SessionSurface key={session.id} host={dockVisible ? portal?.host : workspace?.host}>
                 <SessionPane
                   {...sessionPaneProps}
                   session={session}
+                  embedded={social}
                   visible={visible}
-                  focused={visible}
-                  inSplit={false}
+                  focused={dockVisible || !!workspace?.focused}
+                  inSplit={dockVisible ? false : (workspace?.inSplit ?? false)}
                   composerFocused={composerFocused}
                   composerFocusToken={composerFocusToken}
                 />

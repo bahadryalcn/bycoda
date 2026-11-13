@@ -5,6 +5,15 @@ import { ModalPanel } from "./Modal";
 import { Sheet } from "./Sheet";
 
 describe("ModalPanel", () => {
+  it("opts into the floating surface without changing the default", () => {
+    const props = { title: "Preview", onClose: vi.fn(), children: "Body" };
+    expect(renderToStaticMarkup(createElement(ModalPanel, props))).not.toContain(
+      'data-surface-variant="floating"',
+    );
+    expect(
+      renderToStaticMarkup(createElement(ModalPanel, { ...props, surface: "floating" })),
+    ).toContain('data-surface-variant="floating"');
+  });
   it("names the dialog and close action", () => {
     const markup = renderToStaticMarkup(
       createElement(ModalPanel, {

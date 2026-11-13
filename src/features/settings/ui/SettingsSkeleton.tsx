@@ -1,4 +1,5 @@
 import { SkeletonBar } from "../../../shared/ui/Skeleton";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import "./SettingsLoadingSurface.css";
 
 // Fixed, varied widths so the placeholder reads like real labels without inventing values.
@@ -18,7 +19,7 @@ export function SettingsRowsSkeleton({ rows = 4, start = 0 }: { rows?: number; s
         const control = CONTROL_WIDTHS[at % CONTROL_WIDTHS.length]!;
         const toggle = control === "2.5rem";
         return (
-          <div className="settings-skeleton-row" key={at}>
+          <div {...surfaceAttributes({ separator: "block" }, "settings-skeleton-row")} key={at}>
             <div className="settings-skeleton-label">
               <SkeletonBar width={TITLE_WIDTHS[at % TITLE_WIDTHS.length]} index={at} />
               <SkeletonBar
@@ -52,7 +53,12 @@ export function SettingsGroupsSkeleton({ rows = 6 }: { rows?: number }) {
       {sizes.map((size, group) => (
         <div className="settings-skeleton-group" key={group}>
           <SkeletonBar width={group === 0 ? "9rem" : "7rem"} index={group * sizes[0]!} />
-          <div className="settings-skeleton-frame">
+          <div
+            {...surfaceAttributes(
+              { variant: "card", frame: "card", radius: "card" },
+              "settings-skeleton-frame",
+            )}
+          >
             <SettingsRowsSkeleton rows={size} start={group * sizes[0]!} />
           </div>
         </div>

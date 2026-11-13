@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef } from "react";
@@ -65,7 +66,10 @@ export function CrewWorkList({
   const selectedHidden =
     !!selectedId && !!query.trim() && !runs.some((run) => run.id === selectedId);
   return (
-    <nav aria-label={t("Crew work")} className="flex min-w-0 flex-col bg-transparent">
+    <nav
+      aria-label={t("Crew work")}
+      {...surfaceAttributes({ variant: "transparent" }, "flex min-w-0 flex-col")}
+    >
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
         <SegmentedControl
           label={t("Crew work view")}

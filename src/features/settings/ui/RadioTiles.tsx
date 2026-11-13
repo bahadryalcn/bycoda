@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
+import { RadioGroup, type RadioTileGroupProps } from "../../../shared/ui/RadioGroup";
 
 export type RadioTileOption<T extends string> = {
   value: T;
@@ -8,13 +8,13 @@ export type RadioTileOption<T extends string> = {
   id?: string;
   tooltip?: string;
   /** `data-*` hooks for the tile, such as `{ "data-mode": "dark" }`. */
-  data?: Record<`data-${string}`, string>;
+  data?: Record<`data-${string}`, string | undefined>;
 };
 
 /**
  * A single choice shown as visual tiles (a mode, a crew, a palette sample): `RadioGroup variant="tiles"`
- * with item tiles. The selected tile carries the accent border from the caller's CSS
- * (`[aria-checked="true"]`). Settings Appearance and onboarding use this one tile pattern.
+ * with item tiles. Shared Button selection cues are forwarded through `tile`; caller classes
+ * place the preview. Settings Appearance and onboarding use this one tile pattern.
  */
 export function RadioTiles<T extends string>({
   label,
@@ -23,6 +23,7 @@ export function RadioTiles<T extends string>({
   onChange,
   className,
   tileClassName,
+  tile,
 }: {
   label: string;
   value: T;
@@ -30,6 +31,7 @@ export function RadioTiles<T extends string>({
   onChange: (value: T) => void;
   className?: string;
   tileClassName?: string;
+  tile?: RadioTileGroupProps["tile"];
 }) {
   return (
     <RadioGroup
@@ -38,7 +40,7 @@ export function RadioTiles<T extends string>({
       value={value}
       className={className}
       tileClassName={tileClassName}
-      tile={{ motion: "none" }}
+      tile={{ motion: "none", ...tile }}
       options={options.map(({ children, ...option }) => ({ ...option, content: children }))}
       onValueChange={(next) => onChange(next as T)}
     />

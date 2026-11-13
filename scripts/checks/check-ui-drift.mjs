@@ -55,7 +55,7 @@ export const rules = {
   "role-alert-text": "<p role=alert> / <span role=alert> (use the shared inline error)",
   "role-alert-container": "<div>/<small>/<li>/<section> role=alert (use the shared inline error)",
   "portal-outside-shared":
-    "floating surface outside Popover or OS-window popup owners (use Popover, Modal, Sheet or Tooltip)",
+    "floating surface outside canonical shared overlay owners (use Popover, Modal, Sheet or Tooltip)",
   "ui-wrapper-import":
     "primitive/internal import bypasses shared wrappers (use src/shared/ui/Select, DropdownMenu, Popover, Modal or Tooltip)",
   "component-metadata":
@@ -106,11 +106,15 @@ export const rules = {
   ...appearanceRules,
 };
 
-// Only these owners may position a floating surface directly.
+// Canonical shared overlay owners: anchored popups, dialog/media/sheet layers,
+// toast stacks and OS windows. Legacy self-positioned notices are not owners.
 export const floatingSurfaceOwners = new Set([
   "src/shared/ui/Popover.tsx",
+  "src/shared/ui/Modal.tsx",
+  "src/shared/ui/Sheet.tsx",
+  "src/shared/ui/ImageLightbox.tsx",
+  "src/shared/ui/ToastRegion.tsx",
   "src/shared/ui/NativePopupHost.tsx",
-  "src/shared/ui/NativeSearchableSelect.tsx",
   "src/shared/ui/arc/context-menu/native-context-menu.tsx",
 ]);
 
@@ -347,7 +351,7 @@ const paddingUtility = new RegExp(
 
 /** The className attribute value text (string or braced expression) of an opening tag. */
 function classNameText(span) {
-  const at = span.search(/\sclassName=/);
+  const at = topLevel(span).search(/\sclassName=/);
   if (at < 0) return "";
   let index = span.indexOf("=", at) + 1;
   const open = span[index];
@@ -518,12 +522,14 @@ export function scanFile(file, text, definitions) {
           ? path.posix.normalize(path.posix.join(path.posix.dirname(file), match[1]))
           : match[1].replace(/^@\//, "src/")
       ).replace(/\.(?:tsx?|jsx?)$/, "");
-      const wrapper = /^src\/shared\/ui\/[^/]+\.[jt]sx?$/.test(file);
+      // Shared components may split their implementation into owning subfolders.
+      const wrapper = /^src\/shared\/ui\/.*\.[jt]sx?$/.test(file);
+      // nativeContextMenu only installs a bootstrap event guard; it renders no menu.
       if (
         !wrapper &&
         !file.startsWith("src/shared/ui/arc/") &&
         (/^src\/shared\/ui\/arc(?:\/|$)/.test(target) ||
-          /(?:native-popup\/|\/NativePopupHost$|\/nativePopup(?:\/|$)|\/nativeActionMenu$|\/nativeContextMenu$|\/NativeSearchableSelect$)/.test(
+          /(?:native-popup\/|\/NativePopupHost$|\/nativePopup(?:\/|$)|\/nativeActionMenu$)/.test(
             target,
           ))
       )
@@ -695,7 +701,7 @@ export function scanFile(file, text, definitions) {
     if (
       title >= 0 &&
       !emptyTitle &&
-      tag.name !== "svg" &&
+      !["svg", "iframe"].includes(tag.name) &&
       (/^[a-z]/.test(tag.name) ||
         icons.has(tag.name) ||
         /^(?:Button|InlineAction|InlineTextAction|InlineMoreAction|Badge|Text|Link|TextField|TextareaField|Checkbox|Switch)$/.test(

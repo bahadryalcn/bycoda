@@ -12,7 +12,7 @@ import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Meter, type MeterTone } from "../../../shared/ui/Meter";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { ExternalLink, MessageSquare } from "../../../shared/ui/icons";
+import { ExternalLink, MessageSquare, Briefcase } from "../../../shared/ui/icons";
 import {
   workerContextAction,
   type WorkerContextSettings,
@@ -108,7 +108,11 @@ export function AssistantSessions({
           resetLabel={t("Clear filters")}
           onReset={filtered ? onReset : undefined}
           action={
-            !filtered && onJobs ? <Button onClick={onJobs}>{t("View jobs")}</Button> : undefined
+            !filtered && onJobs ? (
+              <Button startIcon={<Briefcase className="icon-sm" />} onClick={onJobs}>
+                {t("View jobs")}
+              </Button>
+            ) : undefined
           }
         />
       )}
@@ -176,7 +180,10 @@ function ManagedSessionRow({
             ? t("Loading...")
             : t("Unknown");
   return (
-    <ActionHost className={sessionStyles.jobRow} data-assistant-session={id}>
+    <ActionHost
+      {...surfaceAttributes({ frame: "settings", edge: "block-end" }, sessionStyles.jobRow)}
+      data-assistant-session={id}
+    >
       <div className={sessionStyles.jobText}>
         {initialLoad ? (
           <Skeleton lines={2} label={t("Loading session")} className={sessionStyles.skeleton} />

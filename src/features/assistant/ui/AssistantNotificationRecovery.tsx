@@ -1,3 +1,5 @@
+import { Text } from "../../../shared/ui/Text";
+import { RefreshCw } from "../../../shared/ui/icons";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "../../../shared/ui/Badge";
@@ -118,8 +120,10 @@ export function AssistantNotificationRecovery({
   return (
     <Disclosure size="sm" summary={t("Task notification recovery")} onOpenChange={setExpanded}>
       <div className={rt.disclosureBody}>
-        <p>{t("Check the original notification status. This never sends it again.")}</p>
-        {expanded && source === "pending" && <p>{t("Checking Room registration…")}</p>}
+        <Text as="p" size="caption" tone="secondary">
+          {t("Check the original notification status. This never sends it again.")}
+        </Text>
+
         {source === "unavailable" && (
           <InlineError>
             {t("Room registration is unavailable. Reopen the Room to retry.")}
@@ -136,6 +140,11 @@ export function AssistantNotificationRecovery({
           />
           <Button
             variant="secondary"
+            startIcon={<RefreshCw className="icon-sm" />}
+            loading={busy || (expanded && source === "pending")}
+            loadingLabel={
+              source === "pending" ? t("Checking Room registration…") : t("Check notifications")
+            }
             size="sm"
             disabled={!choice || busy || source !== "registered"}
             onClick={() => {
@@ -164,6 +173,7 @@ export function AssistantNotificationRecovery({
             {(row.state === "pending" || row.state === "unknown") && (
               <Button
                 variant="secondary"
+                startIcon={<RefreshCw className="icon-sm" />}
                 size="sm"
                 disabled={busy}
                 onClick={() => {

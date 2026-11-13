@@ -113,6 +113,7 @@ export type ActivityDockInput = {
   blocks: Block[];
   busy: boolean;
   pendingQuestion: boolean;
+  pendingOwnerApproval?: boolean;
   backgroundTasks?: string[];
   backgroundAgents?: number;
   /** Work finished since the user last looked; see `nextUnseenDone`. */
@@ -129,6 +130,7 @@ export function deriveActivityDock({
   blocks,
   busy,
   pendingQuestion,
+  pendingOwnerApproval,
   backgroundTasks,
   backgroundAgents,
   unseenDone,
@@ -161,7 +163,9 @@ export function deriveActivityDock({
   const childNeedsInput = delegatedAgents.some(
     (agent) => agent.needsInput && agent.status === "running",
   );
-  if (busy) {
+  if (pendingOwnerApproval) {
+    state = "needs-input";
+  } else if (busy) {
     state =
       pendingQuestion || hasPendingApproval(blocks) || childNeedsInput
         ? "needs-input"
@@ -192,7 +196,8 @@ export function deriveActivityDock({
   };
 }
 
-function dockAgent(block: Block, busy: boolean): DockAgent[] {
+/** The dock row of one transcript block (native subagent or background command), if it has one. */
+export function dockAgent(block: Block, busy: boolean): DockAgent[] {
   const agent = isSubagentBlock(block);
   if (!agent && !(isToolBlock(block) && block.tool?.background)) return [];
   if (isHiddenTool(block)) return [];

@@ -10,7 +10,7 @@ import { Timestamp } from "../../../shared/ui/Timestamp";
 import { ExternalLink } from "../../../shared/ui/icons";
 import styles from "./AssistantHistory.module.css";
 
-const labels: Record<string, string> = {
+export const assistantActivityLabels: Record<string, string> = {
   "budget.exhausted": "Budget exhausted",
   "chief.woke": "Status reviewed",
   "conversation.replied": "Conversation reply",
@@ -73,7 +73,12 @@ export function AssistantHistory({
           </SectionLabel>
           <ol {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.events)}>
             {events.map((entry) => (
-              <ActionHost as="li" className={styles.event} key={entry.id} hoverReveal>
+              <ActionHost
+                as="li"
+                {...surfaceAttributes({ separator: "pane-block" }, styles.event)}
+                key={entry.id}
+                hoverReveal
+              >
                 <Timestamp
                   className={styles.time}
                   format="time"
@@ -92,7 +97,7 @@ export function AssistantHistory({
                   {entry.summary}
                 </Text>
                 <Badge size="xs" tone={DANGER_KINDS.has(entry.kind) ? "danger" : "neutral"}>
-                  {t(labels[entry.kind] ?? "Activity")}
+                  {t(assistantActivityLabels[entry.kind] ?? "Activity")}
                 </Badge>
                 {(entry.jobId || (entry.sessionId && onOpenSession)) && (
                   <div className={styles.actions}>

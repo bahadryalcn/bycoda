@@ -345,6 +345,37 @@ describe("merge conflicts and blame in the file editor", () => {
     expect(container.querySelector(".cm-blameGutter")).toBeNull();
   });
 
+  it("resizes blame with keyboard, resets it and preserves the document", async () => {
+    localStorage.setItem("bycoda.inlineBlame", "1");
+    disk = "one\ntwo\n";
+    await render(CWD, false);
+    const handle = () =>
+      container.querySelector<HTMLElement>('[role="separator"][aria-label="Blame"]')!;
+    expect(handle()).not.toBeNull();
+    const initial = Number(handle().getAttribute("aria-valuenow"));
+    await act(async () =>
+      handle().dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
+    );
+    expect(Number(handle().getAttribute("aria-valuenow"))).toBe(initial - 16);
+    await act(async () => blameToggle().click());
+    expect(handle()).toBeNull();
+    await act(async () => blameToggle().click());
+    expect(Number(handle().getAttribute("aria-valuenow"))).toBe(initial - 16);
+    await act(async () =>
+      handle().dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", shiftKey: true, bubbles: true }),
+      ),
+    );
+    expect(Number(handle().getAttribute("aria-valuenow"))).toBe(initial + 48);
+    await act(async () =>
+      handle().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(Number(handle().getAttribute("aria-valuenow"))).toBe(initial);
+    expect(view().state.doc.toString()).toBe(disk);
+    await act(async () => blameToggle().click());
+    expect(handle()).toBeNull();
+  });
+
   it("starts with blame on when it was left on", async () => {
     localStorage.setItem("bycoda.inlineBlame", "1");
     disk = "one\ntwo\n";

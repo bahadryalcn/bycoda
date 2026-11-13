@@ -2,10 +2,12 @@ import { EmptyState } from "../../../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
+import { useEffect } from "react";
 import { pickFolders } from "../../../../../platform/tauri/fs";
 import { ASSISTANT_FOLDERS_MAX } from "../../../../../shared/model/assistantFolders";
 import { Alert } from "../../../../../shared/ui/Alert";
 import { Button } from "../../../../../shared/ui/Button";
+import { InfoPopover } from "../../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { FolderPlus, X } from "../../../../../shared/ui/icons";
@@ -15,21 +17,38 @@ import { useAssistantFolders, type FoldersDraftState } from "./useAssistantFolde
 import styles from "./assistantFolders.module.css";
 
 /**
- * Folders the Assistant Room may read and change, and whether it may run commands without asking.
- * Both are owner-only choices saved with the dialog's Save (`saveRef`), under their own version.
- * Reads need no approval; every change and (unless the switch is on) every command still asks.
+ * Assistant Room folder scope and separate command/file-change grants.
+ * Owner-only choices are saved with the dialog's Save (`saveRef`), under their own version.
+ * Reads need no approval; commands and changes ask unless their explicit grant is enabled.
  */
 export function AssistantFoldersSettings({
   request,
   saveRef,
   onDraftStateChange,
+  accessRef,
+  showPermissionControls = true,
 }: {
+  showPermissionControls?: boolean;
   request: typeof assistantRequest;
   saveRef?: { current: (() => Promise<void>) | null };
   onDraftStateChange?: (state: FoldersDraftState) => void;
+  accessRef?: { current: ((runWithoutAsking: boolean) => void) | null };
 }) {
   const state = useAssistantFolders(request, saveRef, onDraftStateChange);
   const { draft } = state;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes the shell access callback with this unsaved folder draft owner.
+  useEffect(() => {
+    // The settings owner changes this draft only after an explicit access choice.
+    if (!accessRef) return;
+    accessRef.current =
+      state.saved && !state.pending
+        ? (runWithoutAsking) =>
+            state.change({ runWithoutAsking, allowChangesWithoutAsking: runWithoutAsking })
+        : null;
+    return () => {
+      accessRef.current = null;
+    };
+  });
   if (state.loading && !state.saved) return <LoadingText>{t("Loading folders…")}</LoadingText>;
   if (!state.saved)
     return (
@@ -50,7 +69,11 @@ export function AssistantFoldersSettings({
       <Row
         label={t("Assistant folders")}
         description={t(
-          "The assistant can read these folders without asking. Every change inside them asks you first. It cannot reach other places on this computer.",
+          !showPermissionControls
+            ? "Choose the folders the assistant can use."
+            : draft.allowChangesWithoutAsking
+              ? "The assistant can read and change these folders without asking."
+              : "The assistant can read these folders without asking. Changes need your approval.",
         )}
         stacked
       >
@@ -103,28 +126,44 @@ export function AssistantFoldersSettings({
           </div>
         </div>
       </Row>
-      <Row
-        label={t("Run commands without asking")}
-        description={t(
-          "Skip the confirmation for each command the assistant runs in these folders and in your projects.",
-        )}
-        feedback={
-          draft.runWithoutAsking ? (
-            <Alert tone="warning">
-              {t(
-                "A command can do anything you can do on this computer. With this on, a mistaken or manipulated request can change or delete files or send data before you see it.",
-              )}
-            </Alert>
-          ) : undefined
-        }
-      >
-        <Toggle
-          label={t("Run commands without asking")}
-          on={draft.runWithoutAsking}
-          disabled={state.pending}
-          onChange={(runWithoutAsking) => state.change({ runWithoutAsking })}
-        />
-      </Row>
+      {showPermissionControls && (
+        <>
+          <Row label={t("Allow file changes without asking")}>
+            <Toggle
+              label={t("Allow file changes without asking")}
+              on={draft.allowChangesWithoutAsking}
+              disabled={state.pending}
+              onChange={(allowChangesWithoutAsking) => state.change({ allowChangesWithoutAsking })}
+            />
+          </Row>
+          <Row
+            label={t("Run commands without asking")}
+            info={
+              <InfoPopover>
+                {t(
+                  "Skip the confirmation for each command the assistant runs in these folders and in your projects.",
+                )}
+              </InfoPopover>
+            }
+            feedback={
+              draft.runWithoutAsking && !accessRef ? (
+                <Alert tone="warning">
+                  {t(
+                    "A command can do anything you can do on this computer. With this on, a mistaken or manipulated request can change or delete files or send data before you see it.",
+                  )}
+                </Alert>
+              ) : undefined
+            }
+          >
+            <Toggle
+              label={t("Run commands without asking")}
+              on={draft.runWithoutAsking}
+              disabled={state.pending}
+              onChange={(runWithoutAsking) => state.change({ runWithoutAsking })}
+            />
+          </Row>
+        </>
+      )}
       {state.error && (
         <InlineError
           retry={

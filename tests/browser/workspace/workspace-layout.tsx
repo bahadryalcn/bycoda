@@ -323,6 +323,8 @@ function Fixture() {
 }
 if (new URLSearchParams(location.search).has("html-link")) {
   localStorage.setItem("bycoda.fileTabMode", "workspace");
+}
+if (new URLSearchParams(location.search).has("theme")) {
   applyThemePreference(
     new URLSearchParams(location.search).get("theme") === "light" ? "light" : "dark",
   );

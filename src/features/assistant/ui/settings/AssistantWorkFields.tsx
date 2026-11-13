@@ -5,6 +5,8 @@ import {
 } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { Text } from "../../../../shared/ui/Text";
 import { AssistantPresetNumber } from "../AssistantProfileControls";
 import { ProfileSelect } from "./ProfileControls";
 import { ExecutionPermissionPicker } from "./ExecutionPermissionPicker";
@@ -15,7 +17,7 @@ import styles from "./work.module.css";
 /**
  * The individual work controls behind the work-mode preset. `jobs` is autonomy, plan approval,
  * job confirmation and routine questions; `budget` is the daily token budget; `permissions` is
- * the execution permission picker. Models live in the model pool editor.
+ * the execution permission picker. Models live in Settings > Models.
  */
 export function AssistantWorkFields({
   value,
@@ -29,6 +31,9 @@ export function AssistantWorkFields({
   const rows = useProfileRows();
   const [workerModelError, setWorkerModelError] = useState("");
   const defaultWorker = useDefaultWorkerExecution();
+  const budgetHelp = t(
+    "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.",
+  );
   function changeAutonomy(next: string) {
     if ((next === "jobs" || next === "chief") && !value.execution) {
       const execution = defaultWorker();
@@ -49,9 +54,16 @@ export function AssistantWorkFields({
         label={t("Daily token budget")}
         value={value.dailyTokenBudget}
         min={ASSISTANT_MIN_DAILY_TOKEN_BUDGET}
-        description={t(
-          "Covers chat and voice replies, supervisor reviews and the jobs the assistant starts. Your own sessions are not counted. At 80% it only reports; at 100% it pauses. Minimum 20,000.",
-        )}
+        description={rows ? undefined : budgetHelp}
+        info={
+          rows ? (
+            <InfoPopover label={t("About daily token budget")}>
+              <Text as="p" size="secondary">
+                {budgetHelp}
+              </Text>
+            </InfoPopover>
+          ) : undefined
+        }
         max={1_000_000_000}
         unit={t("tokens/day")}
         presets={[
@@ -115,6 +127,22 @@ export function AssistantWorkFields({
         checked={value.allowRoutineQuestions ?? false}
         onCheckedChange={(allowRoutineQuestions) => onChange({ allowRoutineQuestions })}
       />
+      {value.execution && (
+        <AssistantPresetNumber
+          label={t("Maximum run time")}
+          value={value.execution.maxRunMinutes}
+          min={1}
+          max={10080}
+          unit={t("minutes")}
+          presets={[
+            { value: 30, label: t("30 minutes") },
+            { value: 60, label: t("1 hour") },
+          ]}
+          onChange={(maxRunMinutes) =>
+            onChange({ execution: { ...value.execution!, maxRunMinutes } })
+          }
+        />
+      )}
       {workerModelError && <InlineError className={styles.wide}>{workerModelError}</InlineError>}
     </>
   );

@@ -168,7 +168,19 @@ it("says plainly that this account has no reply rules and offers no AI review", 
     { projects: [{ id: "p1", name: "Alpha" }] },
   );
   await flush();
-  expect(element.textContent).toContain("No reply rules for this account yet.");
+  expect(element.textContent?.match(/No reply rules for this account yet\./g)).toHaveLength(1);
+  expect(button("Review rules with AI")?.disabled).toBe(true);
+  const description = button("Review rules with AI")?.getAttribute("aria-describedby");
+  expect(description && document.getElementById(description)?.textContent).toBe(
+    "No reply rules for this account yet.",
+  );
+});
+
+it("keeps both the empty state and offline reason when there are no rules", async () => {
+  mount({ sectionSnapshot: snapshotOf([]), request: vi.fn() }, { disabled: true });
+  await flush();
+  expect(element.textContent?.match(/No reply rules for this account yet\./g)).toHaveLength(1);
+  expect(element.textContent).toContain("Connect to this computer to change this account.");
   expect(button("Review rules with AI")?.disabled).toBe(true);
 });
 

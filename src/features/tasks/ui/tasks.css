@@ -33,7 +33,6 @@
 .task-goals-disclosure {
   flex-shrink: 0;
   min-inline-size: 0;
-  border-block-end: 1px solid var(--ui-tone-neutral-border);
 }
 .task-create-sprint-context {
   padding: 0.5rem 1rem 0;
@@ -73,9 +72,6 @@
 }
 .task-session-message[data-role="user"] {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-card-surface);
 }
 .task-session-activity {
   min-inline-size: 0;
@@ -123,10 +119,6 @@
 .task-form-options,
 .task-form-options:empty {
   display: none;
-}
-.task-form-options > * + *,
-.task-form-advanced > div > * + * {
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 .task-workflow-pick {
   display: flex;

@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
 import { AccountMenu, useAccount } from "../../features/account";
 import { useAssistantPresence } from "../../features/assistant/hooks/useAssistantPresence";
 import { AssistantPresenceIndicator } from "../../features/assistant/ui/AssistantPresenceIndicator";
@@ -78,7 +79,7 @@ export function SidebarAccountFooter({
           </Tooltip>
         ) : null}
         <SidebarUpdateFooter repositoryPrompt icon compact={compact} />
-        <div className={styles.personal}>
+        <div {...surfaceAttributes(compact ? { frame: "pane", edge: "top" } : {}, styles.personal)}>
           {settings}
           {account}
         </div>

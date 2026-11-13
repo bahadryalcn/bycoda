@@ -149,6 +149,7 @@ export function ProviderDefaultsSaveBar({
   onTargetChange,
   pending,
   saveState,
+  saving = false,
   onSave,
   onDiscard,
   selection,
@@ -167,6 +168,7 @@ export function ProviderDefaultsSaveBar({
   onTargetChange: (value: string) => void;
   pending: number;
   saveState: DefaultsSaveState;
+  saving?: boolean;
   onSave: () => void;
   onDiscard: () => void;
 }) {
@@ -294,13 +296,14 @@ export function ProviderDefaultsSaveBar({
           />
         </div>
         <div className="provider-defaults-buttons">
-          <Button size="sm" variant="ghost" disabled={pending === 0} onClick={onDiscard}>
+          <Button size="sm" variant="ghost" disabled={saving || pending === 0} onClick={onDiscard}>
             {t("Discard")}
           </Button>
           <Button
             size="sm"
             variant="primary"
-            disabled={pending === 0}
+            disabled={saving || pending === 0}
+            loading={saving}
             success={saveState.state === "saved" && pending === 0}
             successLabel={saveState.state === "saved" && pending === 0 ? t("Saved") : undefined}
             disabledReason={

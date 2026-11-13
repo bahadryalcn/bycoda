@@ -92,7 +92,7 @@ export function CrewMemberForm({
   advancedExtra?: ReactNode;
   autoFocus?: boolean;
   /** The crew's working limits, when the member belongs to a crew; used to say what applies. */
-  policy?: Pick<CrewPolicy, "allowUnknownCost" | "maxEstimatedCost" | "minimumQuality">;
+  policy?: CrewPolicy;
   /** Inside a roster row: the row already edits the role and the pinned model. */
   compact?: boolean;
   /** The machine whose Host keeps model pools (`data.machine.id`); without it automatic members list their own models. */

@@ -638,14 +638,14 @@ test.beforeEach(async ({ page }) => {
           if (new URL(location.href).searchParams.has("inbox-layout")) {
             if (command.endsWith("_status"))
               return { connected: command === "jira_status", login: "fixture" };
-            if (command === "jira_list_issues") {
+            if (command === "jira_list_issues" || command === "jira_list_issue_page") {
               if (inboxRefreshControl.hold) {
                 inboxRefreshControl.calls += 1;
                 await new Promise<void>((resolve) => {
                   inboxRefreshControl.release = resolve;
                 });
               }
-              return Array.from({ length: 12 }, (_, index) => ({
+              const issues = Array.from({ length: 12 }, (_, index) => ({
                 provider: "jira",
                 kind: "jira",
                 id: `fixture-${index}`,
@@ -664,6 +664,7 @@ test.beforeEach(async ({ page }) => {
                 teamName: "Design workspace",
                 projectPath: "G:/wallet/api",
               }));
+              return command === "jira_list_issue_page" ? { issues, nextPageToken: null } : issues;
             }
             if (command === "jira_issue_details")
               return { body: "Fixture issue description", author: "Fixture" };

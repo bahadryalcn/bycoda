@@ -5,12 +5,13 @@ import { useT } from "../../../shared/i18n";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import type { BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { Heading } from "../../../shared/ui/Heading";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Text } from "../../../shared/ui/Text";
 import {
-  CheckCircle,
+  Check,
   CheckList,
   CircleX,
   Clock,
@@ -59,7 +60,7 @@ export function historyKindMeta(
     case "question":
       return { label: t("Question"), Icon: MessageSquare, tone: "warning" };
     case "finished":
-      return { label: t("Finished"), Icon: CheckCircle, tone: "success" };
+      return { label: t("Finished"), Icon: Check, tone: "success" };
     case "failed":
       return { label: t("Failed"), Icon: CircleX, tone: "danger" };
     case "reminder":
@@ -136,7 +137,12 @@ export function HistoryItem({
     runHistoryAction(action, entry, { onOpen, onRemove, inFlight, setBusy, setError, t });
   const kind = historyKindMeta(entry.kind, t);
   return (
-    <ActionHost as="article" className="notification-history-item" data-new={isNew || undefined}>
+    <ActionHost
+      as="article"
+      variant="row"
+      className="notification-history-item"
+      data-new={isNew || undefined}
+    >
       <Button
         fullWidth
         variant="item"
@@ -145,25 +151,18 @@ export function HistoryItem({
         className="notification-row-toggle"
         onClick={() => setExpanded((value) => !value)}
       >
-        <Badge
-          className="notification-history-icon"
-          tone={kind.tone}
-          size="md"
-          icon={<kind.Icon className="icon-sm" strokeWidth={1.75} aria-hidden />}
-          data-tone={kind.tone}
-          aria-hidden
-        />
+        <kind.Icon className="notification-history-icon icon-md" tone={kind.tone} aria-hidden />
         <span className="notification-history-text">
           <span className="notification-history-head">
-            <Text
+            <Heading
+              as="div"
               className="notification-history-title"
-              size="inherit"
-              tone="inherit"
-              weight="medium"
-              truncate
+              size="item"
+              tone="primary"
+              lines={expanded ? undefined : 2}
             >
               {historyTitle(entry) || t("Untitled")}
-            </Text>
+            </Heading>
             {isNew ? (
               <>
                 <StatusDot className="notification-new-dot" tone="accent" />
@@ -175,31 +174,23 @@ export function HistoryItem({
           <Text
             className={expanded ? "notification-history-label" : "notification-history-preview"}
             lines={expanded ? undefined : 2}
+            size="caption"
+            tone="secondary"
+            weight="regular"
             leading="normal"
           >
             {entry.label}
           </Text>
-          <Text className="notification-history-meta">
-            {entry.cwd ? (
-              <NotificationProjectLabel cwd={entry.cwd} />
-            ) : (
-              <Text
-                as="span"
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className="notification-project"
-              />
-            )}
-            <span aria-hidden>·</span>
+          <Text className="notification-history-meta" size="caption" weight="regular">
+            {entry.cwd ? <NotificationProjectLabel cwd={entry.cwd} /> : null}
             <span className="notification-history-kind" data-tone={kind.tone}>
               {kind.label}
             </span>
+            <Text className="notification-history-time" tone="muted" weight="regular">
+              <Timestamp value={entry.occurredAt} format="relative" relativeStyle="narrow" />
+            </Text>
           </Text>
         </span>
-        <Text className="notification-history-time" tone="muted">
-          <Timestamp value={entry.occurredAt} format="relative" relativeStyle="narrow" />
-        </Text>
       </Button>
       {expanded ? (
         <div className="notification-history-details" data-no-drag="">
@@ -251,6 +242,7 @@ export function NotificationProjectLabel({ cwd }: { cwd: string }) {
         as="span"
         size="caption"
         tone="secondary"
+        weight="regular"
         leading="inherit"
         className="notification-project"
       >

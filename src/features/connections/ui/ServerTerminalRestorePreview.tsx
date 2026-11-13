@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
@@ -67,7 +68,7 @@ export function ServerTerminalRestorePreview({
           </Button>
         ) : null}
       </div>
-      <ul className="flex max-h-64 flex-col divide-y divide-stroke overflow-y-auto">
+      <ul {...surfaceAttributes({ dividers: "stroke" }, "flex max-h-64 flex-col overflow-y-auto")}>
         {restore.tabs.map((tab, index) => {
           const server = servers.find((record) => record.id === tab.serverId);
           const endpoint = server?.effectiveSshEndpoint ?? server?.sshEndpoint;

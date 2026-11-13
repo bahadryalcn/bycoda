@@ -19,7 +19,6 @@ const modules: Record<string, string[]> = {
   "Checkbox.module.css": [".checkbox"],
   "ButtonGroup.module.css": [".group"],
   "SplitButton.module.css": [".group"],
-  "NativeSearchableSelect.module.css": [".root"],
   "MiddleTruncate.module.css": [".root"],
   "SearchInput.module.css": ['.input[data-search-appearance="field"]'],
   "ActionHost.module.css": [".host"],

@@ -1,3 +1,5 @@
+import { Badge } from "../../../../shared/ui/Badge";
+import { Divider } from "../../../../shared/ui/Divider";
 import { Text } from "../../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
@@ -18,6 +20,8 @@ export type ActivityKind = "reply" | "publish" | "message" | "audience" | "other
 
 export type ActivityRowProps = {
   title: string;
+  /** Draw the connector to the next entry in a timeline group. */
+  connected?: boolean;
   /** Already formatted time, for example from the shared Timestamp helpers. */
   time: string;
   status: StatusTextStatus;
@@ -42,6 +46,7 @@ type StatusTone = "accent" | "info" | "success" | "warning" | "danger" | "neutra
 function statusTone(status: StatusTextStatus): StatusTone {
   switch (status) {
     case "succeeded":
+    case "completed":
       return "success";
     case "failed":
       return "danger";
@@ -82,13 +87,25 @@ function KindIcon({ kind, neutral }: { kind?: ActivityKind; neutral: boolean }) 
 }
 
 /** One activity entry: what happened, its status, its detail and Undo. */
-export function ActivityRow({ title, time, status, kind, meta, details, undo }: ActivityRowProps) {
+export function ActivityRow({
+  title,
+  time,
+  status,
+  kind,
+  meta,
+  details,
+  undo,
+  connected = false,
+}: ActivityRowProps) {
   return (
     <div className="social-activity-row">
+      {connected ? (
+        <Divider decorative orientation="vertical" className="social-activity-connector" />
+      ) : null}
       <ActionHost className="social-activity-head">
-        <span className="social-activity-icon" data-tone={statusTone(status)} aria-hidden="true">
+        <Badge shape="icon" tone={statusTone(status)} aria-hidden="true">
           <KindIcon kind={kind} neutral={statusTone(status) === "neutral"} />
-        </span>
+        </Badge>
         <div className="social-activity-main">
           <Text size="body" tone="primary" leading="inherit" className="social-activity-title">
             {title}

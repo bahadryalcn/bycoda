@@ -23,6 +23,8 @@ import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { SkillPicker } from "./SkillPicker";
 import { Popover } from "../../../shared/ui/Popover";
 import { PromptField } from "../../../shared/ui/PromptField";
+import { DraftToken } from "../../../shared/ui/DraftToken";
+import { Sparkles } from "../../../shared/ui/icons";
 import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
 
 type Props = {
@@ -198,7 +200,7 @@ export function SkillPromptField({
           gap={4}
           width={300}
           maxHeight={194}
-          style={{ animation: "none" }}
+          motion="none"
           onDismiss={() => setSlash(null)}
           data-skill-suggestions
         >
@@ -258,9 +260,32 @@ function SkillPromptHighlight({
         );
 
         return part.skill ? (
-          <span key={index} className="text-skill">
-            {content}
-          </span>
+          <DraftToken
+            key={index}
+            className="text-skill"
+            prefix={
+              localAnchor === 0 ? (
+                <span ref={anchorRef} data-skill-anchor className="inline-block">
+                  {part.text[0]}
+                </span>
+              ) : (
+                part.text[0]
+              )
+            }
+            icon={<Sparkles />}
+          >
+            {localAnchor > 0 ? (
+              <>
+                {part.text.slice(1, localAnchor)}
+                <span ref={anchorRef} data-skill-anchor className="inline-block">
+                  {part.text[localAnchor]}
+                </span>
+                {part.text.slice(localAnchor + 1)}
+              </>
+            ) : (
+              part.text.slice(1)
+            )}
+          </DraftToken>
         ) : (
           <span key={index}>{content}</span>
         );

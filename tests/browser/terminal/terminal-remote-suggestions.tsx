@@ -57,8 +57,8 @@ export function RemoteSuggestionsFixture() {
   }, []);
   const shell: SshShellController = {
     state: snapshot,
-    waiting: false,
-    error: "",
+    waiting: new URLSearchParams(location.search).has("waiting"),
+    error: new URLSearchParams(location.search).has("failed") ? "Fixture shell unavailable" : "",
     automatic: true,
     source: "commands",
     request: async () => refresh(),

@@ -1,3 +1,4 @@
+import { voiceReplyModel } from "./voiceReplyModel";
 import { shouldWaitForVoice } from "./voiceSpeechPolicy";
 import { buildVoicePrompt } from "./voicePrompt";
 import {
@@ -8,10 +9,6 @@ import {
 } from "../../../integrations/harness";
 import { nativeModelId } from "../../sessions/model/models";
 import { sessionWorkCwd, type Session } from "../../sessions/model/session";
-import {
-  sessionProviderAccountId,
-  supportsProviderAccounts,
-} from "../../providers/model/providerAccounts";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { homeDir } from "../../../platform/tauri/fs";
 import { t } from "../../../shared/i18n";
@@ -220,15 +217,15 @@ export function voiceModelSettings(
   };
 }
 
-async function voiceRequest(session: Session) {
+export async function voiceRequest(session: Session) {
+  const target = await voiceReplyModel(session);
+  if (!canRunHarnessTextPrompt(target.harness))
+    throw new Error("Select a signed-in provider that supports voice side conversations.");
   return {
-    harness: session.harness,
+    ...target,
     cwd: isRemoteProjectPath(session.cwd) ? await homeDir() : sessionWorkCwd(session),
-    providerAccountId: supportsProviderAccounts(session.harness)
-      ? sessionProviderAccountId(session.harness, session)
-      : undefined,
-    model: nativeModelId(session.model),
-    modelSettings: voiceModelSettings(session.modelSettings),
+    model: nativeModelId(target.model),
+    modelSettings: voiceModelSettings(target.modelSettings),
   };
 }
 
@@ -236,9 +233,12 @@ async function voiceRequest(session: Session) {
  * about ten seconds; each reply consumes the warm process, so call this again
  * after every reply. Failures only mean the next reply starts cold. */
 export async function warmVoiceReply(session: Session): Promise<void> {
-  if (!canRunHarnessTextPrompt(session.harness)) return;
-  const { harness, cwd, ...options } = await voiceRequest(session);
-  await warmupHarnessText(harness, cwd, options).catch(() => undefined);
+  try {
+    const { harness, cwd, ...options } = await voiceRequest(session);
+    await warmupHarnessText(harness, cwd, options);
+  } catch {
+    /* Warmup failure leaves the next spoken turn cold. */
+  }
 }
 
 /** Isolated, read-only companion request using the session's existing signed-in provider.
@@ -253,10 +253,6 @@ export async function converseWithSession(
 ): Promise<VoiceDecision> {
   const immediate = immediateVoiceDecision(transcript, session);
   if (immediate) return immediate;
-  if (!canRunHarnessTextPrompt(session.harness))
-    throw new Error(
-      "This session's provider does not support side conversations. Select a supported signed-in provider.",
-    );
   const sentences = onSentence
     ? replySentences((sentence) => {
         if (!signal.aborted) onSentence(sentence);

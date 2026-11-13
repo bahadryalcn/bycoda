@@ -23,7 +23,7 @@ export function ProviderRuntimeGroup({
     <Group layout="full" title={t("Options")}>
       {/* The one-column layout has no provider list, so its picker switch moves here. */}
       {isHarnessAvailable(harness) ? (
-        <div className="provider-picker-narrow">
+        <div className="provider-picker-narrow" data-settings-part="narrow-picker">
           <Row label={t("Show in picker")}>
             <Toggle
               label={t("Show {p0} in the model picker", { p0: HARNESS_TITLE[harness] })}

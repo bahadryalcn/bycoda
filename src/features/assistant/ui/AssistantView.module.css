@@ -91,10 +91,6 @@
   gap: 10px;
   min-inline-size: 0;
 }
-/* The field presentation is sized for body copy; here it sits beside Select and TextField. */
-.modelField button:global(.model-picker-field-trigger)[data-model-picker-presentation="field"] {
-  font-weight: 400;
-}
 .content[data-view="Conversations"] {
   display: flex;
   flex-direction: column;

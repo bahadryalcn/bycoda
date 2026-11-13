@@ -1,3 +1,5 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -68,7 +70,12 @@ export function InboxScopeCollection({
   };
 
   return (
-    <div className="settings-collection">
+    <div
+      {...surfaceAttributes(
+        { variant: "card", frame: "settings", radius: "card" },
+        "settings-collection",
+      )}
+    >
       <CollectionToolbar
         label={searchLabel}
         query={query}
@@ -105,7 +112,7 @@ export function InboxScopeCollection({
       </CollectionToolbar>
       <ScrollArea
         gutter="stable"
-        className="settings-collection-list"
+        {...surfaceAttributes({ separator: "block" }, "settings-collection-list")}
         role="group"
         aria-label={label}
         aria-busy={loading || undefined}
@@ -133,41 +140,43 @@ export function InboxScopeCollection({
           )
         ) : null}
         {matching.map((item) => (
-          <Checkbox
-            checked={selected.has(item.id)}
-            disabled={disabled}
-            onChange={(event) => select([item.id], event.target.checked)}
-            label={
-              <>
-                <span className="settings-collection-main">
-                  <Text
-                    as="span"
-                    size="secondary"
-                    tone="primary"
-                    weight="regular"
-                    leading="normal"
-                    truncate
-                    className="settings-collection-title"
-                  >
-                    {item.title}
-                  </Text>
-                  {item.meta ? (
+          <ActionHost key={item.id} {...surfaceAttributes({ radius: "none", separator: "block" })}>
+            <Checkbox
+              checked={selected.has(item.id)}
+              disabled={disabled}
+              onChange={(event) => select([item.id], event.target.checked)}
+              label={
+                <>
+                  <span className="settings-collection-main">
                     <Text
                       as="span"
-                      size="caption"
-                      tone="muted"
+                      size="secondary"
+                      tone="primary"
+                      weight="regular"
                       leading="normal"
-                      className="settings-collection-meta"
+                      truncate
+                      className="settings-collection-title"
                     >
-                      {item.meta}
+                      {item.title}
                     </Text>
-                  ) : null}
-                </span>
-              </>
-            }
-            key={item.id}
-            className="settings-collection-row inbox-scope-row"
-          />
+                    {item.meta ? (
+                      <Text
+                        as="span"
+                        size="caption"
+                        tone="muted"
+                        leading="normal"
+                        className="settings-collection-meta"
+                      >
+                        {item.meta}
+                      </Text>
+                    ) : null}
+                  </span>
+                </>
+              }
+
+              className={"settings-collection-row inbox-scope-row" + " w-full"}
+            />
+          </ActionHost>
         ))}
       </ScrollArea>
     </div>

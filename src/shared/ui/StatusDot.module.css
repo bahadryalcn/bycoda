@@ -1,3 +1,5 @@
+@layer properties, theme, base, components, utilities;
+
 .dot {
   display: inline-block;
   flex: none;
@@ -15,6 +17,9 @@
 }
 .dot[data-tone="secondary"] {
   background: var(--ui-text-secondary);
+}
+.dot[data-tone="muted"] {
+  background: var(--ui-text-muted);
 }
 .dot[data-tone="neutral"] {
   background: var(--ui-tone-neutral-fg);
@@ -35,5 +40,79 @@
   .dot:not([data-preserve-colors]) {
     background: CanvasText;
     forced-color-adjust: none;
+  }
+}
+
+@layer components {
+  .dot[data-appearance="attention"] {
+    position: relative;
+  }
+}
+.dot[data-appearance="attention"] {
+  inline-size: 8px;
+  block-size: 8px;
+  background: var(--ui-interaction-accent);
+  box-shadow: 0 0 0 2px var(--ui-surface);
+}
+.dot[data-shape="diamond"] {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: calc(var(--ui-control-radius) / 3);
+  outline: 2px solid var(--ui-surface);
+  rotate: 45deg;
+}
+.dot[data-halo="floating"] {
+  box-shadow: 0 0 0 2px var(--ui-surface-floating);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .dot[data-appearance="attention"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    animation: attention-ping 2.4s var(--motion-ease-enter) infinite;
+  }
+  @keyframes attention-ping {
+    0% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    70%,
+    100% {
+      opacity: 0;
+      transform: scale(2.4);
+    }
+  }
+}
+
+@media (forced-colors: active) {
+  .dot[data-appearance="attention"]:not([data-preserve-colors]) {
+    background: CanvasText;
+    box-shadow: 0 0 0 2px Canvas;
+  }
+}
+
+.dot[data-appearance="presence"] {
+  inline-size: 0.5625rem;
+  block-size: 0.5625rem;
+}
+.dot[data-appearance="presence"][data-tone="success"] {
+  background: var(--ui-tone-success-solid);
+}
+.dot[data-appearance="presence"][data-tone="warning"] {
+  background: var(--ui-tone-warning-solid);
+}
+.dot[data-appearance="presence"][data-tone="danger"] {
+  background: var(--ui-tone-danger-solid);
+}
+.dot[data-appearance="presence"][data-hollow] {
+  background: none;
+  border: 1.5px solid currentColor;
+}
+@media (forced-colors: active) {
+  .dot[data-appearance="presence"]:not([data-preserve-colors]) {
+    background: CanvasText;
+    border: 1px solid CanvasText;
   }
 }

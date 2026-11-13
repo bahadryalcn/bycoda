@@ -1,16 +1,18 @@
+import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 /** Different job: Folder navigation opens directories; its separate membership checkbox selects folders without navigating. */
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useT } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   createPath,
   homeDir,
@@ -49,6 +51,7 @@ async function settleAction(
 
 export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   const t = useT();
+  const keyboardHelpId = useId();
   const [directory, setDirectory] = useState("");
   const [home, setHome] = useState("");
   const [roots, setRoots] = useState<string[]>(IS_WIN ? [] : ["/"]);
@@ -76,6 +79,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
       : "Open in File Manager";
   const parent = directory ? parentPath(directory) : "";
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Initializes the mounted picker's OS home/drive snapshot and cancels late native replies on unmount.
   useEffect(() => {
     mounted.current = true;
     if (IS_WIN)
@@ -107,6 +111,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
     };
   }, []);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the open directory's filesystem snapshot and list focus synchronized with native navigation and refresh.
   useEffect(() => {
     if (!directory) return;
     const id = ++request.current;
@@ -131,6 +136,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
     );
   }, [directory, revision]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the active keyboard option visible in the scrolling DOM list.
   useEffect(() => {
     listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
   }, [active]);
@@ -172,8 +178,10 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   }
 
   return (
-    <Modal padding="none" title={title} onClose={onClose} minimalHeader size="md">
-      <div
+    <Modal padding="none" scroll="none" title={title} onClose={onClose} minimalHeader size="md">
+      <FieldGroup
+        variant="bare"
+        aria-label={title}
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
             event.preventDefault();
@@ -181,107 +189,117 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           }
         }}
       >
-        <div className="flex items-center gap-2 border-b border-stroke p-3 pr-12">
-          <Button
-            variant="secondary"
-            motion="none"
-            type="button"
-            aria-label={t("Parent folder")}
-            tooltip={t("Parent folder")}
-            shortcut="Backspace"
-            disabled={busy || !directory || pathKey(parent) === pathKey(directory)}
-            onClick={() => navigate(parent)}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div
+            {...surfaceAttributes(
+              { frame: "stroke", edge: "bottom" },
+              "flex shrink-0 items-center gap-2 p-3 pe-12",
+            )}
           >
-            <ArrowLeft className="icon-md" />
-          </Button>
-          <form
-            className="min-w-0 flex-1"
-            onSubmit={(event) => {
-              event.preventDefault();
-              let path = slash(pathInput.trim());
-              if (path === "~") path = home;
-              else if (path.startsWith("~/")) path = `${home}/${path.slice(2)}`;
-              if (path) {
-                navigate(path);
-                setRevision((value) => value + 1);
-              }
-            }}
-          >
-            <TextField
-              hideLabel
-              label=""
-              aria-label={t("Folder path")}
-              title={directory}
-              value={pathInput}
-              onChange={(event) => setPathInput(event.target.value)}
-              placeholder={t("Folder path…")}
-              disabled={busy}
-              className="w-full"
-            />
-          </form>
-          <Button
-            variant="secondary"
-            motion="none"
-            type="button"
-            shortcut="Mod+Enter"
-            disabled={busy || loading || !directory || loadFailed}
-            onClick={pick}
-          >
-            {t("Add")}
-            {selected.length ? ` (${selected.length})` : ""}
-          </Button>
-        </div>
-        <nav
-          aria-label={t("Locations")}
-          className="flex flex-wrap gap-1 border-b border-stroke px-3 py-2"
-        >
-          <Button
-            variant="secondary"
-            motion="none"
-            type="button"
-            disabled={busy || !home}
-            onClick={() => navigate(home)}
-          >
-            {t("Home folder")}
-          </Button>
-          {roots.map((path) => (
             <Button
               variant="secondary"
               motion="none"
-              key={path}
               type="button"
-              disabled={busy}
-              aria-current={pathKey(path) === pathKey(directory) ? "location" : undefined}
-              onClick={() => navigate(path)}
+              aria-label={t("Parent folder")}
+              tooltip={t("Parent folder")}
+              shortcut="Backspace"
+              disabled={busy || !directory || pathKey(parent) === pathKey(directory)}
+              onClick={() => navigate(parent)}
             >
-              {path}
+              <ArrowLeft className="icon-md" />
             </Button>
-          ))}
-        </nav>
-        <div className="px-3 py-2">
-          <SearchInput
-            standalone
-            aria-label={t("Search folders")}
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setActive(0);
-            }}
-          />
-        </div>
-        <Tooltip
-          label={t("↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close")}
-          asChild
-        >
-          <div
+            <form
+              className="min-w-0 flex-1"
+              onSubmit={(event) => {
+                event.preventDefault();
+                let path = slash(pathInput.trim());
+                if (path === "~") path = home;
+                else if (path.startsWith("~/")) path = `${home}/${path.slice(2)}`;
+                if (path) {
+                  navigate(path);
+                  setRevision((value) => value + 1);
+                }
+              }}
+            >
+              <TextField
+                hideLabel
+                label=""
+                aria-label={t("Folder path")}
+
+                value={pathInput}
+                onChange={(event) => setPathInput(event.target.value)}
+                placeholder={t("Folder path…")}
+                disabled={busy}
+                className="w-full"
+              />
+            </form>
+            <Button
+              variant="secondary"
+              motion="none"
+              type="button"
+              shortcut="Mod+Enter"
+              disabled={busy || loading || !directory || loadFailed}
+              onClick={pick}
+            >
+              {t("Add")}
+              {selected.length ? ` (${selected.length})` : ""}
+            </Button>
+          </div>
+          <nav
+            aria-label={t("Locations")}
+            {...surfaceAttributes(
+              { frame: "stroke", edge: "bottom" },
+              "flex shrink-0 flex-wrap gap-1 px-3 py-2",
+            )}
+          >
+            <Button
+              variant="secondary"
+              motion="none"
+              type="button"
+              disabled={busy || !home}
+              onClick={() => navigate(home)}
+            >
+              {t("Home folder")}
+            </Button>
+            {roots.map((path) => (
+              <Button
+                variant="secondary"
+                motion="none"
+                key={path}
+                type="button"
+                disabled={busy}
+                aria-current={pathKey(path) === pathKey(directory) ? "location" : undefined}
+                onClick={() => navigate(path)}
+              >
+                {path}
+              </Button>
+            ))}
+          </nav>
+          <div className="shrink-0 px-3 py-2">
+            <SearchInput
+              standalone
+              aria-label={t("Search folders")}
+              placeholder={t("Search folders")}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setActive(0);
+              }}
+            />
+          </div>
+          <Text id={keyboardHelpId} className="sr-only">
+            {t("↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close")}
+          </Text>
+          <PickerListRoot
             ref={listRef}
-            role="listbox"
-            aria-label={t("Folders")}
-            aria-multiselectable={multiple || undefined}
+
+            label={t("Folders")}
+            aria-describedby={keyboardHelpId}
+            multiple={multiple}
             tabIndex={0}
             aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
 
-            className="h-[min(340px,50vh)] overflow-y-auto overscroll-none "
+            className="h-[min(340px,50dvh)] min-h-0 shrink overflow-y-auto overscroll-none px-3 py-2"
             onKeyDown={(event) => {
               if (busy || loading) return;
               if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -329,7 +347,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                     ? selected.some((path) => pathKey(path) === pathKey(entry.path))
                     : index === active
                 }
-                className="flex items-center"
+                className="flex items-center gap-1"
               >
                 {multiple ? (
                   <Checkbox
@@ -342,7 +360,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                           : paths.filter((path) => pathKey(path) !== pathKey(entry.path)),
                       )
                     }
-                    className="ml-2"
+                    className="shrink-0"
                     disabled={busy}
                   />
                 ) : null}
@@ -357,7 +375,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                   disabled={busy}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => navigate(entry.path)}
-                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-start"
                 >
                   <Folder tone="muted" className="icon-md shrink-0" />
                   <Text size="inherit" tone="inherit" truncate>
@@ -366,104 +384,116 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                 </Button>
               </ActionHost>
             ))}
-          </div>
-        </Tooltip>
-        {newName !== null ? (
-          <form
-            className="flex items-center gap-2 border-t border-stroke px-3 py-2"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void createFolder();
-            }}
-          >
-            <FolderPlus tone="muted" className="icon-md shrink-0" />
-            <TextField
-              hideLabel
-              label=""
-              autoFocus
-              aria-label={t("New folder name")}
-              placeholder={t("Folder name…")}
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              disabled={busy}
-              className="min-w-0 flex-1"
-            />
-            <Button variant="secondary" motion="none" type="submit" disabled={busy}>
-              {t("Create")}
-            </Button>
-            <Button
-              variant="secondary"
-              motion="none"
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                setNewName(null);
-                setError(undefined);
-                listRef.current?.focus();
+          </PickerListRoot>
+          {newName !== null ? (
+            <form
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "top" },
+                "flex shrink-0 flex-wrap items-center gap-2 px-3 py-2",
+              )}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void createFolder();
               }}
             >
-              {t("Cancel")}
-            </Button>
-          </form>
-        ) : null}
-        {error ? (
-          <div className="flex items-center gap-2 px-3 py-2">
-            <Alert tone="danger">{error}</Alert>
+              <div className="flex min-w-0 flex-[1_1_12rem] items-center gap-2">
+                <FolderPlus tone="muted" className="icon-md shrink-0" />
+                <TextField
+                  hideLabel
+                  label=""
+                  autoFocus
+                  aria-label={t("New folder name")}
+                  placeholder={t("Folder name…")}
+                  value={newName}
+                  onChange={(event) => setNewName(event.target.value)}
+                  disabled={busy}
+                  className="min-w-0 flex-1"
+                />
+              </div>
+              <Button variant="secondary" motion="none" type="submit" disabled={busy}>
+                {t("Create")}
+              </Button>
+              <Button
+                variant="secondary"
+                motion="none"
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setNewName(null);
+                  setError(undefined);
+                  listRef.current?.focus();
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            </form>
+          ) : null}
+          {error ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
+              <Alert tone="danger" className="min-w-0 flex-[1_1_12rem]">
+                {error}
+              </Alert>
+              <Button
+                variant="secondary"
+                motion="none"
+                type="button"
+                disabled={busy}
+                onClick={() => setRevision((value) => value + 1)}
+              >
+                {t("Retry")}
+              </Button>
+            </div>
+          ) : null}
+          <div
+            {...surfaceAttributes(
+              { frame: "stroke", edge: "top" },
+              "flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2",
+            )}
+          >
             <Button
               variant="secondary"
               motion="none"
               type="button"
-              disabled={busy}
-              onClick={() => setRevision((value) => value + 1)}
+              tooltip={t("Create a folder in the current directory")}
+              disabled={busy || loading || !directory}
+              onClick={() => {
+                setNewName("");
+                setError(undefined);
+              }}
             >
-              {t("Retry")}
+              <FolderPlus className="icon-sm" />
+              {t("New folder")}
+            </Button>
+            <Button
+              variant="secondary"
+              motion="none"
+              type="button"
+              tooltip={t("Choose a drive, network location or folders using the system picker")}
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const paths = await pickNativeFolders(title, multiple);
+                  if (paths.length && mounted.current) onPick(paths);
+                })
+              }
+            >
+              {t("Browse…")}
+            </Button>
+            <Button
+              variant="secondary"
+              motion="none"
+              type="button"
+              tooltip={managerLabel}
+              tooltipDetails={[prettyCwd(directory)]}
+              disabled={busy || loading || !directory}
+              onClick={() => void run(() => openPathWithDefaultApp(directory))}
+            >
+              <FolderOpen className="icon-sm" />
+              {managerLabel}
             </Button>
           </div>
-        ) : null}
-        <div className="flex flex-wrap items-center justify-between gap-1 border-t border-stroke px-2 py-2">
-          <Button
-            variant="secondary"
-            motion="none"
-            type="button"
-            tooltip={t("Create a folder in the current directory")}
-            disabled={busy || loading || !directory}
-            onClick={() => {
-              setNewName("");
-              setError(undefined);
-            }}
-          >
-            <FolderPlus className="icon-sm" />
-            {t("New folder")}
-          </Button>
-          <Button
-            variant="secondary"
-            motion="none"
-            type="button"
-            tooltip={t("Choose a drive, network location or folders using the system picker")}
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                const paths = await pickNativeFolders(title, multiple);
-                if (paths.length && mounted.current) onPick(paths);
-              })
-            }
-          >
-            {t("Browse…")}
-          </Button>
-          <Button
-            variant="secondary"
-            motion="none"
-            type="button"
-            tooltip={managerLabel}
-            tooltipDetails={[prettyCwd(directory)]}
-            disabled={busy || loading || !directory}
-            onClick={() => void run(() => openPathWithDefaultApp(directory))}
-          >
-            <FolderOpen className="icon-sm" />
-            {managerLabel}
-          </Button>
         </div>
-      </div>
+      </FieldGroup>
     </Modal>
   );
 }

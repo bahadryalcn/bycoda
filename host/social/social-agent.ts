@@ -14,6 +14,8 @@ export function socialAgentGenerator(directory: string): SocialTextGenerator {
       harness: agent.provider,
       cwd,
       model: agent.model ? nativeModelId(agent.model) : undefined,
+      ...(agent.providerAccountId ? { providerAccountId: agent.providerAccountId } : {}),
+      ...(agent.modelSettings ? { modelSettings: agent.modelSettings } : {}),
       prompt,
       intent: "plan",
       ephemeral: true,

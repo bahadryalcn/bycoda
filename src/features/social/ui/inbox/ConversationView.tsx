@@ -49,7 +49,20 @@ export function ConversationView({
 
   if (!threadId) return <EmptyHint message={t("Choose a conversation to read and reply.")} />;
   if (thread.isPending) return <LoadingText>{t("Loading conversation…")}</LoadingText>;
-  if (!thread.data) return <InlineError>{t("This conversation could not be opened.")}</InlineError>;
+  if (!thread.data)
+    return (
+      <InlineError
+        retry={{
+          label: t("Try again"),
+          pending: thread.isFetching,
+          onRetry: () => {
+            void thread.refetch().catch(() => undefined);
+          },
+        }}
+      >
+        {t("This conversation could not be opened.")}
+      </InlineError>
+    );
 
   const conversation = thread.data;
   const lines: MessageLine[] = item?.person
@@ -134,7 +147,7 @@ export function ConversationView({
                   truncate
                   className="inbox-conversation-account-name"
                 >
-                  {[channelName(item.platform), accountName].filter(Boolean).join(" · ")}
+                  {accountName || channelName(item.platform)}
                 </Text>
               </Text>
             ) : null}
@@ -195,13 +208,39 @@ export function ConversationView({
         </div>
       ) : null}
 
+      {thread.isError ? (
+        <InlineError
+          retry={{
+            label: t("Try again"),
+            pending: thread.isFetching,
+            onRetry: () => {
+              void thread.refetch().catch(() => undefined);
+            },
+          }}
+        >
+          {t("This conversation could not be opened.")}
+        </InlineError>
+      ) : null}
       {item?.person && timeline.isError ? (
-        <InlineError>{t("Could not load the timeline.")}</InlineError>
+        <InlineError
+          retry={{
+            label: t("Try again"),
+            pending: timeline.isFetching,
+            onRetry: () => {
+              void timeline.refetch().catch(() => undefined);
+            },
+          }}
+        >
+          {t("Could not load the timeline.")}
+        </InlineError>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
 
       <MessageTimeline lines={lines} />
-      {lines.length === 0 ? (
+      {item?.person && timeline.isPending ? (
+        <LoadingText>{t("Loading conversation…")}</LoadingText>
+      ) : null}
+      {lines.length === 0 && (!item?.person || (timeline.isSuccess && !timeline.isError)) ? (
         <EmptyState
           size="inline"
           kind="empty"

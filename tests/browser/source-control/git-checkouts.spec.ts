@@ -1,6 +1,95 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+for (const theme of ["light", "dark"] as const)
+  for (const width of [800, 1280])
+    test(`change row indentation follows root font ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/source-control/git-workspace.html?action-feedback");
+      await page.evaluate((light) => {
+        document.documentElement.classList.toggle("theme-light", light);
+        document.documentElement.style.fontSize = "20px";
+      }, theme === "light");
+      const list = page.getByRole("listbox", { name: "Changes", exact: true });
+      await expect(list.locator("[data-git-file]")).toHaveCount(2);
+      const toList = page.getByRole("button", { name: "View as List", exact: true }).first();
+      if (await toList.isVisible()) await toList.click();
+      const filePadding = () =>
+        list
+          .locator("[data-git-file]")
+          .first()
+          .evaluate(
+            (button) =>
+              getComputedStyle(button.closest("li")!.querySelector("[data-action-host]")!)
+                .paddingInlineStart,
+          );
+      await expect.poll(filePadding).toBe("10px");
+      const folder = "temp/verification/git-indent";
+      mkdirSync(folder, { recursive: true });
+      await list.screenshot({ path: `${folder}/list-${theme}-${width}.png` });
+      await page.getByRole("button", { name: "View as Tree", exact: true }).first().click();
+      await expect.poll(filePadding).toBe("20px");
+      const directory = list.locator("li:not([role='option']) > [data-action-host]").first();
+      await expect
+        .poll(() => directory.evaluate((node) => getComputedStyle(node).paddingInlineStart))
+        .toBe("10px");
+      await list.screenshot({ path: `${folder}/tree-${theme}-${width}.png` });
+    });
+
+for (const theme of ["light", "dark"] as const)
+  for (const width of [800, 1280])
+    test(`visual callers graph ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const folder = "temp/verification/visual-callers-workbench";
+      const applyTheme = () =>
+        page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+      for (const [query, state] of [
+        ["action-feedback", "changes"],
+        ["checkouts", "workspace-source-control"],
+      ]) {
+        await page.goto(`/tests/browser/source-control/git-workspace.html?${query}`);
+        await applyTheme();
+        await expect(page.getByText(/workspace\.tsx/).first()).toBeVisible();
+        await page.screenshot({ path: `${folder}/${state}-${theme}-${width}.png` });
+      }
+      await page.goto("/tests/browser/source-control/git-workspace.html");
+      await page.getByRole("button", { name: "Open full graph", exact: true }).click();
+      await applyTheme();
+      const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+      await expect(
+        dialog.getByRole("button", { name: "Working tree actions", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: `${folder}/graph-working-${theme}-${width}.png` });
+      await dialog.getByRole("button").filter({ hasText: "Workspace change 39" }).click();
+      await expect(
+        dialog.getByRole("searchbox", { name: "Filter commit files", exact: true }),
+      ).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Next file", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${folder}/graph-inspector-${theme}-${width}.png` });
+      await page.goto("/tests/browser/source-control/git-workspace.html?conflict&visual-conflict");
+      await applyTheme();
+      await expect(
+        page.getByRole("radiogroup", { name: "Versions to compare", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByText("const theme = 'light';", { exact: false }).first(),
+      ).toBeVisible();
+      await page.screenshot({ path: `${folder}/conflict-ready-${theme}-${width}.png` });
+      await page.goto("/tests/browser/source-control/git-workspace.html?image-conflict");
+      await applyTheme();
+      const figures = page.locator("figure");
+      await expect(figures).toHaveCount(2);
+      await expect(page.getByRole("img", { name: "Current", exact: true })).toBeVisible();
+      await expect(page.getByText("No version on this side", { exact: true })).toBeVisible();
+      await expect(figures.first()).toHaveCSS("border-inline-end-width", "1px");
+      await expect(figures.last()).toHaveCSS("border-inline-end-width", "0px");
+      await page.screenshot({ path: `${folder}/conflict-image-${theme}-${width}.png` });
+    });
+
 test("Git actions show progress in place without losing focus or repeating mutations", async ({
   page,
 }, testInfo) => {
@@ -711,5 +800,36 @@ for (const theme of ["light", "dark"])
       await expect(message(main)).toHaveValue("Main checkout draft stays here");
       await expect(message(worktree)).toHaveValue("Worktree draft stays here");
       await expect(message(mobile)).toHaveValue("Mobile draft stays here");
+    });
+  }
+
+for (const theme of ["light", "dark"] as const)
+  for (const width of [800, 1280]) {
+    test(`conflict row compact geometry ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/source-control/git-workspace.html?conflict&action-feedback");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const row = page.locator('[data-conflict="src/conflict.ts"] [data-action-host]');
+      await expect(row).toBeVisible();
+      const height = await row.evaluate((node) => {
+        const probe = document.createElement("div");
+        probe.style.height = "var(--ui-control-height-compact)";
+        node.append(probe);
+        const result = {
+          actual: node.getBoundingClientRect().height,
+          expected: probe.getBoundingClientRect().height,
+        };
+        probe.remove();
+        return result;
+      });
+      expect(Math.abs(height.actual - height.expected)).toBeLessThan(1);
+      mkdirSync("temp/verification/feature-controls", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/feature-controls/conflict-${theme}-${width}.png`,
+        animations: "disabled",
+      });
     });
   }

@@ -1,3 +1,7 @@
+import { surfaceAttributes } from "../../shared/ui/Surface";
+import { StatusDot, type StatusDotProps } from "../../shared/ui/StatusDot";
+import { Tooltip } from "../../shared/ui/Tooltip";
+import { WorkingIndicator } from "../../shared/ui/WorkingIndicator";
 import { Text } from "../../shared/ui/Text";
 import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
@@ -104,13 +108,13 @@ const STATUS_LABEL: Record<RecentSessionStatus, string> = {
   done: "Done",
 };
 
-const STATUS_DOT: Record<RecentSessionStatus, string> = {
-  retrying: "bg-warning",
-  failed: "bg-danger",
-  interrupted: "bg-warning",
-  working: "working-dot bg-accent animate-pulse motion-reduce:animate-none",
-  input: "bg-warning",
-  done: "bg-success",
+const STATUS_DOT: Record<RecentSessionStatus, StatusDotProps["tone"]> = {
+  retrying: "warning",
+  failed: "danger",
+  interrupted: "warning",
+  working: "accent",
+  input: "warning",
+  done: "success",
 };
 
 export function LastSessionsSection({
@@ -347,7 +351,7 @@ function SessionRow({
     <ActionHost
       role="listitem"
       selected={selected}
-      className="group relative flex min-w-0 items-center rounded-md"
+      {...surfaceAttributes({ radius: "row" }, "group relative flex min-w-0 items-center")}
     >
       {/* One 28px row on the rail grid, like the tool and project rows: a 14px project mark,
           the title, then quiet trailing state. Project and agent live in the tooltip and name. */}
@@ -420,12 +424,15 @@ function SessionRow({
             strokeWidth={1.75}
           />
         ) : status ? (
-          <span
-            role="img"
-            aria-label={t(STATUS_LABEL[status])}
-            title={t(STATUS_LABEL[status])}
-            className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
-          />
+          <Tooltip label={t(STATUS_LABEL[status])}>
+            {status === "working" ? (
+              <span role="img" aria-label={t(STATUS_LABEL[status])}>
+                <WorkingIndicator variant="dot" />
+              </span>
+            ) : (
+              <StatusDot label={t(STATUS_LABEL[status])} tone={STATUS_DOT[status]} />
+            )}
+          </Tooltip>
         ) : null}
         {time ? (
           <Text size="micro" tone="secondary" className="shrink-0 tabular-nums">

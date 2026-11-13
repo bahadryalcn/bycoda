@@ -55,6 +55,7 @@
 .button {
   position: relative;
   flex: 0 0 auto;
+  min-width: 0;
   min-height: var(--control-height-sm);
   border: 0;
   border-radius: calc(var(--radius-control) - 4px);
@@ -116,8 +117,17 @@
   position: relative;
   z-index: 1;
   display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   align-items: center;
   gap: 6px;
+}
+.copy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .icon {
   display: inline-flex;

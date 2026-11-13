@@ -16,7 +16,7 @@ export type ParticleTextProps = Pick<TextRoles, "size" | "tone" | "weight" | "le
  * Fills the remaining width of a flex row. Size, ink, weight and line height are Text roles; unset roles inherit.
  * @group text
  * @use A session or view title whose text changes and should softly re-enter.
- * @avoid Ordinary static text or headings. Do not add continuous or canvas text effects.
+ * @avoid Ordinary static text or headings. Do not add continuous or canvas text effects. Ordinary static copy: Text.
  * @example <ParticleText text={title} size="secondary" tone="primary" weight="medium" leading="snug" lines={1} />
  */
 export function ParticleText({

@@ -25,6 +25,7 @@ import {
   type ConnectionMethod,
 } from "./connectOptions";
 import { EmailAccountDialog } from "./EmailAccountDialog";
+import { PlatformIcon } from "../common/PlatformIcon";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
 
@@ -159,6 +160,7 @@ export function ConnectAccountDialog({
           options={SOCIAL_PLATFORMS.map((item) => ({
             value: item,
             label: SOCIAL_PLATFORM_NAMES[item],
+            icon: <PlatformIcon platform={item} />,
           }))}
           onValueChange={(value) => choosePlatform(value as SocialPlatform)}
         />

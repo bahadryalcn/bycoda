@@ -1,3 +1,4 @@
+import { actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Text } from "../../../shared/ui/Text";
 import { ModelLabel } from "./ModelLabel";
@@ -223,9 +224,10 @@ function SubagentPanel({
           weight="medium"
           truncate
           tone={state === "rejected" ? "danger" : "secondary"}
-          {...motionAttributes(
-            { transition: "colors", duration: "standard" },
-            `${nameClass} ${state === "rejected" ? "" : "group-hover:text-(--ui-tone-neutral-fg)"}`,
+          {...motionAttributes({ transition: "colors", duration: "standard" })}
+          {...actionContentAttributes(
+            { phase: "always", interactionTone: state === "rejected" ? undefined : "neutral" },
+            nameClass,
           )}
         >
           {name}

@@ -41,8 +41,8 @@ export function ProviderSignInPanel({
         size="inherit"
         tone="neutral"
         {...surfaceAttributes(
-          { variant: "raised" },
-          "grid size-16 place-items-center rounded-2xl  ring-1 ring-inset ring-(--color-stroke) shadow-sm",
+          { variant: "raised", ring: "stroke", radius: "well" },
+          "grid size-16 place-items-center",
         )}
       >
         <HarnessIcon harness={harness} className="size-9" />

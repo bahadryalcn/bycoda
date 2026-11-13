@@ -53,26 +53,12 @@
   gap: 0.25rem;
   min-height: 9rem;
   padding: 0.375rem;
-  border-inline-start: 1px solid var(--ui-pane-border);
-  border-block-start: 1px solid var(--ui-pane-border);
   min-width: 0;
   overflow: hidden;
 }
 
-.content-day:nth-child(7n + 1) {
-  border-inline-start: 0;
-}
-
-.content-day:nth-child(-n + 7) {
-  border-block-start: 0;
-}
-
 .content-calendar[data-view="month"] .content-day {
   min-height: 6.5rem;
-}
-
-.content-day[data-today] {
-  background: var(--ui-fill-faint);
 }
 
 .content-day-head {
@@ -107,16 +93,10 @@
   block-size: 1.5rem;
 }
 
-.content-day[data-today] .content-day-number {
-  background: var(--ui-tone-accent-solid);
-}
-
 /* Post chip: the surface is the ActionHost wrapper; the item Button inside only supplies the click
    target. Button adds wrapper spans around its children; they must fill the chip and may shrink, or
    long text pushes into the next day. The chip body and everything inside it keep their own layout. */
 .content-chip-host {
-  background: var(--ui-fill-subtle);
-  border-radius: var(--ui-radius-control);
   min-width: 0;
   max-width: 100%;
 }
@@ -124,18 +104,11 @@
 .content-entry {
   min-width: 0;
   max-width: 100%;
-  text-align: start;
-}
-
-.content-entry span:not(.content-chip, .content-chip *) {
-  display: block;
-  inline-size: 100%;
-  min-inline-size: 0;
-  max-inline-size: 100%;
 }
 
 .content-chip {
   display: flex;
+  inline-size: 100%;
   flex-direction: column;
   gap: 0.125rem;
   min-width: 0;
@@ -189,7 +162,12 @@
 .content-list-filters {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  align-items: center;
+  gap: var(--space-2);
+}
+.content-list-filter {
+  flex: 0 1 14rem;
+  min-width: 0;
 }
 
 .content-rows {
@@ -202,27 +180,16 @@
   overflow: hidden;
 }
 
-.content-rows > li + li {
-  border-block-start: 1px solid var(--ui-pane-border);
-}
-
 .content-row {
   min-width: 0;
   max-width: 100%;
-  text-align: start;
-}
-
-.content-row > span,
-.content-row > span > span,
-.content-row > span > span > span {
-  display: block;
-  inline-size: 100%;
-  min-inline-size: 0;
 }
 
 .content-row-body {
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  inline-size: 100%;
+  min-inline-size: 0;
   align-items: center;
   gap: 0.75rem;
 }
@@ -241,8 +208,6 @@
 }
 
 .content-row-name {
-  overflow: hidden;
-  white-space: nowrap;
   min-width: 0;
 }
 
@@ -251,10 +216,9 @@
 }
 
 .content-row-meta {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 0.5rem;
 }
 
@@ -292,14 +256,12 @@
   flex-direction: column;
   gap: 0.5rem;
   min-width: 0;
-  border: 0;
   margin: 0;
   padding: 0;
 }
 
 .content-platform {
   padding-block-start: 0.5rem;
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 
 .content-check {
@@ -411,4 +373,24 @@
 .content-blocked {
   margin: 0;
   padding-inline-start: 1rem;
+}
+
+@container (max-width: 32rem) {
+  .content-row-body {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .content-row-meta {
+    grid-column: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+.content-list {
+  container-type: inline-size;
+}
+.content-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }

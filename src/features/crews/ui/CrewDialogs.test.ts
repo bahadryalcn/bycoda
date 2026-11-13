@@ -1,3 +1,4 @@
+import { defaultCrewPolicy } from "../model/crew";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -23,7 +24,7 @@ const crew = {
   id: "crew-1",
   name: "Crew",
   updatedAt: 9,
-  policy: {},
+  policy: structuredClone(defaultCrewPolicy),
   agents: [],
 };
 let root: Root;
@@ -69,7 +70,9 @@ const startButton = () =>
   [...document.querySelectorAll("button")].find((b) => b.textContent === "Start");
 
 it("saves the crew policy first only when the owner changed the access", async () => {
-  const call = vi.fn(async (method: string) => (method === "crews.start" ? { id: "run" } : {}));
+  const call = vi.fn(async (method: string, _params: Record<string, unknown>) =>
+    method === "crews.start" ? { id: "run" } : {},
+  );
   await open(call, true, "p-change");
   await typePrompt("Build it");
   await click(document.querySelector("[data-access]"));
@@ -82,7 +85,7 @@ it("saves the crew policy first only when the owner changed the access", async (
 });
 
 it("does not save when access is unchanged or unsupported", async () => {
-  const call = vi.fn(async () => ({ id: "run" }));
+  const call = vi.fn(async (_method: string, _params: Record<string, unknown>) => ({ id: "run" }));
   await open(call, true, "p-same");
   await typePrompt("Build it");
   await click(startButton());
@@ -94,7 +97,7 @@ it("does not save when access is unchanged or unsupported", async () => {
 
 it("a retry after an uncertain start neither saves the policy nor changes the request", async () => {
   let starts = 0;
-  const call = vi.fn(async (method: string) => {
+  const call = vi.fn(async (method: string, _params: Record<string, unknown>) => {
     if (method === "crews.start" && ++starts === 1) throw new Error("Connection lost");
     return { id: "run" };
   });

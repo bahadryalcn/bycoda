@@ -7,12 +7,15 @@ import {
   type ReactNode,
 } from "react";
 import styles from "./Checkbox.module.css";
+import { controlPaddingStyle, type ControlPadding } from "./Button";
 import { optionalTextAttributes, type TextSize, type TextTone, type TextRoles } from "./Text";
 
 export type CheckboxProps = Omit<ComponentPropsWithRef<"input">, "type" | "size"> & {
   /** Label type roles; unset preserves existing styling. */
   size?: TextSize;
   tone?: TextTone;
+  /** Optional hover ink for a labelled choice; resting ink and native input behavior stay unchanged. */
+  interactionTone?: "neutral";
   weight?: TextRoles["weight"];
   /** Line height role; `inherit` keeps the surrounding line height. */
   leading?: TextRoles["leading"];
@@ -21,7 +24,38 @@ export type CheckboxProps = Omit<ComponentPropsWithRef<"input">, "type" | "size"
   label?: ReactNode;
   /** Secondary line under `label`, linked with `aria-describedby`. Needs `label`. */
   description?: ReactNode;
+  /** Token padding for the labeled choice row, never the native input box. */
+  padding?: ControlPadding;
+  /** Card choices own their checked frame/fill; row choices only share the hover layer. Native input and label semantics stay intact. */
+  appearance?: "card" | "row";
 };
+
+/**
+ * Decorative membership mark inside a control that already owns selection and its accessible state.
+ * @group choice
+ * @use A selection button or option needing a checked mark without nesting another input.
+ * @avoid Standalone membership controls and forms: Checkbox. The parent must expose selection.
+ */
+export function CheckboxMark({
+  checked,
+  size = "md",
+  className,
+  ...props
+}: Pick<ComponentPropsWithRef<"span">, "id" | "className"> & {
+  checked: boolean;
+  size?: "sm" | "md";
+}) {
+  return (
+    <span
+      {...props}
+      aria-hidden="true"
+      data-checkbox-mark=""
+      data-checked={checked ? "" : undefined}
+      data-size={size}
+      className={["bycoda-arc", styles.checkbox, styles.mark, className].filter(Boolean).join(" ")}
+    />
+  );
+}
 
 /**
  * Native membership input (keeps form validation, FormData and refs) with the box, check, mixed dash (`indeterminate`), invalid and disabled states drawn over it.
@@ -40,6 +74,9 @@ export function Checkbox({
   tone,
   weight,
   leading,
+  padding,
+  appearance,
+  interactionTone,
   ...props
 }: CheckboxProps) {
   const input = useRef<HTMLInputElement>(null);
@@ -79,6 +116,9 @@ export function Checkbox({
         [styles.row, className].filter(Boolean).join(" "),
       )}
       data-checkbox-row=""
+      data-choice-appearance={appearance}
+      data-interaction-tone={interactionTone}
+      style={controlPaddingStyle(padding)}
       data-disabled={props.disabled ? "" : undefined}
     >
       {control}

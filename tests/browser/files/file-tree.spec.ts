@@ -88,6 +88,52 @@ test("file tree preserves selection, inline rename, windowing and native externa
   await page.screenshot({ path: info.outputPath("file-tree-narrow-light.png") });
 });
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`image transparency shared surface ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/files/file-tree.html?binary&theme=${theme}`);
+      const preview = page.getByRole("group", { name: "Image preview: preview.png" });
+      await expect(preview).toBeVisible();
+      await expect(preview.locator("img")).toBeVisible();
+      await expect(preview).toHaveCSS("background-size", "16px 16px, 16px 16px");
+      await expect(preview).toHaveCSS("background-position", "0px 0px, 8px 8px");
+      expect(await preview.evaluate((node) => getComputedStyle(node).backgroundImage)).toContain(
+        "gradient",
+      );
+      await page.screenshot({
+        path: `temp/verification/files-shared/${process.env.FILES_FRAME_PHASE ?? "after"}-binary-${theme}-${width}.png`,
+      });
+    });
+
+    test(`preview search shared frame ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/files/file-tree.html?preview&theme=${theme}`);
+      await page.getByLabel("Markdown preview", { exact: true }).focus();
+      await page.keyboard.press("Control+f");
+      const search = page.getByLabel("Find in preview", { exact: true });
+      await expect(search).toBeVisible();
+      await expect(search).toHaveCSS("border-bottom-width", "1px");
+      const colors = await search.evaluate((node) => {
+        const probe = document.createElement("span");
+        node.append(probe);
+        probe.style.background = "var(--ui-workspace-reading-panel)";
+        const ground = getComputedStyle(probe).backgroundColor;
+        probe.style.background = "var(--ui-pane-border)";
+        const border = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { ground, border };
+      });
+      await expect(search).toHaveCSS("background-color", colors.ground);
+      await expect(search).toHaveCSS("border-bottom-color", colors.border);
+      await page.screenshot({
+        path: `temp/verification/files-shared/${process.env.FILES_FRAME_PHASE ?? "after"}-search-${theme}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(search).toHaveCount(0);
+    });
+  }
+
 test("preview find paints match/current highlights with shared theme roles and keeps keyboard navigation", async ({
   page,
 }, info) => {
@@ -537,3 +583,85 @@ for (const theme of ["light", "dark"] as const) {
       .toBe(2);
   });
 }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`sheet document geometry and preview action ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/files/file-tree.html?sheet&theme=${theme}`);
+      const grid = page.getByRole("grid");
+      await grid.focus();
+      const cell = grid.getByRole("gridcell", { name: "A1: Revenue", exact: true });
+      const head = grid.getByRole("columnheader", { name: "Row", exact: true });
+      const background = await head.evaluate((node) => {
+        const p = document.createElement("span");
+        p.style.background = "var(--color-background-base)";
+        node.appendChild(p);
+        const expected = getComputedStyle(p).backgroundColor;
+        p.remove();
+        return { actual: getComputedStyle(node).backgroundColor, expected };
+      });
+      expect(background.actual).toBe(background.expected);
+      await expect(cell).toHaveCSS("border-right-width", "1px");
+      await expect(grid).toHaveCSS("font-size", "12px");
+      await expect(cell).toHaveCSS("width", "120px");
+      await expect(cell).toHaveCSS("line-height", "24px");
+      await expect(cell).toHaveCSS("outline-width", "2px");
+      await expect(cell).toHaveCSS("outline-offset", "-2px");
+      const paint = await cell.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.outline = "2px solid var(--color-accent,currentColor)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).outlineColor;
+        probe.remove();
+        return { actual: getComputedStyle(node).outlineColor, expected };
+      });
+      expect(paint.actual).toBe(paint.expected);
+      await page.screenshot({
+        path: `temp/verification/files-sheet/${process.env.FILES_SHEET_PHASE ?? "after"}-sheet-${theme}-${width}.png`,
+      });
+      await grid.press("Control+End");
+      await expect(
+        grid.getByRole("gridcell", { name: "J1000: Last cell", exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(await grid.getByRole("row").count()).toBeLessThan(70);
+      await grid.press("Control+Home");
+      await expect(cell).toHaveAttribute("aria-selected", "true");
+      await grid.dispatchEvent("wheel", {
+        deltaY: -100,
+        deltaMode: 0,
+        ctrlKey: true,
+        clientX: 200,
+        clientY: 200,
+      });
+      await expect
+        .poll(async () =>
+          parseFloat(await grid.evaluate((node) => getComputedStyle(node).fontSize)),
+        )
+        .toBeGreaterThan(12);
+      const geometry = await cell.evaluate((node) => {
+        const s = getComputedStyle(node),
+          g = getComputedStyle(node.closest('[role="grid"]')!);
+        return {
+          font: parseFloat(g.fontSize),
+          width: parseFloat(s.width),
+          height: parseFloat(s.lineHeight),
+        };
+      });
+      expect(geometry.width).toBe(Math.round((120 * geometry.font) / 12));
+      expect(geometry.height).toBe(Math.round((24 * geometry.font) / 12));
+      await page.getByRole("button", { name: /reset to 100%/ }).click();
+      await expect(grid).toHaveCSS("font-size", "12px");
+      await page.goto(`/tests/browser/files/file-tree.html?tool-preview&theme=${theme}`);
+      const open = page.getByRole("button", { name: "src/deep.ts", exact: true });
+      await open.hover();
+      await expect(open).toHaveCSS("text-decoration-line", "underline");
+      await page.screenshot({
+        path: `temp/verification/files-sheet/${process.env.FILES_SHEET_PHASE ?? "after"}-preview-${theme}-${width}.png`,
+      });
+      await open.click();
+      await expect(page.getByLabel("Opened file", { exact: true })).toHaveText(
+        "/fixture/src/deep.ts",
+      );
+    });

@@ -225,3 +225,231 @@ test("keeps the add form and long discovered lists reachable on small and landsc
     );
   }
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`provider list separators ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?providers=all&agents&theme=${theme}`);
+      const rows = page.locator(".onboarding-agent");
+      await expect(rows).toHaveCount(11);
+      const heights = await rows.evaluateAll((nodes) =>
+        nodes.map((node) => node.getBoundingClientRect().height),
+      );
+      expect(heights.every((height) => height >= 40)).toBe(true);
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/onboarding-agents-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`project selection rows ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?projects&theme=${theme}`);
+      const rows = page.locator(".onboarding-projects .onboarding-project");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first().getByRole("checkbox")).toBeChecked();
+      await rows.first().getByRole("checkbox").uncheck();
+      await expect(rows.first().getByRole("checkbox")).not.toBeChecked();
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/onboarding-projects-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`full usage guide chrome ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?guide&theme=${theme}`);
+      const panel = page.locator(".usage-guide-panel");
+      await expect(panel).toBeVisible();
+      await expect(panel.locator(".usage-guide-toolbar")).toBeVisible();
+      await expect(panel.locator(".usage-guide-footer")).toBeVisible();
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/onboarding-guide-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`compact tour chrome ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?compactTour&theme=${theme}`);
+      const card = page.locator(".usage-guide-panel--compact");
+      await expect(card).toContainText("Fixture tour");
+      await expect(card.locator(".usage-guide-toolbar")).toHaveCSS("border-bottom-width", "0px");
+      await expect(card.locator(".usage-guide-footer")).toHaveCSS("border-top-width", "0px");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/onboarding-compact-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [480, 800, 1280])
+    test(`guide hub navigation border ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?guideHub&theme=${theme}`);
+      const nav = page.getByRole("navigation", { name: "Guide topics" });
+      await expect(nav).toBeVisible();
+      const border = await nav.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { end: style.borderInlineEndWidth, bottom: style.borderBlockEndWidth };
+      });
+      expect(border).toEqual(
+        width === 480 ? { end: "0px", bottom: "1px" } : { end: "1px", bottom: "0px" },
+      );
+      const ring = page.locator(".guide-hub-ring").first();
+      await expect(ring).toHaveCSS("border-top-width", "1px");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/guide-hub-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`shared onboarding choice cards ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`${fixture}?theme=${theme}`);
+      const dialog = page.getByRole("dialog");
+      const feature = dialog
+        .locator("label.onboarding-feature")
+        .filter({ hasText: "Social Media" });
+      const checkbox = feature.getByRole("checkbox");
+      await expect(feature).toHaveAttribute("data-choice-appearance", "card");
+      const box = (await feature.boundingBox())!;
+      await checkbox.uncheck();
+      await feature.click();
+      await expect(checkbox).toBeChecked();
+      await page.keyboard.press("Tab");
+      await checkbox.focus();
+      await expect(feature).toHaveCSS("outline-style", "solid");
+      expect((await feature.boundingBox())!.height).toBe(box.height);
+      await page.screenshot({
+        path: `temp/verification/onboarding-controls/workspace-${theme}-${width}.png`,
+      });
+      const awake = dialog.getByRole("switch", {
+        name: "Prevent sleep while agents work",
+        exact: true,
+      });
+      await expect(awake).toHaveAttribute("data-choice-appearance", "card");
+      await expect(awake).toHaveCSS("border-top-width", "1px");
+      const checked = await awake.getAttribute("aria-checked");
+      await awake.click();
+      await expect(awake).toHaveAttribute("aria-checked", checked === "true" ? "false" : "true");
+      await dialog.getByRole("button", { name: /2\s*Appearance/ }).click();
+      const choice = dialog.getByRole("radio", {
+        name: theme === "light" ? "Light" : "Dark",
+        exact: true,
+      });
+      await choice.click();
+      await expect(choice).toBeChecked();
+      await expect(choice).toHaveAttribute("data-selection-indicator", "accent-inset");
+      await expect(choice).toHaveCSS("border-top-width", "1px");
+      expect(await choice.evaluate((node) => getComputedStyle(node).boxShadow)).toContain("inset");
+      const other = dialog.getByRole("radio", {
+        name: theme === "light" ? "Dark" : "Light",
+        exact: true,
+      });
+      await expect(other).toHaveCSS("border-top-width", "1px");
+      const cardBorder = await other.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.border = "1px solid var(--ui-card-border)";
+        node.append(probe);
+        const color = getComputedStyle(probe).borderTopColor;
+        probe.remove();
+        return color;
+      });
+      await expect(other).toHaveCSS("border-top-color", cardBorder);
+      await choice.focus();
+      await page.keyboard.press("ArrowRight");
+      expect(
+        await dialog.locator('.onboarding-mode-grid [role="radio"][aria-checked="true"]').count(),
+      ).toBe(1);
+      await choice.click();
+      await page.screenshot({
+        path: `temp/verification/onboarding-controls/appearance-${theme}-${width}.png`,
+      });
+    });
+    test(`shared feature attention mark ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.goto(`${fixture}?highlight&theme=${theme}`);
+      const marker = page.locator('[data-feature-highlight="fixture-highlight"]');
+      await expect(marker).toBeVisible();
+      await expect(marker).toHaveCSS("width", "8px");
+      await expect(marker).toHaveCSS("height", "8px");
+      await expect(marker).toHaveCSS("position", "fixed");
+      const markerBounds = (await marker.boundingBox())!;
+      const targetBounds = (await page
+        .getByRole("button", { name: "Fixture project", exact: true })
+        .boundingBox())!;
+      expect(markerBounds.x).toBeCloseTo(Math.round(targetBounds.x + targetBounds.width) - 10, 0);
+      expect(markerBounds.y).toBeCloseTo(Math.round(targetBounds.y) - 2, 0);
+      const pseudo = () =>
+        marker.evaluate((node) => ({
+          animation: getComputedStyle(node, "::after").animationName,
+          duration: getComputedStyle(node, "::after").animationDuration,
+        }));
+      expect((await pseudo()).animation).not.toBe("none");
+      expect((await pseudo()).duration).toBe("2.4s");
+      await page.screenshot({
+        path: `temp/verification/onboarding-controls/attention-motion-${theme}-${width}.png`,
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      expect((await pseudo()).animation).toBe("none");
+      await page.emulateMedia({ forcedColors: "active" });
+      const highContrast = await marker.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.background = "CanvasText";
+        node.append(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { expected, actual: getComputedStyle(node).backgroundColor };
+      });
+      expect(highContrast.actual).toBe(highContrast.expected);
+      await page.emulateMedia({ forcedColors: "none" });
+      await page.screenshot({
+        path: `temp/verification/onboarding-controls/attention-reduced-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "Fixture project", exact: true }).focus();
+      await expect(marker).toHaveCount(0);
+    });
+  }
+
+test.describe("coarse onboarding controls", () => {
+  test.use({ hasTouch: true });
+  test("coarse onboarding choice cards retain native toggle and selection", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 1000 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`${fixture}?theme=dark`);
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+    const dialog = page.getByRole("dialog");
+    const row = dialog.locator("label.onboarding-feature").filter({ hasText: "Social Media" });
+    const check = row.getByRole("checkbox");
+    await expect(check).toBeChecked();
+    await row.tap();
+    await expect(check).not.toBeChecked();
+    const awake = dialog.getByRole("switch", {
+      name: "Prevent sleep while agents work",
+      exact: true,
+    });
+    const before = await awake.getAttribute("aria-checked");
+    await awake.tap();
+    await expect(awake).toHaveAttribute("aria-checked", before === "true" ? "false" : "true");
+    await dialog.getByRole("button", { name: /2\s*Appearance/ }).tap();
+    const choice = dialog.getByRole("radio", { name: "Dark", exact: true });
+    await choice.tap();
+    await expect(choice).toBeChecked();
+    expect(await choice.evaluate((node) => getComputedStyle(node).boxShadow)).toContain("inset");
+    await page.screenshot({
+      path: "temp/verification/onboarding-controls/coarse-appearance-dark-800.png",
+    });
+  });
+});

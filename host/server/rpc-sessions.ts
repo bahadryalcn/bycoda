@@ -25,6 +25,7 @@ import { recordRemoteActivity } from "./remote-activity-record";
 export async function handleSessionsRpc(
   dependencies: Pick<
     ServerBindings,
+    | "assistant"
     | "managed"
     | "workspaceForOwnerRpc"
     | "withWorkspaceOwner"
@@ -528,6 +529,8 @@ export async function handleSessionsRpc(
         String(request.params.clientId ?? "legacy"),
         request.params.userActive === true,
       );
+      // Input in a focused window disproves a stale idle or away reading.
+      if (request.params.userActive === true) dependencies.assistant.refreshPresenceSoon();
       // Sequential: an acknowledged command can change the turn the run leases read.
       const durableCommands = await measure("desktopLive.poll", () =>
         dependencies.withinBeat(

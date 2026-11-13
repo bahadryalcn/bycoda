@@ -36,10 +36,6 @@ const candidate = {
       source: "owner declaration",
     },
   },
-  cost: 1.25,
-  quality: 88.5,
-  qualitySource: "owner-estimate" as const,
-  samples: 3,
 };
 const agent = (id: string, role: "coordinator" | "specialist" | "reviewer") => ({
   id,
@@ -62,10 +58,6 @@ const definition = {
   ],
   policy: {
     ...defaultCrewPolicy,
-    maxEstimatedCost: 100,
-    minimumQuality: 50,
-    costWeight: 0.3,
-    qualityWeight: 0.7,
     delegateApprovals: true,
   },
   updatedAt: 3.5,
@@ -201,18 +193,6 @@ const params = {
     expectedUpdatedAt: 2.5,
   },
   "crews.agent.delete": { projectId: "project", agentId: "profile" },
-  "crews.pools.list": { projectId: "project" },
-  "crews.pools.save": {
-    projectId: "project",
-    pool: {
-      id: "pool",
-      name: "Pool",
-      candidates: [{ ...candidate, id: "pool-candidate" }],
-      updatedAt: 2.5,
-    },
-    expectedUpdatedAt: 2.5,
-  },
-  "crews.pools.delete": { projectId: "project", poolId: "pool", expectedUpdatedAt: 2.5 },
   "crews.start": {
     projectId: "project",
     definitionId: "crew",
@@ -349,7 +329,7 @@ it("roundtrips all20 complete params without defaults, coercions or request-fing
     const value: Record<string, unknown> = params[method as keyof typeof params];
     expect(schema.params.parse(value)).toStrictEqual(value);
     // Host-wide methods have no project scope to strip.
-    const hostWide = method === "crews.active.list" || method.startsWith("crews.pools.");
+    const hostWide = method === "crews.active.list";
     const { projectId: _scope, ...unscoped } = value;
     if (method === "crews.active.list") continue;
     expect(schema.params.safeParse(unscoped).success).toBe(hostWide);
@@ -505,8 +485,6 @@ it("preserves finite provider settings/candidate evidence and full approval/ques
   ).toBe(true);
   for (const value of [
     { ...candidate, future: true },
-    { ...candidate, qualitySource: "benchmark" },
-    { ...candidate, quality: null },
     {
       ...candidate,
       capabilities: {
@@ -750,11 +728,6 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
     runId: started.id,
     expectedUpdatedAt: finished!.updatedAt,
   });
-  const pool = await call("crews.pools.save", {
-    pool: { id: "pool", name: "Pool", candidates: [{ ...candidate, id: "pool-candidate" }] },
-  });
-  expect((await call("crews.pools.list")).pools).toHaveLength(1);
-  await call("crews.pools.delete", { poolId: pool.id, expectedUpdatedAt: pool.updatedAt });
   await call("crews.agent.delete", { agentId: savedAgent.id });
   // The first list normalized the dangling member link, which moved the crew revision.
   const current = (await call("crews.list")).definitions.find((d) => d.id === saved.id);
@@ -788,4 +761,42 @@ it("mirrors the member avatar parts and accepts identity fields on members and c
   expect(
     dto.CrewAgentSchema.safeParse({ ...identified.agents[0], avatar: { mood: "x" } }).success,
   ).toBe(false);
+});
+
+it("accepts routing member choices and wait snapshots, while removing crew pool RPCs", () => {
+  expect(
+    dto.CrewAgentSchema.parse({
+      ...agent("m", "specialist"),
+      modelChoice: { kind: "pool", poolId: "routing" },
+    }).modelChoice,
+  ).toEqual({ kind: "pool", poolId: "routing" });
+  expect(
+    dto.CrewMessageSchema.parse({
+      id: "wait",
+      from: "lead",
+      text: "Waiting",
+      createdAt: 1,
+      routingWait: { memberId: "m", required: ["vision"], nextResetAt: 5 },
+    }).routingWait!.nextResetAt,
+  ).toBe(5);
+  expect(Object.keys(dto.CREWS_RPC_SCHEMAS).some((key) => key.startsWith("crews.pools."))).toBe(
+    false,
+  );
+});
+
+it("ignores extra stored fields in semantic parsers and validates wire fields", () => {
+  expect(
+    parseCrewDefinition({
+      ...definition,
+      policy: { ...definition.policy, unused: null },
+      agents: definition.agents.map((member) => ({
+        ...member,
+        unused: false,
+        candidates: member.candidates.map((item) => ({ ...item, unused: null })),
+      })),
+    }),
+  ).toEqual(parseCrewDefinition(definition));
+  expect(dto.CrewCandidateSchema.safeParse({ ...candidate, harness: "unknown" }).success).toBe(
+    false,
+  );
 });

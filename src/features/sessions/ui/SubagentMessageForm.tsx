@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -28,7 +29,10 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
     <ScrollArea
       as="form"
       gutter="stable"
-      className={`${styles.composer} flex shrink-0 flex-col gap-2 border-t border-(--ui-pane-border) px-4 py-3`}
+      {...surfaceAttributes(
+        { frame: "pane", edge: "top" },
+        `${styles.composer} flex shrink-0 flex-col gap-2 px-4 py-3`,
+      )}
       onSubmit={(event) => {
         event.preventDefault();
         if (canSend) relay.send();

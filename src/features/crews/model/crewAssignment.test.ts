@@ -18,11 +18,9 @@ const crew = (agents: CrewAgent[], name = "Alpha"): CrewDefinition => ({
   name,
   agents,
   policy: {
-    preset: "balanced",
     maxParallel: 2,
     maxAssignments: 8,
     maxRunMinutes: 60,
-    allowUnknownCost: false,
     allowSubagents: false,
   },
   updatedAt: 3,

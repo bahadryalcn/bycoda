@@ -426,8 +426,11 @@ function PrCheckRow({
                     <li
                       key={index}
                       {...surfaceAttributes(
-                        { radius: "sm" },
-                        `flex items-center gap-2 px-2 py-1 ${step.state === "fail" ? "bg-(--ui-tone-danger-subtle)" : ""}`,
+                        {
+                          radius: "sm",
+                          tone: step.state === "fail" ? "danger" : undefined,
+                        },
+                        "flex items-center gap-2 px-2 py-1",
                       )}
                     >
                       <MarkGlyph mark={stepMark} size="md" />
@@ -518,7 +521,10 @@ function PrCheckRow({
           {detailsBody}
         </Disclosure>
       ) : (
-        <ActionHost className="min-w-0 gap-2 px-2 py-1 @max-[420px]/checks:gap-1">
+        <ActionHost
+          padding={{ inline: "md", block: "xs" }}
+          className="min-w-0 gap-2 @max-[420px]/checks:gap-1"
+        >
           {linked ? (
             // The desktop WebView cannot rely on target=_blank, so rows open
             // through the same opener as every other external link.

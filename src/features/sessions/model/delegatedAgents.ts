@@ -16,6 +16,7 @@ import { remoteSessionFor } from "../../connections/public/connections";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   isStoppedBlock,
+  isSubagentBlock,
   isToolBlock,
   subagentModelName,
   subagentName,
@@ -61,6 +62,14 @@ export function isDelegatedChildOf(child: Session, parent: Session): boolean {
       }
       return link.parentSessionId === parent.id && child.cwd === parent.cwd;
     }
+    // A local Native parent delegates through the Host: discovery binds its children
+    // to the Host, while their lineage names the parent's own id.
+    if (childBinding && !parentBinding && !parseRemotePath(parent.cwd))
+      return (
+        link.parentSessionId === parent.id &&
+        childBinding.sessionId !== parent.id &&
+        child.cwd === parent.cwd
+      );
     return (
       !!childBinding &&
       !!parentBinding &&
@@ -145,7 +154,14 @@ export function delegatedAgentBlock(child: Session): Block {
         id: block.id,
         kind: "tool",
         text: toolCallLabel(block),
-        ...(block.tool?.kind ? { toolKind: block.tool.kind } : {}),
+        ...(isSubagentBlock(block)
+          ? {
+              toolKind: "subagent",
+              agentRun: block.agentRun ?? { name: subagentName(block), steps: [] },
+            }
+          : block.tool?.kind
+            ? { toolKind: block.tool.kind }
+            : {}),
         ...(block.tool?.status ? { status: block.tool.status } : {}),
         ...(block.tool?.preview ? { preview: block.tool.preview } : {}),
       });

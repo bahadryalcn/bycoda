@@ -16,6 +16,9 @@
 .spinner[data-size="xs"] {
   --spinner-size: var(--ui-icon-xs, 0.75rem);
 }
+.spinner[data-size="micro"] {
+  --spinner-size: 0.625rem;
+}
 .spinner[data-size="md"] {
   --spinner-size: var(--ui-icon-md, 1rem);
 }

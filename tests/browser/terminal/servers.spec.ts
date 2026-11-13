@@ -2,6 +2,163 @@ import { expect, test, type Locator } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 const evidence = "temp/verification/2026-10-19-servers-ux/browser";
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`server shared surfaces ${theme} ${width}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/terminal/servers.html?phonePairingFixture&theme=${theme}`);
+      const qr = page.locator(".phone-pairing-code > div").first();
+      await expect(qr.locator("svg")).toBeVisible();
+      expect(await qr.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
+      expect(
+        await qr.evaluate((el) => {
+          const probe = document.createElement("span");
+          probe.style.backgroundColor = "var(--color-on-solid)";
+          el.append(probe);
+          const equal =
+            getComputedStyle(el).backgroundColor === getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return equal;
+        }),
+      ).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("phone-qr.png"), animations: "disabled" });
+      await page.goto(
+        `/tests/browser/terminal/servers.html?sshFixture&identityColorFixture&httpProxyFixture&proxyAuthFixture&terminalWorkspace&theme=${theme}`,
+      );
+      const dot = page.locator(
+        '[data-server-row="ssh-duplicate"] [data-surface-variant="user-color"]',
+      );
+      await expect(dot).toBeVisible();
+      await dot.scrollIntoViewIfNeeded();
+      await expect(dot).toBeInViewport();
+      expect(
+        await dot.evaluate((el) => ({
+          color: getComputedStyle(el).backgroundColor,
+          width: getComputedStyle(el).width,
+        })),
+      ).toEqual({ color: "rgb(18, 52, 86)", width: "8px" });
+      await page.screenshot({
+        path: testInfo.outputPath("identity-dot.png"),
+        animations: "disabled",
+      });
+      await page
+        .getByRole("list", { name: "Servers" })
+        .getByRole("button", { name: /^Existing SSH target/ })
+        .click();
+      await page
+        .getByRole("region", { name: "Server details" })
+        .getByRole("button", { name: "Server actions", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
+      const advanced = editor
+        .locator("details")
+        .filter({ has: page.locator("summary", { hasText: "Advanced SSH settings" }) })
+        .first();
+      await advanced.scrollIntoViewIfNeeded();
+      expect(await advanced.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
+      await page.screenshot({
+        path: testInfo.outputPath("ssh-editor.png"),
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await page.goto(`/tests/browser/terminal/servers.html?terminalWorkspace&theme=${theme}`);
+      await page
+        .getByRole("list", { name: "Servers" })
+        .getByRole("button", { name: /^Server 01/ })
+        .dblclick();
+      const tabs = page.getByRole("tablist", { name: "SSH terminals", exact: true });
+      await expect(tabs).toBeVisible();
+      expect(await tabs.evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("1px");
+      await page.screenshot({ path: testInfo.outputPath("ssh-tabs.png"), animations: "disabled" });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`connections caller visual ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const folder = "temp/verification/connections-callers";
+      await mkdir(folder, { recursive: true });
+      await page.goto(
+        `/tests/browser/terminal/servers.html?sshFixture&groupFixture&terminalWorkspace&theme=${theme}`,
+      );
+      await page
+        .getByRole("list", { name: "Servers" })
+        .getByRole("button", { name: /^Existing SSH target/ })
+        .click();
+      const details = page.getByRole("region", { name: "Server details" });
+      await expect(details).toBeVisible();
+      await page.screenshot({ path: `${folder}/servers-${theme}-${width}.png` });
+      await details.getByRole("tab", { name: "Automation", exact: true }).click();
+      await expect(
+        details.getByRole("heading", { name: "Saved commands", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: `${folder}/runbooks-${theme}-${width}.png` });
+      await details.getByRole("tab", { name: "Organization", exact: true }).click();
+      await expect(details.getByRole("combobox", { name: "Group", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${folder}/group-${theme}-${width}.png` });
+      await details.getByRole("button", { name: "SSH group settings", exact: true }).click();
+      await expect(
+        page.getByRole("dialog", { name: "SSH group settings", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: `${folder}/group-dialog-${theme}-${width}.png` });
+      await page.goto(`/tests/browser/terminal/servers.html?forwardFixture=1&theme=${theme}`);
+      await page.locator("summary").filter({ hasText: "Port forwarding" }).click();
+      await page.locator("summary").filter({ hasText: "Add forwarding rule" }).click();
+      await expect(
+        page.getByRole("textbox", { name: "Destination host", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: `${folder}/forwards-${theme}-${width}.png` });
+      await page.goto(
+        `/tests/browser/terminal/servers.html?sshFixture=1&terminalWorkspace=1&serverRestoreFixture=1&theme=${theme}`,
+      );
+      await expect(page.getByRole("region", { name: "Saved SSH tabs", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${folder}/restore-${theme}-${width}.png` });
+      await page.goto(
+        `/tests/browser/terminal/servers.html?sshFixture&httpProxyFixture&proxyAuthFixture&terminalWorkspace&runbookFixture&theme=${theme}`,
+      );
+      await page
+        .getByRole("list", { name: "Servers" })
+        .getByRole("button", { name: /^Existing SSH target/ })
+        .click();
+      await page
+        .getByRole("region", { name: "Server details" })
+        .getByRole("button", { name: "Server actions", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
+      await editor.locator("summary").filter({ hasText: "Connection proxy" }).click();
+      await expect(editor.getByRole("textbox", { name: "Proxy host", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${folder}/editor-${theme}-${width}.png` });
+      await editor
+        .getByRole("textbox", { name: "Proxy host", exact: true })
+        .scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `${folder}/editor-proxy-${theme}-${width}.png` });
+      await page.goto(
+        `/tests/browser/terminal/servers.html?sshFixture&httpProxyFixture&proxyAuthFixture&terminalWorkspace&runbookFixture&theme=${theme}`,
+      );
+      await page
+        .getByRole("list", { name: "Servers" })
+        .getByRole("button", { name: /^Existing SSH target/ })
+        .click();
+      await page.getByRole("tab", { name: "Automation", exact: true }).click();
+      await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "SSH runbooks", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${folder}/runbook-dialog-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Files", exact: true }).click();
+      await page
+        .getByRole("dialog", { name: "SFTP files", exact: true })
+        .getByRole("button", { name: "Open", exact: true })
+        .click();
+      await expect(
+        page.getByRole("dialog", { name: "HTTP proxy authentication", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: `${folder}/proxy-approval-${theme}-${width}.png` });
+    });
+
 // The details popover closes on an outside press, so hide/show goes through the keyboard to keep the
 // selection that the retained panel is expected to keep (and a narrow popover can cover the button).
 async function toggleServers(page: import("@playwright/test").Page) {

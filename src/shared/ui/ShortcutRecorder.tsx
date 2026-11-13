@@ -15,7 +15,7 @@ type Props = ShortcutRecorderProps & {
  * `displayKeys` supplies already formatted labels for an externally controlled recorder; the shortcut model lives in `shortcut.ts`.
  * @group fields
  * @use Let the user rebind a keyboard shortcut (settings).
- * @avoid Only displaying a shortcut: ShortcutKeys.
+ * @avoid Only displaying a shortcut: ShortcutKeys. An ordinary editable string instead of a key binding: TextField.
  * @arc shortcut-recorder
  */
 export function ShortcutRecorder({ displayKeys, ...props }: Props) {

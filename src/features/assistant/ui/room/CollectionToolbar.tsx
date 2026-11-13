@@ -10,9 +10,10 @@ import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { Select } from "../../../../shared/ui/Select";
 import { Popover } from "../../../../shared/ui/Popover";
 import { FilterTrigger } from "../../../../shared/ui/FilterTrigger";
-import { Plus } from "../../../../shared/ui/icons";
+import { Plus, Sparkles, Trash2, RotateCcw } from "../../../../shared/ui/icons";
 import styles from "../AssistantView.module.css";
 import toolbar from "./CollectionToolbar.module.css";
+import { assistantActivityLabels } from "../AssistantHistory";
 import { statusLabel, matches } from "./assistantRoomHelpers";
 import { useAssistantRoom } from "./assistantRoomContext";
 
@@ -90,6 +91,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
           {view === "Notes" && (
             <>
               <Button
+                startIcon={<Sparkles className="icon-sm" />}
                 loading={pending?.key === "notes.summary"}
                 disabled={Boolean(pending) || !environmentId}
                 onClick={() => {
@@ -133,8 +135,14 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
             </>
           )}
           {view === "History" && (
-            <Button disabled={!snapshot.activity.length} onClick={clearHistory}>
-              {t("Clear history")}
+            <Button
+              iconOnly
+              variant="ghost"
+              label={t("Clear history")}
+              disabled={!snapshot.activity.length}
+              onClick={clearHistory}
+            >
+              <Trash2 className="icon-sm" />
             </Button>
           )}
           {["Jobs", "History", "Sessions"].includes(view) && (
@@ -171,7 +179,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                     value,
                     label:
                       view === "History"
-                        ? t(value)
+                        ? t(assistantActivityLabels[value] ?? "Activity")
                         : statusLabel(value as Parameters<typeof statusLabel>[0]),
                   })),
                 ]}
@@ -206,6 +214,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
             </div>
             <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, toolbar.footer)}>
               <Button
+                startIcon={<RotateCcw className="icon-sm" />}
                 variant="ghost"
                 disabled={!activeFilters}
                 onClick={() => {

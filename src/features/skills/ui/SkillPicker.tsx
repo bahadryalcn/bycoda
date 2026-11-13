@@ -1,5 +1,8 @@
+import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { isSkillGroupPickerItem } from "../model/skillGroupPicker";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -69,11 +72,7 @@ export function SkillPicker({
   return (
     <div
       data-skill-picker
-      className={
-        compact
-          ? "overflow-hidden"
-          : "overflow-hidden rounded-(--ui-radius-card) border border-(--ui-card-border)"
-      }
+      {...surfaceAttributes(compact ? {} : { radius: "card", frame: "card" }, "overflow-hidden")}
     >
       {creating ? (
         <CreateSkillForm
@@ -166,17 +165,20 @@ function SkillList({
 
   if (skills.length === 0) {
     return (
-      <Text as="p" size="caption" tone="secondary" className="px-3 py-2.5">
-        {query.trim() ? t("No matching commands or skills") : t("No commands yet")}
-      </Text>
+      <EmptyState
+        size="inline"
+        kind={query.trim() ? "filtered" : "empty"}
+        description={query.trim() ? t("No matching commands or skills") : t("No commands yet")}
+        className="px-3 py-2.5"
+      />
     );
   }
 
   return (
-    <div
+    <PickerListRoot
       ref={lockOverscroll}
-      role="listbox"
-      aria-label={t("Commands and skills")}
+
+      label={t("Commands and skills")}
       onMouseMove={onListMouseMove}
       className={`${compact ? "max-h-48" : "max-h-[min(240px,40vh)]"} overflow-y-auto overscroll-none px-1 py-1`}
     >
@@ -250,7 +252,7 @@ function SkillList({
           </Fragment>
         );
       })}
-    </div>
+    </PickerListRoot>
   );
 }
 

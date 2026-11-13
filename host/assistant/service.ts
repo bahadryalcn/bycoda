@@ -1,3 +1,4 @@
+import { hostModelRoutingService } from "../model-routing/runtime";
 import type { AssistantObservation } from "./observations/assistant-observation-journal";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -446,6 +447,7 @@ export class HostAssistant {
   private timer?: ReturnType<typeof setInterval>;
   private closing = false;
   private emergencyStop = false;
+  private presenceRefresh?: Promise<void>;
   private chiefTurn = false;
   private disposal?: Promise<void>;
   private keepAwakeStatus?: AssistantKeepAwakeStatus;
@@ -1063,6 +1065,32 @@ export class HostAssistant {
       return "away";
     return automatic.state === "locked" ? "away" : automatic.state;
   }
+  /**
+   * Reads this computer now instead of at the next minute tick when the owner shows activity
+   * while the automatic reading says idle or away, so returning flips back within seconds.
+   * One read at a time; syncPresence keeps its 15 s floor between reads.
+   */
+  refreshPresenceSoon(): void {
+    if (this.closing || this.presenceRefresh) return;
+    const run = async () => {
+      await this.ready;
+      const profile = await this.profile();
+      if (!profile.enabled || !profile.setupComplete) return;
+      if ((await this.ownerPresence()).state !== "present") return;
+      if ((await this.effectivePresence()) === "present") return;
+      const old = await this.runtime<AssistantAutomaticPresence | null>("automaticPresence", null);
+      if (old && this.now() - old.updatedAt < 15000 && this.now() >= old.updatedAt) return;
+      // Read before joining the queue, as tick() does: the native read takes seconds.
+      const observation = await readAssistantPresence(this.ports.readPresence);
+      await this.serialize(() => this.syncPresence(observation));
+      this.ports.onChange?.();
+    };
+    this.presenceRefresh = this.store.db.outsideScope(() =>
+      run()
+        .catch(this.report)
+        .finally(() => (this.presenceRefresh = undefined)),
+    );
+  }
   private async syncPresence(observed?: AssistantPresenceObservation) {
     const old = await this.runtime<AssistantAutomaticPresence | null>("automaticPresence", null);
     if (old && this.now() - old.updatedAt < 15000 && this.now() >= old.updatedAt) return;
@@ -1480,9 +1508,11 @@ export class HostAssistant {
   }
   async nativePresenceStatus() {
     await this.ready;
-    const profile = await this.profile();
+    const profile = await this.profile(),
+      manual = await this.ownerPresence();
     return {
       state: await this.effectivePresence(),
+      ...(manual.state === "idle" ? {} : { choice: manual.state }),
       setupComplete: profile.setupComplete,
       assistantName: profile.name.slice(0, 80),
     };
@@ -3229,11 +3259,9 @@ export class HostAssistant {
           }),
         };
       case "models.pool.get":
-      case "models.pool.set":
         return assistantModelPoolOp(input, principal, {
-          repository: this.repository,
+          routing: hostModelRoutingService(this.store),
           profile: () => this.profile(),
-          now: () => this.now(),
         });
       case "reminders.create":
       case "reminders.list":
@@ -3583,8 +3611,8 @@ export class HostAssistant {
       case "threads.open": {
         if (input.projectId) await this.assertProject(input.projectId);
         return this.store.transaction(async () => {
-          if (!input.projectId) return { thread: await this.ensureGlobalRoom() };
-          const key = input.projectId ? `project:${input.projectId}` : "global";
+          if (!input.projectId && !input.purpose) return { thread: await this.ensureGlobalRoom() };
+          const key = `${input.purpose ? "job-planning:" : ""}${input.projectId ? `project:${input.projectId}` : "global"}`;
           const existing = await this.repository.byKey<AssistantThread>("threads", key);
           const thread =
             existing ??
@@ -3593,6 +3621,7 @@ export class HostAssistant {
               {
                 ...this.stamp(),
                 ...(input.projectId ? { projectId: input.projectId } : {}),
+                ...(input.purpose ? { purpose: input.purpose } : {}),
                 summary: "",
               },
               0,
@@ -3919,7 +3948,7 @@ export class HostAssistant {
               messages: [await this.require<AssistantMessage>("messages", existing.messageId)],
             };
           const saved =
-            admission && this.ports.roomManagement
+            thread.purpose !== "job-planning" && admission && this.ports.roomManagement
               ? await this.runtime<RoomManagementTurnState | null>(`room-turn:${key}`, null)
               : null;
           if (
@@ -4130,7 +4159,8 @@ export class HostAssistant {
           ),
         );
         const instructions = await this.instructions("all");
-        const management = admission && this.ports.roomManagement;
+        const management =
+          thread.purpose !== "job-planning" && admission && this.ports.roomManagement;
         const scopedMessages = management ? await this.messageProjectScopes(messages) : messages;
         const contextAccounts = new Map<string, string>();
         const contextProjects = new Map<string, string>();
@@ -4246,7 +4276,7 @@ export class HostAssistant {
                 signal: replySignal,
                 ...(managementPrompt ? { managementPrompt } : {}),
               });
-            if (!admission || !this.ports.roomManagement) return reply();
+            if (!management) return reply();
             const contextFingerprints = new Map(
               managementMessages.map((message) => [
                 message.id,
@@ -4437,9 +4467,7 @@ export class HostAssistant {
                   ? !!replySummaryProof && !!thread.summary
                   : !!thread.summary,
                 ...(replySummaryProof ? { summaryProofId: replySummaryProof.id } : {}),
-                ...(admission && this.ports.roomManagement
-                  ? { managementTurnId: `room-turn:${key}` }
-                  : {}),
+                ...(management ? { managementTurnId: `room-turn:${key}` } : {}),
               });
               await this.setRuntime(key, { ...receipt, status: "settled", messageId: reply.id });
               await this.settleChiefUsage(usage.day, tokenCap, tokens, result.tokens === undefined);
@@ -4829,6 +4857,8 @@ export class HostAssistant {
           this.now() - old.since >= 30 * 60000
         )
           await this.prepareBriefing(old.since, undefined, this.now());
+        // Choosing Here over an automatic idle or away reading rereads this computer now.
+        if (input.state === "present") this.refreshPresenceSoon();
         return { ok: true };
       }
       case "briefing.dismiss":

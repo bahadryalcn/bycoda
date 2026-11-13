@@ -1,6 +1,209 @@
 import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`worktree loading row ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/source-control/worktrees.html?managed&visual-loading&theme=${theme}`,
+      );
+      const row = page.getByRole("status").filter({ hasText: /^Loading worktrees…$/ });
+      await expect(row).toBeVisible();
+      const centers = await row.evaluate((element) =>
+        [...element.children].map((child) => {
+          const box = child.getBoundingClientRect();
+          return box.y + box.height / 2;
+        }),
+      );
+      expect(centers).toHaveLength(2);
+      expect(Math.abs(centers[0] - centers[1])).toBeLessThan(3);
+      await page.screenshot({
+        path: `temp/verification/visual-callers-workbench/worktrees-loading-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`visual project picker icon and failure ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const folder = "temp/verification/visual-callers-workbench";
+      mkdirSync(folder, { recursive: true });
+      for (const view of ["cwd", "project"]) {
+        await page.goto(
+          `/tests/browser/source-control/worktrees.html?visualCaller=${view}&theme=${theme}`,
+        );
+        await page.getByTestId("visual-caller").getByRole("button").first().click();
+        if (view === "project")
+          await page
+            .locator('input[placeholder="Search projects..."]')
+            .fill("unmatched-fixture-project");
+        await expect(
+          page.getByText(view === "cwd" ? "No other projects" : "No projects found", {
+            exact: true,
+          }),
+        ).toBeInViewport();
+        await page.screenshot({ path: `${folder}/${view}-${theme}-${width}.png` });
+      }
+      await page.goto(
+        `/tests/browser/source-control/worktrees.html?visualCaller=icon&theme=${theme}`,
+      );
+      await expect(page.locator('[data-project-icon-picker] [role="radio"]').first()).toBeVisible();
+      await page.screenshot({ path: `${folder}/icon-populated-${theme}-${width}.png` });
+      await page.goto(
+        `/tests/browser/source-control/worktrees.html?visualCaller=quick-actions&theme=${theme}`,
+      );
+      await page.getByRole("button", { name: "Open project in", exact: true }).click();
+      await expect(
+        page.getByRole("dialog", { name: "Project action failed", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: `${folder}/quick-actions-error-${theme}-${width}.png` });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`visual callers workbench ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(120000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      // Deterministic pending worker reads exercise the actual viewer loading branches.
+      await page.addInitScript(() => {
+        window.Worker = class extends EventTarget {
+          onmessage = null;
+          onerror = null;
+          postMessage() {}
+          terminate() {}
+        } as unknown as typeof Worker;
+      });
+      const folder = "temp/verification/visual-callers-workbench";
+      mkdirSync(folder, { recursive: true });
+      for (const view of [
+        "pdf",
+        "docx",
+        "sheet",
+        "delimited",
+        "document-message",
+        "commit",
+        "session",
+        "conflict",
+        "delete",
+        "cwd",
+        "project",
+        "icon",
+        "quick-actions",
+        "working-loading",
+        "history-loading",
+        "changes-loading",
+        "unified-empty",
+        "workspace-error",
+        "document-error",
+      ]) {
+        const pending = ![
+          "document-message",
+          "cwd",
+          "project",
+          "icon",
+          "quick-actions",
+          "unified-empty",
+          "workspace-error",
+          "document-error",
+        ].includes(view);
+        await page.goto(
+          `/tests/browser/source-control/worktrees.html?visualCaller=${view}&theme=${theme}${pending ? "&visual-loading" : ""}`,
+        );
+        await expect(page.getByTestId("visual-caller")).toBeVisible();
+        if (view === "delimited") await expect(page.getByText(/Opening report\.csv/)).toBeVisible();
+        else if (view === "unified-empty")
+          await expect(page.getByText("No file changes")).toBeVisible();
+        else if (view === "workspace-error")
+          await expect(
+            page.getByText("Could not refresh repositories. Refresh source control to retry."),
+          ).toBeVisible();
+        else if (view === "document-error")
+          await expect(page.getByText("Could not read document")).toBeVisible();
+        else if (pending) await expect(page.getByRole("status").first()).toBeVisible();
+        if (view === "cwd") {
+          await page.getByTestId("visual-caller").getByRole("button").first().click();
+          await expect(page.getByText("No other projects", { exact: true })).toBeVisible();
+        }
+        if (view === "project") {
+          await page.getByTestId("visual-caller").getByRole("button").first().click();
+          await page
+            .locator('input[placeholder="Search projects..."]')
+            .fill("unmatched-fixture-project");
+          await expect(page.getByText("No projects found", { exact: true })).toBeVisible();
+        }
+        if (view === "icon") {
+          await page
+            .getByRole("searchbox", { name: "Search project icons", exact: true })
+            .fill("unmatched-fixture-icon");
+          await expect(page.getByText("No matching icons", { exact: true })).toBeVisible();
+        }
+        if (view === "quick-actions") {
+          await page.getByRole("button", { name: "Open project in", exact: true }).click();
+          await expect(
+            page.getByRole("dialog", { name: "Project action failed", exact: true }),
+          ).toBeVisible();
+          await page.keyboard.press("Escape");
+        }
+        await page.screenshot({ path: `${folder}/${view}-${theme}-${width}.png` });
+      }
+      await page.goto(
+        `/tests/browser/source-control/worktrees.html?managed&visual-loading&theme=${theme}`,
+      );
+      await expect(page.getByText("Loading worktrees…", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${folder}/worktrees-loading-${theme}-${width}.png` });
+      await page.goto(
+        `/tests/browser/source-control/worktrees.html?managed&visual-policy-error&theme=${theme}`,
+      );
+      await expect(page.getByText(/Workspace policy could not be read:/)).toBeVisible();
+      await page.screenshot({ path: `${folder}/policy-error-${theme}-${width}.png` });
+      await page.goto(`/tests/browser/source-control/worktrees.html?managed&theme=${theme}`);
+      const surface = page.getByRole("dialog", { name: "Worktrees", exact: true });
+      await expect(surface.getByRole("list", { name: "Worktrees", exact: true })).toBeVisible();
+      for (const [id, state] of [
+        ["workspace-policy", "policy"],
+        ["workspace-storage-status", "storage"],
+      ]) {
+        const region = surface.locator(`[data-setting-id="${id}"]`);
+        await expect(region).toBeVisible();
+        await region.screenshot({ path: `${folder}/${state}-${theme}-${width}.png` });
+      }
+      await page.screenshot({ path: `${folder}/worktrees-${theme}-${width}.png` });
+      await surface
+        .getByRole("list", { name: "Worktrees", exact: true })
+        .screenshot({ path: `${folder}/worktrees-list-${theme}-${width}.png` });
+      await page.evaluate(() => {
+        const fixture = window as unknown as {
+          __TAURI_INTERNALS__: {
+            invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
+          };
+          releaseVisualReview?: () => void;
+        };
+        const original = fixture.__TAURI_INTERNALS__.invoke;
+        fixture.__TAURI_INTERNALS__.invoke = (command, args) =>
+          command === "remote_request" && args?.method === "workspaces.delivery.review"
+            ? new Promise((resolve, reject) => {
+                fixture.releaseVisualReview = () => {
+                  void original(command, args).then(resolve, reject);
+                };
+              })
+            : original(command, args);
+      });
+      await surface.getByRole("button", { name: "Review changes", exact: true }).first().click();
+      await expect(page.getByText("Preparing review…", { exact: true })).toBeVisible();
+      await page.screenshot({ path: `${folder}/review-pending-${theme}-${width}.png` });
+      await page.evaluate(() =>
+        (window as unknown as { releaseVisualReview: () => void }).releaseVisualReview(),
+      );
+      await expect(page.getByRole("dialog", { name: "Review changes", exact: true })).toContainText(
+        "src/example.ts",
+      );
+      await page.screenshot({ path: `${folder}/review-${theme}-${width}.png` });
+    });
+
 for (const theme of ["dark", "light"]) {
   for (const width of [390, 768, 1024, 1440]) {
     test(`worktree management: ${theme} ${width}`, async ({ page }) => {
@@ -445,6 +648,29 @@ for (const theme of ["light", "dark"])
       await expect(policy.locator('[data-setting-id="workspace-policy"]')).toBeVisible();
       const trees = repo.getByRole("list", { name: "Worktrees", exact: true });
       await expect(trees.getByRole("listitem").first()).toBeVisible();
+      const unmanagedRow = trees
+        .getByRole("listitem")
+        .filter({ has: page.getByRole("button", { name: /^Reveal (?!folder$)/ }) })
+        .first();
+      const rowActions = unmanagedRow.locator('[data-action-hide="dim"]');
+      await unmanagedRow.scrollIntoViewIfNeeded();
+      await page.mouse.move(width - 5, 5);
+      await expect(rowActions).toHaveCSS("opacity", "0.6");
+      mkdirSync("temp/verification/source-control-surfaces", { recursive: true });
+      await unmanagedRow.screenshot({
+        path: `temp/verification/source-control-surfaces/worktree-rest-${theme}-${width}.png`,
+      });
+      await unmanagedRow.hover();
+      await expect(rowActions).toHaveCSS("opacity", "1");
+      await unmanagedRow.screenshot({
+        path: `temp/verification/source-control-surfaces/worktree-hover-${theme}-${width}.png`,
+      });
+      await unmanagedRow.getByRole("button", { name: /^Reveal / }).focus();
+      await page.mouse.move(width - 5, 5);
+      await expect(rowActions).toHaveCSS("opacity", "1");
+      await unmanagedRow
+        .getByRole("button", { name: /^Reveal / })
+        .evaluate((node: HTMLElement) => node.blur());
 
       // The repository boundary is one distinct, named heading.
       const boundaryHeading = repo.getByRole("heading", {
@@ -564,18 +790,18 @@ for (const theme of ["light", "dark"])
         );
       }
       expect(reached).toMatch(/^Reveal /);
-      // Each unmanaged row offers Delete inline, then its collapsed Details toggle last.
+      // Inline metadata stays visible; Tab follows Reveal/Delete pairs across rows.
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toMatch(
         /^Delete /,
       );
       await page.keyboard.press("Tab");
-      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
-        "Details",
+      const nextReveal = await page.evaluate(() =>
+        document.activeElement?.getAttribute("aria-label"),
       );
-      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-expanded"))).toBe(
-        "false",
-      );
+      expect(nextReveal).toMatch(/^Reveal /);
+      expect(nextReveal).not.toBe(reached);
+      await expect(unmanagedRow.getByText(/\/fixture\/worktrees\//).last()).toBeVisible();
 
       // Nothing overflows horizontally.
       const overflow = await page.evaluate(() => {

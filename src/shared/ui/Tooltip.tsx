@@ -309,14 +309,19 @@ export function useTooltip({
     trigger: {
       "data-tooltip-owner": empty ? undefined : "",
       onPointerEnter: (event) => {
-        if (event.pointerType === "touch" || empty) return;
+        if (
+          event.pointerType === "touch" ||
+          empty ||
+          !event.currentTarget.contains(event.target as Node)
+        )
+          return;
         const target = tooltipAnchor(event.currentTarget);
         if (eligible(target)) intent.scheduleOpen(target);
       },
       onPointerLeave: hide,
       onPointerDown: hide,
       onFocus: (event) => {
-        if (empty) return;
+        if (empty || !event.currentTarget.contains(event.target as Node)) return;
         const target = tooltipAnchor(event.currentTarget);
         if (event.target.matches(":focus-visible") && eligible(target))
           intent.scheduleOpen(target, 0);
@@ -356,7 +361,7 @@ export function useTooltip({
  * Native title tooltip attributes and hand-written plain hover hints; iframe and SVG accessible titles retain their naming job.
  * @group overlay
  * @use Add what the visible label lacks: a shortcut, detail, or the reason a control is disabled.
- * @avoid Repeating a visible label; essential info only in a hover hint; interactive preview: HoverCard. Clipped text: OverflowTooltip.
+ * @avoid Repeating a visible label; essential info only in a hover hint; interactive preview: useHoverCard. Clipped text: OverflowTooltip.
  */
 export function Tooltip({
   children,

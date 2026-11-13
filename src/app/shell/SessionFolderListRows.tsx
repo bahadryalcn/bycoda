@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { actionDragAttributes } from "../../shared/ui/ActionHost";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { SessionListEntry } from "../../features/sessions/model/sessionFolders";
 import styles from "./Sidebar.module.css";
@@ -8,6 +9,7 @@ import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { CheckCheck, Clock, Pin } from "../../shared/ui/icons";
 import { FolderRow, FolderRenameRow } from "./SessionFolderRows";
 import type { FolderEntry, SessionListVirtualProps } from "./sessionListWindow";
+import { surfaceAttributes } from "../../shared/ui/Surface";
 
 export function SessionFolderListHeader({
   entry,
@@ -57,10 +59,18 @@ export function SessionFolderListHeader({
       data-folder-collapsed={expanded ? undefined : "true"}
       data-section-divided={topLevel ? "" : undefined}
       data-section-collapsed={expanded ? undefined : ""}
-      className={`${virtual.className ?? "relative"} ${styles.folder}`}
-      style={{ ...virtual.style, paddingInlineStart: depth ? `${depth * 1.375}rem` : undefined }}
+      {...actionDragAttributes(
+        { appearance: "faded" },
+        `${virtual.className ?? "relative"} ${styles.folder}`,
+      )}
+      style={
+        {
+          ...virtual.style,
+          "--session-folder-indent": depth ? `${depth * 1.375}rem` : undefined,
+        } as CSSProperties
+      }
     >
-      <div className="overflow-hidden rounded-md">
+      <div {...surfaceAttributes({ radius: "row" }, "overflow-hidden")}>
         {renaming ? (
           <FolderRenameRow
             folder={entry.folder}
@@ -176,7 +186,7 @@ export function SessionGroupListRow({
       className={`${virtual.className ?? "relative"} ${styles.folder}`}
       style={virtual.style}
     >
-      <div className="overflow-hidden rounded-md">
+      <div {...surfaceAttributes({ radius: "row" }, "overflow-hidden")}>
         <FolderRow
           folder={folder}
           nameNode={renderName(name)}

@@ -4,6 +4,22 @@ import path from "node:path";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`sessions no match visual ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/sessions/session-row-layout.html?${light ? "light" : "dark"}`,
+      );
+      await page.getByRole("button", { name: "Search conversations", exact: true }).click();
+      await page
+        .getByPlaceholder("Search conversations...")
+        .fill("no matching fixture conversation");
+      await expect(page.getByText("No matching sessions", { exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/no-match-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });
 for (const light of [false, true]) {
   for (const width of [1280, 800]) {
     test(`virtual folder headers do not overlap sessions at ${width} ${light ? "light" : "dark"}`, async ({

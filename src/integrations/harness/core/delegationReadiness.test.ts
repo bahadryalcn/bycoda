@@ -45,15 +45,16 @@ it.each([
   },
 );
 
-it("checks initialize readiness, rejects metadata and normalizes split session ids", async () => {
+it("checks initialize readiness, rejects metadata and retains exact process session ids", async () => {
   invoke
     .mockResolvedValueOnce({ command: "node", args: [] })
     .mockResolvedValueOnce({ ready: true });
   expect(await conversationDelegationReady("session#2")).toBe(false);
   expect(await conversationDelegationReady("session#2")).toBe(true);
   expect(invoke).toHaveBeenLastCalledWith("harness_conversation_tools_bridge", {
-    sessionId: "session",
+    sessionId: "session#2",
     checkReady: true,
+    prepareSpawn: true,
   });
 });
 
@@ -61,7 +62,7 @@ it("bounds a hung backend and handles rejected calls", async () => {
   vi.useFakeTimers();
   invoke.mockReturnValueOnce(new Promise(() => {}));
   const pending = conversationDelegationReady("session");
-  await vi.advanceTimersByTimeAsync(1500);
+  await vi.advanceTimersByTimeAsync(5000);
   expect(await pending).toBe(false);
   invoke.mockRejectedValueOnce(new Error("Host offline"));
   expect(await conversationDelegationReady("session")).toBe(false);

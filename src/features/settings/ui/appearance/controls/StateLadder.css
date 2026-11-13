@@ -22,9 +22,6 @@
 .state-preview-row[data-state="hover"] {
   background: var(--ui-surface-hover);
 }
-.state-preview-row[data-state="selected"] {
-  background: var(--ui-surface-selected);
-}
 .state-preview-row[data-state="pressed"] {
   background: var(--ui-surface-pressed);
 }

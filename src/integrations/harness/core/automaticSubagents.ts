@@ -1,28 +1,32 @@
-import { resolveSubagents, subagentCatalogModels } from "../../../shared/model/automaticSubagents";
+import {
+  resolveSubagents,
+  type AutomaticSubagentInput,
+} from "../../../shared/model/automaticSubagents";
 import { AUTOMATIC_SUBAGENTS } from "../../../shared/model/host-contracts/delegation";
 import { HARNESSES, type HarnessId } from "../../../shared/model/harnessIdentity";
-import { modelsFor, isModelEnabled } from "../../../features/sessions/model/models";
 import { isHarnessAvailable } from "./availabilityState";
-import { defaultProviderAccountId } from "../../../features/providers/model/providerAccounts";
+
+type CatalogSnapshot = Pick<AutomaticSubagentInput, "models" | "defaultAccounts">;
+let readCatalog: (() => CatalogSnapshot) | undefined;
+
+/** Renderer composition supplies live catalog/account reads without a foundation-to-feature import. */
+export function setAutomaticSubagentCatalogReader(
+  reader: (() => CatalogSnapshot) | undefined,
+): void {
+  readCatalog = reader;
+}
 
 /** Runtime catalog preview. agents.options remains the live Host authority. */
 export function runtimeAutomaticSubagents(thread?: {
   harness?: string;
   providerAccountId?: string;
 }) {
-  const providers = HARNESSES.filter(isHarnessAvailable);
+  const catalog = readCatalog?.();
   return resolveSubagents(AUTOMATIC_SUBAGENTS, {
     harness: (thread?.harness ?? "claude") as HarnessId,
     providerAccountId: thread?.providerAccountId,
-    providers,
-    models: subagentCatalogModels(
-      Object.fromEntries(
-        providers.map((id) => [id, modelsFor(id).filter((model) => isModelEnabled(model.id))]),
-      ),
-    ),
-    defaultAccounts: {
-      claude: defaultProviderAccountId("claude"),
-      codex: defaultProviderAccountId("codex"),
-    },
+    providers: HARNESSES.filter(isHarnessAvailable),
+    models: catalog?.models ?? [],
+    defaultAccounts: catalog?.defaultAccounts,
   });
 }

@@ -34,10 +34,6 @@
   block-size: auto;
   padding-block: 8px;
 }
-.kind.kind[aria-checked="true"] {
-  box-shadow: 0 0 0 2px var(--ui-border-accent);
-  background: var(--ui-tone-accent-subtle);
-}
 .ratingRow {
   display: flex;
   align-items: center;

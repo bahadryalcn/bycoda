@@ -1,3 +1,5 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: existing bycoda tokens · v2.0.0 */
+/* Pre-emit critique: hierarchy uses primary row titles and secondary previews; restrained status glyphs replace icon tiles. */
 .notification-trigger-count {
   position: absolute;
   inset-block-start: -10px;
@@ -19,27 +21,9 @@
   flex-direction: column;
   gap: 4px;
 }
-/* A floating request popup is a card on the shared floating surface, the same
-   roles as a toast. Colour only: the ActionHost paints hover and press above it
-   as background images. */
-.notification-request {
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--ui-radius-popup);
-  background-color: var(--ui-surface-floating);
-  box-shadow: var(--ui-elevation-floating);
-}
 /* Pending and History rows share one flat anatomy inside the sheet: title,
    short content, secondary source/time. Floating popups keep their own card
    surface outside the sheet. */
-.notification-sheet .approval-toast {
-  animation: none;
-  border: 0;
-  border-radius: var(--ui-radius-card);
-  /* Colour only: the ActionHost row paints its hover and press as background images. */
-  background-color: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
-}
 .notification-request-body {
   align-items: stretch;
   gap: 4px;
@@ -114,27 +98,28 @@
   flex-direction: column;
   align-items: stretch;
   gap: 0;
-  border-radius: var(--ui-radius-card);
 }
-/* Icon, text and time on one line; the whole row is the expand toggle. */
+/* A quiet status glyph leaves the full content width for the title and preview. */
 .notification-row-toggle {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: start;
   justify-content: stretch;
-  gap: 10px;
+  gap: 12px;
   block-size: auto;
-  padding: 8px 10px;
+  padding: 12px;
   text-align: start;
   white-space: normal;
 }
 .notification-history-icon {
   justify-self: center;
+  margin-block-start: 2px;
 }
 .notification-history-text {
   display: flex;
   flex-direction: column;
   min-inline-size: 0;
+  gap: 4px;
 }
 .notification-history-head {
   display: flex;
@@ -142,8 +127,14 @@
   gap: 6px;
   min-inline-size: 0;
 }
+.notification-history-title {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
 .notification-new-dot {
   flex: none;
+  align-self: start;
+  margin-block-start: 6px;
 }
 .notification-history-preview[data-lines][data-size],
 .notification-history-label {
@@ -153,7 +144,7 @@
 .notification-history-meta {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   min-inline-size: 0;
 }
 .notification-history-meta .notification-project {
@@ -164,14 +155,16 @@
   white-space: nowrap;
 }
 .notification-history-time {
+  flex: none;
+  margin-inline-start: auto;
   white-space: nowrap;
 }
 /* Same columns as the row, so the details line up under the text, past the icon. */
 .notification-history-details {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  gap: 8px 10px;
-  padding: 0 10px 8px;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px 12px;
+  padding: 0 12px 12px;
 }
 .notification-history-details > * {
   grid-column: 2;
@@ -191,9 +184,4 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .approval-toast {
-    animation: none;
-  }
 }

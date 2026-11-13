@@ -2334,55 +2334,33 @@ it("marks a task the host merged on its own, on its card and in its details", as
   expect(panel()!.textContent).toContain("Merged automatically");
 });
 
-it("lists each machine's limits, shows today's use and saves a change", async () => {
+it("routes task work limits to the Models order page", async () => {
   const requests = host([], LIMIT_CAPABILITIES, [], [], LIMITS);
   await render();
-  expect(container.querySelector('[aria-label="Work limits"]')).toBeNull();
   await pickAction(container, "Limits");
-  const panelOfLimits = container.querySelector<HTMLElement>('[aria-label="Work limits"]')!;
-  expect(panelOfLimits.textContent).toContain("this computer");
-  expect(panelOfLimits.textContent).toContain("Used today: 1h 15m");
-  expect(panelOfLimits.textContent).toContain("Max concurrent tasks");
-  expect(panelOfLimits.textContent).toContain("Daily agent time");
-  const pick = (label: string) =>
-    panelOfLimits.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
-  expect(pick("Max concurrent tasks on this computer: 2")).toBeTruthy();
-  expect(pick("Daily agent time on this computer: 2 hours")).toBeTruthy();
-
-  await act(async () => pick("Max concurrent tasks on this computer: 2").click());
-  const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
-    (entry) => entry.textContent?.trim() === "4",
-  )!;
-  await act(async () => option.click());
-  expect(requests).toContainEqual({
-    method: "host.settings.save",
-    params: { settings: { maxRunningTasks: 4 } },
-  });
-  expect(pick("Max concurrent tasks on this computer: 4")).toBeTruthy();
+  expect(container.textContent).toContain("Unattended work limits are managed in Models.");
+  expect(document.querySelector('[aria-label="Work limits"]')).toBeNull();
+  const open = vi.fn();
+  window.addEventListener("bycoda:open-models-settings", open);
+  try {
+    await act(async () => button(container, "Manage in Models")!.click());
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({ detail: "order" }));
+    expect(requests.some((request) => request.method === "host.settings.save")).toBe(false);
+  } finally {
+    window.removeEventListener("bycoda:open-models-settings", open);
+  }
 });
 
-it("saves custom daily hours above the presets and 24 hours", async () => {
-  const requests = host([], LIMIT_CAPABILITIES, [], [], LIMITS);
-  await render();
+it("toggles the Models limits notice without changing tasks or Host settings", async () => {
+  const requests = host([task({ status: "todo" })], LIMIT_CAPABILITIES, [], [], LIMITS);
+  await render(undefined, "backlog");
   await pickAction(container, "Limits");
-  const form = container.querySelector<HTMLFormElement>(
-    'form[aria-label="Custom daily agent time on this computer"]',
-  )!;
-  const hours = form.querySelector<HTMLInputElement>('input[type="number"]')!;
-  expect(hours.value).toBe("2");
-  for (const value of ["18", "48", "12.5", "0"]) {
-    await act(async () => type(hours, value));
-    await act(async () => button(form, "Save")!.click());
-    expect(requests).toContainEqual({
-      method: "host.settings.save",
-      params: { settings: { dailyAgentMinutes: Number(value) * 60 } },
-    });
-    expect(hours.value).toBe(value);
-  }
-  for (const value of ["", "-1"]) {
-    await act(async () => type(hours, value));
-    expect(isDisabled(button(form, "Save")!)).toBe(true);
-  }
+  expect(button(container, "Manage in Models")).toBeDefined();
+  expect(container.textContent).toContain("Ship the report");
+  await pickAction(container, "Limits");
+  expect(button(container, "Manage in Models")).toBeUndefined();
+  expect(container.textContent).toContain("Ship the report");
+  expect(requests.some((request) => request.method === "host.settings.save")).toBe(false);
 });
 
 it.each([
@@ -2468,32 +2446,21 @@ it.each([
   },
 );
 
-it("locks custom daily hours until the settings request settles", async () => {
+it("keeps the Models limits link usable when Host limit reads fail", async () => {
   host([], LIMIT_CAPABILITIES, [], [], LIMITS);
   const original = invoke.getMockImplementation()!;
-  let release!: (value: HostSettingsState) => void;
-  const pending = new Promise<HostSettingsState>((resolve) => {
-    release = resolve;
-  });
   invoke.mockImplementation(async (command: string, args?: any) => {
-    if (command === "remote_request" && args.method === "host.settings.save") return pending;
+    if (command === "remote_request" && args.method === "host.settings.get")
+      throw new Error("Limits temporarily unavailable");
     return original(command, args);
   });
   await render();
   await pickAction(container, "Limits");
-  const form = container.querySelector<HTMLFormElement>(
-    'form[aria-label="Custom daily agent time on this computer"]',
-  )!;
-  const hours = form.querySelector<HTMLInputElement>('input[type="number"]')!;
-  await act(async () => type(hours, "3"));
-  await act(async () => button(form, "Save")!.click());
-  expect(hours.disabled).toBe(true);
-  expect(button(form, "Save")!.getAttribute("aria-disabled")).toBe("true");
-  expect(button(form, "Save")!.getAttribute("aria-busy")).toBe("true");
-  await act(async () => type(hours, "4"));
-  await act(async () => release({ ...LIMITS, dailyAgentMinutes: 180 }));
-  expect(hours.value).toBe("3");
-  expect(hours.disabled).toBe(false);
+  expect(container.textContent).toContain("Unattended work limits are managed in Models.");
+  expect(isDisabled(button(container, "Manage in Models")!)).toBe(false);
+  expect(
+    document.querySelector('form[aria-label="Custom daily agent time on this computer"]'),
+  ).toBeNull();
 });
 
 it("locks task detail edits and cancellation while saving", async () => {

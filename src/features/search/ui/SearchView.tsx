@@ -1,3 +1,8 @@
+import {
+  actionContentAttributes,
+  actionContentScopeAttributes,
+} from "../../../shared/ui/ActionHost";
+import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -817,7 +822,7 @@ function ResultList({
   };
 
   return (
-    <div id={listId} role="listbox" aria-label={t("Search results")} onMouseMove={onListMouseMove}>
+    <PickerListRoot id={listId} label={t("Search results")} onMouseMove={onListMouseMove}>
       {hits.map((hit, index) => {
         const highlighted = index === active;
         const row = rowCopy(hit, query);
@@ -875,6 +880,7 @@ function ResultList({
               motion="none"
               fullWidth
               selected={highlighted}
+              {...actionContentScopeAttributes()}
               className="app-search-result"
               id={`${listId}-option-${index}`}
               ref={highlighted ? activeRef : undefined}
@@ -897,7 +903,10 @@ function ResultList({
                   weight="medium"
                   leading="inherit"
                   truncate
-                  className="app-search-result-title"
+                  {...actionContentAttributes(
+                    { phase: "always", reveal: "wrap" },
+                    "app-search-result-title",
+                  )}
                 >
                   {row.title}
                 </Text>
@@ -906,9 +915,13 @@ function ResultList({
                     size="inherit"
                     tone="secondary"
                     leading="inherit"
+                    {...actionContentAttributes({ phase: "always", reveal: "preview" })}
                     {...motionAttributes(
                       { transition: "size", duration: "standard" },
-                      "app-search-result-preview",
+                      actionContentAttributes(
+                        { phase: "always", reveal: "preview" },
+                        "app-search-result-preview",
+                      ).className,
                     )}
                   >
                     {row.preview}
@@ -919,7 +932,10 @@ function ResultList({
                   tone="secondary"
                   leading="inherit"
                   truncate
-                  className="app-search-result-meta"
+                  {...actionContentAttributes(
+                    { phase: "always", reveal: "wrap" },
+                    "app-search-result-meta",
+                  )}
                 >
                   {row.meta}
                 </Text>
@@ -954,6 +970,6 @@ function ResultList({
           </div>
         );
       })}
-    </div>
+    </PickerListRoot>
   );
 }

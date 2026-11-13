@@ -1,4 +1,5 @@
 import { t } from "../../../../shared/i18n";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { DEFAULT_SOCIAL_POLICIES } from "../../model/socialPolicy";
 import type { SocialSnapshot } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
@@ -27,7 +28,7 @@ export function GeneralSettings({
 }: GeneralSettingsProps) {
   const policies = snapshot.policies ?? DEFAULT_SOCIAL_POLICIES;
   return (
-    <section className="settings-topics" aria-label={t("Settings")}>
+    <section className="social-settings-grid" aria-label={t("Settings")}>
       <SendingSettings
         client={client}
         snapshot={snapshot}
@@ -36,8 +37,12 @@ export function GeneralSettings({
       />
       <InboxSettings client={client} enabled={snapshot.pollingEnabled} onChanged={onChanged} />
       <AiModelSettings client={client} policies={policies} onChanged={onChanged} />
-      <CharacterLimits client={client} policies={policies} onChanged={onChanged} />
-      <ActivityHistory client={client} accounts={snapshot.accounts} projectId={projectId} />
+      <Disclosure summary={t("Character limits")} variant="row">
+        <CharacterLimits client={client} policies={policies} onChanged={onChanged} />
+      </Disclosure>
+      <Disclosure summary={t("Activity history")} variant="row">
+        <ActivityHistory client={client} accounts={snapshot.accounts} projectId={projectId} />
+      </Disclosure>
     </section>
   );
 }

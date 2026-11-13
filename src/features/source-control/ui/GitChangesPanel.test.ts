@@ -78,6 +78,10 @@ vi.mock("../../../integrations/harness", () => ({
   generatePrContent: vi.fn(async () => null),
   canRunHarnessTextPrompt: vi.fn(() => true),
 }));
+vi.mock("../model/gitTextGeneration", () => ({
+  generateCommitMessage: vi.fn(async () => ""),
+  generatePrContent: vi.fn(async () => null),
+}));
 
 vi.mock("../../files/model/fileWatch", () => ({
   invalidateWatchedFiles,
@@ -117,7 +121,7 @@ import {
   notifyGitChanged,
   subscribeGitChanged,
 } from "../../../platform/tauri/fs";
-import { generateCommitMessage, generatePrContent } from "../../../integrations/harness";
+import { generateCommitMessage, generatePrContent } from "../model/gitTextGeneration";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { GitChangedFile, GitDiffIndex } from "../../../platform/tauri/fs";
@@ -451,60 +455,52 @@ describe("GitChangesPanel commit message generation", () => {
     expect(container.querySelector("textarea")?.value).toBe("feat: add app");
     expect(container.textContent).not.toContain("Draft or changes changed during generation");
   });
-  it.each(["project", "default"])(
-    "uses the saved %s model and advisor for generation",
-    async (scope) => {
-      const choice = {
+  it("uses the saved project model and advisor for generation", async () => {
+    const choice = {
+      harness: "claude",
+      model: "claude:sonnet-5",
+      modelSettings: { advisor: "opus" },
+    };
+    localStorage.setItem("bycoda.gitGeneration.v1:/repo", JSON.stringify(choice));
+    vi.mocked(gitDiffIndex).mockResolvedValue(
+      index({
+        files: [
+          {
+            path: "/repo/file.ts",
+            relative: "file.ts",
+            status: "modified",
+            staged: true,
+            unstaged: false,
+            additions: 1,
+            deletions: 0,
+          },
+        ],
+      }),
+    );
+    vi.mocked(generateCommitMessage).mockResolvedValue("Fix generation");
+    await renderPanel();
+    const extras = container.querySelector<HTMLButtonElement>(
+      '[aria-label="AI generation settings"]',
+    )!;
+    expect(extras.textContent).toBe("");
+    expect(
+      extras.parentElement?.querySelector('[aria-label="Generate commit message"]'),
+    ).not.toBeNull();
+    expect(container.textContent).not.toContain("Commit and pull request generation");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')!.click(),
+    );
+    expect(generateCommitMessage).toHaveBeenCalledWith(
+      "/repo",
+      undefined,
+      expect.any(AbortSignal),
+      expect.objectContaining({
         harness: "claude",
-        model: "claude:sonnet-5",
-        modelSettings: { advisor: "opus" },
-      };
-      localStorage.setItem(
-        scope === "project" ? "bycoda.gitGeneration.v1:/repo" : "bycoda.gitGeneration.default.v1",
-        JSON.stringify(choice),
-      );
-      vi.mocked(gitDiffIndex).mockResolvedValue(
-        index({
-          files: [
-            {
-              path: "/repo/file.ts",
-              relative: "file.ts",
-              status: "modified",
-              staged: true,
-              unstaged: false,
-              additions: 1,
-              deletions: 0,
-            },
-          ],
-        }),
-      );
-      vi.mocked(generateCommitMessage).mockResolvedValue("Fix generation");
-      await renderPanel();
-      const extras = container.querySelector<HTMLButtonElement>(
-        '[aria-label="AI generation settings"]',
-      )!;
-      expect(extras.textContent).toBe("");
-      expect(
-        extras.parentElement?.querySelector('[aria-label="Generate commit message"]'),
-      ).not.toBeNull();
-      expect(container.textContent).not.toContain("Commit and pull request generation");
-      await act(async () =>
-        container
-          .querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')!
-          .click(),
-      );
-      expect(generateCommitMessage).toHaveBeenCalledWith(
-        "/repo",
-        undefined,
-        expect.any(AbortSignal),
-        expect.objectContaining({
-          harness: "claude",
-          model: choice.model,
-          modelSettings: expect.objectContaining(choice.modelSettings),
-        }),
-      );
-    },
-  );
+        model: choice.model,
+        modelSettings: expect.objectContaining(choice.modelSettings),
+      }),
+    );
+  });
   it("preserves the draft on generation failure and clears the error after a successful retry", async () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(
       index({

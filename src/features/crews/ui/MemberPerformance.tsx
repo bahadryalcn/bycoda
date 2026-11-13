@@ -5,8 +5,6 @@ import { Text } from "../../../shared/ui/Text";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { useState } from "react";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import type { useProjectCrews } from "../model/crewClient";
 import {
@@ -63,12 +61,7 @@ export function MemberPerformance({
       {status === "loading" || status === "idle" ? (
         <LoadingText delay={false}>{t("Loading performance…")}</LoadingText>
       ) : status === "error" ? (
-        <Alert tone="danger">
-          <InlineError>{t("Could not load performance")}</InlineError>
-          <Button variant="secondary" onClick={load}>
-            {t("Retry")}
-          </Button>
-        </Alert>
+        <InlineError retry={{ onRetry: load }}>{t("Could not load performance")}</InlineError>
       ) : performance && performance.reviewed > 0 ? (
         <div className="flex min-w-0 flex-col gap-2">
           <ul className="flex flex-col gap-1">

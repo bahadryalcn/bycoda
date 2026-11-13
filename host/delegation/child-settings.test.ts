@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentModel } from "../../src/features/sessions/model/models";
 import { childModelSettings, parentEffort } from "./child-settings";
+import { delegationGuidance } from "../../src/integrations/harness/core/delegationGuidance";
 
 const levels = (id: string, values: string[], value: string): AgentModel["settings"] => [
   {
@@ -19,6 +20,13 @@ const model = (settings: AgentModel["settings"]): AgentModel => ({
 });
 
 describe("childModelSettings", () => {
+  it.each(["none", "minimal"])(
+    "maps legacy %s ceilings to low without disabling reasoning",
+    (ceiling) => {
+      const child = model(levels("effort", ["none", "minimal", "low", "high"], "high"));
+      expect(childModelSettings(child, {}, undefined, ceiling)).toEqual({ effort: "low" });
+    },
+  );
   it("uses the parent's level when the child offers it", () => {
     const child = model(levels("effort", ["low", "medium", "high"], "high"));
     expect(childModelSettings(child, { reasoningEffort: "low" })).toEqual({ effort: "low" });
@@ -40,6 +48,26 @@ describe("childModelSettings", () => {
     expect(
       childModelSettings(child, { effort: "low", crossSubagents: "[]", delegationParent: "{}" }),
     ).toEqual({ effort: "low" });
+  });
+
+  it("leaves Host delegation guidance out of child prompts while preserving native subagents", () => {
+    const child = model([
+      ...levels("effort", ["low"], "low")!,
+      {
+        id: "nativeSubagents",
+        label: "Native subagents",
+        kind: "select",
+        value: "on",
+        options: [{ value: "on", label: "On" }],
+      },
+    ]);
+    const settings = childModelSettings(child, {
+      crossSubagents: "auto",
+      crossAdvisor: JSON.stringify({ harness: "codex", model: "codex:test" }),
+      crossSubagentMaxEffort: "high",
+    });
+    expect(settings).toEqual({ effort: "low", nativeSubagents: "on" });
+    expect(delegationGuidance(settings)).toBe("");
   });
 
   it("reads the parent level from any provider's effort key", () => {

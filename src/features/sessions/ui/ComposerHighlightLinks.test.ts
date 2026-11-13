@@ -87,8 +87,44 @@ it("boxes each link with its text intact and opens it from the end badge", () =>
     "hgithub.com/acme/app/pull/1267ttps:/",
     "hexample.comttps:/",
   ]);
+  expect(host.querySelectorAll("[data-composer-link-icon] svg")).toHaveLength(2);
   act(() => host.querySelectorAll<HTMLElement>("[data-composer-link-open]")[1].click());
   expect(openUrl).toHaveBeenCalledWith("https://example.com/");
+});
+
+it("decorates recognized skills and MCP references without changing the draft", () => {
+  const text = "/frontend-design $frontend-design @browser /unknown";
+  act(() =>
+    root.render(
+      createElement(ComposerHighlight, {
+        text,
+        mode: null,
+        names: new Set(["frontend-design"]),
+        skillParts: (value: string) =>
+          value
+            .split(/(\/frontend-design|\$frontend-design)/)
+            .map((text) => ({ text, skill: text.endsWith("frontend-design") ? true : undefined })),
+        mentions: new Map(),
+        mcpTags: [
+          {
+            token: "@browser",
+            server: {
+              name: "browser",
+              provider: "codex",
+              scope: "user",
+              configPath: "/config.toml",
+              transport: "http",
+            },
+          },
+        ],
+        attachments: [],
+        citations: 0,
+      }),
+    ),
+  );
+  expect(host.textContent).toBe(text);
+  expect(host.querySelectorAll("[data-composer-skill-token] svg")).toHaveLength(2);
+  expect(host.querySelector("[data-mcp-tag] svg")).not.toBeNull();
 });
 
 it("shows the link holding the caret in full, so editing lines up with the textarea", () => {

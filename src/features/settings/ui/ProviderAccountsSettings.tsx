@@ -1,6 +1,8 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Group, Row, SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
@@ -45,7 +47,7 @@ import {
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import { AccountColorPopover } from "../../providers/ui/AccountColorPicker";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
-import { exhaustedExplanation } from "../../providers/ui/providerStatus";
+import { exhaustedExplanation, useGrokSignInState } from "../../providers/ui/providerStatus";
 
 import {
   accountStatus,
@@ -313,6 +315,9 @@ export function ProviderAccountsSettings({
     enabled: !harness || supportsProviderAccounts(harness),
   });
   const standaloneHarness = harness === "cursor" || harness === "grok" ? harness : null;
+  const grokSignedIn =
+    useGrokSignInState(harness === "grok" && isHarnessAvailable("grok")).tone === "ready";
+  const standaloneSignedIn = standaloneHarness === "grok" && grokSignedIn;
   const accountProvider = harness
     ? supportsProviderAccounts(harness)
       ? harness
@@ -377,8 +382,12 @@ export function ProviderAccountsSettings({
             return (
               <div
                 key={provider}
+                data-settings-part="account-list"
                 hidden={Boolean(harness && provider !== harness)}
-                className="provider-accounts-body"
+                {...surfaceAttributes(
+                  { layout: "settings-account-list" },
+                  "provider-accounts-body",
+                )}
               >
                 {accounts.map((account) => {
                   const autoDefaultLabel =
@@ -430,7 +439,12 @@ export function ProviderAccountsSettings({
                       />
                     </Modal>
                   ) : (
-                    <div key={account.id} className="provider-account-row">
+                    <ActionHost
+                      key={account.id}
+                      variant="settings"
+                      className="provider-account-row"
+                      data-settings-part="account"
+                    >
                       <AccountColorDot account={account} className="size-2.5" />
                       <div className="provider-account-main">
                         <div className="provider-account-identity">
@@ -441,32 +455,24 @@ export function ProviderAccountsSettings({
                               tone="primary"
                               weight="medium"
                               leading="inherit"
+                              truncate
                               className="provider-account-name"
                             >
                               {displayLabel}
                             </Text>
                           </OverflowTooltip>
                           {account.isDefault && !autoDefaultLabel ? (
-                            <Badge size="sm" tone="accent" className="shrink-0">
-                              <Check className="icon-xs" aria-hidden />
-                              {t("Default account")}
-                            </Badge>
-                          ) : null}
-                          {orgTag ? (
-                            <Badge
-                              size="sm"
-                              appearance="subtle"
-                              truncate
-                              className="max-w-[8rem] shrink-0"
-                            >
-                              {account.kind === "work" ||
-                              (account.kind !== "personal" && orgTag !== t("Personal")) ? (
-                                <Briefcase className="icon-xs" aria-hidden />
-                              ) : (
-                                <UserRound className="icon-xs" aria-hidden />
-                              )}
-                              {orgTag}
-                            </Badge>
+                            <Tooltip label={t("Default account")}>
+                              <Text
+                                tone="accent"
+                                className="inline-flex shrink-0"
+                                role="img"
+                                aria-label={t("Default account")}
+                                tabIndex={0}
+                              >
+                                <Check className="icon-sm" aria-hidden />
+                              </Text>
+                            </Tooltip>
                           ) : null}
                         </div>
                         <Text
@@ -476,13 +482,6 @@ export function ProviderAccountsSettings({
                           leading="inherit"
                           className="provider-account-meta"
                         >
-                          {signedOut ? (
-                            <Badge size="sm" tone="warning" className="shrink-0">
-                              {t("Signed out")}
-                            </Badge>
-                          ) : (
-                            <AccountStatusLabel status={status} className="shrink-0" />
-                          )}
                           <ProviderAccountSubtitle
                             identity={identity}
                             fallback={
@@ -495,6 +494,24 @@ export function ProviderAccountsSettings({
                             tone="secondary"
                             truncate
                           />
+                          {orgTag ? (
+                            <OverflowTooltip label={orgTag}>
+                              <Text
+                                size="caption"
+                                tone="secondary"
+                                truncate
+                                className="inline-flex min-w-0 items-center gap-1"
+                              >
+                                {account.kind === "work" ||
+                                (account.kind !== "personal" && orgTag !== t("Personal")) ? (
+                                  <Briefcase className="icon-xs shrink-0" aria-hidden />
+                                ) : (
+                                  <UserRound className="icon-xs shrink-0" aria-hidden />
+                                )}
+                                {orgTag}
+                              </Text>
+                            </OverflowTooltip>
+                          ) : null}
                         </Text>
                         {exhausted ? (
                           <Text
@@ -522,6 +539,15 @@ export function ProviderAccountsSettings({
                             {t(". Remove this account if you do not need it separately.")}
                           </Text>
                         ) : null}
+                      </div>
+                      <div className="provider-account-status">
+                        {signedOut ? (
+                          <Badge size="sm" tone="warning" className="shrink-0">
+                            {t("Signed out")}
+                          </Badge>
+                        ) : (
+                          <AccountStatusLabel status={status} className="shrink-0" />
+                        )}
                       </div>
                       <div className="provider-account-actions">
                         {signingIn || !limits || canSignIn(limits) ? (
@@ -562,7 +588,7 @@ export function ProviderAccountsSettings({
                           <MoreHorizontal className="icon-md" strokeWidth={1.75} aria-hidden />
                         </Button>
                       </div>
-                    </div>
+                    </ActionHost>
                   );
                 })}
                 {accounts.length === 0 ? (
@@ -570,6 +596,7 @@ export function ProviderAccountsSettings({
                     size="inline"
                     kind="empty"
                     className="provider-account-empty"
+                    data-settings-part="account-empty"
                     description={t("No accounts. Add an account to sign in.")}
                   />
                 ) : null}
@@ -592,7 +619,9 @@ export function ProviderAccountsSettings({
               label={
                 standaloneHarness === "cursor"
                   ? t("Use the Cursor CLI sign-in on this machine.")
-                  : t("Use the Grok Build CLI sign-in on this machine.")
+                  : standaloneSignedIn
+                    ? t("Signed in with the Grok Build CLI on this machine.")
+                    : t("Use the Grok Build CLI sign-in on this machine.")
               }
             >
               {hasProbedHarnessAvailability() && !isHarnessAvailable(standaloneHarness) ? (
@@ -603,7 +632,7 @@ export function ProviderAccountsSettings({
                 <>
                   <Button
                     reserveLabels={[t("Signing in…")]}
-                    variant="secondary"
+                    variant={standaloneSignedIn ? "ghost" : "secondary"}
                     disabled={Boolean(working)}
                     loading={working === `signin:${standaloneHarness}`}
                     aria-label={t("Sign in to {p0}", {
@@ -611,7 +640,11 @@ export function ProviderAccountsSettings({
                     })}
                     onClick={() => void signInStandaloneProvider(standaloneHarness)}
                   >
-                    {working === `signin:${standaloneHarness}` ? t("Signing in…") : t("Sign in")}
+                    {working === `signin:${standaloneHarness}`
+                      ? t("Signing in…")
+                      : standaloneSignedIn
+                        ? t("Sign in again")
+                        : t("Sign in")}
                   </Button>
                 </>
               )}

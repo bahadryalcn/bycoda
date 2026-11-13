@@ -26,7 +26,7 @@ export type ScrollAreaProps<T extends ScrollTag = "div"> = ComponentPropsWithRef
  * `overflow: auto` is layout and stays in the feature: do not migrate it.
  * @group layout
  * @use A scrolling list, panel body or strip whose scrollbar is hidden or needs a stable gutter.
- * @avoid The body of a Modal, Sheet or Popover: they scroll themselves. A virtualized list: ContinuousList. A region that only needs overflow: keep the overflow class in the feature.
+ * @avoid The body of a Modal, Sheet or Popover: they scroll themselves. A virtualized list: ContinuousList. A region that only needs overflow: keep the overflow class in the feature. A static card without scroll ownership: Surface.
  * @example
  * <ScrollArea className="min-h-0 flex-1">{rows}</ScrollArea>
  * <ScrollArea axis="x" scrollbar="hidden">{tabs}</ScrollArea>

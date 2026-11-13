@@ -14,6 +14,19 @@
   },
   "suites": [
     {
+      "id": "folder-picker",
+      "config": "tests/browser/projects/folder-picker.playwright.config.ts",
+      "files": ["folder-picker.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/projects/folder-picker.vite.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/projects/folder-picker.html"
+      },
+      "projects": [
+        { "name": "chromium", "browser": "chromium", "files": ["folder-picker.spec.ts"] }
+      ]
+    },
+    {
       "id": "canvas-paired",
       "config": "tests/browser/crews/playwright.canvas-paired.config.ts",
       "files": ["canvas-paired.spec.ts", "canvas-dot-paired.spec.ts"],
@@ -123,7 +136,9 @@
         "assistant-history.e2e.ts",
         "assistant-memory.e2e.ts",
         "assistant-room-dialogs.e2e.ts",
-        "assistant-room-global.e2e.ts"
+        "assistant-room-global.e2e.ts",
+        "interview-redesign.e2e.ts",
+        "notes-redesign.e2e.ts"
       ],
       "fixture": {
         "config": "tests/browser/assistant/vite.assistant-room.config.ts",
@@ -139,7 +154,9 @@
             "assistant-history.e2e.ts",
             "assistant-memory.e2e.ts",
             "assistant-room-dialogs.e2e.ts",
-            "assistant-room-global.e2e.ts"
+            "assistant-room-global.e2e.ts",
+            "interview-redesign.e2e.ts",
+            "notes-redesign.e2e.ts"
           ]
         }
       ]
@@ -1050,6 +1067,23 @@
           "name": "chromium",
           "browser": "chromium",
           "files": ["settings-subviews.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "settings-collection-visual",
+      "config": "tests/browser/settings/playwright.collection-visual.config.ts",
+      "files": ["settings-collection-visual.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/settings/vite.collection-visual.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/settings/settings.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["settings-collection-visual.e2e.ts"]
         }
       ]
     },
@@ -2022,6 +2056,11 @@
     {
       "config": "tests/browser/app-shell/update-footer.playwright.config.ts",
       "files": ["update-footer.spec.ts"],
+      "browsers": ["chromium"]
+    },
+    {
+      "config": "tests/browser/projects/folder-picker.playwright.config.ts",
+      "files": ["folder-picker.spec.ts"],
       "browsers": ["chromium"]
     },
     {

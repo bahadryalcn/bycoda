@@ -150,7 +150,7 @@ describe("InboxDetail layout", () => {
     expect(header).toContain("Unassigned");
     expect(identityTag).toContain("flex-wrap");
     expect(header).not.toContain("data-inbox-detail-fixed-header");
-    expect(identityTag).not.toContain("border-b");
+    expect(identityTag).not.toContain('data-surface-edge="bottom"');
     expect(header).not.toContain("local-project");
     expect(header).not.toContain("overflow-y-auto");
     expect(header).not.toContain("bg-background-base");
@@ -291,14 +291,14 @@ describe("InboxDetail layout", () => {
     expect(fixedHeader).toContain("px-4");
     expect(fixedHeader).not.toContain("h-10");
     expect(fixedHeader).not.toContain("px-5");
-    expect(fixedHeader).toContain("border-b");
+    expect(fixedHeader).toContain('data-surface-edge="bottom"');
     expect(fixedHeader).not.toContain("A long inbox issue");
     expect(markup).toContain('data-size="page"');
     expect(markup).not.toContain("Related thread");
     expect(fixedHeader).not.toContain("Review Bycoda Pull Request");
     // The PR watch panel may offer linked threads as repair targets inside the scroller.
     expect(reviewButton).toContain('data-button-variant="ghost"');
-    expect(fixedHeader).toContain("pe-8.5");
+    expect(fixedHeader).toContain("pe-10");
   });
 
   it("offers full-file diffs only for GitHub pull requests", () => {

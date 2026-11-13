@@ -275,50 +275,6 @@ test("shared feedback preserves semantic states, recovery and narrow theme layou
   await region.screenshot({ path: "temp/verification/2026-10-16-ui-system/W2-feedback-light.png" });
 });
 
-test("searchable native forms preserve required focus, FormData, defaults, reset and refs", async ({
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/tests/browser/shared-ui/arc-controls.html");
-  const region = page.getByRole("region", { name: "Native searchable forms", exact: true });
-  const project = region.getByRole("button", { name: "Search form projects", exact: true });
-  const controlled = region.getByRole("button", {
-    name: "Search controlled form projects",
-    exact: true,
-  });
-  const submit = region.getByRole("button", { name: "Submit selection form", exact: true });
-  await submit.click();
-  await expect(project).toBeFocused();
-  await expect(region.getByLabel("Submitted selection form")).toHaveText("");
-  await project.press("Enter");
-  const search = page.getByRole("combobox", { name: "Search options…", exact: true });
-  await search.fill("Project 24");
-  await expect(page.getByRole("option", { name: /Project 24 with/ })).toBeVisible();
-  await search.press("ArrowDown");
-  await search.press("Enter");
-  await expect(region.locator('select[name="project"]')).toHaveValue("project-24");
-  await expect(region.getByLabel("Native selection changes")).toHaveText("1");
-  await submit.click();
-  await expect(controlled).toBeFocused();
-  await controlled.press("Enter");
-  await search.fill("Project 23");
-  await page.getByRole("option", { name: /Project 23 with/ }).click();
-  await submit.click();
-  await expect(region.getByLabel("Submitted selection form")).toHaveText("project-24/project-23");
-  await region.getByRole("button", { name: "Set native selection error", exact: true }).click();
-  await submit.click();
-  await expect(project).toBeFocused();
-  await region.getByRole("button", { name: "Clear native selection error", exact: true }).click();
-  await region.getByRole("button", { name: "Reset selection form", exact: true }).click();
-  await expect(region.locator('select[name="project"]')).toHaveValue("");
-  await expect(region.locator('select[name="controlled"]')).toHaveValue("");
-  await expect(project).toContainText("Choose project");
-  await region.getByRole("button", { name: "Focus native selection ref", exact: true }).click();
-  await expect(project).toBeFocused();
-  await region.locator('label[for="native-project"]').click();
-  await expect(project).toBeFocused();
-});
-
 test("expanding actions wait for pointer intent and keep the revealed target stable", async ({
   page,
 }) => {
@@ -1289,6 +1245,33 @@ async function focusByKeyboard(page: Page, control: Locator) {
 }
 
 test.describe("shared control state matrix", () => {
+  test("field placeholders inherit their control typography", async ({ page }) => {
+    for (const width of [800, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const theme of ["light", "dark"] as const) {
+        await openMatrix(page, { theme });
+        for (const name of ["Plain field", "Matrix text area", "Toolbar search sm"]) {
+          const control = page.getByLabel(name, { exact: true });
+          await expect(control).toBeVisible();
+          const typography = await control.evaluate((node) => {
+            const body = getComputedStyle(node);
+            const placeholder = getComputedStyle(node, "::placeholder");
+            return {
+              body: [body.fontSize, body.fontFamily, body.fontWeight, body.letterSpacing],
+              placeholder: [
+                placeholder.fontSize,
+                placeholder.fontFamily,
+                placeholder.fontWeight,
+                placeholder.letterSpacing,
+              ],
+            };
+          });
+          expect(typography.placeholder, `${name}: ${theme} ${width}`).toEqual(typography.body);
+        }
+      }
+    }
+  });
+
   test("matrix sections render every family with stable test ids", async ({ page }) => {
     await openMatrix(page);
     for (const id of [

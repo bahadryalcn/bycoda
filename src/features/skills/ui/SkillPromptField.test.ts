@@ -136,4 +136,15 @@ describe("SkillPromptField", () => {
     expect(document.querySelector("[data-skill-picker]")).toBeNull();
     expect(field.value).toBe("/rev");
   });
+
+  it("marks only recognized skills with icons and retains the picker anchor", () => {
+    const field = type("/unknown /deploy");
+    const tokens = container.querySelectorAll(".text-skill");
+
+    expect(tokens).toHaveLength(1);
+    expect(tokens[0].textContent).toBe("/deploy");
+    expect(tokens[0].querySelector("svg")).not.toBeNull();
+    expect(tokens[0].querySelector("[data-skill-anchor]")?.textContent).toBe("/");
+    expect(field.value).toBe("/unknown /deploy");
+  });
 });

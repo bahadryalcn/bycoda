@@ -676,7 +676,7 @@ describe("Conversation Tools boundary", () => {
     const call = vi.fn(async () => ({ schema: true }));
     const run = runConversationMcp(input, output, call);
     for (const [id, args] of [
-      [1, { ids: ["conversation:crews.schema"], maxChars: 16000 }],
+      [1, { ids: ["conversation:crews.schema"], maxChars: 200 }],
       [2, { ids: ["conversation:crews.schema"] }],
     ] as const) {
       input.write(
@@ -698,7 +698,7 @@ describe("Conversation Tools boundary", () => {
       .map((line) => JSON.parse(line));
     expect(responses[0].result).toMatchObject({ isError: true });
     expect(responses[0].result.content[0].text).toBe(
-      "Invalid numeric field tools.describe.maxChars. Expected a safe integer from 256 to 12000. Omit maxChars to use the default (10000); follow nextCursor for remaining content.",
+      "Invalid numeric field tools.describe.maxChars. Expected a safe integer >= 256. Omit maxChars to use the default (10000); follow nextCursor for remaining content.",
     );
     expect(responses[1].result.isError).toBeUndefined();
     expect(call).toHaveBeenCalledExactlyOnceWith("tools.describe", {
@@ -706,15 +706,16 @@ describe("Conversation Tools boundary", () => {
     });
   });
   it("keeps numeric bounds strict and identifies fields without echoing input", () => {
-    for (const maxChars of [200, 255, 12001, "12000", null, NaN, Infinity, 256.5]) {
+    for (const maxChars of [200, 255, "12000", null, NaN, Infinity, 256.5]) {
       expect(() =>
         validateConversationTool("tools.describe", {
           ids: ["conversation:crews.schema"],
           maxChars,
         }),
-      ).toThrow("tools.describe.maxChars. Expected a safe integer from 256 to 12000.");
+      ).toThrow("tools.describe.maxChars. Expected a safe integer >= 256.");
     }
-    for (const maxChars of [undefined, 256, 12000]) {
+    // Above 12000 is accepted and capped by the handler, so a model asking for more is not failed.
+    for (const maxChars of [undefined, 256, 12000, 16000]) {
       expect(() =>
         validateConversationTool("tools.describe", {
           ids: ["conversation:crews.schema"],
@@ -946,6 +947,9 @@ describe("Conversation Tools boundary", () => {
         ],
       },
     });
+    expect(JSON.parse(authorizeConversationAcpFrame(raw, {})).params.mcpServers).toEqual([
+      { name: "bycoda-runtime-logs", command: "node", env: [] },
+    ]);
     const frame = JSON.parse(authorizeConversationAcpFrame(raw, env));
     expect(frame.params.mcpServers[0].env).toContainEqual({
       name: "BYCODA_CONVERSATION_TOKEN",

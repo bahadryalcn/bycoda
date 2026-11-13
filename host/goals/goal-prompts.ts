@@ -1,3 +1,4 @@
+import type { RoutedRun } from "../tasks/model-routing";
 import { createHash } from "node:crypto";
 import {
   GOAL_FINAL_ACCEPTANCE_CRITERIA,
@@ -7,7 +8,7 @@ import {
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { acceptanceReviewInstructions } from "../../src/features/tasks/model/taskAcceptance";
 
-export type HostGoal = StoredHostGoal & { deliveryApprovalRequired?: boolean };
+export type HostGoal = StoredHostGoal & RoutedRun & { deliveryApprovalRequired?: boolean };
 export const FINAL_ACCEPTANCE_CRITERIA = GOAL_FINAL_ACCEPTANCE_CRITERIA;
 
 /** Identifies the delivered results reviewed together, including missing children. */

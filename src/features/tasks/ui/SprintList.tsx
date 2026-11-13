@@ -52,7 +52,7 @@ export function SprintList({
           options={["all", ...present].map((value) => ({ value, label: label(value) }))}
         />
       ) : null}
-      <Surface as="ul" variant="card" padding="none" className="sprint-collection">
+      <Surface as="ul" variant="card" padding="none" dividers="pane" className="sprint-collection">
         {shown.map((sprint) => (
           <li className="sprint-row" key={sprint.id}>
             <div className="sprint-row-main">

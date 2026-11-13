@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -116,7 +117,12 @@ export function TerminalPage() {
           </InfoPopover>
         }
       >
-        <div className="settings-collection terminal-host-list">
+        <div
+          {...surfaceAttributes(
+            { variant: "card", frame: "none", radius: "none" },
+            "settings-collection terminal-host-list",
+          )}
+        >
           <HostShellRow
             settingId="terminal-default-profile"
             detailId="terminal-available-shells"

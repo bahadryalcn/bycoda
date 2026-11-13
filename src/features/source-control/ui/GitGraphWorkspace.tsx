@@ -490,8 +490,10 @@ export function GitGraphWorkspace({
             <Sash {...branchPane.sashProps} label={t("Resize branches")} />
           </>
         ) : null}
-        <section aria-label={t("Commit Graph")} className="flex min-w-[300px] flex-1 flex-col">
-          <div className="shrink-0 border-b border-(--ui-pane-border)">
+        {/* An explicitly reopened branch rail shares narrow windows with the inspector. The
+            graph can yield to its compact commit column instead of pushing the inspector offscreen. */}
+        <section aria-label={t("Commit Graph")} className="flex min-w-[180px] flex-1 flex-col">
+          <div {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0")}>
             <Button
               size="sm"
               variant="item"
@@ -500,14 +502,17 @@ export function GitGraphWorkspace({
               aria-pressed={!commit}
               selected={false}
               onClick={() => onCommit(null)}
-              className="relative flex w-full items-center justify-between gap-3 rounded-none text-left"
+              {...surfaceAttributes(
+                { radius: "none" },
+                "relative flex w-full items-center justify-between gap-3 text-left",
+              )}
             >
               {commit ? null : (
                 <span
                   aria-hidden
                   {...surfaceAttributes(
-                    { radius: "pill" },
-                    "absolute inset-y-1 start-0 w-0.5 bg-(--ui-border-accent)",
+                    { radius: "pill", bar: "accent" },
+                    "absolute inset-y-1 start-0 w-0.5",
                   )}
                 />
               )}

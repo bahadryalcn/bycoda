@@ -41,11 +41,8 @@ export function WorkspaceDirectoryRemoval({
   const [pending, setPending] = useState<"plan" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lock = useRef(false);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // The preview in flight, reused when the owner deletes before it finishes.
+  const previewing = useRef<Promise<WorkspaceCleanupPlan> | null>(null);
   const latest = async () => {
     const fresh = await workspaceRequest("workspaces.get", { workspaceId: workspace.id }, context);
     if (!fresh) throw new Error(t("This workspace is no longer available."));
@@ -58,18 +55,18 @@ export function WorkspaceDirectoryRemoval({
       context,
     );
   async function preview() {
-    if (lock.current) return;
-    lock.current = true;
+    if (previewing.current) return;
     setPending("plan");
     setError(null);
     setPlan(null);
+    const request = latest().then(planFor);
+    previewing.current = request;
     try {
-      setPlan(await planFor(await latest()));
-      setNow(Date.now());
+      setPlan(await request);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      lock.current = false;
+      previewing.current = null;
       setPending(null);
     }
   }
@@ -77,14 +74,26 @@ export function WorkspaceDirectoryRemoval({
     // An active record cannot be previewed for removal until the owner confirms closing it.
     if (!closeFirst) void preview();
   }, [workspace.id]);
-  /** Closes the dialog at once; closing, planning and deleting continue in the background. */
+  /**
+   * Closes the dialog at once; closing, planning and deleting continue in the background. A
+   * large checkout can take longer to preview than the owner should wait, so deleting does not
+   * require a finished preview: an unfinished or expired one is completed in the background,
+   * and its blockers fail the removal there. A preview already showing blockers disables delete.
+   */
   function remove() {
     if (lock.current) return;
-    if (!closeFirst && (!plan || plan.expiresAt <= Date.now() || plan.blockers.length)) return;
-    const approved = plan;
+    if (plan?.blockers.length) return;
+    lock.current = true;
+    const approved = plan && plan.expiresAt > Date.now() ? plan : null;
+    const inFlight = previewing.current;
     onClose();
     void runBackgroundRemoval(workspace.path, projectName(workspace.path), async () => {
       let confirmed = approved;
+      if (!closeFirst && !confirmed) {
+        confirmed = (await inFlight?.catch(() => null)) ?? (await planFor(await latest()));
+        if (confirmed.expiresAt <= Date.now()) confirmed = await planFor(await latest());
+        if (confirmed.blockers.length) throw new Error(confirmed.blockers.join("; "));
+      }
       if (closeFirst) {
         const fresh = await latest();
         const closed = await workspaceRequest(
@@ -142,7 +151,7 @@ export function WorkspaceDirectoryRemoval({
       }}
       footer={
         <ModalActions>
-          <Button variant="secondary" disabled={!!pending} onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             {t("Cancel")}
           </Button>
           {!closeFirst && (
@@ -158,10 +167,7 @@ export function WorkspaceDirectoryRemoval({
           <Button
             variant="primary"
             tone="danger"
-            disabled={
-              !!pending ||
-              (!closeFirst && (!plan || !!plan.blockers.length || plan.expiresAt <= now))
-            }
+            disabled={!!plan?.blockers.length}
             onClick={remove}
           >
             {missingRecord ? t("Remove record") : t("Delete directory")}
@@ -209,11 +215,6 @@ export function WorkspaceDirectoryRemoval({
                   ))}
                 </ul>
               </Alert>
-            )}
-            {plan.expiresAt <= now && (
-              <InlineError>
-                {t("This preview expired. Refresh preview before deleting.")}
-              </InlineError>
             )}
           </>
         )}

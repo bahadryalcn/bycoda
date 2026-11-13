@@ -180,3 +180,20 @@ test("scope choices, Turkish copy and keyboard selection", async ({ page }) => {
   await page.screenshot({ path: "temp/verification/2026-10-16-external-mcp/tr-dark-help.png" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`external MCP row appearance ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/settings/external-mcp.html?theme=${theme}&visual-rows`);
+      const rows = page.locator('[data-action-host][data-variant="settings"]');
+      await expect(rows).toHaveCount(2);
+      await expect(rows.nth(1)).toHaveCSS("border-block-start-width", "1px");
+      await rows.nth(1).hover();
+      await page.screenshot({
+        path: info.outputPath(`external-rows-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+    });
+  }
+}

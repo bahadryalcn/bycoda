@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider, notifyManager } from "@tanstack/react-query";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -68,10 +69,6 @@ import { registerHarness } from "../../../integrations/harness/core/registry";
 import { codexAdapter } from "../../../integrations/harness/providers/codex/codexAdapter";
 import { antigravityAdapter } from "../../../integrations/harness/providers/antigravity/antigravityAdapter";
 import { saveLastModelChoice } from "../model/models";
-import {
-  saveDefaultTranslationChoice,
-  saveDefaultRepromptChoice,
-} from "../model/translationPreferences";
 
 /** Hovers a control until the shared tooltip opens and returns its text (key caps included). */
 async function tooltipText(element: HTMLElement): Promise<string> {
@@ -89,8 +86,11 @@ async function tooltipText(element: HTMLElement): Promise<string> {
 describe("Composer question focus", () => {
   let container: HTMLDivElement;
   let root: Root;
+  let client: QueryClient;
 
   beforeEach(() => {
+    notifyManager.setScheduler((callback) => callback());
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     clearMcpSettingsCache();
     mcpInvoke.mockReset();
     mcpInvoke.mockImplementation(async (command: string) =>
@@ -123,8 +123,8 @@ describe("Composer question focus", () => {
 
   afterEach(() => {
     act(() => root.unmount());
-    saveDefaultTranslationChoice(undefined);
-    saveDefaultRepromptChoice(undefined);
+    client.clear();
+    notifyManager.setScheduler((callback) => setTimeout(callback, 0));
     container.remove();
     vi.unstubAllGlobals();
     registerHarness(codexAdapter);
@@ -187,10 +187,7 @@ describe("Composer question focus", () => {
     },
   );
   it("opens the translation menu for an Antigravity model without silently calling Codex", async () => {
-    saveDefaultTranslationChoice({
-      harness: "antigravity",
-      model: "antigravity:gemini-3.8-flash-high",
-    });
+    saveLastModelChoice("antigravity", "antigravity:gemini-3.8-flash-high");
     const run = vi.fn(async () => "Hello");
     registerHarness({ ...codexAdapter, runTextPrompt: run });
     const antigravityRun = vi.fn(async () => "Hello");
@@ -312,32 +309,36 @@ describe("Composer question focus", () => {
   ) {
     await act(async () =>
       root.render(
-        createElement(Composer, {
-          key: sessionId,
-          focused: true,
-          focusToken,
-          harness,
-          model: "claude-sonnet",
-          runtimeMode: "supervised",
-          executionCwd: remoteSession ? cwd! : "/repo",
-          remoteSession,
-          cwd,
-          initialDraft,
-          sessionId,
-          onDraftChange: sessionId ? (text) => setComposerDraft(sessionId, text) : undefined,
-          hideProjectPicker: true,
-          hideBranchPicker: true,
-          onFocus: () => {},
-          onCwdChange: () => {},
-          onModelChange: () => {},
-          onRuntimeModeChange: () => {},
-          onSubmit,
-          onBtwCommand,
-          onNewSession,
-          question: currentQuestion,
-          onQuestionReply,
-          busy,
-        }),
+        createElement(
+          QueryClientProvider,
+          { client },
+          createElement(Composer, {
+            key: sessionId,
+            focused: true,
+            focusToken,
+            harness,
+            model: "claude-sonnet",
+            runtimeMode: "supervised",
+            executionCwd: remoteSession ? cwd! : "/repo",
+            remoteSession,
+            cwd,
+            initialDraft,
+            sessionId,
+            onDraftChange: sessionId ? (text) => setComposerDraft(sessionId, text) : undefined,
+            hideProjectPicker: true,
+            hideBranchPicker: true,
+            onFocus: () => {},
+            onCwdChange: () => {},
+            onModelChange: () => {},
+            onRuntimeModeChange: () => {},
+            onSubmit,
+            onBtwCommand,
+            onNewSession,
+            question: currentQuestion,
+            onQuestionReply,
+            busy,
+          }),
+        ),
       ),
     );
   }
@@ -899,7 +900,8 @@ describe("Composer question focus", () => {
       expect(mcpInvoke).not.toHaveBeenCalledWith("claude_mcp_list", expect.anything());
       await act(async () => docs.click());
       expect(textarea.value).toContain("@mcp/docs");
-      expect(document.querySelector("[data-mcp-tag] svg")).toBeNull();
+      expect(document.querySelector("[data-mcp-tag] .lucide-server")).not.toBeNull();
+      expect(document.querySelector("[data-mcp-tag]")?.textContent).toBe("@mcp/docs");
 
       await renderComposer(
         undefined,
@@ -928,6 +930,7 @@ describe("Composer question focus", () => {
       textarea = document.querySelector("textarea")!;
       expect(textarea.value).toContain("@mcp/docs");
       expect(document.querySelector('[data-mcp-tag="@mcp/docs"]')).not.toBeNull();
+      expect(document.querySelector('[data-mcp-tag="@mcp/docs"] .lucide-server')).not.toBeNull();
       await typeInto(textarea, `${textarea.value}Use docs`);
       await act(async () =>
         textarea.dispatchEvent(

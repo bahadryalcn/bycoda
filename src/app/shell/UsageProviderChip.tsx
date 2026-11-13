@@ -51,7 +51,7 @@ import {
   resolveTabGroupMascot,
 } from "../../features/workspace/model/tabGroups";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
-import { ArrowLeft, Check, ChevronRight, Plus, RefreshCw } from "../../shared/ui/icons";
+import { ArrowLeft, Check, ChevronRight, Plus } from "../../shared/ui/icons";
 import { Popover } from "../../shared/ui/Popover";
 import { Badge } from "../../shared/ui/Badge";
 import { InlineError } from "../../shared/ui/InlineError";
@@ -406,7 +406,12 @@ function UsageProviderDetails({
         ) : (
           <>
             <div className="flex items-start gap-2 px-1 pb-2 pt-0.5">
-              <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-(--color-stroke)">
+              <span
+                {...surfaceAttributes(
+                  { variant: "inset", radius: "card", ring: "stroke" },
+                  "grid size-6 shrink-0 place-items-center",
+                )}
+              >
                 <HarnessIcon harness={iconHarness} className="size-4" />
               </span>
               <div className="min-w-0 flex-1">
@@ -462,11 +467,7 @@ function UsageProviderDetails({
                   tone="secondary"
                   className="mt-0.5 inline-flex items-center gap-1"
                 >
-                  <RefreshCw
-                    className="size-2.5 motion-safe:animate-spin"
-                    strokeWidth={1.75}
-                    aria-hidden
-                  />
+                  <Spinner size="micro" />
                   {t("Updating")}
                 </Text>
               ) : null}
@@ -476,7 +477,7 @@ function UsageProviderDetails({
                 as="p"
                 size="caption"
                 tone="warning"
-                className="mb-2 rounded-(--ui-radius-card) bg-(--ui-tone-warning-subtle) px-2.5 py-2"
+                {...surfaceAttributes({ radius: "card", tone: "warning" }, "mb-2 px-2.5 py-2")}
               >
                 {t("Couldn’t refresh. Showing the last available snapshot.")}
               </Text>
@@ -626,19 +627,24 @@ function ProviderAccountPicker({
           const orgTag = identityOrganizationTag(identity);
           const usage = usageFor(account);
           const meters = meterWindowsWith(usage, t);
+          const chipSurface = surfaceAttributes(
+            {
+              radius: "card",
+              variant: selected ? "selected" : "inset",
+              ring: selected ? "tone-accent" : "stroke",
+            },
+            "pointer-events-none relative flex w-full items-center gap-3 px-2.5 py-2 text-left",
+          );
           return (
             <Text
               as="div"
               key={account.id}
               size="micro"
               tone={selected ? "primary" : "secondary"}
+              {...chipSurface}
               {...motionAttributes(
                 { transition: "colors", duration: "standard" },
-                `pointer-events-none relative flex w-full items-center gap-3 rounded-(--ui-radius-card) px-2.5 py-2 text-left ring-1 ring-inset ${
-                  selected
-                    ? "bg-(--ui-surface-selected) ring-(--ui-tone-accent-border)"
-                    : "bg-(--ui-surface-muted) ring-(--color-stroke)"
-                }`,
+                chipSurface.className,
               )}
             >
               {/* A sibling target keeps the email button out of the selection button. */}
@@ -940,8 +946,13 @@ function UnknownUsageBar({ label, loading = false }: { label: string; loading?: 
         size="caption"
         tone="secondary"
         {...surfaceAttributes(
-          { radius: "sm" },
-          "inline-flex h-4 min-w-12 items-center justify-center border border-dashed border-(--color-stroke) bg-(--ui-surface-muted) px-1",
+          {
+            radius: "sm",
+            variant: "inset",
+            frame: "stroke",
+            borderStyle: "dashed",
+          },
+          "inline-flex h-4 min-w-12 items-center justify-center px-1",
         )}
       >
         {loading ? "···" : "?"}
@@ -1024,7 +1035,7 @@ function BankedResets({
         role="list"
         aria-label={t("Available banked resets")}
       >
-        <div className="flex flex-col divide-y divide-stroke">
+        <div {...surfaceAttributes({ dividers: "stroke" }, "flex flex-col")}>
           {rows.map((credit, index) => {
             const rowKey = credit?.id ?? `unlisted-${index}`;
             const selected = activeResetKey === rowKey;
@@ -1066,7 +1077,6 @@ function BankedResetMascot({
       className="grid size-5 shrink-0 place-items-center"
       data-reset-mascot-mood="happy"
       data-mascot-name={mascot.name}
-      style={{ color }}
       aria-hidden
     >
       <ProjectMascot project={project} name={name} color={color} className="size-5" />

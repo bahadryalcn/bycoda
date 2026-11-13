@@ -21,8 +21,8 @@ comes from the catalog.
 - Layout is free: `display`, `grid`, `flex`, `gap`, `margin`, `width`, `overflow` and alignment
   belong to the feature.
 - Spacing: `var(--space-*)` is always allowed and is the preferred form. Only a literal off the
-  scale is reported: a bare px/rem value other than 0, 4, 6, 8, 10, 12, 14, 16, 20 or 24 px, or a
-  Tailwind step other than 0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6.
+  scale is reported: a bare px/rem value other than 0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 40 or 48
+  px, or a Tailwind step other than 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12.
 - Classes are read from `className`-like attributes, properties and variables and from the
   arguments of `cn(…)`/`clsx(…)`, whatever the result is named.
 - A clickable row or card is `Button variant="item"`, or `ActionHost` when it carries inline
@@ -144,8 +144,11 @@ with a one-line reason; the rest of the file still counts. The classes:
 
 Same job means the same shared component and appearance. A distinct component needs a distinct job.
 Import wrappers from `src/shared/ui/*`; Arc primitives and native-popup internals belong behind those
-wrappers. Only `Popover` and the explicit OS-window owners listed in `floatingSurfaceOwners` position
-floating surfaces. Features use `Popover`, `Modal`, `Sheet`, `Tooltip`, `Select` or `DropdownMenu`.
+wrappers. Only canonical shared overlay owners listed in `floatingSurfaceOwners` position floating
+surfaces: `Popover`, `Modal`, `Sheet`, `ImageLightbox`, `ToastRegion` and the explicit OS-window
+owners. Dialog, sheet and media owners use the shared overlay stack; toast owners use its menu
+layer. This does not permit feature portals or legacy self-positioned notices. Features use
+`Popover`, `Modal`, `Sheet`, `Tooltip`, `Select` or `DropdownMenu`.
 
 Every exported shared component, including internal parts, declares `@group` and `@use`. When a group
 has siblings, `@avoid` or `@replaces` names a sibling so the catalog explains the choice. An unused

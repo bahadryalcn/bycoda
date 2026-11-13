@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Portal } from "../../../shared/ui/Portal";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { LAYER } from "../../../shared/lib/layers";
 import { markHighlightSeen } from "../model/featureHighlights";
 import { usePendingHighlights } from "../model/useFeatureHighlights";
@@ -96,12 +97,19 @@ export function FeatureHighlightMarkers() {
       {spots
         .filter((spot) => pending.some((item) => item.id === spot.id))
         .map((spot) => (
-          <span
+          <StatusDot
             key={spot.id}
+            appearance="attention"
             className="feature-new-dot"
             aria-hidden="true"
             data-feature-highlight={spot.id}
-            style={{ left: spot.x, top: spot.y, zIndex: LAYER.popover }}
+            style={
+              {
+                "--highlight-x": `${spot.x}px`,
+                "--highlight-y": `${spot.y}px`,
+                "--highlight-layer": LAYER.popover,
+              } as CSSProperties
+            }
           />
         ))}
     </Portal>

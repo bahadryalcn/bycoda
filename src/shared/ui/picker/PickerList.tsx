@@ -1,11 +1,11 @@
-import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type ReactNode, type ComponentPropsWithRef } from "react";
 import { useT } from "../../i18n";
 import { popupListClassName } from "../Popover";
 import { PickerChoice } from "./PickerChoice";
 import { ActionHost } from "../ActionHost";
 import { Button } from "../Button";
 import { MatchText, matchPositions } from "../MatchText";
-import { ComboboxItem, ComboboxList, ComboboxStatus } from "../arc/combobox/combobox";
+import { ComboboxItem, ComboboxStatus } from "../arc/combobox/combobox";
 import {
   usePickerList,
   type PickerListController,
@@ -13,6 +13,43 @@ import {
   type PickerOption,
 } from "./usePickerList";
 import styles from "./picker.module.css";
+import comboboxStyles from "../arc/combobox/combobox.module.css";
+
+type PickerListRootProps = { label: string; multiple?: boolean } & (
+  | ({ as?: "div" } & Omit<
+      ComponentPropsWithRef<"div">,
+      "role" | "aria-label" | "aria-multiselectable"
+    >)
+  | ({ as: "ul" } & Omit<
+      ComponentPropsWithRef<"ul">,
+      "role" | "aria-label" | "aria-multiselectable"
+    >)
+);
+/**
+ * Listbox composition root for an existing editor or virtualized selection controller.
+ * Owns only the native listbox semantics; caller keeps active IDs, refs, keys, scrolling and selection.
+ * @group choice
+ * @use Existing folder, editor suggestion or path-selection controllers needing custom rows and virtualization.
+ * @avoid Ordinary values or commands without their own controller: PickerList or DropdownMenu.
+ * @replaces role=listbox
+ */
+export function PickerListRoot(props: PickerListRootProps) {
+  if (props.as === "ul") {
+    const { as: _as, label, multiple, ...rest } = props;
+    return (
+      <ul
+        {...rest}
+        role="listbox"
+        aria-label={label}
+        aria-multiselectable={multiple || undefined}
+      />
+    );
+  }
+  const { as: _as, label, multiple, ...rest } = props;
+  return (
+    <div {...rest} role="listbox" aria-label={label} aria-multiselectable={multiple || undefined} />
+  );
+}
 
 /** Value lists show the shared leading check; action lists without a committed value may omit it. */
 export type PickerCheckPlacement = "leading" | "none";
@@ -214,12 +251,11 @@ export function PickerList({
       ) : loading ? (
         <ComboboxStatus className={styles.status}>{loadingLabel ?? t("Loading…")}</ComboboxStatus>
       ) : null}
-      <ComboboxList
+      <PickerListRoot
         ref={root}
         id={list.listId}
-        role="listbox"
-        aria-label={label}
-        aria-multiselectable={list.multiple || undefined}
+        label={label}
+        multiple={list.multiple}
         aria-busy={loading || undefined}
         aria-activedescendant={listOwnsFocus ? list.activeOptionId : undefined}
         tabIndex={listOwnsFocus ? 0 : -1}
@@ -231,7 +267,7 @@ export function PickerList({
           if (listOwnsFocus || event.target.getAttribute("role") === "option")
             list.onListKeyDown(event);
         }}
-        className={`${styles.list} ${popupListClassName}`}
+        className={`${comboboxStyles.listbox} ${styles.list} ${popupListClassName}`}
       >
         {sections.map((section) =>
           section.group ? (
@@ -257,7 +293,7 @@ export function PickerList({
         {list.options.length === 0 && !loading && !failed ? (
           <ComboboxStatus empty>{emptyLabel ?? t("No matching options")}</ComboboxStatus>
         ) : null}
-      </ComboboxList>
+      </PickerListRoot>
     </div>
   );
 }

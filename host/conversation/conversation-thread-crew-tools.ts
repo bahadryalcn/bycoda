@@ -70,7 +70,7 @@ export class ConversationThreadCrewTools {
       new Set(),
     );
   }
-  /** Candidate models written by the voice/Room model must be rows of the owner's model pool. */
+  /** Candidate models written by the voice/Room model must be entries of the owner's main order. */
   private async assertCandidatesInPool(action: string, input: Record<string, unknown>) {
     const value = JSON.parse(
       String(input[action === "crews.save" ? "definitionJson" : "agentJson"]),

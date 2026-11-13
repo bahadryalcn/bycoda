@@ -1,0 +1,79 @@
+/* Voice core: avatar inside state rings. The colour says who has the floor: accent while the
+   assistant listens or replies, info while you speak, warning while it thinks. */
+.core {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  inline-size: 84px;
+  block-size: 84px;
+  --voice-core-ink: var(--ui-tone-accent-fg);
+  pointer-events: none;
+}
+.core[data-pose="user"] {
+  --voice-core-ink: var(--ui-tone-info-fg);
+}
+.core[data-state="thinking"] {
+  --voice-core-ink: var(--ui-tone-warning-fg);
+}
+.core[data-state="connecting"] {
+  --voice-core-ink: var(--ui-tone-neutral-fg);
+}
+.core:is([data-state="off"], [data-state="muted"]) {
+  --voice-core-ink: var(--ui-text-muted);
+}
+.core[data-state="error"] {
+  --voice-core-ink: var(--ui-tone-danger-fg);
+}
+.art {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: visible;
+  stroke: var(--voice-core-ink);
+  stroke-linecap: round;
+}
+.tick {
+  stroke-opacity: 0.18;
+}
+.tickMajor {
+  stroke-opacity: 0.45;
+}
+.arc {
+  stroke-width: 2.5;
+}
+.tail {
+  stroke-opacity: 0.5;
+}
+.dotted {
+  stroke-opacity: 0.3;
+  stroke-dasharray: 1.5 3.5;
+}
+.spectrum {
+  stroke-width: 1.4;
+}
+.hub {
+  fill: var(--voice-core-ink);
+  fill-opacity: 0.07;
+  stroke-opacity: 0.35;
+}
+.dot {
+  fill: var(--voice-core-ink);
+  stroke: none;
+}
+.avatar {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 34px;
+  block-size: 34px;
+  overflow: hidden;
+  clip-path: circle(50%);
+}
+.avatar:empty::before {
+  content: attr(data-initial);
+}
+.core:is([data-state="off"], [data-state="muted"]) .avatar {
+  opacity: 0.6;
+}

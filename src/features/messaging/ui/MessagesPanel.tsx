@@ -172,8 +172,8 @@ export function MessagesPanel({
       <div
         ref={setPaneRef}
         {...surfaceAttributes(
-          { variant: "transparent" },
-          "inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border)",
+          { variant: "transparent", frame: "pane", edge: "right" },
+          "inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col",
         )}
       >
         {sourceRow}
@@ -256,7 +256,12 @@ export function MessagesPanel({
         />
       </div>
       <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="inbox-detail-back shrink-0 border-b border-(--ui-tone-neutral-border) px-2 py-1">
+        <div
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "bottom" },
+            "inbox-detail-back shrink-0 px-2 py-1",
+          )}
+        >
           <Button variant="ghost" onClick={() => setDetailOpen(false)}>
             <ChevronLeft className="icon-sm" aria-hidden="true" />
             {t("Back")}

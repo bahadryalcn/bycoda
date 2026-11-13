@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+  DELEGATION_LIMITS,
+  isReservedDelegationKey,
+} from "../../src/shared/model/host-contracts/delegation";
 import type {
   HostSession,
   ContextualSessionInput,
@@ -104,7 +108,10 @@ export function previewContextualSession(
     turnBlockIds.length > 1000 ||
     Object.keys(sourceSettings).length > 20 ||
     Object.entries(sourceSettings).some(
-      ([key, value]) => key.length > 64 || typeof value !== "string" || value.length > 128,
+      ([key, value]) =>
+        key.length > 64 ||
+        typeof value !== "string" ||
+        value.length > (isReservedDelegationKey(key) ? DELEGATION_LIMITS.valueBytes : 128),
     ) ||
     boundedStrings.some(([value, limit]) => typeof value !== "string" || value.length > limit)
   )

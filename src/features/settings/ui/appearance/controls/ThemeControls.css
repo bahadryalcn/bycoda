@@ -183,12 +183,6 @@
   block-size: auto;
   padding: 0.5rem;
   text-align: start;
-  border-radius: 0.5625rem;
-  border: 1px solid var(--ui-pane-border);
-}
-.theme-palette-card.bycoda-arc[aria-checked="true"] {
-  border-color: transparent;
-  box-shadow: 0 0 0 2px var(--ui-focus-ring-color);
 }
 .theme-palette-swatches {
   display: flex;
@@ -248,7 +242,6 @@
   display: block;
   inline-size: 0.875rem;
   block-size: 0.875rem;
-  border-radius: 50%;
 }
 @media (width < 40rem) {
   .theme-preview {
@@ -274,8 +267,6 @@
   position: relative;
   display: grid;
   min-inline-size: 0;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: 0.5625rem;
 }
 .theme-saved-apply.bycoda-arc {
   display: grid;
@@ -300,20 +291,6 @@
   inset-inline-end: 0.25rem;
   display: flex;
   padding-inline-start: 0.5rem;
-  opacity: 0;
-}
-.theme-saved-card:hover .theme-saved-actions,
-.theme-saved-card:focus-within .theme-saved-actions {
-  opacity: 1;
-}
-@media (hover: none) {
-  .theme-saved-actions {
-    opacity: 1;
-  }
-}
-/* The final grid cell: a dashed "+ Save current look" card. */
-.theme-saved-card[data-add] {
-  border-style: dashed;
 }
 .theme-saved-add.bycoda-arc {
   justify-content: center;

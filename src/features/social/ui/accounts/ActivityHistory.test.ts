@@ -46,6 +46,25 @@ it("shows a succeeded post as Sent with its account name", async () => {
   expect(element.textContent).toContain("Sent");
 });
 
+it("reports a completed draft action without claiming it was sent", async () => {
+  render(
+    [],
+    [
+      {
+        id: "draft1",
+        at: Date.UTC(2026, 10, 7),
+        actor: "owner",
+        action: "drafts.create",
+        summary: "Draft prepared for review",
+        status: "done",
+      },
+    ],
+  );
+  await act(async () => undefined);
+  expect(element.textContent).toContain("Completed");
+  expect(element.textContent).not.toContain("Sent");
+});
+
 const buttonNamed = (name: string) =>
   [...element.querySelectorAll("button")].find((button) => button.textContent?.trim() === name);
 

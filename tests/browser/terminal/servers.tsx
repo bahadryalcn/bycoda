@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PhonePairingFixture } from "./phone-pairing-fixture";
 import { refreshSshRunbookQueue } from "../../../src/features/connections/model/sshRunbookQueue";
 import { createRoot } from "react-dom/client";
 import { TerminalView } from "../../../src/features/terminal/ui/TerminalView";
@@ -98,6 +99,7 @@ const sshRecords: ServerRecord[] =
           metadata: {
             tags: [],
             favorite: false,
+            ...(params.has("identityColorFixture") ? { customColor: "#123456" } : {}),
             ...(params.has("inheritedFixture")
               ? {
                   sshInheritance: {
@@ -658,6 +660,7 @@ function Fixture() {
   }, []);
   const [active, setActive] = useState<WorkspaceToolId>("servers");
   const [visible, setVisible] = useState(true);
+  if (params.has("phonePairingFixture")) return <PhonePairingFixture />;
   if (params.has("autocompleteFixture"))
     return (
       <main className="flex h-dvh min-w-0 flex-col">

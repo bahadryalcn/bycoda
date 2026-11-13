@@ -16,7 +16,7 @@ export type {
  * and exposes `expand()` through its ref for `/` or Ctrl+F.
  * @group navigation
  * @use Quick jump to a setting or item by name, or a collapsible filter box in a sidebar header.
- * @avoid Always-visible form search or filter input: TextField. Choosing a form value: SearchableSelect. Command registries stay with their owners.
+ * @avoid Always-visible form search or filter input: TextField. Choosing a form value: SearchableSelect. Command registries stay with their owners. Navigating between fixed views: Tabs.
  * @arc expanding-search
  */
 export function ExpandingSearch(props: ExpandingSearchProps) {

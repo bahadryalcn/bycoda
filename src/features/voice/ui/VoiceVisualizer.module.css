@@ -125,10 +125,4 @@
   position: absolute;
   inset-block-start: 2px;
   inset-inline-end: 2px;
-  inline-size: 8px;
-  block-size: 8px;
-  border-radius: calc(var(--ui-control-radius) / 3);
-  background: var(--ui-tone-warning-fg);
-  outline: 2px solid var(--ui-surface);
-  rotate: 45deg;
 }

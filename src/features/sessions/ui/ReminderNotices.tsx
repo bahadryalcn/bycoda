@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
@@ -62,7 +63,10 @@ export function ReminderNotices({
         size="inherit"
         tone="neutral"
         aria-label={t("Due reminders")}
-        className="relative flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-floating) shadow-(--ui-elevation-floating)"
+        {...surfaceAttributes(
+          { frame: "pane", variant: "floating" },
+          "relative flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) shadow-(--ui-elevation-floating)",
+        )}
       >
         <div className="flex min-h-7 items-center gap-2 px-3 pt-2">
           <Clock className="icon-sm shrink-0" tone="secondary" aria-hidden />

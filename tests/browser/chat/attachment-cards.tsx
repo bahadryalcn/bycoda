@@ -10,6 +10,14 @@ import {
 import { AttachmentChip } from "../../../src/features/sessions/ui/AttachmentChip";
 import { AttachmentTokenText } from "../../../src/features/sessions/ui/AttachmentTokenText";
 import { ComposerAttachmentHighlight } from "../../../src/features/sessions/ui/ComposerAttachmentHighlight";
+import { ComposerHighlight } from "../../../src/features/sessions/ui/ComposerHighlight";
+import { WorkItemMentionText } from "../../../src/features/sessions/ui/ChatCitationText";
+import { WorkItemMentionCwd } from "../../../src/features/sessions/ui/WorkItemMentionChip";
+import {
+  SkillTokenText,
+  TranscriptSkillNames,
+} from "../../../src/features/sessions/ui/SkillTokenText";
+import { skillTextParts } from "../../../src/features/skills/model/skills";
 import { languageReady } from "../../../src/shared/i18n";
 import "../../../src/styles/index.css";
 
@@ -177,7 +185,94 @@ function EditableExample({ name, initial }: { name: string; initial: Attachment[
   );
 }
 
+const referenceSkills = new Set(["frontend-design"]);
+const referenceAttachments = [samples[0], samples[3], samples[5]];
+const referenceText = [
+  "Use /frontend-design and $frontend-design before /unknown.",
+  `Review ${attachmentTokens(referenceAttachments).join(" ")} and @mcp/docs.`,
+  "Track @jira:PFDEV-1196 @gh:owner/repo#42 @gl:group/project!7.",
+  "https://example.com/design https://github.com/owner/repo/issues/42",
+  "https://gitlab.com/group/project/-/merge_requests/7 https://example.atlassian.net/browse/PFDEV-1196",
+].join("\n");
+
+function ReferenceTokens() {
+  const [text, setText] = useState(referenceText);
+  const field = useRef<HTMLTextAreaElement>(null);
+  return (
+    <WorkItemMentionCwd value="/isolated-fixture">
+      <TranscriptSkillNames value={referenceSkills}>
+        <section aria-label="Reference tokens" className="min-w-0 space-y-5">
+          <h1 className="text-ui-body font-semibold">Reference tokens</h1>
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            Isolated shared-component fixture; not installed app evidence.
+          </p>
+          <h2 className="text-ui-secondary font-medium">Draft</h2>
+          <div className="relative text-ui-body leading-7">
+            <div
+              aria-hidden="true"
+              data-reference-overlay
+              className="composer-highlight pointer-events-none absolute inset-0 whitespace-pre-wrap wrap-break-word p-2 font-sans text-(--color-content)"
+            >
+              <ComposerHighlight
+                text={text}
+                mode={null}
+                names={referenceSkills}
+                skillParts={skillTextParts}
+                mentions={new Map()}
+                mcpTags={[
+                  {
+                    token: "@mcp/docs",
+                    server: {
+                      provider: "claude",
+                      name: "docs",
+                      scope: "project",
+                      configPath: "/isolated-fixture/.mcp.json",
+                      transport: "stdio",
+                    },
+                  },
+                ]}
+                attachments={referenceAttachments}
+                citations={0}
+                field={field}
+              />
+            </div>
+            <textarea
+              ref={field}
+              aria-label="Reference token message"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              rows={11}
+              className="relative block w-full resize-none bg-transparent p-2 font-sans text-transparent caret-(--color-content) outline-none"
+            />
+          </div>
+          <h2 className="text-ui-secondary font-medium">Transcript</h2>
+          <div data-reference-transcript className="space-y-4 text-ui-body leading-7">
+            <p>
+              <SkillTokenText text="Use /frontend-design and $frontend-design before /unknown." />
+            </p>
+            <p>
+              <AttachmentTokenText
+                text={attachmentTokens(referenceAttachments).join(" ")}
+                attachments={referenceAttachments}
+              />
+            </p>
+            <p>
+              <WorkItemMentionText text="Track @jira:PFDEV-1196 @gh:owner/repo#42 @gl:group/project!7." />
+            </p>
+          </div>
+        </section>
+      </TranscriptSkillNames>
+    </WorkItemMentionCwd>
+  );
+}
+
 function Fixture() {
+  if (parameters.has("references"))
+    return (
+      <main className="mx-auto min-h-dvh max-w-5xl bg-(--color-background) px-5 py-5 text-(--color-content)">
+        <ReferenceTokens />
+      </main>
+    );
   return (
     <main className="mx-auto min-h-dvh max-w-5xl space-y-5 bg-(--color-background) px-5 py-5 text-(--color-content)">
       <header className="flex items-baseline justify-between gap-3">

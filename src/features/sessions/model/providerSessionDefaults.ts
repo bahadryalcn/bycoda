@@ -24,6 +24,14 @@ import type { HarnessId } from "./session";
 const KEY = "bycoda.providerSessionDefaults.v1";
 const CHANGE = SESSION_DEFAULTS_CHANGE;
 
+function hostDelegationSynced(): boolean {
+  try {
+    return localStorage.getItem("bycoda.hostDelegationSynced.v1") === "true";
+  } catch {
+    return false;
+  }
+}
+
 /** Effective product values for presentation; these are not saved overrides. */
 export function productSessionDefaults(
   harness: HarnessId,
@@ -94,19 +102,11 @@ export function providerSessionDefaults(
   const { model: _model, ...account } = accountSessionDefaults(harness, accountId);
   const project = loadProjectProviderSettings(cwd).defaults?.[harness];
   const recent = loadLastModelSettings();
-  const recentDelegation = Object.fromEntries(
-    [
-      CROSS_SUBAGENT_MAX_EFFORT_KEY,
-      CROSS_SUBAGENTS_KEY,
-      CROSS_ADVISOR_KEY,
-      CROSS_SUBAGENT_MAX_EFFORT_KEY,
-      IMAGE_MODELS_KEY,
-      ...(harness === "claude" ? ["advisor", "subagentModel"] : []),
-    ]
-      .filter((key) => recent[key] != null)
-      .map((key) => [key, recent[key]]),
-  );
-  const extras = [recentDelegation, global?.extras, account.extras, project?.extras].reduce<
+  const recentImage: Record<string, string> =
+    !hostDelegationSynced() && recent[IMAGE_MODELS_KEY] != null
+      ? { [IMAGE_MODELS_KEY]: recent[IMAGE_MODELS_KEY] }
+      : {};
+  const extras = [recentImage, global?.extras, account.extras, project?.extras].reduce<
     Record<string, string>
   >((base, override) => mergeProviderExtras(harness, base, override), product.extras ?? {});
   return normalizeProviderDefaults({ ...product, ...global, ...account, ...project, extras });
@@ -173,6 +173,11 @@ export function subscribeProviderSessionDefaults(listener: () => void): () => vo
   };
 }
 
-export function providerSessionDefaultsSnapshot(): string {
-  return JSON.stringify([loadGlobalSessionDefaults(), accountSessionDefaultsSnapshot()]);
+/** Include recent global settings only when migrating the renderer's delegation profile. */
+export function providerSessionDefaultsSnapshot(includeRecent = false): string {
+  return JSON.stringify([
+    loadGlobalSessionDefaults(),
+    accountSessionDefaultsSnapshot(),
+    ...(includeRecent ? [loadLastModelSettings()] : []),
+  ]);
 }

@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -68,7 +69,12 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
   };
 
   return (
-    <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-3 py-1.5">
+    <div
+      {...surfaceAttributes(
+        { frame: "stroke", edge: "bottom" },
+        "flex shrink-0 items-center gap-1 px-3 py-1.5",
+      )}
+    >
       {confirmElement}
       <InlineMessage tone="warning" className="flex-1">
         {operationSummary(label, conflictCount)}

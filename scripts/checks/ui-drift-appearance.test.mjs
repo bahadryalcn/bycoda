@@ -7,6 +7,7 @@ import {
   bespokeParts,
   bespokeSurfaces,
   classRanges,
+  isBespokePart,
   isBespokeSurface,
 } from "./ui-drift-appearance.mjs";
 
@@ -19,6 +20,224 @@ const found = (file, text) =>
     .filter((rule) => owned.has(rule));
 const css = (text, file = "src/features/demo/Demo.module.css") => found(file, text);
 const tsx = (text, file = "src/features/demo/Demo.tsx") => found(file, text);
+
+test("theme specimens retain paint without exempting their surrounding controls", () => {
+  const cases = [
+    [
+      "appearance/controls/GradientStrip.module.css",
+      ".gradient",
+      "background-image: var(--gradient-image)",
+    ],
+    [
+      "appearance/controls/GradientStrip.module.css",
+      ".presetDot",
+      "background-image: var(--gradient-image)",
+    ],
+    [
+      "appearance/controls/StateLadder.css",
+      ".state-preview-row:hover",
+      "background: var(--ui-surface-hover)",
+    ],
+    [
+      "appearance/controls/StateLadder.css",
+      ".state-preview-row:active",
+      "background: var(--ui-surface-pressed)",
+    ],
+    ["AppearanceSettings.css", ".appearance-tone", "background: var(--palette-base)"],
+    ["AppearanceSettings.css", ".appearance-tone > i", "background: var(--palette-raised)"],
+    [
+      "AppearanceSettings.css",
+      ".appearance-tone::after",
+      "border-radius: var(--ui-control-radius)",
+    ],
+    ["AppearanceSettings.css", ".appearance-tone > b", "background: var(--palette-accent)"],
+    [
+      "appearance/controls/ToneSliders.css",
+      '.tone-step[data-step="base"] > .tone-swatch',
+      "background: var(--color-background-base)",
+    ],
+    [
+      "appearance/controls/ToneSliders.css",
+      '.tone-step[data-step="surface"] > .tone-swatch',
+      "background: var(--ui-surface)",
+    ],
+    [
+      "appearance/controls/ToneSliders.css",
+      '.tone-step[data-step="line"] > .tone-swatch',
+      "background: var(--ui-pane-border)",
+    ],
+    [
+      "appearance/controls/ToneSliders.css",
+      '.tone-step[data-step="selected"] > .tone-swatch',
+      "background: var(--ui-surface-selected)",
+    ],
+    [
+      "appearance/controls/InterfaceSections.css",
+      ".diff-swatch-bars > span:first-child",
+      "background: var(--swatch-add)",
+    ],
+    [
+      "appearance/controls/InterfaceSections.css",
+      ".diff-swatch-bars > span:last-child",
+      "background: var(--swatch-del)",
+    ],
+    [
+      "appearance/controls/GradientStrip.module.css",
+      ".needle::before",
+      "background: var(--color-content); border-radius: var(--radius-pill)",
+    ],
+    [
+      "appearance/controls/StateLadder.css",
+      '.state-preview-row[data-state="hover"]',
+      "background: var(--ui-surface-hover)",
+    ],
+    [
+      "appearance/controls/StateLadder.css",
+      '.state-preview-row[data-state="pressed"]',
+      "background: var(--ui-surface-pressed)",
+    ],
+  ];
+  for (const [path, selector, declaration] of cases) {
+    const file = `src/features/settings/ui/${path}`;
+    assert.deepEqual(css(`${selector} { ${declaration}; }`, file), [], selector);
+    assert.ok(css(`${selector} button { border: 1px solid var(--x); }`, file).length > 0);
+    assert.ok(css(`${selector} { ${declaration}; }`, "src/features/demo/Demo.css").length > 0);
+  }
+  for (const selector of [
+    ".appearance-tone:hover",
+    ".appearance-tone:focus-visible",
+    ".appearance-mode-button",
+  ])
+    assert.ok(
+      css(
+        `${selector} { background: var(--x); }`,
+        "src/features/settings/ui/AppearanceSettings.css",
+      ).length > 0,
+    );
+  assert.ok(
+    css(
+      '.tone-step[data-step="custom"] > .tone-swatch { background: var(--x); }',
+      "src/features/settings/ui/appearance/controls/ToneSliders.css",
+    ).includes("surface-style"),
+  );
+});
+
+test("sheet zoom typography belongs only to the document viewport", () => {
+  const file = "src/features/files/ui/SheetGridView.css";
+  assert.deepEqual(
+    css(".sheet-document-viewport { font-size: var(--document-font-size); }", file),
+    [],
+  );
+  assert.ok(
+    css(".sheet-document-viewport { font-size: var(--x); }", file).includes("feature-typography"),
+  );
+  for (const part of ["header", "row-header", "cell"]) {
+    const selector = `.sheet-document-${part}[data-size="inherit"][data-leading="inherit"]`;
+    assert.deepEqual(css(`${selector} { line-height: var(--document-row-height); }`, file), []);
+    assert.ok(css(`${selector} { font-size: var(--x); }`, file).includes("feature-typography"));
+    assert.ok(
+      css(`${selector} button { line-height: var(--document-row-height); }`, file).includes(
+        "feature-typography",
+      ),
+    );
+  }
+  for (const selector of [
+    ".sheet-document-viewport button",
+    ".sheet-document-viewport:hover",
+    ".sheet-toolbar",
+  ])
+    assert.equal(
+      isBespokePart(file, "feature-typography", {
+        selectors: [selector],
+        text: "font-size:var(--document-font-size)",
+      }),
+      false,
+    );
+  assert.ok(
+    css(".sheet-document-viewport { font-size: var(--x); }").includes("feature-typography"),
+  );
+  assert.equal(
+    isBespokePart(file, "surface-style", { selectors: [".sheet-document-viewport"] }),
+    false,
+  );
+});
+
+test("usage data marks retain chart paint without exempting adjacent controls or states", () => {
+  const file = "src/features/usage/ui/UsageAnalytics.css";
+  for (const selector of [
+    ".usage-rank-track > span",
+    ".usage-quota-point",
+    ".usage-week-grid .usage-hour-cell",
+    '.usage-week-grid .usage-hour-cell[data-level="4"]',
+    ".usage-heat-legend > i",
+    '.usage-heat-legend > i[data-level="2"]',
+  ]) {
+    const source = `${selector} { background: var(--x); border-radius: 2px; }`;
+    assert.deepEqual(css(source, file), [], selector);
+    assert.ok(css(source).includes("surface-style"), selector);
+    assert.equal(isBespokePart(file, "interaction-state", { selectors: [selector] }), false);
+  }
+  for (const selector of [
+    ".usage-hour-cell",
+    ".usage-week-grid .usage-hour-cell:hover",
+    ".usage-week-grid .usage-hour-cell:focus-visible",
+    ".usage-heat-legend > button",
+    ".usage-quota-point button",
+    ".usage-account-row",
+  ])
+    assert.ok(css(`${selector} { background: var(--x); }`, file).length > 0, selector);
+});
+
+test("voice input level segments retain data paint without exempting controls", () => {
+  const file = "src/features/voice/ui/companion/VoiceCompanionParts.module.css";
+  for (const selector of [".meter > i", ".meter > i[data-on]"]) {
+    assert.deepEqual(
+      css(`${selector} { background: var(--x); border-radius: var(--x); }`, file),
+      [],
+    );
+    assert.equal(isBespokePart(file, "interaction-state", { selectors: [selector] }), false);
+  }
+  for (const selector of [".meter", ".meter > button", ".meter > i:hover", ".meter > i span"])
+    assert.ok(css(`${selector} { background: var(--x); }`, file).length > 0);
+  assert.ok(css(".meter > i { background: var(--x); }").includes("surface-style"));
+});
+
+test("conflict document decorations and their matching legend retain domain ink", () => {
+  const file = "src/features/source-control/ui/conflict-layout.css";
+  for (const selector of [
+    ".conflict-side-dot",
+    ".conflict-source-change",
+    ".conflict-source-word",
+    ".conflict-result-pending",
+    ".conflict-result-resolved",
+    '.conflict-result-pending[data-merge-active="true"]',
+    '.conflict-result-resolved[data-merge-active="true"]',
+  ]) {
+    const rule = `${selector} { background: var(--conflict-highlight); border-radius: 2px; }`;
+    assert.deepEqual(css(rule, file), [], selector);
+    assert.ok(css(rule).includes("surface-style"), selector);
+  }
+  assert.ok(
+    css(".conflict-side-dot button { background: var(--conflict-highlight); }", file).includes(
+      "surface-style",
+    ),
+  );
+  assert.equal(
+    isBespokePart(file, "feature-typography", { selectors: [".conflict-source-change"] }),
+    false,
+  );
+});
+
+test("control sizing applies to the selected element, not its control ancestor", () => {
+  assert.deepEqual(
+    css(".tabs > button svg { height: 14px; } .row button > span { min-height: 14px; }"),
+    [],
+  );
+  assert.deepEqual(
+    css(".tabs > button { height: 28px; } .row svg, .row button { min-height: 28px; }"),
+    ["fixed-control-size", "fixed-control-size"],
+  );
+});
 
 test("generated pseudo-element type and disabled motion are not hierarchy or motion", () => {
   assert.deepEqual(
@@ -167,17 +386,18 @@ test("spacing reports only a literal off the scale; tokens are always free", () 
         ".d { padding: var(--space-2) 5px; }",
         ".e { margin-top: 0.3rem; }",
         ".f { padding: 18px !important; }",
+        ".g { gap: 2px; padding: 32px 40px; margin-block: 3rem; }",
       ].join("\n"),
     ),
     Array(4).fill("spacing-step"),
   );
   assert.deepEqual(
     tsx(
-      '<div className="gap-1.5 p-2 px-5 -mt-2 gap-x-3.5 md:py-6 p-[var(--space-2)] p-(--space-2) gap-[10%]" />',
+      '<div className="gap-1.5 p-2 px-5 -mt-2 gap-x-3.5 md:py-6 gap-0.5 py-10 px-8 mt-12 p-[var(--space-2)] p-(--space-2) gap-[10%]" />',
     ),
     [],
   );
-  assert.deepEqual(tsx('<div className="m-px gap-7 md:px-0.5" />'), Array(3).fill("spacing-step"));
+  assert.deepEqual(tsx('<div className="m-px gap-7 md:px-9" />'), Array(3).fill("spacing-step"));
   // An arbitrary length stays with the narrower rule and is not reported twice.
   assert.deepEqual(
     scanFile("src/features/demo/Demo.tsx", '<div className="p-[7px]" />', definitions).map(
@@ -306,10 +526,76 @@ test("bespoke surfaces, shared UI and suppressed lines are outside the appearanc
   );
 });
 
+test("browser inspector geometry paint does not exempt controls or focus states", () => {
+  const boxFile = "src/features/host-tools/BrowserPanel.css";
+  const highlightFile = "src/features/host-tools/browser-annotation.css";
+  for (const selector of [
+    ".host-browser-box-model",
+    '.host-browser-box-model[data-part="margin"]',
+    '.host-browser-box-model[data-part="padding"]',
+    ".host-browser-child-bound",
+  ])
+    assert.deepEqual(
+      css(`${selector} { border: 1px dashed var(--ui-tone-info-fg); }`, boxFile),
+      [],
+    );
+  for (const selector of [
+    ".host-browser-highlight",
+    '.host-browser-highlight[data-selected="true"]',
+  ])
+    assert.deepEqual(
+      css(
+        `${selector} { border: 2px solid var(--ui-tone-accent-solid); background: var(--ui-annotation-highlight); }`,
+        highlightFile,
+      ),
+      [],
+    );
+  for (const selector of [
+    ".host-browser-highlight:hover",
+    ".host-browser-highlight button",
+    ".host-browser-highlight-label",
+    ".host-browser-surface img:focus-visible",
+  ])
+    assert.ok(
+      css(`${selector} { border: 1px solid var(--x); }`, highlightFile).includes(
+        selector.includes(":") ? "interaction-state" : "surface-style",
+      ),
+    );
+  assert.ok(
+    css(".host-browser-box-model { border: 1px solid var(--x); }", highlightFile).includes(
+      "surface-style",
+    ),
+  );
+  assert.ok(
+    css(".host-browser-highlight { border: 1px solid var(--x); }", boxFile).includes(
+      "surface-style",
+    ),
+  );
+});
+
 test("family recipes use Badge, ProgressBar, Tabs and SegmentedControl", () => {
-  assert.ok(tsx('<span className="project-badge" />').includes("surface-style"));
-  assert.ok(tsx('<div className="progress-fill" />').includes("surface-style"));
+  assert.deepEqual(tsx('<span className="project-badge" />'), []);
+  assert.deepEqual(tsx('<div className="progress-fill" />'), []);
   assert.ok(tsx('<nav className="project-tab-bar" />').includes("interaction-state"));
   assert.ok(tsx('<div className="segmented-row" />').includes("interaction-state"));
   assert.deepEqual(tsx("<Badge /><ProgressBar /><Tabs /><SegmentedControl />"), []);
+});
+
+test("class expressions exclude identifiers while retaining painted literal branches", () => {
+  assert.deepEqual(tsx('<span className={`icon-sm ${badge != null ? "ml-4" : ""}`} />'), []);
+  assert.deepEqual(tsx('<span className={`icon-sm ${border ? "bg-red-500" : "rounded-sm"}`} />'), [
+    "surface-style",
+    "surface-style",
+  ]);
+  assert.deepEqual(tsx('<span className={border ? "border" : "shadow"} />'), [
+    "surface-style",
+    "surface-style",
+  ]);
+  assert.deepEqual(css(".workspace-tab-badge { display: contents; }"), []);
+  assert.deepEqual(
+    css(
+      ".project-badge { background: red; border-radius: 4px; } .progress-fill { background: blue; }",
+    ),
+    ["surface-style", "surface-style"],
+  );
 });

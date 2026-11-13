@@ -91,6 +91,21 @@ export function job(id = "job-one") {
 }
 /** Clicks the first button whose aria-label or text matches. */
 export async function click(label: string) {
+  // Follow the Room's grouped navigation before looking for its destination.
+  const group = ["Notes", "Memory", "History"].includes(label)
+    ? "Records"
+    : ["Jobs", "Sessions"].includes(label)
+      ? "Work"
+      : null;
+  if (
+    group &&
+    ![...document.querySelectorAll('[role="tab"]')].some((tab) => tab.textContent?.trim() === label)
+  ) {
+    const parent = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+      (tab) => tab.getAttribute("aria-label") === group || tab.textContent?.trim() === group,
+    );
+    if (parent) await act(async () => parent.click());
+  }
   const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (element) =>
       element.getAttribute("aria-label") === label || element.textContent?.trim() === label,

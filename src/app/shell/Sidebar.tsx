@@ -1,3 +1,5 @@
+import { CheckboxMark } from "../../shared/ui/Checkbox";
+import { actionContentAttributes } from "../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
 import { ScrollArea } from "../../shared/ui/ScrollArea";
@@ -74,7 +76,6 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Archive,
   Chatting,
-  Check,
   CheckList,
   DashboardSquare,
   Bot,
@@ -2794,6 +2795,7 @@ function SidebarComponent({
         active = true;
         setGrabbing(true);
         source?.setAttribute("data-folder-dragging", "true");
+        source?.setAttribute("data-dragging", "true");
         announceDrag(
           t("Picked up folder {p0}. Escape cancels.", {
             p0: sessionFoldersRef.current.find((item) => item.id === folderId)?.name ?? t("Folder"),
@@ -2843,6 +2845,7 @@ function SidebarComponent({
       // Also clears the cursor badge and the target mark, committed or not.
       setGrabbing(false);
       source?.removeAttribute("data-folder-dragging");
+      source?.removeAttribute("data-dragging");
       cancelFolderDrag.current = null;
       try {
         handle.releasePointerCapture(pointerId);
@@ -3359,14 +3362,20 @@ function SidebarComponent({
       }}
       ref={resize.setPaneRef}
       data-side-pane="workspace"
-      className={`bycoda-sidebar body-glass sidebar-pane ${styles.pane} relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) pe-1.5`}
+      {...surfaceAttributes(
+        { frame: "pane", edge: "right", variant: "panel" },
+        `bycoda-sidebar body-glass sidebar-pane ${styles.pane} relative flex h-full min-h-0 shrink-0 flex-col pe-1.5`,
+      )}
     >
       {railVisible ? (
         <>
           {workspaceHeader()}
           <WorkspaceTabList
             value={tab}
-            className="bycoda-workspace-tabs flex shrink-0 items-center gap-0 border-b border-(--ui-pane-border)"
+            {...surfaceAttributes(
+              { frame: "pane", edge: "bottom" },
+              "bycoda-workspace-tabs flex shrink-0 items-center gap-0",
+            )}
           >
             {workspaceTabItems}
           </WorkspaceTabList>
@@ -3420,7 +3429,10 @@ function SidebarComponent({
           ) : null}
           <WorkspaceTabList
             value={tab}
-            className="bycoda-workspace-tabs flex shrink-0 items-center gap-0 overflow-visible border-b border-(--ui-pane-border)"
+            {...surfaceAttributes(
+              { frame: "pane", edge: "bottom" },
+              "bycoda-workspace-tabs flex shrink-0 items-center gap-0 overflow-visible",
+            )}
           >
             {workspaceTabItems}
           </WorkspaceTabList>
@@ -4721,10 +4733,11 @@ function CompactProjectRail({
           <CompactRailLogo />
         </PaneHeader>
       )}
-      <span
-        aria-hidden
+      <Divider
+        decorative
+        orientation="vertical"
         data-compact-rail-divider
-        className={`pointer-events-none absolute bottom-0 right-0 w-px bg-(--ui-pane-border) ${
+        className={`pointer-events-none absolute bottom-0 right-0 ${
           titleBarAbove ? "top-0" : "top-[calc(var(--ui-control-height-compact)+0.5rem)]"
         }`}
       />
@@ -5436,7 +5449,7 @@ const SessionCard = memo(function SessionCard({
     </Button>
   ) : null;
 
-  const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLElement>) => {
     if (e.target !== e.currentTarget) return;
     if (e.key === "Escape" && detailOpen) hideDetail();
     if (e.key === "Enter" || e.key === " ") {
@@ -5831,13 +5844,11 @@ const SessionCard = memo(function SessionCard({
   // Expanding an orchestration card must not move its existing header. Keep
   // the collapsed top inset and give only the new detail area extra room at
   // the bottom.
-  const cardPaddingY = orchestrationExpanded
-    ? compact
-      ? "pb-2.5 pt-1"
-      : "pb-2.5 pt-1.5"
-    : compact
-      ? "py-1"
-      : "py-1.5";
+  const cardPadding = {
+    inline: "lg",
+    top: compact ? "xs" : "sm",
+    bottom: orchestrationExpanded ? "lg" : compact ? "xs" : "sm",
+  } as const;
 
   const modelLabel = showModel ? (
     <span data-session-row-model className="flex shrink-0 items-center gap-1.5" aria-label={model}>
@@ -5845,23 +5856,25 @@ const SessionCard = memo(function SessionCard({
         <SessionSearchText text={model} />
       </span>
       {providerHistory.providers.map((harness) => (
-        <Text
-          as="span"
-          size="inherit"
-          key={harness}
-          data-session-provider={harness}
-          data-provider-active={harness === providerHistory.activeHarness ? "true" : "false"}
-          title={HARNESS_TITLE[harness]}
-          tone={harness === providerHistory.activeHarness ? "primary" : "muted"}
-          className={
-            harness === providerHistory.activeHarness ? undefined : "session-provider-inactive"
-          }
-        >
-          <HarnessIcon
-            harness={harness}
-            className={`${compact ? "icon-xs" : "icon-md"} shrink-0`}
-          />
-        </Text>
+        <Tooltip key={harness} label={HARNESS_TITLE[harness]}>
+          <Text
+            as="span"
+            size="inherit"
+
+            data-session-provider={harness}
+            data-provider-active={harness === providerHistory.activeHarness ? "true" : "false"}
+
+            tone={harness === providerHistory.activeHarness ? "primary" : "muted"}
+            className={
+              harness === providerHistory.activeHarness ? undefined : "session-provider-inactive"
+            }
+          >
+            <HarnessIcon
+              harness={harness}
+              className={`${compact ? "icon-xs" : "icon-md"} shrink-0`}
+            />
+          </Text>
+        </Tooltip>
       ))}
     </span>
   ) : null;
@@ -6025,6 +6038,7 @@ const SessionCard = memo(function SessionCard({
     <div ref={detailRootRef} className="group relative">
       <ActionHost
         selected={isSelected || isActive}
+        padding={cardPadding}
         hoverReveal
         ground={showProjectAppearance ? project.backgroundColor : undefined}
         data-session-card={session.id}
@@ -6054,11 +6068,12 @@ const SessionCard = memo(function SessionCard({
         onContextMenu={onContextMenu ? (event) => onContextMenu(session.id, event) : undefined}
         tone={dropTarget || isSelected || pressing || isActive ? "primary" : "secondary"}
         {...pressMotion}
-        className={`relative border flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col items-stretch gap-0 rounded-md px-2.5 text-left ${cardPaddingY} ${
-          dragging ? "opacity-0" : ""
-        } border-transparent hover:text-content ${pressMotion?.className ?? ""} ${
-          pressing ? "bg-(--ui-surface-pressed)" : ""
-        }`}
+        pressed={pressing}
+        interactionTone="primary"
+        {...surfaceAttributes(
+          { frame: "transparent", radius: "row" },
+          `relative flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col items-stretch gap-0 text-left ${dragging ? "opacity-0" : ""} ${pressMotion?.className ?? ""}`,
+        )}
       >
         {/* The landing mark (line, group frame) is drawn on this card by setDropIndicator. */}
         {/* Actions sit beside the row's button, never inside it. */}
@@ -6074,7 +6089,17 @@ const SessionCard = memo(function SessionCard({
               data-pinned={markPinned ? "true" : undefined}
               className="session-project-slot relative grid size-5 shrink-0 place-items-center"
             >
-              <span data-session-project-mark className="col-start-1 row-start-1">
+              <span
+                data-session-project-mark
+                {...actionContentAttributes(
+                  {
+                    phase: onPin ? "rest" : "always",
+                    hide: "visibility",
+                    hidden: markPinned && !!onPin,
+                  },
+                  "col-start-1 row-start-1",
+                )}
+              >
                 {project.icon}
               </span>
               {pinAction("col-start-1 row-start-1")}
@@ -6091,8 +6116,12 @@ const SessionCard = memo(function SessionCard({
         ) : null}
         <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">
           {renameEditor ?? (
-            <div
-              role="button"
+            <Button
+              variant="item"
+              motion="none"
+              data-action-primary
+              controlHeight="content"
+              padding={{ inline: "none", block: "none" }}
               tabIndex={0}
               aria-current={isActive ? "true" : undefined}
               aria-pressed={isSelected}
@@ -6116,23 +6145,18 @@ const SessionCard = memo(function SessionCard({
                 const focused = event.currentTarget.ownerDocument.activeElement;
                 if (focused instanceof HTMLElement) focused.blur();
               }}
-              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color)"
+              {...surfaceAttributes(
+                { frame: "none", radius: "sm" },
+                "flex min-w-0 flex-1 items-center gap-1.5",
+              )}
             >
               {selectionMode ? (
-                <Text
-                  size="inherit"
-                  tone={isSelected ? "on-solid" : "inherit"}
-                  aria-hidden
+                <CheckboxMark
+                  checked={isSelected}
+                  size="sm"
                   data-session-checkbox={isSelected ? "checked" : "unchecked"}
-                  {...surfaceAttributes(
-                    { radius: "sm" },
-                    `grid size-3.5 shrink-0 place-items-center border ${
-                      isSelected ? "border-active bg-active" : "border-(--ui-text-muted)"
-                    }`,
-                  )}
-                >
-                  {isSelected ? <Check className="icon-xs" strokeWidth={2} /> : null}
-                </Text>
+                  className="shrink-0"
+                />
               ) : null}
               {compact && session.pinned && !inPinnedSection && !showProjectAppearance ? (
                 <Pin className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />
@@ -6181,7 +6205,7 @@ const SessionCard = memo(function SessionCard({
                   )}
                 </span>
               )}
-            </div>
+            </Button>
           )}
           {compact ? actions : null}
           {compact ? rowCommands : null}
@@ -6212,7 +6236,10 @@ const SessionCard = memo(function SessionCard({
             style={{ "--session-dwell-ms": `${groupDelayMs}ms` } as CSSProperties}
             // Progress only: the cursor badge owns the instruction ("Hold to group" then
             // "Release to group"), so the row never repeats it.
-            className="pointer-events-none absolute right-1.5 top-1/2 grid -translate-y-1/2 place-items-center rounded-full bg-(--ui-surface-raised) p-0.5"
+            {...surfaceAttributes(
+              { radius: "pill" },
+              "pointer-events-none absolute right-1.5 top-1/2 grid -translate-y-1/2 place-items-center bg-(--ui-surface-raised) p-0.5",
+            )}
           >
             <svg viewBox="0 0 16 16" className="session-row-dwell-ring size-3.5 -rotate-90">
               <circle
@@ -6327,7 +6354,10 @@ const SessionCard = memo(function SessionCard({
             as="div"
             size="caption"
             tone="secondary"
-            className="mt-2.5 flex min-w-0 items-center gap-2 border-t border-(--ui-frosted-divider) pt-2"
+            {...surfaceAttributes(
+              { frame: "frosted", edge: "top" },
+              "mt-2.5 flex min-w-0 items-center gap-2 pt-2",
+            )}
           >
             <span className="sr-only">{t("Status")}</span>
             {idle ? (

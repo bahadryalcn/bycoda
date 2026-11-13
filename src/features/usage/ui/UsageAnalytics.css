@@ -125,7 +125,7 @@
 .usage-share {
   display: grid;
   align-content: start;
-  gap: 18px;
+  gap: 16px;
 }
 .usage-analysis-grid {
   display: grid;
@@ -166,6 +166,7 @@
   overflow: clip;
 }
 .usage-rank-track > span {
+  inline-size: var(--usage-rank-share);
   display: block;
   block-size: 100%;
   border-radius: inherit;
@@ -199,6 +200,7 @@
   margin-block-start: 16px;
 }
 .usage-week-grid {
+  grid-template-columns: 3.5rem repeat(var(--usage-week-columns), minmax(0, 1fr));
   display: grid;
   gap: 4px;
   margin-block-start: 16px;
@@ -281,11 +283,12 @@
   margin-block-start: 8px;
 }
 .usage-quota-plot {
+  /* Chart axis labels reserve their own gutter, independent of control spacing. */
+  --usage-quota-axis-gutter: 36px;
   position: relative;
   block-size: 88px;
-  border-block: 1px solid var(--color-stroke);
   margin-block: 12px 8px;
-  margin-inline: 36px 8px;
+  margin-inline: var(--usage-quota-axis-gutter) 8px;
 }
 .usage-quota-legend {
   display: flex;
@@ -310,6 +313,8 @@
   font-variant-numeric: tabular-nums;
 }
 .usage-quota-point {
+  inset-inline-start: var(--usage-point-time);
+  inset-block-end: var(--usage-point-value);
   position: absolute;
   inline-size: 5px;
   block-size: 5px;

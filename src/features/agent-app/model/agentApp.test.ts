@@ -585,8 +585,7 @@ describe("agent app commands", () => {
         modelSettings: {
           effort: "high",
           crossAdvisor: '{"harness":"codex","model":"codex:test","providerAccountId":"default"}',
-          crossSubagents:
-            '[{"harness":"codex","model":"codex:test","providerAccountId":"default"}]',
+          crossSubagents: "auto",
         },
         runtimeMode: "auto-accept-edits",
         workspaceMode: "worktree",

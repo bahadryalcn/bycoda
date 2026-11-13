@@ -1,3 +1,4 @@
+import { CitationTokenPill } from "../../../src/features/sessions/ui/ChatCitationText";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -97,6 +98,7 @@ declare global {
 }
 
 function Fixture() {
+  const [handoff, setHandoff] = useState(new URLSearchParams(location.search).has("handoff"));
   const [blocks, setBlocks] = useState(initialBlocks);
   const [quoteRequest, setQuoteRequest] = useState<QuoteRequest>();
   const [mount, setMount] = useState(0);
@@ -158,6 +160,18 @@ function Fixture() {
             executionCwd="/fixture/chat-citations"
             branch="main"
             initialDraft={draft}
+            handoffCard={
+              handoff
+                ? {
+                    from: "claude",
+                    to: "codex",
+                    brief: "Fixture handoff",
+                    request: "Continue reviewing the shared controls",
+                    files: 2,
+                  }
+                : undefined
+            }
+            onHandoffCardDismiss={() => setHandoff(false)}
             quoteRequest={quoteRequest}
             onQuoteRequestConsumed={() => setQuoteRequest(undefined)}
             inputAriaLabel="Message"
@@ -187,7 +201,25 @@ void languageReady.then(() =>
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <Fixture />
+      {new URLSearchParams(location.search).has("tokenSurface") ? (
+        <main className="p-6">
+          <CitationTokenPill
+            token="[quote1]"
+            citation={{
+              version: 1,
+              id: "quote",
+              sessionId: "fixture-session",
+              blockId: "missing-source",
+              text: "Fixture source",
+              sourceText: "Fixture source",
+              occurrence: 0,
+              comment: "Fixture citation",
+            }}
+          />
+        </main>
+      ) : (
+        <Fixture />
+      )}
     </QueryClientProvider>,
   ),
 );

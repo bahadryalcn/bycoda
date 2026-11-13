@@ -36,9 +36,7 @@
   overflow-wrap: anywhere;
 }
 
-.editorForm {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.documentEditor {
+  block-size: max(24rem, calc(100dvh - 16rem));
   min-inline-size: 0;
 }

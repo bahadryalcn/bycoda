@@ -16,3 +16,10 @@ export {
   applyWorkItemMentionsToTurn,
   type WorkItemMention,
 } from "../model/workItemMentions";
+export {
+  lookupWorkItemMention,
+  parseWorkItemMentionToken,
+  peekWorkItemMention,
+  rememberWorkItemMention,
+} from "../model/workItemMentionLookup";
+export { requestInboxItem, subscribeInboxItemRequests } from "../model/inboxItemRequest";

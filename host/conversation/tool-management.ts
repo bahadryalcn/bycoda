@@ -611,7 +611,7 @@ export function describeManagedTools(entries: readonly ManagedTool[], input: Too
   const key = fingerprint([rev, "describe", tools.map((entry) => entry.id)]);
   const offset = cursorOffset(input.cursor, key);
   if (offset > document.length) throw new Error("Tool cursor is out of range.");
-  const maxChars = integer(input.maxChars, 10000, 256, 12000);
+  const maxChars = Math.min(integer(input.maxChars, 10000, 256, Number.MAX_SAFE_INTEGER), 12000);
   // Never split a UTF-16 surrogate pair between chunks.
   let end = Math.min(offset + maxChars, document.length);
   if (end < document.length && /[\uD800-\uDBFF]/.test(document[end - 1])) end--;

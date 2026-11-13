@@ -10,11 +10,12 @@ import {
   bodyText,
   buttonByText,
   buttonsByText,
-  clientMock,
   clickButton,
+  clientMock,
   fieldByLabel,
   flush,
   mountHost,
+  pickOption,
   setFieldValue,
   type ClientMock,
   type MountedHost,
@@ -248,7 +249,7 @@ describe("OutreachBoard editor", () => {
     expect(bodyText()).toContain("A reply always ends the sequence for that person.");
 
     setFieldValue(fieldByLabel("Sequence name"), "Welcome");
-    setFieldValue(fieldByLabel("People"), "l1");
+    pickOption("People", "Buyers");
     setFieldValue(fieldByLabel("Message"), "Welcome aboard");
     clickButton("Save sequence");
     await flush();

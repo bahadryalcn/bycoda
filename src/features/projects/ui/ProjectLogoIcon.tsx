@@ -1,4 +1,5 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Folder, type IconComponent } from "../../../shared/ui/icons";
 import { useEffect, useState } from "react";
 import { projectLogoSrcAt } from "../model/projectLogos";
@@ -47,7 +48,10 @@ export function ProjectLogoIcon({
         src={src}
         alt=""
         onError={() => setFailedImage(imageKey)}
-        className={`rounded-sm object-cover ${className} ${imageClassName ?? ""}`}
+        {...surfaceAttributes(
+          { radius: "sm" },
+          `object-cover ${className} ${imageClassName ?? ""}`,
+        )}
       />
     );
   }

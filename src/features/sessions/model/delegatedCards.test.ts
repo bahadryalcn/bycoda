@@ -5,12 +5,7 @@ import {
   DELEGATION_PARENT_KEY,
 } from "../../../shared/model/host-contracts/delegation";
 import { delegatedBlockId } from "./delegatedBlockId";
-import {
-  createCardPlacer,
-  crewMemberChildren,
-  delegatedCardBlock,
-  placeDelegatedCards,
-} from "./delegatedCards";
+import { createCardPlacer, delegatedCardBlock, placeDelegatedCards } from "./delegatedCards";
 import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks";
 import { newSession, type Block, type Session } from "./session";
 import { groupTurnItems } from "./transcriptActivity";
@@ -101,6 +96,81 @@ describe("placeDelegatedCards", () => {
   });
 });
 
+describe("placeDelegatedCards for Host agents.delegate calls", () => {
+  const plain = (id: string, askedAt = 2_000): Session => {
+    const child = member(id, {}, undefined, askedAt);
+    return {
+      ...child,
+      modelSettings: { [DELEGATION_PARENT_KEY]: child.modelSettings![DELEGATION_PARENT_KEY] },
+    };
+  };
+  const call = (id: string, title: string, detail: string): Block => ({
+    id,
+    role: "tool",
+    text: title,
+    tool: { kind: "other", title, status: "completed", detail },
+  });
+  const delegate = (
+    id: string,
+    sessionId: string,
+    title = "bycoda-conversation:conversation_agents_delegate",
+  ) => call(id, title, JSON.stringify({ runId: "r", sessionId, status: "running" }));
+  const wait = (id: string, ...sessionIds: string[]) =>
+    call(
+      id,
+      "mcp__bycoda_conversation__conversation_agents_wait",
+      JSON.stringify({ runs: sessionIds.map((sessionId) => ({ sessionId, status: "done" })) }),
+    );
+  const ids = (blocks: Block[]) => blocks.map((block) => block.id);
+
+  it("replaces the delegate call with the card and hides its wait call", () => {
+    const blocks = [
+      user("u1", "audit", 1_000),
+      delegate("d1", "c1"),
+      delegate("d2", "c2", "conversation_agents_delegate"),
+      wait("w1", "c1", "c2"),
+      reply("a1"),
+    ];
+    const placed = placeDelegatedCards(blocks, [plain("c1"), plain("c2")]);
+    expect(ids(placed)).toEqual(["u1", delegatedBlockId("c1"), delegatedBlockId("c2"), "a1"]);
+  });
+
+  it("keeps a failed delegate call and a wait that names an unknown run", () => {
+    const failed = call("d1", "agents.delegate", JSON.stringify({ error: "no model" }));
+    const blocks = [
+      user("u1", "audit", 1_000),
+      failed,
+      delegate("d2", "c1"),
+      wait("w1", "c1", "x"),
+    ];
+    const placed = placeDelegatedCards(blocks, [plain("c1")]);
+    expect(ids(placed)).toEqual(["u1", "d1", delegatedBlockId("c1"), "w1"]);
+  });
+
+  it("falls back to the asking turn when no call names the child", () => {
+    const blocks = [user("u1", "audit", 1_000), reply("a1")];
+    const placed = placeDelegatedCards(blocks, [plain("c1")]);
+    expect(ids(placed)).toEqual(["u1", delegatedBlockId("c1"), "a1"]);
+  });
+
+  it("keeps card identity on a text frame around a replaced call", () => {
+    const base = [
+      user("u1", "audit", 1_000),
+      delegate("d1", "c1"),
+      { ...reply("a1"), streaming: true },
+    ];
+    const children = [plain("c1")];
+    const place = createCardPlacer();
+    const first = place(base, children);
+    const next = base.slice();
+    next[2] = { ...next[2], text: "Hel" };
+    registerStreamingTextUpdate(base, next, 2);
+    const second = place(next, children);
+    expect(second).toEqual(placeDelegatedCards(next, children));
+    expect(second[1]).toBe(first[1]);
+  });
+});
+
 describe("delegatedCardBlock", () => {
   it("names the member and carries status and the final message as the report", () => {
     const done = member("c1", {
@@ -116,11 +186,6 @@ describe("delegatedCardBlock", () => {
     const running = delegatedCardBlock(member("c2", { busy: true }));
     expect(running.tool?.status).toBe("running");
     expect(running.tool?.detail).toBeUndefined();
-  });
-
-  it("selects only Crew member children", () => {
-    const plain = { ...member("p"), modelSettings: {} };
-    expect(crewMemberChildren([plain, member("c1")]).map((child) => child.id)).toEqual(["c1"]);
   });
 });
 

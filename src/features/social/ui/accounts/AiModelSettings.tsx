@@ -13,6 +13,10 @@ import { isRemoteProvider, REMOTE_PROVIDERS } from "../../../connections/public/
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import { Group, Row } from "../../../settings/public/settingsControls";
 import { Select } from "../../../../shared/ui/Select";
+import { ModelLabel } from "../../../sessions/public/ModelLabel";
+import { useModelSource } from "../../../sessions/public/modelSource";
+import { PlatformIcon } from "../common/PlatformIcon";
+import { SocialModelSource } from "../shell/SocialModelSource";
 
 import { effectiveForScope, readScope, withAgent, type PolicyScope } from "./policyScope";
 import { savePolicyScope } from "./savePolicy";
@@ -54,6 +58,7 @@ export function AiModelSettings({ client, policies, onChanged }: AiModelSettings
             ...SOCIAL_PLATFORMS.map((platform) => ({
               value: platform,
               label: SOCIAL_PLATFORM_NAMES[platform],
+              icon: <PlatformIcon platform={platform} />,
             })),
           ]}
           onValueChange={(value) => setScope(value as PolicyScope)}
@@ -69,30 +74,65 @@ export function AiModelSettings({ client, policies, onChanged }: AiModelSettings
     >
       <Row
         label={t("Model")}
-        stacked
         description={
           effective
             ? t("AI uses this model to write replies, plans and reports.")
             : t("Choose a model first. AI cannot write replies or plans until you do.")
         }
       >
-        <ModelPicker
-          harness={own && isRemoteProvider(own.provider) ? own.provider : "claude"}
-          model={own?.model ?? ""}
-          values={{}}
-          allowedHarnesses={REMOTE_PROVIDERS}
-          presentation="field"
-          inheritChoice={{
-            label: scope === "global" ? t("Choose a model") : t("Use the all-accounts model"),
-            selected: !own,
-            onSelect: () => save(undefined),
-          }}
-          onChange={(harness, model) => {
-            if (isRemoteProvider(harness)) save({ provider: harness, ...(model ? { model } : {}) });
-          }}
-          onSettingsChange={() => undefined}
-        />
+        <SocialModelSource model={effective?.model ?? ""} values={effective?.modelSettings ?? {}}>
+          <ModelPicker
+            harness={
+              effective && isRemoteProvider(effective.provider) ? effective.provider : "claude"
+            }
+            model={effective?.model ?? ""}
+            values={effective?.modelSettings ?? {}}
+            accountId={effective?.providerAccountId}
+            accountChoices
+            showExtras
+            extrasDisabled={is("ai.model")}
+            allowedHarnesses={REMOTE_PROVIDERS}
+            presentation="field"
+            inheritChoice={{
+              label: scope === "global" ? t("Choose a model") : t("Use the all-accounts model"),
+              selected: !own,
+              onSelect: () => save(undefined),
+            }}
+            onChange={(harness, model, providerAccountId) => {
+              if (isRemoteProvider(harness))
+                save({
+                  provider: harness,
+                  ...(model ? { model } : {}),
+                  ...(providerAccountId ? { providerAccountId } : {}),
+                  ...(effective?.provider === harness && effective.modelSettings
+                    ? { modelSettings: effective.modelSettings }
+                    : {}),
+                });
+            }}
+            onSettingsChange={(modelSettings) => {
+              if (effective) save({ ...effective, modelSettings });
+            }}
+          />
+          {!own && scope !== "global" && effective ? (
+            <InheritedModelLabel agent={effective} />
+          ) : null}
+        </SocialModelSource>
       </Row>
     </Group>
+  );
+}
+
+function InheritedModelLabel({ agent }: { agent: SocialAgent }) {
+  const source = useModelSource();
+  return (
+    <ModelLabel
+      harness={agent.provider}
+      model={agent.model ?? ""}
+      name={
+        isRemoteProvider(agent.provider)
+          ? source.resolve(agent.provider, agent.model).name
+          : undefined
+      }
+    />
   );
 }

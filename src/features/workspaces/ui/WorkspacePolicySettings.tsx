@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
@@ -393,7 +394,12 @@ export function WorkspacePolicySettings({
               )}
             </Text>
           ) : (
-            <div className="settings-collection">
+            <div
+              {...surfaceAttributes(
+                { variant: "card", frame: "settings", radius: "card" },
+                "settings-collection",
+              )}
+            >
               <CollectionToolbar
                 label={t("Search worktrees")}
                 query={query}
@@ -437,7 +443,7 @@ export function WorkspacePolicySettings({
                   as="div"
                   role="list"
                   aria-label={t("Worktrees")}
-                  className="settings-collection-list"
+                  {...surfaceAttributes({ separator: "block" }, "settings-collection-list")}
                 >
                   {visibleWorkspaces.map((workspace) => (
                     <WorkspaceManagedRow

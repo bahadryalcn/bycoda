@@ -162,6 +162,7 @@ it("renders tiles as a roving radiogroup with custom content and arrow selection
           label: "Tiles",
           options: tiles,
           value,
+          tile: { selectionIndicator: "focus-ring" },
           onValueChange,
         }),
       ),
@@ -177,6 +178,8 @@ it("renders tiles as a roving radiogroup with custom content and arrow selection
   ]);
   expect(radios.map((radio) => radio.tabIndex)).toEqual([-1, -1, 0]);
   expect(radios[0].getAttribute("data-kind")).toBe("x");
+  expect(radios.every((radio) => radio.dataset.selectionIndicator === "focus-ring")).toBe(true);
+  expect(radios[2].dataset.buttonSelected).toBe("true");
   expect(radios[0].querySelector("b")?.textContent).toBe("Alpha");
   expect(radios[1].disabled).toBe(true);
   radios[2].focus();

@@ -2,6 +2,14 @@
 
 Paths are repository-root relative. Follow only the lane affected by the change.
 
+- Room chat presentation: `src/features/assistant/ui/room/AssistantChat.tsx`,
+  backed by Sessions public Markdown and chat-presentation contracts. Domain draft
+  and delivery ownership stays in the conversation hooks.
+- Job planning UI: `src/features/assistant/ui/room/JobDiscussion.tsx`; its dedicated
+  thread purpose is admitted by the Assistant service and text reply runtime.
+- Inline notes: `src/features/assistant/ui/AssistantNoteEditor.tsx`, using the Notes
+  public editor contract and Assistant note draft controller.
+
 - Manual supervision: `host/assistant/sessions/assistant-manual-sessions.ts`, `host/store.ts`. Candidate discovery selects bounded recent metadata before transcript hydration and batches canonical owner lookups; enrollment revalidates visibility, ownership and the exact source token.
 - Core: `host/assistant/service.ts`, `repository.ts` there,
   `host/assistant/core/assistant-runtime.ts`, `host/domains/assistant/service.ts`.

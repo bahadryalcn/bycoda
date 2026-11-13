@@ -1,3 +1,4 @@
+import { GitConflictImages } from "../../../src/features/source-control/ui/GitConflictImages";
 import { createRoot } from "react-dom/client";
 import { GitHistoryGraph } from "../../../src/features/source-control/ui/GitHistoryGraph";
 import { GitGraphWorkspace } from "../../../src/features/source-control/ui/GitGraphWorkspace";
@@ -5,6 +6,7 @@ import { WorkspaceSourceControl } from "../../../src/features/source-control/ui/
 import { SourceControl } from "../../../src/features/source-control/ui/SourceControl";
 import { checkoutOptionLabel } from "../../../src/features/source-control/model/checkoutSelection";
 import { GitChangesPanel } from "../../../src/features/source-control/ui/GitChangesPanel";
+import { GitConflictCompare } from "../../../src/features/source-control/ui/GitConflictCompare";
 import { AppConfirmHost } from "../../../src/app/shell/AppConfirmHost";
 import type { Worktree } from "../../../src/features/source-control/model/worktrees";
 import "../../../src/styles/index.css";
@@ -361,7 +363,30 @@ const renderFixture = () =>
             : "w-80 border-r border-stroke"
         }
       >
-        {actionFeedback ? (
+        {new URLSearchParams(location.search).has("image-conflict") ? (
+          <div style={{ display: "flex", height: "100%" }}>
+            <GitConflictImages
+              sides={["ours", "theirs"]}
+              stages={{
+                path: "/fixture/icon.png",
+                relative: "icon.png",
+                kind: "deleted-by-them",
+                base: "",
+                ours: "",
+                theirs: null,
+                binary: true,
+                tooLarge: false,
+                images: {
+                  base: null,
+                  ours: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+                  theirs: null,
+                },
+              }}
+            />
+          </div>
+        ) : new URLSearchParams(location.search).has("visual-conflict") ? (
+          <GitConflictCompare cwd="/fixture" relative="src/conflict.ts" onClose={() => {}} />
+        ) : actionFeedback ? (
           <GitChangesPanel
             cwd="/fixture"
             enabled

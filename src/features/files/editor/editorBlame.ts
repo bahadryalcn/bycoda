@@ -250,8 +250,10 @@ const blameGutter = gutter({
 
 const blameTheme = EditorView.theme({
   ".cm-blameGutter": {
-    width: "176px",
-    minWidth: "176px",
+    boxSizing: "border-box",
+    width: "var(--editor-blame-width, 182px)",
+    minWidth: "0",
+    overflow: "hidden",
     paddingRight: "6px",
     fontFamily: "var(--font-sans, sans-serif)",
     fontSize: "11px",

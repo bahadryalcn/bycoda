@@ -339,7 +339,8 @@ export function CrewMemberTable({
                               onClick={() => onExpandedChange(agent.id)}
                             >
                               <Text size="inherit" tone="inherit" truncate>
-                                {(agent.pool && poolNames.get(agent.pool.id)) ||
+                                {(agent.modelChoice?.kind === "pool" &&
+                                  poolNames.get(agent.modelChoice.poolId)) ||
                                   memberModelSummary(data.catalog, agent)}
                               </Text>
                             </Button>

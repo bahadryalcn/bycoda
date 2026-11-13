@@ -117,6 +117,8 @@ fn existing_automations_default_to_time_triggers() {
         name: "Audit".into(),
         prompt: "Review the repository".into(),
         harness: "codex".into(),
+        provider_account_id: None,
+        model_choice: None,
         model: "model".into(),
         model_settings: HashMap::new(),
         cwd: "/tmp".into(),
@@ -170,6 +172,8 @@ fn missing_triggers_hydrate_from_legacy_fields() {
         name: "Audit".into(),
         prompt: "Review the repository".into(),
         harness: "codex".into(),
+        provider_account_id: None,
+        model_choice: None,
         model: "model".into(),
         model_settings: HashMap::new(),
         cwd: "/tmp".into(),
@@ -250,6 +254,8 @@ fn trims_run_history_to_the_configured_limit() {
     .unwrap();
     for index in 0..=MAX_RUNS_PER_AUTOMATION {
         let run = AutomationRun {
+            execution: None,
+            max_run_minutes: None,
             executor: None,
             ssh_execution: None,
             id: format!("run-{index}"),
@@ -294,6 +300,8 @@ fn trim_history_preserves_nonterminal_runs() {
     .unwrap();
     for index in 0..=MAX_RUNS_PER_AUTOMATION {
         let run = AutomationRun {
+            execution: None,
+            max_run_minutes: None,
             executor: None,
             ssh_execution: None,
             id: format!("run-{index}"),
@@ -536,4 +544,47 @@ fn rejects_an_overlong_trigger_label() {
     assert!(validate_trigger(&trigger).is_ok());
     trigger.label = "x".repeat(201);
     assert!(validate_trigger(&trigger).is_err());
+}
+
+#[test]
+fn routing_fields_round_trip_old_and_new_automation_rows() {
+    let conn = Connection::open_in_memory().unwrap();
+    ensure_tables(&conn).unwrap();
+    for choice in [
+        None,
+        Some(serde_json::json!({"kind":"default"})),
+        Some(serde_json::json!({"kind":"pool","poolId":"pool"})),
+    ] {
+        let mut value = workspace_definition();
+        if let Some(choice) = choice {
+            value["modelChoice"] = choice;
+            value["providerAccountId"] = serde_json::json!("account");
+        }
+        let input: AutomationUpsert = serde_json::from_value(value.clone()).unwrap();
+        let automation: Automation = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(input.model_choice, automation.model_choice);
+        assert_eq!(input.provider_account_id, automation.provider_account_id);
+        write_automation(&conn, &automation).unwrap();
+        let stored = serde_json::to_value(get(&conn, &automation.id).unwrap().unwrap()).unwrap();
+        assert_eq!(stored.get("modelChoice"), value.get("modelChoice"));
+        assert_eq!(
+            stored.get("providerAccountId"),
+            value.get("providerAccountId")
+        );
+    }
+}
+
+#[test]
+fn routing_fields_round_trip_old_and_new_run_rows() {
+    let original = new_run("automation-id", "manual", 1, 1, "Audit");
+    let old = serde_json::to_value(&original).unwrap();
+    assert!(old.get("execution").is_none());
+    let restored: AutomationRun = serde_json::from_value(old.clone()).unwrap();
+    assert!(restored.execution.is_none());
+    assert!(restored.max_run_minutes.is_none());
+    let mut new = old;
+    new["execution"] = serde_json::json!({"harness":"codex","providerAccountId":"account","model":"codex:model","modelSettings":{"effort":"high"}});
+    new["maxRunMinutes"] = serde_json::json!(23);
+    let restored: AutomationRun = serde_json::from_value(new.clone()).unwrap();
+    assert_eq!(serde_json::to_value(restored).unwrap(), new);
 }

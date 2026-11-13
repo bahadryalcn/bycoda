@@ -4,11 +4,6 @@
   bottom: 36px;
   z-index: var(--layer-pane-sheet);
 }
-/* Floats over content, so it carries the floating surface instead of a bare ghost icon. */
-.launcherButton:not([data-docked]) {
-  border: 1px solid var(--ui-tone-neutral-border);
-  background: var(--ui-surface-floating);
-}
 /* Sidebar footer dock beside Settings (voiceLauncherSlot.tsx). Empty while the companion is
    open; it stays rendered so the dock can tell a visible footer from a hidden copy. */
 .launcherSlot {
@@ -35,7 +30,6 @@
   inline-size: 20px;
   block-size: 20px;
   overflow: hidden;
-  border-radius: var(--radius-pill);
   background: var(--ui-fill-subtle);
 }
 .launcherMark:empty::before {
@@ -45,7 +39,6 @@
   position: absolute;
   inset-inline-end: -1px;
   inset-block-end: -1px;
-  box-shadow: 0 0 0 2px var(--ui-surface-floating);
 }
 .launcherAvatar:is(
     [data-state="listening"],
@@ -91,8 +84,6 @@
   max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 16px);
   overflow: hidden;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--radius-panel);
 }
 .header {
   display: flex;
@@ -100,7 +91,6 @@
   align-items: center;
   gap: 4px;
   padding: 6px;
-  border-bottom: 1px solid var(--ui-tone-neutral-border);
   /* The header is a drag surface (useVoicePanelDrag). */
   touch-action: none;
   cursor: grab;
@@ -156,35 +146,12 @@
   display: block;
   min-inline-size: 0;
 }
-.srOnly {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-/* An undismissed error (VoiceErrorNotice in the header) tints the whole card. */
-.panel:has([data-voice-error]) {
-  border-color: var(--ui-tone-danger-border);
-}
-.panel:has([data-voice-error]) .header {
-  border-bottom-color: var(--ui-tone-danger-border);
-}
-/* Released here, the panel continues as a floating window outside the app. */
-.panel[data-detaching] {
-  border-color: var(--ui-focus-ring-color);
-}
 .panel[data-compact] {
   inline-size: min(380px, calc(100vw - 16px));
   block-size: auto;
   grid-template-rows: auto;
-  border-radius: var(--radius-pill);
 }
 .panel[data-compact] .header {
-  border-block-end: 0;
   gap: 6px;
   padding: 4px 6px 4px 4px;
 }
@@ -200,9 +167,5 @@
 @media (pointer: coarse) {
   .header {
     gap: 8px;
-  }
-  .header button {
-    min-width: var(--ui-control-height);
-    min-height: var(--ui-control-height);
   }
 }

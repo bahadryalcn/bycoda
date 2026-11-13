@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { FilePane } from "../../../src/features/files/ui/FilePane";
+import { newEditorPane, newPlanTab } from "../../../src/features/workspace/model/layout";
 import { EditorView } from "@codemirror/view";
 import { CodeMirrorEditor } from "../../../src/features/files/ui/CodeMirrorEditor";
 import {
@@ -102,4 +104,44 @@ function Fixture() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<Fixture />);
+function PlanFixture() {
+  const [text, setText] = useState(
+    Array.from({ length: 100 }, (_, index) => `Draft line ${index}`).join("\n"),
+  );
+  const [pane] = useState(() =>
+    newEditorPane(newPlanTab("fixture-session", "fixture-plan", "Plan", "/fixture")),
+  );
+  const session = {
+    id: "fixture-session",
+    cwd: "/fixture",
+    busy: false,
+    blocks: [{ id: "fixture-plan", role: "plan", text }],
+  } as never;
+  const noop = () => {};
+  return (
+    <main style={{ height: "600px", width: "100%" }}>
+      <FilePane
+        pane={pane}
+        focused
+        visible
+        showTabs={false}
+        dirtyFileIds={new Set()}
+        fileErrorCounts={new Map()}
+        sessions={[session]}
+        onFocus={noop}
+        onSelectFile={noop}
+        onCloseFile={noop}
+        onCloseOtherFiles={noop}
+        onDirtyChange={noop}
+        onErrorCountChange={noop}
+        onReorderFiles={noop}
+        onOpenFile={noop}
+        onUpdatePlan={(_session, _block, value) => setText(value)}
+        onBuildPlan={noop}
+      />
+    </main>
+  );
+}
+createRoot(document.getElementById("root")!).render(
+  searchFixture.has("plan") ? <PlanFixture /> : <Fixture />,
+);

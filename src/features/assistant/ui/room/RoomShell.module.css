@@ -109,15 +109,6 @@
   margin: 0;
 }
 
-/* Pending operation line below the content. */
-.footer {
-  display: flex;
-  align-items: center;
-  flex: none;
-  gap: 8px;
-  padding: 6px 16px;
-}
-
 /* Undo bar: a thin frame under the content, message left, actions right. */
 .undo {
   display: flex;

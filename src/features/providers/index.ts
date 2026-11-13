@@ -1,4 +1,5 @@
 export type * as providerUsage from "./public/providerUsage";
+export type * as providerAccountId from "./public/providerAccountId";
 export type * as providerAccounts from "./public/providerAccounts";
 export type * as uiUseProviderAccounts from "./public/useProviderAccounts";
 export type * as accountUsage from "./public/accountUsage";

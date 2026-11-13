@@ -1,5 +1,7 @@
 import { Fragment, memo, useEffect, useState, type ReactNode, type RefObject } from "react";
-import { ExternalLink, StickyNote } from "../../../shared/ui/icons";
+import { ExternalLink, Server, Sparkles, StickyNote } from "../../../shared/ui/icons";
+import { DraftToken } from "../../../shared/ui/DraftToken";
+import { UserLinkIcon } from "./UserLinkIcon";
 import { useLocale } from "../../../shared/i18n";
 import type { ProjectFile } from "../../../platform/tauri/fs";
 import { FileTypeIcon } from "../../files/public/FileTypeIcon";
@@ -13,6 +15,7 @@ import { openExternal } from "../../../platform/tauri/openExternal";
 import styles from "./ComposerHighlight.module.css";
 import { ModeCommandText, type ModeCommandToken } from "./modeCommands";
 import { workItemMentionParts } from "./ChatCitationText";
+import { ComposerWorkItemToken } from "./WorkItemMentionChip";
 
 /** Overlay that paints skill, mention, MCP, attachment and quote tokens under the textarea. */
 export const ComposerHighlight = memo(function ComposerHighlight({
@@ -25,6 +28,8 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   attachments,
   citations,
   field,
+  modeIndent,
+  modeIconClassName,
 }: {
   text: string;
   mode: ModeCommandToken | null;
@@ -41,13 +46,22 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   citations: number;
   /** The textarea under the overlay; a link holding its caret shows in full. */
   field?: RefObject<HTMLTextAreaElement | null>;
+  modeIndent?: string;
+  modeIconClassName?: string;
 }) {
   useLocale();
   const edited = useEditedLink(text, field);
   const rest = mode ? text.slice(mode.end) : text;
   return (
     <>
-      {mode ? <ModeCommandText text={text} mode={mode} /> : null}
+      {mode ? (
+        <ModeCommandText
+          text={text}
+          mode={mode}
+          indent={modeIndent}
+          iconClassName={modeIconClassName}
+        />
+      ) : null}
       <ComposerAttachmentHighlight
         text={rest}
         attachments={attachments}
@@ -59,9 +73,15 @@ export const ComposerHighlight = memo(function ComposerHighlight({
             renderText={(plain) =>
               skillParts(plain, names).map((part, index) =>
                 part.skill ? (
-                  <span key={index} className="text-skill">
-                    {part.text}
-                  </span>
+                  <DraftToken
+                    key={index}
+                    prefix={part.text[0]}
+                    icon={<Sparkles />}
+                    className="text-skill"
+                    data-composer-skill-token=""
+                  >
+                    {part.text.slice(1)}
+                  </DraftToken>
                 ) : (
                   // Skill tokens always end on whitespace, so each remaining run still
                   // starts on a boundary `@mention` matching can rely on.
@@ -135,7 +155,12 @@ function LinkRuns({
       ) : (
         <Fragment key={`l${range.start}`}>
           <span className={styles.link} data-composer-link-token="">
-            <span className={styles.hidden}>{link[0]}</span>
+            <span className={styles.linkPrefix}>
+              <span className={styles.hidden}>{link[0]}</span>
+              <span className={styles.linkMark} data-composer-link-icon="" aria-hidden="true">
+                <UserLinkIcon link={range.link} />
+              </span>
+            </span>
             {link.slice(scheme)}
             <span className={styles.badge}>
               {link.slice(1, scheme - 1)}
@@ -179,15 +204,19 @@ function MentionRuns({
     <>
       {mcpTagParts(text, mcpTags).map((part, index) =>
         part.tag ? (
-          <span key={index} className="text-mention" data-mcp-tag={part.tag.token}>
-            {part.text}
-          </span>
+          <DraftToken
+            key={index}
+            prefix={part.text[0]}
+            icon={<Server />}
+            className="text-mention"
+            data-mcp-tag={part.tag.token}
+          >
+            {part.text.slice(1)}
+          </DraftToken>
         ) : (
           workItemMentionParts(part.text).map((run, runIndex) =>
             run.workItem ? (
-              <span key={`${index}:${runIndex}`} className="text-mention" data-work-item-mention="">
-                {run.text}
-              </span>
+              <ComposerWorkItemToken key={`${index}:${runIndex}`} token={run.text} />
             ) : (
               <FileMentionRuns key={`${index}:${runIndex}`} text={run.text} mentions={mentions} />
             ),
@@ -211,23 +240,22 @@ function FileMentionRuns({
     <>
       {parts.map((part, index) =>
         part.file ? (
-          <span key={index} className="text-mention">
+          <DraftToken
+            key={index}
+            className="text-mention"
+            prefix="@"
+            icon={
+              isNoteMentionPath(part.file.path) ? (
+                <StickyNote />
+              ) : (
+                <FileTypeIcon name={part.file.name} isDir={Boolean(part.file.isDir)} size="sm" />
+              )
+            }
+          >
             {/* The `@` keeps its width so the textarea underneath stays in
                 lockstep; the file icon sits on top of it. */}
-            <span className="relative text-transparent">
-              {"@"}
-              {/* `indent-0`: a leading mode command indents the first line,
-                  and this box would otherwise inherit that indent. */}
-              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 indent-0">
-                {part.file && isNoteMentionPath(part.file.path) ? (
-                  <StickyNote className="icon-sm" strokeWidth={1.75} />
-                ) : (
-                  <FileTypeIcon name={part.file.name} isDir={Boolean(part.file.isDir)} size="sm" />
-                )}
-              </span>
-            </span>
             {part.text.slice(1)}
-          </span>
+          </DraftToken>
         ) : (
           part.text
         ),

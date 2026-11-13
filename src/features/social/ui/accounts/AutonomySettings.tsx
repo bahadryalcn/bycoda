@@ -7,7 +7,6 @@ import { getLocale, t } from "../../../../shared/i18n";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
-import { Heading } from "../../../../shared/ui/Heading";
 
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Select } from "../../../../shared/ui/Select";
@@ -143,7 +142,6 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
         aria-label={t("Autonomy")}
       >
-        <Heading size="item">{t("Autonomy")}</Heading>
         {loadError ? (
           <InlineError>{loadError}</InlineError>
         ) : (
@@ -228,10 +226,20 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
       {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
       aria-label={t("Autonomy")}
     >
-      <Heading size="item">{t("Autonomy")}</Heading>
       <Text as="p" tone="muted" leading="snug" className="social-card-description">
         {t("Platform limits, opt-outs, working hours and the global AI stop still apply.")}
       </Text>
+      <div className="social-autonomy-row social-autonomy-header" aria-hidden>
+        <Text as="span" size="caption" tone="muted">
+          {t("Action")}
+        </Text>
+        <Text as="span" size="caption" tone="muted">
+          {t("Autonomy")}
+        </Text>
+        <Text as="span" size="caption" tone="muted">
+          {t("Per day")}
+        </Text>
+      </div>
       {AUTONOMY_ACTIONS.map((action) => (
         <div key={action} className="social-autonomy-row">
           <Text as="span" size="secondary" leading="inherit">

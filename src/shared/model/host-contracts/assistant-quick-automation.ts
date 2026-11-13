@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ModelRoutingItemChoiceSchema } from "./model-routing";
 import {
   SessionProviderSchema,
   SessionRuntimeModeSchema,
@@ -18,7 +19,12 @@ export const quickAutomationActionSchema = z
     name: text(200).refine((value) => !!value.trim()),
     prompt: text(16000).refine((value) => !!value.trim() && !value.includes("\0")),
     harness: SessionProviderSchema,
-    model: text(200).refine((value) => !!value.trim()),
+    providerAccountId: z.string().min(1).max(200).optional(),
+    modelChoice: ModelRoutingItemChoiceSchema.optional(),
+    model: z
+      .string()
+      .max(200)
+      .refine((value) => value === "" || !!value.trim()),
     modelSettings: ModelSettingsSchema,
     runtimeMode: SessionRuntimeModeSchema,
     scheduleKind: z.enum(["hourly", "daily", "weekdays", "weekly", "once"]),
@@ -32,3 +38,8 @@ export const quickAutomationActionSchema = z
     enabled: z.boolean(),
   })
   .refine((action) => (action.scheduleKind === "once") === (action.runAt !== undefined));
+
+export type QuickAutomationRoutingFields = Pick<
+  z.infer<typeof quickAutomationActionSchema>,
+  "modelChoice" | "providerAccountId"
+>;

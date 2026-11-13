@@ -75,7 +75,7 @@ for (const theme of themes) {
       await expect(page.getByRole("tab", { name: "Microsoft Teams" })).toHaveCount(0);
     });
 
-    test(`messages list and thread (${suffix})`, async ({ page }) => {
+    test(`messages list and thread (${suffix})`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`${fixture}?view=messages&theme=${theme}`, { waitUntil: "domcontentloaded" });
       const list = page.getByRole("list", { name: "Conversations" });
@@ -89,6 +89,41 @@ for (const theme of themes) {
         thread.getByRole("list", { name: "Messages" }).locator(":scope > li"),
       ).toHaveCount(5);
       await expect(page.getByRole("textbox", { name: "Reply" })).toHaveValue(/timeline works/);
+      const bubbles = thread.locator('li > div[dir="auto"]');
+      await expect(bubbles).toHaveCount(5);
+      for (const index of [0, 1]) {
+        const appearance = await bubbles.nth(index).evaluate((element, outbound) => {
+          const actual = getComputedStyle(element);
+          const probe = document.createElement("div");
+          probe.style.background = outbound
+            ? "var(--ui-tone-accent-subtle)"
+            : "var(--ui-fill-subtle)";
+          probe.style.borderRadius = "var(--ui-radius-card)";
+          if (outbound) probe.style.borderEndEndRadius = "var(--ui-radius-control)";
+          else probe.style.borderEndStartRadius = "var(--ui-radius-control)";
+          element.append(probe);
+          const expected = getComputedStyle(probe);
+          const result = {
+            actual: [
+              actual.backgroundColor,
+              actual.borderEndStartRadius,
+              actual.borderEndEndRadius,
+            ],
+            expected: [
+              expected.backgroundColor,
+              expected.borderEndStartRadius,
+              expected.borderEndEndRadius,
+            ],
+          };
+          probe.remove();
+          return result;
+        }, index === 1);
+        expect(appearance.actual).toEqual(appearance.expected);
+      }
+      await page.screenshot({
+        path: testInfo.outputPath("message-bubbles.png"),
+        animations: "disabled",
+      });
       await capture(
         page,
         width === 800 ? `g-messages-detail-${suffix}` : `f-messages-${suffix}`,

@@ -13,7 +13,9 @@ import type { QuickComposerOwner } from "../model/quickComposerClosure";
 import type { QuickWorkspace } from "../model/quickWorkspace";
 
 /** Commands the floating composer offers after a leading `/`. */
-export const MODE_COMMANDS = [PLAN_COMMAND, ORCHESTRATOR_COMMAND, DRAFT_COMMAND];
+export function quickModeCommands() {
+  return [PLAN_COMMAND, ORCHESTRATOR_COMMAND, DRAFT_COMMAND];
+}
 
 export type QuickPicker = "project" | "model" | "permissions" | "attachments" | "commands";
 type OpenablePicker = Exclude<QuickPicker, "commands">;
@@ -57,7 +59,7 @@ export function useQuickPickers({
     [picker, projects, query],
   );
   const commandOptions = useMemo(
-    () => rankSkills(MODE_COMMANDS, slash?.query ?? ""),
+    () => rankSkills(quickModeCommands(), slash?.query ?? ""),
     [slash?.query],
   );
   const optionCount = picker === "commands" ? commandOptions.length : projectOptions.length;

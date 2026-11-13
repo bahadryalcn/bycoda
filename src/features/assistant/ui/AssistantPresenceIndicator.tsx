@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   assistantPresencePresentation,
@@ -29,7 +30,11 @@ export function AssistantPresenceIndicator({
       data-presence-tone={presentation.tone}
       aria-hidden={markOnly || undefined}
     >
-      <span className={styles.mark} aria-hidden="true" />
+      <StatusDot
+        appearance="presence"
+        tone={presentation.tone === "neutral" ? "muted" : presentation.tone}
+        hollow={presentation.state === "offline"}
+      />
       {!markOnly && (
         <Text size="inherit" tone="inherit" truncate className={styles.label}>
           {label ?? t(presentation.label)}

@@ -9,14 +9,12 @@ import {
   type CrewCandidate,
 } from "./crew";
 
-const candidate = (id: string, cost?: number, quality?: number): CrewCandidate => ({
+const candidate = (id: string): CrewCandidate => ({
   id,
   harness: "codex",
   model: id,
   modelSettings: {},
   capabilities: {},
-  cost,
-  quality,
 });
 const agent = (
   candidates: CrewCandidate[],
@@ -41,10 +39,10 @@ describe("crew allocation", () => {
     expect(crewScopesOverlap(["src/ui"], ["src/backend"])).toBe(false);
     expect(crewScopesOverlap(["."], ["src/backend"])).toBe(true);
   });
-  it("filters missing capabilities before considering quality or cost", () => {
-    const cheap = candidate("cheap", 0, 100);
+  it("filters missing capabilities before choosing a candidate", () => {
+    const cheap = candidate("cheap");
     const image = {
-      ...candidate("image", 5, 80),
+      ...candidate("image"),
       capabilities: {
         "image-generation": { state: "available" as const, observedAt: 1000, source: "probe" },
       },
@@ -87,36 +85,11 @@ describe("crew allocation", () => {
       ),
     ).toThrow("No eligible");
   });
-  it("distinguishes unknown costs from zero and applies hard thresholds first", () => {
-    const options = agent([
-      candidate("unknown", undefined, 100),
-      candidate("cheap", 1, 60),
-      candidate("quality", 3, 95),
-    ]);
-    expect(
-      selectCrewCandidate(
-        options,
-        { ...defaultCrewPolicy, preset: "economy", allowUnknownCost: false },
-        [],
-        () => true,
-      ).candidate.id,
-    ).toBe("cheap");
-    expect(
-      selectCrewCandidate(
-        options,
-        { ...defaultCrewPolicy, preset: "quality", maxEstimatedCost: 2 },
-        [],
-        () => true,
-      ).candidate.id,
-    ).toBe("cheap");
-    expect(() =>
-      selectCrewCandidate(
-        options,
-        { ...defaultCrewPolicy, minimumQuality: 90, maxEstimatedCost: 2 },
-        [],
-        () => true,
-      ),
-    ).toThrow();
+  it("preserves first eligible order", () => {
+    const options = agent([candidate("first"), candidate("second")]);
+    expect(selectCrewCandidate(options, defaultCrewPolicy, [], () => true).candidate.id).toBe(
+      "first",
+    );
   });
   it("rejects missing review roles and duplicate identities", () => {
     const worker = agent([candidate("one")]);
@@ -154,7 +127,7 @@ describe("crew access policy", () => {
         instructions: "",
         selection: "fixed",
         candidates: [
-          { id: "x", harness: "codex", model: "m", modelSettings: {}, capabilities: {}, cost: 1 },
+          { id: "x", harness: "codex", model: "m", modelSettings: {}, capabilities: {} },
         ],
       })),
       policy: { ...base, ...(runtimeMode === undefined ? {} : { runtimeMode }) },
@@ -177,9 +150,7 @@ describe("crew identity", () => {
     role,
     instructions: "",
     selection: "fixed",
-    candidates: [
-      { id: "x", harness: "codex", model: "m", modelSettings: {}, capabilities: {}, cost: 1 },
-    ],
+    candidates: [{ id: "x", harness: "codex", model: "m", modelSettings: {}, capabilities: {} }],
     ...extra,
   });
   const parse = (extra: Record<string, unknown> = {}, agentExtra: Record<string, unknown> = {}) =>

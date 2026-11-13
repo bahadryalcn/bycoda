@@ -19,7 +19,6 @@
     flex: none;
     gap: 4px;
     padding: 4px 8px;
-    border-block-end: 1px solid var(--color-stroke);
   }
   .note-library-sidebar {
     inline-size: 100% !important;
@@ -102,7 +101,6 @@
   gap: 8px;
   padding-block: 8px;
   padding-inline: 12px;
-  border-block-start: 1px solid var(--color-stroke);
 }
 
 .notes-workspace button.note-library-card {
@@ -184,7 +182,6 @@
 
 .note-details-title {
   padding-block-end: 8px;
-  border-block-end: 1px solid var(--color-stroke);
 }
 
 .note-quick-tags {
@@ -215,7 +212,6 @@
   justify-content: end;
   gap: 8px;
   padding: 12px 16px;
-  border-block-start: 1px solid var(--color-stroke);
 }
 
 @container (max-width: 620px) {
@@ -269,10 +265,6 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.note-split > .note-editor-pane + .note-editor-pane {
-  border-inline-start: 1px solid var(--ui-editor-border);
-}
-
 .note-editor-pane {
   position: relative;
   display: flex;
@@ -280,11 +272,6 @@
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
-}
-
-/* The document canvas is the reading ground. */
-.note-editor-pane[data-document] {
-  background: transparent;
 }
 
 .note-pane-label {

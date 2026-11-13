@@ -18,6 +18,8 @@ export type BadgeSize = "xs" | "sm" | "md";
 
 export type BadgeProps = Omit<ArcBadgeProps, "size"> & {
   size?: BadgeSize;
+  /** Round 28px icon container for a decorative activity glyph. */
+  shape?: "icon";
   minWidth?: CSSProperties["minInlineSize"];
   /** One-line text label: text that does not fit ends in an ellipsis and the badge shrinks
    *  inside its row (it needs a bounded width: a flex or grid item, or `max-w-*`). Applies to
@@ -35,6 +37,8 @@ export { BADGE_COUNT_MAX };
 
 /**
  * Small pill for a short label, status or count with tone, appearance and optional icon. Sizes `xs` (inline metadata in triggers, rows, tabs), `sm`, `md`. `variant="count"` caps at 99+ and keeps the real number as the accessible name.
+ * `shape="icon"` is a 28px circular well for an icon, with the same semantic tones; name it
+ * for assistive technology or hide it when adjacent text already carries the meaning.
  * Domain-to-tone mapping stays with the caller.
  * @group feedback
  * @use Tags, counts and short labels beside content.
@@ -46,6 +50,7 @@ export function Badge({
   minWidth,
   style,
   size = "md",
+  shape,
   max,
   variant,
   tone,
@@ -64,11 +69,18 @@ export function Badge({
       size={size === "xs" ? "sm" : size}
       max={max ?? (variant === "count" ? BADGE_COUNT_MAX : undefined)}
       data-size={size}
+      data-shape={shape}
       data-tone={badgeTone}
       data-variant={variant ?? "label"}
       data-leading={leading}
       style={{ ...style, minInlineSize: minWidth ?? style?.minInlineSize }}
-      className={["bycoda-arc", size === "xs" && styles.xs, leading && styles.leading, className]
+      className={[
+        "bycoda-arc",
+        size === "xs" && styles.xs,
+        shape === "icon" && styles.iconShape,
+        leading && styles.leading,
+        className,
+      ]
         .filter(Boolean)
         .join(" ")}
     >

@@ -7,6 +7,8 @@ description: "Use when changing provider catalogs, model defaults, accounts and 
 
 Own provider settings and catalog/account workflows. Composer owns the submitted request and handoff UI; Host runtime owns captured process/operation writers, physical retirement and execution authority. Do not duplicate their protocols in provider preferences.
 
+Order, pools, roles and delegation belong to [model routing](../feature-model-routing/SKILL.md), Settings > Models. Resolve at run start; running sessions keep their model.
+
 ## Source starts
 
 - `src/features/providers/`

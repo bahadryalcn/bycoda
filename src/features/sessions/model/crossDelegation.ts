@@ -14,12 +14,14 @@ import {
 import {
   AUTOMATIC_SUBAGENTS,
   CROSS_SUBAGENT_MAX_EFFORT_KEY,
-  EFFORT_LEVELS,
+  SUBAGENT_EFFORT_LEVELS,
+  subagentEffortCeiling,
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
   DELEGATION_LIMITS,
   decodeAdvisor,
   decodeSubagents,
+  decodeSubagentSelection,
   delegateRefKey,
   encodeAdvisor,
   encodeSubagents,
@@ -32,6 +34,17 @@ import {
   decodeImageModels,
   encodeImageModels,
 } from "../../../shared/model/host-contracts/image-models";
+
+/** Mode represented by the persisted subagent selection. */
+export function subagentMode(value: string | undefined): "auto" | "custom" | "off" {
+  const selection = decodeSubagentSelection(value ?? AUTOMATIC_SUBAGENTS);
+  return selection === AUTOMATIC_SUBAGENTS ? "auto" : selection.length ? "custom" : "off";
+}
+
+/** Wire value for a non-custom mode. Custom is a picker action. */
+export function subagentModeValue(mode: "auto" | "off"): string {
+  return mode === "auto" ? AUTOMATIC_SUBAGENTS : "[]";
+}
 
 export type DelegationInput = {
   current: AgentModel;
@@ -227,7 +240,7 @@ export function crossDelegationSettings(input: DelegationInput): ModelSetting[] 
       value: "",
       options: [
         { value: "", label: "Automatic" },
-        ...EFFORT_LEVELS.map((value) => ({
+        ...SUBAGENT_EFFORT_LEVELS.map((value) => ({
           value,
           label: value[0].toUpperCase() + value.slice(1),
         })),
@@ -307,8 +320,9 @@ export function crossDelegationSummary(
   }
   if (setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY)
     return (
-      setting.options.find((option) => option.value === (values[setting.id] ?? setting.value))
-        ?.label ?? "Automatic"
+      setting.options.find(
+        (option) => option.value === subagentEffortCeiling(values[setting.id] ?? setting.value),
+      )?.label ?? "Automatic"
     );
   const picked = setting.options.filter(
     (option) => option.value && delegationOptionSelected(setting, values, option.value),

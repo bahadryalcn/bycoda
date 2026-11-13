@@ -38,7 +38,7 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
           disabled={!tool.onSelect}
           onClick={tool.onSelect}
           data-usage-guide={tool.guide}
-          className="relative min-w-0 flex-1"
+          className="min-w-0 flex-1"
           onContextMenu={
             tool.onOpenContextMenu
               ? (event) => {
@@ -62,14 +62,17 @@ export function RailToolGroup({ label, tools }: { label: string; tools: readonly
           }
         >
           {tool.active ? <ButtonGroupSelection /> : null}
-          {tool.icon}
-          {tool.dot ? (
-            <StatusDot
-              label={tool.dot}
-              aria-hidden
-              className="absolute [inset-inline-end:4px] [inset-block-start:4px]"
-            />
-          ) : null}
+          {/* The dot is anchored to the icon, selected or not. */}
+          <span className="relative inline-flex">
+            {tool.icon}
+            {tool.dot ? (
+              <StatusDot
+                label={tool.dot}
+                aria-hidden
+                className="absolute [inset-inline-end:4px] [inset-block-start:4px]"
+              />
+            ) : null}
+          </span>
         </Button>
       ))}
     </ButtonGroup>

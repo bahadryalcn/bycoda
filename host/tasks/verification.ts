@@ -1,3 +1,10 @@
+import {
+  resolveRunModel,
+  reviewerModelInput,
+  routingRun,
+  routingWait,
+  routingWaitDue,
+} from "./model-routing";
 import { deferredAssistantTurn } from "../assistant/core/assistant-turn-policy";
 import {
   readAssistantRecovery,
@@ -355,6 +362,7 @@ export async function sharedCheckoutWriterActive(
 
 export async function verify(context: TaskContext, task: HostTask): Promise<void> {
   if (context.closing) return;
+  if (!routingWaitDue(task, context.now())) return;
   if (!(await context.goalExecutionAllowed(task.goalId))) return;
   if (await sharedCheckoutWriterActive(context, task)) return;
   const { id } = task;
@@ -536,6 +544,38 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
       await context.budgetBlock(latest, finalReviewBudget, context.now());
       return;
     }
+    if (latest.reviewer?.sessionId || !routingWaitDue(latest, now)) return;
+    const routingExpected = await context.taskValue(id);
+    const persistRouting = (row: HostTask) =>
+      context.transaction(async () =>
+        (await current()) && (await context.unchangedTask(id, routingExpected))
+          ? context.write(row)
+          : undefined,
+      );
+    const reviewInput = reviewerModelInput(latest);
+    const resolution = await resolveRunModel(
+      context.store,
+      "task.reviewer",
+      reviewInput.target,
+      reviewInput.choice,
+    );
+    if (!(await current()) || !(await context.unchangedTask(id, routingExpected))) return;
+    if (!resolution.ok && resolution.reason === "noEligibleEntry") {
+      const wait = routingWait(resolution);
+      const waiting = { ...latest, modelRoutingWait: wait, error: wait.reason, updatedAt: now };
+      if (JSON.stringify(routingRun(latest).modelRoutingWait) !== JSON.stringify(wait))
+        await persistRouting(waiting);
+      return;
+    }
+    const reviewerTarget = resolution.ok ? resolution.target : reviewInput.target;
+    const pendingReview = {
+      ...latest,
+      reviewerTarget,
+      modelRoutingWait: undefined,
+      error: undefined,
+    };
+    const routedReview = await persistRouting(pendingReview);
+    if (!routedReview) return;
     const started = await launchSessionRun(
       context.store,
       context.engine,
@@ -544,23 +584,14 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
         title: `Review: ${task.title}`.slice(0, 200),
         author: { kind: "task", id: task.id, name: task.title, reason: "review" },
         ...(task.isolate === false ? { workspaceMode: "current" as const } : {}),
-        ...(task.reviewerConfig
-          ? {
-              harness: task.reviewerConfig.harness,
-              // A profile belongs to one provider; never reuse it for a different reviewer.
-              providerAccountId:
-                task.reviewerConfig.harness === task.harness ? task.providerAccountId : undefined,
-              model: task.reviewerConfig.model,
-              modelSettings: task.reviewerConfig.modelSettings,
-            }
-          : {}),
+        ...reviewerTarget,
         prompt: `${task.reviewerConfig?.instructions ?? ""}\n${reviewPrompt({ ...task, verification })}`,
       },
       async () => !controller.signal.aborted && (await context.goalExecutionAllowed(task.goalId)),
     );
     if (started.deferred) return;
     const reviewing = {
-      ...latest,
+      ...routedReview,
       ...(crewReviewFingerprint ? { crewReviewFingerprint } : {}),
       verification,
       reviewer: {

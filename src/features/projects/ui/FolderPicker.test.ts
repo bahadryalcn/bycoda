@@ -147,7 +147,15 @@ describe("project folder browser", () => {
     expect(fs.listDir).toHaveBeenLastCalledWith("C:/Users/me");
     await key("Enter", { ctrlKey: true });
     expect(onPick).toHaveBeenCalledWith(["C:/Users/me"]);
-    expect(container.textContent).not.toContain("Navigate");
+    const list = container.querySelector('[role="listbox"]')!;
+    const descriptionId = list.getAttribute("aria-describedby");
+    expect(descriptionId).toBeTruthy();
+    const description = document.getElementById(descriptionId!);
+    expect(description?.textContent).toBe(
+      "↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close",
+    );
+    expect(description?.classList.contains("sr-only")).toBe(true);
+    expect(list.hasAttribute("aria-description")).toBe(false);
   });
 
   it("opens the current folder itself in the file manager", async () => {

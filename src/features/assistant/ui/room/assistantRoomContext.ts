@@ -2,7 +2,10 @@ import { createContext, useContext } from "react";
 import type { AssistantRoomCore } from "./useAssistantRoomState";
 import type { useAssistantRoomJobs } from "./useAssistantRoomJobs";
 
-export type AssistantRoom = AssistantRoomCore & ReturnType<typeof useAssistantRoomJobs>;
+export type AssistantRoom = AssistantRoomCore &
+  ReturnType<typeof useAssistantRoomJobs> & {
+    isAppQuitting: () => boolean;
+  };
 
 export const AssistantRoomContext = createContext<AssistantRoom | null>(null);
 

@@ -20,6 +20,9 @@ const tokens = [
     revokedAt: 1,
   },
 ];
+if (new URLSearchParams(location.search).has("visual-rows")) {
+  tokens.push({ ...tokens[0], id: "other", name: "Another revoked" });
+}
 let creates = 0;
 let revokes = 0;
 mockWindows("main");

@@ -12,6 +12,51 @@ const PRELUDE =
   "declare const Menu: any;\ndeclare const List: any;\ndeclare const el: HTMLElement;\n" +
   "declare const run: (message: string) => void;\n";
 
+test("TanStack useQuery defers query functions but not query option expressions", async () => {
+  const query = 'import { useQuery as useData } from "@tanstack/react-query";\n';
+  assert.equal(
+    await marked(
+      query +
+        'export function A() { useData({queryKey: ["a"], queryFn: () => localStorage.getItem("a")}); return <p />; }',
+    ),
+    false,
+  );
+  assert.equal(
+    await marked(
+      query +
+        'export function A() { useData({queryKey: ["a"], queryFn: getLocale}); return <p />; }',
+    ),
+    false,
+  );
+  assert.equal(
+    await marked(
+      query +
+        'export function A() { useData({queryKey: [getLocale()], queryFn: () => "a"}); return <p />; }',
+    ),
+    true,
+  );
+  assert.equal(
+    await marked(
+      query +
+        'export function A() { useData({queryKey: ["a"], queryFn: getLocale()}); return <p />; }',
+    ),
+    true,
+  );
+  assert.equal(
+    await marked(
+      query +
+        'export function A() { useData({queryKey: ["a"], experimental_prefetchInRender: true, queryFn: () => getLocale()}); return <p />; }',
+    ),
+    true,
+  );
+  assert.equal(
+    await marked(
+      "declare const useData: any; export function A() { useData({queryFn: () => getLocale()}); return <p />; }",
+    ),
+    true,
+  );
+});
+
 /** Whether the guard opted any function of the source out. */
 async function marked(code) {
   const { skipped } = await scanSource(file, PRELUDE + code);

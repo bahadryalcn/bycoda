@@ -1,3 +1,7 @@
+import { ModelChoiceField } from "../../model-routing/public/choice";
+import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
+import { useAutomationRoutingHost } from "../../automations/hooks/useAutomationRoutingHost";
+import type { QuickAutomationRoutingFields } from "../../../shared/model/host-contracts/assistant-quick-automation";
 import { useEffect, useState } from "react";
 import type { AssistantQuickAutomationAction } from "../../../shared/model/assistantQuickAutomation";
 import { t } from "../../../shared/i18n";
@@ -9,7 +13,7 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
-import { ModelPicker } from "../../sessions/ui/ModelPicker";
+import { ModelPicker } from "../../sessions/public/ModelPicker";
 import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
 import { RUNTIME_MODES, RUNTIME_MODE_LABEL } from "../../sessions/model/session";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../connections/model/protocol";
@@ -24,12 +28,15 @@ export function AssistantQuickAutomationFields({
   projects,
   disabled = false,
 }: {
-  value: AssistantQuickAutomationAction;
+  value: AssistantQuickAutomationAction & QuickAutomationRoutingFields;
   onChange: (value: AssistantQuickAutomationAction) => void;
   projects: readonly { id: string; name: string; path: string }[];
   disabled?: boolean;
 }) {
-  const update = (patch: Partial<AssistantQuickAutomationAction>) => {
+  const routingHost = useAutomationRoutingHost();
+  const update = (
+    patch: Partial<AssistantQuickAutomationAction & QuickAutomationRoutingFields>,
+  ) => {
     if (!disabled) onChange({ ...value, ...patch });
   };
   return (
@@ -62,29 +69,39 @@ export function AssistantQuickAutomationFields({
         />
         <div className={styles.fieldRow}>
           <FieldGroup legend={t("Execution model")} className={styles.modelField}>
-            <ModelPicker
-              harness={value.harness}
-              model={value.model}
-              values={value.modelSettings}
-              allowedHarnesses={REMOTE_PROVIDERS}
-              presentation="field"
-              showExtras
-              inheritChoice={{
-                label: t("Choose a provider and model"),
-                selected: !value.model,
-                onSelect: () => update({ model: "", modelSettings: {} }),
-              }}
-              onChange={(harness, model) => {
-                if (isRemoteProvider(harness))
-                  update({
-                    harness,
-                    model,
-                    modelSettings: defaultModelSettings(resolveModel(harness, model)),
-                  });
-              }}
-              onSettingsChange={(modelSettings) => {
-                if (value.model) update({ modelSettings });
-              }}
+            <ModelChoiceField
+              routingRole="automation"
+              value={value.modelChoice ?? (!value.model ? { kind: "default" } : undefined)}
+              onChange={(modelChoice) => update({ modelChoice })}
+              machineId={routingHost.machineId}
+              supported={routingHost.supported}
+              allowDefault
+              disabled={disabled}
+              onManage={() => openModelsSettings("roles")}
+              fixed={
+                <ModelPicker
+                  accountChoices
+                  accountId={value.providerAccountId}
+                  harness={value.harness}
+                  model={value.model}
+                  values={value.modelSettings}
+                  allowedHarnesses={REMOTE_PROVIDERS}
+                  presentation="field"
+                  showExtras
+                  onChange={(harness, model, providerAccountId) => {
+                    if (isRemoteProvider(harness))
+                      update({
+                        harness,
+                        model,
+                        providerAccountId,
+                        modelSettings: defaultModelSettings(resolveModel(harness, model)),
+                      });
+                  }}
+                  onSettingsChange={(modelSettings) => {
+                    if (value.model) update({ modelSettings });
+                  }}
+                />
+              }
             />
           </FieldGroup>
           <Select
@@ -167,7 +184,7 @@ export function AssistantQuickAutomationFields({
         </div>
         <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
           {t(
-            "Zero means no limit. These run limits and the automation lifecycle are managed in Automations, independently of the assistant token budget.",
+            "Zero uses the default run time limit in Models and no daily run limit. Automation limits are independent of the assistant token budget.",
           )}
         </Text>
         <div className={styles.fieldRow}>

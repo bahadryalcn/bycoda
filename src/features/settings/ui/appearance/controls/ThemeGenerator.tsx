@@ -1,3 +1,5 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
+import { useThemeGeneratorModel } from "./useThemeGeneratorModel";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { lazy, Suspense, useEffect, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
@@ -8,7 +10,6 @@ import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
 import { HARNESSES } from "../../../../sessions";
 import { defaultModelSettings, resolveModel } from "../../../../sessions/public/models";
-import { defaultTextActionChoice } from "../../../../sessions/public/translationPreferences";
 import {
   defaultProviderAccountId,
   supportsProviderAccounts,
@@ -97,7 +98,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   useLocale();
   // Everything below survives closing Settings (see themeGeneratorSession.ts).
   const [prompt, setPrompt] = useGeneratorState("prompt", "");
-  const [choice, setChoice] = useGeneratorState("choice", defaultTextActionChoice);
+  const [choice, setChoice] = useThemeGeneratorModel();
   const [suggestions, setSuggestions] = useGeneratorState<ThemeSuggestion[]>("suggestions", []);
   const [busy, setBusy] = useGeneratorState("busy", false);
   /** `null` while nothing failed; otherwise the Host's reason, or "" when it gave none. */
@@ -330,7 +331,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
             accountId={choice.providerAccountId}
             accountChoices
             allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
-            onChange={(harness, model, accountId) =>
+            onChange={(harness, model, accountId) => {
               setChoice({
                 ...choice,
                 harness,
@@ -341,9 +342,11 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
                 providerAccountId: supportsProviderAccounts(harness)
                   ? (accountId ?? defaultProviderAccountId(harness))
                   : undefined,
-              })
-            }
-            onSettingsChange={(modelSettings) => setChoice({ ...choice, modelSettings })}
+              });
+            }}
+            onSettingsChange={(modelSettings) => {
+              setChoice({ ...choice, modelSettings });
+            }}
           />
         </Suspense>
         <div className="theme-generator-actions">
@@ -391,10 +394,22 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
                 onClick={() => choose(suggestion, index)}
               >
                 <span className="theme-swatch-strip" aria-hidden="true">
-                  <span style={{ background: canvas }} />
-                  <span style={{ background: surface }} />
-                  <span style={{ background: line }} />
-                  <span style={{ background: accent }} />
+                  <span
+                    {...surfaceAttributes({ variant: "user-color" })}
+                    style={{ "--surface-user-color": canvas } as React.CSSProperties}
+                  />
+                  <span
+                    {...surfaceAttributes({ variant: "user-color" })}
+                    style={{ "--surface-user-color": surface } as React.CSSProperties}
+                  />
+                  <span
+                    {...surfaceAttributes({ variant: "user-color" })}
+                    style={{ "--surface-user-color": line } as React.CSSProperties}
+                  />
+                  <span
+                    {...surfaceAttributes({ variant: "user-color" })}
+                    style={{ "--surface-user-color": accent } as React.CSSProperties}
+                  />
                 </span>
                 {image && image.status !== "error" ? (
                   <span className="theme-suggestion-thumb" aria-hidden="true">

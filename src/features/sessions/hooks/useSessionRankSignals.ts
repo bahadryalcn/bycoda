@@ -5,8 +5,8 @@ import { hasUnsentComposerDraft, subscribeComposerDraftPresence } from "../model
  * Status inputs for list ranking that the list itself does not hold.
  * - `doneIds`: unseen finished sessions, plus the open session when it was unseen as it
  *   opened, so opening a Done row does not move it from under the pointer.
- * - `draftIds`: sessions whose composer holds unsent text or attachments, except the open
- *   one, so a row does not move while the user types. Re-renders only when the set changes.
+ * - `draftIds`: sessions whose composer holds unsent text or attachments, including the open
+ *   one, so opening a draft preserves its rank. Re-renders only when the set changes.
  */
 export function useSessionRankSignals(
   sessions: readonly { id: string }[],
@@ -31,7 +31,7 @@ export function useSessionRankSignals(
     subscribeComposerDraftPresence,
     () =>
       sessions
-        .filter((session) => session.id !== activeId && hasUnsentComposerDraft(session.id))
+        .filter((session) => hasUnsentComposerDraft(session.id))
         .map((session) => session.id)
         .join("\0"),
     () => "",

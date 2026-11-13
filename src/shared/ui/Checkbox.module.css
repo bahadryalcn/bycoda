@@ -32,6 +32,10 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+.row[data-interaction-tone="neutral"]:hover:not([data-disabled]) {
+  color: var(--ui-tone-neutral-fg);
+}
+
 .checkbox::before,
 .checkbox::after {
   content: "";
@@ -66,12 +70,12 @@
   transition: opacity var(--duration-instant) var(--ease-standard);
 }
 
-.checkbox:is(:checked, :indeterminate)::before {
+.checkbox:is(:checked, :indeterminate, [data-checked])::before {
   border-color: var(--control-on);
   background: var(--control-on);
 }
 
-.checkbox:checked::after {
+.checkbox:is(:checked, [data-checked])::after {
   opacity: 1;
 }
 
@@ -171,13 +175,42 @@ label:has(> .checkbox:disabled) {
   .checkbox::before {
     border-color: ButtonText;
   }
-  .checkbox:is(:checked, :indeterminate)::before {
+  .checkbox:is(:checked, :indeterminate, [data-checked])::before {
     forced-color-adjust: none;
     border-color: Highlight;
     background: Highlight;
   }
-  .checkbox:is(:checked, :indeterminate)::after {
+  .checkbox:is(:checked, :indeterminate, [data-checked])::after {
     forced-color-adjust: none;
     color: HighlightText;
   }
+}
+
+.mark {
+  inline-size: var(--checkbox-box);
+  block-size: var(--checkbox-box);
+  flex: none;
+  pointer-events: none;
+  cursor: inherit;
+}
+.mark[data-size="sm"] {
+  --checkbox-box: calc(var(--ui-control-checkbox-size) - 2px);
+}
+
+.row[data-choice-appearance="card"] {
+  border: 1px solid var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
+}
+@media (hover: hover) and (pointer: fine) {
+  .row[data-choice-appearance]:not([data-disabled]):not(:has(input[readonly])):hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.row[data-choice-appearance="card"]:has(input:checked) {
+  border-color: var(--ui-tone-accent-border);
+  background: var(--ui-surface-selected);
+}
+.row[data-choice-appearance="card"]:has(input:focus-visible) {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }

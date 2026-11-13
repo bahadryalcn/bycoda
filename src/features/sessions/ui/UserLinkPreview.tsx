@@ -1,11 +1,11 @@
+import type { CSSProperties } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ClampText } from "../../../shared/ui/ClampText";
-import { motionAttributes } from "../../../shared/ui/Motion";
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
-import { Link } from "../../../shared/ui/Link";
+import { Link, linkContentAttributes } from "../../../shared/ui/Link";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
@@ -22,6 +22,7 @@ import {
 } from "../../../shared/ui/icons";
 import { useHoverCard } from "../../../shared/ui/HoverCard";
 import { Skeleton } from "../../../shared/ui/Skeleton";
+import { UserLinkIcon } from "./UserLinkIcon";
 import {
   formatRelativeTime,
   githubWorkItem,
@@ -112,7 +113,7 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
               onError={() => setFaviconFailed(true)}
             />
           ) : (
-            link.host.charAt(0)
+            <UserLinkIcon link={link} className="icon-sm" />
           )}
         </Text>
         <Text
@@ -120,7 +121,7 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
           size="inherit"
           tone="inherit"
           weight="medium"
-          className="user-link-preview-title group-hover:underline"
+          {...linkContentAttributes("user-link-preview-title")}
         >
           {title}
         </Text>
@@ -225,12 +226,8 @@ function GithubWorkItemPreview({
           p2: workItem.repo,
           p3: itemTitle ? `: ${itemTitle}` : "",
         })}
-        {...motionAttributes(
-          { transition: "transform", duration: "fast" },
-          `group mx-px inline-flex max-w-full items-center gap-1 rounded-md border-0 bg-transparent p-0 no-underline shadow-none focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color) active:scale-[0.98] pb-px ${
-            compact ? "align-middle" : "align-[-0.25em]"
-          }`,
-        )}
+        appearance="chip"
+        className={`mx-0.5 inline-flex max-w-full items-center gap-1 ${compact ? "align-middle" : "align-[-0.25em]"}`}
         onClick={(event) => {
           hover.close();
           event.stopPropagation();
@@ -241,8 +238,8 @@ function GithubWorkItemPreview({
           tone={workItem.kind === "pr" ? "accent" : "success"}
           weight="medium"
           {...surfaceAttributes(
-            { radius: "row" },
-            ` inline-flex shrink-0 items-center  ${compact ? "h-4.5 gap-0.5  px-1.5" : "h-5 gap-1  px-1.5"} ${workItem.kind === "pr" ? "bg-(--ui-tone-accent-subtle) " : "bg-(--ui-tone-success-subtle) "}`,
+            { radius: "row", tone: workItem.kind === "pr" ? "accent" : "success" },
+            ` inline-flex shrink-0 items-center  ${compact ? "h-4.5 gap-0.5  px-1.5" : "h-5 gap-1  px-1.5"}`,
           )}
         >
           {workItem.kind === "pr" ? (
@@ -358,8 +355,8 @@ function GithubWorkItemCard({
           size="caption"
           tone="secondary"
           {...surfaceAttributes(
-            { radius: "row" },
-            "mt-2 flex min-w-0 items-center gap-1.5  bg-(--ui-tone-neutral-solid)/[0.045] px-2 py-1.5",
+            { radius: "row", variant: "neutral-metadata" },
+            "mt-2 flex min-w-0 items-center gap-1.5 px-2 py-1.5",
           )}
         >
           <GitCompare className="icon-sm shrink-0" aria-hidden="true" />
@@ -381,8 +378,11 @@ function GithubWorkItemCard({
               icon: (
                 <span
                   aria-hidden="true"
-                  {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0 ")}
-                  style={{ backgroundColor: labelColor(label.color) }}
+                  {...surfaceAttributes(
+                    { radius: "pill", variant: "user-color" },
+                    "size-1.5 shrink-0 ",
+                  )}
+                  style={{ "--surface-user-color": labelColor(label.color) } as React.CSSProperties}
                 />
               ),
             }))}
@@ -411,7 +411,10 @@ function GithubWorkItemCard({
         as="div"
         size="caption"
         tone="secondary"
-        className="mt-3 flex items-center gap-1.5 border-t border-(--ui-tone-neutral-border)/[0.07] pt-2"
+        {...surfaceAttributes(
+          { frame: "neutral-metadata", edge: "top" },
+          "mt-3 flex items-center gap-1.5 pt-2",
+        )}
       >
         <ExternalLink className="icon-xs" aria-hidden="true" />
         {t("Click the chip to open on GitHub")}
@@ -452,19 +455,20 @@ function GithubAvatar({
     return (
       <Text
         as="span"
-        size="inherit"
+        size="glyph"
         tone="secondary"
         weight="medium"
         aria-hidden="true"
         {...surfaceAttributes(
           { radius: "pill", frame: "neutral", edge: "all", variant: "raised" },
-          "grid shrink-0 place-items-center   border-(--ui-tone-neutral-border) ",
+          "grid shrink-0 place-items-center size-(--avatar-size) border-(--ui-tone-neutral-border)",
         )}
-        style={{
-          width: size,
-          height: size,
-          fontSize: Math.max(8, size * 0.45),
-        }}
+        style={
+          {
+            "--avatar-size": `${size}px`,
+            "--text-glyph-size": `${Math.max(8, size * 0.45)}px`,
+          } as React.CSSProperties
+        }
       >
         {name.trim().charAt(0).toUpperCase() || "?"}
       </Text>
@@ -479,8 +483,16 @@ function GithubAvatar({
       referrerPolicy="no-referrer"
       draggable={false}
       onError={() => setFailed(true)}
-      className="shrink-0 rounded-full border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) object-cover"
-      style={{ width: size, height: size }}
+      {...surfaceAttributes(
+        { radius: "circle", frame: "neutral", variant: "raised" },
+        "shrink-0 object-cover [width:var(--layout-width)] [height:var(--layout-height)]",
+      )}
+      style={
+        {
+          "--layout-width": size === undefined ? undefined : size + "px",
+          "--layout-height": size === undefined ? undefined : size + "px",
+        } as CSSProperties
+      }
     />
   );
 }

@@ -76,6 +76,7 @@ import {
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { AttachmentChip } from "./AttachmentChip";
 import { AttachmentTokenText } from "./AttachmentTokenText";
+import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { ChatCitationList } from "./ChatCitationText";
 import { extractChatCitations } from "../model/chatCitation";
 import { TranscriptSkills } from "./SkillTokenText";
@@ -211,6 +212,7 @@ type Props = {
   modelSettings?: Record<string, string>;
   providerAccountId?: string;
   pendingQuestion?: boolean;
+  pendingOwnerApproval?: boolean;
   questionBehavior?: "blocking" | "nonBlocking";
   /** The companion composer dock owns the live clock; keep work disclosure here. */
   liveStatusInDock?: boolean;
@@ -281,6 +283,7 @@ function AgentTranscriptComponent({
   modelSettings,
   providerAccountId,
   pendingQuestion = false,
+  pendingOwnerApproval = false,
   questionBehavior,
   liveStatusInDock = false,
   backgroundTasks,
@@ -431,7 +434,7 @@ function AgentTranscriptComponent({
   const blockingQuestion = pendingQuestion && questionBehavior === "blocking";
   const [scanCache] = useState(() => new BlockScanCache());
   const scan = scanCache.scan(blocks);
-  const waitingForApproval = scan.pendingApproval || blockingQuestion;
+  const waitingForApproval = pendingOwnerApproval || scan.pendingApproval || blockingQuestion;
   const preparingHandoff = scan.preparingHandoff;
   // The prompt whose run is in flight; a mid-turn message continues its clock.
   const runOwner = busy ? blocks[scan.executionUser] : undefined;
@@ -939,13 +942,15 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
       visible={props.visible !== false && !props.parked}
     >
       <Activity mode={props.visible === false ? "hidden" : "visible"}>
-        {props.approvalContext ? (
-          <ApprovalDecisionProvider {...props.approvalContext}>
-            {transcript}
-          </ApprovalDecisionProvider>
-        ) : (
-          transcript
-        )}
+        <WorkItemMentionCwd value={props.cwd}>
+          {props.approvalContext ? (
+            <ApprovalDecisionProvider {...props.approvalContext}>
+              {transcript}
+            </ApprovalDecisionProvider>
+          ) : (
+            transcript
+          )}
+        </WorkItemMentionCwd>
       </Activity>
     </OwnerApprovalChat>
   );

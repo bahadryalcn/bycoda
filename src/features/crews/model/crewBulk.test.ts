@@ -112,15 +112,18 @@ describe("applyPool", () => {
   const pool = { id: "p1", candidates: [candidate("m1"), candidate("m2")] };
   it("makes the targets automatic members of the pool", () => {
     const [a, b] = applyPool([agent("a"), agent("b")], ["a"], pool);
-    expect(a).toMatchObject({ selection: "automatic", pool: { id: "p1" } });
-    expect(a!.candidates.map((c) => c.id)).toEqual(["m1", "m2"]);
-    expect(a!.candidates[0]).not.toBe(pool.candidates[0]);
+    expect(a).toMatchObject({
+      selection: "automatic",
+      modelChoice: { kind: "pool", poolId: "p1" },
+    });
+    expect(a!.candidates).toEqual(agent("a").candidates);
     expect(b).toMatchObject({ selection: "fixed" });
-    expect(b!.pool).toBeUndefined();
   });
   it("targets everyone when no ids are given", () => {
-    expect(applyPool([agent("a"), agent("b")], [], pool).every((x) => x.pool?.id === "p1")).toBe(
-      true,
-    );
+    expect(
+      applyPool([agent("a"), agent("b")], [], pool).every(
+        (x) => x.modelChoice?.kind === "pool" && x.modelChoice.poolId === "p1",
+      ),
+    ).toBe(true);
   });
 });

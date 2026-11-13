@@ -17,7 +17,10 @@ it("copies the live child's questions without mutating the Host snapshot and cle
       id: "child",
       cwd: "/project",
       title: "Child",
-      blocks: [],
+      blocks: [
+        { id: "prompt", role: "user", text: "Work" },
+        { id: "step", role: "tool", text: "Reading files" },
+      ],
       modelSettings: {
         delegationParent: JSON.stringify({
           parentSessionId: "parent",
@@ -42,6 +45,8 @@ it("copies the live child's questions without mutating the Host snapshot and cle
   const known = new Map<string, HostSession>();
   const [child] = await discoverDelegatedRuns(parent, port, known, () => true);
   expect(remoteSessionFor(child.id)).toBe("child");
+  expect(child.blocks).toEqual(host.session.blocks);
+  expect(child.continuingElsewhere).toBe(true);
   expect(child.pendingQuestion).toEqual(question);
   expect(child.submittedQuestions).toEqual(host.session.submittedQuestions);
   expect(child.pendingQuestion).not.toBe(host.session.pendingQuestion);
@@ -50,9 +55,14 @@ it("copies the live child's questions without mutating the Host snapshot and cle
   expect(question.questions[0].prompt).toBe("Choose");
   host.session.pendingQuestion = undefined;
   host.session.submittedQuestions = undefined;
+  host.session.blocks = [...host.session.blocks, { id: "reply", role: "assistant", text: "Done" }];
+  host.status = "idle";
+  host.revision = 2;
   const [updated] = await discoverDelegatedRuns(parent, port, known, () => true);
   expect(updated.pendingQuestion).toBeUndefined();
   expect(updated.submittedQuestions).toBeUndefined();
+  expect(updated.blocks.map((block) => block.id)).toEqual(["prompt", "step", "reply"]);
+  expect(updated.continuingElsewhere).toBeUndefined();
   rememberRemoteSession("other-shell", "child");
   await expect(discoverDelegatedRuns(parent, port, known, () => true)).rejects.toThrow(
     "bound to another session",

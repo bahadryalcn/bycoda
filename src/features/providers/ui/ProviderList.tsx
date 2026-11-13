@@ -2,9 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { Badge } from "../../../shared/ui/Badge";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Button } from "../../../shared/ui/Button";
 import { Check, Bot } from "../../../shared/ui/icons";
@@ -12,6 +10,7 @@ import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { Toggle } from "../../settings/ui/settingsControls";
 import type { ProviderAuthState, ProviderAuthTone } from "./providerStatus";
+import { useGrokSignInState } from "./providerStatus";
 
 /** Ink of the auth line: a warning for a sign-in or quota problem, danger when exhausted. */
 function authMetaTone(tone: ProviderAuthTone | undefined) {
@@ -40,6 +39,9 @@ export type ProviderListEntry = {
 export function providerMetaLine(entry: ProviderListEntry, probed: boolean): string {
   if (!probed) return t("Checking CLI…");
   if (!entry.available) return entry.harness === "acp" ? t("Add provider") : t("Not installed");
+  if (entry.accountSummary && (entry.auth?.tone === "low" || entry.auth?.tone === "exhausted")) {
+    return `${entry.accountSummary}, ${entry.auth.label}`;
+  }
   return entry.accountSummary ?? entry.auth?.label ?? "";
 }
 
@@ -68,6 +70,8 @@ function ProviderListItem({
     <div className="provider-cli-item" data-muted={muted || undefined}>
       <Button
         variant="item"
+        controlHeight="auto"
+        padding={{ block: "xl", inline: "md" }}
         selected={selected}
         disabled={disabled}
         className="provider-cli-option"
@@ -102,10 +106,9 @@ function ProviderListItem({
             </Text>
             {entry.isDefault ? (
               <Tooltip label={t("New conversations start with this provider")}>
-                <Badge size="xs" tone="accent" className="shrink-0">
-                  <Check className="icon-xs" aria-hidden />
-                  {t("Default")}
-                </Badge>
+                <Text tone="secondary" className="shrink-0" aria-label={t("Default provider")}>
+                  <Check className="icon-sm" aria-hidden />
+                </Text>
               </Tooltip>
             ) : null}
           </Text>
@@ -122,20 +125,6 @@ function ProviderListItem({
             </Text>
           ) : null}
         </span>
-        {entry.auth ? (
-          <Tooltip label={entry.auth.label}>
-            <StatusDot
-              tone={
-                entry.auth.tone === "ready"
-                  ? "success"
-                  : entry.auth.tone === "exhausted"
-                    ? "danger"
-                    : "warning"
-              }
-              label={entry.auth.label}
-            />
-          </Tooltip>
-        ) : null}
       </Button>
       {available ? (
         <Tooltip label={t("Show {p0} in the model picker", { p0: title })}>
@@ -186,6 +175,9 @@ export function ProviderList({
   onSetup: (harness: HarnessId) => void;
 }) {
   useLocale();
+  const grokAuth = useGrokSignInState(
+    probed && entries.some((entry) => entry.harness === "grok" && entry.available),
+  );
   const [expanded, setExpanded] = useState(false);
   const generic = entries.find((entry) => entry.harness === "acp");
   const listed = entries.filter((entry) => entry.harness !== "acp");
@@ -197,7 +189,7 @@ export function ProviderList({
   const item = (entry: ProviderListEntry) => (
     <ProviderListItem
       key={entry.harness}
-      entry={entry}
+      entry={entry.harness === "grok" ? { ...entry, auth: grokAuth } : entry}
       probed={probed}
       selected={active === entry.harness}
       disabled={disabled}

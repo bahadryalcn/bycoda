@@ -55,6 +55,9 @@
 .text[data-tone="accent"] {
   color: var(--ui-tone-accent-fg);
 }
+.text[data-tone="feature"] {
+  color: var(--color-feature);
+}
 .text[data-tone="info"] {
   color: var(--ui-tone-info-fg);
 }
@@ -134,4 +137,14 @@
   -webkit-line-clamp: var(--clamp-lines);
   overflow: hidden;
   white-space: normal;
+}
+
+.text[data-size="glyph"] {
+  font-size: var(--text-glyph-size);
+}
+.text[data-tone="background-base"] {
+  color: var(--color-background-base);
+}
+.text[data-hover-underline]:hover {
+  text-decoration: underline;
 }

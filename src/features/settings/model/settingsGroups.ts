@@ -57,6 +57,7 @@ export const SETTINGS_SECTION_ORDER: readonly SettingsSectionId[] = [
   "terminal",
   "groupLock",
   "providers",
+  "models",
   "crews",
   "skills",
   "mcp",

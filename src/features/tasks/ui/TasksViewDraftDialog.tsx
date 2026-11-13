@@ -80,7 +80,7 @@ export function TasksViewDraftDialog({
           onCancel={() => {
             if (!saving) onClose();
           }}
-          onSubmit={(mode) => onSave(mode, draft)}
+          onSubmit={(mode, resolvedDraft) => onSave(mode, resolvedDraft)}
         />
       </HostModelSource>
     </Modal>

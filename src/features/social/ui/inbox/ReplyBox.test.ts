@@ -8,6 +8,20 @@ import type { SocialClient } from "../../model/socialClient";
 import type { InboxReplyOptions } from "./inboxTypes";
 import { ReplyBox } from "./ReplyBox";
 
+const invalidationFailure = vi.hoisted(() => ({ fail: false }));
+vi.mock("./useInboxData", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./useInboxData")>();
+  return {
+    ...actual,
+    useInboxInvalidate: (client: SocialClient) => {
+      const invalidate = actual.useInboxInvalidate(client);
+      return async () => {
+        await invalidate();
+        if (invalidationFailure.fail) throw new Error("Refresh failed");
+      };
+    },
+  };
+});
 const confirm = vi.fn(async () => true);
 vi.mock("../../../../shared/ui/ConfirmDialog", () => ({
   useConfirm: () => ({ confirm, dialog: null }),
@@ -82,6 +96,7 @@ function fakeClient(
 }
 
 beforeEach(() => {
+  invalidationFailure.fail = false;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   element = document.createElement("div");
   document.body.append(element);
@@ -147,6 +162,7 @@ it("keeps Send disabled with its reason until the owner writes a reply", async (
   await mount(fake.client);
   expect(off(button("Send"))).toBe(true);
   expect(button("Send").getAttribute("aria-description")).toBe("Write a reply first.");
+  expect(element.querySelector(".inbox-note")?.textContent).toContain("Write a reply first.");
   await type("   ");
   expect(off(button("Send"))).toBe(true);
   await type("Thanks, see you soon.");
@@ -186,7 +202,7 @@ it("blocks the reply box with the Host reason and never sends while a reply is n
   expect(editor().disabled).toBe(true);
   expect(off(button("Send"))).toBe(true);
   expect(element.textContent).toContain(
-    "The 24-hour window has passed. Only a template can be sent.",
+    "This conversation requires a template. Template replies are unavailable here.",
   );
   await click(button("Send"));
   expect(fake.writes()).toEqual([]);
@@ -362,4 +378,59 @@ it("replaces the draft with the AI suggestion once the owner agrees", async () =
   await click(button("Fill with AI"));
   expect(fake.calls.some((call) => call.action === "replies.suggest")).toBe(true);
   expect(editor().value).toBe("It is free.");
+});
+
+it("restores the exact reply draft after leaving and reopening the conversation", async () => {
+  const fake = fakeClient();
+  await mount(fake.client);
+  await type("Unsent owner draft");
+  await act(async () => root.render(null));
+  await mount(fake.client);
+  expect(editor().value).toBe("Unsent owner draft");
+  expect(fake.writes()).toEqual([]);
+});
+
+it("does not carry a reply draft to another Host client with the same thread id", async () => {
+  const first = fakeClient();
+  await mount(first.client);
+  await type("Private draft on first Host");
+  const second = fakeClient();
+  await mount(second.client);
+  expect(editor().value).toBe("");
+  expect(second.writes()).toEqual([]);
+});
+
+it("keeps confirmed queue success distinct from a later refresh failure", async () => {
+  const fake = fakeClient();
+  await mount(fake.client);
+  await type("Ready to queue");
+  invalidationFailure.fail = true;
+  await click(button("Send"));
+  expect(element.textContent).toContain("Reply queued.");
+  expect(element.textContent).toContain("Reply queued, but the conversation could not refresh.");
+  expect(element.textContent).not.toContain("The reply was not sent.");
+  expect(editor().value).toBe("");
+  expect(fake.writes().filter((call) => call.action === "replies.send")).toHaveLength(1);
+});
+
+it("shows suggestion progress and protects the editor while AI text is pending", async () => {
+  let finish!: (value: { text: string; factIds: string[] }) => void;
+  const fake = fakeClient({
+    handlers: {
+      "replies.suggest": () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    },
+  });
+  await mount(fake.client);
+  await act(async () => button("Fill with AI").click());
+  expect(button("Fill with AI").getAttribute("aria-busy")).toBe("true");
+  expect(editor().disabled).toBe(true);
+  expect(element.querySelector(".inbox-note")?.textContent).not.toContain("Sending");
+  await act(async () => finish({ text: "Prepared reply", factIds: ["f1"] }));
+  await flush();
+  expect(editor().disabled).toBe(false);
+  expect(editor().value).toBe("Prepared reply");
+  expect(fake.writes()).toEqual([]);
 });

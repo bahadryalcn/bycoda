@@ -1,3 +1,4 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
@@ -82,9 +83,17 @@ export function HostShellRow({
       data-setting-id={settingId}
       data-revealed={flash || undefined}
       tabIndex={-1}
-      {...surfaceAttributes({ radius: "control" }, "terminal-host")}
+      {...surfaceAttributes(
+        { radius: "control", variant: flash ? "selected" : undefined },
+        "terminal-host",
+      )}
     >
-      <div className="settings-collection-row terminal-host-row">
+      <ActionHost
+        {...surfaceAttributes(
+          { radius: "none", separator: "block" },
+          "settings-collection-row terminal-host-row",
+        )}
+      >
         <div className="settings-collection-main terminal-host-identity">
           <Text
             as="p"
@@ -167,7 +176,7 @@ export function HostShellRow({
             />
           </Button>
         </div>
-      </div>
+      </ActionHost>
       {feedback ? (
         <div className="settings-collection-feedback terminal-host-feedback">{feedback}</div>
       ) : null}

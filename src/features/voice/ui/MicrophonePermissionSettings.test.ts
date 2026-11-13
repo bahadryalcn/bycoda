@@ -49,14 +49,14 @@ it("leaves permission unknown without prompting and checks only after an explici
   saveVoiceSettings({ ...loadVoiceSettings(), microphoneId: "selected-device" });
   await render();
   expect(mock.capture).not.toHaveBeenCalled();
-  expect(element.textContent).toContain("requested only when");
+  expect(element.textContent).toContain("Not checked");
   await click("Check microphone access");
   expect(mock.capture).toHaveBeenCalledExactlyOnceWith({
     audio: { deviceId: { exact: "selected-device" } },
     video: false,
   });
   expect(stop).toHaveBeenCalledOnce();
-  expect(element.textContent).toContain("Microphone permission is allowed.");
+  expect(element.textContent).toContain("Microphone allowed");
 });
 
 it("stops a late permission grant after cancellation, prevents duplicate capture and permits a fresh check", async () => {
@@ -77,7 +77,7 @@ it("stops a late permission grant after cancellation, prevents duplicate capture
   expect(mock.capture).toHaveBeenCalledOnce();
   await act(async () => grant({ getTracks: () => [{ stop }] }));
   expect(stop).toHaveBeenCalledOnce();
-  expect(element.textContent).not.toContain("Microphone permission is allowed.");
+  expect(element.textContent).not.toContain("Microphone allowed");
   expect(button("Check microphone access")?.disabled).toBe(false);
 });
 
@@ -107,7 +107,7 @@ it("shows denial recovery without treating opening settings as a grant", async (
   await click("Open Privacy Settings");
   expect(mock.open).toHaveBeenCalledWith("microphone");
   expect(element.textContent).toContain("Could not open microphone settings.");
-  expect(element.textContent).not.toContain("Microphone permission is allowed.");
+  expect(element.textContent).not.toContain("Microphone allowed");
 });
 
 it("observes permission changes without capture and removes its listener on close", async () => {
@@ -122,7 +122,7 @@ it("observes permission changes without capture and removes its listener on clos
     status.state = "granted";
     status.dispatchEvent(new Event("change"));
   });
-  expect(element.textContent).toContain("Microphone permission is allowed.");
+  expect(element.textContent).toContain("Microphone allowed");
   expect(mock.capture).not.toHaveBeenCalled();
   await act(async () => root!.unmount());
   root = undefined;
@@ -139,7 +139,7 @@ it("keeps unsupported synchronous permission queries unknown without opening the
     },
   });
   await render();
-  expect(element.textContent).toContain("requested only when");
+  expect(element.textContent).toContain("Not checked");
   expect(mock.capture).not.toHaveBeenCalled();
   expect(button("Check microphone access")?.disabled).toBe(false);
 });
@@ -159,7 +159,18 @@ it("clears a stale denial when permission resets to prompt without claiming acce
     status.dispatchEvent(new Event("change"));
   });
   expect(element.textContent).not.toContain("Microphone blocked");
-  expect(element.textContent).not.toContain("Microphone permission is allowed.");
+  expect(element.textContent).not.toContain("Microphone allowed");
   expect(button("Open Privacy Settings")).toBeUndefined();
   expect(mock.capture).toHaveBeenCalledOnce();
+});
+
+it("keeps routine microphone lifetime guidance in help without starting capture", async () => {
+  await render();
+  expect(element.textContent).not.toContain("requested only when");
+  const help = element.querySelector<HTMLButtonElement>(
+    'button[aria-label="Microphone access: Help"]',
+  )!;
+  await act(async () => help.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("requested only when");
+  expect(mock.capture).not.toHaveBeenCalled();
 });

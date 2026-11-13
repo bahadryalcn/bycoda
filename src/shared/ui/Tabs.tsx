@@ -168,6 +168,8 @@ export type TabListProps = Omit<ComponentPropsWithRef<"div">, "role" | "aria-lab
  * its own container steps (as `.bycoda-workspace-tabs` does) through `className`.
  * @group navigation
  * @status internal
+ * @use The roving tab strip inside Tabs.
+ * @avoid The complete selection and panel owner: Tabs.
  */
 export function TabList({
   label,
@@ -296,6 +298,8 @@ export type TabProps = TabBase & TabLabel;
  * `leading` (label line height).
  * @group navigation
  * @status internal
+ * @use One selectable tab inside Tabs and TabList.
+ * @avoid The complete tab collection: Tabs.
  */
 export function Tab({
   value,
@@ -379,6 +383,8 @@ export type TabPanelProps = Omit<ComponentPropsWithRef<"div">, "role"> & {
  * `role="tabpanel"`, labelled by its tab and focusable (`tabIndex` 0) unless overridden.
  * @group navigation
  * @status internal
+ * @use Content associated with one tab inside Tabs.
+ * @avoid The complete selection and panel owner: Tabs.
  */
 export function TabPanel({
   value,

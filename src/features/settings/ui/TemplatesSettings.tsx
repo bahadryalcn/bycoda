@@ -314,7 +314,12 @@ export function TemplatesSettings() {
                 </div>
               </div>
               {selected ? (
-                <div className="template-manager-editor">
+                <div
+                  {...surfaceAttributes(
+                    { frame: "stroke", edge: "responsive-start" },
+                    "template-manager-editor",
+                  )}
+                >
                   <TextField
                     ref={nameRef}
                     label={t("Template name")}

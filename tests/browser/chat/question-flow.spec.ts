@@ -696,3 +696,49 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+test("question note actual field geometry", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 950 });
+  await page.goto("/tests/browser/chat/question-flow.html?theme=light&variant=choices");
+  const form = page.locator("[data-question-form]");
+  await form.getByRole("radio", { name: /Windows and macOS/ }).check();
+  await form.getByRole("button", { name: "Add a note", exact: true }).click();
+  const note = form.getByRole("textbox", { name: "Additional note (optional)", exact: true });
+  await note.fill("Draft text retained");
+  const geometry = await note.evaluate((node) => {
+    const css = getComputedStyle(node);
+    const parent = node.parentElement!;
+    const field = node.closest('[class*="answer"]');
+    return {
+      minHeight: css.minHeight,
+      maxHeight: css.maxHeight,
+      lineHeight: css.lineHeight,
+      padding: css.padding,
+      height: node.getBoundingClientRect().height,
+      directChild: field === parent,
+    };
+  });
+  console.log("QUESTION_GEOMETRY", JSON.stringify(geometry));
+  expect(geometry.minHeight).toBe("110px");
+  expect(geometry.maxHeight).toBe("none");
+  expect(geometry.height).toBe(110);
+  await expect(note).toHaveValue("Draft text retained");
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`question footer surface ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/chat/question-flow.html?theme=${theme}&variant=choices`);
+      const form = page.locator("[data-question-form]");
+      await expect(form).toBeVisible();
+      await form.getByRole("radio", { name: /Windows and macOS/ }).check();
+      await form.getByRole("button", { name: "Add a note", exact: true }).click();
+      await form
+        .getByRole("textbox", { name: "Additional note (optional)" })
+        .fill("Keep this draft");
+      await form.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/question-footer-${theme}-${width}.png`,
+      });
+    });

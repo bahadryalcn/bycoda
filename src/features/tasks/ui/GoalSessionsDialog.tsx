@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -34,10 +35,16 @@ export function GoalSessionsDialog({
     >
       <Text as="div" size="secondary" tone="inherit" className="grid">
         <SectionLabel count={goalTasks.length}>{t("Tasks")}</SectionLabel>
-        {goalTasks.map((task) => {
+        {goalTasks.map((task, index) => {
           const sessions = taskSessionIds(task);
           return (
-            <div key={task.id} className="goal-session-task">
+            <div
+              key={task.id}
+              {...surfaceAttributes(
+                { frame: index < goalTasks.length - 1 ? "pane" : undefined, edge: "bottom" },
+                "goal-session-task",
+              )}
+            >
               <div className="goal-session-head">
                 <Text as="span" size="inherit" tone="inherit" weight="medium">
                   {task.title}

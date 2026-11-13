@@ -21,6 +21,7 @@ vi.mock("../model/voiceWakeAdapters", () => ({
   }),
 }));
 import { claimVoiceConversationActivity } from "../model/voiceActivity";
+import { reportDictation } from "../model/dictationActivity";
 import { loadVoiceSettings } from "../model/voiceSettings";
 import { useVoiceWake } from "./useVoiceWake";
 import { VOICE_WAKE_EVENT } from "./useVoiceTalkEvent";
@@ -131,4 +132,29 @@ it("turns the feature off in one click", async () => {
   await render();
   seen.turnOff();
   expect(loadVoiceSettings().wakeEnabled).toBeUndefined();
+});
+
+it("stops for dictation, rejects late ASR and rearms after dictation ends", async () => {
+  let finish!: (text: string) => void;
+  mocks.recognize.mockImplementationOnce(
+    () =>
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await speak();
+  const owner = Symbol();
+  try {
+    await act(async () =>
+      reportDictation(owner, { state: "listening", visible: true, stop: () => {} }),
+    );
+    expect(mocks.close).toHaveBeenCalledTimes(1);
+    await act(async () => finish("hey arif"));
+    expect(talk).not.toHaveBeenCalled();
+    expect(seen.indicator).toBeNull();
+  } finally {
+    await act(async () => reportDictation(owner, undefined));
+  }
+  expect(mocks.open).toHaveBeenCalledTimes(2);
 });

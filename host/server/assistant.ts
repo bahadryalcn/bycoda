@@ -1,3 +1,4 @@
+import { AssistantRepository } from "../assistant/repository";
 import { dirname } from "node:path";
 import { HostAssistantKeepAwake } from "../assistant/core/assistant-keep-awake";
 import {
@@ -10,9 +11,7 @@ import {
   roomAttestationKeyPath,
 } from "../assistant/room/assistant-room-attestation";
 import { createAssistantModelSelector } from "../assistant/models/assistant-model-execution";
-import { setAssistantModelPoolPorts } from "../assistant/models/assistant-model-pool";
-import { AssistantQuotaReader } from "../assistant/models/assistant-quota-reader";
-import { AssistantRepository } from "../assistant/repository";
+import { hostModelRoutingService } from "../model-routing/runtime";
 import { HostAssistant } from "../assistant/service";
 import { HostAssistantManualSessions } from "../assistant/sessions/assistant-manual-sessions";
 import { assistantSessionRuntime } from "../assistant/sessions/assistant-session-runtime";
@@ -20,9 +19,7 @@ import { HostDesktopHelper } from "../desktop-helper";
 import { HostDesktopControl } from "../desktop/desktop-control-host";
 import { readDesktopPresenceWithVoice } from "../desktop/desktop-voice-activity";
 import { projectDisplayNames } from "../projects/project-display-names";
-import { readUsageLimits } from "../usage/limits-report";
 import type { ServerBindings } from "./bindings";
-import { hostUsageLimitsDeps } from "./usage-limits-deps";
 export async function createAssistantRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -73,12 +70,6 @@ export async function createAssistantRuntime(
     },
   });
 
-  // One quota reader per Host: selection never blocks on provider reads.
-  const quota = new AssistantQuotaReader({
-    readLimits: () => readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId)),
-  });
-  // The catalog cache is created after the assistant, so it is read lazily at validation time.
-  setAssistantModelPoolPorts({ catalog: () => dependencies.models() });
   const orderSessionWrite: SessionWriteOrder = (id, write) =>
     dependencies.engine.sessionStoreWrite(id, write);
   const assistantPorts = assistantExecutionPorts(
@@ -88,8 +79,8 @@ export async function createAssistantRuntime(
     () => dependencies.hostNotes,
     () => dependencies.automations,
     createAssistantModelSelector({
+      routing: () => hostModelRoutingService(dependencies.engine.store),
       repository: new AssistantRepository(dependencies.engine.store),
-      quota,
     }),
     orderSessionWrite,
   );

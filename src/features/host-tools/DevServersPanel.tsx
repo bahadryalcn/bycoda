@@ -38,6 +38,7 @@ import {
   Copy,
   ExternalLink,
   Eye,
+  Info,
   MoreHorizontal,
   Pause,
   Play,
@@ -656,66 +657,66 @@ function ProjectDevServersPanel({
           />
         </Surface>
       ) : null}
-      {intent !== "details" ? (
-        <div className="dev-server-confirm">
-          <p className="host-tool-muted">
+      <div className="dev-server-confirm">
+        {intent !== "details" ? (
+          <Text as="p" size="caption" tone="secondary">
             {t(
               "Review the affected ports before confirming. The host verifies process identity before sending a signal.",
             )}
-          </p>
-          <div className="dev-server-actions">
-            {intent === "stop" && !requiresForce ? (
-              <Button
-                variant="danger"
-                loading={operation === `${current.server.id}:stop`}
-                disabled={unavailable(`${current.server.id}:stop`) || !canControl(current.server)}
-                onClick={() => void control("stop")}
-              >
-                {t("Confirm graceful stop")}
-              </Button>
-            ) : null}
-            {intent === "kill" || requiresForce ? (
-              <Button
-                variant="danger"
-                loading={operation === `${current.server.id}:kill`}
-                disabled={unavailable(`${current.server.id}:kill`) || !hasIdentity(current.server)}
-                onClick={() => void control("kill")}
-              >
-                {t("Confirm force terminate")}
-              </Button>
-            ) : null}
-            {intent === "restart" ? (
-              <Button
-                variant="primary"
-                loading={operation === `${current.server.id}:restart`}
-                disabled={
-                  unavailable(`${current.server.id}:restart`) ||
-                  !canControl(current.server) ||
-                  (!current.server.managed && (!restartCommand.trim() || !restartCwd.trim()))
-                }
-                onClick={() => void control("restart")}
-              >
-                {t("Confirm restart")}
-              </Button>
-            ) : null}
-          </div>
+          </Text>
+        ) : null}
+        <div className="dev-server-actions">
+          {intent === "stop" && !requiresForce ? (
+            <Button
+              variant="danger"
+              loading={operation === `${current.server.id}:stop`}
+              disabled={unavailable(`${current.server.id}:stop`) || !canControl(current.server)}
+              onClick={() => void control("stop")}
+            >
+              {t("Confirm graceful stop")}
+            </Button>
+          ) : null}
+          {intent === "kill" || requiresForce ? (
+            <Button
+              variant="danger"
+              loading={operation === `${current.server.id}:kill`}
+              disabled={unavailable(`${current.server.id}:kill`) || !hasIdentity(current.server)}
+              onClick={() => void control("kill")}
+            >
+              {t("Confirm force terminate")}
+            </Button>
+          ) : null}
+          {intent === "restart" ? (
+            <Button
+              variant="primary"
+              loading={operation === `${current.server.id}:restart`}
+              disabled={
+                unavailable(`${current.server.id}:restart`) ||
+                !canControl(current.server) ||
+                (!current.server.managed && (!restartCommand.trim() || !restartCwd.trim()))
+              }
+              onClick={() => void control("restart")}
+            >
+              {t("Confirm restart")}
+            </Button>
+          ) : null}
+          <Button
+            disabled={unavailable(`${current.server.id}:logs`)}
+            loading={operation === `${current.server.id}:logs`}
+            onClick={() =>
+              void action(`${current.server.id}:logs`, async () => {
+                const result = await request<{ available: boolean; output: string }>(
+                  "logs",
+                  target(current.server),
+                );
+                if (alive.current) setLogs(result);
+              })
+            }
+          >
+            {t("Show logs")}
+          </Button>
         </div>
-      ) : null}
-      <Button
-        disabled={unavailable(`${current.server.id}:logs`)}
-        loading={operation === `${current.server.id}:logs`}
-        onClick={() =>
-          void action(`${current.server.id}:logs`, async () => {
-            const result = await request<{ available: boolean; output: string }>(
-              "logs",
-              target(current.server),
-            );
-            if (alive.current) setLogs(result);
-          })
-        }
-      >
-        {t("Show logs")}
-      </Button>
+      </div>
       {logs ? (
         logs.available ? (
           <pre className="dev-server-logs" aria-label={t("Server logs")}>
@@ -797,6 +798,38 @@ function ProjectDevServersPanel({
         >
           <Copy className="icon-sm" aria-hidden />
         </Button>
+
+        <Button
+          iconOnly
+          label={t("Process details")}
+          disabled={unavailable(`${server.id}:select:details`)}
+          loading={operation === `${server.id}:select:details`}
+          onClick={() => void select(server, "details")}
+        >
+          <Info className="icon-sm" aria-hidden />
+        </Button>
+        <Button
+          iconOnly
+          label={t("Stop")}
+          loading={operation === `${server.id}:select:stop`}
+          disabled={
+            unavailable(`${server.id}:select:stop`) ||
+            !canControl(server) ||
+            server.state === "stopped"
+          }
+          onClick={() => void select(server, "stop")}
+        >
+          <Square className="icon-sm" aria-hidden />
+        </Button>
+        <Button
+          iconOnly
+          label={t("Restart")}
+          loading={operation === `${server.id}:select:restart`}
+          disabled={unavailable(`${server.id}:select:restart`) || !canControl(server)}
+          onClick={() => void select(server, "restart")}
+        >
+          <RotateCcw className="icon-sm" aria-hidden />
+        </Button>
         <Button
           variant="ghost"
           iconOnly
@@ -812,35 +845,6 @@ function ProjectDevServersPanel({
           }}
         >
           <MoreHorizontal className="icon-sm" aria-hidden />
-        </Button>
-      </div>
-      <div className="dev-server-actions dev-server-process" role="group" aria-label={t("Process")}>
-        <Button
-          disabled={unavailable(`${server.id}:select:details`)}
-          loading={operation === `${server.id}:select:details`}
-          onClick={() => void select(server, "details")}
-        >
-          {t("Process details")}
-        </Button>
-        <Button
-          startIcon={<Square />}
-          loading={operation === `${server.id}:select:stop`}
-          disabled={
-            unavailable(`${server.id}:select:stop`) ||
-            !canControl(server) ||
-            server.state === "stopped"
-          }
-          onClick={() => void select(server, "stop")}
-        >
-          {t("Stop")}
-        </Button>
-        <Button
-          startIcon={<RotateCcw />}
-          loading={operation === `${server.id}:select:restart`}
-          disabled={unavailable(`${server.id}:select:restart`) || !canControl(server)}
-          onClick={() => void select(server, "restart")}
-        >
-          {t("Restart")}
         </Button>
       </div>
       {menu ? (
@@ -883,7 +887,8 @@ function ProjectDevServersPanel({
           {t("Process identity unavailable; process control is disabled.")}
         </p>
       ) : null}
-      {(server.command ?? server.process?.command ?? server.cwd ?? server.process?.cwd) ? (
+      {!selectedDetails &&
+      (server.command ?? server.process?.command ?? server.cwd ?? server.process?.cwd) ? (
         <div className="dev-server-context">
           {(server.command ?? server.process?.command) ? (
             <Code className="dev-server-command">{server.command ?? server.process?.command}</Code>
@@ -1044,11 +1049,11 @@ function ProjectDevServersPanel({
       ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
       {showStart ? (
-        <Surface as="section" variant="outline">
+        <Surface as="section" variant="plain" padding="none">
           <form
             ref={startForm}
             tabIndex={-1}
-            className="dev-server-form"
+            className="dev-server-form dev-server-start-form"
             onSubmit={(event) => {
               event.preventDefault();
               const expectedPort = port ? Number(port) : undefined;
@@ -1073,50 +1078,52 @@ function ProjectDevServersPanel({
               });
             }}
           >
-            <TextField
-              label={t("Server name")}
-              value={name}
-              required
-              maxLength={80}
-              disabled={disabled}
-              onChange={(event) => setName(event.target.value)}
-            />
-            <TextField
-              label={t("Server command")}
-              value={command}
-              required
-              maxLength={32768}
-              disabled={disabled}
-              onChange={(event) => setCommand(event.target.value)}
-            />
-            <TextField
-              label={t("Working directory")}
-              value={workingDirectory}
-              disabled={disabled}
-              onChange={(event) => setWorkingDirectory(event.target.value)}
-            />
-            <NumberField
-              label={t("Expected port (optional)")}
+            <div className="dev-server-start-fields">
+              <TextField
+                label={t("Server name")}
+                value={name}
+                required
+                maxLength={80}
+                disabled={disabled}
+                onChange={(event) => setName(event.target.value)}
+              />
+              <TextField
+                label={t("Server command")}
+                value={command}
+                required
+                maxLength={32768}
+                disabled={disabled}
+                onChange={(event) => setCommand(event.target.value)}
+              />
+              <TextField
+                label={t("Working directory")}
+                value={workingDirectory}
+                disabled={disabled}
+                onChange={(event) => setWorkingDirectory(event.target.value)}
+              />
+              <NumberField
+                label={t("Expected port (optional)")}
 
-              min={1}
-              max={65535}
-              value={port}
-              disabled={disabled}
-              onChange={(event) => setPort(event.target.value)}
-            />
-            <p className="host-tool-muted">
-              {t(
-                "To use another port, enter the server command for that port and update the expected port. No flags are added automatically.",
-              )}
-            </p>
-            <Button
-              type="submit"
-              variant="primary"
-              loading={operation === "start" || !!launch?.pending}
-              disabled={unavailable("start") || !name.trim() || !command.trim()}
-            >
-              {t("Start command")}
-            </Button>
+                min={1}
+                max={65535}
+                value={port}
+                disabled={disabled}
+                onChange={(event) => setPort(event.target.value)}
+              />
+            </div>
+            <div className="dev-server-form-footer">
+              <Text as="p" size="caption" tone="secondary">
+                {t("Set the port in the command too; no flags are added.")}
+              </Text>
+              <Button
+                type="submit"
+                variant="primary"
+                loading={operation === "start" || !!launch?.pending}
+                disabled={unavailable("start") || !name.trim() || !command.trim()}
+              >
+                {t("Start command")}
+              </Button>
+            </div>
           </form>
         </Surface>
       ) : null}

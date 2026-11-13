@@ -91,7 +91,7 @@ type Fit = { count: number; reserve: number };
  * Set `--badge-list-item-max` through `className` (e.g. `[--badge-list-item-max:16rem]`) so one long label cannot fill a row.
  * @group data
  * @use Several names, groups or tags in a bounded space instead of comma-joined text or a hand-written "+N".
- * @avoid One badge: Badge. Editable tags: TagInput. Status of a run: StatusBadge.
+ * @avoid One badge: Badge. Editable tags: TagInput. Status of a run: StatusBadge. Term and value metadata: DescriptionList.
  */
 export function BadgeList({
   items,

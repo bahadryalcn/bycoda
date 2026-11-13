@@ -48,8 +48,8 @@ export function InlineVisual({ snapshot }: { snapshot: InlineVisualValue }) {
       padding="none"
       aria-label={snapshot.title}
       aria-busy
-      style={{ height: snapshot.height }}
-      className="my-2 min-w-0 overflow-hidden"
+      style={{ "--inline-visual-height": `${snapshot.height}px` } as React.CSSProperties}
+      className="my-2 min-w-0 overflow-hidden h-(--inline-visual-height)"
     >
       <SurfaceLoading />
     </Surface>
@@ -157,7 +157,12 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
       className="my-2 min-w-0 overflow-hidden font-sans"
     >
       {view === "inline" ? (
-        <div style={{ height: valid.height }}>{preview("inline")}</div>
+        <div
+          className="h-(--inline-visual-height)"
+          style={{ "--inline-visual-height": `${valid.height}px` } as React.CSSProperties}
+        >
+          {preview("inline")}
+        </div>
       ) : (
         <div className="flex min-w-0 items-center gap-2 px-2 py-1">
           <PanelRight className="icon-sm" />

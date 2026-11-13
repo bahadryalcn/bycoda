@@ -454,6 +454,13 @@
   font-weight: 500;
 }
 
+/* Sortable tab wrappers expose their lifted state without replacing the shared palette. */
+[data-dragging]
+  > .control[data-button-hierarchy="tab"]:not([data-button-selected], [aria-disabled="true"]) {
+  background: var(--button-hover);
+  color: var(--button-fg);
+}
+
 /* Press is one layer. Scaling controls (Arc renderer) answer with the scale alone;
    native-rendered controls and popup anchors never scale, so they step their tone. */
 .control[data-button-hierarchy]:is(
@@ -597,6 +604,17 @@
 .control.inset[data-button-hierarchy][data-button-tone][aria-disabled="true"] {
   color: var(--ui-text-disabled);
 }
+/* Bare corner actions retain ink feedback and the shared keyboard focus ring. */
+.control.inset.insetBare[data-button-hierarchy][data-button-tone],
+.control.inset.insetBare[data-button-hierarchy][data-button-tone]:is(
+    :hover,
+    :active,
+    [data-button-selected],
+    [aria-expanded="true"]
+  ) {
+  background: transparent;
+  border-color: transparent;
+}
 /* Revealed with its host: hover, focus inside it or selection. Keyboard focus and an
    open menu always show it, and touch input shows it permanently, so hover is never
    the only way to find the action. */
@@ -633,7 +651,7 @@
 /* Inside an action host the host paints hover, keyboard focus and selection. The
    primary control drops its own fills (so moving onto an inline action never moves
    the highlight) but keeps its text, focus ring and selected-tab indicator. */
-:global([data-action-host]) > .control:not(.inset)[data-button-tone],
+:global([data-action-host]:not([data-variant="settings"])) > .control:not(.inset)[data-button-tone],
 .control[data-action-primary][data-button-tone] {
   --button-hover: transparent;
   --button-pressed: transparent;
@@ -709,8 +727,16 @@
 }
 :global([data-button-group="joined"][data-selection="plate"])
   > .control[data-button-tone][data-button-hierarchy] {
+  position: relative;
   isolation: isolate;
   border-radius: var(--ui-control-radius);
+}
+/* Button wraps its content in positioned slots. The plate resolves against the segment
+   instead, or it shrinks into the icon's slot and the selection hides behind the icon. */
+:global([data-button-group="joined"][data-selection="plate"])
+  > .control
+  span:has(:global([data-button-group-selection])) {
+  position: static;
 }
 :global([data-button-group="joined"][data-selection="plate"])
   > .control[data-button-tone][data-button-hierarchy][data-button-selected] {
@@ -760,4 +786,151 @@
 }
 .labelGhost::after {
   content: attr(data-reserve);
+}
+
+@layer components {
+  .control.iconOnly[data-icon-target="compact"] {
+    inline-size: calc(var(--space-1) * 6);
+    block-size: calc(var(--space-1) * 6);
+    min-block-size: calc(var(--space-1) * 6);
+  }
+  .control[data-control-height="content"] {
+    block-size: auto;
+    min-block-size: 0;
+  }
+  .control[data-control-height="fill"] {
+    block-size: 100%;
+  }
+}
+
+@layer components {
+  .control[data-control-min-height="compact"] {
+    min-block-size: var(--ui-control-height-compact);
+  }
+  .control[data-control-min-height="control"] {
+    min-block-size: var(--ui-control-height);
+  }
+  .control[data-control-min-height="large"] {
+    min-block-size: var(--ui-control-height-lg);
+  }
+}
+
+@layer components {
+  .control[data-control-height="auto"] {
+    block-size: auto;
+  }
+}
+
+@media (pointer: coarse) {
+  .control[data-touch-target="control"] {
+    min-inline-size: var(--ui-control-height);
+    min-block-size: var(--ui-control-height);
+  }
+}
+
+:global([data-action-host]):is(:hover, :has(:focus-visible), [data-action-open])
+  > .control[data-reserve-end-action="interaction"] {
+  --button-interaction-end: var(--space-6);
+}
+@media (hover: none), (pointer: coarse) {
+  .control[data-reserve-end-action="interaction"] {
+    --button-interaction-end: var(--space-6);
+  }
+}
+
+/* Preview selection uses an outer ring without adding to the card or image box. */
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="accent-ring"] {
+  box-shadow: 0 0 0 2px var(--ui-interaction-accent);
+}
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="focus-ring"] {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--ui-focus-ring-color);
+}
+
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="accent-inset"] {
+  border-color: var(--ui-border-accent);
+  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
+}
+
+.control[data-button-hover-underline]:hover {
+  text-decoration: underline;
+}
+
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="dot"],
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="dot"]:is(
+    :hover,
+    :focus-visible,
+    :active,
+    [data-button-press]
+  ) {
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-content);
+}
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="dot"]::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 3px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--ui-tone-accent-fg);
+  pointer-events: none;
+}
+
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="subtle-ring"],
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="subtle-ring"]:is(
+    :hover,
+    :focus-visible,
+    :active,
+    [data-button-press]
+  ) {
+  box-shadow: 0 0 0 2px var(--ui-border-accent);
+  background: var(--ui-tone-accent-subtle);
+}
+
+.control[data-button-hierarchy][data-button-frame="dropzone"] {
+  --button-border: var(--ui-pane-border);
+  border-width: var(--ui-drop-target-border-width);
+  border-style: dashed;
+  border-radius: var(--ui-drop-target-radius);
+  border-color: var(--button-border);
+}
+.control[data-button-hierarchy][data-button-tone][data-button-frame="dropzone"]:is(
+    :hover,
+    :active,
+    [data-button-selected]
+  ):not([aria-disabled="true"]) {
+  border-color: var(--button-border);
+}
+:global([data-over]) > .control[data-button-frame="dropzone"] {
+  --button-border: var(--ui-interaction-accent);
+}
+.control[data-button-frame="dropzone"][data-has-image] {
+  border-style: solid;
+}
+
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="border-ring"],
+.control[data-button-hierarchy][data-button-selected][data-selection-indicator="border-ring"]:is(
+    :hover,
+    :focus-visible,
+    :active,
+    [data-button-press]
+  ) {
+  box-shadow: 0 0 0 2px var(--ui-border-accent);
+}
+
+.control[data-button-frame="preview"] {
+  --button-border: var(--ui-pane-border);
+  border: 1px solid var(--button-border);
+  border-radius: var(--ui-preview-card-radius);
+}
+
+.control[data-button-text-decoration="rest-underline"] {
+  text-decoration: underline;
+}
+.control[data-button-text-decoration="rest-underline"]:hover {
+  text-decoration: none;
 }

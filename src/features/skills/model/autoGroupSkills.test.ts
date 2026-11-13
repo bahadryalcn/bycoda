@@ -9,7 +9,7 @@ vi.mock("../../sessions/public/models", () => ({
   modelBelongsToHarness: () => true,
 }));
 vi.mock("./skillGroupingModel", () => ({
-  getSkillGroupingModel: () => ({ harness: "codex", model: "test" }),
+  resolveSkillGroupingModel: async () => ({ harness: "codex", model: "test" }),
 }));
 import { autoGroupSkills, parseSkillGroupProposal } from "./autoGroupSkills";
 const skills = [

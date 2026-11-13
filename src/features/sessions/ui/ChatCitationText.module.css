@@ -29,14 +29,8 @@
   gap: 4px;
   flex-shrink: 0;
   padding: 0 4px;
-  background: var(--ui-tone-accent-subtle);
-  box-shadow: inset 0 0 0 1px var(--ui-tone-accent-border);
   font-size: 0.9em;
   vertical-align: baseline;
-}
-.token[data-unavailable] {
-  background: var(--ui-tone-neutral-subtle);
-  box-shadow: inset 0 0 0 1px var(--ui-tone-neutral-border);
 }
 .tokenIcon {
   width: 13px;
@@ -67,7 +61,6 @@
   margin-block: 0.5rem 0.75rem;
   margin-inline: 0;
   padding-inline-start: 0.625rem;
-  border-inline-start: 2px solid var(--ui-border-accent);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

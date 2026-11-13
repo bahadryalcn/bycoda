@@ -251,3 +251,22 @@ it("drops the tray inset with padding none", () => {
   render("none");
   expect(container.querySelector("[role=toolbar]")?.getAttribute("data-padding")).toBe("none");
 });
+
+it("forwards a selected toolbar dot without changing pressed semantics or action activation", () => {
+  const onSelect = vi.fn();
+  act(() =>
+    root.render(
+      createElement(FloatingButtonGroup, {
+        label: "Inspection",
+        items: [
+          { id: "wrap", label: "Wrap lines", pressed: true, selectionIndicator: "dot", onSelect },
+        ],
+      }),
+    ),
+  );
+  const button = container.querySelector("button")!;
+  expect(button.dataset.selectionIndicator).toBe("dot");
+  expect(button.getAttribute("aria-pressed")).toBe("true");
+  act(() => button.click());
+  expect(onSelect).toHaveBeenCalledOnce();
+});

@@ -53,7 +53,6 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
-  border-block-start: 1px solid var(--ui-editor-border);
 }
 .feedback {
   flex: 1 1 14rem;
@@ -83,10 +82,6 @@
 }
 .addNote {
   margin-block-start: var(--space-2);
-}
-.answer > textarea {
-  min-block-size: 3.5rem;
-  max-block-size: 14rem;
 }
 .fields > legend {
   margin-block-end: var(--space-1);
@@ -127,12 +122,5 @@
 /* Shown beside the icon instead; kept for screen readers as the group's name. */
 .body[data-inline-prompt] .fields > legend,
 .body[data-inline-prompt] .fields .radio > legend {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+  @apply sr-only;
 }

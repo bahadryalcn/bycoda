@@ -1,3 +1,4 @@
+import styles from "./Sidebar.module.css";
 import { useLayoutEffect, useRef, type ReactNode, type RefObject } from "react";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
@@ -99,8 +100,13 @@ export function SessionListItem({
       data-index={virtual?.["data-index"]}
       data-session-folder-owner={folderId}
       data-session-section={groupSection}
-      className={virtual?.className}
-      style={{ ...virtual?.style, paddingInlineStart: depth ? `${depth * 1.375}rem` : undefined }}
+      className={`${virtual?.className ?? ""} ${styles.folder}`}
+      style={
+        {
+          ...virtual?.style,
+          "--session-folder-indent": depth ? `${depth * 1.375}rem` : undefined,
+        } as React.CSSProperties
+      }
     >
       {children}
     </li>

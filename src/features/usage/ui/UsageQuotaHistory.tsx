@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { formatDate, formatNumber, t, useLocale } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
@@ -128,8 +128,11 @@ export function QuotaHistory({
             >
               <span
                 aria-hidden
-                {...surfaceAttributes({ radius: "pill" }, "usage-quota-legend-dot")}
-                style={{ background: providerAccountColorValue(a) }}
+                {...surfaceAttributes(
+                  { radius: "pill", variant: "user-color" },
+                  "usage-quota-legend-dot",
+                )}
+                style={{ "--surface-user-color": providerAccountColorValue(a) } as CSSProperties}
               />
               <UsageProviderIdentity provider={a.provider} label={accountLabel(a)} />
               <Tooltip label={sample ? observationTime(sample.at) : undefined} asChild>
@@ -144,7 +147,7 @@ export function QuotaHistory({
       {rows.length ? (
         <>
           <div
-            className="usage-quota-plot"
+            {...surfaceAttributes({ frame: "stroke", edge: "block" }, "usage-quota-plot")}
             role="img"
             aria-label={`${t("Limit history")}: ${rows.length} ${t("recorded samples")}`}
           >
@@ -161,14 +164,18 @@ export function QuotaHistory({
                 asChild
               >
                 <span
-                  className="usage-quota-point"
+                  {...surfaceAttributes({ variant: "user-color" }, "usage-quota-point")}
                   key={`${row.account}:${row.kind}:${row.at}`}
 
-                  style={{
-                    background: providerAccountColorValue(accountMap.get(row.account)!),
-                    insetInlineStart: `${((row.at - window.start) / width) * 100}%`,
-                    insetBlockEnd: `${row.used}%`,
-                  }}
+                  style={
+                    {
+                      "--surface-user-color": providerAccountColorValue(
+                        accountMap.get(row.account)!,
+                      ),
+                      "--usage-point-time": `${((row.at - window.start) / width) * 100}%`,
+                      "--usage-point-value": `${row.used}%`,
+                    } as CSSProperties
+                  }
                 />
               </Tooltip>
             ))}

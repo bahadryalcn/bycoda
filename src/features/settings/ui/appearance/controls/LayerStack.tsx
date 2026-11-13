@@ -74,7 +74,7 @@ function LayerRow({
   const dimmed = layer.dimmed ?? !layer.enabled;
   return (
     <li
-      {...surfaceAttributes({ radius: "panel", variant: "plain" }, styles.layer)}
+      {...surfaceAttributes({ radius: "panel", variant: "plain", frame: "card" }, styles.layer)}
       data-disabled={dimmed || undefined}
       data-open={open || undefined}
     >
@@ -148,7 +148,12 @@ function LayerRow({
           />
         </span>
       </div>
-      <div id={contentId} className={styles.content} hidden={!open} inert={!open}>
+      <div
+        id={contentId}
+        {...surfaceAttributes({ frame: "card", edge: "top" }, styles.content)}
+        hidden={!open}
+        inert={!open}
+      >
         <LayerEditorHeadings.Provider value>{layer.content}</LayerEditorHeadings.Provider>
       </div>
     </li>

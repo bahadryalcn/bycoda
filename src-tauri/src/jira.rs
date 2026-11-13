@@ -2,6 +2,7 @@ use crate::integrations::http::string_field;
 pub mod board;
 pub mod comments;
 pub mod filters;
+pub mod list_page;
 mod mention_search;
 pub(crate) mod room_inbox;
 use std::fs;

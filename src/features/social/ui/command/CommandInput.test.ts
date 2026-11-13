@@ -43,7 +43,9 @@ it("disables Plan with its reason as the description while the box is empty or o
   for (const text of ["", "   \n "]) {
     const { onSubmit } = render({ text });
     expect(plan()?.getAttribute("aria-disabled")).toBe("true");
-    expect(plan()?.getAttribute("aria-description")).toBe("Type what AI should do.");
+    expect(document.getElementById(plan()!.getAttribute("aria-describedby")!)?.textContent).toBe(
+      "Type what AI should do.",
+    );
     act(() => plan()?.click());
     submitForm();
     expect(onSubmit).not.toHaveBeenCalled();
@@ -53,7 +55,7 @@ it("disables Plan with its reason as the description while the box is empty or o
 it("enables Plan once there is text and submits it once", () => {
   const { onSubmit } = render({ text: "Reply to pricing questions" });
   expect(plan()?.getAttribute("aria-disabled")).toBeNull();
-  expect(plan()?.getAttribute("aria-description")).toBeNull();
+  expect(plan()?.getAttribute("aria-describedby")).toBeNull();
   act(() => plan()?.click());
   expect(onSubmit).toHaveBeenCalledTimes(1);
 });

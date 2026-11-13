@@ -134,6 +134,16 @@ export function decorativeMotionEnabled(): boolean {
   );
 }
 
+/** Audio feedback paints at a capped frame rate, so the display's automatic
+ * high-refresh fallback does not disable it. Explicit and accessibility choices still win. */
+export function audioFeedbackMotionEnabled(): boolean {
+  return (
+    (unsaved ?? readFlag(DECORATIVE_MOTION_KEY) ?? DECORATIVE_MOTION_DEFAULT) &&
+    !prefersReducedMotion() &&
+    (typeof document === "undefined" || (!document.hidden && nativeVisible))
+  );
+}
+
 /**
  * Whether this window has input focus. Each platform trusts the signal that is
  * right there: on macOS the native window state, because WKWebView keeps
@@ -163,6 +173,7 @@ function exposedState(): string {
     loadFollowSystemMotionEnabled(),
     prefersReducedMotion(),
     decorativeMotionEnabled(),
+    audioFeedbackMotionEnabled(),
     windowHasFocus(),
   ].join();
 }
@@ -292,6 +303,11 @@ export function usePrefersReducedMotion(): boolean {
 /** Use for decorative effects only; game availability is a separate setting. */
 export function useDecorativeMotionEnabled(): boolean {
   return useSyncExternalStore(subscribeDecorativeMotion, decorativeMotionEnabled, () => false);
+}
+
+/** Only for audio feedback whose renderer caps its paint rate independently of display Hz. */
+export function useAudioFeedbackMotionEnabled(): boolean {
+  return useSyncExternalStore(subscribeDecorativeMotion, audioFeedbackMotionEnabled, () => false);
 }
 
 /** Whether the window is in front; decorative canvas loops hold their frame while it is not. */

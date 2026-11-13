@@ -1,6 +1,7 @@
 import { NotificationRequestCount } from "./NotificationRequestCount";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
+import { Motion } from "../../../shared/ui/Motion";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Surface } from "../../../shared/ui/Surface";
@@ -532,13 +533,15 @@ export function ApprovalToasts({
 function LockedNotice({ onDismiss }: { onDismiss?: () => void }) {
   const t = useT();
   return (
-    <ToastCard
-      className="approval-toast"
-      tone="warning"
-      message={t(LOCKED_NOTIFICATION_TEXT)}
-      durationMs={onDismiss ? POPUP_DURATION : null}
-      onDismiss={onDismiss}
-    />
+    <Motion enter="down" duration="standard">
+      <ToastCard
+        className="approval-toast"
+        tone="warning"
+        message={t(LOCKED_NOTIFICATION_TEXT)}
+        durationMs={onDismiss ? POPUP_DURATION : null}
+        onDismiss={onDismiss}
+      />
+    </Motion>
   );
 }
 

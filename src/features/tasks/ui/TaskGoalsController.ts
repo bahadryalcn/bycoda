@@ -128,12 +128,12 @@ export function useTaskGoals({
     );
   };
 
-  const create = async (event: FormEvent) => {
+  const create = async (event: FormEvent, resolvedDraft = draft) => {
     event.preventDefault();
-    if (saving || !draft) return;
+    if (saving || !resolvedDraft) return;
     setSaving(true);
     try {
-      const saved = await createGoal(capable, draft);
+      const saved = await createGoal(capable, resolvedDraft);
       putGoal(saved);
       setDraft(null);
       if (currentSprint && sprintBoard.supported) {

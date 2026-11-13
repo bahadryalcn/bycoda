@@ -76,6 +76,7 @@ export function ImageDropZone({
     <div ref={zone} className={styles.dropWrap} data-over={over || undefined}>
       <Button
         variant="item"
+        frame="dropzone"
         motion="none"
         fullWidth
         className={styles.drop}

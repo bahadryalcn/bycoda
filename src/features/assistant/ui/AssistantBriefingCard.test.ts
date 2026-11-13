@@ -97,6 +97,27 @@ it("filters fresh approval sources and refuses navigation when the selected proj
   expect(p.onOpenGoal).not.toHaveBeenCalled();
   expect(container.textContent).not.toContain("Visible approval");
 });
+it("lists multiple approval targets without opening either and uses shared pane dividers", async () => {
+  const target = {
+    kind: "goal",
+    environmentId: "host",
+    goalId: "goal",
+    jobId: "job",
+    projectId: "project",
+    title: "First approval",
+  };
+  ports.find.mockResolvedValue({
+    targets: [target, { ...target, goalId: "goal-2", title: "Second approval" }],
+    unavailable: 0,
+  });
+  const p = await render();
+  await click("Go to approvals");
+  const list = container.querySelector('[data-surface-dividers="pane"]');
+  expect(list?.children).toHaveLength(2);
+  expect(list?.textContent).toContain("First approval");
+  expect(list?.textContent).toContain("Second approval");
+  expect(p.onOpenGoal).not.toHaveBeenCalled();
+});
 it("starts output only after Listen and exposes an actual cancellable Stop while it plays", async () => {
   let signal: AbortSignal | undefined;
   ports.speak.mockImplementation(

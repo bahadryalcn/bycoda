@@ -120,7 +120,6 @@
 .task-planning[data-layout="bar"] {
   flex: none;
   padding: 0.5rem 0.75rem;
-  border-block-end: 1px solid var(--ui-pane-border);
 }
 .task-planning[data-layout="panel"] {
   padding-block: 0.5rem;

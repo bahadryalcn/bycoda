@@ -5,6 +5,7 @@ import { GithubStarPrompt } from "../../../src/app/shell/GithubStarPrompt";
 import { SidebarUpdateFooter } from "../../../src/app/shell/SidebarUpdate";
 import { SidebarAccountFooter } from "../../../src/app/shell/SidebarAccountFooter";
 import { RailAction } from "../../../src/app/shell/RailAction";
+import { RailToolGroup } from "../../../src/app/shell/RailToolGroup";
 import { VoiceLauncher } from "../../../src/features/voice/ui/companion/VoiceLauncher";
 import {
   consumeInstalledUpdate,
@@ -35,7 +36,45 @@ if (localStorage.getItem(seedKey) !== installation) {
 }
 snoozeUpdatePrompt();
 
+const railTools = [
+  { id: "servers", label: "Servers", icon: <PanelLeft className="icon-sm" /> },
+  { id: "inbox", label: "Inbox", icon: <Inbox className="icon-sm" />, dot: "New items" },
+  { id: "tasks", label: "Tasks", icon: <LayoutGrid className="icon-sm" /> },
+  { id: "search", label: "Search", icon: <Search className="icon-sm" /> },
+];
+
+/** The joined workspace tools on the rail ground, with one selected tool. */
+function ToolsFixture() {
+  const [active, setActive] = useState("inbox");
+  return (
+    <main className="update-fixture" data-update-footer-fixture>
+      <h1>Workspace tools</h1>
+      <p>Browser fixture: joined rail tools with one selected tool.</p>
+      <aside
+        className="update-account-rail bycoda-project-rail"
+        aria-label="Workspace tools specimen"
+      >
+        <nav className="bycoda-rail-tools" aria-label="Workspace tools">
+          <RailToolGroup
+            label="Workspace tools"
+            tools={railTools.map((tool) => ({
+              ...tool,
+              active: tool.id === active,
+              onSelect: () => setActive(tool.id),
+            }))}
+          />
+        </nav>
+      </aside>
+    </main>
+  );
+}
+
 function Fixture() {
+  if (params.has("tools")) return <ToolsFixture />;
+  return <UpdateFixture />;
+}
+
+function UpdateFixture() {
   const notices = useUpdateNotices({ installedUpdate: consumeInstalledUpdate() });
   const [clicks, setClicks] = useState(0);
   if (params.has("account")) {

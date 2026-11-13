@@ -26,7 +26,7 @@ vi.mock("../../../features/connections/model/connections", () => ({
 }));
 vi.mock("../../../features/sessions/data/sessionStore", () => ({ getSession: mocks.read }));
 vi.mock("../../../features/sessions/model/titlePreferences", () => ({
-  titleGenerationChoice: mocks.choice,
+  resolveTitleGenerationChoice: mocks.choice,
 }));
 vi.mock("../../../features/group-lock/model/groupLock", () => ({ isProjectLocked: mocks.locked }));
 

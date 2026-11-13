@@ -12,6 +12,51 @@ const URL = "/tests/browser/shared-ui/overlay-feedback.html";
 const prefix = process.env.FEEDBACK_CAPTURE;
 const outDir = "temp/verification/2026-10-28-session5-overlays/feedback";
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`visual family matrix ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const folder = "temp/verification/shared-family-matrix";
+      await open(page, `?theme=${theme}`);
+      for (const state of ["loading", "empty", "failure", "progress"]) {
+        const section = page.locator(`[data-section="${state}"]`);
+        await expect(section).toBeVisible();
+        await section.screenshot({ path: `${folder}/${state}-${theme}-${width}.png` });
+      }
+      const records = page.getByTestId("skeleton-content");
+      await expect(records).not.toBeVisible();
+      await page.getByRole("button", { name: "Toggle loading", exact: true }).click();
+      await expect(records).toBeVisible();
+      await page.goto(`/tests/browser/shared-ui/overlay-popups.html?theme=${theme}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      for (const state of ["modal-md", "sheet"]) {
+        await page.getByTestId(`open-${state}`).click();
+        await expect(page.getByRole("dialog")).toBeVisible();
+        await page.screenshot({ path: `${folder}/${state}-${theme}-${width}.png` });
+        await page.keyboard.press("Escape");
+        await expect(page.getByRole("dialog")).toHaveCount(0);
+      }
+      await page.goto(`/tests/browser/shared-ui/overlay-menus.html?theme=${theme}`);
+      await page.locator('[data-trigger="dropdown"]').click();
+      await expect(page.getByRole("menu", { name: "Item actions" })).toBeVisible();
+      await page.getByRole("menuitem", { name: "Copy path", exact: true }).hover();
+      await page.screenshot({ path: `${folder}/menu-dropdown-${theme}-${width}.png` });
+      await page.keyboard.press("Escape");
+      await page.locator('[data-trigger="ctx-center"]').click();
+      const menu = page.getByRole("menu", { name: "Point actions" });
+      await expect(menu).toBeVisible();
+      await menu.getByRole("menuitem", { name: "Open with", exact: true }).hover();
+      await expect(page.getByRole("menu", { name: "Open with", exact: true })).toBeVisible();
+      await page.screenshot({ path: `${folder}/menu-context-${theme}-${width}.png` });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+
 async function open(page: Page, query = "") {
   await page.goto(`${URL}${query}`);
   await page.waitForSelector("[data-section], main, section");

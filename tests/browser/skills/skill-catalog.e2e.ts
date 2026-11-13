@@ -110,3 +110,66 @@ test("Turkish catalog searches translated purposes", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "impeccable", exact: true })).toBeVisible();
   await page.screenshot({ path: `${folder}/turkish-light-800.png` });
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`skill split shared frames ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/skills/skill-catalog.html?theme=${theme}`);
+      await page
+        .getByRole("button", { name: /project-guide/ })
+        .first()
+        .click();
+      await page.getByRole("radio", { name: "Split", exact: true }).click();
+      const source = page.getByRole("region", { name: "Skill instructions", exact: true });
+      await expect(source).toBeVisible();
+      const editor = source.locator(".cm-content");
+      await editor.click();
+      await page.keyboard.press("Control+End");
+      await page.keyboard.type("\nRetain shared-frame draft.");
+      await expect(editor).toContainText("Retain shared-frame draft.");
+      await expect(source).toHaveCSS(
+        width === 800 ? "border-block-end-width" : "border-inline-end-width",
+        "1px",
+      );
+      mkdirSync("temp/verification/search-skills-notes", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/search-skills-notes/skills-${theme}-${width}.png`,
+      });
+      await page.getByRole("radio", { name: "Preview", exact: true }).click();
+      await page.getByRole("radio", { name: "Split", exact: true }).click();
+      await expect(editor).toContainText("Retain shared-frame draft.");
+      await page.setViewportSize({ width: 600, height: 900 });
+      await page.getByRole("button", { name: "Close skill preview", exact: true }).click();
+      const library = page.getByRole("region", { name: "Skills", exact: true });
+      await expect(library).toBeVisible();
+      await expect(library).toHaveCSS("border-inline-end-width", "0px");
+      await expect(library).toHaveCSS("border-block-end-width", "0px");
+      await page
+        .getByRole("button", { name: /project-guide/ })
+        .first()
+        .click();
+      await expect(page.locator(".cm-content")).toContainText("Retain shared-frame draft.");
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`skill machine hairlines ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/skills/skill-catalog.html?theme=${theme}&machinePanel`);
+      const list = page.getByRole("list", { name: "Machines", exact: true }),
+        rows = list.getByRole("listitem");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first()).toHaveCSS("border-block-end-width", "1px");
+      await expect(rows.last()).toHaveCSS("border-block-end-width", "0px");
+      await expect(rows.first().getByRole("switch")).toBeChecked();
+      await rows.first().getByRole("switch").click();
+      await expect(rows.first().getByRole("switch")).not.toBeChecked();
+      await expect(rows.first()).toContainText("Installed, off");
+      await expect(rows.last()).toContainText("Not installed");
+      await page.screenshot({
+        path: `temp/verification/search-skills-notes/skill-machines-${theme}-${width}.png`,
+      });
+    });
+  }

@@ -9,6 +9,7 @@ import {
 
 export const TEXT_HARNESSES: HarnessId[] = ["claude", "cursor", "codex", "grok", "opencode"];
 export type GitGenerationChoice = {
+  providerAccountId?: string;
   harness: HarnessId;
   model: string;
   modelSettings: Record<string, string>;

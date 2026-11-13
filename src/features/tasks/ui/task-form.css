@@ -26,9 +26,6 @@
   display: grid;
   min-inline-size: 0;
 }
-.task-form-rows > * + * {
-  border-block-start: 1px solid var(--ui-pane-border);
-}
 .task-form-row {
   display: flex;
   min-inline-size: 0;

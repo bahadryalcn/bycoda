@@ -49,19 +49,11 @@
 .caption {
   display: block;
   min-inline-size: 0;
-  font-family: var(--font-mono);
 }
 
 .row .actions {
   justify-self: end;
   gap: 4px;
-  opacity: 0.6;
-}
-
-.row:hover .actions,
-.row:focus-within .actions,
-.row[data-open] .actions {
-  opacity: 1;
 }
 
 /* Aligns the facts with the identity column: status dot (14px) plus its gap (10px). */
@@ -69,10 +61,4 @@
   min-inline-size: 0;
   padding-block-start: 6px;
   padding-inline-start: 24px;
-}
-
-@media (hover: none) {
-  .row .actions {
-    opacity: 1;
-  }
 }

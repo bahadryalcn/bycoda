@@ -126,13 +126,19 @@ function toLiveAgent(
         ? "Done"
         : pendingQuestion
           ? pendingQuestion.title || pendingQuestion.questions[0]?.prompt || "Question"
-          : session.continuingElsewhere
-            ? "Working on host"
-            : activityLabel(activityBlock, session.cwd),
+          : session.pendingOwnerApproval
+            ? "Need approval"
+            : session.continuingElsewhere
+              ? "Working on host"
+              : activityLabel(activityBlock, session.cwd),
     startedAt: turnStartedAt(session.blocks),
     durationMs: done ? turnDurationMs(session.blocks) : undefined,
-    needsApproval: Boolean(pending) || Boolean(pendingQuestion),
-    inputKind: pendingQuestion ? "question" : pending ? "approval" : undefined,
+    needsApproval: Boolean(pending) || Boolean(pendingQuestion) || !!session.pendingOwnerApproval,
+    inputKind: pendingQuestion
+      ? "question"
+      : pending || session.pendingOwnerApproval
+        ? "approval"
+        : undefined,
     done,
     waiting: wait && !done && !issue && !pending && !pendingQuestion ? wait : undefined,
   };

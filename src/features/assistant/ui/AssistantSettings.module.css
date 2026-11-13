@@ -5,7 +5,8 @@
   display: flex;
   flex-direction: column;
   min-block-size: 0;
-  block-size: 100%;
+  flex: 1;
+  min-inline-size: 0;
 }
 .navigation {
   flex: none;
@@ -21,6 +22,7 @@
 .content {
   flex: 1;
   min-block-size: 0;
+  min-inline-size: 0;
   overscroll-behavior: contain;
   padding: 14px 20px 20px;
   scroll-padding-block: 14px;
@@ -52,7 +54,7 @@
   padding-block-start: 12px;
 }
 
-/* One footer row that never wraps; the discard confirmation replaces its content. */
+/* Footer actions wrap when translated labels or discard feedback need another line. */
 .footer {
   display: flex;
   flex-direction: column;
@@ -62,11 +64,11 @@
 }
 .footerRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   min-inline-size: 0;
-  white-space: nowrap;
 }
 .footerRow > * {
   min-inline-size: 0;

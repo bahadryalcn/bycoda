@@ -213,8 +213,16 @@ function InboxAvatarImage({
       referrerPolicy="no-referrer"
       draggable={false}
       onError={() => setFailedUrl(avatarUrl)}
-      className="shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
-      style={{ width: size, height: size }}
+      {...surfaceAttributes(
+        { radius: "pill", variant: "raised" },
+        "shrink-0 object-cover [width:var(--layout-width)] [height:var(--layout-height)]",
+      )}
+      style={
+        {
+          "--layout-width": size === undefined ? undefined : size + "px",
+          "--layout-height": size === undefined ? undefined : size + "px",
+        } as CSSProperties
+      }
     />
   ) : (
     <Text
@@ -317,8 +325,8 @@ export function inboxLabelItems(labels: readonly GithubLabel[]): BadgeListItem[]
       icon: color ? (
         <span
           aria-hidden
-          {...surfaceAttributes({ radius: "pill" }, "size-1.5 shrink-0")}
-          style={{ backgroundColor: color }}
+          {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-1.5 shrink-0")}
+          style={{ "--surface-user-color": color } as CSSProperties}
         />
       ) : undefined,
     };

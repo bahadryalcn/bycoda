@@ -18,6 +18,10 @@ vi.mock("../../hooks/useSocialMediaEditor", () => ({
   useSocialMediaEditor: () => ({}),
 }));
 
+const confirmDiscard = vi.fn(async () => true);
+vi.mock("../../../../shared/ui/ConfirmDialog", () => ({
+  useConfirm: () => ({ confirm: confirmDiscard, dialog: null }),
+}));
 const refetch = vi.fn();
 const state: { data: Record<string, unknown> } = { data: {} };
 vi.mock("./useContentData", () => ({
@@ -237,4 +241,30 @@ describe("after the editor finishes", () => {
       expect(text()).not.toContain(message);
     },
   );
+});
+
+it("exposes the hidden draft for recovery and explicit discard", () => {
+  render();
+  act(() => buttonWith("New post")!.click());
+  typeInEditor("Keep my draft");
+  act(() => editor.props!.onClose());
+  expect(buttonWith("Resume draft")).toBeDefined();
+  act(() => buttonWith("Resume draft")!.click());
+  expect(draft().text).toBe("Keep my draft");
+  act(() => editor.props!.onClose());
+  expect(buttonWith("Discard draft")).toBeDefined();
+});
+
+it("discards only after confirmation and leaves a fresh post available", async () => {
+  render();
+  act(() => buttonWith("New post")!.click());
+  typeInEditor("Keep unless confirmed");
+  act(() => editor.props!.onClose());
+  confirmDiscard.mockResolvedValueOnce(false);
+  await act(async () => buttonWith("Discard draft")!.click());
+  expect(buttonWith("Resume draft")).toBeDefined();
+  await act(async () => buttonWith("Discard draft")!.click());
+  expect(buttonWith("Resume draft")).toBeUndefined();
+  act(() => buttonWith("New post")!.click());
+  expect(draft().text).toBe("");
 });

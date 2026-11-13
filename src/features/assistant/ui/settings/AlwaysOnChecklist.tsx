@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { t } from "../../../../shared/i18n";
+import { formatNumber, t } from "../../../../shared/i18n";
 import type { AssistantAlwaysOn } from "../../../../shared/model/assistantAlwaysOn";
 import type { AssistantModelPoolRow } from "../../../../shared/model/assistantModelPool";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { RefreshCw } from "../../../../shared/ui/icons";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { Text } from "../../../../shared/ui/Text";
 import { Row } from "../../../settings/public/settingsControls";
 import {
   deriveAlwaysOnItems,
   type AlwaysOnState,
   type AlwaysOnTarget,
+  type AlwaysOnItem,
 } from "../../model/assistantAlwaysOn";
 import type { assistantRequest } from "../../model/assistantClient";
 
@@ -22,6 +26,7 @@ const STATE: Record<AlwaysOnState, { label: string; tone: BadgeTone }> = {
   review: { label: "Review", tone: "info" },
 };
 const WHERE: Record<AlwaysOnTarget, string> = {
+  access: "Access",
   setup: "Quick setup",
   work: "Work",
   schedule: "Work",
@@ -45,6 +50,7 @@ export function AlwaysOnChecklist({
   const [poolRows, setPoolRows] = useState<AssistantModelPoolRow[] | null>(null);
   const [alwaysOn, setAlwaysOn] = useState<AssistantAlwaysOn | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false);
   const generation = useRef(0);
   const fetchLatest = useCallback(async () => {
     const mine = ++generation.current;
@@ -79,38 +85,56 @@ export function AlwaysOnChecklist({
       }),
     [snapshot.profile, snapshot.keepAwake, poolRows, alwaysOn],
   );
+  const row = (item: AlwaysOnItem) => (
+    <Row
+      key={item.id}
+      label={item.label}
+      info={
+        item.detail ? (
+          <InfoPopover label={item.label}>
+            <Text as="p" size="secondary">
+              {item.target && !onOpen && item.state !== "done"
+                ? `${item.detail} ${t("Settings · {p0}", { p0: t(WHERE[item.target]) })}`
+                : item.detail || undefined}
+            </Text>
+          </InfoPopover>
+        ) : undefined
+      }
+    >
+      <Badge tone={STATE[item.state].tone} size="xs">
+        {t(STATE[item.state].label)}
+      </Badge>
+      {item.target && onOpen && item.state !== "done" && (
+        <Button type="button" size="sm" onClick={() => onOpen(item.target!)}>
+          {t(item.target === "setup" ? "Quick setup" : "Open settings")}
+        </Button>
+      )}
+    </Row>
+  );
+  const exceptions = items.filter((item) => item.state !== "done");
   return (
     <div data-always-on-checklist>
-      {items.map((item) => (
-        <Row
-          key={item.id}
-          label={item.label}
-          description={
-            item.target && !onOpen && item.state !== "done"
-              ? `${item.detail} ${t("Settings · {p0}", { p0: t(WHERE[item.target]) })}`
-              : item.detail || undefined
-          }
-        >
-          <Badge tone={STATE[item.state].tone} size="xs">
-            {t(STATE[item.state].label)}
-          </Badge>
-          {item.target && onOpen && item.state !== "done" && (
-            <Button type="button" size="sm" onClick={() => onOpen(item.target!)}>
-              {t(item.target === "setup" ? "Quick setup" : "Open settings")}
-            </Button>
-          )}
-        </Row>
-      ))}
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        iconOnly
-        label={t("Refresh")}
-        startIcon={<RefreshCw className="icon-sm" />}
-        loading={loading}
-        onClick={() => void load()}
-      />
+      <Row
+        label={t("{p0} of {p1} checks ready", {
+          p0: formatNumber(items.length - exceptions.length),
+          p1: formatNumber(items.length),
+        })}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Refresh")}
+          startIcon={<RefreshCw className="icon-sm" />}
+          loading={loading}
+          onClick={() => void load()}
+        />
+      </Row>
+      {!showAll && exceptions.filter((item) => item.target).map(row)}
+      <Disclosure size="sm" summary={t("All checks")} open={showAll} onOpenChange={setShowAll}>
+        {items.map(row)}
+      </Disclosure>
     </div>
   );
 }

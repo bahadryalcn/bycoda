@@ -31,7 +31,6 @@
   flex-direction: column;
 }
 .footer[data-sidebar-account-footer="compact"] .personal {
-  border-block-start: 1px solid var(--ui-pane-border);
   padding-block-start: var(--space-2);
   margin-block-start: var(--space-1);
 }

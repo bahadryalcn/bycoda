@@ -344,7 +344,9 @@ it("inspects the latest hover point when an earlier host read finishes slowly", 
     vi.advanceTimersByTime(100);
   });
   expect(
-    container.querySelector<HTMLElement>('[data-selected="false"]')?.style.insetInlineStart,
+    container
+      .querySelector<HTMLElement>('[data-selected="false"]')
+      ?.style.getPropertyValue("--inspector-inline-start"),
   ).toBe("15.625%");
   expect(hostFeatureRequest).toHaveBeenLastCalledWith(
     "/project",

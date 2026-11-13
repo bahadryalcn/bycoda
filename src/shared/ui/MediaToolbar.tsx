@@ -12,7 +12,7 @@ export type MediaToolbarTone = "overlay" | "surface";
  * `overlay` tone sits on the media backdrop (secondary Buttons), `surface` on a pane (ghost Buttons).
  * @group media
  * @use Zoom/rotate/compare/annotate controls over an image, video or device preview; fill with MediaToolbarButton.
- * @avoid Page or pane actions: PaneHeader actions. Grouped buttons outside media: ButtonGroup.
+ * @avoid Page or pane actions: PaneHeader actions. Grouped buttons outside media: ButtonGroup. The complete image viewer with built-in tools: ImageLightbox.
  */
 export function MediaToolbar({
   label,
@@ -47,7 +47,7 @@ type IconActionProps = Omit<ButtonProps, "iconOnly" | "label" | "size" | "varian
  * Icon-only 28px action of a MediaToolbar; `label` is both accessible name and default tooltip. Pass a 14px glyph (`className="icon-sm"`).
  * @group media
  * @use Each action inside MediaToolbar.
- * @avoid Outside a media toolbar: Button iconOnly.
+ * @avoid Outside a media toolbar: Button iconOnly. A complete row of media actions: MediaToolbar.
  */
 export function MediaToolbarButton({
   label,

@@ -1,3 +1,7 @@
+import {
+  ModelRoutingItemChoiceSchema,
+  type ModelRoutingItemChoice,
+} from "../../../shared/model/host-contracts/model-routing";
 import { isRemoteProvider } from "../../connections/public/protocol";
 import { type RemoteProvider } from "../../connections";
 import { parseProviderAccountId } from "../../providers/model/providerAccountId";
@@ -70,6 +74,7 @@ export type HostGoalInput = {
   harness: RemoteProvider;
   /** Local profile inherited by the planner and planned tasks. */
   providerAccountId?: string;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings: Record<string, string>;
   plannerExecution?: GoalPlannerExecution;
@@ -358,6 +363,9 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     ...(v.providerAccountId === undefined
       ? {}
       : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
+    ...(v.modelChoice === undefined
+      ? {}
+      : { modelChoice: ModelRoutingItemChoiceSchema.parse(v.modelChoice) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     ...(v.plannerExecution === undefined

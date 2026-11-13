@@ -89,7 +89,7 @@ function Fixture() {
     <>
       <ApprovalToasts
         notices={pending}
-        popupNotices={[]}
+        popupNotices={params.has("popup") ? pending : []}
         onFocusSession={(id) => setResult(`Opened ${id}`)}
         // As in the app: a recorded conversation may no longer exist.
         onOpenHistorySession={(id) => {

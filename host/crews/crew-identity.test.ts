@@ -28,9 +28,7 @@ async function setup() {
     role: "specialist",
     instructions: "",
     selection: "fixed",
-    candidates: [
-      { id: "c", harness: "codex", model: "m", modelSettings: {}, capabilities: {}, cost: 1 },
-    ],
+    candidates: [{ id: "c", harness: "codex", model: "m", modelSettings: {}, capabilities: {} }],
     ...(handle ? { handle } : {}),
   });
   const save = async (projectId: string, member: CrewAgent, scope?: string, expected?: number) =>

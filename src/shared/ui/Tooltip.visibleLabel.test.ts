@@ -1,11 +1,43 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { createPortal } from "react-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { Tooltip, useTooltip, type TooltipContent } from "./Tooltip";
 import { Button } from "./Button";
 
 const roots: Root[] = [];
+
+it("ignores pointer and focus events from portalled picker content", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  const portal = document.createElement("div");
+  document.body.append(host, portal);
+  const root = createRoot(host);
+  roots.push(root);
+  await act(async () =>
+    root.render(
+      createElement(Tooltip, {
+        label: "Agent working folder",
+        delay: 0,
+        children: createElement(
+          "div",
+          null,
+          createElement("button", { type: "button" }, "Project"),
+          createPortal(createElement("input", { "aria-label": "Find project" }), portal),
+        ),
+      }),
+    ),
+  );
+  const input = portal.querySelector("input")!;
+  vi.spyOn(input, "matches").mockReturnValue(true);
+  await act(async () => {
+    input.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    input.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(document.querySelector('[role="tooltip"]')).toBeNull();
+});
 
 it("adds shared hints to an existing element without a layout box or lost events", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

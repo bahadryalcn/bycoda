@@ -8,6 +8,15 @@ Tasks opens on the current project's Host. Select All projects to include other 
 
 Local project options can appear while other sources are still loading. Sprint data appears as soon as its planning Host answers; source history synchronization can continue afterward. Actions that require current history still wait for that synchronization. Repeated refresh ticks do not accumulate an unlimited queue.
 
+## Model selection
+
+Tasks, goals and stewards choose **Default**, **Pool** or **Fixed** for each model
+role. Default follows the matching role in **Settings > Models**. Pool uses a
+named ordered subset; Fixed keeps the selected model. **Manage in Models** opens
+the shared order and limits. Workers, reviewers and planners resolve when their
+run starts; changing settings never switches an existing session. If every model
+is skipped, pending work waits for eligibility. See [Models](models.md).
+
 ## Understanding progress
 
 - **Queued** means the request is saved. Start requests scheduler admission; it does not promise that a worker has launched. Dependencies, concurrency and budgets still apply.

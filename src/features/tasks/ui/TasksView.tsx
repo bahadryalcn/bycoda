@@ -1,3 +1,5 @@
+import { Button } from "../../../shared/ui/Button";
+import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
 import { Text } from "../../../shared/ui/Text";
 import "./tasks.css";
 import "./tasks-shell.css";
@@ -95,7 +97,7 @@ import {
   NewGoalDialog,
   useTaskGoals,
 } from "./TaskGoals";
-import { LimitsPanel, useMachineLimitSave } from "./TaskLimits";
+import { useMachineLimitSave } from "./TaskLimits";
 import { StewardsSection, useTaskStewards } from "./TaskStewards";
 import { SummaryPanel, useDailySummaryPanel } from "./TaskSummaryPanel";
 
@@ -844,13 +846,12 @@ function TasksContent({
         />
       ) : null}
       {section === "backlog" && limitsOpen ? (
-        <LimitsPanel
-          limits={limits}
-          errors={board.limitErrors}
-          retrying={board.pending}
-          onRetry={(machineId) => void refreshQueries(true, machineId)}
-          onChange={onChangeLimits}
-        />
+        <Text as="p" size="caption" tone="secondary">
+          {t("Unattended work limits are managed in Models.")}{" "}
+          <Button variant="link" onClick={() => openModelsSettings("order")}>
+            {t("Manage in Models")}
+          </Button>
+        </Text>
       ) : null}
       {draft ? (
         <TasksViewDraftDialog

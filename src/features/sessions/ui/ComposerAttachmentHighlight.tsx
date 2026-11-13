@@ -1,4 +1,7 @@
 import { Fragment, type ReactNode } from "react";
+import { BlockQuote } from "../../../shared/ui/icons";
+import { DraftToken } from "../../../shared/ui/DraftToken";
+import { AttachmentIdentity } from "./AttachmentIdentity";
 import type { Attachment } from "../model/session";
 import { splitAttachmentTokens, tokenLabel } from "../model/attachmentTokens";
 import { attachmentPresentation } from "../model/attachmentPresentation";
@@ -7,7 +10,7 @@ import styles from "./ComposerAttachmentHighlight.module.css";
 
 /**
  * Decoration only: every character retains its native textarea width. The hidden brackets
- * are the chip's padding; the label already names the kind, so the chip carries no icon.
+ * reserve the icon's position without changing the draft or its caret offsets.
  */
 export function ComposerAttachmentHighlight({
   text,
@@ -24,11 +27,16 @@ export function ComposerAttachmentHighlight({
   const renderPlain = (plain: string) =>
     splitCitationTokens(plain, citations).map((part, index) =>
       "token" in part ? (
-        <span key={index} className={styles.token} data-composer-citation-token="">
-          <span className={styles.bracket}>{"["}</span>
+        <DraftToken
+          key={index}
+          prefix="["
+          icon={<BlockQuote />}
+          className={styles.token}
+          data-composer-citation-token=""
+        >
           {tokenLabel(part.token)}
           <span className={styles.bracket}>{"]"}</span>
-        </span>
+        </DraftToken>
       ) : (
         <Fragment key={index}>{renderText(part.text)}</Fragment>
       ),
@@ -37,16 +45,17 @@ export function ComposerAttachmentHighlight({
     if (!("token" in part)) return <Fragment key={index}>{renderPlain(part.text)}</Fragment>;
     const presentation = attachmentPresentation(part.attachment);
     return (
-      <span
+      <DraftToken
         key={index}
+        prefix="["
+        icon={<AttachmentIdentity attachment={part.attachment} size="pill" />}
         className={styles.token}
         data-composer-attachment-kind={presentation.kind}
         data-attachment-kind={presentation.kind}
       >
-        <span className={styles.bracket}>{"["}</span>
         {part.label}
         <span className={styles.bracket}>{"]"}</span>
-      </span>
+      </DraftToken>
     );
   });
 }

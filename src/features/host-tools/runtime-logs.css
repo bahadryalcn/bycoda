@@ -243,25 +243,16 @@
 .runtime-log-row {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr);
-  border-block-end: 1px solid var(--color-stroke);
   min-inline-size: 0;
   content-visibility: auto;
   contain-intrinsic-block-size: auto 51px;
-}
-
-.runtime-log-row:last-child {
-  border-block-end: 0;
-}
-
-.runtime-log-row[data-selected="true"] {
-  background: var(--ui-surface-selected);
 }
 
 .runtime-log-select {
   display: flex;
   justify-content: center;
   align-items: start;
-  padding-block-start: 11px;
+  padding-block-start: 12px;
 }
 
 .runtime-log-row > details {
@@ -270,9 +261,9 @@
 
 .runtime-log-summary {
   display: grid;
-  gap: 5px;
+  gap: 4px;
   padding-block: 8px;
-  padding-inline: 2px 9px;
+  padding-inline: 4px 8px;
   min-inline-size: 0;
 }
 
@@ -280,16 +271,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-inline-size: 0;
-}
-
-.runtime-log-meta time {
-  font-family: var(--font-mono);
-  font-size: var(--ui-font-caption);
-  color: var(--runtime-log-muted);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 .runtime-log-kind {
@@ -299,39 +282,9 @@
   white-space: nowrap;
 }
 
-.runtime-log-kind::before {
-  content: "";
-  inline-size: 4px;
-  block-size: 4px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-
-.runtime-log-kind[data-source="browser"] {
-  color: var(--runtime-log-browser);
-}
-
-.runtime-log-kind[data-source="server"] {
-  color: var(--runtime-log-server);
-}
-
-.runtime-log-level {
-  color: var(--runtime-log-muted);
-}
-
-.runtime-log-row[data-level="error"] .runtime-log-level {
-  color: var(--runtime-log-error);
-}
-
-.runtime-log-row[data-level="warn"] .runtime-log-level {
-  color: var(--runtime-log-warning);
-}
-
 .runtime-log-source-label {
   flex: 1;
   min-inline-size: 25px;
-  color: var(--runtime-log-muted);
 }
 
 .runtime-log-count {
@@ -340,49 +293,20 @@
 
 .runtime-log-details-trigger {
   margin-inline-start: auto;
-  color: var(--runtime-log-muted);
   white-space: nowrap;
-}
-
-.runtime-log-details-trigger::after {
-  content: " +";
-}
-
-.runtime-log-row > details[open] .runtime-log-details-trigger::after {
-  content: " −";
 }
 
 .runtime-log-message {
   margin: 0;
-  font-family: var(--font-mono);
 }
 
 .runtime-log-detail-body {
   display: grid;
-  gap: 9px;
+  gap: 8px;
   padding-block: 4px 12px;
-  padding-inline: 2px 10px;
+  padding-inline: 4px 10px;
   min-inline-size: 0;
   overflow-wrap: break-word;
-}
-
-.runtime-log-detail-body pre,
-.runtime-log-detail-body code {
-  font-family: var(--font-mono);
-  font-size: var(--ui-font-micro);
-}
-
-.runtime-log-detail-body pre {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.runtime-log-detail-body h4 {
-  margin-block: 0 5px;
-  font-size: var(--ui-font-caption);
-  font-weight: 500;
-  color: var(--runtime-log-muted);
 }
 
 .runtime-log-location {
@@ -398,21 +322,13 @@
 .runtime-log-object-tree {
   min-inline-size: 0;
   padding: 8px;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--ui-control-radius);
-}
-
-.runtime-log-object-node summary {
-  font-family: var(--font-mono);
-  font-size: var(--ui-font-micro);
 }
 
 .runtime-log-object-node ul {
   list-style: none;
-  margin-block: 5px 0;
+  margin-block: 4px 0;
   margin-inline: 0;
   padding-inline-start: 12px;
-  border-inline-start: 1px solid var(--color-stroke);
 }
 
 .runtime-log-object-node li {
@@ -420,12 +336,8 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 4px;
-  margin-block-start: 3px;
+  margin-block-start: 4px;
   overflow-wrap: anywhere;
-}
-
-.runtime-log-object-key {
-  color: var(--runtime-log-browser);
 }
 
 .runtime-logs-empty {
@@ -519,46 +431,6 @@
 
 .runtime-logs-sources > p {
   margin-block: 8px 0;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .runtime-log-summary:hover {
-    background: var(--ui-surface-hover);
-  }
-}
-
-/* Severity is carried by text and the gutter, never by a red log canvas. */
-.runtime-log-row {
-  --runtime-row-color: var(--runtime-log-muted);
-}
-.runtime-log-row[data-level="error"] {
-  --runtime-row-color: var(--runtime-log-error);
-}
-.runtime-log-row[data-level="warn"] {
-  --runtime-row-color: var(--runtime-log-warning);
-}
-.runtime-log-row[data-level="info"] {
-  --runtime-row-color: var(--color-info);
-}
-.runtime-log-row[data-level="debug"] {
-  --runtime-row-color: var(--runtime-log-muted);
-}
-.runtime-log-row[data-level="http"] {
-  --runtime-row-color: var(--color-feature);
-}
-.runtime-log-row[data-level="success"] {
-  --runtime-row-color: var(--ui-tone-success-fg);
-}
-.runtime-log-row .runtime-log-level {
-  color: var(--runtime-row-color);
-}
-.runtime-log-row .runtime-log-message {
-}
-.runtime-log-meta > .runtime-log-kind {
-  font-family: var(--font-mono);
-}
-.runtime-log-meta > .runtime-log-kind::before {
-  content: none;
 }
 
 /* Keep capture, source and level controls in the same surface as the stream. */

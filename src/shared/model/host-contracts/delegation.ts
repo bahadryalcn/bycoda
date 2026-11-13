@@ -53,6 +53,17 @@ export const DELEGATION_LIMITS = {
 /** Reasoning levels from least to most effort, across providers' spellings. */
 export const EFFORT_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
 
+/** Ceilings are thinking levels; provider-specific disabled/minimal modes are not ceilings. */
+export const SUBAGENT_EFFORT_LEVELS = EFFORT_LEVELS.filter(
+  (level) => level !== "none" && level !== "minimal",
+);
+
+/** Old disabled/minimal ceilings migrate to the lowest supported thinking ceiling. */
+export function subagentEffortCeiling(value: string | undefined): string {
+  if (value === "none" || value === "minimal") return "low";
+  return value && SUBAGENT_EFFORT_LEVELS.includes(value) ? value : "";
+}
+
 export const DelegateModelRefSchema = z.strictObject({
   harness: SessionProviderSchema,
   model: z.string().min(1).max(200),
@@ -186,8 +197,8 @@ export function carryCrossDelegation(
     from[CROSS_SUBAGENTS_KEY] === AUTOMATIC_SUBAGENTS
       ? AUTOMATIC_SUBAGENTS
       : encodeSubagents(decodeSubagents(from[CROSS_SUBAGENTS_KEY]));
-  const ceiling = from[CROSS_SUBAGENT_MAX_EFFORT_KEY];
-  if (ceiling && EFFORT_LEVELS.includes(ceiling)) into[CROSS_SUBAGENT_MAX_EFFORT_KEY] = ceiling;
+  const ceiling = subagentEffortCeiling(from[CROSS_SUBAGENT_MAX_EFFORT_KEY]);
+  if (ceiling) into[CROSS_SUBAGENT_MAX_EFFORT_KEY] = ceiling;
   const advisor = encodeAdvisor(decodeAdvisor(from[CROSS_ADVISOR_KEY]));
   const parent = decodeDelegationParent(from[DELEGATION_PARENT_KEY]);
   if (subagents) into[CROSS_SUBAGENTS_KEY] = subagents;

@@ -1,4 +1,5 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
@@ -208,7 +209,12 @@ export function ChatFolderBrowser({
       }
     >
       <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2 border-b border-stroke pb-2">
+        <div
+          {...surfaceAttributes(
+            { frame: "stroke", edge: "bottom" },
+            "flex min-w-0 items-center gap-2 pb-2",
+          )}
+        >
           <Button
             iconOnly
             label={t("Parent folder")}
@@ -268,7 +274,7 @@ export function ChatFolderBrowser({
           <Text as="div" size="body" tone="inherit">
             <form
               id={mappingFormId}
-              className="grid gap-2 border-b border-stroke pb-3"
+              {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "grid gap-2 pb-3")}
               onSubmit={(event) => {
                 event.preventDefault();
                 void saveMapping();

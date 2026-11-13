@@ -612,11 +612,12 @@ export function SurfaceTabs({
             const tab = (
               <ActionHost
                 selected={active}
+                controlHeight="fill"
                 ref={closing ? undefined : tabRef(file.id)}
                 className={
                   closing || opening
-                    ? "tab-motion group relative flex h-full w-full min-w-0 overflow-hidden items-center"
-                    : "reorder-item tab-motion group relative flex h-full w-56 min-w-28 shrink touch-none items-center"
+                    ? "tab-motion group relative flex w-full min-w-0 overflow-hidden items-center"
+                    : "reorder-item tab-motion group relative flex w-56 min-w-28 shrink touch-none items-center"
                 }
                 data-tab-slot-id={closing ? undefined : file.id}
                 data-surface-tab-id={closing ? undefined : file.id}

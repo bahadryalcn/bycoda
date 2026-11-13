@@ -236,7 +236,7 @@ fall. Suppress one line only, always with a reason.
 - `popover-menu` (`src/app, src/features, shared stylesheets`)
   - Popover with role=menu/listbox (use DropdownMenu/picker)
 - `portal-outside-shared` (`src/app, src/features, shared stylesheets`)
-  - floating surface outside Popover or OS-window popup owners (use Popover, Modal, Sheet or Tooltip)
+  - floating surface outside canonical shared overlay owners (use Popover, Modal, Sheet or Tooltip)
 - `radius-size` (`src/app, src/features, shared stylesheets`)
   - literal radius/size: rounded-[…], h-/w-/size-[Npx], CSS border-radius px
 - `raw-anchor` (`src/app, src/features, shared stylesheets`)
@@ -252,7 +252,7 @@ fall. Suppress one line only, always with a reason.
 - `scrollbar-style` (`src/app, src/features, shared stylesheets`)
   - scrollbar styled in feature code: scrollbar-* properties, ::-webkit-scrollbar or scrollbar-* classes (use ScrollArea)
 - `spacing-step` (`src/app, src/features, shared stylesheets`)
-  - gap, padding or margin with a literal off the spacing scale: a bare px/rem value other than 0, 4, 6, 8, 10, 12, 14, 16, 20 or 24 px, or a Tailwind step other than 0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6 (var(--space-*) is always allowed)
+  - gap, padding or margin with a literal off the spacing scale: a bare px/rem value other than 0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 40 or 48 px, or a Tailwind step other than 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12 (var(--space-*) is always allowed)
 - `surface-style` (`src/app, src/features, shared stylesheets`)
   - surface drawn in feature code, including badge/chip/progress recipes: border, outline, radius, background or shadow (use Surface, Divider, FieldGroup; Badge for chips, ProgressBar for meters)
 - `target-blank` (`src/app, src/features, shared stylesheets`)

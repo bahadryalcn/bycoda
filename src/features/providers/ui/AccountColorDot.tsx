@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { providerAccountColorValue, type ProviderAccount } from "../model/providerAccounts";
 
@@ -11,8 +12,8 @@ export function AccountColorDot({
 }) {
   return (
     <span
-      {...surfaceAttributes({ radius: "pill" }, `shrink-0 ${className}`)}
-      style={{ background: providerAccountColorValue(account) }}
+      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, `shrink-0 ${className}`)}
+      style={{ "--surface-user-color": providerAccountColorValue(account) } as CSSProperties}
       data-account-color={account.color ?? "auto"}
       aria-hidden
     />

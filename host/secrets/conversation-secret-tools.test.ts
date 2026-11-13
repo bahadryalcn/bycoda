@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -85,6 +85,66 @@ function fixture(answers?: Answer[]) {
 }
 
 describe("ConversationSecretTools", () => {
+  it("uses the session resolver for desktop-only conversations", async () => {
+    const f = fixture();
+    const hostSession = vi.fn(async () => {
+      throw new Error("Session not found on this machine");
+    });
+    const session = vi.fn(async (id: string) => ({ id, projectId: "p1" }) as never);
+    const tools = new ConversationSecretTools(
+      { project: async () => ({ id: "p1", cwd: f.cwd }) as never, session: hostSession },
+      desktopFixture().desktop,
+      f.secrets,
+      session,
+    );
+    const actor = principal("native-only");
+    const result = (await tools.call(
+      "secrets.request",
+      { requestId: "native-request", name: "GIT_TOKEN", purpose: "Git access" },
+      actor,
+      f.allowed,
+    )) as { secretRef: string };
+    expect(result.secretRef).toEqual(expect.any(String));
+    expect(JSON.stringify(result)).not.toContain(VALUE);
+    await expect(tools.call("secrets.list", {}, actor, f.allowed)).resolves.toEqual({
+      secrets: [expect.objectContaining({ secretRef: result.secretRef })],
+    });
+    await expect(
+      tools.call("secrets.materialize", { secretRef: result.secretRef }, actor, f.allowed),
+    ).resolves.toMatchObject({ path: expect.any(String) });
+    await expect(
+      tools.call("secrets.revoke", { secretRef: result.secretRef }, actor, f.allowed),
+    ).resolves.toMatchObject({ revoked: true });
+    expect(session).toHaveBeenCalledWith("native-only");
+    expect(hostSession).not.toHaveBeenCalled();
+  });
+
+  it("rejects foreign or missing resolved sessions before prompting or reading secrets", async () => {
+    const f = fixture();
+    const { desktop, calls } = desktopFixture();
+    const session = vi.fn(async () => ({ projectId: "p2" }) as never);
+    const tools = new ConversationSecretTools(
+      { project: async () => ({ id: "p1", cwd: f.cwd }) as never, session },
+      desktop,
+      f.secrets,
+      session,
+    );
+    await expect(
+      tools.call(
+        "secrets.request",
+        { requestId: "r", name: "GIT_TOKEN", purpose: "Git" },
+        principal(),
+        f.allowed,
+      ),
+    ).rejects.toThrow("Session belongs to another project.");
+    session.mockRejectedValueOnce(new Error("Session not found on this machine"));
+    await expect(tools.call("secrets.list", {}, principal(), f.allowed)).rejects.toThrow(
+      "Session not found on this machine",
+    );
+    expect(calls).toHaveLength(0);
+    expect(f.map.size).toBe(0);
+  });
+
   it("returns only a ref, name and expiry, and never the value", async () => {
     const { request, map, calls } = fixture();
     const result = (await request()) as { secretRef: string; name: string; expiresAt: number };

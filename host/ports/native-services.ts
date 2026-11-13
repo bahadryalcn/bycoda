@@ -88,9 +88,10 @@ export function bindNativeServicesOwner(
   };
   const presence = async () => {
     if (!adapters.assistantPresence) throw new Error("Native assistant presence is unavailable.");
-    const { state, setupComplete, assistantName } = await adapters.assistantPresence();
+    const { state, choice, setupComplete, assistantName } = await adapters.assistantPresence();
     return {
       state,
+      ...(choice ? { choice } : {}),
       setupComplete,
       ...(assistantName ? { assistantName: assistantName.slice(0, 80) } : {}),
     };

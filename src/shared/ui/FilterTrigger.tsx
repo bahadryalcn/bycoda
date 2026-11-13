@@ -25,7 +25,7 @@ export type FilterTriggerProps = Omit<
  * reset, so the narrowed scope and the way back are visible without opening the popup.
  * @group actions
  * @use Opening a filter popover for a list or collection toolbar.
- * @avoid Choosing one value: Select. Switching views: Tabs or SegmentedControl. The filter panel itself: Popover kind="dialog".
+ * @avoid Choosing one value: Select. Switching views: Tabs or SegmentedControl. The filter panel itself: Popover kind="dialog". One standalone action without filter state: Button.
  */
 export function FilterTrigger({
   label,

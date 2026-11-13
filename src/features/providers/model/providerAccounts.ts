@@ -122,7 +122,7 @@ export function providerAccounts(provider: ProviderAccountProvider): ProviderAcc
         id,
         provider,
         label,
-        ...((account.kind === "personal" || account.kind === "work") ? { kind: account.kind } : {}),
+        ...(account.kind === "personal" || account.kind === "work" ? { kind: account.kind } : {}),
         ...(authoritative && account.isDefault ? { isDefault: true } : {}),
         ...(authoritative && validAccountColor(account.color) ? { color: account.color } : {}),
       },
@@ -226,16 +226,25 @@ export function renameProviderAccount(
 }
 
 /** Edit display metadata atomically; credential identity and session pins stay untouched. */
-export function editProviderAccount(provider: ProviderAccountProvider, accountId: string,
-  metadata: { label: string; color?: ProviderAccountColor; kind?: "personal" | "work" }): boolean {
+export function editProviderAccount(
+  provider: ProviderAccountProvider,
+  accountId: string,
+  metadata: { label: string; color?: ProviderAccountColor; kind?: "personal" | "work" },
+): boolean {
   const label = cleanLabel(metadata.label);
   if (!label || (metadata.color !== undefined && !validAccountColor(metadata.color))) return false;
-  if (metadata.kind !== undefined && metadata.kind !== "personal" && metadata.kind !== "work") return false;
+  if (metadata.kind !== undefined && metadata.kind !== "personal" && metadata.kind !== "work")
+    return false;
   const accounts = providerAccounts(provider);
   if (!accounts.some((account) => account.id === accountId)) return false;
   const stored = readRecord<StoredAccounts>(ACCOUNTS_KEY);
-  stored[provider] = serializeProviderAccounts(accounts.map((account) => account.id === accountId
-    ? { ...account, label, color: metadata.color, kind: metadata.kind } : account));
+  stored[provider] = serializeProviderAccounts(
+    accounts.map((account) =>
+      account.id === accountId
+        ? { ...account, label, color: metadata.color, kind: metadata.kind }
+        : account,
+    ),
+  );
   writeJson(ACCOUNTS_KEY, stored);
   announceChange();
   return true;
@@ -269,7 +278,7 @@ function serializeProviderAccounts(accounts: ProviderAccount[]): ProviderAccount
         id: account.id,
         provider: account.provider,
         label,
-        ...((account.kind === "personal" || account.kind === "work") ? { kind: account.kind } : {}),
+        ...(account.kind === "personal" || account.kind === "work" ? { kind: account.kind } : {}),
         ...(account.isDefault ? { isDefault: true } : {}),
         ...(validAccountColor(account.color) ? { color: account.color } : {}),
       },

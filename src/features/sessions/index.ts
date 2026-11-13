@@ -48,6 +48,8 @@ export type {
 } from "./model/userQuestion";
 export type { ModelSource } from "./ui/modelSource";
 export type { SessionPaneProps } from "./ui/SessionPane";
+export type * as uiSessionDiscussionPanelApi from "./public/SessionDiscussionPanel";
+export type * as uiChatPresentationApi from "./public/chatPresentation";
 export { loadModelPicker } from "./model/publicSurfaces";
 export { HARNESSES, HARNESS_TITLE } from "../../shared/model/harnessIdentity";
 export type { SessionProviderHistory } from "./model/sessionProviderHistory";
@@ -115,3 +117,6 @@ export type * as uiTranscriptSelectionMenuApi from "./public/TranscriptSelection
 
 export type * as headlessApi from "./public/headless";
 export type * as uiDelegatedRequestsApi from "./public/delegatedRequests";
+export type * as uiSessionPanelTargetsApi from "./public/SessionPanelTargets";
+
+export type * as uiSubagentModeControlApi from "./public/SubagentModeControl";

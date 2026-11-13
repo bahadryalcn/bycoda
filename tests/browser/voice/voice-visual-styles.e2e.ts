@@ -4,6 +4,56 @@ import { expect, test, type Page } from "@playwright/test";
 const captures = join(process.cwd(), "temp/verification/voice-visual-styles");
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
+    test(`bounded voice motion on high-refresh display ${theme} ${width}`, async ({ browser }) => {
+      const output = join(process.cwd(), "temp/verification/2026-11-13-voice-motion");
+      await mkdir(output, { recursive: true });
+      const context = await browser.newContext({
+        viewport: { width, height: 900 },
+        reducedMotion: "no-preference",
+        recordVideo: { dir: output },
+      });
+      const page = await context.newPage();
+      const base = "http://127.0.0.1:1497/tests/browser/voice/";
+      const moving = async (selector: string) => {
+        const node = page.locator(selector).first();
+        await expect(node).toBeVisible();
+        const before = await node.evaluate((el) => el.outerHTML);
+        await expect.poll(() => node.evaluate((el) => el.outerHTML)).not.toBe(before);
+      };
+      try {
+        await page.goto(`${base}voice-visual-styles.html?theme=${theme}&high-refresh`);
+        await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+        await page.getByRole("button", { name: "Start voice", exact: true }).click();
+        await expect(page.locator("html")).toHaveAttribute("data-decorative-motion", "off");
+        await moving("[data-turn]");
+        await page.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
+        for (const visual of ["mark", "wave", "dots", "orb"]) {
+          await page.goto(
+            `${base}voice-visual-styles.html?theme=${theme}&high-refresh&working-probe&visual=${visual}`,
+          );
+          await moving("[data-visual] svg");
+          await expect(page.locator("[data-visual]")).toHaveAttribute("data-hearing", "false");
+          await page.emulateMedia({ reducedMotion: "reduce" });
+          await expect(page.locator("[data-visual]")).toHaveAttribute("data-animating", "false");
+          const still = await page.locator("[data-visual] svg").innerHTML();
+          await page.evaluate(
+            () =>
+              new Promise<void>((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+              ),
+          );
+          expect(await page.locator("[data-visual] svg").innerHTML()).toBe(still);
+          await page.emulateMedia({ reducedMotion: "no-preference" });
+        }
+        await page.goto(`${base}voice-overlay.html?theme=${theme}&compact=0&high-refresh`);
+        await moving("[data-turn]");
+      } finally {
+        await context.close();
+        await page.video()?.saveAs(join(output, `${theme}-${width}-motion.webm`));
+      }
+    });
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
     test(`explicit turn ending is discoverable without reconnecting ${theme} ${width}`, async ({
       page,
     }) => {
@@ -236,6 +286,7 @@ for (const theme of ["light", "dark"])
         await panelCompact(page, visual, theme, width);
       }
       await page.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await page.getByText("Appearance and voice style", { exact: true }).click();
       const picker = page.getByRole("radiogroup", { name: "Visual style", exact: true });
       await picker.scrollIntoViewIfNeeded();
       await picker.getByRole("radio", { name: "Wave", exact: true }).click();
@@ -309,3 +360,267 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
   await panel.getByRole("button", { name: "Close voice companion", exact: true }).click();
   await expect(page.getByRole("button", { name: "Talk to Arif", exact: true })).toBeFocused();
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`voice header coarse targets ${theme} ${width}`, async ({ browser }) => {
+      const context = await browser.newContext({
+        viewport: { width, height: 900 },
+        hasTouch: true,
+      });
+      const page = await context.newPage();
+      await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global`);
+      await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+      const panel = page.locator("section[data-voice-state]");
+      const buttons = panel.locator("header button");
+      await expect(buttons.first()).toBeVisible();
+      const sizes = await buttons.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const style = getComputedStyle(node);
+          return {
+            width: node.getBoundingClientRect().width,
+            height: node.getBoundingClientRect().height,
+            minWidth: parseFloat(style.minWidth),
+            minHeight: parseFloat(style.minHeight),
+            target: parseFloat(style.getPropertyValue("--ui-control-height")),
+          };
+        }),
+      );
+      for (const size of sizes) {
+        expect(size.minWidth).toBeGreaterThanOrEqual(size.target);
+        expect(size.minHeight).toBeGreaterThanOrEqual(size.target);
+        expect(size.width).toBeGreaterThanOrEqual(size.target);
+        expect(size.height).toBeGreaterThanOrEqual(size.target);
+      }
+      await panel.screenshot({
+        path: `temp/verification/feature-controls/voice-touch-${theme}-${width}.png`,
+      });
+      await panel.getByRole("button", { name: "Compact voice companion" }).click();
+      const compactButtons = panel.locator("header button");
+      await expect(panel.getByRole("button", { name: "More voice options" })).toBeVisible();
+      for (const size of await compactButtons.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const style = getComputedStyle(node);
+          return {
+            width: node.getBoundingClientRect().width,
+            height: node.getBoundingClientRect().height,
+            target: parseFloat(style.getPropertyValue("--ui-control-height")),
+          };
+        }),
+      )) {
+        expect(size.width).toBeGreaterThanOrEqual(size.target);
+        expect(size.height).toBeGreaterThanOrEqual(size.target);
+      }
+      await panel.screenshot({
+        path: `temp/verification/feature-controls/voice-touch-compact-${theme}-${width}.png`,
+      });
+      await context.close();
+    });
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`voice transcript and setup surfaces ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/voice/voice-visual-styles.html?transcript-fixture=1&theme=${theme}&lang=en`,
+      );
+      const transcript = page.getByRole("list", { name: "Conversation" });
+      await expect(transcript.getByText("Please review this draft.")).toBeVisible();
+      await expect(transcript.locator('[data-surface-tone="accent"]')).toBeVisible();
+      await transcript.screenshot({ path: info.outputPath(`transcript-${theme}-${width}.png`) });
+      await page.goto(
+        `/tests/browser/voice/voice-visual-styles.html?setup-step=provider&theme=${theme}&lang=en`,
+      );
+      const details = page.locator(
+        '[data-surface-frame="neutral"][data-surface-edge="block-start"]',
+      );
+      await expect(details).toBeVisible();
+      await expect(details).toHaveCSS("border-block-start-width", "1px");
+      await details.screenshot({ path: info.outputPath(`setup-${theme}-${width}.png`) });
+    });
+  }
+}
+
+test("voice surface computed probe", async ({ page }) => {
+  for (const theme of ["light", "dark"]) {
+    await page.goto(
+      `/tests/browser/voice/voice-visual-styles.html?transcript-fixture=1&theme=${theme}&lang=en`,
+    );
+    const bubble = page.locator('[data-role="assistant"] > div');
+    const assistant = await bubble.evaluate((el) => getComputedStyle(el).backgroundColor);
+    await page.goto(
+      `/tests/browser/voice/voice-visual-styles.html?activity-probe=1&theme=${theme}&lang=en`,
+    );
+    const count = page
+      .getByRole("button", { name: /Taking action/ })
+      .locator('[data-surface-variant="info-foreground"]');
+    const activity = await count.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const panel = await open(page, "mark", "listening", theme, 1280);
+    const normal = await panel.evaluate((el) => getComputedStyle(el).borderTopColor);
+    await panel.evaluate((el) => el.setAttribute("data-surface-frame", "focus"));
+    const focus = await panel.evaluate((el) => getComputedStyle(el).borderTopColor);
+    await page.evaluate(() => (window as any).fixtureVoice.callbacks.error("fixture error"));
+    await expect(panel.locator("[data-voice-error]")).toBeVisible();
+    const danger = await panel.evaluate((el) => getComputedStyle(el).borderTopColor);
+    console.log(JSON.stringify({ theme, assistant, activity, normal, focus, danger }));
+  }
+});
+
+test("floating launcher surface computed baseline", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["light", "dark"]) {
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}`);
+    const button = page.getByRole("button", { name: "Talk to Arif", exact: true });
+    const read = () =>
+      button.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return {
+          background: s.backgroundColor,
+          border: s.borderTopColor,
+          width: s.borderTopWidth,
+          rect: el.getBoundingClientRect().toJSON(),
+        };
+      });
+    const rest = await read();
+    await button.hover();
+    const hover = await read();
+    await page.mouse.down();
+    const active = await read();
+    await page.mouse.up();
+    console.log("LAUNCHER_BASELINE", JSON.stringify({ theme, rest, hover, active }));
+  }
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`floating launcher visual ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}`);
+      const button = page.getByRole("button", { name: "Talk to Arif", exact: true });
+      await expect(button).toHaveAttribute("data-surface-variant", "floating");
+      await expect(button).toHaveAttribute("data-surface-frame", "neutral");
+      await expect(button).toHaveCSS("border-top-width", "1px");
+      const box = await button.boundingBox();
+      await button.hover();
+      expect(await button.boundingBox()).toEqual(box);
+      await button.focus();
+      await expect(button).toBeFocused();
+      await button.screenshot({ path: info.outputPath(`voice-launcher-${theme}-${width}.png`) });
+      await button.click();
+      await expect(page.locator("section[data-voice-state]")).toBeVisible();
+    });
+  }
+
+test("voice launcher status dot computed baseline", async ({ page }) => {
+  for (const theme of ["light", "dark"]) {
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&launcher-dot`);
+    const button = page.getByRole("button", { name: "Talk to Arif", exact: true });
+    const dot = button.locator('[data-appearance="solid"]');
+    const read = () =>
+      dot.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return {
+          shadow: s.boxShadow,
+          background: s.backgroundColor,
+          width: el.getBoundingClientRect().width,
+          height: el.getBoundingClientRect().height,
+        };
+      });
+    const rest = await read();
+    await button.hover();
+    const hover = await read();
+    console.log("VOICE_DOT_BASELINE", JSON.stringify({ theme, rest, hover }));
+  }
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`voice launcher dot ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&launcher-dot`);
+      const button = page.getByRole("button", { name: "Talk to Arif", exact: true });
+      const dot = button.locator('[data-appearance="solid"]');
+      await expect(dot).toHaveAttribute("data-halo", "floating");
+      await expect(dot).toHaveAttribute("data-tone", "warning");
+      await expect(dot).toHaveCSS("width", "6px");
+      await expect(dot).toHaveCSS("box-shadow", /2px/);
+      await button.hover();
+      await expect(dot).toHaveCSS("box-shadow", /2px/);
+      await button.screenshot({ path: info.outputPath(`voice-dot-${theme}-${width}.png`) });
+    });
+  }
+
+test("voice live announcements remain visually hidden", async ({ page }) => {
+  await page.goto("/tests/browser/voice/voice-visual-styles.html?theme=light&global");
+  await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+  const panel = page.locator("section[data-voice-state]");
+  const live = panel.locator(":scope > [role=status]").first();
+  await expect(live).toHaveAttribute("role", "status");
+  const before = await live.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return {
+      position: s.position,
+      width: s.width,
+      height: s.height,
+      overflow: s.overflow,
+      margin: s.marginTop,
+    };
+  });
+  expect(before).toEqual({
+    position: "absolute",
+    width: "1px",
+    height: "1px",
+    overflow: "hidden",
+    margin: "-1px",
+  });
+});
+
+test("voice working mark computed baseline", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["light", "dark"]) {
+    await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&working-probe`);
+    const mark = page.locator('[data-visual="mark"][data-working="true"] > span').last();
+    const values = await mark.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        width: s.width,
+        height: s.height,
+        radius: s.borderTopLeftRadius,
+        background: s.backgroundColor,
+        outline: s.outline,
+        rotate: s.rotate,
+      };
+    });
+    console.log("WORKING_BASELINE", JSON.stringify({ theme, ...values }));
+  }
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`voice working diamond ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}&working-probe`);
+      const visual = page.locator('[data-visual="mark"][data-working="true"]');
+      const dot = visual.locator("[data-shape=diamond]");
+      await expect(dot).toHaveAttribute("data-tone", "warning");
+      await expect(dot).toHaveCSS("width", "8px");
+      await expect(dot).toHaveCSS("rotate", "45deg");
+      await expect(dot).toHaveCSS("outline-width", "2px");
+      await visual.screenshot({ path: info.outputPath(`voice-working-${theme}-${width}.png`) });
+    });
+  }
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`voice tool activity caller ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/voice/voice-visual-styles.html?activity-probe=1&theme=${theme}&lang=en`,
+      );
+      const trigger = page.getByRole("button", { name: /Taking action/ });
+      await expect(trigger).toBeVisible();
+      await trigger.click();
+      const panel = page.getByRole("dialog", { name: "Voice actions" });
+      await expect(panel).toContainText("Search");
+      await expect(panel.getByRole("button", { name: "Stop waiting" })).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`voice-activity-${theme}-${width}.png`) });
+    });

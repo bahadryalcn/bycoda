@@ -1,3 +1,5 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { useRef, useState } from "react";
@@ -89,7 +91,12 @@ export function CrewLibrary({
             descriptionVisible
           />
         ) : (
-          <div className="settings-collection">
+          <div
+            {...surfaceAttributes(
+              { variant: "card", frame: "none", radius: "none" },
+              "settings-collection",
+            )}
+          >
             <CollectionToolbar
               label={t("Search name, role, model or group")}
               query={query}
@@ -140,7 +147,10 @@ export function CrewLibrary({
                 grows with its rows and scrolls with the page instead. */}
             <ScrollArea
               gutter="stable"
-              className="settings-collection-list max-h-none! overflow-visible!"
+              {...surfaceAttributes(
+                { separator: "block" },
+                "settings-collection-list max-h-none! overflow-visible!",
+              )}
               role="region"
               aria-label={t("Member library")}
             >
@@ -157,7 +167,13 @@ export function CrewLibrary({
                 />
               ) : null}
               {agents.map((agent) => (
-                <div key={agent.id} className="settings-collection-row">
+                <ActionHost
+                  key={agent.id}
+                  {...surfaceAttributes(
+                    { radius: "none", separator: "block" },
+                    "settings-collection-row",
+                  )}
+                >
                   <Checkbox
                     aria-label={t("Select {p0}", { p0: agent.name })}
                     checked={selected.has(agent.id)}
@@ -196,7 +212,11 @@ export function CrewLibrary({
                     <CrewMemberMeta
                       agent={agent}
                       catalog={data.catalog}
-                      poolName={agent.pool && poolNames.get(agent.pool.id)}
+                      poolName={
+                        agent.modelChoice?.kind === "pool"
+                          ? poolNames.get(agent.modelChoice.poolId)
+                          : undefined
+                      }
                     />
                     <CrewMemberTeams teams={teamsOf(agent.id)} />
                     <CrewMemberTeamError assignment={assignment} id={agent.id} />
@@ -218,7 +238,7 @@ export function CrewLibrary({
                       {t("Edit")}
                     </Button>
                   </div>
-                </div>
+                </ActionHost>
               ))}
             </ScrollArea>
           </div>
@@ -294,6 +314,7 @@ function LibraryMemberDialog({
       "specialist",
       "",
       first ? catalogCandidate(data.catalog, `${first.harness}/${first.id}`) : undefined,
+      data.modelPoolsSupported,
     );
   });
   const [scope, setScope] = useState<"project" | "global">(

@@ -6,7 +6,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Badge } from "../../../shared/ui/Badge";
 import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Surface } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import {
   useEffect,
   useRef,
@@ -421,7 +421,7 @@ function BudgetEditor({
   };
   return (
     <form
-      className="space-y-3 rounded-(--ui-radius-card) border border-(--ui-card-border) p-3"
+      {...surfaceAttributes({ frame: "card", radius: "card" }, "space-y-3 p-3")}
       onSubmit={(event) => {
         event.preventDefault();
         const next = normalizeBudget({

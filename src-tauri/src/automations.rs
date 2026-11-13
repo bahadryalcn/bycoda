@@ -47,6 +47,10 @@ pub struct Automation {
     name: String,
     prompt: String,
     harness: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider_account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_choice: Option<serde_json::Value>,
     model: String,
     #[serde(default)]
     model_settings: HashMap<String, String>,
@@ -71,7 +75,7 @@ pub struct Automation {
     #[serde(default)]
     triggers: Option<Vec<AutomationTrigger>>,
     missed_run_grace_minutes: i64,
-    /// Run limits; zero means off.
+    /// Zero run time inherits the routing default, applied by the launcher.
     #[serde(default)]
     max_run_minutes: i64,
     #[serde(default)]
@@ -101,6 +105,10 @@ pub struct AutomationUpsert {
     name: String,
     prompt: String,
     harness: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider_account_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model_choice: Option<serde_json::Value>,
     model: String,
     #[serde(default)]
     model_settings: HashMap<String, String>,
@@ -137,6 +145,10 @@ pub struct AutomationUpsert {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomationRun {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    execution: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_run_minutes: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     executor: Option<crate::ssh_runbooks::Executor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -606,6 +618,8 @@ fn new_run(
     prompt: &str,
 ) -> AutomationRun {
     AutomationRun {
+        execution: None,
+        max_run_minutes: None,
         executor: None,
         ssh_execution: None,
         id: Uuid::new_v4().to_string(),
@@ -823,6 +837,8 @@ fn automations_upsert_with(
         name: automation.name.trim().to_string(),
         prompt: automation.prompt,
         harness: automation.harness,
+        provider_account_id: automation.provider_account_id,
+        model_choice: automation.model_choice,
         model: automation.model,
         model_settings: automation.model_settings,
         cwd: automation.cwd,
@@ -1239,11 +1255,23 @@ pub fn automation_run_update(
     session_id: Option<String>,
     error: Option<String>,
     now: i64,
+    execution: Option<serde_json::Value>,
+    max_run_minutes: Option<i64>,
 ) -> Result<AutomationRun, String> {
     crate::native_window_lifecycle::persistence_write(&window, || {
-        automation_run_update_with(&store, run_id, status, session_id, error, now, || {
-            let _ = window.app_handle().emit(CHANGED, ());
-        })
+        automation_run_update_with(
+            &store,
+            run_id,
+            status,
+            session_id,
+            error,
+            now,
+            execution,
+            max_run_minutes,
+            || {
+                let _ = window.app_handle().emit(CHANGED, ());
+            },
+        )
     })
 }
 
@@ -1254,6 +1282,8 @@ fn automation_run_update_with(
     session_id: Option<String>,
     error: Option<String>,
     now: i64,
+    execution: Option<serde_json::Value>,
+    max_run_minutes: Option<i64>,
     notify: impl FnOnce(),
 ) -> Result<AutomationRun, String> {
     validate_id(&run_id, "automation run")?;
@@ -1293,6 +1323,10 @@ fn automation_run_update_with(
         )
     {
         return Err("Invalid automation run status transition.".into());
+    }
+    if run.session_id.is_none() && run.execution.is_none() {
+        run.execution = execution;
+        run.max_run_minutes = max_run_minutes;
     }
     run.status = status;
     if run.status == "running" && run.started_at.is_none() {

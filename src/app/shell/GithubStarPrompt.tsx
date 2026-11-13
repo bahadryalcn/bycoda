@@ -1,3 +1,4 @@
+import { actionContentAttributes, actionContentScopeAttributes } from "../../shared/ui/ActionHost";
 import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
 import { ButtonGroup } from "../../shared/ui/ButtonGroup";
@@ -77,7 +78,9 @@ function GithubStarPromptBody({ version, action, icon = false, compact = false }
         type="button"
         aria-label={t("View {p0} on GitHub", { p0: PRODUCT_IDENTITY.displayName })}
         onClick={star.open}
-        className={icon ? styles.open : "min-w-0 flex-1"}
+        {...(icon
+          ? actionContentAttributes({ phase: "rest", hide: "corner" })
+          : { className: "min-w-0 flex-1" })}
       >
         <Star className={icon ? "icon-md" : "icon-xs shrink-0"} strokeWidth={1.75} />
         {!icon ? (
@@ -88,9 +91,14 @@ function GithubStarPromptBody({ version, action, icon = false, compact = false }
       </Button>
       <Button
         iconOnly
-        inset={icon}
+        inset={icon ? "bare" : false}
         shape={icon ? "pill" : "default"}
-        className={icon ? styles.dismiss : undefined}
+        {...(icon
+          ? actionContentAttributes(
+              { phase: "interaction", hide: "corner", display: "inline-flex" },
+              styles.dismiss,
+            )
+          : {})}
         label={t("Dismiss GitHub repository prompt")}
         variant="ghost"
         motion="none"
@@ -111,7 +119,11 @@ function GithubStarPromptBody({ version, action, icon = false, compact = false }
       data-compact={compact || undefined}
       className={icon ? styles.icons : visible ? "w-full" : "self-end"}
     >
-      {icon && visible ? <div className={styles.star}>{buttons}</div> : buttons}
+      {icon && visible ? (
+        <div {...actionContentScopeAttributes(styles.star)}>{buttons}</div>
+      ) : (
+        buttons
+      )}
       {action}
     </ButtonGroup>
   );

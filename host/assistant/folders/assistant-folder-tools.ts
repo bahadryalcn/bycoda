@@ -31,7 +31,10 @@ export { isRoomFolderAction };
 export type FolderProjectPrincipal = AssistantThreadPrincipal & { projectCwd: string };
 export type FolderPrincipal = FolderProjectPrincipal | GlobalManagementPrincipal;
 type Qualify = <T>(effect: () => Promise<T>) => Promise<T>;
-type FolderState = Pick<AssistantFoldersResponse, "folders" | "runWithoutAsking">;
+type FolderState = Pick<
+  AssistantFoldersResponse,
+  "folders" | "runWithoutAsking" | "allowChangesWithoutAsking"
+>;
 
 export type FolderToolPorts = Pick<
   ManagementPorts<string, FolderPrincipal>,
@@ -118,8 +121,8 @@ const summary = (snapshot: CommandSnapshot) => ({
 });
 
 /** Global Room file tools over owner-chosen folders, and `commands.run` for the global Room and
- * project Room threads. Reads need no approval; every write and (unless the owner enabled
- * "Run commands without asking") every run needs exact native approval. Unknown outcomes are
+ * project Room threads. Reads need no approval; writes and runs use their explicit owner grants
+ * or request exact native approval. Legacy command grants never grant file changes. Unknown outcomes are
  * reported, never retried. */
 export function createAssistantFolderTools(ports: FolderToolPorts) {
   const ledger = new Map<string, Entry>();
@@ -162,7 +165,10 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
     {
       receipt: ports.receipt,
       saveReceipt: ports.saveReceipt,
-      approve: ports.approve,
+      approve: async (operation, principal, authorized) =>
+        (await ports.folders()).allowChangesWithoutAsking === true
+          ? { approved: true, operationHash: operation.operationHash }
+          : ports.approve(operation, principal, authorized),
       execute: async (action, args, principal, authorized) => {
         const { requestId: _requestId, root, rootPath, ...input } = args;
         const path = (await base(principal, root)).path;

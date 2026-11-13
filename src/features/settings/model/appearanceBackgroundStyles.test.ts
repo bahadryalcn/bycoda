@@ -3,9 +3,14 @@ import { expect, it } from "vitest";
 
 const settings = readFileSync("src/features/settings/ui/BycodaSettings.css", "utf8");
 const theme = readFileSync("src/styles/index.css", "utf8");
+const actionHost = readFileSync("src/shared/ui/ActionHost.module.css", "utf8");
+const controls = readFileSync("src/features/settings/ui/settingsControls.tsx", "utf8");
 
 it("limits shared row hover to single-line settings", () => {
-  expect(settings).toContain(".settings-row:not([data-stacked]):hover");
+  expect(controls).toContain('stacked || layerEditor ? undefined : { variant: "settings" }');
+  expect(actionHost).toMatch(
+    /\.host\[data-variant="settings"\]:hover\s*\{\s*background: var\(--ui-settings-row-hover\)/,
+  );
   expect(settings).not.toMatch(
     /\.settings-row:hover\s*\{\s*background: var\(--ui-settings-row-hover\)/,
   );

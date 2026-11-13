@@ -44,8 +44,7 @@
     inline-size: 100% !important; /* Override the drag-resize inline width in stacked mode. */
     max-inline-size: 100%;
     block-size: 50%;
-    border-inline-start: 0;
-    border-block-start: 1px solid var(--color-stroke);
+    --surface-frame-stacked: 1;
   }
 
   .session-notes-layout:has(> [data-notes-panel]) > [data-session-drop] {

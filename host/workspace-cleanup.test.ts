@@ -13,6 +13,7 @@ import {
   realpathSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -84,6 +85,47 @@ it("hashes large clean content in a worker without blocking timers", async () =>
     clearTimeout(timer);
     await worker.terminate();
   }
+});
+
+it("fingerprints ignored outputs by metadata so large build folders do not stall cleanup previews", async () => {
+  const s = await setup();
+  mkdirSync(join(s.path, "build"));
+  const output = join(s.path, "build", "bundle.bin");
+  writeFileSync(output, Buffer.alloc(1024, 1));
+  // A whole-second timestamp survives utimes exactly on every filesystem.
+  const mtime = new Date("2026-01-01T00:00:00Z");
+  utimesSync(output, mtime, mtime);
+  const fingerprint = async () => {
+    const worker = new Worker(new URL("./workspace-cleanup-worker.mjs", import.meta.url), {
+      workerData: {
+        path: s.path,
+        files: [],
+        ignored: ["build/"],
+        index: join(s.root, "missing-index"),
+        head: "head",
+        branch: "branch",
+        status: "",
+        detachedLinks: [],
+      },
+    });
+    try {
+      return await new Promise<{ fingerprint?: string; error?: string }>((resolve, reject) => {
+        worker.once("message", resolve);
+        worker.once("error", reject);
+      });
+    } finally {
+      await worker.terminate();
+    }
+  };
+  const before = await fingerprint();
+  expect(before.error).toBeUndefined();
+  // Same size and timestamp: metadata matches, so the bytes are not read again.
+  writeFileSync(output, Buffer.alloc(1024, 2));
+  utimesSync(output, mtime, mtime);
+  expect((await fingerprint()).fingerprint).toBe(before.fingerprint);
+  // Any rewrite that moves size or timestamp is a change the removal must re-preview.
+  utimesSync(output, mtime, new Date(mtime.getTime() + 5_000));
+  expect((await fingerprint()).fingerprint).not.toBe(before.fingerprint);
 });
 
 it("retains revoked removal's original failure and durable blocked ledger without restarting filesystem work", async () => {

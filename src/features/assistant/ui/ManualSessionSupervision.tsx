@@ -10,7 +10,7 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Switch } from "../../../shared/ui/Switch";
-import { RefreshCw } from "../../../shared/ui/icons";
+import { RefreshCw, Settings, Square } from "../../../shared/ui/icons";
 import { Row } from "../../settings/public/settingsControls";
 import type { ManualProject, ManualSupervisionController } from "../model/assistantManual";
 import styles from "./AssistantView.module.css";
@@ -112,7 +112,7 @@ export function ManualSessionSupervision({
     ? "Turning off…"
     : error
       ? "Unknown"
-      : pending === "list" || (!data && pending)
+      : !data && pending
         ? "Loading…"
         : !data
           ? "Unknown"
@@ -165,12 +165,27 @@ export function ManualSessionSupervision({
   }
   // The controller's request runner reports its own failures in `error`.
   const reload = () => void controller.refresh();
-  const off = data && (enabled || !!pending || stopping) && (
-    <Button loading={stopping} disabled={stopping} onClick={() => void controller.off()}>
-      {t("Turn off supervision")}
+  const off = data && (enabled || (pending && pending !== "list") || stopping) && (
+    <Button
+      iconOnly={settings}
+      label={t("Turn off supervision")}
+      size="sm"
+      startIcon={<Square className="icon-sm" />}
+      loading={stopping}
+      disabled={stopping}
+      onClick={() => void controller.off()}
+    >
+      {settings ? undefined : t("Turn off supervision")}
     </Button>
   );
-  const idle = !settings && data && !enabled && !grants.length && !error && !pending && !stopping;
+  const idle =
+    !settings &&
+    data &&
+    !enabled &&
+    !grants.length &&
+    !error &&
+    (!pending || pending === "list") &&
+    !stopping;
   if (idle)
     return (
       <Surface
@@ -193,23 +208,30 @@ export function ManualSessionSupervision({
             </Text>
           </div>
           <div className={sessionStyles.actions}>
-            {onSettings && <Button onClick={onSettings}>{t("Settings")}</Button>}
-            <RefreshIcon onClick={reload} />
+            {onSettings && (
+              <Button startIcon={<Settings className="icon-sm" />} onClick={onSettings}>
+                {t("Settings")}
+              </Button>
+            )}
+            <RefreshIcon loading={pending === "list"} disabled={!!pending} onClick={reload} />
           </div>
         </div>
       </Surface>
     );
   const refresh = settings ? (
-    <Button loading={pending === "list"} disabled={!!pending || stopping} onClick={reload}>
+    <Button
+      startIcon={<RefreshCw className="icon-sm" />}
+      loading={pending === "list"}
+      disabled={!!pending || stopping}
+      onClick={reload}
+    >
       {t("Refresh")}
     </Button>
   ) : (
     <RefreshIcon loading={pending === "list"} disabled={!!pending || stopping} onClick={reload} />
   );
   const chiefNotice = !chief
-    ? settings
-      ? t("Requires the work mode “Work and ask” or “Work freely” in Work.")
-      : t("Manual session supervision needs a work mode that runs jobs.")
+    ? t("Manual session supervision needs a work mode that runs jobs.")
     : "";
   // Settings rows are direct children of the dialog's group so the shared row layout applies.
   if (settings)
@@ -234,7 +256,12 @@ export function ManualSessionSupervision({
             }}
           />
         </Row>
-        <div className={panelStyles.notices}>
+        <div
+          {...surfaceAttributes(
+            { frame: "settings", edge: "responsive-start" },
+            panelStyles.notices,
+          )}
+        >
           <LiveText
             size="micro"
             tone="secondary"
@@ -374,7 +401,11 @@ export function ManualSessionSupervision({
           </Text>
         </div>
         <div className={sessionStyles.actions}>
-          {onSettings && <Button onClick={onSettings}>{t("Choose projects in Settings")}</Button>}
+          {onSettings && (
+            <Button startIcon={<Settings className="icon-sm" />} onClick={onSettings}>
+              {t("Choose projects in Settings")}
+            </Button>
+          )}
           {off}
           {refresh}
         </div>

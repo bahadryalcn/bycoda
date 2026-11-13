@@ -1,3 +1,5 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -227,7 +229,12 @@ export function ArchivePage({
             {t("No archived projects.")}
           </SettingsFeedback>
         ) : (
-          <div className="settings-collection">
+          <div
+            {...surfaceAttributes(
+              { variant: "card", frame: "none", radius: "none" },
+              "settings-collection",
+            )}
+          >
             <CollectionToolbar
               label={t("Search archived projects")}
               query={projectQuery}
@@ -239,7 +246,10 @@ export function ArchivePage({
             />
             <ScrollArea
               gutter="stable"
-              className="settings-collection-list archive-settings-list"
+              {...surfaceAttributes(
+                { separator: "block" },
+                "settings-collection-list archive-settings-list",
+              )}
               role="region"
               aria-label={t("Archived projects")}
               tabIndex={0}
@@ -256,7 +266,13 @@ export function ArchivePage({
                 />
               ) : null}
               {matchingProjects.map((project) => (
-                <div key={project.path} className="settings-collection-row">
+                <ActionHost
+                  key={project.path}
+                  {...surfaceAttributes(
+                    { radius: "none", separator: "block" },
+                    "settings-collection-row",
+                  )}
+                >
                   <div className="settings-collection-main">
                     <Text
                       as="p"
@@ -306,7 +322,7 @@ export function ArchivePage({
                       </SettingsFeedback>
                     </div>
                   ) : null}
-                </div>
+                </ActionHost>
               ))}
             </ScrollArea>
           </div>
@@ -348,7 +364,12 @@ export function ArchivePage({
             {t("No archived conversations in this project.")}
           </SettingsFeedback>
         ) : (
-          <div className="settings-collection">
+          <div
+            {...surfaceAttributes(
+              { variant: "card", frame: "none", radius: "none" },
+              "settings-collection",
+            )}
+          >
             <CollectionToolbar
               label={t("Search archived conversations")}
               query={sessionQuery}
@@ -374,7 +395,10 @@ export function ArchivePage({
             ) : null}
             <ScrollArea
               gutter="stable"
-              className="settings-collection-list archive-settings-list"
+              {...surfaceAttributes(
+                { separator: "block" },
+                "settings-collection-list archive-settings-list",
+              )}
               role="region"
               aria-label={t("Archived conversations")}
               tabIndex={0}
@@ -391,7 +415,13 @@ export function ArchivePage({
                 />
               ) : null}
               {matchingSessions.map((session) => (
-                <div key={session.id} className="settings-collection-row">
+                <ActionHost
+                  key={session.id}
+                  {...surfaceAttributes(
+                    { radius: "none", separator: "block" },
+                    "settings-collection-row",
+                  )}
+                >
                   <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
                   <Button
                     className="min-w-0 flex-1"
@@ -436,7 +466,7 @@ export function ArchivePage({
                       </SettingsFeedback>
                     </div>
                   ) : null}
-                </div>
+                </ActionHost>
               ))}
             </ScrollArea>
           </div>

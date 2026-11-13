@@ -82,6 +82,23 @@ it("uses only the target catalog while retaining saved model IDs and setting val
   ).toContainEqual(expect.objectContaining({ value: "max" }));
 });
 
+it("keeps Host accounts explicit, including old catalogs and catalogs still loading", () => {
+  const accounts = { codex: [{ id: "host-work", label: "Host work", isDefault: true }] };
+  const source = hostModelSource(
+    "remote:B",
+    descriptor,
+    { ...catalog("Host B"), accounts },
+    "",
+    {},
+    vi.fn(),
+  );
+  expect(source.accounts).toEqual(accounts);
+  expect(
+    hostModelSource("remote:B", descriptor, catalog("Host B"), "", {}, vi.fn()).accounts,
+  ).toEqual({});
+  expect(hostModelSource("remote:B", undefined, undefined, "", {}, vi.fn()).accounts).toEqual({});
+});
+
 it("switches target catalogs without accepting a late response from the previous host", async () => {
   let finishA!: (value: HostModelCatalog) => void;
   const pendingA = new Promise<HostModelCatalog>((resolve) => {

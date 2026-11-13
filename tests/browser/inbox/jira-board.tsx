@@ -1,3 +1,12 @@
+import { InboxPrChecks } from "../../../src/features/inbox/ui/InboxPrChecks";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { InboxView } from "../../../src/features/inbox/ui/InboxView";
+import { InboxPrChangesGlance } from "../../../src/features/inbox/ui/InboxPrOverview";
+import { InboxComments } from "../../../src/features/inbox/ui/InboxComments";
+import { CheckEvidence } from "../../../src/features/inbox/ui/CheckEvidence";
+import { LinkedWorkItemUpdateNotice } from "../../../src/features/inbox/ui/LinkedWorkItemUpdateNotice";
+import { inboxLabelItems } from "../../../src/features/inbox/ui/InboxPresentation";
+import { BadgeList } from "../../../src/shared/ui/BadgeList";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { JiraBoardView } from "../../../src/features/inbox/ui/JiraBoardView";
@@ -28,18 +37,33 @@ const issue = (key: string, title: string, statusId: string): JiraBoardIssue => 
   stateType: statusId === "1" ? "new" : "indeterminate",
   updatedAt: "",
   labels: [],
-  assignees: [{ login: "Ada" }],
+  assignees: [
+    { login: "Ada Lovelace", accountId: "ada" },
+    { login: "Grace Hopper", accountId: "grace" },
+  ],
   draft: false,
   repo: "ENG",
   teamId: "1",
   teamName: "Engineering",
   projectPath: "",
 });
-const issues = [
+const seedIssues = [
   issue("ENG-1", "Support Jira board management", "1"),
   issue("ENG-2", "Review authentication flow", "3"),
   issue("ENG-3", "Prepare the next release", "1"),
 ];
+const dense = new URLSearchParams(location.search).has("dense");
+const issues = dense
+  ? Array.from({ length: 80 }, (_, index) =>
+      issue(
+        `ENG-${index + 1}`,
+        index % 3 === 0
+          ? "[UI/UX] Tekrarlı Ödeme Oluştur penceresinde oluşturma işlemi"
+          : `Review payment integration ${index + 1}`,
+        ["1", "2", "3", "4", "5", "6", "7", "9"][index % 8]!,
+      ),
+    )
+  : seedIssues;
 const pullRequest = {
   ...issues[0],
   provider: "github",
@@ -59,23 +83,89 @@ const membership = new Map([
 ]);
 Object.assign(window, {
   jiraFixtureCalls: calls,
+  __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
   inboxFixtureFilterWrites: filterWrites,
   jiraFixtureFail: () => {
     fail = true;
   },
   __TAURI_INTERNALS__: {
+    metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
+    transformCallback: () => 1,
+    unregisterCallback: () => {},
+    convertFileSrc: (path: string) => path,
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
+      if (command === "git_commit_file_diff")
+        return {
+          current: "const first = 1;\nexpect(first).toBe(2);\nfinish();",
+          original: "",
+          binary: false,
+          tooLarge: false,
+        };
       if (command === "git_github_pr_action") return { ...pullRequest, state: "merged" };
+      if (command.endsWith("_status"))
+        return {
+          connected: command === "jira_status",
+          site: "https://example.atlassian.net",
+          email: "fixture@example.test",
+        };
+      if (command === "jira_list_projects") return [{ id: "1", key: "ENG", name: "Engineering" }];
+      if (command === "jira_issue_details")
+        return {
+          body: "## Bulgu\n\nTekrarlı Ödeme Oluştur penceresinde oluşturma işlemi yanıt vermiyor.\n\n| Alan | Değer |\n| --- | --- |\n| Modül | Ödeme İşlemleri |\n| Alt ekran | Tekrarlı Ödemeler |",
+          author: "Fixture reporter",
+        };
+      if (command === "jira_issue_thread")
+        return {
+          comments: [
+            {
+              id: "one",
+              author: "Fixture reviewer",
+              kind: "comment",
+              url: "",
+              state: "",
+              path: "",
+              line: null,
+              resolved: false,
+              threadId: "one",
+              replies: [],
+              body: "Ready for review.",
+              createdAt: "2026-11-12T10:00:00Z",
+            },
+          ],
+          truncated: false,
+        };
+      if (command === "jira_list_issue_page") {
+        const offset = args.nextPageToken ? 40 : 0;
+        return {
+          issues: structuredClone(issues.slice(offset, offset + 40)),
+          nextPageToken: offset === 0 && dense ? "second" : null,
+          total: issues.length,
+        };
+      }
       if (command === "jira_list_boards")
         return [{ id: 7, name: "Engineering board", kind: "scrum" }];
       if (command === "jira_board_configuration")
         return {
-          columns: [
-            { name: "To Do", statusIds: ["1"] },
-            { name: "In Progress", statusIds: ["3"] },
-            { name: "Done", statusIds: ["9"] },
-          ],
+          columns: dense
+            ? [
+                "Pending",
+                "On hold",
+                "Development in progress",
+                "Ready to test",
+                "Test",
+                "Test approved",
+                "Release candidate",
+                "Released",
+              ].map((name, index) => ({
+                name,
+                statusIds: [["1", "2", "3", "4", "5", "6", "7", "9"][index]!],
+              }))
+            : [
+                { name: "To Do", statusIds: ["1"] },
+                { name: "In Progress", statusIds: ["3"] },
+                { name: "Done", statusIds: ["9"] },
+              ],
           rankFieldId: 10,
           sprints: [
             { id: 21, name: "Sprint 21", state: "active", goal: "Ship the board experience" },
@@ -86,9 +176,11 @@ Object.assign(window, {
         const scope = args.scope === "sprint" ? `sprint:${args.sprintId}` : String(args.scope);
         return {
           issues: structuredClone(
-            issues.filter((i) => scope === "board" || membership.get(i.identifier) === scope),
+            issues
+              .filter((i) => scope === "board" || membership.get(i.identifier) === scope)
+              .slice(args.nextPageToken ? 40 : 0, args.nextPageToken ? 80 : dense ? 40 : undefined),
           ),
-          nextPageToken: null,
+          nextPageToken: dense && !args.nextPageToken && scope === "board" ? "second" : null,
         };
       }
       if (command === "jira_issue_transitions")
@@ -158,6 +250,7 @@ function SharedControlsFixture() {
           x={16}
           y={80}
           source="jira"
+          items={issues}
           projects={[]}
           linearProjects={[]}
           linearTeams={[]}
@@ -180,6 +273,181 @@ function SharedControlsFixture() {
     </main>
   );
 }
+function InboxFixture() {
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <div className="flex h-dvh min-w-0 flex-col">
+        <InboxView
+          cwd="G:/fixture/monocode"
+          recents={[
+            { path: "G:/fixture/monocode", openedAt: 1 },
+            { path: "G:/fixture/portal", openedAt: 1 },
+          ]}
+          onAsk={async () => ""}
+          onAskRestart={async () => ""}
+          onAskMount={() => {}}
+          onOpenIntegrations={() => {}}
+          onStart={() => {}}
+        />
+      </div>
+    </QueryClientProvider>
+  );
+}
+const inbox = new URLSearchParams(location.search).has("inbox");
+if (inbox) {
+  localStorage.setItem("bycoda.inboxSource", "jira");
+  localStorage.setItem("bycoda.inboxSeen", JSON.stringify({ seeded: true, items: {} }));
+  localStorage.setItem(
+    "bycoda.inboxConnections",
+    JSON.stringify({ github: false, linear: false, jira: true, gitlab: false, azuredevops: false }),
+  );
+}
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("uiControls") ? <SharedControlsFixture /> : <Fixture />,
+  new URLSearchParams(location.search).has("checks-fixture") ? (
+    <main style={{ padding: 24, maxWidth: 720 }}>
+      <InboxPrChecks
+        view={{
+          checks: {
+            headOid: "abc",
+            checks: [
+              {
+                name: "Build",
+                workflow: "CI",
+                state: "fail",
+                url: null,
+                startedAt: null,
+                completedAt: null,
+              },
+              {
+                name: "Tests",
+                workflow: "CI",
+                state: "pending",
+                url: null,
+                startedAt: null,
+                completedAt: null,
+              },
+              {
+                name: "Lint",
+                workflow: "CI",
+                state: "pass",
+                url: null,
+                startedAt: null,
+                completedAt: null,
+              },
+            ],
+          },
+          loading: false,
+          refreshing: false,
+          error: null,
+          stale: false,
+          refresh: () => {},
+        }}
+        onRefresh={() => {}}
+      />
+    </main>
+  ) : new URLSearchParams(location.search).has("evidence-fixture") ? (
+    <main style={{ padding: 24, maxWidth: 720 }}>
+      <CheckEvidence
+        annotations={[
+          { path: "src/example.ts", line: 2, level: "failure", message: "Assertion failed" },
+        ]}
+        cwd="/repo"
+        repo="acme/app"
+        headOid={"a".repeat(40)}
+      />
+      <LinkedWorkItemUpdateNotice
+        sessionId="fixture"
+        card={{
+          kind: "pr",
+          repo: "acme/app",
+          number: 42,
+          title: "Update sidebar activity",
+          url: "https://github.com/acme/app/pull/42",
+          state: "open",
+          since: 1,
+          updatedAt: 2,
+          status: "ready",
+          counts: { comments: 1, reviews: 0, commits: 0 },
+          entries: [],
+          truncated: false,
+        }}
+        onAcknowledge={() => {}}
+        onDismiss={() => {}}
+        onOpenDiscussion={() => {}}
+        onAddToChat={() => {}}
+      />
+    </main>
+  ) : new URLSearchParams(location.search).has("timeline-fixture") ? (
+    <main style={{ padding: 24, maxWidth: 720 }}>
+      <InboxComments
+        thread={
+          {
+            truncated: false,
+            comments: [
+              {
+                id: "c1",
+                kind: "comment",
+                author: "Maya",
+                body: "Review message",
+                createdAt: "2026-10-03T09:00:00Z",
+                url: "",
+                state: "",
+                path: "",
+                line: null,
+                resolved: false,
+                replies: [],
+              },
+            ],
+            commits: [
+              {
+                oid: "abc1234def",
+                messageHeadline: "First commit",
+                author: "Maya",
+                committedDate: "2026-10-03T10:00:00Z",
+                url: "https://example.test/commit/first",
+              },
+              {
+                oid: "def5678abc",
+                messageHeadline: "Second commit",
+                author: "Maya",
+                committedDate: "2026-10-03T10:05:00Z",
+                url: "",
+              },
+            ],
+          } as never
+        }
+        loading={false}
+        error={null}
+        cwd="/repo"
+        provider="github"
+      />
+    </main>
+  ) : new URLSearchParams(location.search).has("changes-fixture") ? (
+    <main style={{ padding: 24, maxWidth: 720 }}>
+      <BadgeList label="Labels" items={inboxLabelItems([{ name: "Bug", color: "ff0000" }])} />
+      <InboxPrChangesGlance
+        diff={{
+          additions: 20,
+          deletions: 10,
+          files: [
+            { path: "src/first.ts", additions: 15, deletions: 5 },
+            { path: "src/second.ts", additions: 5, deletions: 5 },
+          ],
+          patch: "",
+          truncated: false,
+        }}
+        loading={false}
+        error={null}
+        onOpenFile={() => {}}
+      />
+    </main>
+  ) : inbox ? (
+    <InboxFixture />
+  ) : new URLSearchParams(location.search).has("uiControls") ? (
+    <SharedControlsFixture />
+  ) : (
+    <Fixture />
+  ),
 );

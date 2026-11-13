@@ -45,7 +45,7 @@ export function rowCopy(
     };
   }
   return {
-    icon: <ProjectLogoIcon path={hit.path} className="icon-sm rounded-sm" fallback={Folder} />,
+    icon: <ProjectLogoIcon path={hit.path} className="icon-sm" fallback={Folder} />,
     title: <MatchText text={hit.name} positions={hit.positions} active />,
     meta: prettyCwd(hit.path),
   };

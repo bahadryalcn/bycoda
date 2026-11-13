@@ -1,3 +1,10 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import type { RemoteMachine } from "../../connections/public/protocol";
+import { TaskModelChoiceField } from "./TaskModelChoiceField";
+import {
+  defaultModelSettings,
+  resolveModel as resolveTaskModel,
+} from "../../sessions/public/models";
 import { Text } from "../../../shared/ui/Text";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import "./task-form.css";
@@ -28,6 +35,8 @@ export function TaskFormAgent({
   open,
   onOpenChange,
   machine,
+  target,
+  routingSupported = false,
   projectName,
   hasProject,
   localAccounts,
@@ -39,6 +48,8 @@ export function TaskFormAgent({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   machine?: string;
+  target?: RemoteMachine;
+  routingSupported?: boolean;
   projectName: string;
   hasProject: boolean;
   localAccounts: boolean;
@@ -79,32 +90,50 @@ export function TaskFormAgent({
             </Text>
           ) : null}
           <div className="task-form-agent-picks">
-            <ModelPicker
-              harness={draft.harness}
-              model={draft.model}
-              values={draft.modelSettings}
-              project={draft.cwd}
-              accountChoices={localAccounts}
-              accountId={draft.providerAccountId}
-              onChange={(harness, model, accountId) =>
-                onChange({
-                  ...draft,
-                  harness,
-                  model,
-                  providerAccountId: localAccounts
-                    ? (accountId ?? defaultAccountFor(harness))
-                    : harness === draft.harness
-                      ? draft.providerAccountId
-                      : defaultAccountFor(harness),
-                })
+            <TaskModelChoiceField
+              machine={target}
+              routingRole="task.worker"
+              value={draft.modelChoice}
+              supported={routingSupported}
+              onChange={(choice) => update("modelChoice", choice)}
+              fixed={
+                <ModelPicker
+                  harness={draft.harness}
+                  model={draft.model}
+                  values={draft.modelSettings}
+                  project={draft.cwd}
+                  accountChoices={localAccounts}
+                  accountId={draft.providerAccountId}
+                  onChange={(harness, model, accountId) =>
+                    onChange({
+                      ...draft,
+                      harness,
+                      model,
+                      modelChoice: routingSupported
+                        ? (draft.modelChoice ?? { kind: "fixed" })
+                        : undefined,
+                      modelSettings:
+                        harness === draft.harness && model === draft.model
+                          ? draft.modelSettings
+                          : defaultModelSettings(resolveTaskModel(harness, model)),
+                      providerAccountId: localAccounts
+                        ? (accountId ?? defaultAccountFor(harness))
+                        : harness === draft.harness
+                          ? draft.providerAccountId
+                          : defaultAccountFor(harness),
+                    })
+                  }
+                  onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+                />
               }
-              onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
             />
-            <TaskAccountPicker
-              harness={draft.harness}
-              accountId={draft.providerAccountId}
-              local={localAccounts}
-            />
+            {!routingSupported || !draft.modelChoice || draft.modelChoice.kind === "fixed" ? (
+              <TaskAccountPicker
+                harness={draft.harness}
+                accountId={draft.providerAccountId}
+                local={localAccounts}
+              />
+            ) : null}
             {draft.harness !== "fx" ? (
               <AccessPicker
                 value={draft.runtimeMode}
@@ -112,7 +141,7 @@ export function TaskFormAgent({
               />
             ) : null}
           </div>
-          <div className="task-form-rows">
+          <div {...surfaceAttributes({ dividers: "pane" }, "task-form-rows")}>
             <TaskFormRow label={t("Time limit")}>
               <SearchableSelect
                 hideLabel
@@ -186,7 +215,7 @@ export function TaskFormAgent({
                           ...draft.reviewerConfig!,
                           harness: harness as RemoteProvider,
                           model,
-                          modelSettings: {},
+                          modelSettings: defaultModelSettings(resolveTaskModel(harness, model)),
                         })
                       }
                       onSettingsChange={(modelSettings) =>

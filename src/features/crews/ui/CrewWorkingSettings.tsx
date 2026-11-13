@@ -1,45 +1,18 @@
+import { Button } from "../../../shared/ui/Button";
+import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
 import { Text } from "../../../shared/ui/Text";
 import { useId, type ReactNode } from "react";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NumberField } from "../../../shared/ui/NumberField";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Select } from "../../../shared/ui/Select";
-import { Toggle } from "../../settings/ui/settingsControls";
 import type { CrewAgent, CrewPolicy } from "../model/crew";
-import {
-  COST_LEVELS,
-  QUALITY_LEVELS,
-  crewPolicyImpact,
-  shortNameList,
-  type MemberPolicyEffect,
-} from "../model/crewRoster";
 
 export type CrewPolicyErrors = {
   maxParallel: string;
   maxAssignments: string;
   maxRunMinutes: string;
 };
-
-function memberNames(effects: MemberPolicyEffect[], withShare = false) {
-  return shortNameList(
-    effects.map(({ agent, eligible, pool }) => {
-      const name = agent.name || t("Unnamed member");
-      return withShare ? `${name} (${eligible}/${pool})` : name;
-    }),
-  );
-}
-
-function costNames() {
-  return [t("Low"), t("Medium"), t("High")];
-}
-
-function qualityNames() {
-  return [t("Basic"), t("Good"), t("Best")];
-}
 
 /** A compact titled block of settings; blocks are separated by spacing, not frames. */
 function Section({
@@ -165,7 +138,6 @@ function LimitLine({
  * component only edits it. It lays out inside the editor's `crew-editor` container.
  */
 export function CrewWorkingSettings({
-  agents,
   policy,
   errors,
   onPolicyChange,
@@ -188,155 +160,13 @@ export function CrewWorkingSettings({
   maintenance?: ReactNode;
 }) {
   useLocale();
-  const automatic = agents.filter((agent) => agent.selection === "automatic").length;
-  const impact = crewPolicyImpact(agents, policy);
-  const customWeights = policy.costWeight !== undefined || policy.qualityWeight !== undefined;
-
-  const levelSelect = (
-    key: "maxEstimatedCost" | "minimumQuality",
-    label: string,
-    levels: readonly number[],
-    names: string[],
-  ) => {
-    const current = policy[key];
-    return (
-      <Select
-        hideLabel
-        label={label}
-        value={current === undefined ? "" : String(current)}
-        options={[
-          { value: "", label: t("Any") },
-          ...levels.map((level, index) => ({ value: String(level), label: names[index]! })),
-          ...(current !== undefined && !levels.includes(current)
-            ? [{ value: String(current), label: t("Custom ({p0})", { p0: current }) }]
-            : []),
-        ]}
-        onValueChange={(value) => onPolicyChange({ [key]: value ? Number(value) : undefined })}
-      />
-    );
-  };
-
-  // Every catalog ends this caption with its name list, so an empty list leaves the lead-in.
-  const narrowedLead = t("Fewer candidates (eligible/total): {p0}", { p0: "" }).trimEnd();
-  const eligibilityFeedback =
-    impact.blocked.length || impact.narrowed.length ? (
-      <div className="flex min-w-0 flex-col gap-1.5">
-        {impact.blocked.length ? (
-          <Alert tone="warning">
-            {t("No eligible model left for: {p0}. Fixed models are not exempt.", {
-              p0: memberNames(impact.blocked),
-            })}
-          </Alert>
-        ) : null}
-        {impact.narrowed.length ? (
-          <Text as="div" className="flex min-w-0 flex-col gap-1">
-            <span>{narrowedLead}</span>
-            <BadgeList
-              label={narrowedLead.replace(/\s*[:：]$/, "")}
-              size="xs"
-              max={5}
-              items={impact.narrowed.map(({ agent, eligible, pool }) => ({
-                id: agent.id,
-                label: `${agent.name || t("Unnamed member")} (${eligible}/${pool})`,
-              }))}
-            />
-          </Text>
-        ) : null}
-      </div>
-    ) : null;
-
-  const rankingNote = customWeights
-    ? t("Custom weights are active. Choose a preset to reset them.")
-    : policy.preset === "economy"
-      ? t("Prefers models you rated cheaper.")
-      : policy.preset === "quality"
-        ? t("Prefers models you rated higher quality.")
-        : t("Weighs cost and quality equally.");
-
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="grid min-w-0 gap-x-10 gap-y-5 @min-[48rem]/crew-editor:grid-cols-2">
-        <Section
-          title={t("Models")}
-          description={[
-            t(
-              "These settings belong to the crew. They apply to work you start afterwards; work already started keeps its own.",
-            ),
-            t(
-              "Rules apply first, to every member including fixed models. A fixed model that fails a rule is not used.",
-            ),
-          ]}
-        >
-          {eligibilityFeedback}
-          <Line
-            label={t("Highest cost allowed")}
-            info={
-              <InfoPopover label={t("About the cost limit")}>
-                <p>
-                  {t(
-                    "Cost is the relative rating you give each model (Low, Medium, High), not a price in any currency.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "This one limit does two things: it skips every model rated above it, and it caps the combined estimate of the worker and reviewer assignments in one work.",
-                  )}
-                </p>
-                <p>{t("When it is set, models without a cost rating are skipped.")}</p>
-              </InfoPopover>
-            }
-          >
-            {levelSelect("maxEstimatedCost", t("Highest cost allowed"), COST_LEVELS, costNames())}
-          </Line>
-          <Line
-            label={t("Lowest quality allowed")}
-            description={t("Models rated below this quality are skipped.")}
-          >
-            {levelSelect(
-              "minimumQuality",
-              t("Lowest quality allowed"),
-              QUALITY_LEVELS,
-              qualityNames(),
-            )}
-          </Line>
-          <Line
-            label={t("Use models without a cost rating")}
-            description={t("When off, only models you rated for cost can be chosen.")}
-          >
-            <Toggle
-              label={t("Use models without a cost rating")}
-              on={policy.allowUnknownCost}
-              onChange={(value) => onPolicyChange({ allowUnknownCost: value })}
-            />
-          </Line>
-          <Line
-            label={t("Automatic ranking")}
-            description={
-              automatic === 1
-                ? `${t("Used by the member set to Automatic.")} ${rankingNote}`
-                : automatic
-                  ? `${t("Used by {p0} members set to Automatic.", { p0: automatic })} ${rankingNote}`
-                  : t("No member chooses its model automatically. This applies once one does.")
-            }
-          >
-            <SegmentedControl
-              label={t("Priority")}
-              value={policy.preset}
-              options={[
-                { value: "economy", label: t("Economy") },
-                { value: "balanced", label: t("Balanced") },
-                { value: "quality", label: t("Quality") },
-              ]}
-              onValueChange={(preset) =>
-                // A preset deliberately resets any custom weights.
-                onPolicyChange({
-                  preset: preset as CrewPolicy["preset"],
-                  costWeight: undefined,
-                  qualityWeight: undefined,
-                })
-              }
-            />
-          </Line>
+        <Section title={t("Models")}>
+          <Button variant="link" onClick={() => openModelsSettings("order")}>
+            {t("Manage in Models")}
+          </Button>
         </Section>
 
         <div className="flex min-w-0 flex-col gap-5">

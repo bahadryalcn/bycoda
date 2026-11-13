@@ -332,7 +332,9 @@ it("changes only canonical owner presence through finite authenticated native ro
   const initial = await ws.call(get);
   expect(initial).toMatchObject({ setupComplete: false });
   expect(
-    Object.keys(initial).every((key) => ["state", "setupComplete", "assistantName"].includes(key)),
+    Object.keys(initial).every((key) =>
+      ["state", "choice", "setupComplete", "assistantName"].includes(key),
+    ),
   ).toBe(true);
   expect(await ws.call(set, { state: "away" })).toMatchObject({
     state: "away",
@@ -554,6 +556,72 @@ it("routes descriptions, real bound grants and terminal append through both tran
       })
     ).error.code,
   ).toBe(RPC_ERROR_CODES.invalidParams);
+});
+
+it("keeps secret and SSH permission checks owner-bound across HTTP and WS contracts", async () => {
+  const f = await fixture(),
+    ws = await f.connect(),
+    foreign = await f.connect(f.other.token);
+  const relays = new Set<ConversationDesktopRelay>();
+  const take = ConversationDesktopRelay.prototype.take;
+  vi.spyOn(ConversationDesktopRelay.prototype, "take").mockImplementation(function (
+    this: ConversationDesktopRelay,
+    owner,
+  ) {
+    relays.add(this);
+    return take.call(this, owner);
+  });
+  await ws.call("native.services.conversation.desktop.take");
+  const relay = [...relays][0];
+  const method = "native.services.conversation.desktop.authorize";
+  for (const action of ["secrets.input.authorize", "servers.ssh.execute"]) {
+    let fullAccess = true;
+    let authorized = true;
+    const pending = relay
+      .call(
+        action,
+        {},
+        f.projectPath,
+        {
+          kind: "session",
+          projectId: f.project.id,
+          sessionId: f.session.sessionId,
+          provider: "codex",
+        },
+        () => authorized,
+        () => fullAccess,
+      )
+      .catch((error: unknown) => error);
+    const [request] = await ws.call("native.services.conversation.desktop.take");
+    const params = {
+      id: request.id,
+      action: action === "servers.ssh.execute" ? "servers.ssh.execute.permission" : action,
+    };
+    const expected =
+      action === "servers.ssh.execute"
+        ? { authorized: true, fullAccess: true }
+        : { authorized: true };
+    expect(await ws.call(method, params)).toEqual(expected);
+    expect(await f.callHttp(method, params)).toEqual(expected);
+    expect(await foreign.call(method, params)).toEqual({ authorized: false });
+    expect((await f.http(method, params, f.other.token)).result).toEqual({ authorized: false });
+    expect((await ws.request(method, { ...params, fullAccess: true })).error.code).toBe(
+      RPC_ERROR_CODES.invalidParams,
+    );
+    if (action === "servers.ssh.execute") {
+      fullAccess = false;
+      expect(await ws.call(method, params)).toEqual({ authorized: true, fullAccess: false });
+      expect(await f.callHttp(method, params)).toEqual({ authorized: true, fullAccess: false });
+    }
+    authorized = false;
+    expect(await ws.call(method, params)).toEqual({ authorized: false });
+    expect(await f.callHttp(method, params)).toEqual({ authorized: false });
+    await ws.call("native.services.conversation.desktop.finish", {
+      id: request.id,
+      result: { cancelled: true },
+    });
+    expect(await pending).toBeInstanceOf(Error);
+  }
 });
 
 it("commits an actual >1MiB desktop completion once to its real owner-bound mailbox", async () => {

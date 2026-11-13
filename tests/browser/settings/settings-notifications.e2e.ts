@@ -2,10 +2,10 @@ import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["dark", "light"]) {
-  for (const width of [390, 768, 1024, 1440]) {
+  for (const width of [390, 768, 800, 1024, 1280, 1440]) {
     test(`notification collection flows with the page and stays searchable: ${theme} ${width}`, async ({
       page,
-    }) => {
+    }, testInfo) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.addInitScript(() => {
@@ -36,6 +36,37 @@ for (const theme of ["dark", "light"]) {
       });
       const list = page.locator(".project-notification-list");
       await expect(list.locator("fieldset")).toHaveCount(41);
+      await list.scrollIntoViewIfNeeded();
+      await expect(list.locator("fieldset").nth(0)).toHaveCSS("border-top-width", "0px");
+      await expect(list.locator("fieldset").nth(1)).toHaveCSS("border-top-width", "1px");
+      await expect(list.locator("fieldset").nth(1)).toHaveCSS("border-top-left-radius", "0px");
+      await page.screenshot({
+        path: testInfo.outputPath("notification-rows.png"),
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: "Select projects", exact: true }).click();
+      const selectAll = page.getByRole("checkbox", {
+        name: "Select all known projects",
+        exact: true,
+      });
+      const selectLabel = selectAll.locator("..");
+      await selectLabel.hover();
+      const colors = await selectLabel.evaluate((element) => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--ui-tone-neutral-fg)";
+        element.append(probe);
+        const result = [getComputedStyle(element).color, getComputedStyle(probe).color];
+        probe.remove();
+        return result;
+      });
+      expect(colors[0]).toBe(colors[1]);
+      await selectAll.check();
+      await expect(selectAll).toBeChecked();
+      await page.screenshot({
+        path: testInfo.outputPath("notification-selection.png"),
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: "Done", exact: true }).click();
       // Long project sets scroll inside the bounded card instead of stretching the page.
       const geometry = await list.evaluate((element) => ({
         height: element.clientHeight,

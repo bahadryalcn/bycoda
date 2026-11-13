@@ -1,33 +1,12 @@
 /* "New" dot over the control of a feature added since the last update. */
 .feature-new-dot {
   position: fixed;
+  left: var(--highlight-x);
+  top: var(--highlight-y);
+  z-index: var(--highlight-layer);
   inline-size: 8px;
   block-size: 8px;
   margin-block-start: -2px;
   margin-inline-start: -10px;
-  border-radius: 50%;
-  background: var(--ui-interaction-accent);
-  box-shadow: 0 0 0 2px var(--ui-surface);
   pointer-events: none;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .feature-new-dot::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: inherit;
-    animation: feature-new-dot-ping 2.4s var(--motion-ease-enter) infinite;
-  }
-  @keyframes feature-new-dot-ping {
-    0% {
-      opacity: 0.5;
-      transform: scale(1);
-    }
-    70%,
-    100% {
-      opacity: 0;
-      transform: scale(2.4);
-    }
-  }
 }

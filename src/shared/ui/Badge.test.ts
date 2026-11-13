@@ -168,3 +168,56 @@ it("treats a dot without text or name as decoration, never as a colour-only stat
     labelled.done();
   }
 });
+
+it("renders a decorative activity glyph with a semantic tone", async () => {
+  const badge = await render(
+    createElement(
+      Badge,
+      { shape: "icon", tone: "warning", "aria-hidden": true },
+      createElement(Check),
+    ),
+  );
+  try {
+    expect(badge.container.firstElementChild?.getAttribute("data-shape")).toBe("icon");
+    expect(badge.container.firstElementChild?.getAttribute("data-tone")).toBe("warning");
+    expect(badge.container.querySelector("svg")).not.toBeNull();
+  } finally {
+    badge.done();
+  }
+});
+
+it("opts a status dot into its floating halo without changing status semantics", async () => {
+  const dot = await render(
+    createElement(StatusDot, { tone: "warning", label: "Connecting", halo: "floating" }),
+  );
+  try {
+    const element = dot.container.firstElementChild!;
+    expect(element.getAttribute("data-halo")).toBe("floating");
+    expect(element.getAttribute("aria-label")).toBe("Connecting");
+    expect(element.getAttribute("data-tone")).toBe("warning");
+  } finally {
+    dot.done();
+  }
+});
+
+it("exposes diamond status geometry without changing its tone", async () => {
+  const dot = await render(createElement(StatusDot, { tone: "warning", shape: "diamond" }));
+  try {
+    expect(dot.container.firstElementChild?.getAttribute("data-shape")).toBe("diamond");
+    expect(dot.container.firstElementChild?.getAttribute("data-tone")).toBe("warning");
+  } finally {
+    dot.done();
+  }
+});
+
+it("offers a nine-pixel presence dot with hollow offline state", async () => {
+  const dot = await render(
+    createElement(StatusDot, { tone: "muted", appearance: "presence", hollow: true }),
+  );
+  try {
+    expect(dot.container.firstElementChild?.getAttribute("data-appearance")).toBe("presence");
+    expect(dot.container.firstElementChild?.getAttribute("data-hollow")).toBe("true");
+  } finally {
+    dot.done();
+  }
+});

@@ -389,9 +389,10 @@ function TitleTabItem({
 
   return (
     <ActionHost
+      controlHeight="compact"
       selected={active}
       ref={setNode}
-      className="reorder-item tab-motion group @container relative flex h-(--ui-control-height-compact) w-full min-w-0 cursor-default touch-none items-center self-center"
+      className="reorder-item tab-motion group @container relative flex w-full min-w-0 cursor-default touch-none items-center self-center"
       data-tauri-drag-region="false"
       data-tab-draggable={canDrag || undefined}
       onDragStart={(event) => event.preventDefault()}
@@ -443,7 +444,8 @@ function TitleTabItem({
             if (tab.previewSessionId) onKeepSession?.(tab.previewSessionId);
           }
         }}
-        className={`relative min-w-0 flex-1 self-center ${closable ? "pe-[var(--ui-control-height-compact)]" : ""}`}
+        reserveEndAction={closable ? "control" : undefined}
+        className="relative min-w-0 flex-1 self-center"
       >
         {tab.harnesses.length > 0 ? (
           <TabHarnesses
@@ -1193,9 +1195,10 @@ function TitleBarComponent({
   // exempts buttons, links and inputs on its own.
   return (
     <header
-      className={`bycoda-titlebar flex h-9 shrink-0 select-none items-stretch border-b border-b-(--ui-pane-border)!${
-        compactRail ? " body-glass" : ""
-      }`}
+      {...surfaceAttributes(
+        { frame: "pane", edge: "bottom" },
+        `bycoda-titlebar flex h-9 shrink-0 select-none items-stretch${compactRail ? " body-glass" : ""}`,
+      )}
       // The row is one compact control plus 4px above and below, so it grows with
       // the density and UI-scale setting instead of clipping its controls at 36px.
       style={TITLEBAR_HEIGHT_STYLE}
@@ -1205,7 +1208,13 @@ function TitleBarComponent({
       {compactRail ? (
         <div
           data-compact-title-nav
-          className={`flex shrink-0 items-center ${IS_MAC ? "ps-17.5" : "ps-1.5"}`}
+          // Native traffic lights occupy 64px plus 6px clearance.
+          style={
+            IS_MAC
+              ? ({ "--mac-traffic-lights-reserve": "calc(4rem + 0.375rem)" } as React.CSSProperties)
+              : undefined
+          }
+          className={`flex shrink-0 items-center ${IS_MAC ? "ps-(--mac-traffic-lights-reserve)" : "ps-1.5"}`}
         >
           <TabVisitNav
             canGoBack={canGoBack}
@@ -1268,9 +1277,13 @@ function TitleBarComponent({
       ) : null}
 
       <div
-        className={`flex min-w-0 flex-1 items-stretch${
-          showProjectButton ? " border-l border-l-(--ui-pane-border)" : ""
-        }`}
+        {...surfaceAttributes(
+          {
+            frame: showProjectButton ? "pane" : undefined,
+            edge: showProjectButton ? "left" : undefined,
+          },
+          "flex min-w-0 flex-1 items-stretch",
+        )}
       >
         <div
           className="relative h-full min-w-0 flex-1 overflow-hidden"
@@ -1313,8 +1326,12 @@ function TitleBarComponent({
                     <span
                       data-pane-tab-drop-hint
                       {...surfaceAttributes(
-                        { radius: "pill" },
-                        `pointer-events-none absolute inset-y-1 z-1 w-0.5 ${paneToTabDrop.invalid ? "bg-danger" : "bg-accent"} ${
+                        {
+                          radius: "pill",
+                          tone: paneToTabDrop.invalid ? "danger" : "accent",
+                          toneFill: "solid",
+                        },
+                        `pointer-events-none absolute inset-y-1 z-1 w-0.5 ${
                           paneToTabDrop.position === "before" ? "left-0" : "right-0"
                         }`,
                       )}

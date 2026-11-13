@@ -1,4 +1,5 @@
 import { someAsync } from "../async-collections";
+import { resolveRunModel, routingRun, routingWait, routingWaitDue } from "./model-routing";
 import { AssistantTurnPolicyDeferredError } from "../assistant/core/assistant-turn-policy";
 import {
   assistantRecoveryHoldsTask,
@@ -14,7 +15,7 @@ import type { HostEngine } from "../engine";
 import { createHostWorktree } from "../git/git-worktrees";
 import { taskWorkspace } from "./task-workspace";
 import { transferTaskArtifacts } from "./task-artifacts";
-import { admitRunDuration } from "../execution/run-duration";
+import { admitRunDuration, retractRunDuration } from "../execution/run-duration";
 import { errorMessage, launchSessionRun } from "../sessions/sessionRuns";
 import { assertShellOwnershipAvailable, hasShellPhysicalOwner } from "../execution/shell-ownership";
 import { writerWorkspaceMode } from "./task-workspace-runtime";
@@ -188,7 +189,9 @@ export async function launch(
           crewExecutionId: randomUUID(),
           updatedAt: context.now(),
         });
-    if (!task.crewExecutionId && pending.crewExecutionId)
+    if (!routingWaitDue(pending, now)) return pending;
+    // A run retracted by a model wait is admitted again here; admission is idempotent.
+    if (pending.crewExecutionId && (!task.crewExecutionId || routingRun(task).modelRoutingWait))
       await admitRunDuration(
         context.store,
         `\u0000crew-task:${task.id}`,
@@ -208,21 +211,71 @@ export async function launch(
         await context.crewRunner.stop(pending);
         return latest ?? task;
       }
-      return await context.write({
+      const started = {
         ...latest,
         ...coordinator,
-        status: "running",
+        status: "running" as const,
         startedAt: now,
         updatedAt: context.now(),
         error: undefined,
         needsInput: undefined,
-      });
+        modelRoutingWait: undefined,
+      };
+      return await context.write(started);
     } catch (error) {
       const latest = await context.find(task.id);
       if (!latest || latest.status !== "queued" || latest.updatedAt !== pending.updatedAt)
         return latest ?? task;
+      if (error instanceof Error && error.name === "CrewRoutingWait") {
+        // No eligible model for a crew member: keep the task queued until the next reset.
+        const wait = routingWait(error as Error & { nextResetAt?: number });
+        // No coordinator was dispatched: the wait is not run time.
+        await retractRunDuration(
+          context.store,
+          `\u0000crew-task:${task.id}`,
+          pending.crewExecutionId!,
+        );
+        const waiting = {
+          ...latest,
+          modelRoutingWait: wait,
+          error: wait.reason,
+          updatedAt: context.now(),
+        };
+        return await context.write(waiting);
+      }
       return await context.block(latest, errorMessage(error), context.now());
     }
+  }
+  if (!task.sessionId) {
+    if (!routingWaitDue(task, now)) return task;
+    const expected = await context.taskValue(task.id);
+    const resolution = await resolveRunModel(context.store, "task.worker", task);
+    const routed = await context.transaction(async () => {
+      const current = await context.unchangedTask(task.id, expected);
+      if (!current) return undefined;
+      if (!resolution.ok && resolution.reason === "noEligibleEntry") {
+        const wait = routingWait(resolution);
+        if (JSON.stringify(routingRun(current).modelRoutingWait) === JSON.stringify(wait))
+          return current;
+        const waiting = {
+          ...current,
+          modelRoutingWait: wait,
+          error: wait.reason,
+          updatedAt: now,
+        };
+        return context.write(waiting);
+      }
+      const resolved = {
+        ...current,
+        ...(resolution.ok ? resolution.target : {}),
+        modelRoutingWait: undefined,
+        error: routingRun(current).modelRoutingWait ? undefined : current.error,
+      };
+      return context.write(resolved);
+    });
+    if (!routed) return (await context.find(task.id)) ?? task;
+    if (!resolution.ok && resolution.reason === "noEligibleEntry") return routed;
+    task = routed;
   }
   let ready: HostTask;
   try {

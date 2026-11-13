@@ -11,13 +11,13 @@ import {
   asClient,
   bodyText,
   buttonByText,
-  clientMock,
   clickButton,
+  clientMock,
   deferred,
-  fieldByLabel,
   flush,
   mountHost,
-  setFieldValue,
+  optionLabels,
+  pickOption,
   type ClientMock,
   type MountedHost,
 } from "./audienceTestKit";
@@ -123,7 +123,7 @@ describe("ImportDialog account and list", () => {
 
     expect(buttonByText("Import 1 people")?.disabled).toBe(true);
     expect(bodyText()).toContain("Choose the account the people belong to.");
-    setFieldValue(fieldByLabel("Account"), "acc2");
+    pickOption("Account", "X · Studio");
     expect(buttonByText("Import 1 people")?.disabled).toBe(false);
     clickButton("Import 1 people");
     await flush();
@@ -135,8 +135,7 @@ describe("ImportDialog account and list", () => {
   it("offers only static lists, sends the chosen one and sends none by default", async () => {
     const mock = clientMock();
     await chosen(mock, textFile("people.csv", "platformId,name\n1,Ada"));
-    const target = fieldByLabel("Add them to") as HTMLSelectElement;
-    const labels = Array.from(target.options).map((option) => option.textContent);
+    const labels = optionLabels("Add them to");
     expect(labels).toContain("Buyers");
     expect(labels).not.toContain("Turkish");
 
@@ -150,7 +149,7 @@ describe("ImportDialog account and list", () => {
   it("sends the chosen list", async () => {
     const mock = clientMock();
     await chosen(mock, textFile("people.csv", "platformId,name\n1,Ada"));
-    setFieldValue(fieldByLabel("Add them to"), "l1");
+    pickOption("Add them to", "Buyers");
     clickButton("Import 1 people");
     await flush();
     expect(mock.audience.import).toHaveBeenLastCalledWith(
@@ -167,8 +166,8 @@ describe("ImportDialog column mapping", () => {
     expect(buttonByText("Import people")?.disabled).toBe(true);
     expect(bodyText()).toContain("Match the Platform ID and Name columns.");
 
-    setFieldValue(fieldByLabel("Platform ID · Required"), "handle");
-    setFieldValue(fieldByLabel("Name · Required"), "label");
+    pickOption("Platform ID · Required", "handle");
+    pickOption("Name · Required", "label");
     expect(buttonByText("Import 1 people")?.disabled).toBe(false);
     clickButton("Import 1 people");
     await flush();
@@ -189,7 +188,7 @@ describe("ImportDialog column mapping", () => {
   it("leaves the email out of the import when its column is set to Not in file", async () => {
     const mock = clientMock();
     await chosen(mock, textFile("people.csv", "platformId,name,email\n1,Ada,ada@example.test"));
-    setFieldValue(fieldByLabel("Email"), "");
+    pickOption("Email", "Not in file");
     clickButton("Import 1 people");
     await flush();
     expect(sentContent(mock)).toEqual([{ platformId: "1", name: "Ada" }]);

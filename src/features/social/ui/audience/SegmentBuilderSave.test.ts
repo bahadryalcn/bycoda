@@ -29,9 +29,9 @@ afterEach(() => {
 
 function renderBuilder(mock: ClientMock) {
   const onClose = vi.fn();
-  const onCreated = vi.fn();
-  host.render(createElement(SegmentBuilder, { client: asClient(mock), onClose, onCreated }));
-  return { onClose, onCreated };
+  const onSaved = vi.fn();
+  host.render(createElement(SegmentBuilder, { client: asClient(mock), onClose, onSaved }));
+  return { onClose, onSaved };
 }
 
 describe("SegmentBuilder save", () => {
@@ -71,7 +71,7 @@ describe("SegmentBuilder save", () => {
         }),
       },
     });
-    const { onClose, onCreated } = renderBuilder(mock);
+    const { onClose, onSaved } = renderBuilder(mock);
     await flush();
     setFieldValue(fieldByLabel("Segment name"), "Turkish");
     setFieldValue(fieldByLabel("Language"), "tr");
@@ -79,7 +79,7 @@ describe("SegmentBuilder save", () => {
     await flush();
 
     expect(bodyText()).toContain("A segment with this name exists.");
-    expect(onCreated).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(fieldByLabel("Language").value).toBe("tr");
     expect(buttonByText("Save segment")?.disabled).toBe(false);

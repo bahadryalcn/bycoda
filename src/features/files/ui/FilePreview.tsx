@@ -98,7 +98,8 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
             variant="ghost"
             motion="none"
             type="button"
-            className="min-w-0 flex-1 text-left font-mono hover:underline"
+            hoverUnderline
+            className="min-w-0 flex-1 text-left font-mono"
             truncate
             tooltip={path}
             tooltipWhen={path === label ? "overflow" : "always"}
@@ -133,7 +134,7 @@ export function FilePreview({ preview, status, cwd, onOpenFile, variant = "card"
       </div>
       {showDiff ? (
         <>
-          <div className="h-px bg-[var(--ui-surface-muted)]" />
+          <div {...surfaceAttributes({ variant: "inset" }, "h-px")} />
           <div
             className={
               variant === "popover"

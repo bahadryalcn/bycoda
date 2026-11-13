@@ -9,12 +9,14 @@ import {
   asClient,
   bodyText,
   buttonByText,
-  clientMock,
   clickButton,
+  clientMock,
   deferred,
   fieldByLabel,
   flush,
   mountHost,
+  pickOption,
+  selectedLabel,
   setFieldValue,
   type ClientMock,
   type MountedHost,
@@ -65,7 +67,7 @@ describe("BulkDialog list", () => {
     renderDialog(clientMock());
     await flush();
     expect(bodyText()).toContain("2 selected");
-    expect(fieldByLabel("List").value).toBe("l1");
+    expect(selectedLabel("List")).toBe("Buyers");
     expect(buttonByText("Add to list")?.disabled).toBe(false);
   });
 
@@ -162,7 +164,7 @@ describe("BulkDialog sequence", () => {
     renderDialog(mock, { action: "sequence" });
     await flush();
     expect(bodyText()).toContain("so the selected people are added to that list");
-    setFieldValue(fieldByLabel("Sequence"), "seq1");
+    pickOption("Sequence", "Spring follow-up");
     clickButton("Add to sequence");
     await flush();
     expect(mock.lists.addMembers).toHaveBeenCalledWith({ listId: "l9", personIds: ["p1", "p2"] });

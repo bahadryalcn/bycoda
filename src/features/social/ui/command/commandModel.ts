@@ -127,7 +127,7 @@ export function groupActivityByDay(items: AiAction[], now = Date.now()): Activit
 export function activityStatus(item: AiAction): StatusTextStatus {
   switch (item.status) {
     case "done":
-      return "succeeded";
+      return "completed";
     case "failed":
       return "failed";
     case "queued":

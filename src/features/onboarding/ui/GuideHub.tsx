@@ -185,7 +185,7 @@ export default function GuideHub({
                       <Check className="icon-sm" aria-hidden="true" />
                     ) : (
                       <span
-                        {...surfaceAttributes({ radius: "pill" }, "guide-hub-ring")}
+                        {...surfaceAttributes({ radius: "pill", frame: "muted" }, "guide-hub-ring")}
                         aria-hidden="true"
                       />
                     )
@@ -226,7 +226,10 @@ export default function GuideHub({
             </Button>
           </div>
         </Text>
-        <nav className="guide-hub-nav" aria-label={t("Guide topics")}>
+        <nav
+          {...surfaceAttributes({ frame: "stroke", edge: "responsive-end" }, "guide-hub-nav")}
+          aria-label={t("Guide topics")}
+        >
           {groups.map((group) => (
             <div key={group.name} className="guide-hub-group">
               <SectionLabel as="h3" className="guide-hub-group-title">

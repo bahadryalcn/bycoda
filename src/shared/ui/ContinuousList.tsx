@@ -32,7 +32,7 @@ export type CollectionFooterProps = {
  * Footer for a loaded collection: spinner, error and partial-result Alerts, Retry, empty text and an explicit "Load more". A failed continuation never hides loaded rows; `standalone` renders only the Load more button.
  * @group data
  * @use Explicit remote continuation state under any list or table.
- * @avoid Page-level load failure: FailureState.
+ * @avoid Page-level load failure: FailureState. Virtualized rows plus continuation: ContinuousList.
  */
 export function CollectionFooter({
   loading,
@@ -78,6 +78,8 @@ export function CollectionFooter({
 }
 
 export type ContinuousListProps<T> = CollectionFooterProps & {
+  /** Request one remote page near the scroll end. Errors pause automatic retries. */
+  loadOnScroll?: boolean;
   items: readonly T[];
   itemKey: (item: T) => string;
   renderItem: (item: T, index: number) => ReactNode;
@@ -91,6 +93,9 @@ export type ContinuousListProps<T> = CollectionFooterProps & {
   /** Reserve scrollbar space without changing the virtualizer's scroll owner. Unset keeps its gutter. */
   gutter?: ScrollAreaProps["gutter"];
   className?: string;
+  /** Compound settings rows: shared hover/focus fill and hairlines between logical items.
+   * The collection wrapper owns these states so virtualized rows keep the same presentation. */
+  rowAppearance?: "settings";
   /** Fill an already bounded flex pane instead of imposing a settings-list height. */
   fill?: boolean;
   label?: string;
@@ -102,7 +107,7 @@ export type ContinuousListProps<T> = CollectionFooterProps & {
  * `fill` fills an already bounded flex pane.
  * @group data
  * @use Long or growing record lists (inbox, threads, boards) that load more on demand.
- * @avoid Short fixed lists: map them in a plain list. Tree data: TreeView.
+ * @avoid Short fixed lists: map them in a plain list. Tree data: TreeView. Tabular records with columns: DataTable.
  */
 export function ContinuousList<T>(props: ContinuousListProps<T>) {
   return <ContinuousListWindow key={props.stateKey} {...props} />;
@@ -116,9 +121,11 @@ function ContinuousListWindow<T>({
   estimateSize = 64,
   gutter,
   className,
+  rowAppearance,
   requiredKey,
   fill,
   label,
+  loadOnScroll,
   ...footer
 }: ContinuousListProps<T>) {
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -154,6 +161,16 @@ function ContinuousListWindow<T>({
     [retainedRef],
   );
   const windows = virtualizer.getVirtualItems();
+  const requestAtEnd = (event: { currentTarget: HTMLDivElement }) => {
+    const node = event.currentTarget;
+    if (
+      footer.hasMore &&
+      !footer.loading &&
+      !footer.error &&
+      node.scrollHeight - node.scrollTop - node.clientHeight < 160
+    )
+      footer.onLoadMore?.();
+  };
   return (
     <div
       ref={ref}
@@ -162,6 +179,8 @@ function ContinuousListWindow<T>({
         : { className: [styles.scroller, className].filter(Boolean).join(" ") })}
       data-continuous-list={stateKey}
       data-fill={fill || undefined}
+      onScroll={loadOnScroll ? requestAtEnd : undefined}
+      onWheel={loadOnScroll ? requestAtEnd : undefined}
       // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- Native scroll viewport must remain keyboard-focusable.
       tabIndex={0}
     >
@@ -179,11 +198,17 @@ function ContinuousListWindow<T>({
               key={key}
               data-index={row.index}
               data-collection-key={key}
+              data-row-appearance={rowAppearance}
+              data-row-divider={
+                rowAppearance === "settings" ? (row.index > 0 ? "" : undefined) : undefined
+              }
               role={label ? "listitem" : undefined}
               aria-posinset={label ? row.index + 1 : undefined}
               aria-setsize={label ? items.length : undefined}
               ref={virtual ? virtualizer.measureElement : undefined}
-              className={virtual ? styles.virtualRow : undefined}
+              className={[virtual && styles.virtualRow, rowAppearance && styles.settingsRow]
+                .filter(Boolean)
+                .join(" ")}
               style={virtual ? { transform: `translateY(${row.start}px)` } : undefined}
               onFocusCapture={() => setFocusedKey(key)}
               onBlurCapture={(event) => {
@@ -196,7 +221,11 @@ function ContinuousListWindow<T>({
           );
         })}
       </div>
-      <CollectionFooter {...footer} empty={items.length === 0} />
+      <CollectionFooter
+        {...footer}
+        hasMore={loadOnScroll ? false : footer.hasMore}
+        empty={items.length === 0}
+      />
     </div>
   );
 }

@@ -95,6 +95,19 @@ export function SkillGroupsList({
                   if (drag.consumeClick()) {
                     event.preventDefault();
                     event.stopPropagation();
+                    return;
+                  }
+                  // Pointer capture retargets the click to this wrapper; forward it to the control under the pointer.
+                  if (event.target !== event.currentTarget) return;
+                  const hit = document.elementFromPoint(event.clientX, event.clientY);
+                  const control = hit?.closest<HTMLElement>("button, a, [role='button']");
+                  if (
+                    control &&
+                    control !== event.currentTarget &&
+                    event.currentTarget.contains(control)
+                  ) {
+                    event.stopPropagation();
+                    control.click();
                   }
                 }}
               >

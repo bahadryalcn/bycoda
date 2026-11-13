@@ -1,3 +1,4 @@
+import { useTaskModelRouting } from "./TaskModelChoiceField";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { projectDisplayName } from "../../projects/public/projectNames";
@@ -32,7 +33,7 @@ import {
 } from "./TaskFormFields";
 
 export function TaskForm({
-  draft,
+  draft: inputDraft,
   recents,
   machines,
   machine,
@@ -53,7 +54,7 @@ export function TaskForm({
   onChange: (draft: TaskDraft) => void;
   onCancel: () => void;
   /** `todo` and `queued` add a new task; `save` keeps an edited task's status. */
-  onSubmit: (mode: "todo" | "queued" | "save") => void;
+  onSubmit: (mode: "todo" | "queued" | "save", draft: TaskDraft) => void;
 }) {
   useLocale();
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
@@ -74,10 +75,17 @@ export function TaskForm({
     firstProjectOn,
   } = useTaskTargetMachine({
     machines,
-    machineId: draft.machineId,
-    cwd: draft.cwd,
-    discover: !draft.id,
+    machineId: inputDraft.machineId,
+    cwd: inputDraft.cwd,
+    discover: !inputDraft.id,
   });
+  const { supported: routingSupported, choice } = useTaskModelRouting(
+    target,
+    !inputDraft.id,
+    inputDraft.modelChoice,
+  );
+  const draft =
+    choice === inputDraft.modelChoice ? inputDraft : { ...inputDraft, modelChoice: choice };
   // Account profiles are local to this computer; other hosts keep their own account choice.
   const localAccounts = Boolean(target && isLocalSyncMachine(target));
   const workspaceValid = isWorkspaceValid(draft.workspace, workspaceChecks);
@@ -86,6 +94,7 @@ export function TaskForm({
     targetId,
     draft.harness,
     draft.model,
+    draft.modelChoice,
     draft.workspace,
     draft.preflightRequirements,
   ]);
@@ -137,11 +146,11 @@ export function TaskForm({
         if (draft.id) {
           if (canSave) {
             setSubmitMode("save");
-            onSubmit("save");
+            onSubmit("save", draft);
           }
         } else if (canTodo) {
           setSubmitMode("todo");
-          onSubmit("todo");
+          onSubmit("todo", draft);
         }
       }}
       className="task-form"
@@ -171,6 +180,7 @@ export function TaskForm({
                       onChange({
                         ...draft,
                         machineId: id,
+                        modelChoice: undefined,
                         providerAccountId: defaultAccountFor(draft.harness, id),
                         crewDefinitionId: undefined,
                         workspace: undefined,
@@ -202,6 +212,7 @@ export function TaskForm({
                       onChange({
                         ...draft,
                         cwd,
+                        modelChoice: draft.id ? draft.modelChoice : undefined,
                         workspace: undefined,
                         crewDefinitionId: undefined,
                       })
@@ -278,6 +289,8 @@ export function TaskForm({
             {draft.crewDefinitionId ? null : (
               <TaskFormAgent
                 draft={draft}
+                target={target}
+                routingSupported={routingSupported}
                 update={update}
                 onChange={onChange}
                 open={agentOpen}
@@ -292,6 +305,7 @@ export function TaskForm({
             <Disclosure
               variant="card"
               className="task-form-advanced"
+              bodyDividers="pane"
               open={advancedOpen}
               onOpenChange={setAdvancedOpen}
               summary={t("Advanced")}
@@ -411,7 +425,7 @@ export function TaskForm({
               disabledReason={(ready && hasDescription) || saving ? undefined : startReason}
               onClick={() => {
                 setSubmitMode("queued");
-                onSubmit("queued");
+                onSubmit("queued", draft);
               }}
             >
               {t(draft.crewDefinitionId ? "Start with crew" : "Add and start")}

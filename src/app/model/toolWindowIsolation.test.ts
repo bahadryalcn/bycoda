@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { loadBootWorkspace } from "./appLifecycle";
+import { readBindingEvidencePage } from "../../features/connections/model/hostSessionBindingDatabase";
 import {
   isPrimaryWorkspaceWindow,
   replaceInFlightSessions,
@@ -24,10 +25,60 @@ vi.mock("@tauri-apps/api/window", () => ({
   },
 }));
 afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.mocked(readBindingEvidencePage).mockReset().mockResolvedValue([]);
   window.history.replaceState(null, "", "/");
   nativeWindow.label = "main";
   nativeWindow.unavailable = false;
   vi.clearAllMocks();
+});
+
+it.each(["/?tool=tasks&tools=all", "/?tool=notes"])(
+  "waits for session owner storage before booting %s",
+  async (url) => {
+    vi.resetModules();
+    vi.stubGlobal("indexedDB", {});
+    window.history.replaceState(null, "", url);
+    const database = await import("../../features/connections/model/hostSessionBindingDatabase");
+    let finishRead!: () => void;
+    vi.mocked(database.readBindingEvidencePage).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = () => resolve([]);
+        }),
+    );
+    const lifecycle = await import("./appLifecycle");
+    const bindings = await import("../../features/connections/model/sessionExecutionBinding");
+    const boot = lifecycle.loadBootWorkspace();
+    let ready = false;
+    void boot.then(() => {
+      ready = true;
+    });
+    await vi.waitFor(() => expect(finishRead).toBeTypeOf("function"));
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    expect(() => bindings.hostSessionBinding({ id: "session" })).toThrow(
+      "Session owner storage is still loading. Sending is held.",
+    );
+    finishRead();
+    expect(await boot).toEqual({
+      windowTransfer: null,
+      resumed: null,
+      history: [],
+      historyCwd: null,
+    });
+    expect(bindings.hostSessionBinding({ id: "session" })).toBeUndefined();
+    expect(invoke).not.toHaveBeenCalled();
+  },
+);
+
+it("keeps tool boot blocked when session owner storage fails", async () => {
+  vi.resetModules();
+  window.history.replaceState(null, "", "/?tool=tasks&tools=all");
+  vi.mocked(readBindingEvidencePage).mockRejectedValueOnce(new Error("owner storage unavailable"));
+  const lifecycle = await import("./appLifecycle");
+  await expect(lifecycle.loadBootWorkspace()).rejects.toThrow("owner storage unavailable");
+  expect(invoke).not.toHaveBeenCalled();
 });
 
 it("does not consume the main window's resume, transfer or history during tool boot", async () => {

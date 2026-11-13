@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ModelRoutingItemChoiceSchema, ModelRoutingTargetSchema } from "./model-routing";
 import { SafeCounterSchema } from "./schemas";
 import { SessionProviderSchema, SessionRuntimeModeSchema } from "./session-commands";
 import {
@@ -44,6 +45,8 @@ export const TaskPreflightResultSchema = z.strictObject({
 const textMap = z.record(z.string(), z.string());
 const reviewerConfig = z.strictObject({
   harness: SessionProviderSchema,
+  /** The reviewer's own account; omitted reuses the worker's account on the same provider. */
+  providerAccountId: z.string().min(1).optional(),
   model: z.string(),
   modelSettings: textMap,
   instructions: z.string(),
@@ -53,6 +56,7 @@ const inputFields = {
   title: z.string(),
   prompt: z.string(),
   projectId: z.string(),
+  modelChoice: ModelRoutingItemChoiceSchema.optional(),
   harness: SessionProviderSchema,
   model: z.string(),
   runtimeMode: SessionRuntimeModeSchema,
@@ -122,6 +126,10 @@ export const TaskVerificationSchema = z.strictObject({
   acceptance: TaskAcceptanceReportSchema.optional(),
 });
 const metadataFields = {
+  modelRoutingWait: z
+    .strictObject({ reason: z.string(), retryAt: SafeCounterSchema.optional() })
+    .optional(),
+  reviewerTarget: ModelRoutingTargetSchema.optional(),
   workspaceId: z.string().optional(),
   workspaceGenerationId: z.string().optional(),
   workspaceActivityId: z.string().optional(),

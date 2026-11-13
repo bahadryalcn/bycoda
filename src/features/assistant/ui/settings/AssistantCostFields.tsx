@@ -139,8 +139,14 @@ export function AssistantCostFields({
   if (rows)
     return (
       <>
-        {limits}
-        <AdvancedSettings title={t("Advanced worker context limits")} defaultOpen={false}>
+        <AdvancedSettings title={t("Supervisor limits")} keepMounted>
+          {limits}
+        </AdvancedSettings>
+        <AdvancedSettings
+          title={t("Worker context limits")}
+          defaultOpen={!validWorkerContextSettings(value)}
+          keepMounted
+        >
           {workerLimits}
         </AdvancedSettings>
         {contextError}

@@ -31,6 +31,14 @@
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: var(--ui-focus-offset);
 }
+.root[data-interaction-tone="accent"] > .summary:active {
+  color: var(--ui-tone-accent-fg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .root[data-interaction-tone="accent"] > .summary:hover {
+    color: var(--ui-tone-accent-fg);
+  }
+}
 .root[data-size="sm"] > .summary {
   font-size: var(--ui-font-caption);
   line-height: var(--ui-leading-caption);

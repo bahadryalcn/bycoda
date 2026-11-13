@@ -95,7 +95,7 @@ export function splitMiddle(
  * Pure CSS fitting (no observer); the full value stays accessible and shows as an overflow tooltip. Needs a bounded parent (`min-w-0`).
  * @group text
  * @use Paths, branches, model ids and file names in rows or chips where the end matters.
- * @avoid Prose or titles where the start matters: `truncate` class. Multi-line clamping: line-clamp.
+ * @avoid Prose or titles where the start matters: `truncate` class. Multi-line clamping: line-clamp. Ordinary one-line end truncation: Text truncate.
  */
 export const MiddleTruncate = memo(function MiddleTruncate({
   children,

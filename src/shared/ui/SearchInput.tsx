@@ -38,7 +38,7 @@ export type SearchFieldSize = "sm" | "md";
  * Bordered frame around a search input and its adornments; it owns the single hover and focus indicator.
  * `appearance`: `bare` (default), `field` (standalone form look), `quiet` (navigation search).
  * @group fields
- * @use Compose SearchInput with buttons, filters or a SearchInputTrigger inside one frame.
+ * @use Compose SearchInput with buttons or filters inside one frame.
  * @avoid A plain search box needs only SearchInput.
  */
 export const SearchInputGroup = forwardRef<
@@ -62,32 +62,11 @@ export const SearchInputGroup = forwardRef<
 });
 
 /**
- * Looks like search text but is a button that opens a search surface elsewhere.
- * Place it inside a `SearchInputGroup`: the group frame is the single hover/focus surface.
- * @group fields
- * @use Sidebar or toolbar search entry that opens a command palette or search dialog.
- * @avoid A field the user types into: SearchInput.
- */
-export const SearchInputTrigger = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button">>(
-  function SearchInputTrigger({ className, type = "button", ...props }, ref) {
-    return (
-      <button
-        {...props}
-        ref={ref}
-        type={type}
-        data-ui-focus="group"
-        className={[styles.trigger, className].filter(Boolean).join(" ")}
-      />
-    );
-  },
-);
-
-/**
  * Single-line search field with a clear button; clearing fires a real change event and keeps focus in the field.
  * `fieldSize` sm (default, toolbar height) or md (form height); `textSize` and `leading` set the type role of the typed text. Native input events, ref and keys pass through.
  * @group fields
  * @use Filter or search a list, tree or table; standalone or inside a SearchInputGroup.
- * @avoid Choosing from a long option list: SearchableSelect. General text entry: Input.
+ * @avoid Choosing from a long option list: SearchableSelect. General text entry: Input. A plain text field without search behavior: TextField.
  */
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(function SearchInput(
   {

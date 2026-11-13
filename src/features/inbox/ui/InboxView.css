@@ -1,8 +1,10 @@
+/* Hallmark v2.0.0 | shape: app screen | theme: bycoda, existing DESIGN.md | signature: issue queue and board */
+/* Critique: full-width search and aligned actions preserve density; shared controls own appearance and focus. */
 .bycoda-inbox {
   container: inbox / inline-size;
 }
 .inbox-collection-search {
-  flex-basis: 10rem;
+  flex-basis: 12rem;
 }
 .inbox-detail-back {
   display: none;
@@ -17,7 +19,7 @@
   .inbox-list-detail > .inbox-list-panel {
     /* Keep the desktop resize preference intact while filling a single-column view. */
     width: 100% !important;
-    border-inline-end: 0;
+    --surface-frame-visible: 0;
     flex: 1;
   }
   .inbox-list-detail:not([data-detail-open="true"]) > .inbox-detail-pane,
@@ -34,7 +36,7 @@
     width: 100%;
     max-width: none;
     flex: 1;
-    border-inline-start: 0;
+    --surface-frame-visible: 0;
   }
 }
 /* The discussion panel covers the detail pane when the inbox itself is narrow, whatever
@@ -46,7 +48,7 @@
     inset: 0;
     z-index: 10;
     width: auto !important;
-    background: var(--color-background-base);
+    --surface-base-visible: 1;
   }
   .inbox-discussion-resizer {
     display: none;

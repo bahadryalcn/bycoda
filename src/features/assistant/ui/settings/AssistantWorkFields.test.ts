@@ -121,3 +121,11 @@ it("renders no permission picker until a worker execution exists", async () => {
   await setup({ execution: null }, "permissions");
   expect(container.textContent).toBe("");
 });
+
+it("keeps the profile run deadline editable after model settings move", async () => {
+  await setup({ execution });
+  expect(container.textContent).toContain("Maximum run time");
+  const number = container.querySelector<HTMLInputElement>('input[type="number"]');
+  expect(number?.value).toBe("45");
+  expect(observed.patches).toEqual([]);
+});

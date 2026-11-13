@@ -1,5 +1,95 @@
 import { expect, test } from "@playwright/test";
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`tool wrap selected indicator ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/chat/transcript.html?artifacts", {
+        waitUntil: "domcontentloaded",
+      });
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: /^Show output for/ }).click();
+      const wrap = page.getByRole("button", { name: "Wrap lines" });
+      await expect(wrap).toBeVisible();
+      if ((await wrap.getAttribute("aria-pressed")) !== "true") await wrap.click();
+      await expect(wrap).toHaveAttribute("aria-pressed", "true");
+      await expect(wrap).toHaveAttribute("data-selection-indicator", "dot");
+      await page.mouse.move(0, 0);
+      for (const state of ["rest", "hover", "focus"] as const) {
+        if (state === "hover") await wrap.hover();
+        if (state === "focus") {
+          await page.keyboard.press("Tab");
+          await wrap.focus();
+        }
+        const actual = await wrap.evaluate((element) => {
+          const s = getComputedStyle(element);
+          const dot = getComputedStyle(element, "::after");
+          const probe = document.createElement("span");
+          probe.style.background = "var(--ui-tone-accent-fg)";
+          element.appendChild(probe);
+          const accent = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return {
+            background: s.backgroundColor,
+            border: s.borderTopColor,
+            dot: dot.backgroundColor,
+            dotWidth: dot.width,
+            dotHeight: dot.height,
+            accent,
+          };
+        });
+        expect(["rgba(0, 0, 0, 0)", "oklab(0 0 0 / 0)"]).toContain(actual.background);
+        expect(["rgba(0, 0, 0, 0)", "oklab(0 0 0 / 0)"]).toContain(actual.border);
+        expect(actual.dot).toBe(actual.accent);
+        expect(actual.dotWidth).toBe("3px");
+        expect(actual.dotHeight).toBe("3px");
+        await page.screenshot({
+          animations: "disabled",
+          path: `temp/verification/feature-controls/tool-wrap-${state}-${theme}-${width}.png`,
+        });
+      }
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`tool output keyboard focus ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/chat/transcript.html?artifacts", {
+        waitUntil: "domcontentloaded",
+      });
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: /^Show output for/ }).click();
+      const output = page.locator("[data-tool-inspection] pre[tabindex='0']").last();
+      await expect(output).toContainText("output-marker");
+      await page.keyboard.press("Tab");
+      await output.focus();
+      const outline = await output.evaluate((node) => {
+        const s = getComputedStyle(node);
+        const probe = document.createElement("span");
+        probe.style.outline = "2px solid var(--ui-focus-ring-color)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).outlineColor;
+        probe.remove();
+        return { width: s.outlineWidth, offset: s.outlineOffset, color: s.outlineColor, expected };
+      });
+      expect(outline).toEqual({
+        width: "2px",
+        offset: "-2px",
+        color: outline.expected,
+        expected: outline.expected,
+      });
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/tool-output-focus-${theme}-${width}.png`,
+      });
+    });
+
 test("background commands wrap without losing their start and remain separate", async ({
   page,
 }, info) => {

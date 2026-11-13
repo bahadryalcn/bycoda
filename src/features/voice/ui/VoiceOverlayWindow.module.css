@@ -48,18 +48,11 @@
   inline-size: 100%;
   max-block-size: 640px;
   overflow: hidden;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--radius-panel);
   user-select: none;
-}
-/* An undismissed error (the header mark) tints the whole card. */
-.panel:has([data-voice-error]) {
-  border-color: var(--ui-tone-danger-border);
 }
 .panel[data-compact] {
   block-size: 100vh;
   align-content: center;
-  border-radius: var(--radius-pill);
 }
 .header {
   display: flex;
@@ -85,19 +78,12 @@
   flex: 1;
   min-inline-size: 0;
 }
-.status {
-  padding: 0 14px;
-}
 .body {
   max-block-size: 420px;
   overflow: auto;
   overscroll-behavior: contain;
   padding: 2px 14px 12px;
   user-select: text;
-}
-.heard {
-  padding-inline-start: 10px;
-  border-inline-start: 2px solid var(--ui-tone-neutral-border);
 }
 .feedback {
   margin-block-start: 12px;
@@ -108,18 +94,10 @@
 .caption {
   margin: 0;
 }
-.turn {
-  margin: 10px 0;
-}
-.message {
-  margin: 4px 0 0;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
 .actions {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 10px 14px;
 }
@@ -129,24 +107,10 @@
 .actions > * {
   flex-shrink: 0;
 }
-.srOnly {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 /* The side panel is the question's surface; drop the card frame inside it. */
 .side:has([data-question-form]) {
   padding: 0;
 }
 .side :where([data-question-form]) {
   padding: 0;
-}
-.side :where([data-question-form] > form) {
-  border: 0;
-  border-radius: 0;
 }

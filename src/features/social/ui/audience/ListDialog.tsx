@@ -1,36 +1,40 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
-import { InlineError } from "../../../../shared/ui/InlineError";
-import { Modal, ModalActions } from "../../../../shared/ui/Modal";
+import { Modal } from "../../../../shared/ui/Modal";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { SocialList } from "../../model/audience";
 import type { SocialClient } from "../../model/socialClient";
-import { DisabledReason } from "../common/DisabledReason";
 import { errorMessage } from "./audienceModel";
+import { useFormFooter, useTouched } from "./formFooter";
 
 export type ListDialogProps = {
   client: SocialClient;
+  /** The list being renamed. Omit to create a new one. */
+  list?: SocialList;
   onClose: () => void;
-  onCreated: (list: SocialList) => void;
+  onSaved: (list: SocialList) => void;
 };
 
-/** A static list: people are added to it explicitly from the table or a capture rule. */
-export function ListDialog({ client, onClose, onCreated }: ListDialogProps) {
-  const [name, setName] = useState("");
+/** A static list: people are added to it explicitly from the table or a capture rule. Renaming keeps its people. */
+export function ListDialog({ client, list: existing, onClose, onSaved }: ListDialogProps) {
+  const [name, setName] = useState(existing?.name ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
-  const saveState = name.trim()
-    ? { disabled: false as const }
-    : { disabled: true as const, reason: t("Enter a name for the list.") };
+  const { touched, touch } = useTouched();
+  const nameReason = name.trim() ? undefined : t("Enter a name for the list.");
 
   async function save() {
-    if (!name.trim()) return;
+    if (nameReason) return;
     setSaving(true);
     setError(undefined);
     try {
-      const list = await client.lists.save({ name: name.trim(), kind: "static", projectIds: [] });
-      onCreated(list);
+      const list = await client.lists.save({
+        ...(existing ? { id: existing.id } : {}),
+        name: name.trim(),
+        kind: "static",
+        projectIds: existing?.projectIds ?? [],
+      });
+      onSaved(list);
       onClose();
     } catch (err) {
       setError(errorMessage(err));
@@ -39,34 +43,34 @@ export function ListDialog({ client, onClose, onCreated }: ListDialogProps) {
     }
   }
 
+  const footer = useFormFooter({
+    saving,
+    error,
+    blockedReason: nameReason,
+    saveLabel: existing ? t("Save name") : t("Create list"),
+    onSave: () => void save().catch(() => undefined),
+    onCancel: onClose,
+  });
+
   return (
     <Modal
-      title={t("New list")}
-      description={t("Add people to it from the table after you create it.")}
+      title={existing ? t("Rename list") : t("New list")}
+      description={
+        existing
+          ? t("The people in this list stay in it.")
+          : t("Add people to it from the table after you create it.")
+      }
       onClose={() => {
         if (!saving) onClose();
       }}
-      footerStart={error ? <InlineError>{error}</InlineError> : undefined}
-      footer={
-        <ModalActions>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
-            {t("Cancel")}
-          </Button>
-          <DisabledReason
-            variant="primary"
-            loading={saving}
-            {...saveState}
-            onClick={() => void save().catch(() => undefined)}
-          >
-            {t("Create list")}
-          </DisabledReason>
-        </ModalActions>
-      }
+      {...footer}
     >
       <TextField
         label={t("List name")}
         value={name}
         disabled={saving}
+        error={touched("name") ? nameReason : undefined}
+        onBlur={() => touch("name")}
         onChange={(event) => setName(event.target.value)}
       />
     </Modal>

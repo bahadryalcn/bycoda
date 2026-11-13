@@ -34,7 +34,6 @@
   display: block;
   inline-size: 12px;
   block-size: 12px;
-  border: 1px solid var(--ui-text-muted);
 }
 .guide-hub-nav {
   display: flex;
@@ -44,7 +43,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: var(--space-3) var(--space-2);
-  border-inline-end: 1px solid var(--color-stroke);
 }
 .guide-hub-group {
   display: flex;
@@ -153,8 +151,7 @@
     flex-direction: row;
     overflow-x: auto;
     overflow-y: hidden;
-    border-inline-end: 0;
-    border-block-end: 1px solid var(--color-stroke);
+    --surface-frame-stacked: 1;
   }
   .guide-hub-group {
     flex-direction: row;

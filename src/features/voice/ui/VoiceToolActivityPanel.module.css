@@ -9,14 +9,10 @@
   inset-inline-end: 0;
   min-inline-size: 14px;
   padding-inline: 4px;
-  background: var(--ui-tone-neutral-solid, var(--ui-tone-neutral-fg));
   color: var(--ui-surface-floating);
   font-variant-numeric: tabular-nums;
   text-align: center;
   pointer-events: none;
-}
-.trigger[data-running] .count {
-  background: var(--ui-tone-info-fg);
 }
 .popover {
   padding: 8px 10px;

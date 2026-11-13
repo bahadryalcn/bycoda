@@ -37,9 +37,6 @@
 }
 /* Same pane role as the host tools row it sits on (canvas in pure mode), so the
    dock actions never read as a separate, hovered-looking strip. */
-.tools-workspace-toolbar {
-  background: var(--ui-workspace-panel);
-}
 /* Keep dock controls in the shared context row, without a second title bar. */
 .tools-workspace-pane:has(.host-tools) {
   position: relative;
@@ -52,8 +49,6 @@
   block-size: auto;
   min-block-size: var(--ui-control-height-compact);
   padding: 2px 4px;
-  border: 0;
-  background: var(--ui-workspace-panel);
   gap: 0;
 }
 /* The shared context row already names the tool: hide the PaneHeader heading (icon, title, meta). */
@@ -93,7 +88,6 @@
   min-block-size: 0;
   min-inline-size: 0;
   font-family: var(--font-sans, system-ui, sans-serif);
-  background: var(--ui-workspace-canvas);
 }
 .host-tools-placement-trigger {
   flex: none;
@@ -101,14 +95,6 @@
 .runtime-logs-monitor-setup {
   display: grid;
   gap: 6px;
-}
-.runtime-logs-monitor-setup summary {
-  cursor: pointer;
-  padding-block: 6px;
-}
-.runtime-logs-monitor-setup summary:focus-visible {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: var(--ui-focus-offset);
 }
 .runtime-logs-monitor-setup form {
   margin-block-start: 8px;
@@ -202,4 +188,12 @@
     max-inline-size: none;
     flex: 1;
   }
+}
+
+.tools-workspace-dock[data-visible="true"] {
+  display: contents;
+}
+.tools-workspace-dock[data-visible="false"],
+.tools-workspace-pane[data-visible="false"] {
+  display: none;
 }

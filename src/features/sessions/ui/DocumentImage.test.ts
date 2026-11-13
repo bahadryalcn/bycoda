@@ -78,7 +78,7 @@ describe("DocumentImage", () => {
     expect(document.querySelector('[role="tooltip"]')?.textContent).toBe("Upstream");
     expect(image.getAttribute("width")).toBe("600");
     expect(image.getAttribute("align")).toBe("right");
-    expect(image.style.maxInlineSize).toBe("100%");
+    expect(image.className).toContain("[max-inline-size:100%]");
     expect(blobs[0].type).toBe("image/png");
 
     act(() => root.unmount());

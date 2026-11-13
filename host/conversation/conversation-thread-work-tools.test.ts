@@ -25,7 +25,7 @@ const pool = {
   ],
 };
 
-function fixture() {
+function fixture(source = pool) {
   const receipts = new Map<string, string>();
   let records: Array<Record<string, unknown>> = [];
   const store = {
@@ -80,7 +80,7 @@ function fixture() {
       goals as unknown as HostGoals,
       automations as unknown as HostAutomations,
       approve,
-      async () => pool,
+      async () => source,
       track,
     );
   const principal = {
@@ -493,4 +493,20 @@ it("tracks only top-level work the thread started, best effort and without extra
     tools.call("tasks.start", { taskId: "own" }, f.principal, f.authorized, "start-2"),
   ).resolves.toBeDefined();
   expect(track).toHaveBeenCalledWith(expect.objectContaining({ id: "own", title: "Own" }));
+});
+
+it("tasks.create preserves the selected non-default provider account", async () => {
+  const f = fixture({ rows: [poolRow({ providerAccountId: "work" })] });
+  await f
+    .service()
+    .call(
+      "tasks.create",
+      { ...input, execution: { poolRowId: "row-1" } },
+      f.principal,
+      f.authorized,
+      "account-request",
+    );
+  expect(f.tasks.save).toHaveBeenCalledWith(
+    expect.objectContaining({ providerAccountId: "work", model: "gpt" }),
+  );
 });

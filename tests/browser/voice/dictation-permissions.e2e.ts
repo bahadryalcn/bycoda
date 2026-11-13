@@ -53,7 +53,7 @@ for (const theme of ["light", "dark"]) {
         (window as any).fixtureDictation.microphoneResult = "allowed";
       });
       await check.click();
-      await expect(permission).toContainText("Microphone permission is allowed.");
+      await expect(permission).toContainText("Microphone allowed");
       expect(await page.evaluate(() => (window as any).fixtureDictation.microphoneStops)).toBe(1);
       await expect(page.getByRole("textbox", { name: "Message draft" })).toHaveValue(
         "Unsent draft remains here.",
@@ -274,7 +274,7 @@ test("live permission denial returning to prompt clears stale denial without gra
   });
   await expect(permission).toContainText("Microphone permission is requested only");
   await expect(permission).not.toContainText("Microphone access is blocked.");
-  await expect(permission).not.toContainText("Microphone permission is allowed.");
+  await expect(permission).not.toContainText("Microphone allowed");
   expect(await page.evaluate(() => (window as any).fixtureDictation.microphoneRequests)).toBe(1);
 });
 
@@ -295,3 +295,22 @@ test("Turkish dictation controls and permission recovery are localized", async (
     animations: "disabled",
   });
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`settings feedback error visual ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1100 });
+      await page.goto(`/tests/browser/voice/dictation-permissions.html?theme=${theme}`);
+      await page.getByRole("button", { name: "Dictate", exact: true }).click();
+      const feedback = page.locator('.settings-feedback[data-state="error"]');
+      await expect(feedback).toBeVisible();
+      await expect(feedback).toContainText("Microphone access is blocked.");
+      await expect(page.getByRole("textbox", { name: "Message draft" })).toHaveValue(
+        "Unsent draft remains here.",
+      );
+      await feedback.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: join(captures, `feedback-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+    });

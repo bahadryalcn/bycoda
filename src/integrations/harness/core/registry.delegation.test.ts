@@ -72,6 +72,43 @@ function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapte
 }
 
 describe("harness registry: reserved delegation keys", () => {
+  it.each([true, false])(
+    "fresh Codex spawn grant ready=%s controls first-turn hints and notice",
+    async (ready) => {
+      nativeInvoke.mockImplementation(async (command, args) => {
+        if (command === "harness_conversation_tools_bridge") {
+          const request = args as { checkReady?: boolean; prepareSpawn?: boolean };
+          if (request.checkReady) return { ready: request.prepareSpawn === true && ready };
+        }
+        return undefined;
+      });
+      const onEvent = vi.fn();
+      registerHarness(
+        stub("codex", {
+          sendTurn: async (input) => {
+            expect(input.text).toBe("First message");
+            expect(
+              input.runtimeInstructions?.includes("Host delegation is unavailable this turn"),
+            ).toBe(!ready);
+            input.onAccepted?.();
+          },
+        }),
+      );
+      await sendHarnessTurn({
+        harness: "codex",
+        sessionId: `fresh-spawn-${ready}`,
+        cwd: "/tmp",
+        model: defaultModelId("codex"),
+        runtimeMode: "supervised",
+        text: "First message",
+        modelSettings: { crossSubagents: "auto" },
+        onEvent,
+      });
+      expect(
+        onEvent.mock.calls.filter(([event]) => event.key === "delegation-unavailable"),
+      ).toHaveLength(ready ? 0 : 1);
+    },
+  );
   it("maps only same-account Claude choices to native settings", () => {
     const input = {
       harness: "claude",
@@ -186,6 +223,32 @@ describe("harness registry: reserved delegation keys", () => {
       subagentModel: "claude-sonnet-5",
       subagentPolicy: "force",
     });
+  });
+  it("announces delegation fallback once, only after the adapter accepts", async () => {
+    const onEvent = vi.fn();
+    const notices = () =>
+      onEvent.mock.calls.filter(([event]) => event.key === "delegation-unavailable");
+    registerHarness(
+      stub("codex", {
+        sendTurn: async (input: SendTurnInput) => {
+          expect(notices()).toHaveLength(0);
+          input.onAccepted?.();
+          input.onEvent({ type: "turn.started" });
+          expect(notices()).toHaveLength(1);
+        },
+      }),
+    );
+    await sendHarnessTurn({
+      harness: "codex",
+      sessionId: "accepted-delegation-notice",
+      cwd: "/tmp",
+      model: defaultModelId("codex"),
+      runtimeMode: "supervised",
+      text: "Continue",
+      modelSettings: { crossSubagents: "auto" },
+      onEvent,
+    });
+    expect(notices()).toHaveLength(1);
   });
   afterEach(() => {
     nativeEnabled.mockReset().mockReturnValue(false);

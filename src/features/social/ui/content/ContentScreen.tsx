@@ -3,6 +3,7 @@ import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
 import { useMemo, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
+import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Button } from "../../../../shared/ui/Button";
 import { ChevronLeft, ChevronRight, Plus } from "../../../../shared/ui/icons";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
@@ -49,6 +50,7 @@ export function ContentScreen({
   active,
   onNavigate,
 }: SocialScreenProps) {
+  const confirmation = useConfirm();
   const data = useContentData(client, projectId, active);
   const editor = useSocialMediaEditor(client);
   const [view, setView] = useState<CalendarView>("week");
@@ -96,6 +98,18 @@ export function ContentScreen({
     setNotice(undefined);
     setDraft(draftFromCampaign(campaign));
     setOpen(true);
+  };
+  const discard = async () => {
+    const confirmed = await confirmation.confirm({
+      title: t("Discard draft?"),
+      message: t("Your unsaved post will be removed."),
+      confirmLabel: t("Discard draft"),
+      danger: true,
+    });
+    if (confirmed) {
+      setDraft(emptyDraft());
+      setNotice(undefined);
+    }
   };
   const close = () => {
     setOpen(false);
@@ -187,6 +201,28 @@ export function ContentScreen({
           {notice.text}
         </InlineMessage>
       ) : null}
+      {!open && hasUnsaved(draft) ? (
+        <InlineMessage
+          tone="neutral"
+          action={
+            <span className="content-draft-actions">
+              <Button variant="link" layout="text" onClick={() => setOpen(true)}>
+                {t("Resume draft")}
+              </Button>
+              <Button
+                variant="link"
+                layout="text"
+                tone="danger"
+                onClick={() => void discard().catch(() => undefined)}
+              >
+                {t("Discard draft")}
+              </Button>
+            </span>
+          }
+        >
+          {t("You have an unsaved post.")}
+        </InlineMessage>
+      ) : null}
       {!projectId ? (
         <EmptyHint message={t("Choose a project at the top to see its posts.")} />
       ) : data.error ? (
@@ -252,6 +288,7 @@ export function ContentScreen({
           onNavigate={onNavigate}
         />
       ) : null}
+      {confirmation.dialog}
     </section>
   );
 }

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Sequence } from "../../model/outreach";
+import type { CaptureRule } from "../../model/audience";
 import { CaptureRuleForm, type CaptureRuleFormProps } from "./CaptureRuleForm";
 import {
   ACCOUNT,
@@ -10,11 +11,14 @@ import {
   asClient,
   bodyText,
   buttonByText,
-  clientMock,
   clickButton,
+  clientMock,
   fieldByLabel,
   flush,
   mountHost,
+  optionLabels,
+  pickOption,
+  selectedLabel,
   setFieldValue,
   type ClientMock,
   type MountedHost,
@@ -58,7 +62,7 @@ function renderForm(mock: ClientMock, overrides: Partial<CaptureRuleFormProps> =
 /** Fills the two things every rule needs: a name and a target list. */
 async function fillRequired() {
   setFieldValue(fieldByLabel("Rule name"), "  Launch commenters  ");
-  setFieldValue(fieldByLabel("Add them to"), "l1");
+  pickOption("List", "Buyers");
   await flush();
 }
 
@@ -79,15 +83,14 @@ describe("CaptureRuleForm requirements", () => {
     setFieldValue(fieldByLabel("Rule name"), "Launch");
     expect(buttonByText("Save rule")?.disabled).toBe(true);
     expect(bodyText()).toContain("Choose the list the people are added to.");
-    setFieldValue(fieldByLabel("Add them to"), "l1");
+    pickOption("List", "Buyers");
     expect(buttonByText("Save rule")?.disabled).toBe(false);
   });
 
   it("offers only static lists as the target", async () => {
     renderForm(clientMock());
     await flush();
-    const target = fieldByLabel("Add them to") as HTMLSelectElement;
-    const labels = Array.from(target.options).map((option) => option.textContent);
+    const labels = optionLabels("List");
     expect(labels).toContain("Buyers");
     expect(labels).not.toContain("Turkish");
   });
@@ -96,7 +99,7 @@ describe("CaptureRuleForm requirements", () => {
     renderForm(clientMock());
     await flush();
     await fillRequired();
-    setFieldValue(fieldByLabel("Where to look"), "keyword");
+    pickOption("Where to look", "Keyword search");
     await flush();
     expect(buttonByText("Save rule")?.disabled).toBe(true);
     expect(bodyText()).toContain("Enter a keyword or hashtag.");
@@ -121,7 +124,7 @@ describe("CaptureRuleForm actions", () => {
     renderForm(clientMock());
     await flush();
     await fillRequired();
-    setFieldValue(fieldByLabel("Then"), "tag");
+    pickOption("Next step", "Add a tag");
     await flush();
     expect(buttonByText("Save rule")?.disabled).toBe(true);
     expect(bodyText()).toContain("Enter the tag to add.");
@@ -131,11 +134,11 @@ describe("CaptureRuleForm actions", () => {
     renderForm(clientMock());
     await flush();
     await fillRequired();
-    setFieldValue(fieldByLabel("Then"), "enroll");
+    pickOption("Next step", "Start a sequence");
     await flush();
     expect(buttonByText("Save rule")?.disabled).toBe(true);
     expect(bodyText()).toContain("Choose a sequence.");
-    setFieldValue(fieldByLabel("Sequence"), "seq1");
+    pickOption("Sequence", "Welcome");
     expect(buttonByText("Save rule")?.disabled).toBe(false);
   });
 });
@@ -170,13 +173,13 @@ describe("CaptureRuleForm save", () => {
     renderForm(mock);
     await flush();
     await fillRequired();
-    setFieldValue(fieldByLabel("Where to look"), "hashtag");
+    pickOption("Where to look", "Hashtag");
     await flush();
     setFieldValue(fieldByLabel("Keyword or hashtag"), "#launch");
     setFieldValue(fieldByLabel("Language (optional)"), "  tr ");
     setFieldValue(fieldByLabel("Minimum followers (optional)"), "100");
-    setFieldValue(fieldByLabel("Tone (optional)"), "positive");
-    setFieldValue(fieldByLabel("Then"), "tag");
+    pickOption("Tone (optional)", "Positive");
+    pickOption("Next step", "Add a tag");
     await flush();
     setFieldValue(fieldByLabel("Tag"), " hot ");
     clickButton("Save rule");
@@ -197,9 +200,9 @@ describe("CaptureRuleForm save", () => {
     renderForm(mock);
     await flush();
     await fillRequired();
-    setFieldValue(fieldByLabel("Then"), "enroll");
+    pickOption("Next step", "Start a sequence");
     await flush();
-    setFieldValue(fieldByLabel("Sequence"), "seq1");
+    pickOption("Sequence", "Welcome");
     clickButton("Save rule");
     await flush();
     expect(mock.captureRules.save).toHaveBeenCalledWith(
@@ -225,5 +228,77 @@ describe("CaptureRuleForm save", () => {
     expect(props.onSaved).not.toHaveBeenCalled();
     expect(props.onClose).not.toHaveBeenCalled();
     expect(buttonByText("Save rule")?.disabled).toBe(false);
+  });
+});
+
+describe("CaptureRuleForm editing", () => {
+  const existing = {
+    id: "r1",
+    name: "Pricing questions",
+    enabled: true,
+    source: { kind: "keyword", accountId: "acc1", query: "pricing" },
+    filter: { keywords: ["price"], language: "en", minFollowers: 10, sentiment: "negative" },
+    targetListId: "l1",
+    action: { kind: "enroll", sequenceId: "seq1" },
+    createdAt: 5,
+  } as CaptureRule;
+
+  it("opens with every field of the rule and saves under the same id", async () => {
+    const mock = clientMock();
+    const props = renderForm(mock, { rule: existing });
+    await flush();
+    expect(bodyText()).toContain("Edit rule");
+    expect(fieldByLabel("Rule name").value).toBe("Pricing questions");
+    expect(fieldByLabel("Keyword or hashtag").value).toBe("pricing");
+    expect(fieldByLabel("Language (optional)").value).toBe("en");
+    expect(fieldByLabel("Minimum followers (optional)").value).toBe("10");
+    expect(selectedLabel("List")).toBe("Buyers");
+    expect(selectedLabel("Next step")).toBe("Start a sequence");
+
+    setFieldValue(fieldByLabel("Rule name"), "Pricing and plans");
+    clickButton("Save rule");
+    await flush();
+    expect(mock.captureRules.save).toHaveBeenCalledWith({
+      id: "r1",
+      name: "Pricing and plans",
+      source: { kind: "keyword", accountId: "acc1", query: "pricing" },
+      filter: { keywords: ["price"], language: "en", minFollowers: 10, sentiment: "negative" },
+      targetListId: "l1",
+      enabled: true,
+      action: { kind: "enroll", sequenceId: "seq1" },
+    });
+    expect(props.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a switched-off rule off when it is edited", async () => {
+    const mock = clientMock();
+    renderForm(mock, { rule: { ...existing, enabled: false } });
+    await flush();
+    clickButton("Save rule");
+    await flush();
+    expect(mock.captureRules.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "r1", enabled: false }),
+    );
+  });
+});
+
+describe("CaptureRuleForm guidance", () => {
+  it("says there is no list to add people to when only segments exist", async () => {
+    renderForm(clientMock(), { lists: [SEGMENT_LIST] });
+    await flush();
+    expect(bodyText()).toContain("There is no list to add people to.");
+  });
+
+  it("puts the missing name next to the field once the field was left", async () => {
+    renderForm(clientMock());
+    await flush();
+    const name = fieldByLabel("Rule name");
+    expect(name.getAttribute("aria-invalid")).not.toBe("true");
+    act(() => {
+      name.focus();
+      name.blur();
+    });
+    await flush();
+    expect(fieldByLabel("Rule name").getAttribute("aria-invalid")).toBe("true");
   });
 });

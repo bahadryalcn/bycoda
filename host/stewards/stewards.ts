@@ -1,10 +1,17 @@
+import {
+  resolveRunModel,
+  routingRun,
+  routingWait,
+  routingWaitDue,
+  type RoutedRun,
+} from "../tasks/model-routing";
+import { parseHostSteward } from "./routing-input";
 import { assertExpectedConfiguration } from "../configurationConflict";
 import { randomUUID } from "node:crypto";
 import { nextAutomationRunAt } from "../../src/features/automations/model/automationSchedule";
 import {
   MAX_DECLINED,
   normalizeStewardTitle,
-  parseHostSteward,
   parseStewardProposals,
   type HostSteward as StoredHostSteward,
   type StewardRunStatus,
@@ -35,7 +42,8 @@ type ManagedStewardRun = NonNullable<HostSteward["run"]> & {
   workspaceId?: string;
   activityId?: string;
 };
-type HostSteward = StoredHostSteward & { deliveryApprovalRequired?: boolean };
+type HostSteward = StoredHostSteward &
+  RoutedRun & { deliveryApprovalRequired?: boolean; providerAccountId?: string };
 export interface StewardWorkspaceServices {
   policy?: WorkspacePolicyResolver;
   registry: WorkspaceRegistry;
@@ -460,6 +468,26 @@ export class HostStewards {
         await this.skip(steward, openLimitSkip(steward.maxOpen), now);
         return;
       }
+      if (!routingWaitDue(steward, now)) return;
+      const resolution = await resolveRunModel(this.store, "steward", steward);
+      const current = await this.find(steward.id);
+      if (!current || current.updatedAt !== steward.updatedAt || current.run) return;
+      if (!resolution.ok && resolution.reason === "noEligibleEntry") {
+        const wait = routingWait(resolution);
+        await this.write({
+          ...current,
+          modelRoutingWait: wait,
+          lastRunStatus: "skipped",
+          lastRunError: wait.reason,
+          nextRunAt: resolution.nextResetAt ?? now + TICK_MS,
+        });
+        return;
+      }
+      steward = await this.write({
+        ...current,
+        ...(resolution.ok ? resolution.target : {}),
+        modelRoutingWait: undefined,
+      });
       const project = await this.store.project(steward.projectId);
       // Persist the pending identity before an external workspace/provider can
       // be created. Only this owned run may later receive receipt bookkeeping.
@@ -569,6 +597,7 @@ export class HostStewards {
         {
           projectId: steward.projectId,
           harness: steward.harness,
+          providerAccountId: steward.providerAccountId,
           author: { kind: "steward", id: steward.id, name: project.name, reason: "kickoff" },
           model: steward.model,
           modelSettings: steward.modelSettings,
@@ -792,6 +821,8 @@ export class HostStewards {
         prompt: proposal.description,
         projectId: latest.projectId,
         harness: latest.harness,
+        providerAccountId: latest.providerAccountId,
+        modelChoice: routingRun(latest).modelChoice,
         model: latest.model,
         modelSettings: latest.modelSettings,
         runtimeMode: latest.runtimeMode,

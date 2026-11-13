@@ -47,6 +47,7 @@ function render(
   liveStatusInDock = false,
   pendingQuestion = false,
   questionBehavior?: "blocking" | "nonBlocking",
+  pendingOwnerApproval = false,
 ) {
   act(() =>
     root.render(
@@ -57,6 +58,7 @@ function render(
         liveStatusInDock,
         pendingQuestion,
         questionBehavior,
+        pendingOwnerApproval,
         backgroundTasks: ["npm run dev"],
       }),
     ),
@@ -64,6 +66,11 @@ function render(
 }
 
 describe("AgentTranscript background clock", () => {
+  it("pauses working status for application consent without a provider question", () => {
+    render(true, true, false, undefined, true);
+    expect(container.textContent).not.toContain("Working for");
+    expect(container.textContent).toContain("Waiting for approval");
+  });
   it("keeps counting from the prompt that started the run", () => {
     render(true);
     expect(container.textContent).toContain("Working for 1m 35s");

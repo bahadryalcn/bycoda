@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { Text } from "../../../shared/ui/Text";
 import type { RefObject } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -82,8 +83,8 @@ export function InboxSourceRow({
         >
           <TabList
             label={t("Inbox source")}
-            className="min-w-0 basis-0"
-            style={{ flexGrow: tabCount }}
+            className="min-w-0 basis-0 [flex-grow:var(--layout-flex-grow)]"
+            style={{ "--layout-flex-grow": tabCount } as CSSProperties}
           >
             {sources.map((option) => (
               <InboxSourceTab

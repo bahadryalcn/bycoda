@@ -121,6 +121,8 @@ export function FieldLabel({
  * One control frame with intrinsic start and end adornment columns (no guessed padding, no overlapping text).
  * @group fields
  * @status internal
+ * @use Adornment-aware control frame inside Field.
+ * @avoid The complete labeled form row: Field.
  */
 export function FieldControl({
   children,

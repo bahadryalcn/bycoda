@@ -1,8 +1,9 @@
 import { errorText } from "../../../../shared/lib/errors";
 import { Text } from "../../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { TextField } from "../../../../shared/ui/TextField";
+import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
 import { Select } from "../../../../shared/ui/Select";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
@@ -11,6 +12,7 @@ import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { X } from "../../../../shared/ui/icons";
 import {
   assistantJobDraftReady,
+  assistantJobBriefTitle,
   changeAssistantJobDraftKind,
   selectAssistantJobProjects,
 } from "../../model/assistantJobs";
@@ -101,7 +103,7 @@ export function JobReviewDialog() {
     >
       <div className={styles.reviewList}>
         {jobReview.map((draft, index) => (
-          <div className={styles.reviewJob} key={draft.id}>
+          <div {...surfaceAttributes({ separator: "pane-block" }, styles.reviewJob)} key={draft.id}>
             <div className={styles.reviewHead}>
               <SectionLabel as="h3">{t("Request {p0}", { p0: index + 1 })}</SectionLabel>
               <div className={styles.reviewTools}>
@@ -159,15 +161,18 @@ export function JobReviewDialog() {
                 )}
               </div>
             </div>
-            <TextField
+            <TextareaField
               label={t("Request {p0}", { p0: index + 1 })}
               hideLabel
               value={draft.request}
+              minRows={3}
+              maxRows={12}
+              autosize
               disabled={jobReviewFrozen || !!pending}
               maxLength={16000}
               onChange={(event) => {
                 const value = event.currentTarget.value;
-                updateJobDraft(draft.id, { request: value, title: value.trim().slice(0, 300) });
+                updateJobDraft(draft.id, { request: value, title: assistantJobBriefTitle(value) });
               }}
             />
             {draft.kind === "quick" && draft.quickAction?.kind === "note" ? (

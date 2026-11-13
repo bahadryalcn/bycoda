@@ -1,11 +1,10 @@
-import { afterEach, expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { AssistantQuickAutomationJob } from "../../../src/shared/model/host-contracts/assistant";
 import {
   assistantQuickAutomationPoolJob,
+  assistantQuickAutomationConfiguration,
   setQuickAutomationModelPool,
 } from "./assistant-quick-automations";
-
-afterEach(() => setQuickAutomationModelPool(undefined));
 const job = (model: string) =>
   ({
     id: "job",
@@ -18,35 +17,77 @@ const job = (model: string) =>
       runtimeMode: "supervised",
     },
   }) as unknown as AssistantQuickAutomationJob;
-const row = (over: Record<string, unknown>) => ({
-  id: "r",
-  harness: "claude" as const,
-  model: "sonnet",
-  modelSettings: { effort: "high" },
-  runtimeMode: "auto" as const,
-  maxRunMinutes: 30,
-  roles: ["worker" as const],
-  unknownLimit: "use" as const,
-  ...over,
+
+it("stores default routing for an empty voice choice without consulting the worker pool", async () => {
+  const pool = vi.fn(async () => {
+    throw new Error("Worker pool must not be read");
+  });
+  setQuickAutomationModelPool(pool);
+  const result = await assistantQuickAutomationPoolJob(job(""), {
+    harness: "codex",
+    model: "codex:fallback",
+    modelSettings: {},
+  });
+  expect(result.quickAction).toMatchObject({
+    harness: "codex",
+    modelChoice: { kind: "default" },
+    modelSettings: {},
+    runtimeMode: "supervised",
+  });
+  expect(result.quickAction.model.length).toBeGreaterThan(0);
+  expect(pool).not.toHaveBeenCalled();
+  setQuickAutomationModelPool(undefined);
+});
+it("keeps an explicit owner choice as legacy fixed", async () => {
+  const original = job("owner-model");
+  expect(await assistantQuickAutomationPoolJob(original)).toBe(original);
 });
 
-it("fills the voice quick automation model from the first worker pool row", async () => {
-  setQuickAutomationModelPool(async () => ({
-    rows: [row({ id: "chief", model: "opus", roles: ["chief"] }), row({})],
-  }));
-  const resolved = await assistantQuickAutomationPoolJob(job(""));
-  expect(resolved.quickAction).toMatchObject({
-    harness: "claude",
-    model: "sonnet",
-    modelSettings: { effort: "high" },
-    runtimeMode: "auto",
+it("preserves routing and account when building the persisted canonical automation", () => {
+  const original = job("codex:fallback");
+  const configured = {
+    ...original,
+    quickAction: {
+      ...original.quickAction,
+      projectId: "project",
+      name: "Audit",
+      prompt: "Audit",
+      scheduleKind: "daily" as const,
+      minute: 0,
+      time: "09:00",
+      dayOfWeek: 1,
+      maxRunMinutes: 0,
+      maxRunsPerDay: 0,
+      isolate: false,
+      enabled: true,
+      modelChoice: { kind: "pool" as const, poolId: "pool" },
+      providerAccountId: "account",
+    },
+  };
+  expect(assistantQuickAutomationConfiguration(configured)).toMatchObject({
+    modelChoice: { kind: "pool", poolId: "pool" },
+    providerAccountId: "account",
   });
 });
-it("keeps an owner-chosen model and fails when the pool has no worker row", async () => {
-  setQuickAutomationModelPool(async () => ({ rows: [row({})] }));
-  expect((await assistantQuickAutomationPoolJob(job("owner-pick"))).quickAction).toMatchObject({
-    model: "owner-pick",
+
+it("keeps an explicit pool for a model-free item and requires a concrete fallback", async () => {
+  const original = {
+    ...job(""),
+    quickAction: { ...job("").quickAction, modelChoice: { kind: "pool" as const, poolId: "pool" } },
+  };
+  const result = await assistantQuickAutomationPoolJob(original, {
+    harness: "claude",
+    model: "claude:fallback",
+    modelSettings: {},
   });
-  setQuickAutomationModelPool(async () => ({ rows: [row({ roles: ["chief"] })] }));
-  await expect(assistantQuickAutomationPoolJob(job(""))).rejects.toThrow("model pool");
+  expect(result.quickAction).toMatchObject({
+    modelChoice: { kind: "pool", poolId: "pool" },
+    model: "claude:fallback",
+  });
+  await expect(assistantQuickAutomationPoolJob(job(""))).rejects.toThrow("fallback model");
+  const fixed = {
+    ...original,
+    quickAction: { ...original.quickAction, modelChoice: { kind: "fixed" as const } },
+  };
+  await expect(assistantQuickAutomationPoolJob(fixed)).rejects.toThrow("fixed automation");
 });

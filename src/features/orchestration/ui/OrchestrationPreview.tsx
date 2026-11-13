@@ -258,7 +258,7 @@ function InstructionsField({
       }}
       fieldClassName="w-full"
       className="max-h-40 resize-none overscroll-none"
-      style={{ resize: "none", overscrollBehavior: "none" }}
+
       rows={1}
       aria-label={label}
 
@@ -431,7 +431,11 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                 : undefined;
             return (
               <li key={task.id}>
-                <ActionHost className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1">
+                <ActionHost
+                  controlMinHeight="control"
+                  padding={{ inline: "xl", block: "xs" }}
+                  className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                >
                   <Button
                     variant="item"
                     type="button"

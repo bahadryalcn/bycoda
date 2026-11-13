@@ -17,6 +17,3 @@
   max-block-size: clamp(14rem, 44dvh, 24rem);
   padding-block: 4px;
 }
-.project-notification-settings .project-notification-categories {
-  background: transparent;
-}

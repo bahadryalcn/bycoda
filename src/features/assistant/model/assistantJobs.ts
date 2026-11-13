@@ -13,6 +13,17 @@ import {
   type AssistantQuickAutomationAction,
 } from "../../../shared/model/assistantQuickAutomation";
 import { AssistantRequestValidationSchema } from "../../../shared/model/host-contracts/assistant";
+import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
+
+/** A multiline plan keeps its full request, but its title is one readable line within the wire limit. */
+export function assistantJobBriefTitle(request: string) {
+  const lines = request
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const line = lines.find((value) => !/^#{1,6}\s/.test(value)) ?? lines[0] ?? "";
+  return truncateCodeUnits(line.replace(/^#{1,6}\s+/, ""), 300);
+}
 export type AssistantQuickAction = AssistantQuickNoteAction | AssistantQuickAutomationAction;
 
 export type AssistantJobDraft = {
@@ -221,6 +232,12 @@ export function assistantJobDraftRequest(row: AssistantJobDraft): Create {
   if (row.kind === "quick") {
     if (!row.quickAction)
       throw new Error("Review the exact title and content of every personal note.");
+    if (
+      row.quickAction.kind === "automation" &&
+      row.quickAction.modelChoice?.kind === "fixed" &&
+      !row.quickAction.model.trim()
+    )
+      throw new Error("Choose a model for a fixed automation.");
     const input = {
       op: "jobs.create" as const,
       kind: "quick" as const,

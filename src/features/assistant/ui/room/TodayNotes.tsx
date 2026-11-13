@@ -1,3 +1,4 @@
+import { File } from "../../../../shared/ui/icons";
 import { Text } from "../../../../shared/ui/Text";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
@@ -36,7 +37,7 @@ export function TodayNotes({
       <SectionLabel
         as="h2"
         actions={
-          <Button variant="link" onClick={onOpenNotes}>
+          <Button variant="link" startIcon={<File className="icon-sm" />} onClick={onOpenNotes}>
             {t("Open notes")}
           </Button>
         }

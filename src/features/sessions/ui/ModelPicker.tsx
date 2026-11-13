@@ -55,7 +55,6 @@ import { ModelPanel } from "./ModelPanel";
 import { Popover, popupListClassName } from "../../../shared/ui/Popover";
 import { keybindingPressed } from "../../settings/public/settings";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
-import "./ModelPicker.css";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import {
   accountChoicesSnapshot,

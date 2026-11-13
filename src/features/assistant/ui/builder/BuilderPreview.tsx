@@ -3,10 +3,13 @@ import { useMemo, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Button } from "../../../../shared/ui/Button";
+import { ArrowLeft, Check } from "../../../../shared/ui/icons";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { ModalActions, ModalFooter } from "../../../../shared/ui/Modal";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { Surface } from "../../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../../shared/ui/Surface";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import { builderEntries, builderPatch, type BuilderFieldKey } from "../../model/assistantBuilder";
 import { AssistantAvatarMark } from "../AssistantAvatar";
@@ -51,14 +54,16 @@ export function BuilderPreview({
 
   return (
     <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
-      <Text as="p" size="body" tone="inherit" leading="normal" className={styles.summary}>
-        {proposal.summary}
-      </Text>
-      <SectionLabel as="h3">{t("Proposed settings")}</SectionLabel>
+      {entries.length > 0 && (
+        <Text as="p" size="body" tone="inherit" leading="normal" className={styles.summary}>
+          {proposal.summary}
+        </Text>
+      )}
+      {entries.length > 0 && <SectionLabel as="h3">{t("Proposed settings")}</SectionLabel>}
       {entries.length > 0 ? (
         <Surface as="ul" variant="card" padding="none" className={styles.fields}>
           {entries.map((entry) => (
-            <li key={entry.key} className={styles.field}>
+            <li key={entry.key} {...surfaceAttributes({ separator: "block" }, styles.field)}>
               <Checkbox
                 label={entry.label}
                 checked={checked.has(entry.key)}
@@ -104,46 +109,53 @@ export function BuilderPreview({
           {t("The proposal matches your current settings. Nothing to change.")}
         </Text>
       )}
-      <section className={styles.avatarSection} aria-label={t("Avatar")}>
-        <SectionLabel as="h3">{t("Avatar (optional)")}</SectionLabel>
-        {avatar ? (
-          <div className={styles.avatarResult}>
-            <AssistantAvatarMark
-              className={styles.avatarPreview}
-              value={avatar}
-              name={proposal.profile.name ?? current.name ?? ""}
-            />
-            <Checkbox
-              label={t("Use this avatar")}
-              checked={useAvatar}
-              onChange={(event) => setUseAvatar(event.currentTarget.checked)}
-            />
-          </div>
-        ) : null}
-        <AvatarGenerator
-          initialPrompt={proposal.avatarPrompt ?? ""}
-          onGenerated={(next) => {
-            setAvatar(next);
-            setUseAvatar(true);
-          }}
-        />
-      </section>
+      <Disclosure summary={t("Avatar (optional)")}>
+        <section className={styles.avatarSection} aria-label={t("Avatar")}>
+          {avatar ? (
+            <div className={styles.avatarResult}>
+              <AssistantAvatarMark
+                className={styles.avatarPreview}
+                value={avatar}
+                name={proposal.profile.name ?? current.name ?? ""}
+              />
+              <Checkbox
+                label={t("Use this avatar")}
+                checked={useAvatar}
+                onChange={(event) => setUseAvatar(event.currentTarget.checked)}
+              />
+            </div>
+          ) : null}
+          <AvatarGenerator
+            initialPrompt={proposal.avatarPrompt ?? ""}
+            onGenerated={(next) => {
+              setAvatar(next);
+              setUseAvatar(true);
+            }}
+          />
+        </section>
+      </Disclosure>
       <ModalFooter>
         <ModalActions
           start={
-            <Text as="p" leading="snug" className={styles.note}>
+            <InfoPopover label={t("Permissions")}>
               {t(
                 "Permissions stay manual: jobs and autonomy, execution access, projects and computer use are not changed here.",
               )}
-            </Text>
+            </InfoPopover>
           }
         >
-          <Button variant="ghost" type="button" onClick={onBack}>
+          <Button
+            variant="ghost"
+            type="button"
+            startIcon={<ArrowLeft className="icon-sm" />}
+            onClick={onBack}
+          >
             {t("Back to questions")}
           </Button>
           <Button
             variant="primary"
             type="button"
+            startIcon={<Check className="icon-sm" />}
             disabled={nothing}
             onClick={() =>
               onApply(

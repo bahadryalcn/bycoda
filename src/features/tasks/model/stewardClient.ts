@@ -1,3 +1,5 @@
+import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
+import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import {
@@ -50,7 +52,9 @@ export type StewardDraft = {
   minute: number;
   time: string;
   dayOfWeek: number;
+  providerAccountId?: string;
   harness: HarnessId;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -75,7 +79,12 @@ export function stewardMachines(fresh = false): Promise<RemoteMachine[]> {
   return backgroundMachines(HOST_STEWARDS, fresh);
 }
 
-export function newStewardDraft(cwd: string, harness: HarnessId, model: string): StewardDraft {
+export function newStewardDraft(
+  cwd: string,
+  harness: HarnessId,
+  model: string,
+  routingSupported = false,
+): StewardDraft {
   return {
     cwd,
     focus: "",
@@ -85,7 +94,8 @@ export function newStewardDraft(cwd: string, harness: HarnessId, model: string):
     dayOfWeek: 1,
     harness,
     model,
-    modelSettings: {},
+    ...(routingSupported ? { modelChoice: { kind: "default" as const } } : {}),
+    modelSettings: defaultModelSettings(resolveModel(harness, model)),
     runtimeMode: "auto",
     maxProposals: DEFAULT_MAX_PROPOSALS,
     maxOpen: DEFAULT_MAX_OPEN,
@@ -105,6 +115,8 @@ export function draftFromSteward(steward: BoardSteward): StewardDraft {
     time: steward.time,
     dayOfWeek: steward.dayOfWeek,
     harness: steward.harness,
+    ...(steward.modelChoice ? { modelChoice: steward.modelChoice } : {}),
+    providerAccountId: steward.providerAccountId,
     model: steward.model,
     modelSettings: steward.modelSettings,
     runtimeMode: steward.runtimeMode,
@@ -129,6 +141,8 @@ export function hostStewardFromDraft(
     projectId,
     enabled: draft.enabled,
     harness: draft.harness,
+    ...(draft.modelChoice ? { modelChoice: draft.modelChoice } : {}),
+    ...(draft.providerAccountId ? { providerAccountId: draft.providerAccountId } : {}),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,

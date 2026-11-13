@@ -199,7 +199,8 @@ export function CrewRailSection({
               key={crew.id}
               role="listitem"
               selected={menu?.crewId === crew.id}
-              className="group relative flex min-h-(--ui-control-height-compact) items-stretch"
+              controlMinHeight="compact"
+              className="group relative flex items-stretch"
               onContextMenu={openMenuAt}
             >
               <Button

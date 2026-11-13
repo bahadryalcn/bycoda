@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import styles from "./DescriptionList.module.css";
 import { OverflowTooltip } from "./Tooltip";
 
@@ -18,7 +18,8 @@ export function DescriptionList({
   hideTerms = false,
   className,
   children,
-}: {
+  ...props
+}: Omit<ComponentPropsWithoutRef<"dl">, "size"> & {
   columns?: 1 | 2 | "auto";
   size?: "sm" | "md";
   /** Visually hide every term (screen readers still read it) and keep the two-column layout. */
@@ -28,6 +29,7 @@ export function DescriptionList({
 }) {
   return (
     <dl
+      {...props}
       data-columns={columns}
       data-hide-terms={hideTerms || undefined}
       className={[
@@ -49,6 +51,8 @@ export function DescriptionList({
  * One term and value pair inside DescriptionList, grouped in a `div` for valid markup.
  * @group data
  * @status internal
+ * @use One term/value pair inside DescriptionList.
+ * @avoid The complete collection: DescriptionList.
  */
 export function DescriptionItem({
   term,

@@ -5,6 +5,7 @@ import {
 } from "../settings/model/appearancePreferences";
 import { QueryProvider } from "../../app/QueryProvider";
 import "../../app/model/fileUiAdapters";
+import "../model-routing/public/rendererBootstrap";
 import React from "react";
 import { languageReady } from "../../shared/i18n";
 import ReactDOM from "react-dom/client";

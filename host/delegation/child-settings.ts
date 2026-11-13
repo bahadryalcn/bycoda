@@ -6,6 +6,7 @@ import {
 } from "../../src/features/sessions/model/models";
 import {
   EFFORT_LEVELS,
+  subagentEffortCeiling,
   providerModelSettings,
 } from "../../src/shared/model/host-contracts/delegation";
 
@@ -31,6 +32,7 @@ export function childModelSettings(
   explicitEffort?: string,
   maxEffort?: string,
 ): Record<string, string> {
+  maxEffort = subagentEffortCeiling(maxEffort);
   const settings = providerModelSettings(defaultModelSettings(model));
   if (explicitEffort !== undefined && rank(explicitEffort) < 0)
     throw new Error("Unknown effort level.");

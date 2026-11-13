@@ -166,7 +166,9 @@ it("resolves a stored reference by id, keeps transcript title and height, and re
     const preview = host.querySelector("[data-preview-source]")!;
     expect(preview.getAttribute("data-preview-source")).toContain("<p>Neo</p>");
     expect(host.querySelector('section[aria-label="Crew"]')).toBeTruthy();
-    expect((preview.parentElement as HTMLElement).style.height).toBe("900px");
+    expect(
+      (preview.parentElement as HTMLElement).style.getPropertyValue("--inline-visual-height"),
+    ).toBe("900px");
   } finally {
     await act(async () => root.unmount());
     host.remove();

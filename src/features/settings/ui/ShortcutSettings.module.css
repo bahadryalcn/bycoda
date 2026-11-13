@@ -110,11 +110,6 @@
 .list :global(.settings-row) {
   padding-block: 4px;
 }
-@media (hover: hover) and (pointer: fine) {
-  .list :global(.settings-row):hover {
-    background: var(--ui-settings-row-hover);
-  }
-}
 
 /* Wrap the complete editor below its label when the two tracks no longer fit.
    The feedback slot and recorder actions retain their own space at every width. */

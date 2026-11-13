@@ -9,6 +9,8 @@ export const AssistantPresenceViewSchema = z.strictObject({
   status: z
     .strictObject({
       state: z.enum(["present", "idle", "away", "dnd"]),
+      /** The owner's own choice; `state` also reflects this computer's idle or away reading. */
+      choice: AssistantPresenceChoiceSchema.optional(),
       setupComplete: z.boolean(),
       assistantName: z.string().max(80).optional(),
     })
@@ -51,6 +53,14 @@ export const emptyAssistantPresence: AssistantPresenceView = {
   writeError: false,
   retry: null,
 };
+/** The choice a menu marks: the owner's own, or the effective state from a Host without it. */
+export function selectedAssistantPresence(
+  status: AssistantPresenceView["status"],
+): AssistantPresenceChoice | undefined {
+  if (status?.choice) return status.choice;
+  const parsed = AssistantPresenceChoiceSchema.safeParse(status?.state);
+  return parsed.success ? parsed.data : undefined;
+}
 /** A displayed menu always keeps the source it opened against. */
 export function canSetAssistantPresence(
   view: AssistantPresenceView,

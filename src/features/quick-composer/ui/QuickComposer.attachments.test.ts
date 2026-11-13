@@ -109,6 +109,7 @@ afterEach(() => {
 
 it("uploads from the plus menu, preserves attachments on dismissal, and submits them", async () => {
   await attach();
+  expect(container.querySelector('[data-composer-attachment-kind="image"]')).not.toBeNull();
   expect(container.querySelector('button[aria-label="Open image.png full screen"]')).not.toBeNull();
   act(() => button("Close composer").click());
   expect(invoke).toHaveBeenCalledWith("quick_composer_dismiss");

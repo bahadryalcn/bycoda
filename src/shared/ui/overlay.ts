@@ -140,6 +140,12 @@ function restoreFocusFor(entry: Entry) {
     return;
   }
   focusInScope(entry);
+  // Simultaneously mounted nested dialogs capture the same outside opener. It remains
+  // inert after the child closes, so return to the surviving modal's initial control.
+  const modalRoot = modalRoots()[0];
+  const modal = entries.find((item) => item.root === modalRoot);
+  if (modal && !modalRoots().some((root) => root.contains(document.activeElement)))
+    initialFocus(modal).focus({ preventScroll: true });
 }
 /** Outer window listeners must leave Escape to the active overlay stack. */
 export function hasActiveOverlay() {

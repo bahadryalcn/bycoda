@@ -62,11 +62,10 @@ test.beforeEach(async ({ page }) => {
   // Settings defaults are independent of the conversation's provider.
   await page.addInitScript(() =>
     localStorage.setItem(
-      "bycoda.translation.default.v1",
+      "bycoda.lastModel",
       JSON.stringify({
         harness: "claude",
         model: "claude:sonnet-5",
-        providerAccountId: "default",
       }),
     ),
   );
@@ -202,7 +201,7 @@ for (const width of [1280, 800]) {
         page.getByRole("button", { name: "Close translation", exact: true }),
       ).toBeVisible();
       await page.screenshot({ path: `${captures}/${theme}-${width}-translation.png` });
-      await page.getByRole("button", { name: "Original text", exact: true }).click();
+      await page.getByRole("radio", { name: "Original text", exact: true }).click();
       await expect(source).toContainText(quote);
       await page.getByRole("button", { name: "Close translation", exact: true }).click();
       await expect(
@@ -308,3 +307,45 @@ test("citation submit retains exact quote and comment, changed source remains re
     "bycoda-citation:",
   );
 });
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`handoff shared card ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/chat-citations.html?theme=${theme}&handoff`);
+      const card = page.locator("[data-handoff-card]");
+      await expect(card.locator('[data-variant="card"]')).toBeVisible();
+      await expect(card).toContainText("Continue reviewing the shared controls");
+      await mkdir("temp/verification/component-inventory-skills", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/component-inventory-skills/handoff-${theme}-${width}.png`,
+      });
+      await card.getByRole("button", { name: "Remove handoff", exact: true }).click();
+      await expect(card).toHaveCount(0);
+      await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+        "Keep my existing draft.",
+      );
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`citation token available and unavailable ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/chat/chat-citations.html?theme=${theme}&tokenSurface`);
+      const button = page.getByRole("button", { name: "quote1: Fixture citation" });
+      const token = button.locator("[data-surface-tone]");
+      await expect(token).toHaveAttribute("data-surface-tone", "accent");
+      await expect(token).toHaveAttribute("data-surface-ring", "tone-accent");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/citation-available-${theme}-${width}.png`,
+      });
+      await button.click();
+      await expect(token).toHaveAttribute("data-surface-tone", "neutral");
+      await expect(token).toHaveAttribute("data-surface-ring", "tone-neutral");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/citation-unavailable-${theme}-${width}.png`,
+      });
+    });

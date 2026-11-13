@@ -1,3 +1,4 @@
+import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
 import type { ReactNode } from "react";
@@ -34,7 +35,7 @@ function Tile({ value, caption, onOpen }: { value: number; caption: string; onOp
         leading="tight"
         className={styles.tileValue}
       >
-        {value}
+        {formatNumber(value)}
       </Text>
       <Text size="caption" tone="muted" leading="inherit" className={styles.tileCaption}>
         {caption}
@@ -42,7 +43,7 @@ function Tile({ value, caption, onOpen }: { value: number; caption: string; onOp
     </>
   );
   return (
-    <Surface variant="outline" padding="none" className={styles.tile}>
+    <Surface variant="canvas" padding="none" className={styles.tile}>
       {onOpen ? (
         <Button variant="item" layout="stacked" align="start" onClick={onOpen}>
           {body}
@@ -125,52 +126,59 @@ export function TodayGlance({
           onOpen={onOpenHistory}
         />
       </div>
-      <div className={styles.charts}>
-        <ChartBlock title={t("Recent activity")} caption={t("Last 7 days")}>
-          {hasActivity ? (
-            <BarChart
-              label={t("Updates per day")}
-              period={`${range(days[0]!.start)} – ${range(days[days.length - 1]!.start)}`}
-              height={CHART_HEIGHT}
-              formatValue={(value) => formatNumber(value, { maximumFractionDigits: 1 })}
-              data={days.map((day) => ({
-                key: day.key,
-                label: formatDate(day.start, { weekday: "long", month: "short", day: "numeric" }),
-                axisLabel: formatDate(day.start, { weekday: "short" }),
-                value: day.count,
-              }))}
-            />
-          ) : (
-            <EmptyState
-              size="inline"
-              kind="empty"
-              className={styles.muted}
-              description={t("No updates in the last 7 days")}
-            />
-          )}
-        </ChartBlock>
-        <ChartBlock title={t("Jobs by status")} caption={t("Jobs you can see")}>
-          {slices.length ? (
-            <DonutChart
-              label={t("Jobs by status")}
-              size={120}
-              thickness={14}
-              data={slices.map((slice) => ({
-                key: slice.status,
-                label: statusLabel(slice.status),
-                value: slice.count,
-              }))}
-            />
-          ) : (
-            <EmptyState
-              size="inline"
-              kind="empty"
-              className={styles.muted}
-              description={t("No jobs yet")}
-            />
-          )}
-        </ChartBlock>
-      </div>
+      <Disclosure
+        summary={t("Recent activity")}
+        variant="row"
+        textSize="secondary"
+        tone="secondary"
+      >
+        <div className={styles.charts}>
+          <ChartBlock title={t("Recent activity")} caption={t("Last 7 days")}>
+            {hasActivity ? (
+              <BarChart
+                label={t("Updates per day")}
+                period={`${range(days[0]!.start)} – ${range(days[days.length - 1]!.start)}`}
+                height={CHART_HEIGHT}
+                formatValue={(value) => formatNumber(value, { maximumFractionDigits: 1 })}
+                data={days.map((day) => ({
+                  key: day.key,
+                  label: formatDate(day.start, { weekday: "long", month: "short", day: "numeric" }),
+                  axisLabel: formatDate(day.start, { weekday: "short" }),
+                  value: day.count,
+                }))}
+              />
+            ) : (
+              <EmptyState
+                size="inline"
+                kind="empty"
+                className={styles.muted}
+                description={t("No updates in the last 7 days")}
+              />
+            )}
+          </ChartBlock>
+          <ChartBlock title={t("Jobs by status")} caption={t("Jobs you can see")}>
+            {slices.length ? (
+              <DonutChart
+                label={t("Jobs by status")}
+                size={120}
+                thickness={14}
+                data={slices.map((slice) => ({
+                  key: slice.status,
+                  label: statusLabel(slice.status),
+                  value: slice.count,
+                }))}
+              />
+            ) : (
+              <EmptyState
+                size="inline"
+                kind="empty"
+                className={styles.muted}
+                description={t("No jobs yet")}
+              />
+            )}
+          </ChartBlock>
+        </div>
+      </Disclosure>
     </section>
   );
 }

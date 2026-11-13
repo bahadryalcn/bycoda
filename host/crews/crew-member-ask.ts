@@ -191,6 +191,7 @@ export async function askCrewMember(
         `${files ? `Your write scopes: ${files.join(", ")}. Read outside them as needed. ` : ""}Preserve other sessions' work. Do not stage, commit, merge or push.`,
       ].join("\n\n"),
       harness: selected.candidate.harness,
+      providerAccountId: selected.candidate.providerAccountId,
       model: selected.candidate.model,
       modelSettings: {
         ...withCrewTools(selected.candidate.modelSettings, agent),

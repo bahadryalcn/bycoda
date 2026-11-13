@@ -407,3 +407,60 @@ it("keeps recovery actions independent of feedback dismissal", async () => {
   );
   expect(retry).toHaveBeenCalledOnce();
 });
+
+it("retains focused draft when a settings row changes stacking", async () => {
+  const render = (stacked: boolean) =>
+    root.render(
+      createElement(Row, {
+        id: "dynamic-stack",
+        label: "Account",
+        stacked,
+        children: createElement("input", {
+          "aria-label": "Account draft",
+          defaultValue: "initial",
+        }),
+      }),
+    );
+  await act(() => render(false));
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Account draft"]')!;
+  input.value = "unsaved";
+  input.focus();
+  const row = input.closest(".settings-row");
+  expect(row?.getAttribute("data-variant")).toBe("settings");
+  await act(() => render(true));
+  expect(row?.hasAttribute("data-action-host")).toBe(false);
+  expect(container.querySelector(".settings-row")).toBe(row);
+  expect(container.querySelector("input")).toBe(input);
+  expect(input.value).toBe("unsaved");
+  expect(document.activeElement).toBe(input);
+  await act(() => render(false));
+  expect(row?.getAttribute("data-variant")).toBe("settings");
+  expect(container.querySelector("input")).toBe(input);
+  expect(document.activeElement).toBe(input);
+});
+
+it("preserves dependent state and search reveal on settings rows", async () => {
+  await act(() =>
+    root.render(
+      createElement(
+        RevealedSetting.Provider,
+        { value: "dependent" },
+        createElement(Row, {
+          id: "dependent",
+          label: "Dependent",
+          dependsOn: false,
+          disabledReason: "Enable parent",
+          children: createElement("button", null, "Control"),
+        }),
+      ),
+    ),
+  );
+  const row = container.querySelector<HTMLElement>(".settings-row")!;
+  const controls = row.querySelector<HTMLElement>(".settings-row-control")!;
+  expect(row.dataset.revealed).toBe("true");
+  expect(row.dataset.dependent).toBe("true");
+  expect(row.dataset.disabled).toBe("true");
+  expect(controls.getAttribute("aria-disabled")).toBe("true");
+  expect(controls.hasAttribute("inert")).toBe(true);
+  expect(row.textContent).toContain("Enable parent");
+});

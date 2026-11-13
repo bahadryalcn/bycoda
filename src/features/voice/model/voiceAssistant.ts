@@ -2,14 +2,8 @@ import { boundToolOutput } from "./voiceToolOutput";
 import { shouldWaitForVoice } from "./voiceSpeechPolicy";
 import { VOICE_FEATURE_CONTEXT } from "./voiceFeatureLexicon";
 import { VOICE_SHARED_POLICY } from "./voiceInstructions";
-import { canRunHarnessTextPrompt, runHarnessTextPrompt } from "../../../integrations/harness";
-import { nativeModelId } from "../../sessions/model/models";
-import { sessionWorkCwd, type Session } from "../../sessions/model/session";
-import {
-  sessionProviderAccountId,
-  supportsProviderAccounts,
-} from "../../providers/model/providerAccounts";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { runHarnessTextPrompt } from "../../../integrations/harness";
+import type { Session } from "../../sessions/model/session";
 import { monotonicNow, elapsedSince } from "../../../shared/lib/time/timestamps";
 import {
   VOICE_PROGRESS_AFTER_MS,
@@ -19,8 +13,7 @@ import {
   voiceProgressText,
 } from "./voiceAssistantNotices";
 import { personaBlock } from "./voicePrompt";
-import { homeDir } from "../../../platform/tauri/fs";
-import { voiceModelSettings } from "./voiceConversation";
+import { voiceRequest } from "./voiceConversation";
 import {
   voiceRuntimeDeadline,
   voiceToolWaitsForOwner,
@@ -172,14 +165,14 @@ export async function converseWithAssistant(
   input.signal.throwIfAborted();
   if (!input.transcript.trim() || input.transcript.length > 16_000)
     throw new Error("The voice request is empty or too long.");
-  if (!canRunHarnessTextPrompt(input.session.harness))
-    throw new Error("Select a signed-in provider that supports voice side conversations.");
   const limit = input.maxToolCalls ?? 12;
   if (!Number.isInteger(limit) || limit < 1 || limit > 20)
     throw new Error("Voice tool calls must be limited to 1–20 per spoken turn.");
+  const selected = await voiceRequest(input.session);
+  input.signal.throwIfAborted();
   const observations: unknown[] = [];
   try {
-    return await runTurn(input, observations, limit);
+    return await runTurn(input, observations, limit, selected);
   } catch (error) {
     // Cancellation stays silent; any other failure is spoken, bounded and free of internals.
     if (input.signal.aborted) throw error;
@@ -200,19 +193,14 @@ async function runTurn(
   input: VoiceAssistantInput,
   observations: unknown[],
   limit: number,
+  selected: Awaited<ReturnType<typeof voiceRequest>>,
 ): Promise<VoiceAssistantResult> {
   const allowed = new Set(input.tools.map((tool) => tool.name));
   const startedAt = monotonicNow();
   let progressSent = false;
   const attempts = new Map<string, unknown>();
   const request = {
-    harness: input.session.harness,
-    cwd: isRemoteProjectPath(input.session.cwd) ? await homeDir() : sessionWorkCwd(input.session),
-    providerAccountId: supportsProviderAccounts(input.session.harness)
-      ? sessionProviderAccountId(input.session.harness, input.session)
-      : undefined,
-    model: nativeModelId(input.session.model),
-    modelSettings: voiceModelSettings(input.session.modelSettings),
+    ...selected,
     // Read-only native provider mode; application effects remain in execute().
     intent: "plan" as const,
     ephemeral: true,

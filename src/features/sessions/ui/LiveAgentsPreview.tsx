@@ -196,9 +196,15 @@ export function LiveAgentsPreview({
               ? t("Waiting agents")
               : t("Finished agents")
       }
-      className={`min-w-0 shrink-0 ${
-        collapsible ? "mb-2 rounded-lg bg-(--ui-navigation-quiet) data-[collapsed]:mb-0.5" : "px-2"
-      } ${bottomSpacing ? "pb-2" : ""}`}
+      {...surfaceAttributes(
+        {
+          radius: collapsible ? "card" : undefined,
+          variant: collapsible ? "navigation-quiet" : undefined,
+        },
+        `min-w-0 shrink-0 ${
+          collapsible ? "mb-2 data-[collapsed]:mb-0.5" : "px-2"
+        } ${bottomSpacing ? "pb-2" : ""}`,
+      )}
       data-live-agents-preview="full"
       data-live-agents-headline={summary.headline}
       data-collapsed={collapsible && collapsed ? "" : undefined}
@@ -208,10 +214,12 @@ export function LiveAgentsPreview({
           title, summary counts and the collapse control. */}
       <div
         {...surfaceAttributes(
-          { radius: collapsible ? undefined : "card" },
-          collapsible
-            ? ""
-            : "overflow-hidden  border border-(--ui-tone-accent-border) bg-(--ui-tone-accent-subtle)",
+          {
+            radius: collapsible ? undefined : "card",
+            frame: collapsible ? undefined : "accent",
+            tone: collapsible ? undefined : "accent",
+          },
+          collapsible ? "" : "overflow-hidden",
         )}
       >
         {collapsible ? (
@@ -246,7 +254,10 @@ export function LiveAgentsPreview({
               as="p"
               size="caption"
               tone="secondary"
-              className="flex min-w-0 items-center gap-1.5 border border-transparent px-2.5 py-1"
+              {...surfaceAttributes(
+                { frame: "transparent" },
+                "flex min-w-0 items-center gap-1.5 px-2.5 py-1",
+              )}
             >
               <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
                 <StatusDot label={t("Working")} aria-hidden />
@@ -417,7 +428,9 @@ function LiveAgentCard({
   return (
     <Button
       // shrink-0: the explicit min height lets flex squeeze a row below its two lines; the list scrolls instead.
-      className="min-h-(--ui-control-height-compact) min-w-0 shrink-0 flex-col items-stretch gap-0.5 py-1 text-start"
+      controlMinHeight="compact"
+      padding={{ block: "xs" }}
+      className="min-w-0 shrink-0 flex-col items-stretch gap-0.5 text-start"
       fullWidth
       selected={selected}
       variant="item"

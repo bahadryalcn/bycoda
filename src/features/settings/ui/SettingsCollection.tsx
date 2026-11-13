@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -26,7 +27,12 @@ export function CollectionToolbar({
   children?: ReactNode;
 }) {
   return (
-    <div className={["settings-collection-toolbar", className].filter(Boolean).join(" ")}>
+    <div
+      {...surfaceAttributes(
+        { separator: "block" },
+        ["settings-collection-toolbar", className].filter(Boolean).join(" "),
+      )}
+    >
       <div className="settings-collection-search">
         <SearchInput
           appearance="field"

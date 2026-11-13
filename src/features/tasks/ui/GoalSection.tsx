@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef } from "react";
 import { t } from "../../../shared/i18n";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -33,7 +34,7 @@ export function GoalList({
       ref={disclosure}
       variant="row"
       size="sm"
-      className="task-goals-disclosure"
+      {...surfaceAttributes({ frame: "neutral", edge: "bottom" }, "task-goals-disclosure")}
       summary={t("Goals")}
       count={goals.goals.length}
     >

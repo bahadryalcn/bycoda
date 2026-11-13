@@ -88,7 +88,7 @@ for (const [theme, width] of [
     await page.goto(`/tests/browser/usage/usage-budgets.html?page=1&theme=${theme}`);
     const accounts = page.locator(".usage-account");
     await expect(accounts).toHaveCount(4);
-    await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    await page.getByRole("tab", { name: "Limits", exact: true }).click();
     await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
       "aria-valuenow",
       "68",
@@ -113,7 +113,7 @@ for (const [theme, width] of [
       path: `temp/verification/2026-10-18-usage/usage-overview-${theme}-${width}.png`,
       animations: "disabled",
     });
-    const cost = page.getByRole("radio", { name: "Overview", exact: true });
+    const cost = page.getByRole("tab", { name: "Overview", exact: true });
     await cost.focus();
     await page.keyboard.press("ArrowRight");
     await expect(page.getByRole("heading", { name: "Recorded sessions" })).toBeVisible();
@@ -121,14 +121,14 @@ for (const [theme, width] of [
     await expect(page.getByRole("dialog", { name: "Filters" })).toBeVisible();
     await page.keyboard.press("Escape");
     await cost.click();
-    await page.getByRole("radio", { name: "Time analysis", exact: true }).click();
+    await page.getByRole("tab", { name: "Time analysis", exact: true }).click();
     await page.getByRole("button", { name: "Filters", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Filters" })).toBeVisible();
     await page.keyboard.press("Escape");
 
-    await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    await page.getByRole("tab", { name: "Limits", exact: true }).click();
     await page.getByRole("switch", { name: "Show remaining usage", exact: true }).click();
-    await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    await page.getByRole("tab", { name: "Limits", exact: true }).click();
     await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
       "aria-valuenow",
       "32",
@@ -261,3 +261,148 @@ for (const [theme, width, motion] of [
     expect(errors).toEqual([]);
   });
 }
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [800, 1280]) {
+    test(`visual callers usage decision account ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(90_000);
+      page.setDefaultTimeout(10_000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const shot = async (view: string) =>
+        page.screenshot({
+          path: `temp/verification/visual-callers-usage-decision-account/${view}-${theme}-${width}.png`,
+        });
+      for (const view of ["account", "decision", "api", "source-order", "grok", "contribution"]) {
+        await page.goto(
+          `/tests/browser/usage/usage-budgets.html?visualCaller=${view}&theme=${theme}`,
+        );
+        if (view === "account")
+          await expect(
+            page.getByText("No announcements right now.", { exact: true }),
+          ).toBeVisible();
+        if (view === "decision")
+          await expect(
+            page.getByRole("status").filter({ hasText: "Loading" }).first(),
+          ).toBeVisible();
+        if (view === "api")
+          await expect(
+            page.getByRole("dialog", { name: "API provider", exact: true }).getByRole("status"),
+          ).toBeVisible();
+        if (view === "source-order") {
+          await page.getByRole("button", { name: "Fixture source order", exact: true }).click();
+          await expect(
+            page
+              .getByRole("dialog", { name: "Fixture source order", exact: true })
+              .getByText("No sources connected", { exact: true }),
+          ).toBeVisible();
+        }
+        if (view === "grok")
+          await expect(page.getByRole("status").filter({ hasText: "Loading usage" })).toBeVisible();
+        if (view === "contribution")
+          await expect(page.getByText("No records", { exact: true })).toBeVisible();
+        await shot(view);
+      }
+      await page.goto(`/tests/browser/usage/usage-budgets.html?overview=1&theme=${theme}`);
+      await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
+      await page.evaluate(() => {
+        const fixture = window as unknown as {
+          holdUsageVisualReads: () => void;
+          refreshUsageFixture: () => void;
+        };
+        fixture.holdUsageVisualReads();
+        fixture.refreshUsageFixture();
+      });
+      await expect(
+        page
+          .getByRole("status")
+          .filter({ hasText: /Refreshing usage.*Previous results remain visible/ }),
+      ).toBeVisible();
+      await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "true");
+      await shot("overview-pending");
+      await page.goto(`/tests/browser/usage/usage-budgets.html?theme=${theme}`);
+      await expect(
+        page.getByText("No usage budgets. Add a project, session or workspace budget.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await shot("budgets-empty");
+      await page.goto(
+        `/tests/browser/usage/usage-budgets.html?page=1&limits=1&stress=1&theme=${theme}`,
+      );
+      await expect(page.locator(".usage-account")).toHaveCount(5);
+      await expect(page.locator(".usage-account").nth(2).getByRole("alert")).toContainText(
+        "Previous limits remain visible.",
+      );
+      const grokHeading = page.locator('.usage-account[aria-label="Grok"] h4').first();
+      const separation = await grokHeading.evaluate((heading) => {
+        const walker = document.createTreeWalker(heading, NodeFilter.SHOW_TEXT);
+        let text = walker.nextNode();
+        while (text && !text.textContent?.trim()) text = walker.nextNode();
+        const range = document.createRange();
+        range.selectNodeContents(text!);
+        return (
+          heading.querySelector(".usage-quota-reset")!.getBoundingClientRect().top -
+          range.getBoundingClientRect().bottom
+        );
+      });
+      expect(separation).toBeGreaterThanOrEqual(-1);
+      await shot("page-limits-error");
+    });
+  }
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`account shared selection and dividers ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/usage/usage-budgets.html?visualCaller=account-controls&theme=${theme}`,
+      );
+      const avatars = page.locator("[data-account-avatar]");
+      await expect(avatars).toHaveCount(3);
+      for (let n = 0; n < 3; n++) {
+        await expect(avatars.nth(n)).toHaveCSS("width", n === 2 ? "56px" : "24px");
+        await expect(avatars.nth(n).locator("span").first()).toHaveCSS("border-radius", "50%");
+      }
+      const news = page.getByRole("region", { name: "News" });
+      const rows = news.getByRole("listitem");
+      await expect(rows).toHaveCount(3);
+      await expect(rows.first()).toHaveCSS("border-bottom-width", "1px");
+      await expect(rows.last()).toHaveCSS("border-bottom-width", "0px");
+      await page.screenshot({
+        path: `temp/verification/account-shared/${process.env.ACCOUNT_SHARED_PHASE ?? "after"}-news-${theme}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "Open feedback fixture" }).click();
+      const dialog = page.getByRole("dialog", { name: "Send feedback", exact: true });
+      const field = dialog.getByRole("textbox");
+      await field.fill("Keep this unsent feedback draft.");
+      await dialog.getByRole("radio", { name: "Problem", exact: true }).click();
+      await page.keyboard.press("ArrowRight");
+      const selected = dialog.getByRole("radio", { name: "Praise", exact: true });
+      await expect(selected).toBeChecked();
+      await expect(selected).toBeFocused();
+      await expect(field).toHaveValue("Keep this unsent feedback draft.");
+      await page.screenshot({
+        path: `temp/verification/account-shared/${process.env.ACCOUNT_SHARED_PHASE ?? "after"}-feedback-${theme}-${width}.png`,
+      });
+      const actual = await selected.evaluate((node) => {
+        const p = document.createElement("span");
+        p.style.boxShadow = "0 0 0 2px var(--ui-border-accent)";
+        p.style.background = "var(--ui-tone-accent-subtle)";
+        node.appendChild(p);
+        const s = getComputedStyle(node),
+          q = getComputedStyle(p);
+        const result = {
+          shadow: s.boxShadow,
+          background: s.backgroundColor,
+          expectedShadow: q.boxShadow,
+          expectedBackground: q.backgroundColor,
+        };
+        p.remove();
+        return result;
+      });
+      expect(actual.shadow).toBe(actual.expectedShadow);
+      expect(actual.background).toBe(actual.expectedBackground);
+    });

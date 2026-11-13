@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useLocale } from "../../../shared/i18n/git";
 import { Modal } from "../../../shared/ui/Modal";
 import styles from "./GitGraphLayout.module.css";
@@ -32,7 +33,7 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
       className={expandable ? "h-[calc(100dvh-48px)]" : "h-[min(760px,calc(100dvh-48px))]"}
       toolbar={<div className={styles.toolbar}>{toolbar}</div>}
     >
-      <div className="flex min-h-0 flex-1 flex-col border-t border-(--ui-pane-border)">
+      <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "flex min-h-0 flex-1 flex-col")}>
         {children}
       </div>
     </Modal>

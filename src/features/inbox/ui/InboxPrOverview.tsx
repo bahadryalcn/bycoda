@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -182,7 +183,13 @@ export function InboxPrChangesGlance({
       {diff && files.length === 0 ? (
         <EmptyState size="inline" kind="empty" description={t("No file changes")} />
       ) : shown.length > 0 ? (
-        <Surface as="ul" variant="outline" padding="none" className="flex flex-col overflow-hidden">
+        <Surface
+          as="ul"
+          variant="outline"
+          padding="none"
+          dividers="neutral"
+          className="flex flex-col overflow-hidden"
+        >
           {shown.map((file) => {
             const slash = file.path.lastIndexOf("/");
             const dir = slash >= 0 ? file.path.slice(0, slash + 1) : "";
@@ -191,10 +198,7 @@ export function InboxPrChangesGlance({
             const width = Math.max(8, Math.round((churn / maxChurn) * 48));
             const added = churn > 0 ? (file.additions / churn) * width : 0;
             return (
-              <li
-                key={file.path}
-                className="border-b border-(--ui-tone-neutral-border) last:border-b-0"
-              >
+              <li key={file.path}>
                 <Button
                   variant="ghost"
                   type="button"
@@ -221,12 +225,22 @@ export function InboxPrChangesGlance({
                     aria-hidden
                     {...surfaceAttributes(
                       { radius: "pill" },
-                      "flex h-1.5 shrink-0 overflow-hidden @max-[420px]/linked:hidden",
+                      "flex h-1.5 shrink-0 overflow-hidden @max-[420px]/linked:hidden [width:var(--layout-width)]",
                     )}
-                    style={{ width }}
+                    style={
+                      {
+                        "--layout-width": width === undefined ? undefined : width + "px",
+                      } as CSSProperties
+                    }
                   >
-                    <span className="shrink-0 bg-diff-add" style={{ width: added }} />
-                    <span className="flex-1 bg-diff-del" />
+                    <span
+                      {...surfaceAttributes(
+                        { variant: "diff-add" },
+                        "shrink-0 [width:var(--layout-added-width)]",
+                      )}
+                      style={{ "--layout-added-width": `${added}px` } as CSSProperties}
+                    />
+                    <span {...surfaceAttributes({ variant: "diff-delete" }, "flex-1")} />
                   </span>
                   <DiffStat
                     additions={file.additions}

@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { getLocale } from "../../../shared/i18n";
 import type { AssistantProfile } from "../../../shared/model/host-contracts/assistant";
 import { localVoiceBackend } from "../model/localVoiceClient";
+import { useActiveDictations } from "../model/dictationActivity";
 import {
   isVoiceConversationActive,
   subscribeVoiceConversationActivity,
@@ -40,6 +41,7 @@ type Input = {
  * A match asks Talk to start exactly like its button; the listener has released the microphone first.
  */
 export function useVoiceWake({ settings, profile, manualPresence }: Input) {
+  const dictations = useActiveDictations();
   const conversationActive = useSyncExternalStore(
     subscribeVoiceConversationActivity,
     isVoiceConversationActive,
@@ -53,7 +55,12 @@ export function useVoiceWake({ settings, profile, manualPresence }: Input) {
     (presence === "active" || presence === "idle") &&
     manualPresence !== "away" &&
     manualPresence !== "dnd";
-  const armed = settings.wakeEnabled === true && present && !conversationActive && !handoff;
+  const armed =
+    settings.wakeEnabled === true &&
+    present &&
+    !conversationActive &&
+    !dictations.length &&
+    !handoff;
   const language = voiceLanguageCode(profile.language) ?? locale.split("-")[0];
   const configValue = voiceRuntimeSettings({ ...settings, natural: false });
   const configKey = JSON.stringify(configValue);

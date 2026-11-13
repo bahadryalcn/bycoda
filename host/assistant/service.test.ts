@@ -9,6 +9,52 @@ import { chiefContextAction, tokenBudgetMode, workerContextAction } from "./cost
 import { AssistantModelsHeldError } from "./models/assistant-model-execution";
 import { AssistantTextPreflightError } from "./core/assistant-text-budget";
 
+it("keeps job planning separate, durable and text-only before explicit job admission", async () => {
+  const reply = vi.fn(async () => ({ text: "Brief: revise the release notes.", tokens: 12 }));
+  const createGoal = vi.fn(async () => ({ goalId: "never" }));
+  const roomManagement = vi.fn(async () => {
+    throw new Error("Planning must not run tools");
+  });
+  const f = await setup({ reply, createGoal, roomManagement });
+  await f.configure();
+  const global = (await f.request({ op: "threads.open" })).thread!;
+  const input = { op: "threads.open", purpose: "job-planning", projectId: "project" };
+  const plan = (await f.request(input)).thread!;
+  expect(plan).toMatchObject({ purpose: "job-planning", projectId: "project" });
+  expect(plan.id).not.toBe(global.id);
+  await f.service.request(
+    {
+      op: "threads.send",
+      threadId: plan.id,
+      via: "text",
+      text: "Help refine a release-notes job",
+      idempotencyKey: "plan-one",
+    },
+    "owner",
+    { environmentId: "test-host", deviceHash: "owner", authorized: async () => true },
+  );
+  expect(reply).toHaveBeenCalledTimes(1);
+  expect(createGoal).not.toHaveBeenCalled();
+  expect(roomManagement).not.toHaveBeenCalled();
+  expect((await f.request({ op: "snapshot" })).snapshot!.jobs).toEqual([]);
+  await f.restart();
+  expect((await f.request(input)).thread!.id).toBe(plan.id);
+  expect((await f.request({ op: "threads.messages", threadId: plan.id })).messages).toHaveLength(2);
+  reply.mockRejectedValueOnce(new Error("Provider result unknown"));
+  const uncertain = {
+    op: "threads.send",
+    threadId: plan.id,
+    via: "text",
+    text: "Refine the scope",
+    idempotencyKey: "plan-uncertain",
+  };
+  await expect(f.request(uncertain)).rejects.toThrow("Provider result unknown");
+  await f.restart();
+  await expect(f.request(uncertain)).rejects.toThrow("uncertain outcome");
+  expect(reply).toHaveBeenCalledTimes(2);
+  expect(roomManagement).not.toHaveBeenCalled();
+});
+
 it("reads the profile alone, without Room history that needs project disclosure", async () => {
   const f = await setup({});
   await f.request({ op: "threads.open" });

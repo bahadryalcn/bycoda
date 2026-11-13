@@ -1,3 +1,7 @@
+import { resolveGoalRunModel } from "./model-routing";
+import { routingRun, routingWait, routingWaitDue } from "../tasks/model-routing";
+import { parseHostGoal } from "./routing-input";
+import { lastTurnReply } from "../sessions/turn-reply";
 import { flatMapAsync, mapAsync, someAsync } from "../async-collections";
 import { deferredAssistantTurn } from "../assistant/core/assistant-turn-policy";
 import { createHash, randomUUID } from "node:crypto";
@@ -10,7 +14,6 @@ import {
   goalPlanNeedsApproval,
   goalPlanReviews,
   parseGoalPlan,
-  parseHostGoal,
   type GoalPlan,
   type GoalSettings,
 } from "../../src/features/tasks/model/hostGoals";
@@ -682,13 +685,16 @@ export class HostGoals {
   }
   /** Starts the planner in the lead project's folder. */
   private async plan(goal: HostGoal, reviewed?: HostGoal): Promise<HostGoal> {
+    if (goal.plannerSessionId || !routingWaitDue(goal, this.now())) return goal;
     if (!(await this.tasks.goalExecutionAllowed(goal.id))) return goal;
     if (this.assistantPlanning.has(goal.id)) return (await this.find(goal.id)) ?? goal;
     this.assistantPlanning.add(goal.id);
     let admitted: HostGoal | undefined;
     try {
       if (reviewed) admitted = await this.store.transaction(() => this.write(goal, reviewed));
-      else if (goal.id.startsWith("assistant-"))
+      else if (goal.id.startsWith("assistant-")) {
+        // Later writes spread `goal`; keep the admitted planning status in it.
+        goal = { ...goal, status: "planning" };
         await this.store.transaction(async () => {
           const current = await this.find(goal.id);
           if (
@@ -697,8 +703,10 @@ export class HostGoals {
             current?.status === "cancelled"
           )
             throw new Error("The original assistant goal is held or awaits an owner restart.");
-          await this.write({ ...goal, status: "planning" });
+          await this.write(goal);
         }, "critical");
+      }
+      admitted ??= await this.find(goal.id);
       const now = this.now();
       const budget = await this.tasks.budgets.evaluate({ goalId: goal.id }, goal.budget, {
         starting: true,
@@ -734,6 +742,24 @@ export class HostGoals {
       } catch (error) {
         return await this.blockPlanning(goal, errorMessage(error), now, admitted);
       }
+      const { resolution, target: plannerTarget } = await resolveGoalRunModel(
+        this.store,
+        goal,
+        "goal.planner",
+      );
+      if (!resolution.ok && resolution.reason === "noEligibleEntry") {
+        const wait = routingWait(resolution);
+        if (JSON.stringify(goal.modelRoutingWait) === JSON.stringify(wait)) return goal;
+        return await this.write(
+          { ...goal, modelRoutingWait: wait, error: wait.reason, updatedAt: now },
+          admitted,
+        );
+      }
+      goal = await this.write(
+        { ...goal, plannerTarget, modelRoutingWait: undefined, error: undefined },
+        admitted,
+      );
+      if (admitted) admitted = goal;
       const checkAdmission = async () => {
         if (!admitted) return;
         const current = await this.find(goal.id);
@@ -759,10 +785,10 @@ export class HostGoals {
             ...(projects.find((project) => project.lead)?.workingCwd
               ? { worktreeCwd: projects.find((project) => project.lead)!.workingCwd }
               : {}),
-            harness: (goal.plannerExecution ?? goal).harness,
-            providerAccountId: (goal.plannerExecution ?? goal).providerAccountId,
-            model: (goal.plannerExecution ?? goal).model,
-            modelSettings: (goal.plannerExecution ?? goal).modelSettings,
+            harness: plannerTarget.harness,
+            providerAccountId: plannerTarget.providerAccountId,
+            model: plannerTarget.model,
+            modelSettings: plannerTarget.modelSettings,
             runtimeMode: goal.runtimeMode,
             title: `Plan: ${goal.title}`.slice(0, 200),
             author: { kind: "task", id: goal.id, name: goal.title, reason: "planning" },
@@ -994,12 +1020,7 @@ export class HostGoals {
     // The planner's whole last turn: the plan may sit in an earlier message
     // than its last one, or in a plan block when it answered in plan mode.
     const blocks = (await this.store.session(goal.plannerSessionId ?? "")).session.blocks;
-    const lastUser = blocks.findLastIndex((block) => block.role === "user");
-    const reply = blocks
-      .slice(lastUser + 1)
-      .filter((block) => (block.role === "assistant" || block.role === "plan") && block.text.trim())
-      .map((block) => block.text)
-      .join("\n\n");
+    const reply = lastTurnReply(blocks, { includePlan: true });
     const paths = new Map(
       await mapAsync(goal.projectIds, async (projectId) => [
         (await this.store.project(projectId)).cwd,
@@ -1060,6 +1081,7 @@ export class HostGoals {
           prompt: task.prompt,
           projectId,
           harness: goal.harness,
+          modelChoice: routingRun(goal).modelChoice,
           providerAccountId: goal.providerAccountId,
           model: goal.model,
           modelSettings: goal.modelSettings,
@@ -1300,6 +1322,7 @@ export class HostGoals {
     if (goal.status !== "running") return;
     if (!(await this.tasks.goalExecutionAllowed(goal.id))) return;
     if (await this.attachFinalReceipt(goal, now)) return;
+    if (goal.finalAcceptance?.sessionId || !routingWaitDue(goal, now)) return;
     if (await this.tasks.limits.reached()) return;
     const budget = await this.tasks.budgets.evaluate({ goalId: goal.id }, goal.budget, {
       starting: true,
@@ -1400,9 +1423,31 @@ export class HostGoals {
           ),
         };
       });
+      const { resolution, target: finalReviewTarget } = await resolveGoalRunModel(
+        this.store,
+        goal,
+        "goal.finalReview",
+      );
+      const fresh = await this.find(goal.id);
+      if (!fresh || fresh.updatedAt !== current.updatedAt || fresh.finalAcceptance?.sessionId)
+        return;
+      if (!resolution.ok && resolution.reason === "noEligibleEntry") {
+        const wait = routingWait(resolution);
+        if (JSON.stringify(goal.modelRoutingWait) !== JSON.stringify(wait))
+          await this.write({
+            ...fresh,
+            modelRoutingWait: wait,
+            error: wait.reason,
+            updatedAt: now,
+          });
+        return;
+      }
       const launchAt = this.now();
       goal = await this.write({
         ...current,
+        finalReviewTarget,
+        modelRoutingWait: undefined,
+        error: undefined,
         finalAcceptance: {
           ...current.finalAcceptance!,
           startedAt: launchAt,
@@ -1421,10 +1466,10 @@ export class HostGoals {
             ? { workspaceMode: goal.isolate ? ("worktree" as const) : ("current" as const) }
             : {}),
           worktreeCwd: projects.find((project) => project.id === goal.leadProjectId)!.cwd,
-          harness: goal.harness,
-          providerAccountId: goal.providerAccountId,
-          model: goal.model,
-          modelSettings: goal.modelSettings,
+          harness: finalReviewTarget.harness,
+          providerAccountId: finalReviewTarget.providerAccountId,
+          model: finalReviewTarget.model,
+          modelSettings: finalReviewTarget.modelSettings,
           runtimeMode: goal.runtimeMode,
           title: `Final review: ${goal.title}`.slice(0, 200),
           author: { kind: "task", id: goal.id, name: goal.title, reason: "final review" },
@@ -1571,12 +1616,13 @@ export class HostGoals {
         session.runId === final.runId &&
         session.projectId === goal.leadProjectId &&
         session.session.cwd === cwd &&
-        session.session.harness === goal.harness &&
+        session.session.harness === (goal.finalReviewTarget ?? goal).harness &&
         (session.session.providerAccountId ?? "default") ===
-          (goal.providerAccountId ?? "default") &&
-        session.session.model === goal.model &&
+          ((goal.finalReviewTarget ?? goal).providerAccountId ?? "default") &&
+        session.session.model === (goal.finalReviewTarget ?? goal).model &&
         session.session.runtimeMode === goal.runtimeMode &&
-        JSON.stringify(session.session.modelSettings) === JSON.stringify(goal.modelSettings)
+        JSON.stringify(session.session.modelSettings) ===
+          JSON.stringify((goal.finalReviewTarget ?? goal).modelSettings)
       );
     } catch {
       return false;
@@ -1797,12 +1843,7 @@ export class HostGoals {
       return;
     }
     const blocks = reviewedSession.session.blocks;
-    const lastUser = blocks.findLastIndex((block) => block.role === "user");
-    const reply = blocks
-      .slice(lastUser + 1)
-      .filter((block) => block.role === "assistant" && block.text.trim())
-      .map((block) => block.text)
-      .join("\n\n");
+    const reply = lastTurnReply(blocks);
     const review = parseReviewVerdict(reply);
     if (
       (review.note === NO_VERDICT || !hasTaskAcceptanceReport(reply, FINAL_ACCEPTANCE_CRITERIA)) &&

@@ -1,3 +1,7 @@
+import {
+  ModelRoutingItemChoiceSchema,
+  type ModelRoutingItemChoice,
+} from "../../../shared/model/host-contracts/model-routing";
 import { isRemoteProvider, type RemoteProvider } from "../../connections/model/protocol";
 import type { RuntimeMode } from "../../sessions/model/session";
 import { parseAppearance, parseAvatar, parseHandle, type CrewAppearance } from "./crewIdentity";
@@ -19,9 +23,6 @@ export const HOST_CREW_ACTIVE = "crews.active.v1";
 export const HOST_CREW_MEMBER_ASK = "crews.member.ask.v1";
 /** Members carry a tool profile the Host enforces on their Conversation Tool calls. */
 export const HOST_CREW_TOOLS = "crews.tools.v1";
-/** Host-wide named model pools (`crews.pools.list|save|delete`); members reference one by id. */
-export const HOST_CREW_MODEL_POOLS = "crews.model-pools.v1";
-export const CREW_MODEL_POOL_LIMIT = 50;
 export const CREW_CAPABILITIES = [
   "code",
   "review",
@@ -37,6 +38,7 @@ export type CrewCandidate = {
   id: string;
   harness: RemoteProvider;
   model: string;
+  providerAccountId?: string;
   modelSettings: Record<string, string>;
   capabilities: Partial<
     Record<
@@ -44,11 +46,6 @@ export type CrewCandidate = {
       { state: "available" | "unavailable" | "unknown"; observedAt: number; source: string }
     >
   >;
-  /** Comparable owner estimates, not provider billing or invented benchmarks. */
-  cost?: number;
-  quality?: number;
-  qualitySource?: "owner-estimate" | "review-history";
-  samples?: number;
 };
 export type CrewAgent = {
   id: string;
@@ -56,6 +53,7 @@ export type CrewAgent = {
   role: CrewRole;
   instructions: string;
   selection: "fixed" | "automatic";
+  modelChoice?: ModelRoutingItemChoice;
   candidates: CrewCandidate[];
   /** Specialty groups such as UI or Mobile; independent from the working role. */
   groups?: string[];
@@ -69,26 +67,11 @@ export type CrewAgent = {
   handle?: string;
   /** Narrows the member's session tools; absent means unchanged. */
   tools?: CrewToolProfile;
-  /** An automatic member that takes its candidates from this model pool; `candidates` is the Host's copy. */
-  pool?: { id: string };
-};
-/** An owner-defined set of automatic candidates shared by every member that references it. */
-export type CrewModelPool = {
-  id: string;
-  name: string;
-  candidates: CrewCandidate[];
-  updatedAt: number;
 };
 export type CrewPolicy = {
-  preset: "economy" | "balanced" | "quality";
   maxParallel: number;
   maxAssignments: number;
   maxRunMinutes: number;
-  maxEstimatedCost?: number;
-  minimumQuality?: number;
-  costWeight?: number;
-  qualityWeight?: number;
-  allowUnknownCost: boolean;
   allowSubagents: boolean;
   delegateApprovals?: boolean;
   /** Access mode for every member session of a run started from the owner UI. */
@@ -116,6 +99,12 @@ export type CrewMessage = {
   taskId?: string;
   createdAt: number;
   resolvedAt?: number;
+  routingWait?: {
+    memberId: string;
+    required: CrewCapability[];
+    nextResetAt?: number;
+    requestFingerprint?: string;
+  };
 };
 export type CrewAssignment = {
   id: string;
@@ -140,6 +129,8 @@ export type CrewRun = {
   status: "active" | "paused" | "finished";
   coordinatorSessionId?: string;
   coordinatorCandidate?: CrewCandidate;
+  /** No session exists yet; retry routing on the next scheduler tick/reset. */
+  routingWait?: { nextResetAt?: number };
   launch?: { candidate: CrewCandidate; runtimeMode: RuntimeMode; prompt: string };
   requestFingerprint?: string;
   assignments: CrewAssignment[];
@@ -160,11 +151,9 @@ export function crewWorkTitle(prompt: string | undefined): string | undefined {
   return line.length > 72 ? `${line.slice(0, 71).trimEnd()}…` : line;
 }
 export const defaultCrewPolicy: CrewPolicy = {
-  preset: "balanced",
   maxParallel: 2,
   maxAssignments: 20,
   maxRunMinutes: 30,
-  allowUnknownCost: true,
   allowSubagents: false,
 };
 
@@ -208,10 +197,9 @@ export function parseCrewCandidate(value: unknown): CrewCandidate {
     id: text(c.id),
     harness: c.harness,
     model: text(c.model),
+    ...(c.providerAccountId === undefined ? {} : { providerAccountId: text(c.providerAccountId) }),
     modelSettings: settings as Record<string, string>,
     capabilities,
-    ...(c.cost === undefined ? {} : { cost: number(c.cost, 0, 1_000_000) }),
-    ...(c.quality === undefined ? {} : { quality: number(c.quality, 0, 100) }),
   };
 }
 export function parseCrewAgent(value: unknown): CrewAgent {
@@ -238,13 +226,15 @@ export function parseCrewAgent(value: unknown): CrewAgent {
   const avatar = a.avatar === undefined ? undefined : parseAvatar(a.avatar);
   const handle = a.handle === undefined ? undefined : parseHandle(a.handle);
   const tools = a.tools === undefined ? undefined : parseCrewTools(a.tools);
-  const pool = a.pool === undefined ? undefined : { id: text(record(a.pool).id) };
   return {
     id: text(a.id),
     name: text(a.name),
     role: a.role as CrewRole,
     instructions: typeof a.instructions === "string" ? a.instructions.slice(0, 12000) : "",
     selection: a.selection,
+    ...(a.modelChoice === undefined
+      ? {}
+      : { modelChoice: ModelRoutingItemChoiceSchema.parse(a.modelChoice) }),
     candidates,
     ...(groups?.length ? { groups } : {}),
     ...(source ? { source } : {}),
@@ -252,31 +242,12 @@ export function parseCrewAgent(value: unknown): CrewAgent {
     ...(avatar ? { avatar } : {}),
     ...(handle ? { handle } : {}),
     ...(tools ? { tools } : {}),
-    ...(pool && a.selection === "automatic" ? { pool } : {}),
-  };
-}
-
-/** Validates a model pool at the trust boundary; `updatedAt` is the Host's, never the caller's. */
-export function parseCrewModelPool(value: unknown): CrewModelPool {
-  const p = record(value);
-  if (!Array.isArray(p.candidates) || !p.candidates.length || p.candidates.length > 20)
-    throw new Error("Choose 1 to 20 models for a pool");
-  const candidates = p.candidates.map(parseCrewCandidate);
-  if (new Set(candidates.map((c) => c.id)).size !== candidates.length)
-    throw new Error("Duplicate candidate IDs");
-  return {
-    id: text(p.id),
-    name: text(p.name, 80),
-    candidates,
-    updatedAt: typeof p.updatedAt === "number" ? p.updatedAt : 0,
   };
 }
 
 export function parseCrewDefinition(value: unknown): CrewDefinition {
   const input = record(value);
   const p = record(input.policy);
-  if (!["economy", "balanced", "quality"].includes(String(p.preset)))
-    throw new Error("Invalid allocation policy");
   if (!Array.isArray(input.agents) || input.agents.length < 3 || input.agents.length > 20)
     throw new Error("Choose 3 to 20 crew members, including a coordinator and reviewer");
   const agents = input.agents.map(parseCrewAgent);
@@ -302,19 +273,9 @@ export function parseCrewDefinition(value: unknown): CrewDefinition {
     agents,
     ...(appearance ? { appearance } : {}),
     policy: {
-      preset: p.preset as CrewPolicy["preset"],
       maxParallel,
       maxAssignments,
       maxRunMinutes: number(p.maxRunMinutes, 1, 240),
-      ...(p.maxEstimatedCost === undefined
-        ? {}
-        : { maxEstimatedCost: number(p.maxEstimatedCost, 0, 1_000_000) }),
-      ...(p.minimumQuality === undefined
-        ? {}
-        : { minimumQuality: number(p.minimumQuality, 0, 100) }),
-      ...(p.costWeight === undefined ? {} : { costWeight: number(p.costWeight, 0, 1) }),
-      ...(p.qualityWeight === undefined ? {} : { qualityWeight: number(p.qualityWeight, 0, 1) }),
-      allowUnknownCost: p.allowUnknownCost === true,
       allowSubagents: p.allowSubagents === true,
       delegateApprovals: p.delegateApprovals === true,
       ...(p.runtimeMode === undefined ? {} : { runtimeMode: crewRuntimeMode(p.runtimeMode) }),
@@ -338,49 +299,32 @@ function crewRuntimeMode(value: unknown): RuntimeMode {
 /** Required capability gates always precede preferences. Unknown is not support. */
 export function selectCrewCandidate(
   agent: CrewAgent,
-  policy: CrewPolicy,
+  _policy: CrewPolicy,
   required: CrewCapability[],
   available: (candidate: CrewCandidate) => boolean,
   now = Date.now(),
 ): { candidate: CrewCandidate; reason: string } {
-  const candidates = (
+  const candidate = (
     agent.selection === "fixed" ? agent.candidates.slice(0, 1) : agent.candidates
-  ).filter(
+  ).find(
     (c) =>
       available(c) &&
       required.every((key) => {
-        const e = c.capabilities[key];
+        const evidence = c.capabilities[key];
         return (
-          e?.state === "available" &&
-          e.observedAt <= now &&
-          now - e.observedAt < 24 * 60 * 60 * 1000
+          evidence?.state === "available" &&
+          evidence.observedAt <= now &&
+          now - evidence.observedAt < 24 * 60 * 60 * 1000
         );
-      }) &&
-      (policy.allowUnknownCost || c.cost !== undefined) &&
-      (policy.maxEstimatedCost === undefined ||
-        (c.cost !== undefined && c.cost <= policy.maxEstimatedCost)) &&
-      (policy.minimumQuality === undefined ||
-        (c.quality !== undefined && c.quality >= policy.minimumQuality)),
+      }),
   );
-  if (!candidates.length)
+  if (!candidate)
     throw new Error(
-      `No eligible model for ${agent.name}. Check required capabilities, model availability, pins and policy limits.`,
+      `No eligible model for ${agent.name}. Check required capabilities and model availability.`,
     );
-  const knownCosts = candidates.flatMap((c) => (c.cost === undefined ? [] : [c.cost]));
-  const maxCost = Math.max(1, ...knownCosts);
-  const costWeight =
-    policy.costWeight ??
-    (policy.preset === "economy" ? 0.85 : policy.preset === "quality" ? 0.1 : 0.5);
-  const qualityWeight = policy.qualityWeight ?? 1 - costWeight;
-  const score = (c: CrewCandidate) =>
-    qualityWeight * ((c.quality ?? 0) / 100) -
-    costWeight * (c.cost === undefined ? 1 : c.cost / maxCost);
-  const candidate = [...candidates].sort(
-    (a, b) => score(b) - score(a) || a.id.localeCompare(b.id),
-  )[0]!;
   return {
     candidate,
-    reason: `${agent.selection}; ${policy.preset}; required capabilities ${required.length ? required.join(", ") : "none"}; cost ${candidate.cost === undefined ? "unknown" : "owner estimate"}; quality ${candidate.quality === undefined ? "unmeasured" : (candidate.qualitySource ?? "owner estimate")}; samples ${candidate.samples ?? 0}`,
+    reason: `${agent.selection}; required capabilities ${required.join(", ") || "none"}`,
   };
 }
 

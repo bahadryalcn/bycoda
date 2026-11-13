@@ -28,12 +28,12 @@ const profile = (agent: CrewAgent) => ({
   name: agent.name,
   instructions: agent.instructions,
   selection: agent.selection,
+  modelChoice: agent.modelChoice ?? null,
   candidates: agent.candidates.map(({ capabilities: _capabilities, ...rest }) => rest),
   groups: agent.groups ?? [],
   avatar: agent.avatar ?? null,
   handle: agent.handle ?? null,
   tools: agent.tools ?? null,
-  pool: agent.pool ?? null,
 });
 const matches = (member: CrewAgent, library: SavedCrewAgent) =>
   isDeepStrictEqual(profile(member), profile(library));
@@ -44,7 +44,7 @@ function followLibrary(member: CrewAgent, library: SavedCrewAgent): CrewAgent {
     avatar: _avatar,
     handle: _handle,
     tools: _tools,
-    pool: _pool,
+    modelChoice: _modelChoice,
     ...rest
   } = member;
   const evidence = new Map(member.candidates.map((c) => [c.id, c.capabilities]));
@@ -57,12 +57,12 @@ function followLibrary(member: CrewAgent, library: SavedCrewAgent): CrewAgent {
     name: library.name,
     instructions: library.instructions,
     selection: library.selection,
+    ...(library.modelChoice ? { modelChoice: library.modelChoice } : {}),
     candidates,
     ...(library.groups?.length ? { groups: [...library.groups] } : {}),
     ...(library.avatar ? { avatar: structuredClone(library.avatar) } : {}),
     ...(library.handle ? { handle: library.handle } : {}),
     ...(library.tools ? { tools: structuredClone(library.tools) } : {}),
-    ...(library.pool ? { pool: { ...library.pool } } : {}),
     source: { id: library.id, updatedAt: library.updatedAt },
   };
 }

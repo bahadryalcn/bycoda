@@ -1,4 +1,5 @@
 import source from "../../../../public/brand/bycoda/logo-horizontal-white.svg?raw";
+import { themePalette } from "../../../shared/theme/palette";
 
 export type SignPath = {
   path: string;
@@ -34,7 +35,7 @@ export function prepareSignPaths(): SignPath[] {
       });
     for (const child of element.children) visit(child, matrix, style);
   };
-  visit(root, new DOMMatrix(), { fill: "black", stroke: "none", width: 1 });
+  visit(root, new DOMMatrix(), { fill: themePalette.svgDefaultFill, stroke: "none", width: 1 });
   return paths;
 }
 

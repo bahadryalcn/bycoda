@@ -57,3 +57,20 @@ it("never derives worker tokens from cache reads", async () => {
     "Worker tokens: 1,000",
   );
 });
+
+it("shows one missing-usage message and does not turn missing cache facts into zero", async () => {
+  const text = await mount({
+    workerUsageIncomplete: true,
+    cacheUsage: cache({
+      complete: false,
+      cacheReadTokens: undefined,
+      cacheWriteTokens: undefined,
+      cacheHitPercent: undefined,
+    }),
+  });
+  expect(text.match(/Some usage is unavailable\./g)).toHaveLength(1);
+  expect(text).toContain("Worker tokens: 1,000");
+  expect(text).not.toContain("Cache read tokens: 0");
+  expect(text).not.toContain("Cache write tokens: 0");
+  expect(text).not.toContain("Cache usage unavailable");
+});

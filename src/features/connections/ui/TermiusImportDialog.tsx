@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -235,7 +236,7 @@ export function TermiusImportDialog({
               aria-label={t("Search servers")}
             />
             <div
-              className="max-h-[45dvh] min-h-0 overflow-y-auto divide-y divide-(--ui-card-border)"
+              {...surfaceAttributes({ dividers: "card" }, "max-h-[45dvh] min-h-0 overflow-y-auto")}
               aria-label={t("Termius records")}
             >
               {visible.map((host) => {

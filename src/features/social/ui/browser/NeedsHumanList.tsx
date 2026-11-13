@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { FailureState } from "../../../../shared/ui/FailureState";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { Text } from "../../../../shared/ui/Text";
@@ -109,8 +110,14 @@ export function NeedsHumanList({ client, active = true, onCountChange }: NeedsHu
       ) : null}
       {doneFailed ? <InlineError>{t("Could not mark this as done.")}</InlineError> : null}
       <ul className="needs-human-list">
-        {items.map((item) => (
-          <li key={item.id} className="needs-human-row">
+        {items.map((item, index) => (
+          <li
+            key={item.id}
+            {...surfaceAttributes(
+              index ? { frame: "pane", edge: "block-start" } : {},
+              "needs-human-row",
+            )}
+          >
             <PlatformMark platform={item.platform} size="md" />
             <div className="needs-human-text">
               <Text

@@ -76,6 +76,42 @@ async function show(state: Record<string, unknown>) {
 
 const fits = () => calls.filter((call) => call.cmd === "voice_overlay_fit").map((c) => c.args!);
 
+it("shares the expanded voice core and conversation while preserving header keyboard movement", async () => {
+  const { saveVoiceSettings, loadVoiceSettings } = await import("../model/voiceSettings");
+  saveVoiceSettings({ ...loadVoiceSettings(), compact: false });
+  await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));
+  await show({
+    visualState: "listening",
+    name: "Arif",
+    chatTurns: [
+      { id: 1, role: "owner", text: "Earlier question" },
+      { id: 2, role: "assistant", text: "Earlier answer" },
+      { id: 3, role: "owner", text: "Latest question" },
+    ],
+    transcript: "Do not duplicate this snapshot",
+  });
+  expect(host.querySelectorAll("[data-spoke]")).toHaveLength(40);
+  expect(host.querySelectorAll('[role="listitem"]')).toHaveLength(3);
+  expect(host.textContent).not.toContain("Do not duplicate this snapshot");
+  expect(host.querySelector("header button[aria-label^='Move voice']")).toBeNull();
+  act(() =>
+    host
+      .querySelector("header")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+  );
+  expect(calls).toContainEqual({ cmd: "voice_overlay_nudge", args: { dx: 16, dy: 0 } });
+  const moves = calls.filter((call) => call.cmd === "voice_overlay_nudge").length;
+  act(() =>
+    host
+      .querySelector("header button")!
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
+  );
+  expect(calls.filter((call) => call.cmd === "voice_overlay_nudge")).toHaveLength(moves);
+  await show({ visualState: "muted", chatTurns: [] });
+  expect(host.querySelector('[data-state="muted"]')).not.toBeNull();
+  expect(host.querySelectorAll('[role="listitem"]')).toHaveLength(0);
+});
+
 it("opens a question beside the detached companion on the side with room", async () => {
   room = { left: 0, right: 900 };
   await act(async () => root.render(createElement(VoiceOverlayWindow, { owner: "main" })));

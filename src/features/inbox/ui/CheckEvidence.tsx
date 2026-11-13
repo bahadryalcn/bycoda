@@ -128,8 +128,8 @@ function CheckAnnotation({
           size="caption"
           tone="secondary"
           {...surfaceAttributes(
-            { frame: "neutral", edge: "bottom" },
-            "flex min-w-0 items-center gap-1.5 bg-(--ui-fill-subtle) px-3 py-2",
+            { frame: "neutral", edge: "bottom", variant: "fill-subtle" },
+            "flex min-w-0 items-center gap-1.5 px-3 py-2",
           )}
         >
           <FileTypeIcon name={annotation.path} isDir={false} />
@@ -165,7 +165,16 @@ function CheckAnnotation({
               key={index}
               size="inherit"
               tone={firstLine + index === annotation.line ? "neutral" : "secondary"}
-              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)" : "border-transparent"}`}
+              {...surfaceAttributes(
+                {
+                  tone: firstLine + index === annotation.line ? "danger" : undefined,
+                  bar:
+                    firstLine + index === annotation.line
+                      ? "diagnostic-danger"
+                      : "diagnostic-empty",
+                },
+                "flex min-w-max gap-4 pr-3",
+              )}
             >
               <Text
                 size="inherit"
@@ -180,7 +189,13 @@ function CheckAnnotation({
         </Text>
       ) : null}
       <div
-        className={`flex min-w-0 items-start gap-2 px-3 py-3 ${excerpt.length ? "border-t border-(--ui-tone-neutral-border)" : ""}`}
+        {...surfaceAttributes(
+          {
+            frame: excerpt.length ? "neutral" : undefined,
+            edge: excerpt.length ? "top" : undefined,
+          },
+          "flex min-w-0 items-start gap-2 px-3 py-3",
+        )}
       >
         <Mark
           tone={annotation.level === "failure" ? "danger" : "warning"}

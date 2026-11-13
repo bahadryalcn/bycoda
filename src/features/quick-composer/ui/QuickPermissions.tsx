@@ -1,5 +1,6 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { PickerList } from "../../../shared/ui/picker";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { RUNTIME_MODE_ICONS, runtimeModeOptions } from "../../sessions/ui/runtimeModeOptions";
 import { type RuntimeMode } from "../../sessions/model/session";
 
@@ -38,7 +39,10 @@ export function QuickPermissions({
   useLocale();
   return (
     <div
-      className={`min-h-0 overflow-y-auto overscroll-none p-2 ${embedded ? "" : "border-t border-stroke"}`}
+      {...surfaceAttributes(
+        { frame: embedded ? undefined : "stroke", edge: embedded ? undefined : "top" },
+        "min-h-0 overflow-y-auto overscroll-none p-2",
+      )}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.preventDefault();

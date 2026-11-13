@@ -15,7 +15,7 @@ import {
 } from "./activityDock";
 import { stopAllControl } from "./backgroundStop";
 import { delegatedChildren, delegatedDockAgents } from "./delegatedAgents";
-import { createCardPlacer, crewMemberChildren } from "./delegatedCards";
+import { createCardPlacer } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
@@ -109,6 +109,7 @@ export function useActivityDock(input: ActivityDockInput): {
     blocks,
     busy,
     pendingQuestion,
+    pendingOwnerApproval,
     backgroundTasks,
     backgroundAgents,
     unseenDone,
@@ -119,6 +120,7 @@ export function useActivityDock(input: ActivityDockInput): {
       blocks,
       busy,
       pendingQuestion,
+      pendingOwnerApproval,
       backgroundTasks,
       backgroundAgents,
       unseenDone,
@@ -130,6 +132,7 @@ export function useActivityDock(input: ActivityDockInput): {
     blocks,
     busy,
     pendingQuestion,
+    pendingOwnerApproval,
     backgroundTasks,
     backgroundAgents,
     unseenDone,
@@ -143,14 +146,14 @@ function sameSessionList(a: readonly Session[], b: readonly Session[]): boolean 
   return a.length === b.length && a.every((session, index) => session === b[index]);
 }
 
-/** The transcript's blocks with each Crew member ask shown as a card in its turn. */
+/** The transcript's blocks with each delegated run shown as a card. */
 export function useDelegatedCardBlocks(
   parentId: string,
   blocks: Block[],
   enabled: boolean,
 ): Block[] {
   const children = useSessionsSelector(
-    (sessions) => (enabled ? crewMemberChildren(delegatedChildren(sessions, parentId)) : []),
+    (sessions) => (enabled ? delegatedChildren(sessions, parentId) : []),
     sameSessionList,
   );
   const [place] = useState(createCardPlacer);

@@ -54,7 +54,7 @@ function Fixture() {
           <LiveAgentsPreview
             agents={source}
             currentProject={project}
-            collapsible
+            collapsible={!parameters.has("noncollapsible")}
             activeSessionId={selected}
             onSelect={setSelected}
           />
@@ -67,7 +67,7 @@ function Fixture() {
           <LiveAgentsPreview
             agents={source}
             currentProject={project}
-            collapsible
+            collapsible={!parameters.has("noncollapsible")}
             activeSessionId={selected}
             onSelect={setSelected}
           />

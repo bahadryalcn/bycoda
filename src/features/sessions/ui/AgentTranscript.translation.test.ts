@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider, notifyManager } from "@tanstack/react-query";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
@@ -9,10 +10,7 @@ import { copyMessage } from "../../../platform/tauri/clipboard";
 vi.mock("../../../platform/tauri/clipboard", () => ({
   copyMessage: vi.fn().mockResolvedValue(undefined),
 }));
-import {
-  saveDefaultTranslationChoice,
-  saveDefaultRepromptChoice,
-} from "../model/translationPreferences";
+import { saveLastModelChoice } from "../model/models";
 
 it.each([
   ["Translate to English", "Apply translation"],
@@ -21,9 +19,7 @@ it.each([
   "previews %s for selected message text and reverses approved display without changing the saved block",
   async (action, applyLabel) => {
     vi.mocked(copyMessage).mockClear();
-    const saveChoice =
-      action === "Reprompt" ? saveDefaultRepromptChoice : saveDefaultTranslationChoice;
-    saveChoice({ harness: "codex", model: "codex:gpt-6.1", providerAccountId: "chosen" });
+    saveLastModelChoice("codex", "codex:gpt-6.1");
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(
       "ResizeObserver",
@@ -39,15 +35,21 @@ it.each([
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
+    notifyManager.setScheduler((callback) => callback());
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     try {
       await act(async () =>
         root.render(
-          createElement(AgentTranscript, {
-            blocks: [block],
-            cwd: "/project",
-            harness: "codex",
-            providerAccountId: "chosen",
-          }),
+          createElement(
+            QueryClientProvider,
+            { client },
+            createElement(AgentTranscript, {
+              blocks: [block],
+              cwd: "/project",
+              harness: "codex",
+              providerAccountId: "default",
+            }),
+          ),
         ),
       );
       const node = container.querySelector("pre")!.firstChild!;
@@ -98,10 +100,11 @@ it.each([
       expect(container.querySelector("pre")?.textContent).toBe("Before Hello after");
       expect(scroller.textContent).not.toContain("After applying:");
       expect(scroller.querySelector('button[aria-label="Close translation"]')).toBeNull();
-      expect(run).toHaveBeenCalledWith(expect.objectContaining({ providerAccountId: "chosen" }));
+      expect(run).toHaveBeenCalledWith(expect.objectContaining({ providerAccountId: "default" }));
     } finally {
-      saveChoice(undefined);
       act(() => root.unmount());
+      client.clear();
+      notifyManager.setScheduler((callback) => setTimeout(callback, 0));
       container.remove();
       window.getSelection()?.removeAllRanges();
       registerHarness(codexAdapter);

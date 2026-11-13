@@ -96,7 +96,7 @@ export function AccountsScreen({
             action={{
               label: t("Connect account"),
               onClick: () => setConnectOpen(true),
-              disabled: false,
+              ...connectGate,
             }}
           />
         ) : null}
@@ -113,6 +113,7 @@ export function AccountsScreen({
       {selected && snapshot ? (
         <Sheet title={selected.name} onClose={() => setSelectedId(undefined)}>
           <AccountDetail
+            key={selected.id}
             client={client}
             account={selected}
             snapshot={snapshot}

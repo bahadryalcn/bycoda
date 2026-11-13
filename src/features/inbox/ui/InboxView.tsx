@@ -1,17 +1,12 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { InboxCollectionStatus } from "./InboxCollectionStatus";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
 import { InboxLoadError } from "./InboxLoadError";
 import { RemoteActivityNotices } from "../../sessions/public/RemoteActivityNotices";
 import { githubRepositoryOptions } from "../model/inboxRepositoryFilters";
-import { LiveText } from "../../../shared/ui/LiveText";
-import { ActionHost } from "../../../shared/ui/ActionHost";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { Badge } from "../../../shared/ui/Badge";
-import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import "./InboxView.css";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
@@ -21,44 +16,36 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Sash } from "../../../shared/ui/Sash";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Spinner } from "../../../shared/ui/Spinner";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { ToolNavigation, ToolNavigationContext } from "../../../app/shell/ToolNavigation";
 import { filterCodeHostScopes, useCodeHostScopes } from "../model/codeHostScopes";
-import { prefetchInboxItem } from "../model/inboxPrefetch";
+import { subscribeInboxItemRequests, takeInboxItemRequest } from "../model/inboxItemRequest";
 import { t, useLocale } from "../../../shared/i18n";
 import { useInboxCollection } from "../hooks/useInboxCollection";
 import { useProviderConnections } from "../hooks/useProviderConnections";
 import { useInboxProviderScopes } from "../hooks/useInboxProviderScopes";
 import { useInboxSourceSelection } from "../hooks/useInboxSourceSelection";
-import { useGithubWorkItem } from "../hooks/useGithubWorkItem";
 import { useLinkedTarget, useLinkedTargetItem } from "../hooks/useLinkedTarget";
 import { visibleInboxItems } from "../model/inboxVisibleItems";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
-import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
-import { InlineError } from "../../../shared/ui/InlineError";
 import {
   ChevronsUpDown,
   ChevronLeft,
   CheckCheck,
   CircleX,
-  ExternalLink,
   Inbox,
   ListBullet,
   ListFilter,
   SquareKanban,
-  MessageMultiple,
   RefreshCw,
   Search,
-  X,
 } from "../../../shared/ui/icons";
 import {
   useCallback,
   useContext,
   useDeferredValue,
-  memo,
   useEffect,
   useMemo,
   useRef,
@@ -70,19 +57,14 @@ import { InboxConnectMenu } from "./InboxConnectMenu";
 import { JiraBoardView } from "./JiraBoardView";
 import type { JiraBoardIssue } from "../model/jiraBoard";
 import { WORKSPACE_REFRESH_EVENT } from "../../../app/shell/WorkspaceControls";
-import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import {
-  gitlabAttentionLabel,
   inboxItemKey,
-  inboxItemRef,
   inboxProjectsForRail,
-  formatRelativeTime,
   type InboxItem,
   type InboxQuery,
 } from "../model/githubTasks";
@@ -121,7 +103,6 @@ import {
   markInboxItemSeen,
   markInboxItemsSeen,
   retryInboxSeenStorage,
-  useInboxItemUnseen,
   useInboxSeenTick,
 } from "../model/inboxSeen";
 import { saveHiddenLinearTeamIds } from "../model/linear";
@@ -136,17 +117,12 @@ import {
 } from "../../workspace/model/tabGroups";
 import { InboxDiscussionPanel, type InboxSessionPortal } from "./InboxDiscussionPanel";
 import { inboxAskKey } from "../model/inboxAsk";
-import { InboxDetail } from "./InboxDetail";
 import { InboxDetailBody } from "./InboxDetailBody";
 import { InboxSourceRow } from "./InboxSourceRow";
-import { InboxStatusBadge } from "./InboxStatusBadge";
 import { MessagesPanel, openMessagingSettings, useMessagingAccounts } from "../../messaging";
-import {
-  inboxProjectOptions,
-  inboxStatusMark,
-  inboxLabelItems,
-  CiRepairProps,
-} from "./InboxPresentation";
+import { inboxProjectOptions, CiRepairProps } from "./InboxPresentation";
+import { InboxCard } from "./InboxCard";
+export { LinkedWorkItemPanel } from "./LinkedWorkItemPanel";
 export { InboxDetail, inboxShowsFullFileDiff } from "./InboxDetail";
 export { GithubPrActions } from "./InboxPrActions";
 export { inboxStatusMark } from "./InboxPresentation";
@@ -157,13 +133,7 @@ const MAX_WIDTH = 420;
 
 const DEFAULT_WIDTH = 320;
 
-const LINKED_PANEL_MIN_WIDTH = 360;
-
-const LINKED_PANEL_DEFAULT_WIDTH = 520;
-
 let rememberedWidth = DEFAULT_WIDTH;
-
-let rememberedLinkedPanelWidth = LINKED_PANEL_DEFAULT_WIDTH;
 
 type Props = {
   pullRequestsOnly?: boolean;
@@ -462,6 +432,21 @@ export function InboxView({
       }
     return counts;
   }, [sessions]);
+  const openRequestedItem = useStableCallback(() => {
+    if (pullRequestsOnly) return;
+    const item = takeInboxItemRequest();
+    if (!item) return;
+    setMessagesChosen(false);
+    selectSource(item.provider);
+    setSearchInput(item.identifier || String(item.number));
+    setSelectedKey(inboxItemKey(item));
+    setDetailOpen(true);
+  });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- store listener for chat work-item chips; a request sent before mount waits in the store.
+  useEffect(() => {
+    openRequestedItem();
+    return subscribeInboxItemRequests(openRequestedItem);
+  }, [openRequestedItem]);
   const selectItem = useStableCallback((item: InboxItem) => {
     const key = inboxItemKey(item);
     const generation = ++seenSaveGeneration.current;
@@ -746,14 +731,14 @@ export function InboxView({
     <div
       ref={resize.setPaneRef}
       {...surfaceAttributes(
-        { frame: "pane", edge: "right", variant: "transparent" },
+        { frame: "pane", edge: "responsive-end", variant: "transparent" },
         "inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col",
       )}
     >
       {sourceRow}
       {viewRow}
       {noSourcesConnected ? null : (
-        <div className="inbox-collection-toolbar flex shrink-0 flex-wrap items-center gap-1 px-2 py-1">
+        <div className="inbox-collection-toolbar flex shrink-0 flex-wrap items-center gap-2 px-2 py-1.5">
           {showCollectionTools ? (
             <div className="inbox-collection-search flex min-w-0 flex-1 items-center gap-1">
               <SearchInputGroup appearance="field" className="min-w-0 flex-1">
@@ -762,7 +747,7 @@ export function InboxView({
                   focusOwner="group"
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder={t("Filter loaded items")}
+                  placeholder={t("Filter issues")}
                   aria-label={t("Filter loaded items")}
                   spellCheck={false}
                   autoComplete="off"
@@ -910,7 +895,8 @@ export function InboxView({
           />
         ) : loading && items.length === 0 ? (
           <LoadingText className="justify-center py-10" />
-        ) : visibleItems.length === 0 ? (
+        ) : visibleItems.length === 0 &&
+          !(source === "jira" && collection.jiraContinuation.hasMore) ? (
           !pullRequestsOnly && !isTrackerSource(source) && projects.length === 0 ? (
             <EmptyState
               kind="empty"
@@ -947,6 +933,12 @@ export function InboxView({
           )
         ) : (
           <ContinuousList
+            loadOnScroll={source === "jira"}
+            hasMore={source === "jira" && collection.jiraContinuation.hasMore}
+            loading={source === "jira" && collection.jiraContinuation.loading}
+            error={source === "jira" ? collection.jiraContinuation.error : null}
+            onLoadMore={collection.jiraContinuation.loadMore}
+            onRetry={collection.jiraContinuation.loadMore}
             fill
             className="p-1.5 overscroll-none"
             label={t("Inbox")}
@@ -982,32 +974,12 @@ export function InboxView({
         )}
       </div>
       {noSourcesConnected || visibleItems.length === 0 ? null : (
-        <Text
-          as="div"
-          size="micro"
-          tone="secondary"
-          data-inbox-list-status
-          className="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 tabular-nums"
-        >
-          <span>
-            <LiveText text={t("{p0} loaded", { p0: visibleItems.length })} />
-            {sourceLimited ? (
-              <Tooltip
-                label={t(
-                  "The provider returned a full page. Older items may not be loaded, and no total is available.",
-                )}
-                asChild
-              >
-                <span data-inbox-list-limit>{` · ${t("Limit reached")}`}</span>
-              </Tooltip>
-            ) : null}
-          </span>
-          {sourceError ? (
-            <Text size="inherit" tone="warning">
-              {t("Partial")}
-            </Text>
-          ) : null}
-        </Text>
+        <InboxCollectionStatus
+          count={visibleItems.length}
+          total={source === "jira" && !narrowed ? collection.jiraContinuation.total : undefined}
+          limited={sourceLimited}
+          partial={!!sourceError}
+        />
       )}
       <Sash
         {...resize.sashProps}
@@ -1079,7 +1051,12 @@ export function InboxView({
       </PaneHeader>
       <RemoteActivityNotices inbox />
       {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
-        <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
+        <header
+          {...surfaceAttributes(
+            { frame: "neutral", edge: "bottom" },
+            "flex shrink-0 flex-wrap items-center gap-2 px-3 py-2",
+          )}
+        >
           {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
             <Button variant="ghost" type="button" onClick={() => void onOpenProject()}>
               {t("Add project")}
@@ -1091,7 +1068,12 @@ export function InboxView({
         <MessagesPanel accounts={messaging.accounts} sourceRow={sourceRow} />
       ) : source === "jira" && jiraView === "board" ? (
         <>
-          <div className="inbox-board-band flex shrink-0 flex-wrap items-center bg-transparent">
+          <div
+            {...surfaceAttributes(
+              { variant: "transparent" },
+              "inbox-board-band flex shrink-0 flex-wrap items-center",
+            )}
+          >
             <div className="min-w-0 max-w-sm flex-1 basis-72">{sourceRow}</div>
             {toolbarActions}
           </div>
@@ -1117,7 +1099,10 @@ export function InboxView({
             />
             {boardIssue ? (
               <aside
-                {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, "jira-board-detail")}
+                {...surfaceAttributes(
+                  { frame: "pane", edge: "responsive-start" },
+                  "jira-board-detail",
+                )}
                 aria-label={boardIssue.identifier}
                 onKeyDown={(event) => {
                   if (event.key === "Escape" && !hasActiveOverlay()) {
@@ -1158,7 +1143,12 @@ export function InboxView({
         >
           {list}
           <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="inbox-detail-back shrink-0 border-b border-(--ui-tone-neutral-border) px-2 py-1">
+            <div
+              {...surfaceAttributes(
+                { frame: "neutral", edge: "bottom" },
+                "inbox-detail-back shrink-0 px-2 py-1",
+              )}
+            >
               <Button variant="ghost" onClick={() => setDetailOpen(false)}>
                 <ChevronLeft className="icon-sm" aria-hidden="true" />
                 {t("Back")}
@@ -1199,363 +1189,3 @@ export function InboxView({
     </Text>
   );
 }
-
-export function LinkedWorkItemPanel({
-  repairSessions,
-  onRepairChecks,
-  onOpenSession,
-  target,
-  cwd,
-  recents,
-  visible = true,
-  onClose,
-}: {
-  repairSessions?: CiRepairProps["repairSessions"];
-  onRepairChecks?: CiRepairProps["onRepairChecks"];
-  onOpenSession?: (sessionId: string) => void | Promise<void>;
-  target: LinkedWorkItem;
-  cwd: string;
-  recents: RecentProject[];
-  visible?: boolean;
-  onClose: () => void;
-}) {
-  useLocale();
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  const logos = useTabGroupLogos();
-  const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
-  const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
-  const { item, error, loading, setItem } = useGithubWorkItem(target, cwd);
-  const [openError, setOpenError] = useState("");
-  const targetUrlRef = useRef(target.url);
-  targetUrlRef.current = target.url;
-  useEffect(() => setOpenError(""), [target.url]);
-  const resize = useDragResize({
-    min: LINKED_PANEL_MIN_WIDTH,
-    max: () =>
-      Math.max(
-        LINKED_PANEL_MIN_WIDTH,
-        Math.round(
-          (typeof window === "undefined" ? LINKED_PANEL_DEFAULT_WIDTH / 0.65 : window.innerWidth) *
-            0.65,
-        ),
-      ),
-    defaultWidth: LINKED_PANEL_DEFAULT_WIDTH,
-    initial: rememberedLinkedPanelWidth,
-    direction: "left",
-    onCommit: (width) => {
-      rememberedLinkedPanelWidth = width;
-    },
-  });
-
-  useEffect(() => {
-    if (!visible) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented || hasActiveOverlay()) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onCloseRef.current();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [visible]);
-
-  const kindLabel = target.kind === "pr" ? t("pull request") : t("issue");
-  return (
-    <Text
-      as="aside"
-      size="inherit"
-      tone="neutral"
-      ref={resize.setPaneRef}
-      aria-label={t("Linked {p0} #{p1}", { p0: kindLabel, p1: target.number })}
-      aria-busy={loading}
-      aria-hidden={!visible}
-      inert={!visible || undefined}
-      data-linked-work-item-panel
-      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-(--ui-pane-border) @max-[950px]/main-row:absolute @max-[950px]/main-row:inset-y-0 @max-[950px]/main-row:right-0 @max-[950px]/main-row:z-30 @max-[950px]/main-row:shadow-(--ui-elevation-floating) ${
-        visible ? "flex linked-work-item-enter" : "hidden"
-      }`}
-    >
-      <Sash
-        {...resize.sashProps}
-        appearance="hidden"
-        label={t("Resize linked {p0} panel", { p0: kindLabel })}
-        className="absolute inset-y-0 -left-px"
-      />
-      <header className="flex shrink-0 items-center gap-2 px-3 py-1">
-        <Text size="caption" tone="secondary" weight="medium" truncate className="min-w-0 flex-1">
-          {t("Linked {p0} #{p1}", { p0: kindLabel, p1: target.number })}
-        </Text>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={t("Close {p0} panel", { p0: kindLabel })}
-          onClick={onClose}
-          className="shrink-0"
-        >
-          <X className="icon-sm" strokeWidth={1.75} />
-        </Button>
-      </header>
-      <div className="min-h-0 min-w-0 flex-1">
-        {item ? (
-          <InboxDetail
-            key={inboxItemKey(item)}
-            item={item}
-            cwd={cwd}
-            projects={projectOptions}
-            revision={0}
-            relatedSessions={[]}
-            mode="panel"
-            visible={visible}
-            repairSessions={repairSessions}
-            onRepairChecks={onRepairChecks}
-            onOpenSession={onOpenSession}
-            onItemChange={setItem}
-          />
-        ) : error ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
-            <CircleX tone="danger" className="icon-lg" strokeWidth={1.75} />
-            <Alert tone="danger" className="max-w-sm">
-              {error}
-            </Alert>
-            {openError ? <InlineError>{openError}</InlineError> : null}
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={() => {
-                setOpenError("");
-                const url = target.url;
-                openUrlSafely(url, () => {
-                  if (targetUrlRef.current === url)
-                    setOpenError(t("Could not open the link. Try again."));
-                });
-              }}
-            >
-              <ExternalLink className="icon-sm" strokeWidth={1.75} />
-              {t("Open on GitHub")}
-            </Button>
-          </div>
-        ) : (
-          <Text
-            as="div"
-            size="inherit"
-            tone="secondary"
-            className="flex h-full items-center justify-center"
-          >
-            <Spinner size="md" />
-          </Text>
-        )}
-      </div>
-    </Text>
-  );
-}
-
-const InboxCard = memo(function InboxCard({
-  item,
-  active,
-  logoPath,
-  mascotName,
-  mascotColor,
-  relatedSessionCount,
-  onSelect,
-}: {
-  item: InboxItem;
-  active: boolean;
-  logoPath: string | null;
-  mascotName: string | null;
-  mascotColor: string;
-  relatedSessionCount: number;
-  onSelect: (item: InboxItem) => void;
-}) {
-  useLocale();
-  const visibilityRef = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
-  const entryKey = inboxItemKey(item);
-  const unseen = useInboxItemUnseen({ key: entryKey, updatedAt: item.updatedAt }, visible);
-  useEffect(() => {
-    const element = visibilityRef.current;
-    if (!element) return;
-    if (typeof IntersectionObserver === "undefined") {
-      const update = () => {
-        const bounds = element.getBoundingClientRect();
-        setVisible(bounds.bottom >= -300 && bounds.top <= window.innerHeight + 300);
-      };
-      update();
-      window.addEventListener("scroll", update, true);
-      window.addEventListener("resize", update);
-      return () => {
-        window.removeEventListener("scroll", update, true);
-        window.removeEventListener("resize", update);
-      };
-    }
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), {
-      rootMargin: "300px",
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const status = inboxStatusMark(item);
-  const kindLabel =
-    item.kind === "pr" ? (item.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
-  const time = formatRelativeTime(item.updatedAt);
-  const name = projectName(item.projectPath);
-  const tracker = item.provider === "linear" || item.provider === "jira";
-  const jira = item.provider === "jira";
-  const category = item.stateType?.trim().toLowerCase();
-  const rowStatus = jira
-    ? {
-        ...status,
-        tone:
-          category === "done"
-            ? ("success" as const)
-            : category === "indeterminate"
-              ? ("info" as const)
-              : ("neutral" as const),
-      }
-    : status;
-  const statusLabel =
-    jira && item.state === item.state.toUpperCase()
-      ? item.state.charAt(0) + item.state.slice(1).toLowerCase()
-      : item.state;
-  const source = tracker ? item.teamName || item.repo : item.repo || name;
-  const attentionLabel =
-    item.provider === "gitlab" || item.provider === "azuredevops"
-      ? gitlabAttentionLabel(item.attentionReason ?? "")
-      : "";
-
-  // The label badges hold their own "+N" button, which cannot sit inside the row button: with
-  // labels the source line is a sibling laid over the row (clicks outside the badges fall through
-  // to the row) and the row keeps the line's height.
-  const sourceLine = (
-    <Text
-      size="micro"
-      tone={jira ? "muted" : "secondary"}
-      className="flex min-w-0 flex-1 items-center gap-1.5"
-    >
-      {tracker || !item.projectPath ? null : logoPath ? (
-        <ProjectLogoIcon
-          path={logoPath}
-          className="icon-sm shrink-0 rounded-sm"
-          imageClassName="icon-sm"
-        />
-      ) : (
-        <ProjectMascot
-          project={name}
-          color={mascotColor}
-          name={mascotName}
-          className="icon-xs shrink-0"
-        />
-      )}
-      <Text size="inherit" tone="inherit" truncate className="min-w-0">
-        {source}
-      </Text>
-    </Text>
-  );
-
-  return (
-    <div ref={visibilityRef}>
-      <ActionHost selected={active} className="w-full min-w-0">
-        <Button
-          variant="item"
-          layout="stacked"
-          className="w-full min-w-0"
-          type="button"
-          tooltip={item.title}
-          tooltipWhen="overflow"
-          aria-current={active ? "true" : undefined}
-          selected={active}
-          aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(
-            item,
-          )}: ${item.title}, ${source}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
-          onClick={() => onSelect(item)}
-          onMouseEnter={() => prefetchInboxItem(item)}
-          onFocus={() => prefetchInboxItem(item)}
-        >
-          <ClampText
-            as="span"
-            lines={2}
-            expandable={false}
-            size="secondary"
-            tone="neutral"
-            weight={unseen ? "medium" : "regular"}
-            leading="snug"
-            className="min-w-0 wrap-anywhere"
-          >
-            {item.title}
-          </ClampText>
-          <span data-inbox-row-metadata className="flex min-w-0 items-start gap-2">
-            <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-              {jira ? (
-                <>
-                  <Text size="micro" tone="secondary" className="shrink-0">
-                    {inboxItemRef(item)}
-                  </Text>
-                  <span className="flex min-w-0 max-w-full">
-                    <InboxStatusBadge mark={rowStatus} label={statusLabel} />
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Badge
-                    size="xs"
-                    tone={status.tone}
-                    appearance="subtle"
-                    icon={<status.Icon strokeWidth={1.75} />}
-                    aria-hidden="true"
-                  />
-                  <Text size="micro" tone="secondary" truncate className="min-w-0">
-                    {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
-                    {attentionLabel ? ` · ${attentionLabel}` : ""}
-                  </Text>
-                </>
-              )}
-            </span>
-            {relatedSessionCount > 0 || time || unseen ? (
-              <span className="flex shrink-0 items-center gap-1.5">
-                {relatedSessionCount > 0 ? (
-                  <Tooltip
-                    label={t(
-                      relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads",
-                      { p0: relatedSessionCount },
-                    )}
-                    asChild
-                  >
-                    <Badge
-                      variant="count"
-                      size="xs"
-                      icon={<MessageMultiple className="icon-xs" strokeWidth={1.75} />}
-
-                      className="shrink-0"
-                    >
-                      {relatedSessionCount}
-                    </Badge>
-                  </Tooltip>
-                ) : null}
-                {time ? (
-                  <Text size="micro" tone="secondary" className="whitespace-nowrap tabular-nums">
-                    {time}
-                  </Text>
-                ) : null}
-                {unseen ? <StatusDot data-inbox-unread tone="accent" label={t("Unread")} /> : null}
-              </span>
-            ) : null}
-          </span>
-          {item.labels.length > 0 ? (
-            <span aria-hidden="true" className="mt-1 block h-4" />
-          ) : (
-            <span className="mt-1 flex min-w-0 items-center gap-2">{sourceLine}</span>
-          )}
-        </Button>
-        {item.labels.length > 0 ? (
-          <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
-            {sourceLine}
-            <span className="pointer-events-auto min-w-0 w-[45%] shrink-0 [&>div>ul]:justify-end">
-              <BadgeList label={t("Labels")} size="xs" items={inboxLabelItems(item.labels)} />
-            </span>
-          </div>
-        ) : null}
-      </ActionHost>
-    </div>
-  );
-});

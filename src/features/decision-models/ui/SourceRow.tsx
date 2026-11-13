@@ -1,6 +1,7 @@
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useState } from "react";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -151,12 +152,12 @@ export function SourceRow({
         ? t("Failed")
         : null;
   return (
-    <li className="flex min-w-0 flex-col gap-2 border-t border-(--ui-settings-hairline) px-4 py-2.5 first:border-t-0">
+    <li {...surfaceAttributes({ separator: "block" }, "flex min-w-0 flex-col gap-2 px-4 py-2.5")}>
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <SourceKindIcon kind={source.kind} modelPath={source.local?.modelPath} />
           <div className="flex min-w-0 flex-col gap-0.5">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Text
                 as="span"
                 size="body"
@@ -180,7 +181,7 @@ export function SourceRow({
                           : "danger"
                         : sourceStatusTone(source.status)
                   }
-                  size="sm"
+                  size="xs"
                 >
                   {status}
                 </Badge>
@@ -216,11 +217,14 @@ export function SourceRow({
               tone="secondary"
               className="flex min-w-0 items-center gap-1"
             >
-              <span className="shrink-0">{details[0]} ·</span>
-              <MiddleTruncate className="min-w-0 shrink">{String(details[1] ?? "")}</MiddleTruncate>
+              <Tooltip label={details[1] ? String(details[1]) : undefined}>
+                <Text size="caption" tone="secondary" tabIndex={details[1] ? 0 : undefined}>
+                  {details[0]}
+                </Text>
+              </Tooltip>
               {latency ? (
                 <span className="shrink-0">
-                  · {tested ? t("Test: {p1}", { p1: latency }) : t("Average {p1}", { p1: latency })}
+                  {tested ? t("Test: {p1}", { p1: latency }) : t("Average {p1}", { p1: latency })}
                 </span>
               ) : null}
             </Text>
@@ -260,9 +264,14 @@ export function SourceRow({
           tone="secondary"
           className="flex flex-wrap items-center gap-2"
         >
+          {details[1] ? (
+            <MiddleTruncate className="min-w-0 basis-full">{String(details[1])}</MiddleTruncate>
+          ) : null}
           {[failedReason, accuracy ? t("Last accuracy {p1}", { p1: accuracy }) : null, cost]
             .filter(Boolean)
-            .join(" · ")}
+            .map((detail, index) => (
+              <span key={index}>{detail}</span>
+            ))}
           {testedAt !== null ? (
             <Timestamp size="caption" value={testedAt} prefix={t("Last tested")} />
           ) : null}

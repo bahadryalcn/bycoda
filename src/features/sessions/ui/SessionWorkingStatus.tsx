@@ -1,3 +1,4 @@
+import { actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { useT } from "../../../shared/i18n";
@@ -54,7 +55,13 @@ export function SessionWorkingStatus({
       >
         {wait ? <Clock className="icon-xs" strokeWidth={1.75} aria-hidden /> : <TerminalSpinner />}
         {labelled ? (
-          <span aria-hidden className="session-working-label">
+          <span
+            aria-hidden
+            {...actionContentAttributes(
+              { phase: "rest", hide: "display" },
+              "session-working-label",
+            )}
+          >
             {word}
           </span>
         ) : null}

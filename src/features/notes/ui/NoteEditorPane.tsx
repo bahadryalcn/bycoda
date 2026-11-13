@@ -62,7 +62,15 @@ export function NoteEditorPane({
       hidden={hidden}
       data-split={split || undefined}
       data-document={readingPane || undefined}
-      className={hidden ? "hidden" : "note-editor-pane"}
+      {...surfaceAttributes(
+        {
+          ...(readingPane && split
+            ? { frame: "editor" as const, edge: "inline-start" as const }
+            : {}),
+          ...(readingPane ? { variant: "transparent" as const } : {}),
+        },
+        hidden ? "hidden" : "note-editor-pane",
+      )}
     >
       {split ? (
         <Text

@@ -1,4 +1,5 @@
 import { Text as UiText } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
@@ -391,7 +392,10 @@ export function FilePreviewSearch({
           as="div"
           size="inherit"
           tone="primary"
-          className="relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-workspace-reading-panel) px-2 py-1"
+          {...surfaceAttributes(
+            { frame: "pane", edge: "bottom", variant: "reading-panel" },
+            "relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 px-2 py-1",
+          )}
           onKeyDown={onKeyDown}
         >
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">

@@ -450,22 +450,16 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
         && !plan.presence.pending
         && !plan.presence.status_error
         && !plan.presence.write_error;
-    for (index, (choice, label, checked)) in [
-        (
-            crate::assistant_presence::Choice::Present,
-            &labels.here,
-            effective == Some(&crate::assistant_presence::Presence::Present),
-        ),
-        (
-            crate::assistant_presence::Choice::Away,
-            &labels.away,
-            effective == Some(&crate::assistant_presence::Presence::Away),
-        ),
-        (
-            crate::assistant_presence::Choice::Dnd,
-            &labels.dnd,
-            effective == Some(&crate::assistant_presence::Presence::Dnd),
-        ),
+    // The mark is the owner's choice; the caption above shows the effective state.
+    let selected = plan
+        .presence
+        .status
+        .as_ref()
+        .and_then(crate::assistant_presence::Status::selected);
+    for (index, (choice, label)) in [
+        (crate::assistant_presence::Choice::Present, &labels.here),
+        (crate::assistant_presence::Choice::Away, &labels.away),
+        (crate::assistant_presence::Choice::Dnd, &labels.dnd),
     ]
     .into_iter()
     .enumerate()
@@ -473,7 +467,7 @@ fn build_menu(app: &AppHandle, name: &str, plan: &Plan) -> tauri::Result<Built> 
         let id = format!("{PRESENCE_PREFIX}{}_{index}", plan.generation);
         presence = presence.item(
             &CheckMenuItemBuilder::with_id(&id, label)
-                .checked(checked)
+                .checked(selected == Some(choice))
                 .enabled(available)
                 .build(app)?,
         );
@@ -771,6 +765,7 @@ mod tests {
             state: crate::assistant_presence::Presence::Present,
             setup_complete: true,
             assistant_name: None,
+            choice: None,
         });
         let plan = state.plan().expect("menu plan");
         state.windows.clear();

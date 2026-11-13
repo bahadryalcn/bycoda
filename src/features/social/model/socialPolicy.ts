@@ -1,3 +1,4 @@
+import { hasControlCharacters } from "../../../shared/lib/controlCharacters";
 export { socialCharacterCount, socialLimit } from "./socialLimits";
 import { isRemoteProvider } from "../../connections/model/protocol";
 import {
@@ -21,18 +22,52 @@ export function parseSocialAgent(raw: unknown): SocialAgent {
     throw new Error("Choose a valid AI agent.");
   const agent = raw as Record<string, unknown>;
   if (
-    Object.keys(agent).some((key) => !["provider", "model"].includes(key)) ||
+    Object.keys(agent).some(
+      (key) => !["provider", "model", "providerAccountId", "modelSettings"].includes(key),
+    ) ||
     !isRemoteProvider(agent.provider)
   )
     throw new Error("Unsupported social AI agent.");
   if (
     agent.model !== undefined &&
-    (typeof agent.model !== "string" || agent.model.length > 200 || /[\x00-\x1f]/.test(agent.model))
+    (typeof agent.model !== "string" ||
+      agent.model.length > 200 ||
+      hasControlCharacters(agent.model, false))
   )
     throw new Error("Invalid social AI model.");
+  if (
+    agent.providerAccountId !== undefined &&
+    (typeof agent.providerAccountId !== "string" ||
+      !agent.providerAccountId.trim() ||
+      agent.providerAccountId.length > 512 ||
+      hasControlCharacters(agent.providerAccountId, false))
+  )
+    throw new Error("Invalid social AI account.");
+  const settings = agent.modelSettings;
+  if (
+    settings !== undefined &&
+    (!settings ||
+      typeof settings !== "object" ||
+      Array.isArray(settings) ||
+      Object.keys(settings).length > 20 ||
+      Object.entries(settings).some(
+        ([key, value]) =>
+          !key ||
+          key.length > 64 ||
+          hasControlCharacters(key, false) ||
+          typeof value !== "string" ||
+          value.length > 128 ||
+          hasControlCharacters(value, false),
+      ))
+  )
+    throw new Error("Invalid social AI model settings.");
   return {
     provider: agent.provider,
     ...(typeof agent.model === "string" && agent.model.trim() ? { model: agent.model.trim() } : {}),
+    ...(typeof agent.providerAccountId === "string"
+      ? { providerAccountId: agent.providerAccountId.trim() }
+      : {}),
+    ...(settings ? { modelSettings: { ...(settings as Record<string, string>) } } : {}),
   };
 }
 function parsePolicy(raw: unknown): SocialPolicy {

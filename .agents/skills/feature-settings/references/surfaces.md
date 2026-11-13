@@ -2,6 +2,8 @@
 
 All code paths below are repository-relative. This is a starting map; follow current imports and dispatcher registrations rather than treating a listed path or type as a delivered capability.
 
+Model order, pools, roles and delegation use [model routing](../../feature-model-routing/SKILL.md).
+
 ## Route page work
 
 | Change                                            | Read only the relevant specialist                                                                                                                 |
@@ -17,7 +19,7 @@ All code paths below are repository-relative. This is a starting map; follow cur
 | Inbox credentials/scope                           | [Inbox settings](../../feature-inbox-settings/SKILL.md)                                                                                           |
 | Archive management                                | [Archive](../../feature-archive/SKILL.md)                                                                                                         |
 | Chat preferences and prompt templates             | [Chat settings](../../feature-chat-settings/SKILL.md)                                                                                             |
-| Models/accounts/provider setup                    | [Providers](../../feature-providers/SKILL.md)                                                                                                     |
+| Accounts/catalog/provider setup                   | [Providers](../../feature-providers/SKILL.md)                                                                                                     |
 | Usage analytics, provider quotas, local budgets   | [Usage](../../feature-usage/SKILL.md)                                                                                                             |
 | Outgoing MCP config or incoming grants            | [MCP](../../feature-mcp/SKILL.md)                                                                                                                 |
 | Skill management                                  | [Skills](../../feature-skills/SKILL.md)                                                                                                           |

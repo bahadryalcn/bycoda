@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionPane, type SessionPaneProps } from "../../../src/features/sessions/ui/SessionPane";
+import { setNotesPanelOpen } from "../../../src/features/notes/notesPanel";
+import { ContextMeter } from "../../../src/features/sessions/ui/ContextMeter";
 import { hydrateComposerDrafts } from "../../../src/features/sessions/data/composerDraftStore";
 import { hydrateHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
@@ -92,6 +94,25 @@ const initial: Session = {
   ...newSession("claude", "/fixture", modelId),
   id: sessionId,
   title: "Composer reading mode",
+  ...(params.has("docked-question")
+    ? {
+        pendingQuestion: {
+          requestId: 88,
+          questions: [
+            {
+              id: "choice",
+              prompt: "Select a target",
+              multiSelect: false,
+              allowCustom: false,
+              options: [
+                { id: "one", label: "First target" },
+                { id: "two", label: "Second target" },
+              ],
+            },
+          ],
+        },
+      }
+    : {}),
   ...(params.has("backgroundOnly")
     ? { busy: true, backgroundTasks: ["Wait for test runs to finish"], backgroundAgents: 0 }
     : {}),
@@ -119,7 +140,7 @@ function seedComposer() {
   }
 }
 
-const events = { sends: 0, stops: 0 };
+const events = { sends: 0, stops: 0, paneDrags: 0 };
 declare global {
   interface Window {
     compactFixture: {
@@ -162,7 +183,12 @@ function Fixture() {
     session,
     visible: true,
     focused: true,
-    inSplit: false,
+    inSplit: params.has("split"),
+    onPaneDragStart: params.has("pane-grab")
+      ? () => {
+          events.paneDrags++;
+        }
+      : undefined,
     composerFocused: false,
     recents: [],
     hideProjectPicker: true,
@@ -229,6 +255,8 @@ Object.assign(window, {
       if (command === "canonical_store_session_guard_ready") return false;
       if (command === "canonical_store_list") return { entries: [], revision: 0 };
       if (command === "session_list_drafts") return [];
+      if (command === "session_checkpoint_status") return { files: [] };
+      if (command === "notes_list" || command === "notes_list_summaries") return [];
       if (command === "plugin:event|listen") return 1;
       return null;
     },
@@ -242,11 +270,41 @@ void Promise.all([
   hydrateHostSessionBindings().then(() => hydrateComposerDrafts()),
 ]).then(() => {
   seedComposer();
+  if (params.has("notes")) setNotesPanelOpen(true);
   return createRoot(document.getElementById("root")!).render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <Fixture />
+      {params.has("context-sections") ? (
+        <main className="p-8">
+          <ContextMeter
+            usage={{ used: 64000, window: 128000 }}
+            sessionUsage={{
+              costUsd: 1.8,
+              apiMs: 290000,
+              lastProcessCostUsd: 1.8,
+              lastProcessApiMs: 290000,
+            }}
+            contextBlocks={[
+              {
+                id: "context-agent",
+                role: "tool",
+                text: "Agent",
+                tool: {
+                  callId: "context-agent",
+                  kind: "agent",
+                  status: "completed",
+                  agentContext: { used: 12000 },
+                },
+                agentRun: { name: "Review", steps: [] },
+              },
+            ]}
+            onCompact={() => {}}
+          />
+        </main>
+      ) : (
+        <Fixture />
+      )}
     </QueryClientProvider>,
   );
 });

@@ -203,8 +203,8 @@ export function ModelExtrasPanel({
               <Tooltip label={t("Changed from default")} asChild>
                 <span
                   {...surfaceAttributes(
-                    { radius: "pill" },
-                    "size-1.5 shrink-0  bg-(--color-accent)",
+                    { radius: "pill", variant: "accent-marker" },
+                    "size-1.5 shrink-0",
                   )}
                 />
               </Tooltip>
@@ -277,8 +277,8 @@ export function ModelExtrasPanel({
       {!compact && (
         <div
           {...surfaceAttributes(
-            { frame: "neutral", edge: "bottom" },
-            "sticky top-0 z-(--layer-pane-sheet)  border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) px-3 pt-2.5 pb-2",
+            { frame: "neutral", edge: "bottom", variant: "floating" },
+            "sticky top-0 z-(--layer-pane-sheet)  border-(--ui-tone-neutral-border) px-3 pt-2.5 pb-2",
           )}
         >
           <div className="flex items-center justify-between gap-2">
@@ -387,7 +387,11 @@ export function ModelExtras({
         <SlidersHorizontal className="icon-xs shrink-0" strokeWidth={1.75} />
         <span data-extras-label>{t("Extras")}</span>
         {changed > 0 && (
-          <Text as="span" tone="neutral" className="rounded bg-selection px-1">
+          <Text
+            as="span"
+            tone="neutral"
+            {...surfaceAttributes({ radius: "sm", variant: "selection" }, "px-1")}
+          >
             {changed}
           </Text>
         )}

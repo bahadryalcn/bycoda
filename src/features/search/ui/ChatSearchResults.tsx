@@ -1,3 +1,9 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import {
+  actionContentAttributes,
+  actionContentScopeAttributes,
+} from "../../../shared/ui/ActionHost";
+import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { motionAttributes } from "../../../shared/ui/Motion";
@@ -222,15 +228,22 @@ export function ChatSearchResults({
   };
 
   return (
-    <div
+    <PickerListRoot
       id={listId}
-      role="listbox"
-      aria-label={t("Chat search results")}
+
+      label={t("Chat search results")}
       onMouseMove={onMouseMove}
       className="pb-2"
     >
-      {groups.map((group) => (
-        <section key={group.key} aria-label={group.name} className="app-search-project">
+      {groups.map((group, groupIndex) => (
+        <section
+          key={group.key}
+          aria-label={group.name}
+          {...surfaceAttributes(
+            groupIndex > 0 ? { frame: "pane", edge: "block-start" } : {},
+            "app-search-project",
+          )}
+        >
           <SectionLabel
             as="h3"
             className="app-search-project-heading"
@@ -256,17 +269,24 @@ export function ChatSearchResults({
           >
             {group.cwd}
           </Text>
-          {group.sessions.map((session) => {
+          {group.sessions.map((session, sessionIndex) => {
             const row = rowProps(session.id);
             const more = session.hitCount - session.hits.length;
             return (
-              <div key={session.id} className="app-search-conversation">
+              <div
+                key={session.id}
+                {...surfaceAttributes(
+                  sessionIndex > 0 ? { frame: "pane", edge: "block-start" } : {},
+                  "app-search-conversation",
+                )}
+              >
                 <Button
                   variant="item"
                   tone="accent"
                   motion="none"
                   fullWidth
                   selected={row.highlighted}
+                  {...actionContentScopeAttributes()}
                   className="app-search-result app-search-conversation-row @max-[560px]/search:flex-wrap"
                   type="button"
                   {...row.buttonProps}
@@ -280,7 +300,10 @@ export function ChatSearchResults({
                     weight="medium"
                     leading="inherit"
                     truncate
-                    className="app-search-result-title min-w-0 flex-1"
+                    {...actionContentAttributes(
+                      { phase: "always", reveal: "wrap" },
+                      "app-search-result-title min-w-0 flex-1",
+                    )}
                   >
                     <Marked text={session.title} ranges={session.titleRanges} />
                   </Text>
@@ -311,6 +334,7 @@ export function ChatSearchResults({
                       motion="none"
                       fullWidth
                       selected={hitRow.highlighted}
+                      {...actionContentScopeAttributes()}
                       className="app-search-result app-search-match"
                       key={hit.id}
                       type="button"
@@ -326,9 +350,13 @@ export function ChatSearchResults({
                         size="caption"
                         tone="secondary"
                         leading="inherit"
+                        {...actionContentAttributes({ phase: "always", reveal: "preview" })}
                         {...motionAttributes(
                           { transition: "size", duration: "standard" },
-                          "app-search-match-excerpt",
+                          actionContentAttributes(
+                            { phase: "always", reveal: "preview" },
+                            "app-search-match-excerpt",
+                          ).className,
                         )}
                       >
                         <Marked text={hit.snippet} ranges={hit.ranges} />
@@ -355,6 +383,6 @@ export function ChatSearchResults({
           })}
         </section>
       ))}
-    </div>
+    </PickerListRoot>
   );
 }

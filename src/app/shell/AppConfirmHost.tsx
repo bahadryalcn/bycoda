@@ -14,6 +14,7 @@ import {
 } from "../../shared/model/appConfirm";
 import { useConfirm } from "../../shared/ui/ConfirmDialog";
 import { restoreWindowFocus } from "../model/windowFocus";
+import { startOwnerApprovalSessions } from "../workspace/bridges/ownerApprovalSessions";
 
 /** A key that opened a menu item must not be able to answer the dialog it opened. */
 const GUARD_MS = 350;
@@ -53,6 +54,8 @@ async function revealWindow(): Promise<void> {
 export function AppConfirmHost() {
   const { confirm, dialog } = useConfirm();
   const openedAt = useRef(0);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to native approval and session stores while the confirmation host is mounted.
+  useEffect(() => startOwnerApprovalSessions(), []);
   useEffect(() => {
     let lastId: string | undefined;
     return subscribeOwnerApprovals(() => {
@@ -94,7 +97,7 @@ export function AppConfirmHost() {
     }
   };
   return (
-    <div style={{ display: "contents" }} onKeyDownCapture={guard} onKeyUpCapture={guard}>
+    <div className="contents" onKeyDownCapture={guard} onKeyUpCapture={guard}>
       {dialog}
       <OwnerApprovalInbox />
     </div>

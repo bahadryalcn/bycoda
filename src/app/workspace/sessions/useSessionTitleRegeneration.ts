@@ -11,7 +11,7 @@ import {
 } from "../../../features/connections/model/connections";
 import { parseRemotePath } from "../../../features/connections/model/remoteProjects";
 import { getSession } from "../../../features/sessions/data/sessionStore";
-import { titleGenerationChoice } from "../../../features/sessions/model/titlePreferences";
+import { resolveTitleGenerationChoice } from "../../../features/sessions/model/titlePreferences";
 import { isProjectLocked } from "../../../features/group-lock/model/groupLock";
 import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
@@ -56,7 +56,7 @@ export function useSessionTitleRegeneration({
         if (!session) throw new Error(t("Could not save changes"));
         if (pathKey(session.cwd) !== pathKey(cwd))
           throw new Error(t("This project is no longer available."));
-        const target = titleGenerationChoice(session.harness);
+        const target = await resolveTitleGenerationChoice(session.harness, session.cwd);
         if (!target) throw new Error(t("Choose a title generation model in Settings."));
         const key = JSON.stringify([cwd, target]);
         let request = requests.current.get(sessionId);

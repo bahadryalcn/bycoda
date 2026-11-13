@@ -40,7 +40,7 @@ it("Automatic disables native delegation when its runtime set is not exactly one
   const input = {
     harness: "claude",
     providerAccountId: "own",
-    modelSettings: { crossSubagents: "auto" },
+    modelSettings: { crossSubagents: "auto" } as Record<string, string>,
   };
   const result = providerTurnInput(input, (id) => id);
   expect(result.modelSettings.subagentModel).toBe("off");
@@ -53,7 +53,7 @@ it("Automatic keeps Claude native Agent only for exactly one resolved same-accou
   const input = {
     harness: "claude",
     providerAccountId: "own",
-    modelSettings: { crossSubagents: "auto" },
+    modelSettings: { crossSubagents: "auto" } as Record<string, string>,
   };
   automaticModels.mockReturnValue([
     { harness: "claude", model: "sonnet", providerAccountId: "own" },

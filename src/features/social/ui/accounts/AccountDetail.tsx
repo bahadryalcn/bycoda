@@ -6,6 +6,8 @@ import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import type { HostProject } from "../../../connections/public/protocol";
 import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
+import { Globe, MessageSquare, Shield, SlidersHorizontal } from "../../../../shared/ui/icons";
 import { PlatformMark } from "../common/PlatformIcon";
 import { ScreenHeader, type ScreenHeaderMenuItem } from "../common/ScreenHeader";
 import { SOCIAL_PLATFORM_NAMES, type SocialAccount, type SocialSnapshot } from "../../model/social";
@@ -124,7 +126,7 @@ export function AccountDetail({
       </div>
       {disabled ? (
         <InlineMessage tone="warning" live="off">
-          {t("Connect to this computer to change this account.")}
+          {t("Could not reach this computer.")}
         </InlineMessage>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
@@ -136,29 +138,70 @@ export function AccountDetail({
         disabled={disabled}
         onChanged={onChanged}
       />
-      <AccountPermissions
-        client={client}
-        account={account}
-        projects={projects}
-        disabled={disabled}
-        onChanged={onChanged}
-      />
-      <AutonomySettings
-        client={client}
-        account={account}
-        disabled={disabled}
-        onChanged={onChanged}
-      />
-      {account.connection === "browser" ? (
-        <BrowserSettings
+      <Disclosure
+        summary={
+          <span className="social-detail-topic">
+            <Shield className="icon-sm" aria-hidden />
+            {t("Who can use this account")}
+          </span>
+        }
+        variant="row"
+      >
+        <AccountPermissions
           client={client}
-          accountId={account.id}
-          accountName={account.name}
-          needsHuman={needsHuman}
+          account={account}
+          projects={projects}
           disabled={disabled}
+          onChanged={onChanged}
         />
+      </Disclosure>
+      <Disclosure
+        summary={
+          <span className="social-detail-topic">
+            <SlidersHorizontal className="icon-sm" aria-hidden />
+            {t("Autonomy")}
+          </span>
+        }
+        variant="row"
+      >
+        <AutonomySettings
+          client={client}
+          account={account}
+          disabled={disabled}
+          onChanged={onChanged}
+        />
+      </Disclosure>
+      {account.connection === "browser" ? (
+        <Disclosure
+          summary={
+            <span className="social-detail-topic">
+              <Globe className="icon-sm" aria-hidden />
+              {t("Browser")}
+            </span>
+          }
+          variant="row"
+          defaultOpen={needsHuman}
+        >
+          <BrowserSettings
+            client={client}
+            accountId={account.id}
+            accountName={account.name}
+            needsHuman={needsHuman}
+            disabled={disabled}
+          />
+        </Disclosure>
       ) : null}
-      <ReplyRules client={client} account={account} projects={projects} disabled={disabled} />
+      <Disclosure
+        summary={
+          <span className="social-detail-topic">
+            <MessageSquare className="icon-sm" aria-hidden />
+            {t("Reply rules")}
+          </span>
+        }
+        variant="row"
+      >
+        <ReplyRules client={client} account={account} projects={projects} disabled={disabled} />
+      </Disclosure>
       {confirmation.dialog}
     </div>
   );

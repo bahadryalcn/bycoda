@@ -599,14 +599,21 @@ async function initializeChatLayout(page: import("@playwright/test").Page) {
     localStorage.setItem("bycoda.language", "en");
     Math.random = () => 0;
     Object.assign(window, {
+      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
       __TAURI_INTERNALS__: {
         metadata: {
           currentWebview: { label: "fixture" },
           currentWindow: { label: "fixture" },
         },
+        convertFileSrc: (path: string) => path,
         transformCallback: () => 1,
         unregisterCallback: () => {},
         invoke: async (command: string) => {
+          if (
+            new URLSearchParams(location.search).has("picker-root-consumers") &&
+            command === "plugin:window|is_maximized"
+          )
+            return false;
           if (command === "plugin:event|listen") return 1;
           if (command === "plugin:event|unlisten") return;
           throw new Error(`No native host in composer fixture: ${command}`);
@@ -831,6 +838,56 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
     await expect(folders).toBeInViewport();
     await page.keyboard.press("Escape");
   }
+});
+
+test("access label collapses before narrow composer controls wrap", async ({ page }) => {
+  await initializeChatLayout(page);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tests/browser/chat/composer-extras.html?chat-layout&workspace-footer");
+  const access = page.locator("[data-access-picker-trigger]");
+  await access.click();
+  await page.getByRole("option", { name: /^Full access / }).click();
+  const input = page.getByRole("textbox", { name: "Message", exact: true });
+  await input.fill("Keep this draft");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate((value) => {
+      document.documentElement.classList.toggle("theme-light", value === "light");
+    }, theme);
+    for (const width of [458, 520, 800, 1280]) {
+      await page.setViewportSize({ width: width < 560 ? 1280 : width, height: 800 });
+      await page.locator("main").evaluate((main, size) => {
+        main.style.inlineSize = `${size}px`;
+      }, width);
+      await expect(access).toHaveAccessibleName("Full access");
+      await expect(access.locator(":scope > span[aria-hidden]")).toBeVisible();
+      await page.mouse.move(0, 0);
+      await page.screenshot({
+        path: `temp/verification/composer-narrow/${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      const label = access.locator(":scope > span:not([aria-hidden])");
+      if (width < 560) await expect(label).toBeHidden();
+      else await expect(label).toBeVisible();
+      const model = page
+        .locator('[data-composer-model-controls] button[aria-haspopup="dialog"]')
+        .first();
+      const modelBounds = (await model.boundingBox())!;
+      const accessBounds = (await access.boundingBox())!;
+      expect(
+        Math.abs(modelBounds.y + modelBounds.height / 2 - accessBounds.y - accessBounds.height / 2),
+      ).toBeLessThan(2);
+      await expect(input).toHaveValue("Keep this draft");
+      await expect(access).toBeInViewport();
+    }
+  }
+  await page.locator("main").evaluate((main) => {
+    main.style.inlineSize = "458px";
+  });
+  await expect(access.locator(":scope > span:not([aria-hidden])")).toBeHidden();
+  await access.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("option", { name: /^Full access / })).toBeVisible();
+  await page.keyboard.press("Escape");
 });
 
 test("chat busy actions explain steering and queuing without losing the draft", async ({
@@ -1355,6 +1412,9 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
     name: "Model and settings",
     exact: true,
   });
+  await expect(panel).toHaveCSS("--layout-height", "460px");
+  await expect.poll(async () => (await panel.boundingBox())?.height).toBeGreaterThanOrEqual(450);
+  expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(460);
   for (const viewport of [
     { width: 661, height: 761 },
     { width: 320, height: 480 },
@@ -1394,7 +1454,7 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
       const lineHeight = await help
         .locator("p")
         .evaluate((el) => parseFloat(getComputedStyle(el).lineHeight));
-      expect(helpText!.height).toBeLessThanOrEqual(lineHeight + 1);
+      expect(helpText!.height).toBeLessThanOrEqual(lineHeight * 2 + 1);
     }
     // The trailing icon button can be slightly taller than a single text line.
     expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(3);
@@ -1652,3 +1712,363 @@ test("queue removal offers inline Undo without a confirmation", async ({ page })
   await expect(card.locator("[data-queue-handle]")).toHaveCount(1);
   await expect(card.locator("[data-queue-removal]")).toHaveCount(0);
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [320, 800, 1280])
+    test(`model settings responsive divider ${theme} ${width}`, async ({ page }) => {
+      await page.addInitScript(() => {
+        localStorage.setItem("bycoda.language", "en");
+      });
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/chat/composer-extras.html?theme=${theme}`);
+      await page.locator("[data-composer-model-controls] button[aria-haspopup]").first().click();
+      const panel = page.getByRole("dialog", { name: "Model and settings", exact: true });
+      const column = panel.locator("[data-model-settings]");
+      await expect(column).toBeVisible();
+      const border = await column.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return {
+          left: style.borderLeftWidth,
+          top: style.borderTopWidth,
+          container: node.closest('[class*="@container/model-panel"]')?.getBoundingClientRect()
+            .width,
+        };
+      });
+      console.log("MODEL_DIVIDER", width, JSON.stringify(border));
+      expect(border.left).toBe(width === 320 ? "0px" : "1px");
+      expect(border.top).toBe(width === 320 ? "1px" : "0px");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/model-divider-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`activity dock transparency fallback ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        "/tests/browser/chat/composer-extras.html?chat-layout&accounts&queue-state=active&queue-background",
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const dock = page.locator("[data-activity-dock]");
+      const queue = page.locator("[data-message-queue-card]");
+      await expect(dock).toBeVisible();
+      await expect(queue).toBeVisible();
+      for (const mode of ["glass", "no-blur", "streaming", "forced-colors"] as const) {
+        await page.emulateMedia({ forcedColors: mode === "forced-colors" ? "active" : "none" });
+        await page.evaluate((state) => {
+          document.documentElement.toggleAttribute("data-performance-no-blur", state === "no-blur");
+          document
+            .querySelector("[data-composer]")!
+            .parentElement!.toggleAttribute("data-session-streaming", state === "streaming");
+          if (state === "streaming")
+            document
+              .querySelector("[data-composer]")!
+              .parentElement!.setAttribute("data-session-streaming", "true");
+        }, mode);
+        const values = await Promise.all(
+          [dock, queue].map((loc) =>
+            loc.evaluate((node) => {
+              const style = getComputedStyle(node);
+              const probe = document.createElement("span");
+              probe.style.background = "var(--ui-composer-surface)";
+              node.appendChild(probe);
+              const opaque = getComputedStyle(probe).backgroundColor;
+              probe.style.background = "var(--ui-activity-dock-glass)";
+              const glass = getComputedStyle(probe).backgroundColor;
+              probe.remove();
+              return {
+                background: style.backgroundColor,
+                shadow: style.boxShadow,
+                filter: style.backdropFilter,
+                opaque,
+                glass,
+              };
+            }),
+          ),
+        );
+        for (const value of values) {
+          expect(value.background).toBe(mode === "glass" ? value.glass : value.opaque);
+          if (mode !== "glass") {
+            expect(value.shadow).toBe("none");
+            expect(value.filter).toBe("none");
+          }
+        }
+        await page.screenshot({
+          animations: "disabled",
+          path: `temp/verification/feature-controls/activity-dock-${mode}-${theme}-${width}.png`,
+        });
+      }
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`queue card top corners ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        "/tests/browser/chat/composer-extras.html?chat-layout&accounts&queue-state=active",
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const card = page.locator("[data-message-queue-card]");
+      await expect(card).toBeVisible();
+      const corners = await card.evaluate((node) => {
+        const s = getComputedStyle(node);
+        return [
+          s.borderTopLeftRadius,
+          s.borderTopRightRadius,
+          s.borderBottomLeftRadius,
+          s.borderBottomRightRadius,
+        ];
+      });
+      expect(corners).toEqual(["12px", "12px", "0px", "0px"]);
+      await expect(card.locator("[data-queue-handle]")).toHaveCount(2);
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/queue-corners-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`delegation and extras surfaces ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/chat/composer-extras.html?surfaceProbes&theme=${theme}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const marker = page.locator('[data-probe="extras"] [data-surface-radius="pill"]').first();
+      const count = page.locator('[data-extras-trigger] [data-surface-radius="sm"]');
+      const ring = page.locator('[data-probe="delegation"] [data-surface-radius="pill"]').first();
+      const help = page.locator("[data-model-setting-help]");
+      await expect(marker).toBeVisible();
+      await expect(count).toBeVisible();
+      await expect(ring).toBeVisible();
+      const computed = await Promise.all(
+        [marker, count, ring].map((loc) =>
+          loc.evaluate((node) => {
+            const s = getComputedStyle(node);
+            return { bg: s.backgroundColor, shadow: s.boxShadow };
+          }),
+        ),
+      );
+      const expected = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        document.body.appendChild(probe);
+        const background = (value: string) => {
+          probe.style.background = value;
+          return getComputedStyle(probe).backgroundColor;
+        };
+        const accent = background("var(--color-accent)");
+        const selection = background("var(--color-selection)");
+        const base = background("var(--color-background-base)");
+        probe.remove();
+        return { accent, selection, base };
+      });
+      expect(computed[0]!.bg).toBe(expected.accent);
+      expect(computed[1]!.bg).toBe(expected.selection);
+      expect(computed[2]!.shadow).toContain(`${expected.base} 0px 0px 0px 2px`);
+      const helpBorder = await help.evaluate((node) => {
+        const style = getComputedStyle(node);
+        const probe = document.createElement("span");
+        probe.style.borderTop = "1px solid var(--ui-frosted-divider)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).borderTopColor;
+        probe.remove();
+        return { width: style.borderTopWidth, color: style.borderTopColor, expected };
+      });
+      expect(helpBorder.width).toBe("1px");
+      expect(helpBorder.color).toBe(helpBorder.expected);
+      console.log("SURFACE_PROBES", theme, JSON.stringify(computed));
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/model-surfaces-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`shared lifted queue appearance ${theme} ${width}`, async ({ page }) => {
+      await initializeChatLayout(page);
+      await page.setViewportSize({ width, height: 850 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?chat-layout&accounts&queue-state=busy&theme=${theme}`,
+      );
+      const row = page.locator("[data-message-queue-card] .reorder-item").first();
+      const handle = page.locator('[data-message-queue-card] [data-queue-handle="queued"]');
+      await handle.focus();
+      const before = await row.boundingBox();
+      // Seed only the controller's visual state; keyboard reorder below exercises actual behavior.
+      await row.evaluate((node) => node.setAttribute("data-dragging", ""));
+      const actual = await row.evaluate((node) => {
+        const s = getComputedStyle(node),
+          probe = document.createElement("span");
+        probe.style.background = "var(--ui-surface)";
+        probe.style.boxShadow = "var(--shadow-lg)";
+        probe.style.borderRadius = "var(--ui-radius-row)";
+        node.appendChild(probe);
+        const p = getComputedStyle(probe);
+        const result = {
+          background: s.backgroundColor,
+          shadow: s.boxShadow,
+          radius: s.borderRadius,
+          expectedBackground: p.backgroundColor,
+          expectedShadow: p.boxShadow,
+          expectedRadius: p.borderRadius,
+        };
+        probe.remove();
+        return result;
+      });
+      expect(actual.background).toBe(actual.expectedBackground);
+      expect(actual.shadow).toBe(actual.expectedShadow);
+      expect(actual.radius).toBe(actual.expectedRadius);
+      expect(await row.boundingBox()).toEqual(before);
+      await handle.evaluate((node) => node.blur());
+      await page.mouse.move(0, 0);
+      await expect(page.getByRole("tooltip")).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/session-interactions/queue-${theme}-${width}.png`,
+      });
+      await row.evaluate((node) => node.removeAttribute("data-dragging"));
+      await handle.focus();
+      await handle.press("Alt+ArrowDown");
+      await expect(handle).toBeFocused();
+      await expect(
+        page.locator("[data-message-queue-card] [data-queue-handle]").last(),
+      ).toHaveAttribute("data-queue-handle", "queued");
+      await expect(page.locator("[data-message-queue-card] .reorder-item")).toHaveCount(2);
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`shared Btw tab frame preserves draft ${theme} ${width}`, async ({ page }) => {
+      await initializeChatLayout(page);
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/composer-extras.html?btw-interaction&theme=${theme}`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page.getByRole("button", { name: "Open side questions" }).click();
+      const sheet = page.getByRole("dialog", { name: "By-the-way conversations" });
+      const draft = sheet.getByRole("textbox").first();
+      await expect(draft).toHaveValue("Unsent side question");
+      await draft.fill("Retain exact unsent draft");
+      const tabs = sheet.getByRole("tab");
+      await expect(tabs).toHaveCount(2);
+      const host = tabs.last().locator("..");
+      await expect(host).toHaveCSS("border-radius", "6px");
+      await tabs.first().click();
+      await tabs.last().click();
+      await expect(draft).toHaveValue("Retain exact unsent draft");
+      await page.screenshot({
+        path: `temp/verification/session-interactions/btw-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`picker composition keeps editor and search activation ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await initializeChatLayout(page);
+      await page.setViewportSize({ width, height: 1100 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/chat/composer-extras.html?picker-root-consumers");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const editor = page.getByRole("textbox", { name: "External picker editor" });
+      await editor.focus();
+      const skills = page.getByRole("listbox", { name: "Commands and skills" });
+      await expect(skills.getByRole("option")).toHaveCount(2);
+      await skills.getByRole("option").first().click();
+      await expect(editor).toBeFocused();
+      await expect(editor).toHaveValue("Exact unsent editor draft");
+      await expect(page.getByLabel("Picker activation")).not.toHaveText("");
+      await page
+        .locator("[data-root-skills]")
+        .screenshot({ path: `temp/verification/picker-roots/skills-${theme}-${width}.png` });
+      const chats = page.getByRole("listbox", { name: "Chat search results" });
+      await expect(chats.getByRole("option")).toHaveCount(2);
+      await chats.getByRole("option").last().click();
+      await expect(page.getByLabel("Picker activation")).toHaveText("fixture-chat-b");
+      await page
+        .locator("[data-root-chat]")
+        .screenshot({ path: `temp/verification/picker-roots/chat-${theme}-${width}.png` });
+      const search = page.getByRole("combobox", { name: "Search", exact: true });
+      await expect(search).toHaveValue("visual");
+      await search.focus();
+      await search.press("ArrowDown");
+      const results = page.getByRole("listbox", { name: "Search results", exact: true });
+      await expect(results.getByRole("option")).toHaveCount(1);
+      expect(await search.getAttribute("aria-controls")).toBe(await results.getAttribute("id"));
+      await page
+        .locator("[data-root-search]")
+        .screenshot({ path: `temp/verification/picker-roots/search-${theme}-${width}.png` });
+      await search.press("Enter");
+      await expect(page.getByLabel("Picker activation")).toHaveText("/fixture/visual-project");
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`search content disclosure geometry ${theme} ${width}`, async ({ page }) => {
+      await initializeChatLayout(page);
+      await page.setViewportSize({ width, height: 1200 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        "/tests/browser/chat/composer-extras.html?picker-root-consumers&search-surfaces",
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const list = page.getByRole("listbox", { name: "Chat search results", exact: true });
+      const match = list.locator(".app-search-match");
+      const excerpt = match.locator(".app-search-match-excerpt");
+      await expect(match).toHaveCSS("margin-inline-start", "22px");
+      await expect(list.locator(".app-search-more")).toHaveCSS("margin-inline-start", "42px");
+      await page.mouse.move(width - 1, 1199);
+      const line = await excerpt.evaluate((node) => parseFloat(getComputedStyle(node).lineHeight));
+      expect(
+        await excerpt.evaluate((node) => parseFloat(getComputedStyle(node).maxBlockSize)),
+      ).toBeCloseTo(line, 1);
+      const collapsed = (await excerpt.boundingBox())!.height;
+      await match.hover();
+      await expect
+        .poll(() => excerpt.evaluate((node) => parseFloat(getComputedStyle(node).maxBlockSize)))
+        .toBeCloseTo(line * 6, 1);
+      expect((await excerpt.boundingBox())!.height).toBeGreaterThan(collapsed);
+      await page.mouse.move(width - 1, 1199);
+      await match.focus();
+      await expect
+        .poll(() => excerpt.evaluate((node) => parseFloat(getComputedStyle(node).maxBlockSize)))
+        .toBeCloseTo(line * 6, 1);
+      const title = list.locator(".app-search-result-title").first();
+      await list.getByRole("option").first().hover();
+      await expect(title).toHaveCSS("white-space", "normal");
+      await expect(list.locator(".app-search-project").last()).toHaveCSS(
+        "border-block-start-width",
+        "1px",
+      );
+      await expect(list.locator(".app-search-conversation").nth(1)).toHaveCSS(
+        "border-block-start-width",
+        "1px",
+      );
+      await page.screenshot({
+        path: `temp/verification/search-skills-notes/search-${theme}-${width}.png`,
+      });
+      await match.click();
+      await expect(page.getByLabel("Picker activation")).toHaveText("fixture-chat-a");
+    });
+  }

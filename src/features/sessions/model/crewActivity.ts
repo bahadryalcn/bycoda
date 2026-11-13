@@ -55,6 +55,7 @@ export function crewSeats(sessionId: string | undefined, sessions: readonly Sess
       blocks: session.blocks,
       busy: !!session.busy,
       pendingQuestion: !!session.pendingQuestion,
+      pendingOwnerApproval: session.pendingOwnerApproval,
       backgroundTasks: session.backgroundTasks,
       backgroundAgents: session.backgroundAgents,
       unseenDone: false,

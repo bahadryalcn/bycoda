@@ -277,7 +277,11 @@ it("delivers urgent real pending approvals and budget while away, retaining ordi
     patch: { quietStart: 0, quietEnd: 0 },
   });
   f.time(10);
+  // Choosing Here rereads this computer in the background; make that read unreadable so the
+  // snapshot never races a fresh "present" reading.
+  f.setSupported(false);
   await f.owner({ op: "presence.set", state: "present" });
+  await (f.assistant as unknown as { presenceRefresh?: Promise<void> }).presenceRefresh;
   // Without a readable desktop the owner is away, never unknown: urgent items stay eligible.
   snapshot = await f.snapshot();
   expect(snapshot.effectivePresence).toBe("away");

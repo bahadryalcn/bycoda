@@ -88,33 +88,3 @@ html.has-native-glass:not(.theme-light) .bycoda-sidebar [data-session-card][data
     stroke-dashoffset: 0;
   }
 }
-
-/* The pin replaces the project mark in one stable slot, on the card's hover-reveal states
-   (hover, keyboard focus): selection alone keeps the mark, since it does not show the pin. */
-[data-session-card]:is(:hover, :has(:focus-visible))
-  .session-project-slot:has([data-action-inline])
-  [data-session-project-mark],
-.session-project-slot[data-pinned="true"]:has([data-action-inline]) [data-session-project-mark] {
-  visibility: hidden;
-}
-@media (hover: none), (pointer: coarse) {
-  .session-project-slot:has([data-action-inline]) [data-session-project-mark] {
-    visibility: hidden;
-  }
-}
-
-/* Free header space for row actions while retaining the status name for assistive technology. */
-[data-session-card]:is(:hover, :focus-within) .session-row-status-label {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-[data-session-card]:is(:hover, :focus-within) .session-working-label {
-  display: none;
-}

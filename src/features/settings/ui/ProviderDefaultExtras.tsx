@@ -1,3 +1,4 @@
+import { EffortScale } from "../../../shared/ui/EffortScale";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { delegationSelectChoice } from "../../sessions/public/modelPickerData";
 import type { CSSProperties } from "react";
@@ -8,6 +9,8 @@ import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENT_MAX_EFFORT_KEY,
   CROSS_SUBAGENTS_KEY,
+  SUBAGENT_EFFORT_LEVELS,
+  subagentEffortCeiling,
 } from "../../../shared/model/host-contracts/delegation";
 import { IMAGE_MODELS_KEY } from "../../../shared/model/host-contracts/image-models";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
@@ -16,6 +19,7 @@ import {
   isMultiSetting,
   DelegationSubagentsControl,
   DelegationOptionIcon,
+  SubagentEffortSwitch,
 } from "../../sessions/public/modelPickerData";
 import type { ProviderSessionDefaults } from "../../sessions/public/projectProviders";
 import { mergeProviderExtras } from "../../sessions/public/providerSessionDefaults";
@@ -89,27 +93,34 @@ export function ProviderDefaultExtras({
             resetLabel={resetLabel}
           >
             {setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY ? (
-              <SegmentedControl
-                compact
-                label={t(setting.label)}
-                value={saved ?? ""}
-                options={setting.options.map((option) => ({
-                  value: option.value,
-                  label: option.value
-                    ? t(option.label)
-                    : inheritedChoiceLabel(
-                        inheritedLabel ? t(inheritedLabel) : undefined,
-                        Boolean(inheritedOption),
-                      ),
-                  tooltip: t(option.label),
-                }))}
-                onValueChange={(next) => {
-                  const nextExtras = { ...scopeDefaults.extras };
-                  if (next) nextExtras[setting.id] = next;
-                  else delete nextExtras[setting.id];
-                  onSessionDefaultsChange({ ...scopeDefaults, extras: nextExtras });
-                }}
-              />
+              <div className="provider-effort provider-effort-ceiling">
+                <SubagentEffortSwitch
+                  value={effectiveValues[setting.id] ?? ""}
+                  onChange={(next) =>
+                    onSessionDefaultsChange({
+                      ...scopeDefaults,
+                      extras: { ...scopeDefaults.extras, [setting.id]: next },
+                    })
+                  }
+                />
+                <EffortScale
+                  label={t(setting.label)}
+                  value={subagentEffortCeiling(effectiveValues[setting.id]) || ""}
+                  disabled={!subagentEffortCeiling(effectiveValues[setting.id])}
+                  options={setting.options
+                    .filter((option) => SUBAGENT_EFFORT_LEVELS.includes(option.value))
+                    .map((option) => ({
+                      value: option.value,
+                      label: t(option.label),
+                    }))}
+                  onValueChange={(next) => {
+                    const nextExtras = { ...scopeDefaults.extras };
+                    if (next) nextExtras[setting.id] = next;
+                    else delete nextExtras[setting.id];
+                    onSessionDefaultsChange({ ...scopeDefaults, extras: nextExtras });
+                  }}
+                />
+              </div>
             ) : setting.id === CROSS_SUBAGENTS_KEY ? (
               <ProviderDefaultSubagents
                 setting={setting}
@@ -205,7 +216,6 @@ export function ProviderDefaultExtras({
                 options={[
                   {
                     value: "",
-                    icon: <WandSparkles className="icon-sm" />,
                     label: inheritedChoiceLabel(
                       inheritedLabel ? t(inheritedLabel) : undefined,
                       Boolean(inheritedOption) || inherited === "null",
@@ -216,7 +226,7 @@ export function ProviderDefaultExtras({
                     ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
                     : []),
                   ...setting.options
-                    .filter((option) => !delegation || option.value)
+                    .filter((option) => option.value !== "")
                     .map((option) => ({
                       value: option.value,
                       ...delegationSelectChoice(setting, option, t),

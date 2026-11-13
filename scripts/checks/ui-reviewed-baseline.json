@@ -5,6 +5,12 @@
   "componentDecisions": {
     "columns": ["file","name","indexed","definition","line","sourceFingerprint","decision","owner","reasonIndex","reviewPackage"],
     "rows": [
+      ["src/shared/ui/arc/elastic-slider/elastic-slider.tsx","ElasticSlider",false,"removed",null,null,"extract","shared elastic-slider composite",397,"W8-ROOT"],
+      ["src/shared/ui/arc/morph-select/morph-select.tsx","MorphSelect",true,"removed",null,null,"extract","shared morph-select composite",407,"W8-ROOT"],
+      ["src/shared/ui/ElasticSlider.tsx","ElasticSlider",false,"removed",null,null,"extract","public ElasticSlider adapter",390,"W8-ROOT"],
+      ["src/shared/ui/ExpandingButtonGroup.tsx","ExpandingButtonGroup",false,"removed",null,null,"extract","public ExpandingButtonGroup adapter",390,"W8-ROOT"],
+      ["src/shared/ui/MorphSelect.tsx","MorphSelect",true,"removed",null,null,"extract","public MorphSelect adapter",390,"W8-ROOT"],
+      ["src/shared/ui/Shimmer.tsx","ShimmerComponent",true,"removed",null,null,"native-platform-editor-owner","decorative/selection-preserving text content",428,"W8-ROOT"],
       ["src/app/App.tsx","App",true,"current",310,"865e894cd301cd9f4da565e49c0ae344a6c9e894333fb5b9c30c2c42a4d55234","native-platform-editor-owner","application composition",0,"W8-ROOT"],
       ["src/app/App.tsx","Workspace",true,"current",319,"57d2acc014bb64bfc6dfdc6cdfb08fd8b1733a31a9b89d28bfd5d78df762ab3d","native-platform-editor-owner","application composition",0,"W8-ROOT"],
       ["src/app/QueryProvider.tsx","QueryProvider",true,"current",7,"6596671f0109eeddc42be38bb0f64757ccf1636122d1161dfdc77e5accd3f68b","native-platform-editor-owner","application composition",0,"W8-ROOT"],

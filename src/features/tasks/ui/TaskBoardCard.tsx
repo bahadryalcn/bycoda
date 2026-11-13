@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
 import { motionAttributes } from "../../../shared/ui/Motion";
@@ -7,7 +8,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Modal } from "../../../shared/ui/Modal";
-import { ActionHost } from "../../../shared/ui/ActionHost";
+import { ActionHost, actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import type { BoardTask } from "../model/taskClient";
@@ -143,7 +144,7 @@ function TaskCardBody({
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && event.key === "Enter") onOpen();
       }}
-      className="task-board-card cursor-pointer"
+      {...surfaceAttributes({ radius: "row" }, "task-board-card cursor-pointer")}
     >
       {goal ? (
         <Tooltip label={t("Part of the goal “{p0}”", { p0: goal })} asChild>
@@ -172,7 +173,11 @@ function TaskCardBody({
           <GripVertical
             aria-hidden="true"
             tone="muted"
-            {...motionAttributes({ transition: "opacity" }, "task-drag-grip icon-xs")}
+            {...motionAttributes({ transition: "opacity" })}
+            {...actionContentAttributes(
+              { phase: "interaction", hide: "opacity" },
+              motionAttributes({ transition: "opacity" }, "task-drag-grip icon-xs").className,
+            )}
             strokeWidth={1.75}
           />
         </Heading>

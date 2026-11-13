@@ -170,6 +170,7 @@ const features: Record<string, string[]> = {
     "プロバイダー",
     "provedores",
     "供应商",
+    "提供商",
   ],
   terminals: [
     "terminals",
@@ -373,6 +374,7 @@ const actions: Record<string, string[]> = {
     "mise à jour",
     "アップデート",
     "atualização",
+    "atualizar",
     "更新",
   ],
   delete: ["delete", "sil", "löschen", "eliminar", "supprimer", "削除", "excluir", "删除"],

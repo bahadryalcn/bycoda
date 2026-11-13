@@ -1,3 +1,5 @@
+import { ActionHost, actionContentAttributes } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { useState } from "react";
@@ -63,9 +65,13 @@ export function WorkspaceManagedRow({
     .filter(Boolean)
     .join(" · ");
   return (
-    <div
+    <ActionHost
       role="listitem"
-      className={`settings-collection-row ${styles.row}`}
+      {...surfaceAttributes(
+        { radius: "none", separator: "block" },
+        `settings-collection-row ${styles.row}`,
+      )}
+      interactionOpen={open}
       data-open={open || undefined}
     >
       <Disclosure
@@ -117,7 +123,7 @@ export function WorkspaceManagedRow({
                   tone="muted"
                   leading="inherit"
                   truncate
-                  className={styles.caption}
+                  className={`${styles.caption} font-mono`}
                 >
                   {caption}
                 </Text>
@@ -127,7 +133,12 @@ export function WorkspaceManagedRow({
           </span>
         }
         summaryActions={
-          <div className={`settings-collection-actions ${styles.actions}`}>
+          <div
+            {...actionContentAttributes(
+              { phase: "rest", hide: "dim", focus: "within" },
+              `settings-collection-actions ${styles.actions}`,
+            )}
+          >
             <Button size="sm" disabled={reviewDisabled || removing} onClick={onReview}>
               {t("Review changes")}
             </Button>
@@ -190,6 +201,6 @@ export function WorkspaceManagedRow({
           </DescriptionList>
         </div>
       </Disclosure>
-    </div>
+    </ActionHost>
   );
 }

@@ -1,7 +1,55 @@
+import { mkdir } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 
 const fixture = "/tests/browser/host-tools/host-tools.html";
 const captures = "temp/verification/2026-10-26-device-panel";
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`device shared frames ${theme} ${width}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 980 });
+      await page.goto(`${fixture}?detached=1&theme=${theme}`);
+      await page.getByRole("button", { name: "Setup and access", exact: true }).click();
+      const platforms = page.locator(".device-panel-setup-platforms > li");
+      await expect(platforms).toHaveCount(2);
+      expect(await platforms.nth(1).evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe(
+        "1px",
+      );
+      await page.screenshot({ path: testInfo.outputPath("setup.png"), animations: "disabled" });
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Connect devices", exact: true }).click();
+      const boot = page.getByRole("button", { name: /^Start (emulator|simulator)$/ });
+      await expect(boot).toBeVisible();
+      const row = page.locator(".device-panel-waiting > .device-panel-device-row");
+      expect(await row.evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
+      await page.screenshot({ path: testInfo.outputPath("waiting.png"), animations: "disabled" });
+      await boot.click();
+      await expect(
+        page.getByRole("img", { name: "Current device screen", exact: true }),
+      ).toBeVisible();
+      await expect(page.locator(".device-panel-stage[data-rail] .device-panel-canvas")).toHaveCSS(
+        "padding-inline-end",
+        "64px",
+      );
+      const groups = page.locator(".device-panel-rail > .device-panel-group");
+      await expect(groups).toHaveCount(3);
+      expect(await groups.nth(1).evaluate((el) => getComputedStyle(el).borderTopWidth)).toBe("1px");
+      await page.screenshot({ path: testInfo.outputPath("rail.png"), animations: "disabled" });
+      await page.evaluate(() => {
+        (
+          window as unknown as { hostToolFixture: { deviceCaptureFailure: boolean } }
+        ).hostToolFixture.deviceCaptureFailure = true;
+      });
+      await page.getByRole("button", { name: "Capture", exact: true }).click();
+      const error = page.locator(".device-panel-error");
+      await expect(error).toBeVisible();
+      expect(await error.evaluate((el) => getComputedStyle(el).borderBottomWidth)).toBe("1px");
+      await page.screenshot({ path: testInfo.outputPath("error.png"), animations: "disabled" });
+      expect(
+        await page.locator(".device-panel").evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+      ).toBe(true);
+    });
+  }
 
 async function ready(page: Page, detached = true, theme = "dark") {
   await page.goto(`${fixture}?${detached ? "detached=1&" : ""}theme=${theme}`);
@@ -198,3 +246,51 @@ test("right dock retains a usable screen and annotation tools at 360px", async (
   expect(await dock.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   await page.screenshot({ path: `${captures}/integrated-dock-360.png` });
 });
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`device panel visual caller states ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`${fixture}?detached=1&theme=${theme}`);
+      await mkdir("temp/verification/automations-devices-visual", { recursive: true });
+      await expect(
+        page.getByRole("button", { name: "Connect devices", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/automations-devices-visual/${theme}-${width}-device-connect.png`,
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: "Connect devices", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: /^Start (emulator|simulator)$/ }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/automations-devices-visual/${theme}-${width}-device-waiting.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`device support checking visual ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`${fixture}?detached=1&slowDeviceStatus&theme=${theme}`);
+      await expect(page.getByText("Checking device support…", { exact: true })).toBeVisible();
+      const status = page.getByRole("status").filter({ hasText: "Checking device support…" });
+      const icon = await status.locator('span[aria-hidden="true"]').boundingBox();
+      const label = await status.locator("span").last().boundingBox();
+      expect(icon).not.toBeNull();
+      expect(label).not.toBeNull();
+      expect(Math.abs(icon!.y + icon!.height / 2 - (label!.y + label!.height / 2))).toBeLessThan(3);
+      await page.screenshot({
+        path: `temp/verification/automations-devices-visual/${theme}-${width}-device-support-loading.png`,
+        animations: "disabled",
+      });
+      await expect(
+        page.getByRole("button", { name: "Connect devices", exact: true }),
+      ).toBeVisible();
+    });
+  }

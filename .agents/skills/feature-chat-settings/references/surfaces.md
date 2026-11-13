@@ -8,18 +8,18 @@ Code paths are repository-relative.
 | Continuation/spelling | `src/features/settings/model/settings.ts`, `composerSpelling.ts`; runtime `src/features/sessions/model/usageLimit.ts`, `turnRecovery.ts`; `src/features/connections/model/remoteRecovery.ts` |
 | Templates             | `src/features/settings/ui/TemplatesSettings.tsx`; `src/features/sessions/model/promptTemplates.ts`                                                                                           |
 | Insertion/SSH         | `src/features/sessions/ui/Composer.tsx`; `src/features/connections/model/sshSnippets.ts`                                                                                                     |
-| Translation/reprompt  | `src/features/settings/ui/TranslationSettings.tsx`; `src/features/sessions/model/translationPreferences.ts`, `translation.ts`; `src/features/sessions/ui/TranslationResultDialog.tsx`        |
+| Translation/reprompt  | `src/features/settings/ui/HelperModelsSettings.tsx`; `src/features/sessions/model/translationPreferences.ts`, `translation.ts`; `src/features/sessions/ui/TranslationResultDialog.tsx`        |
 | Voice settings        | `src/features/voice/ui/VoiceSettings.tsx`; follow current voice model and Host setup owner rather than duplicating voice runtime here                                                        |
 | Desktop control       | `src/features/sessions/model/desktopPreferencesControl.ts`; `src/app/workspace/control/useAppControlRequests.ts`; `src-tauri/src/control.rs`                                                 |
 
 ## Data and capabilities
 
-- Conversation titles use `src/features/settings/ui/TitleGenerationSettings.tsx`
-  and `src/features/sessions/model/titlePreferences.ts`, stored independently as
-  `bycoda.title.default.v1` with `bycoda:title-default` and sibling storage updates.
-  `title-model-default` reveals the Chat row. Automatic choice matches enabled
+- Conversation titles use `src/features/settings/ui/HelperModelsSettings.tsx`
+  and `src/features/sessions/model/titlePreferences.ts`. The `text.title` Host routing
+  role owns explicit model choices.
+  `helper-models` reveals the single Chat row linking all helper models. Automatic choice matches enabled
   Haiku/Terra/Flash catalog entries before other economical families; explicit
-  model/account/settings choices remain unchanged and failed writes retain Retry.
+  model/account/settings choices use the shared Models role editor.
 - Templates use `bycoda.promptTemplates` and `bycoda:prompt-templates-change`. Verify current name/body/count limits and normalization in the model; preserve explicit Save and disk comparison instead of introducing autosave.
 - Preserve exact Chat reveal targets in `src/features/settings/model/settings.ts`, including display, continuation, translation/reprompt, voice-companion and prompt-template controls.
 - Desktop controller routes `preferences.desktop.read`, `preferences.desktop.template.read`, `preferences.desktop.patch/status` under `preferences.desktop.v1`; reviewed template body access requires expected revision. Metadata visibility is not unrestricted body-read permission or general Chat-flag management.

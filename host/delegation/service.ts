@@ -113,15 +113,24 @@ export class ConversationDelegation {
     );
   }
 
+  /** Shared discovery and execution boundary for Host delegation children. */
+  async isChild(sessionId: string, session?: Session): Promise<boolean> {
+    return (
+      (await this.store.isChild(sessionId)) ||
+      !!decodeDelegationParent(
+        (session ?? (await this.deps.featureSession(sessionId)).session).modelSettings[
+          DELEGATION_PARENT_KEY
+        ],
+      )
+    );
+  }
+
   private async caller(caller: AgentsCaller) {
     const own = await this.deps.featureSession(caller.sessionId);
     if (own.projectId !== caller.projectId)
       throw new Error("Conversation belongs to another project.");
     // Children never start children: the store knows them, and the parent key is checked too.
-    if (
-      (await this.store.isChild(caller.sessionId)) ||
-      decodeDelegationParent(own.session.modelSettings[DELEGATION_PARENT_KEY])
-    )
+    if (await this.isChild(caller.sessionId, own.session))
       throw new Error("A subagent cannot start agents runs.");
     return own;
   }
@@ -252,10 +261,14 @@ export class ConversationDelegation {
         throw new Error(`No ${kind} model is selected for this conversation.`);
       let ref = candidates[0]!;
       if (kind === "subagent" && (candidates.length > 1 || args.model !== undefined)) {
+        const choices = `Use one of: ${candidates.map(delegateRefKey).join(", ")}.`;
         if (typeof args.model !== "string")
-          throw new Error("Field model is required when more than one subagent model is selected.");
+          throw new Error(
+            `Field model is required when more than one subagent model is selected. ${choices}`,
+          );
         const match = candidates.find((candidate) => delegateRefKey(candidate) === args.model);
-        if (!match) throw new Error("Field model is not one of the selected subagent models.");
+        if (!match)
+          throw new Error(`Field model is not one of the selected subagent models. ${choices}`);
         ref = match;
       }
       const model = this.resolve(ref, catalog);
@@ -336,10 +349,6 @@ export class ConversationDelegation {
       if (status === "signedOut")
         throw new Error(
           `The selected ${ref.harness} account (${ref.providerAccountId ?? "default"}) is signed out or its sign-in expired. Sign in again before delegating.`,
-        );
-      if (status === "unknown")
-        throw new Error(
-          `Could not verify sign-in for the selected ${ref.harness} account (${ref.providerAccountId ?? "default"}). Check its sign-in and try again.`,
         );
     }
   }

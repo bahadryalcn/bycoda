@@ -1,4 +1,12 @@
-import { createContext, useLayoutEffect, useRef, type Ref, type CSSProperties } from "react";
+import {
+  createContext,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Ref,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { observeResize } from "../lib/observeResize";
 import { POPUP_MAX_WIDTH, popupListWidth, type Size } from "../lib/popover";
 import styles from "./Popover.module.css";
@@ -91,5 +99,43 @@ export function useNativePopupFrame({
  * Context holding the native popup window element a surface is rendered into, so nested overlays skip their own
  * positioning, clipping and shadow. Provided by popup roots; consumed by Popover and menus.
  * @status internal
+ * @group overlay
+ * @use Hosting the native popup window content and its dismissal bridge.
+ * @avoid An in-window anchored popup: Popover.
  */
 export const NativePopupHost = createContext<HTMLElement | null>(null);
+
+/**
+ * Shared popup frame inside an existing OS window. Owns backdrop, scroll bound
+ * and native host context; the caller owns native transport and dismissal.
+ * @group overlay
+ * @use Contents of an already-created native popup window, through Popover's public export.
+ * @avoid Anchored content inside the current window: Popover.
+ */
+export function NativePopover({
+  children,
+  maxHeight,
+  ref,
+  ...options
+}: NativePopupFrameOptions & { children: ReactNode; maxHeight: number }) {
+  const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const { frameProps, contentClassName } = useNativePopupFrame({
+    ...options,
+    ref: (node) => {
+      setHost(node);
+      if (typeof ref === "function") return ref(node);
+      if (ref) ref.current = node;
+    },
+  });
+  return (
+    <div {...frameProps}>
+      <PopupBackdrop />
+      <div
+        className={`${contentClassName} max-h-[var(--native-popup-max-height)] overflow-y-auto`}
+        style={{ "--native-popup-max-height": `${maxHeight}px` } as CSSProperties}
+      >
+        {host ? <NativePopupHost value={host}>{children}</NativePopupHost> : null}
+      </div>
+    </div>
+  );
+}

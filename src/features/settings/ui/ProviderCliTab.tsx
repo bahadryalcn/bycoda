@@ -36,8 +36,8 @@ export function ProviderCliTab({
       <DataTable
         caption={t("CLI")}
         headers={[
-          { label: t("Provider name") },
-          { label: t("Installed version") },
+          { label: t("Provider") },
+          { label: t("Version") },
           { label: t("Status") },
           { label: t("Actions"), hidden: true },
         ]}

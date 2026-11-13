@@ -25,9 +25,11 @@ export function AssistantRetentionField({
     <>
       <Row
         label={t("Keep conversation messages")}
-        description={t("Older messages move to Recently deleted for seven days.")}
         info={
           <InfoPopover label={t("About conversation retention")}>
+            <Text as="p" size="secondary">
+              {t("Older messages move to Recently deleted for seven days.")}
+            </Text>
             <Text
               as="p"
               size="micro"
@@ -77,23 +79,15 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
     [t("Supervisor tokens"), formatNumber(usage.chiefTokens)],
     [t("Worker tokens"), formatNumber(usage.workerTokens)],
   ];
-  if (cache)
-    chips.push(
-      [
-        t("Cache read tokens"),
-        cache.cacheReadTokens === undefined ? unavailable : formatNumber(cache.cacheReadTokens),
-      ],
-      [
-        t("Cache write tokens"),
-        cache.cacheWriteTokens === undefined ? unavailable : formatNumber(cache.cacheWriteTokens),
-      ],
-      [
-        t("Mean reported cache hit"),
-        cache.cacheHitPercent === undefined
-          ? unavailable
-          : `${formatNumber(cache.cacheHitPercent, { maximumFractionDigits: 1 })}%`,
-      ],
-    );
+  if (cache?.cacheReadTokens !== undefined)
+    chips.push([t("Cache read tokens"), formatNumber(cache.cacheReadTokens)]);
+  if (cache?.cacheWriteTokens !== undefined)
+    chips.push([t("Cache write tokens"), formatNumber(cache.cacheWriteTokens)]);
+  if (cache?.cacheHitPercent !== undefined)
+    chips.push([
+      t("Mean reported cache hit"),
+      `${formatNumber(cache.cacheHitPercent, { maximumFractionDigits: 1 })}%`,
+    ]);
   return (
     <div className={styles.usage}>
       <ul className={styles.chips} aria-label={t("Today's usage")}>
@@ -110,22 +104,40 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
         tone="secondary"
         leading="inherit"
         className={viewStyles.muted}
-        text={usage.workerUsageIncomplete ? t("Usage unavailable. No zero usage is assumed.") : ""}
+        text={
+          usage.workerUsageIncomplete || !cache || !cache.complete
+            ? t("Some usage is unavailable.")
+            : ""
+        }
       />
       {cache ? (
         <>
-          {!cache.complete && (
-            <Text
-              as="p"
-              size="micro"
-              tone="secondary"
-              leading="inherit"
-              className={`${viewStyles.muted} ${styles.note}`}
-            >
-              {t("Partial cache usage. Missing values are unavailable, not zero.")}
-            </Text>
-          )}
           <InfoPopover label={t("About usage")}>
+            {usage.workerUsageIncomplete && (
+              <Text as="p" size="secondary">
+                {t("Usage unavailable. No zero usage is assumed.")}
+              </Text>
+            )}
+            {!cache.complete && (
+              <Text as="p" size="secondary">
+                {t("Partial cache usage. Missing values are unavailable, not zero.")}
+              </Text>
+            )}
+            {cache.cacheReadTokens === undefined && (
+              <Text as="p" size="secondary">
+                {t("Cache read tokens")}: {unavailable}
+              </Text>
+            )}
+            {cache.cacheWriteTokens === undefined && (
+              <Text as="p" size="secondary">
+                {t("Cache write tokens")}: {unavailable}
+              </Text>
+            )}
+            {cache.cacheHitPercent === undefined && (
+              <Text as="p" size="secondary">
+                {t("Mean reported cache hit")}: {unavailable}
+              </Text>
+            )}
             <Text
               as="p"
               size="micro"
@@ -166,15 +178,16 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
           </InfoPopover>
         </>
       ) : (
-        <Text
-          as="p"
-          size="micro"
-          tone="secondary"
-          leading="inherit"
-          className={`${viewStyles.muted} ${styles.note}`}
-        >
-          {t("Cache usage unavailable")}
-        </Text>
+        <InfoPopover label={t("About usage")}>
+          <Text as="p" size="secondary">
+            {t("Cache usage unavailable")}
+          </Text>
+          {usage.workerUsageIncomplete && (
+            <Text as="p" size="secondary">
+              {t("Usage unavailable. No zero usage is assumed.")}
+            </Text>
+          )}
+        </InfoPopover>
       )}
     </div>
   );

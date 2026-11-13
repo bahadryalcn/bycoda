@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import "./phone-pairing.css";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
@@ -291,7 +292,9 @@ export function PhonePairingFlow({
 
       {state.stage === "qr" ? (
         <div className="phone-pairing-code">
-          <div className="rounded-(--ui-radius-card) border border-(--ui-card-border) bg-on-solid p-2">
+          <div
+            {...surfaceAttributes({ frame: "card", radius: "card", variant: "on-solid" }, "p-2")}
+          >
             <QRCodeSVG
               value={JSON.stringify(state.session.code)}
               size={260}

@@ -437,14 +437,7 @@ describe("settings pages", () => {
 
   it("groups settings by the workflow they configure and preserves old anchor routes", async () => {
     const ownership = {
-      chat: [
-        "chat-width",
-        "code-word-wrap",
-        "streaming-text-mode",
-        "translation-model-default",
-        "reprompt-model-default",
-        "title-model-default",
-      ],
+      chat: ["chat-width", "code-word-wrap", "streaming-text-mode", "helper-models"],
       worktrees: ["git-generation-default", "diff-view", "project-worktrees"],
       groupLock: ["mask-emails", "file-access", "start-in-privacy-mode"],
     } as const;
@@ -1084,8 +1077,8 @@ describe("settings pages", () => {
 
     expect(container.textContent).toContain("Claude Code");
     expect(container.textContent).toContain("Codex");
-    await accountAction("Default account", "Rename account");
-    const defaultInput = container.querySelector<HTMLInputElement>(
+    await accountAction("Default account", "Edit account");
+    const defaultInput = document.querySelector<HTMLInputElement>(
       '[aria-label="Rename Claude Code account"]',
     )!;
     await act(async () => {
@@ -1096,12 +1089,12 @@ describe("settings pages", () => {
       defaultInput.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[role="dialog"] button[type="submit"]')!.click(),
     );
     expect(providerAccounts("claude")[0]?.label).toBe("Primary");
 
-    await accountAction("Wrk", "Rename account");
-    const input = container.querySelector<HTMLInputElement>('[aria-label="Rename Codex account"]')!;
+    await accountAction("Wrk", "Edit account");
+    const input = document.querySelector<HTMLInputElement>('[aria-label="Rename Codex account"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         input,
@@ -1110,7 +1103,7 @@ describe("settings pages", () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[role="dialog"] button[type="submit"]')!.click(),
     );
     expect(providerAccounts("codex")[1]?.label).toBe("Work");
 
@@ -1578,6 +1571,13 @@ describe("settings pages", () => {
       vi.mocked(invoke).mockResolvedValue([]);
     }
     await render(section);
+    if (section === "skills") {
+      await act(async () =>
+        [...container.querySelectorAll<HTMLButtonElement>("button")]
+          .find((button) => button.textContent === "Advanced: skill controls and folders")!
+          .click(),
+      );
+    }
     const expected = SETTINGS_INDEX.filter((entry) => entry.section === section).map(
       (entry) => entry.id,
     );
@@ -1620,13 +1620,15 @@ describe("settings pages", () => {
       return undefined;
     });
     await render("providers");
-    // The page keeps one summary row; each provider's own version lives in its Status group.
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+        .find((button) => button.textContent === "CLI")!
+        .click(),
+    );
     const group = container.querySelector('[data-setting-id="harness-updates"]')!;
-    const status = Array.from(container.querySelectorAll("section")).find(
-      (section) => section.querySelector("h2")?.textContent === "Status",
-    )!;
+    const status = container.querySelector('[data-setting-id="cli-path-claude"]')!;
     expect(group.textContent).toContain("Not checked yet");
-    expect(status.textContent).toContain("Not checked yet");
+    expect(status.textContent).toContain("Unknown");
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "harness_exec")).toBe(
       false,
     );
@@ -1636,8 +1638,9 @@ describe("settings pages", () => {
     )!;
     await act(async () => checkButton.click());
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
-    expect(status.textContent).toContain("2.1.284 · Version 2.1.285 is available.");
-    expect(group.textContent).toContain("1 CLI needs attention");
+    expect(status.textContent).toContain("2.1.284");
+    expect(status.textContent).toContain("Update available");
+    expect(group.textContent).toContain("Update available: Claude Code");
 
     await act(async () =>
       status
@@ -1651,7 +1654,8 @@ describe("settings pages", () => {
       binaryPath: null,
       targetVersion: "2.1.285",
     });
-    expect(status.textContent).toContain("CLI updated to 2.1.285.");
+    expect(status.textContent).toContain("2.1.285");
+    expect(status.textContent).toContain("Up to date");
     expect(status.querySelector('[aria-label="Update Claude Code to 2.1.285"]')).toBeNull();
 
     // Claude Code, updated earlier in this session, falls behind again and
@@ -1662,7 +1666,7 @@ describe("settings pages", () => {
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
     vi.mocked(invoke).mockClear();
     const updateAll = Array.from(group.querySelectorAll("button")).find(
-      (button) => button.textContent === "Update all",
+      (button) => button.textContent === "Update all (2)",
     )!;
     await act(async () => updateAll.click());
     await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));

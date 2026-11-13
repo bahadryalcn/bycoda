@@ -1,3 +1,4 @@
+import { applyRecordsDataset } from "./records-redesign-data";
 import type {
   AssistantSnapshot,
   AssistantMessage,
@@ -90,6 +91,20 @@ function desktopFixtureRequest(input: any) {
   };
 }
 const now = Date.now();
+let foldersConfiguration = {
+  folders: [
+    {
+      id: "f0000000000000001",
+      path: desktopParams.has("settings-layout")
+        ? "/fixture/Projects/International-Platform-Development/Customer-Integrations-and-Notifications/Assistant-Workspace-with-a-long-folder-name-and-preserved-owner-permissions"
+        : "/fixture/assistant",
+    },
+  ],
+  runWithoutAsking: false,
+  allowChangesWithoutAsking: false,
+  version: 0,
+  updatedAt: now,
+};
 // Model pool fixture: three accounts with different live limits (usage-limits reader port).
 const poolRow = (id: string, account: string, roles: string[], extra: object = {}) => ({
   id,
@@ -529,6 +544,17 @@ if (new URLSearchParams(location.search).has("chief-blocked")) {
   };
 }
 if (requestedName?.trim()) snapshot.profile.name = requestedName.trim().slice(0, 80);
+if (desktopParams.has("settings-layout"))
+  Object.assign(snapshot.profile, {
+    name: "Aleksandra Wiśniewska-Kowalczyk — International Platform Assistant",
+    addressAs: "Alexandria Montgomery-Wellington",
+    persona:
+      "Use short spoken updates. Preserve original technical names, file paths and error messages. Ask one clear question when a decision is needed. ".repeat(
+        8,
+      ),
+    activeStart: 8,
+    activeEnd: 18,
+  });
 if (new URLSearchParams(location.search).has("policy"))
   Object.assign(snapshot.profile, {
     activeStart: 22,
@@ -673,6 +699,30 @@ const messages: AssistantMessage[] = [
     jobIds: ["job-one", "job-two"],
   },
 ];
+if (desktopParams.has("chat-redesign")) {
+  messages[0].via = "voice";
+  messages[0].text = "Summarize the recovery work and show the next check.";
+  messages.push({
+    id: "rich-response",
+    version: 1,
+    createdAt: now - 60000,
+    updatedAt: now - 60000,
+    threadId: "thread-global",
+    role: "assistant",
+    via: "voice",
+    jobIds: ["job-one"],
+    text: "## Recovery status\n\nThe **saved draft** remains available.\n\n- Retry uses the same request identity.\n- Voice replies stay brief.\n\n```ts\nconst draft = await restoreDraft(threadId);\nawait send(draft);\n```\n\n| Check | Result |\n| --- | --- |\n| Draft recovery | Passed |\n| Native device | Pending |\n\n[Review the guide](https://example.com/guide)",
+    toolActions: [
+      {
+        id: "rich-action",
+        family: "conversation",
+        action: "files.read",
+        status: "completed",
+        createdAt: now - 60000,
+      },
+    ],
+  });
+}
 if (globalRoomFixture)
   messages[0].toolActions = [
     {
@@ -729,6 +779,17 @@ export async function hostToolRequest(
   if (_method === "goals.list")
     return briefingFixture
       ? [
+          ...(new URLSearchParams(location.search).has("multi-approvals")
+            ? [
+                {
+                  id: "assistant-job-one",
+                  projectIds: ["one"],
+                  status: "awaiting-approval",
+                  plan: { tasks: [{ id: "task-first", title: "Review recovery" }] },
+                  updatedAt: now,
+                },
+              ]
+            : []),
           {
             id: "assistant-job-two",
             projectIds: ["one"],
@@ -788,6 +849,23 @@ export async function hostToolRequest(
     return desktopFixtureRequest(input);
   }
   switch (input.op) {
+    case "folders.get":
+      return { assistantFolders: structuredClone(foldersConfiguration) };
+    case "folders.set":
+      if (input.expectedVersion !== foldersConfiguration.version)
+        throw new Error("Assistant folders changed. Refresh before saving.");
+      foldersConfiguration = {
+        folders: input.paths.map((path: string, index: number) => ({
+          id: `f${(index + 1).toString(16).padStart(16, "0")}`,
+          path,
+        })),
+        runWithoutAsking: input.runWithoutAsking,
+        allowChangesWithoutAsking: input.allowChangesWithoutAsking ?? false,
+        version: foldersConfiguration.version + 1,
+        updatedAt: Date.now(),
+      };
+      (window as any).__foldersFixtureConfiguration = structuredClone(foldersConfiguration);
+      return { assistantFolders: structuredClone(foldersConfiguration) };
     case "questions.present": {
       (window as any).__presentationRequest = structuredClone(input);
       const existing = snapshot.ownerQuestions?.find(
@@ -1132,12 +1210,70 @@ export async function hostToolRequest(
       return { thread: structuredClone(thread) };
     }
     case "threads.open":
+      if (input.purpose === "job-planning") {
+        let thread = snapshot.threads.find(
+          (thread) => thread.purpose === "job-planning" && thread.projectId === input.projectId,
+        );
+        if (!thread) {
+          thread = {
+            id: `planning-${input.projectId ?? "global"}`,
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+            summary: "",
+            purpose: "job-planning",
+            ...(input.projectId ? { projectId: input.projectId } : {}),
+          };
+          snapshot.threads.push(thread);
+        }
+        return { thread: structuredClone(thread) };
+      }
       if (globalRoomFixture) {
         const thread = snapshot.threads.find((thread) => thread.projectId === input.projectId);
         if (!thread) throw new Error("The requested Room fixture thread does not exist.");
         return { thread: structuredClone(thread) };
       }
       return { ok: true };
+    case "threads.send": {
+      if (
+        !desktopParams.has("job-discussion") ||
+        !snapshot.threads.some(
+          (thread) => thread.id === input.threadId && thread.purpose === "job-planning",
+        )
+      )
+        throw new Error("Conversation replies are unavailable in this fixture.");
+      const turns = messages.filter(
+        (message) => message.threadId === input.threadId && message.role === "user",
+      ).length;
+      const at = Date.now();
+      const owner: AssistantMessage = {
+        id: `${input.idempotencyKey}-owner`,
+        version: 1,
+        threadId: input.threadId,
+        role: "user",
+        via: "text",
+        text: input.text,
+        jobIds: [],
+        createdAt: at,
+        updatedAt: at,
+      };
+      messages.push(owner);
+      if (desktopParams.has("discussion-failure"))
+        throw new Error("The provider reply is unconfirmed. Check the original conversation.");
+      const reply: AssistantMessage = {
+        ...owner,
+        id: `${input.idempotencyKey}-reply`,
+        role: "assistant",
+        createdAt: at + 1,
+        updatedAt: at + 1,
+        text:
+          turns === 0
+            ? "Which release should the notes cover, and should internal changes be excluded?"
+            : "## Job brief\nUpdate the public release notes for version 2.4.\n\n### Scope\n- Include user-visible features and fixes.\n- Exclude internal maintenance.\n\n### Acceptance\nEvery change links to its source and all links resolve. Keep the existing document format.",
+      };
+      messages.push(reply);
+      return { messages: [owner, reply] };
+    }
     case "threads.messages":
       return {
         ...(summaryFixture
@@ -1444,3 +1580,5 @@ export async function hostFeatureRequest<T>(..._args: unknown[]): Promise<T> {
 export async function listHostToolMachines(): Promise<never[]> {
   return [];
 }
+
+applyRecordsDataset(snapshot);

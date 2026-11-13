@@ -35,7 +35,7 @@ export function storedDefaultProvider(target: DefaultsTarget): HarnessId {
 }
 
 /**
- * Providers > Defaults for the selected provider. Shows the target's stored values with the
+ * Models > Chat defaults / Subagents for the selected provider. Shows the target's stored values with the
  * pending changes on top; every edit goes into the draft, and the save bar writes it.
  */
 export function ProviderDefaultsPanel({
@@ -43,7 +43,14 @@ export function ProviderDefaultsPanel({
   target,
   draft,
   onDraftChange,
+  section,
+  providerControl,
 }: {
+  section?: "chat" | "delegation";
+  providerControl?: {
+    options: { value: string; label: string }[];
+    onChange: (id: HarnessId) => void;
+  };
   harness: HarnessId;
   target: DefaultsTarget;
   draft: DefaultsDraft;
@@ -100,32 +107,49 @@ export function ProviderDefaultsPanel({
 
   return (
     <>
-      <Group
-        layout="full"
-        title={t("Default provider")}
-        description={t("New conversations start with this provider and its default model.")}
-      >
-        <Row label={t("Provider")}>
-          <Select
-            hideLabel
-            label={t("Default provider")}
-            value={defaultProvider ?? ""}
-            options={providerChoices.map((id) => ({
-              value: id,
-              label: HARNESS_TITLE[id],
-              icon: <HarnessIcon harness={id} className="icon-sm" />,
-            }))}
-            onChange={(next) => {
-              const value = next as HarnessId;
-              const { defaultProvider: _drop, ...rest } = draft;
-              onDraftChange(value === storedDefault ? rest : { ...rest, defaultProvider: value });
-            }}
-          />
-        </Row>
-      </Group>
+      {section !== "delegation" ? (
+        <Group
+          id="default-provider"
+          layout="full"
+          title={t("Default provider")}
+          description={t("New conversations start with this provider and its default model.")}
+        >
+          <Row label={t("Provider")}>
+            <Select
+              hideLabel
+              label={t("Default provider")}
+              value={defaultProvider ?? ""}
+              options={providerChoices.map((id) => ({
+                value: id,
+                label: HARNESS_TITLE[id],
+                icon: <HarnessIcon harness={id} className="icon-sm" />,
+              }))}
+              onChange={(next) => {
+                const value = next as HarnessId;
+                const { defaultProvider: _drop, ...rest } = draft;
+                onDraftChange(value === storedDefault ? rest : { ...rest, defaultProvider: value });
+              }}
+            />
+          </Row>
+        </Group>
+      ) : null}
       <ProviderDefaultsForm
         key={`${harness}:${accountId ?? ""}`}
         harness={harness}
+        section={section}
+        providerControl={
+          providerControl ? (
+            <Row label={t("Edit defaults for")}>
+              <Select
+                hideLabel
+                label={t("Provider defaults")}
+                value={harness}
+                options={providerControl.options}
+                onChange={(value) => providerControl.onChange(value as HarnessId)}
+              />
+            </Row>
+          ) : null
+        }
         selectedModel={selectedModel}
         inheritedDefaults={inherited}
         scopeDefaults={overlaySessionDefaults(base, change)}

@@ -404,6 +404,7 @@ it("does not apply a completed background job over newer voice preferences", asy
 it("chooses visual previews with radio arrows and keeps runtime setup unchanged", async () => {
   await setup();
   await advance();
+  await click("Appearance and voice style");
   const group = container.querySelector('[role="radiogroup"][aria-label="Visual style"]')!;
   const radios = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
   expect(radios.map((radio) => radio.textContent?.trim())).toEqual([
@@ -490,7 +491,12 @@ it("shows conversation and companion preferences without changing saved values o
     "voice-device",
   ])
     expect(container.querySelector(`[data-setting-id="${id}"]`), id).not.toBeNull();
-  expect(container.querySelector(".settings-advanced-content")).toBeNull();
+  for (const id of ["voice-device", "voice-idle-sleep", "voice-visual-style"]) {
+    expect(
+      container.querySelector(`[data-setting-id="${id}"]`)?.closest("[hidden]"),
+      id,
+    ).not.toBeNull();
+  }
   expect(localStorage.getItem("bycoda.voice")).toBe(saved);
   expect(backend.inspect).toHaveBeenCalledTimes(calls);
   expect(backend.setup).not.toHaveBeenCalled();
@@ -628,4 +634,25 @@ it("chooses the default cloud dictation model per provider", async () => {
     saveVoiceSettings({ ...loadVoiceSettings(), dictationEngine: "openrouter" }),
   );
   expect(document.querySelector('[data-setting-id="voice-openrouter-key"]')).not.toBeNull();
+});
+
+it("keeps core voice choices visible and retains optional dictation and processing controls behind disclosures", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, dictationEngine: "openai" });
+  await setup();
+  const row = (id: string) => container.querySelector<HTMLElement>(`[data-setting-id="${id}"]`)!;
+  expect(row("voice-mode").closest("[hidden]")).toBeNull();
+  expect(row("voice-speaker").closest("[hidden]")).toBeNull();
+  expect(row("dictation-language").closest("[hidden]")).toBeNull();
+  const recognition = row("dictation-engine");
+  expect(recognition.closest("[hidden]")).not.toBeNull();
+  expect(row("voice-device").closest("[hidden]")).not.toBeNull();
+  expect(
+    recognition.closest('[data-settings-part="advanced"]')?.querySelector("button")?.textContent,
+  ).toContain("OpenAI");
+  await act(async () =>
+    recognition.closest('[data-settings-part="advanced"]')!.querySelector("button")!.click(),
+  );
+  expect(row("dictation-engine")).toBe(recognition);
+  expect(recognition.closest("[hidden]")).toBeNull();
+  expect(backend.setup).not.toHaveBeenCalled();
 });

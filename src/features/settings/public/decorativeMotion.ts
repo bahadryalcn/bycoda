@@ -2,6 +2,7 @@
 export {
   prefersReducedMotion,
   useDecorativeMotionEnabled,
+  useAudioFeedbackMotionEnabled,
   usePrefersReducedMotion,
   useWindowHasFocus,
 } from "../model/decorativeMotion";

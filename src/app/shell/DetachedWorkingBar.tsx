@@ -1,3 +1,4 @@
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
@@ -92,11 +93,20 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
       agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")
     }`,
     icon: (
-      <span
-        {...surfaceAttributes(
-          { radius: "pill" },
-          `size-1.5 ${agent.issue === "failed" ? "bg-danger" : agent.issue === "retrying" ? "bg-warning" : agent.done ? "bg-(--ui-text-muted)" : agent.needsApproval ? "bg-warning" : agent.waiting ? "bg-(--ui-text-secondary)" : "bg-active"}`,
-        )}
+      <StatusDot
+        tone={
+          agent.issue === "failed"
+            ? "danger"
+            : agent.issue === "retrying"
+              ? "warning"
+              : agent.done
+                ? "muted"
+                : agent.needsApproval
+                  ? "warning"
+                  : agent.waiting
+                    ? "secondary"
+                    : "accent"
+        }
       />
     ),
   }));
@@ -114,7 +124,10 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
           setWindowError(error instanceof Error ? error.message : String(error)),
         );
       }}
-      className={`flex h-8 min-w-0 shrink-0 select-none items-center gap-2 border-b border-(--ui-pane-border) [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+      {...surfaceAttributes(
+        { frame: "pane", edge: "bottom" },
+        `flex h-8 min-w-0 shrink-0 select-none items-center gap-2 [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`,
+      )}
     >
       <Text size="micro" tone="secondary">
         {t("Working")}
@@ -138,8 +151,14 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         }}
         className="flex max-w-56 items-center gap-2"
       >
-        <span
-          className={`size-1.5 shrink-0 rounded-full ${agents.some((agent) => agent.needsApproval) ? "bg-warning" : agents.some((agent) => !agent.done) ? "bg-active" : "bg-(--ui-text-muted)"}`}
+        <StatusDot
+          tone={
+            agents.some((agent) => agent.needsApproval)
+              ? "warning"
+              : agents.some((agent) => !agent.done)
+                ? "accent"
+                : "muted"
+          }
         />
         <Text size="inherit" tone="inherit" truncate>
           {summary}

@@ -29,9 +29,9 @@ afterEach(() => {
 
 function renderDialog(mock: ClientMock) {
   const onClose = vi.fn();
-  const onCreated = vi.fn();
-  host.render(createElement(ListDialog, { client: asClient(mock), onClose, onCreated }));
-  return { onClose, onCreated };
+  const onSaved = vi.fn();
+  host.render(createElement(ListDialog, { client: asClient(mock), onClose, onSaved }));
+  return { onClose, onSaved };
 }
 
 describe("ListDialog", () => {
@@ -46,7 +46,7 @@ describe("ListDialog", () => {
 
   it("saves a static list with the trimmed name, reports it and closes", async () => {
     const mock = clientMock();
-    const { onClose, onCreated } = renderDialog(mock);
+    const { onClose, onSaved } = renderDialog(mock);
     await flush();
     setFieldValue(fieldByLabel("List name"), "  Buyers  ");
     clickButton("Create list");
@@ -56,9 +56,7 @@ describe("ListDialog", () => {
       kind: "static",
       projectIds: [],
     });
-    expect(onCreated).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "l-new", name: "Buyers" }),
-    );
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: "l-new", name: "Buyers" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -71,13 +69,13 @@ describe("ListDialog", () => {
         }),
       },
     });
-    const { onClose, onCreated } = renderDialog(mock);
+    const { onClose, onSaved } = renderDialog(mock);
     await flush();
     setFieldValue(fieldByLabel("List name"), "Buyers");
     clickButton("Create list");
     await flush();
     expect(bodyText()).toContain("A list with this name exists.");
-    expect(onCreated).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
     expect(fieldByLabel("List name").value).toBe("Buyers");
   });

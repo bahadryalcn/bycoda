@@ -338,3 +338,160 @@ it("reserves a progress slot only for a start icon and keeps an icon-less label'
     vi.unstubAllGlobals();
   }
 });
+
+it("reserves inline actions without forwarding layout props or changing its name", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          Button,
+          {
+            variant: "item",
+            padding: { start: "xs", end: "none" },
+            reserveEndAction: "inline",
+            controlHeight: "fill",
+            motion: "none",
+          },
+          "Project",
+        ),
+      ),
+    );
+    const button = container.querySelector("button")!;
+    expect(button.textContent).toBe("Project");
+    expect(button.dataset.reserveEndAction).toBe("inline");
+    expect(button.dataset.controlHeight).toBe("fill");
+    expect(button.style.paddingInlineStart).toBe("var(--control-padding-start, var(--space-1))");
+    expect(button.hasAttribute("reserveEndAction")).toBe(false);
+    await act(async () =>
+      root.render(
+        createElement(
+          Button,
+          { iconOnly: true, label: "Expand group", iconTarget: "compact", motion: "none" },
+          "+",
+        ),
+      ),
+    );
+    expect(button.getAttribute("aria-label")).toBe("Expand group");
+    expect(button.dataset.iconTarget).toBe("compact");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps opt-in preview selection rings independent from toggle semantics and layout", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          Button,
+          { selected: true, selectionIndicator: "focus-ring", motion: "none" },
+          "Palette",
+        ),
+      ),
+    );
+    const button = container.querySelector("button")!;
+    expect(button.dataset.selectionIndicator).toBe("focus-ring");
+    expect(button.dataset.buttonSelected).toBe("true");
+    expect(button.hasAttribute("selectionIndicator")).toBe(false);
+    expect(button.hasAttribute("aria-pressed")).toBe(false);
+    await act(async () =>
+      root.render(
+        createElement(
+          Button,
+          { selected: false, selectionIndicator: "accent-ring", motion: "none" },
+          "Palette",
+        ),
+      ),
+    );
+    expect(container.querySelector("button")).toBe(button);
+    expect(button.dataset.selectionIndicator).toBe("accent-ring");
+    expect(button.hasAttribute("data-button-selected")).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("opts a ghost file action into hover underline without changing its native activation", async () => {
+  const container = document.createElement("div"),
+    root = createRoot(container),
+    onClick = vi.fn();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(Button, { variant: "ghost", hoverUnderline: true, onClick }, "file.ts"),
+      ),
+    );
+    const button = container.querySelector("button")!;
+    expect(button.dataset.buttonHoverUnderline).toBe("true");
+    expect(button.dataset.buttonHierarchy).toBe("ghost");
+    expect(button.hasAttribute("hoverUnderline")).toBe(false);
+    await act(async () => button.click());
+    expect(onClick).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps a dropzone frame on the native button without changing disabled admission", async () => {
+  const container = document.createElement("div"),
+    root = createRoot(container),
+    onClick = vi.fn();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          Button,
+          { variant: "item", frame: "dropzone", disabled: true, onClick },
+          "Choose image",
+        ),
+      ),
+    );
+    const button = container.querySelector("button")!;
+    expect(button.dataset.buttonFrame).toBe("dropzone");
+    expect(button.hasAttribute("frame")).toBe(false);
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    expect(onClick).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("retains ghost recovery activation while opting into rest underline", async () => {
+  const container = document.createElement("div"),
+    root = createRoot(container),
+    onClick = vi.fn();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          Button,
+          { variant: "ghost", textDecoration: "rest-underline", onClick },
+          "Retry",
+        ),
+      ),
+    );
+    const button = container.querySelector("button")!;
+    expect(button.dataset.buttonTextDecoration).toBe("rest-underline");
+    expect(button.dataset.buttonHierarchy).toBe("ghost");
+    expect(button.hasAttribute("textDecoration")).toBe(false);
+    await act(async () => button.click());
+    expect(onClick).toHaveBeenCalledOnce();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

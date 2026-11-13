@@ -94,8 +94,10 @@ export function usePanelAccounts(harness: HarnessId, active: boolean) {
 function AccountDot({ account }: { account: PanelAccount }) {
   return account.local ? (
     <span
-      {...surfaceAttributes({ radius: "pill" }, "size-2 shrink-0 ")}
-      style={{ background: providerAccountColorValue(account.local) }}
+      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-2 shrink-0 ")}
+      style={
+        { "--surface-user-color": providerAccountColorValue(account.local) } as React.CSSProperties
+      }
       aria-hidden
     />
   ) : null;
@@ -200,7 +202,12 @@ export function ModelAccountControl({
       </Text>
       <Percent value={current?.usedPercent ?? null} />
       {current && current.id === defaultAccountId ? <DefaultMark /> : null}
-      <span className="flex shrink-0 items-center gap-1 border-l border-(--ui-tone-neutral-border) pl-1.5 ui-caption-text">
+      <span
+        {...surfaceAttributes(
+          { frame: "neutral", edge: "left" },
+          "flex shrink-0 items-center gap-1 pl-1.5 ui-caption-text",
+        )}
+      >
         {formatNumber(accounts.length)}
         {elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
       </span>

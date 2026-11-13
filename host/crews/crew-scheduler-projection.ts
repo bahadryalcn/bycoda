@@ -203,7 +203,8 @@ export async function readCrewSchedulerRuns(store: HostStore): Promise<CrewRun[]
     throw new Error("Crew storage is invalid or unavailable");
   const rows = await store.db
     .prepare(`SELECT payload FROM crew_runs_v2
-    WHERE status='active' AND coordinator_session_id IS NOT NULL AND coordinator_session_id<>''
+    WHERE status='active' AND ((coordinator_session_id IS NOT NULL AND coordinator_session_id<>'')
+      OR json_type(payload,'$.routingWait')='object')
     ORDER BY ordinal`)
     .all();
   return rows.map((row) => JSON.parse(String(row.payload)) as CrewRun);

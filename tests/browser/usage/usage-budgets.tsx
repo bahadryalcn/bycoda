@@ -1,3 +1,4 @@
+import { VisualCaller } from "./visual-callers";
 import { useState } from "react";
 import { UsageOverview } from "../../../src/features/usage/ui/UsageOverview";
 import { saveDecorativeMotionEnabled } from "../../../src/features/settings/model/decorativeMotion";
@@ -31,6 +32,11 @@ const grokLimits = {
 };
 setCachedRateLimits("grok", "default", grokLimits);
 queryClient.setQueryData(["rate-limits", "grok", "default"], grokLimits);
+if (params.get("visualCaller") === "grok") {
+  const pending = { ...idleRateLimits("grok"), status: "fetching" as const };
+  setCachedRateLimits("grok", "default", pending);
+  queryClient.setQueryData(["rate-limits", "grok", "default"], pending);
+}
 localStorage.setItem("bycoda.recentProjects", JSON.stringify([{ path: cwd, openedAt: 1 }]));
 localStorage.setItem(
   "bycoda.projectGroups",
@@ -128,7 +134,14 @@ if (params.get("page") === "1") {
       weekly: { usedPercent: 100, windowMinutes: 10_080, resetsAt: Date.now() + 260_000_000 },
     });
 }
+let holdUsageVisualReads = params.has("visual-hold");
 mockIPC((command, args) => {
+  if (
+    params.get("visualCaller") === "grok" ||
+    (holdUsageVisualReads &&
+      (command === "provider_usage_report" || command === "session_usage_report"))
+  )
+    return new Promise(() => {});
   if (command === "fetch_claude_usage") {
     quotaFetches.push((args as { accountId: string }).accountId);
     return {
@@ -219,6 +232,9 @@ mockIPC((command, args) => {
 });
 Object.assign(window, {
   usageQuotaFetches: quotaFetches,
+  holdUsageVisualReads: () => {
+    holdUsageVisualReads = true;
+  },
   recolorUsageFixture: (color: "blue" | "pink") =>
     setProviderAccountColor("codex", "default", color),
 });
@@ -252,7 +268,9 @@ createRoot(document.getElementById("root")!).render(
             params.get("page") === "1" ? "bycoda-settings-form @container/settings" : undefined
           }
         >
-          {params.get("footer") === "1" ? (
+          {params.has("visualCaller") ? (
+            <VisualCaller view={params.get("visualCaller")!} />
+          ) : params.get("footer") === "1" ? (
             <UsageFooter providers={["grok"]} />
           ) : params.get("page") === "1" ? (
             <UsagePage limitsOnly={params.get("limits") === "1"} />

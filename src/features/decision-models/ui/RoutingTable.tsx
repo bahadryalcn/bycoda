@@ -17,6 +17,7 @@ import {
   Minus,
 } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useState } from "react";
 import { DECISION_TASK_TYPES } from "../../../shared/model/host-contracts/decision-models";
 import { formatNumber, t } from "../../../shared/i18n";
@@ -123,7 +124,8 @@ export function RoutingTable({
         </Button>
       </div>
       <div className="decision-routing-list">
-        {expanded ? (
+        {expanded &&
+        (editingTask !== null || Object.values(draft).some((route) => route?.sourceIds.length)) ? (
           <div className="decision-routing-row">
             <Text size="caption" tone="secondary" className="decision-routing-task">
               {t("Task")}
@@ -272,7 +274,7 @@ export function RoutingTable({
                 ) : expanded ? (
                   <div className="col-span-2 flex min-w-0 items-center justify-between gap-2">
                     <Text size="caption" tone="secondary">
-                      {t("Automatic: local models first")}
+                      {t("Automatic")}
                     </Text>
                     <Button
                       variant="ghost"
@@ -310,12 +312,17 @@ export function RoutingTable({
           })}
       </div>
       {saveError !== null ? (
-        <div className="border-t border-(--ui-settings-hairline) px-4 py-2.5">
+        <div {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "px-4 py-2.5")}>
           <ErrorNotice error={saveError} onRetry={save} />
         </div>
       ) : null}
       {dirty || saved || busy ? (
-        <div className="flex min-w-0 items-center justify-end gap-3 border-t border-(--ui-settings-hairline) px-4 py-2.5">
+        <div
+          {...surfaceAttributes(
+            { frame: "settings", edge: "block-start" },
+            "flex min-w-0 items-center justify-end gap-3 px-4 py-2.5",
+          )}
+        >
           {dirty ? (
             <>
               <Text size="caption" tone="secondary">

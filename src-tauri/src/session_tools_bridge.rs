@@ -497,6 +497,27 @@ pub(crate) fn register_pinned(
     grant["endpoint"] = json!(format!("http://127.0.0.1:{}", broker.port));
     Ok(grant)
 }
+/// Exact live spawn capability, never a newly issued Host grant.
+pub(crate) fn conversation_grant(session: &str) -> Option<Value> {
+    let broker = BROKER.get()?.as_ref().ok()?;
+    conversation_grant_from(&broker.registry, broker.port, session)
+}
+
+fn conversation_grant_from(registry: &Mutex<Registry>, port: u16, session: &str) -> Option<Value> {
+    // Issuance takes the issuer gate before the registry. Release the registry
+    // before checking the issuer so readiness preserves that lock order.
+    let (token, route) = {
+        let registry = registry.lock().ok()?;
+        let (token, route) = registry
+            .routes
+            .iter()
+            .find(|(_, route)| route.session == session && route.group == Group::Conversation)?;
+        (token.clone(), route.clone())
+    };
+    route.check().ok()?;
+    Some(json!({"token": token, "endpoint": format!("http://127.0.0.1:{port}")}))
+}
+
 pub(crate) fn begin_session(session: &str, stamp: (u64, u64)) {
     if let Ok(broker) = broker() {
         if let Ok(mut registry) = broker.registry.lock() {
@@ -843,6 +864,58 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
+
+    #[test]
+    fn first_turn_begin_preserves_the_prepared_spawn_capability() {
+        let mut registry = Registry::default();
+        registry.begin("session", (1, 0));
+        let conversation = route("http://127.0.0.1:1", Group::Conversation, |_| {
+            panic!("must not issue")
+        });
+        registry
+            .routes
+            .insert("prepared-capability".into(), conversation.clone());
+        registry.begin("session", (1, 0));
+        assert!(Arc::ptr_eq(
+            registry.routes.get("prepared-capability").unwrap(),
+            &conversation
+        ));
+        registry.begin("session", (2, 0));
+        assert!(!registry.routes.contains_key("prepared-capability"));
+        assert!(conversation.check().is_err());
+    }
+
+    #[test]
+    fn readiness_uses_only_the_exact_live_spawn_conversation_route() {
+        let registry = Mutex::new(Registry::default());
+        assert!(conversation_grant_from(&registry, 1234, "session").is_none());
+        let logs = route("http://127.0.0.1:1", Group::RuntimeLogs, |_| {
+            panic!("must not issue")
+        });
+        registry
+            .lock()
+            .unwrap()
+            .routes
+            .insert("logs-token".into(), logs);
+        assert!(conversation_grant_from(&registry, 1234, "session").is_none());
+        let conversation = route("http://127.0.0.1:1", Group::Conversation, |_| {
+            panic!("must not issue")
+        });
+        registry
+            .lock()
+            .unwrap()
+            .routes
+            .insert("spawn-token".into(), conversation.clone());
+        assert!(conversation_grant_from(&registry, 1234, "session#2").is_none());
+        assert_eq!(
+            conversation_grant_from(&registry, 1234, "session"),
+            Some(json!({"token":"spawn-token","endpoint":"http://127.0.0.1:1234"}))
+        );
+        conversation.revoke();
+        assert!(conversation_grant_from(&registry, 1234, "session").is_none());
+        remove_session(&mut registry.lock().unwrap(), "session");
+        assert!(conversation_grant_from(&registry, 1234, "session").is_none());
+    }
 
     #[test]
     fn saturated_broker_answers_instead_of_dropping_the_connection() {

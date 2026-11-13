@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { RemoteMachine } from "../../../connections/model/protocol";
 import { useSocialWorkspace } from "./useSocialWorkspace";
 import { SocialShell, type SocialHeaderProps, type SocialShellProps } from "./SocialShell";
+import { remoteProjectFor } from "../../../connections/public/remoteProjects";
 
 // The screens, the first-run offer and the app header are stubbed: this test covers the shell.
 // Keep the real platform constants (IS_WIN and friends) that the settings chain reads at load.
@@ -13,6 +14,19 @@ vi.mock("../../../../platform/tauri/platform", async (importOriginal) => ({
   IS_MAC: true,
 }));
 vi.mock("./SocialFirstRun", () => ({ SocialFirstRun: () => null }));
+vi.mock("../../../sessions/public/SessionDiscussionPanel", () => ({
+  SessionDiscussionPanel: ({ onOpen }: { onOpen(): Promise<string> }) =>
+    createElement(
+      "button",
+      {
+        onClick: () => {
+          void onOpen();
+        },
+      },
+      "Open session fixture",
+    ),
+}));
+vi.mock("./SocialChatLiveView", () => ({ SocialChatLiveView: () => null }));
 vi.mock("./useSocialWorkspace", () => ({ useSocialWorkspace: vi.fn() }));
 vi.mock("../../model/socialClient", () => ({ socialClient: vi.fn(() => ({})) }));
 vi.mock("../command/CommandScreen", () => ({
@@ -113,6 +127,7 @@ async function flush() {
 }
 
 beforeEach(() => {
+  localStorage.removeItem("bycoda.social.chatOpen");
   element = document.createElement("div");
   document.body.append(element);
   root = createRoot(element);
@@ -137,6 +152,54 @@ it("shows the five sections in order", () => {
     "Inbox",
     "Accounts & Settings",
   ]);
+});
+
+it("rejects a remote main-workspace folder as the local Host's all-projects fallback", async () => {
+  const open = vi.fn(async (_scope: { cwd: string }) => "social-session");
+  render(
+    {
+      machineId: "local",
+      machines: [
+        {
+          id: "local",
+          name: "This computer (local sync)",
+          endpoint: "http://127.0.0.1:5500",
+          environmentId: "local-env",
+        },
+      ] as RemoteMachine[],
+    },
+    { cwd: "remote://other-host/project", onOpenSession: open, onSessionMount: vi.fn() },
+  );
+  await act(async () => buttonWithText("AI chat")!.click());
+  await act(async () => buttonWithText("Open session fixture")!.click());
+  expect(open.mock.calls[0]?.[0]).toMatchObject({ cwd: "" });
+});
+
+it("registers the selected remote project before opening its Social conversation", async () => {
+  const open = vi.fn(async (scope: { cwd: string }) => {
+    expect(remoteProjectFor(scope.cwd)?.projectId).toBe("social-only-project");
+    return "social-session";
+  });
+  render(
+    {
+      projectId: "social-only-project",
+      projects: [{ id: "social-only-project", name: "Social only", cwd: "/social-only" }],
+      machines: [
+        {
+          id: "m1",
+          name: "Remote",
+          endpoint: "https://host.test",
+          environmentId: "remote-social-test",
+        },
+      ] as RemoteMachine[],
+    },
+    { onOpenSession: open, onSessionMount: vi.fn() },
+  );
+  await act(async () => buttonWithText("AI chat")!.click());
+  await act(async () => buttonWithText("Open session fixture")!.click());
+  expect(open).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: "remote://remote-social-test/social-only" }),
+  );
 });
 
 it("marks the open section and keeps an opened section mounted but hidden", () => {
@@ -187,6 +250,8 @@ it("offers Resume AI while AI is stopped and resumes only after confirmation", a
 it("warns when the Host is offline and offers a retry", () => {
   render({ shell: { hostOnline: false, unreachable: false, aiStopped: false }, loaded: true });
   expect(element.textContent).toContain("Scheduling is offline");
+  expect(element.textContent).not.toContain("AI active");
+  expect(buttonWithText("Stop all AI")?.disabled).toBe(true);
   act(() => buttonWithText("Try again")?.click());
   expect(retry).toHaveBeenCalledTimes(1);
 });

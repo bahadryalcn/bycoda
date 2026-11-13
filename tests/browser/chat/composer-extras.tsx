@@ -1,3 +1,19 @@
+import type { ChatProjectGroup } from "../../../src/features/search/model/chatSearch";
+import { SkillPicker } from "../../../src/features/skills/ui/SkillPicker";
+import { PLAN_COMMAND } from "../../../src/features/sessions/model/plan";
+import { COMPACT_COMMAND } from "../../../src/features/sessions/model/compact";
+import { ChatSearchResults } from "../../../src/features/search/ui/ChatSearchResults";
+import { SearchView } from "../../../src/features/search/ui/SearchView";
+import { surfaceAttributes } from "../../../src/shared/ui/Surface";
+import { Button } from "../../../src/shared/ui/Button";
+import { BtwSheet, useBtwConversation } from "../../../src/features/sessions/ui/BtwSheet";
+import { ModelExtras, ModelExtrasPanel } from "../../../src/features/sessions/ui/ModelExtras";
+import { ModelSettingHelp } from "../../../src/features/sessions/ui/ModelSettingsColumn";
+import { DelegationOptionIcon } from "../../../src/features/sessions/ui/DelegationSettings";
+import {
+  CROSS_ADVISOR_KEY,
+  encodeAdvisor,
+} from "../../../src/shared/model/host-contracts/delegation";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
 import { ModelControlPills } from "../../../src/features/sessions/ui/ModelPicker";
@@ -206,15 +222,23 @@ function Fixture() {
         className="session-header-title flex min-w-0 items-center gap-2 border-b border-stroke p-2"
       >
         <span className="min-w-0 flex-1 truncate text-xs">Chat layout fixture</span>
-        <SessionAgentIdentity
-          harness={harness}
-          model={model}
-          accountId={accountId}
-          running={busy}
-          showAccount={accountPicker}
-        />
+        <div
+          {...surfaceAttributes(
+            { frame: "stroke", edge: "inline-start" },
+            "min-w-0 max-w-[48%] flex-[0_1_auto] ps-2.5",
+          )}
+        >
+          <SessionAgentIdentity
+            harness={harness}
+            model={model}
+            accountId={accountId}
+            running={busy}
+            showAccount={accountPicker}
+          />
+        </div>
       </div>
       <Composer
+        onReorderQueuedMessages={queueVisual ? (ids) => setFixtureRows(ids) : undefined}
         queuedMessages={
           queueVisual
             ? [
@@ -241,7 +265,9 @@ function Fixture() {
                   },
                   attachments: [],
                 },
-              ].filter((row) => fixtureRows.includes(row.id))
+              ]
+                .filter((row) => fixtureRows.includes(row.id))
+                .sort((a, b) => fixtureRows.indexOf(a.id) - fixtureRows.indexOf(b.id))
             : queueFeedback || deliveryProgress
               ? [
                   {
@@ -508,12 +534,208 @@ function ScalarFixture() {
     </main>
   );
 }
+function SurfaceProbeFixture() {
+  const value = encodeAdvisor({
+    harness: "claude",
+    model: "claude:sonnet-5",
+    providerAccountId: "surface-account",
+  })!;
+  const setting = {
+    id: CROSS_ADVISOR_KEY,
+    label: "Advisor",
+    kind: "select" as const,
+    value,
+    options: [{ value, label: "Fixture account", accountColor: "#b55272" }],
+  };
+  const [values, setValues] = useState({ effort: "low" });
+  return (
+    <ModelSourceContext.Provider value={source}>
+      <main className="p-4">
+        <div data-probe="delegation">
+          <DelegationOptionIcon setting={setting} value={value} />
+        </div>
+        <div data-probe="extras">
+          <ModelExtras
+            harness="claude"
+            model="claude:sonnet-5"
+            values={values}
+            onSettingsChange={setValues}
+          />
+          <ModelExtrasPanel
+            harness="claude"
+            model="claude:sonnet-5"
+            values={values}
+            onSettingsChange={setValues}
+          />
+        </div>
+        <output data-probe="changed">{values.effort}</output>
+        <ModelSettingHelp setting={null} />
+      </main>
+    </ModelSourceContext.Provider>
+  );
+}
+function PickerRootConsumersFixture() {
+  const [active, setActive] = useState(0),
+    [picked, setPicked] = useState("");
+  const groups: ChatProjectGroup[] = [
+    {
+      key: "fixture",
+      cwd: "/fixture",
+      name: "Fixture project",
+      sessions: [
+        {
+          id: "fixture-chat-a",
+          sessionId: "fixture-chat-a",
+          title: "Review picker keyboard",
+          titleRanges: [],
+          harness: "claude" as const,
+          updatedAt: Date.now(),
+          archived: false,
+          hitCount: 0,
+          hits: [],
+        },
+        {
+          id: "fixture-chat-b",
+          sessionId: "fixture-chat-b",
+          title: "Retain editor draft",
+          titleRanges: [],
+          harness: "codex" as const,
+          updatedAt: Date.now(),
+          archived: false,
+          hitCount: 0,
+          hits: [],
+        },
+      ],
+    },
+  ];
+  if (new URLSearchParams(location.search).has("search-surfaces")) {
+    groups[0]!.sessions[0]!.title = "Review picker keyboard ".repeat(12);
+    groups[0]!.sessions[0]!.hitCount = 4;
+    groups[0]!.sessions[0]!.hits = [
+      {
+        id: "fixture-hit",
+        blockId: "fixture-block",
+        role: "user",
+        snippet:
+          "Long searchable context keeps full message readable on hover and selection. ".repeat(12),
+        ranges: [],
+      },
+    ];
+    groups.push({
+      ...groups[0]!,
+      key: "second-project",
+      name: "Second project",
+      cwd: "/second",
+      sessions: [{ ...groups[0]!.sessions[1]!, id: "second-chat", sessionId: "second-chat" }],
+    });
+  }
+  return (
+    <main className="p-3">
+      <textarea aria-label="External picker editor" defaultValue="Exact unsent editor draft" />
+      <output aria-label="Picker activation">{picked}</output>
+      <section data-root-skills>
+        <SkillPicker
+          skills={[PLAN_COMMAND, COMPACT_COMMAND]}
+          query=""
+          active={active}
+          creating={false}
+          cwd="/fixture"
+          onActive={setActive}
+          onPick={(skill) => setPicked(skill.invocation)}
+          onStartCreate={() => {}}
+          onCancelCreate={() => {}}
+          onCreate={() => {}}
+          showCreate={false}
+        />
+      </section>
+      <section data-root-chat className="app-search">
+        <ChatSearchResults
+          listId="fixture-chat-results"
+          groups={groups}
+          entries={groups.flatMap((g) =>
+            g.sessions.flatMap((v) => [
+              { id: v.id, sessionId: v.sessionId },
+              ...v.hits.map((h) => ({ id: h.id, sessionId: v.sessionId, blockId: h.blockId })),
+            ]),
+          )}
+          active={active}
+          onActive={setActive}
+          onOpen={(entry) => setPicked(entry.sessionId)}
+        />
+      </section>
+      <section data-root-search className="flex h-[360px] min-h-0 flex-col">
+        <SearchView
+          open
+          presentation="page"
+          request={{ scope: "projects", query: "visual" }}
+          cwd="/fixture"
+          recents={[{ path: "/fixture/visual-project", openedAt: 1 }]}
+          history={[]}
+          sessions={[]}
+          onClose={() => {}}
+          onOpenFile={() => {}}
+          onOpenSession={() => {}}
+          onOpenProject={setPicked}
+        />
+      </section>
+    </main>
+  );
+}
+function BtwInteractionFixture() {
+  const btw = useBtwConversation({
+    available: true,
+    blocks: [
+      {
+        id: "fixture-user",
+        role: "user",
+        text: "Context",
+        durationMs: 1000,
+        btwThreads: [
+          {
+            id: "fixture-earlier",
+            sourceEndBlockId: "fixture-answer",
+            createdAt: 1,
+            updatedAt: 1,
+            status: "ready",
+            harness: "claude",
+            messages: [
+              { id: "fixture-question", role: "user", text: "Earlier question", createdAt: 1 },
+              { id: "fixture-response", role: "assistant", text: "Retained answer", createdAt: 1 },
+            ],
+          },
+        ],
+      },
+      { id: "fixture-answer", role: "assistant", text: "Done" },
+    ],
+    harness: "claude",
+    onSubmit: () => false,
+    onRetry: () => {},
+  });
+  return (
+    <main>
+      <Button onClick={() => void btw.openWith("Unsent side question", { draft: true })}>
+        Open side questions
+      </Button>
+      <BtwSheet btw={btw} />
+    </main>
+  );
+}
 void languageReady.then(() =>
   createRoot(document.getElementById("root")!).render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      {new URLSearchParams(location.search).has("scalar") ? <ScalarFixture /> : <Fixture />}
+      {new URLSearchParams(location.search).has("picker-root-consumers") ? (
+        <PickerRootConsumersFixture />
+      ) : new URLSearchParams(location.search).has("btw-interaction") ? (
+        <BtwInteractionFixture />
+      ) : new URLSearchParams(location.search).has("surfaceProbes") ? (
+        <SurfaceProbeFixture />
+      ) : new URLSearchParams(location.search).has("scalar") ? (
+        <ScalarFixture />
+      ) : (
+        <Fixture />
+      )}
     </QueryClientProvider>,
   ),
 );

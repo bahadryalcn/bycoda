@@ -944,16 +944,21 @@ describe("cross-provider delegation settings", () => {
     expect(merged).toEqual({ effort: "high", delegationParent: parent });
   });
 
-  it("saves the owner's delegation choices as last-used settings", () => {
-    saveLastModelSettings(
-      { effort: "low", crossSubagents: subagents, crossAdvisor: advisor },
-      "overwrite",
-      ["crossSubagents", "crossAdvisor"],
+  it("excludes delegation choices from saved and previously stored settings", () => {
+    localStorage.setItem(
+      "bycoda.lastModelSettings",
+      JSON.stringify({ effort: "high", crossAdvisor: advisor, advisor: "opus" }),
     );
-    expect(loadLastModelSettings()).toEqual({
+    expect(loadLastModelSettings()).toEqual({ effort: "high" });
+    saveLastModelSettings({
       effort: "low",
       crossSubagents: subagents,
       crossAdvisor: advisor,
+      subagentModel: "sonnet",
+    });
+    expect(loadLastModelSettings()).toEqual({ effort: "low" });
+    expect(JSON.parse(localStorage.getItem("bycoda.lastModelSettings")!)).toEqual({
+      effort: "low",
     });
   });
 

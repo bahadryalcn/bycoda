@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { ProviderDetailHeader } from "./ProviderStatusGroup";
 import { ProviderList, providerMetaLine, type ProviderListEntry } from "./ProviderList";
+import { clearCachedRateLimits, setCachedRateLimits } from "../model/rateLimitsCache";
+import { idleRateLimits, type RateLimitStatus } from "../model/rateLimits";
 const entry: ProviderListEntry = {
   harness: "codex",
   available: true,
@@ -27,8 +29,8 @@ it("keeps CLI versions out of Accounts metadata and marks default and auth seman
       onSetup: vi.fn(),
     }),
   );
-  expect(html).toContain('data-tone="accent"');
-  expect(html).toContain('aria-label="Signed in"');
+  expect(html).toContain('aria-label="Default provider"');
+  expect(html).toContain('aria-label="Codex, Signed in, Default provider"');
   expect(html).toContain('aria-current="true"');
   expect(html).toContain("Show Codex in the model picker");
 });
@@ -38,7 +40,7 @@ it("shows standalone sign-in once in the header without inferring readiness from
     createElement(ProviderDetailHeader, { harness: "cursor", available: true }),
   );
   expect(unknown).toContain("Sign-in");
-  expect(unknown).toContain("Unknown");
+  expect(unknown).toContain("Not checked");
   expect(unknown).not.toContain("CLI detected");
   expect(unknown).not.toContain("Verified ready");
   const completed = renderToStaticMarkup(
@@ -58,4 +60,70 @@ it("uses sign-in metadata without repeated installation filler", () => {
   expect(providerMetaLine({ ...entry, accountSummary: "3 accounts · 1 signed out" }, true)).toBe(
     "3 accounts · 1 signed out",
   );
+});
+
+it.each([
+  ["ok", "Signed in"],
+  ["unavailable", "Signed out"],
+  ["fetching", "Checking…"],
+  ["error", "Not checked"],
+] satisfies [RateLimitStatus, string][])(
+  "shows Grok %s cache state in header and rail",
+  (status, label) => {
+    setCachedRateLimits("grok", "default", { ...idleRateLimits("grok"), status });
+    try {
+      const header = renderToStaticMarkup(
+        createElement(ProviderDetailHeader, {
+          harness: "grok",
+          available: true,
+          signInCompleted: true,
+        }),
+      );
+      expect(header).toContain(`Sign-in: ${label}`);
+      const rail = renderToStaticMarkup(
+        createElement(ProviderList, {
+          entries: [{ ...entry, harness: "grok", auth: null }],
+          active: "grok",
+          probed: true,
+          disabled: false,
+          onSelect: vi.fn(),
+          onPickerVisible: vi.fn(),
+          onSetup: vi.fn(),
+        }),
+      );
+      expect(rail).toContain(label);
+      expect(rail).not.toContain('data-button-layout="stacked"');
+      if (status === "error" || status === "fetching")
+        expect(rail).toContain('data-tone="secondary"');
+    } finally {
+      clearCachedRateLimits("grok");
+    }
+  },
+);
+
+it("keeps installed, installable and ACP provider icons beside their labels", () => {
+  const html = renderToStaticMarkup(
+    createElement(ProviderList, {
+      entries: [
+        entry,
+        { ...entry, harness: "cursor", available: false },
+        { ...entry, harness: "acp", available: false },
+      ],
+      active: "cursor",
+      probed: true,
+      disabled: false,
+      onSelect: vi.fn(),
+      onPickerVisible: vi.fn(),
+      onSetup: vi.fn(),
+    }),
+  );
+  expect(html).not.toContain('data-button-layout="stacked"');
+  expect(html.match(/provider-cli-option-copy/g)).toHaveLength(3);
+});
+
+it.each(["low", "exhausted"] as const)("keeps %s visible with several accounts", (tone) => {
+  const label = tone === "low" ? "Running low" : "Exhausted";
+  expect(
+    providerMetaLine({ ...entry, accountSummary: "2 accounts", auth: { tone, label } }, true),
+  ).toBe(`2 accounts, ${label}`);
 });

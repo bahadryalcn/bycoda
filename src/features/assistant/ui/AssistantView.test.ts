@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -14,6 +15,12 @@ const mock = vi.hoisted(() => ({
   request: vi.fn(),
   refresh: vi.fn(async () => {}),
   close: vi.fn(),
+  roomPrivacy: { pending: false, error: null as string | null },
+}));
+vi.mock("../../group-lock/model/roomPrivacyProjection", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  getRoomPrivacyStatus: () => mock.roomPrivacy,
+  subscribeRoomPrivacyStatus: () => () => {},
 }));
 vi.mock("../model/assistantClient", () => ({
   useAssistantSnapshot: () => ({
@@ -74,10 +81,13 @@ import * as privacyModel from "../model/assistantPrivacy";
 import { AssistantSetup } from "./AssistantSetup";
 import { click, job, snapshot, stubNavigatorLocks } from "./AssistantView.testSupport";
 let root: Root | undefined, container: HTMLDivElement;
+let queryClient: QueryClient;
 beforeEach(() => {
   stubNavigatorLocks();
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   mock.environmentId = "room-fixture";
   mock.automations = [];
+  mock.roomPrivacy = { pending: false, error: null };
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   mock.snapshot = snapshot();
@@ -118,16 +128,36 @@ async function render(props: Parameters<typeof AssistantView>[0] = {}) {
   }
   await act(async () =>
     root!.render(
-      createElement(AssistantView, {
-        projectPath: "/one",
-        projects: [{ id: "project-one", name: "One", path: "/one" }],
-        ...props,
-      }),
+      createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(AssistantView, {
+          projectPath: "/one",
+          projects: [{ id: "project-one", name: "One", path: "/one" }],
+          ...props,
+        }),
+      ),
     ),
   );
 }
+it("keeps background privacy qualification out of the Room layout", async () => {
+  mock.roomPrivacy = { pending: true, error: null };
+  await render();
+  expect(container.textContent).not.toContain("Confirming Room privacy protection...");
+  await click("Assistant status");
+  expect(document.body.textContent).toContain("Confirming Room privacy protection...");
+});
+
 it("opens Room at its global conversation even when a coding project is selected", async () => {
   mock.snapshot!.threads = [
+    {
+      id: "planning-thread",
+      purpose: "job-planning",
+      version: 1,
+      createdAt: 1,
+      updatedAt: 9,
+      summary: "",
+    },
     {
       id: "project-thread",
       projectId: "project-one",
@@ -147,6 +177,9 @@ it("opens Room at its global conversation even when a coding project is selected
   );
   await render({ initialTab: "conversations" });
   expect(container.querySelector("textarea")?.value).toBe("Manage all projects");
+  expect(mock.request.mock.calls.some(([input]) => input.threadId === "planning-thread")).toBe(
+    false,
+  );
   await click("Open conversation");
   expect(mock.request).toHaveBeenCalledWith({ op: "threads.open" }, "room-fixture");
 });
@@ -1338,7 +1371,8 @@ it("creates an explicitly reviewed global quick note in Report mode and opens on
   await click(text);
   await click("Open saved note");
   expect(mock.request).toHaveBeenCalledWith({ op: "notes.get", id: "quick-note" }, "room-fixture");
-  expect(document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')?.value).toBe(text);
+  expect(document.querySelector('section[aria-label="Edit note"]')).not.toBeNull();
+  expect(document.querySelector("[data-note-editor] .cm-content")?.textContent).toBe(text);
 });
 it("retains a frozen quick review across cancel/reopen and resolves the original lost receipt without a second create", async () => {
   const text = "Save a private personal note";
@@ -1517,7 +1551,7 @@ it("preserves explicit assistant role providers and nullable inheritance in sett
   };
   await render({ initialTab: "settings" });
   // Save is disabled until the draft changes; this edit leaves the role patch unchanged.
-  await click("Answer routine worker questions");
+  await click("Allow profanity");
   await click("Save profile settings");
   expect(mock.request).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -1548,7 +1582,7 @@ it("submits every existing policy field from Settings without forwarding profile
   await render({ initialTab: "settings" });
   expect(mock.request.mock.calls.some(([input]) => input.op === "profile.update")).toBe(false);
   // Save is disabled until the draft changes; this toggle leaves the policy fields under test intact.
-  await click("Answer routine worker questions");
+  await click("Allow profanity");
   await click("Save profile settings");
   const [input, environment] = mock.request.mock.calls.find(
     ([input]) => input.op === "profile.update",
@@ -1641,7 +1675,8 @@ it("reviews a project-scoped automation with an explicit model, then opens only 
     [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (button) => button.textContent?.trim() === "Create automations",
     )!;
-  expect(create().disabled).toBe(true);
+  // Automatic routing is valid before explicitly selecting a model.
+  expect(create().disabled).toBe(false);
   await click("Choose a fixture model");
   expect(create().disabled).toBe(false);
   await click("Create automations");
@@ -1855,12 +1890,13 @@ it("retains a new note identity and body across a lost acknowledgement, cancel/r
   });
   expect(writes[0][0].id).toBeTruthy();
   expect(document.body.textContent).toContain("Reply lost after native commit");
-  expect(document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')?.disabled).toBe(
-    true,
-  );
-  await click("Cancel");
+  await click("Source");
+  expect(
+    document.querySelector("[data-note-editor] .cm-content")?.getAttribute("contenteditable"),
+  ).toBe("false");
+  await click("Close");
   await click("New note");
-  expect(document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')?.value).toBe(
+  expect(document.querySelector("[data-note-editor] .cm-content")?.textContent).toBe(
     "Exact unsent owner body",
   );
   await click("Save");
@@ -1869,7 +1905,7 @@ it("retains a new note identity and body across a lost acknowledgement, cancel/r
     { op: "notes.get", id: writes[0][0].id },
     "room-fixture",
   );
-  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(document.querySelector('section[aria-label="New note"]')).toBeNull();
   expect(localStorage.getItem("bycoda.assistant.note-draft:new:record")).toBeNull();
 });
 
@@ -1885,12 +1921,12 @@ it("keeps the uncertain note draft when exact lookup is missing and never recrea
   await render({ initialTab: "notes" });
   await click("New note");
   await click("Save");
-  await click("Cancel");
+  await click("Close");
   await click("New note");
   await click("Save");
   expect(mock.request.mock.calls.filter(([input]) => input.op === "notes.save")).toHaveLength(1);
   expect(document.body.textContent).toContain("note is no longer available");
-  expect(document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')?.value).toBe(
+  expect(document.querySelector("[data-note-editor] .cm-content")?.textContent).toBe(
     "Keep this exact draft",
   );
   expect(localStorage.getItem("bycoda.assistant.note-draft:new:record")).toContain(
@@ -2183,11 +2219,12 @@ it("shows only measured worker cache counters and percentage coverage", async ()
     complete: false,
   };
   await render({ initialTab: "settings" });
-  expect(document.body.textContent).toContain("Partial cache usage");
+  expect(document.body.textContent).toContain("Some usage is unavailable.");
   expect(document.body.textContent).toContain("Cache read tokens: 120");
-  expect(document.body.textContent).toContain("Cache write tokens: Unavailable");
   expect(document.body.textContent).toContain("Mean reported cache hit: 25%");
   await click("About usage");
+  expect(document.body.textContent).toContain("Partial cache usage");
+  expect(document.body.textContent).toContain("Cache write tokens: Unavailable");
   expect(document.body.textContent).toContain("2 of 4 worker turns measured");
   expect(document.body.textContent).toContain("Average of 1 provider-reported worker percentages");
 });

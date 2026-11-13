@@ -35,3 +35,14 @@
 .footer:not(:empty) {
   padding-block: 8px;
 }
+.settingsRow[data-row-divider] {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+@media (hover: hover) and (pointer: fine) {
+  .settingsRow:hover {
+    background: var(--ui-settings-row-hover);
+  }
+}
+.settingsRow:has(:focus-visible) {
+  background: var(--ui-settings-row-hover);
+}

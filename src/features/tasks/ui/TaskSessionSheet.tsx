@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useEffect, useRef, useState } from "react";
 import { Disclosure } from "../../../shared/ui/Disclosure";
@@ -143,7 +144,14 @@ export function TaskSessionSheet({
         ) : null}
         {!session && !error ? <LoadingText /> : null}
         {conversation.map((block) => (
-          <section className="task-session-message" data-role={block.role} key={block.id}>
+          <section
+            {...surfaceAttributes(
+              block.role === "user" ? { variant: "card", frame: "card", radius: "card" } : {},
+              "task-session-message",
+            )}
+            data-role={block.role}
+            key={block.id}
+          >
             <SectionLabel as="h3" className="task-session-heading">
               {t(block.role === "user" ? "You" : "Assistant")}
             </SectionLabel>

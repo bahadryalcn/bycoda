@@ -44,35 +44,10 @@
   text-align: start;
 }
 
-.app-search-result-title,
-.app-search-result-meta {
-  overflow: clip;
-  white-space: nowrap;
-}
-
-.app-search-result[aria-selected="true"] .app-search-result-title,
-.app-search-result[aria-selected="true"] .app-search-result-meta,
 .app-search-result-identity {
   white-space: normal;
   overflow-wrap: anywhere;
 }
-
-@media (hover: none), (pointer: coarse) {
-  .app-search-result-title,
-  .app-search-result-meta {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-}
-
-.app-search-result-preview {
-  display: block;
-  max-block-size: 1lh;
-  overflow: clip;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-
 .app-search-result-kind {
   flex-shrink: 0;
 }
@@ -97,7 +72,6 @@
 }
 
 .app-search-project + .app-search-project {
-  border-block-start: 1px solid var(--ui-pane-border);
   margin-block-start: 10px;
 }
 
@@ -123,37 +97,25 @@
 .app-search-conversation + .app-search-conversation {
   margin-block-start: 8px;
   padding-block-start: 6px;
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 
 .app-search .app-search-match {
-  margin-inline-start: 22px;
-  inline-size: calc(100% - 22px);
+  --layout-match-indent: 22px;
+  margin-inline-start: var(--layout-match-indent);
+  inline-size: calc(100% - var(--layout-match-indent));
 }
 
 .app-search-match-excerpt {
   flex: 1;
   min-inline-size: 0;
-  max-block-size: 1lh;
   overflow: clip;
   overflow-wrap: anywhere;
   white-space: normal;
   text-align: start;
 }
 
-.app-search-match:is([aria-selected="true"], :focus-visible) .app-search-match-excerpt,
-.app-search-result:is([aria-selected="true"], :focus-visible) .app-search-result-preview {
-  max-block-size: 6lh;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .app-search-match:hover .app-search-match-excerpt,
-  .app-search-result:hover .app-search-result-preview {
-    max-block-size: 6lh;
-  }
-}
-
 .app-search-more {
   padding: 2px 10px;
-  margin-inline-start: 42px;
+  --layout-more-indent: 42px;
+  margin-inline-start: var(--layout-more-indent);
 }

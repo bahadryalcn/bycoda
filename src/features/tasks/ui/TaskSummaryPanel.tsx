@@ -49,7 +49,12 @@ export function SummaryPanel({
           {label}
           {note}
         </SectionLabel>
-        <ul className="task-ops-frame">
+        <ul
+          {...surfaceAttributes(
+            { frame: "card", radius: "card", dividers: "card" },
+            "task-ops-frame",
+          )}
+        >
           {items.map((item) => (
             <li key={item.key} className="task-ops-row">
               <Button
@@ -74,7 +79,12 @@ export function SummaryPanel({
     goals.length ? (
       <section aria-label={label} className="task-ops-section">
         <SectionLabel count={goals.length}>{label}</SectionLabel>
-        <ul className="task-ops-frame">
+        <ul
+          {...surfaceAttributes(
+            { frame: "card", radius: "card", dividers: "card" },
+            "task-ops-frame",
+          )}
+        >
           {goals.map((goal) => (
             <li key={`${goal.machineName}:${goal.title}`} className="task-ops-row">
               <Text as="span" size="body" weight="medium" tone="primary" leading="inherit" truncate>
@@ -197,7 +207,12 @@ export function SummaryPanel({
           {summary.usage.length ? (
             <section aria-label={t("Agent time")} className="task-ops-section">
               <SectionLabel>{t("Agent time today")}</SectionLabel>
-              <ul className="task-ops-frame">
+              <ul
+                {...surfaceAttributes(
+                  { frame: "card", radius: "card", dividers: "card" },
+                  "task-ops-frame",
+                )}
+              >
                 {summary.usage.map((entry) => (
                   <li key={entry.machineName} className="task-ops-row">
                     <Text

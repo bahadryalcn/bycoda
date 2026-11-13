@@ -1,4 +1,5 @@
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
@@ -205,7 +206,12 @@ export function OnboardingAgents({
             </Text>
           </div>
         ) : null}
-        <div className="onboarding-agent-list">
+        <div
+          {...surfaceAttributes(
+            { frame: "stroke", edge: "block", dividers: "stroke" },
+            "onboarding-agent-list",
+          )}
+        >
           {listed.map((provider) => {
             const available = isHarnessAvailable(provider);
             const visible = isPickerProviderVisible(provider);

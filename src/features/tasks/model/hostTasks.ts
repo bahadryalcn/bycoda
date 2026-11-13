@@ -1,3 +1,7 @@
+import {
+  ModelRoutingItemChoiceSchema,
+  type ModelRoutingItemChoice,
+} from "../../../shared/model/host-contracts/model-routing";
 import { NO_VERDICT } from "./taskRules";
 import type { TaskAcceptanceReport } from "./taskAcceptance";
 import { parseTaskRunBudget, type TaskRunBudget, type TaskRunBudgetUsage } from "./taskBudget";
@@ -135,6 +139,7 @@ export type HostTaskInput = {
   harness: RemoteProvider;
   /** Local profile on the executing host. Absent retains legacy host default. */
   providerAccountId?: string;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -525,6 +530,9 @@ export function parseHostTask(input: unknown): HostTaskInput {
     ...(v.providerAccountId === undefined
       ? {}
       : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
+    ...(v.modelChoice === undefined
+      ? {}
+      : { modelChoice: ModelRoutingItemChoiceSchema.parse(v.modelChoice) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,

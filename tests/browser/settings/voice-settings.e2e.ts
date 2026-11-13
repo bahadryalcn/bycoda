@@ -1,8 +1,177 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Locator } from "@playwright/test";
 
 const captures = join(process.cwd(), "temp/verification/2026-10-24-voice-setup");
+
+async function assertVoiceRows(region: Locator) {
+  const problems = await region.evaluate((root) => {
+    const issues: string[] = [];
+    const bounds = root.getBoundingClientRect();
+    for (const row of root.querySelectorAll<HTMLElement>(".settings-row")) {
+      const box = row.getBoundingClientRect();
+      if (!box.width || !box.height || !row.checkVisibility()) continue;
+      const name = row.dataset.settingId ?? row.textContent?.trim().slice(0, 40);
+      if (box.left < bounds.left - 1 || box.right > bounds.right + 1)
+        issues.push(`${name}: row outside content`);
+      const label = row.querySelector(":scope > .settings-row-label")?.getBoundingClientRect();
+      const control = row.querySelector(":scope > .settings-row-control")?.getBoundingClientRect();
+      if (
+        label &&
+        control &&
+        Math.min(label.right, control.right) > Math.max(label.left, control.left) + 1 &&
+        Math.min(label.bottom, control.bottom) > Math.max(label.top, control.top) + 1
+      )
+        issues.push(`${name}: overlapping label and control`);
+      for (const field of row.querySelectorAll<HTMLElement>(
+        "button,input,textarea,[role='radiogroup']",
+      )) {
+        const rect = field.getBoundingClientRect();
+        if (
+          !rect.width ||
+          !rect.height ||
+          getComputedStyle(field).opacity === "0" ||
+          !field.checkVisibility()
+        )
+          continue;
+        if (
+          rect.left < box.left - 1 ||
+          rect.right > box.right + 1 ||
+          rect.top < box.top - 1 ||
+          rect.bottom > box.bottom + 1
+        )
+          issues.push(`${name}: ${field.getAttribute("aria-label") ?? field.tagName} outside row`);
+      }
+    }
+    return issues;
+  });
+  expect(problems).toEqual([]);
+}
+
+for (const [theme, width] of [
+  ["light", 1280],
+  ["dark", 1280],
+  ["light", 800],
+  ["dark", 800],
+  ["dark", 560],
+] as const) {
+  test(`voice settings compact geometry and shared assistant route ${theme} ${width}`, async ({
+    page,
+  }) => {
+    const region = await openVoice(page, "ready", theme, width);
+    const output = join(process.cwd(), "temp/verification/voice-settings-layout-20261113/after");
+    await mkdir(output, { recursive: true });
+    const capture = async (name: string) => {
+      await page.mouse.move(0, 0);
+      await page.screenshot({
+        path: join(output, `${theme}-${width}-${name}.png`),
+        animations: "disabled",
+      });
+    };
+    await expect(region.getByText("Voice is ready", { exact: true })).toBeVisible();
+    await assertVoiceRows(region);
+    await capture("top");
+    await region.locator('[data-setting-id="voice-persona"]').scrollIntoViewIfNeeded();
+    await capture("bottom");
+    for (const title of [
+      "Voice options",
+      "Dictation options",
+      "Sleep and wake",
+      "Appearance and voice style",
+    ])
+      await region.getByRole("button", { name: new RegExp(`^${title}`) }).click();
+    await assertVoiceRows(region);
+    for (const [name, id] of [
+      ["engine-expanded", "voice-device"],
+      ["dictation-expanded", "dictation-engine"],
+      ["conversation-expanded", "voice-idle-sleep"],
+      ["appearance-expanded", "voice-visual-style"],
+    ]) {
+      await region.locator(`[data-setting-id="${id}"]`).scrollIntoViewIfNeeded();
+      await capture(name);
+    }
+    const last = region.getByRole("radio", { name: "Orb", exact: true });
+    await last.scrollIntoViewIfNeeded();
+    expect(
+      await last.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return !!hit && (hit === element || element.contains(hit));
+      }),
+    ).toBe(true);
+    await region.getByRole("button", { name: /^Reply voice:/ }).click();
+    await expect(page.getByRole("listbox")).toBeVisible();
+    const popup = (await page.getByRole("listbox").boundingBox())!;
+    expect(popup.x).toBeGreaterThanOrEqual(0);
+    expect(popup.x + popup.width).toBeLessThanOrEqual(width + 1);
+    await capture("voice-picker");
+    await page.keyboard.press("Escape");
+    await region.getByRole("radio", { name: "Grok Voice", exact: true }).click();
+    await assertVoiceRows(region);
+    await region.locator('[data-setting-id="voice-mode"]').scrollIntoViewIfNeeded();
+    await capture("grok");
+    await region.getByRole("button", { name: /^Speaker:/ }).click();
+    await expect(page.getByRole("listbox")).toBeVisible();
+    await capture("grok-speaker-picker");
+    await page.keyboard.press("Escape");
+    await region.getByRole("radio", { name: "OpenAI Realtime", exact: true }).click();
+    await region.getByText("Advanced turn detection", { exact: true }).click();
+    await assertVoiceRows(region);
+    await region.locator('[data-setting-id="voice-semantic-vad"]').scrollIntoViewIfNeeded();
+    await capture("openai-turn-detection");
+    const experimental = region.getByRole("switch", {
+      name: "Experimental OpenAI turn detection",
+      exact: true,
+    });
+    const manual = region.getByRole("switch", { name: "I decide when my turn ends", exact: true });
+    await expect(experimental).not.toBeChecked();
+    await manual.check();
+    await expect(experimental).toBeDisabled();
+    await region.locator('[data-setting-id="voice-semantic-vad"]').scrollIntoViewIfNeeded();
+    await capture("openai-manual-disabled");
+    await manual.uncheck();
+    await experimental.check();
+    await expect(experimental).toBeChecked();
+    expect(
+      await page.evaluate(
+        () => JSON.parse(localStorage.getItem("bycoda.voice")!).experimentalSemanticVad,
+      ),
+    ).toBe(true);
+    await capture("openai-opt-in");
+    await region.getByRole("button", { name: "Assistant settings", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: /^Settings/ });
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByRole("textbox", { name: "Assistant name", exact: true }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByRole("radiogroup", { name: "How often to use your name", exact: true }),
+    ).not.toBeVisible();
+    await assertVoiceRows(dialog);
+    await capture("assistant-personal");
+    await dialog.getByRole("tab", { name: "Access", exact: true }).click();
+    await assertVoiceRows(dialog);
+    await expect(
+      dialog.getByRole("switch", { name: "Physical input", exact: true }),
+    ).not.toBeVisible();
+    await capture("assistant-access");
+    const footer = dialog.getByRole("button", { name: "Save profile settings", exact: true });
+    await expect(footer).toBeVisible();
+    const checks = dialog.getByRole("button", { name: "All checks", exact: true });
+    await checks.scrollIntoViewIfNeeded();
+    const checkBox = (await checks.boundingBox())!;
+    const footerBox = (await footer.boundingBox())!;
+    expect(checkBox.y + checkBox.height).toBeLessThan(footerBox.y);
+    expect(
+      await checks.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return !!hit && (hit === element || element.contains(hit));
+      }),
+    ).toBe(true);
+    await capture("assistant-access-bottom");
+  });
+}
 
 async function openVoice(page: Page, fixture: string, theme = "dark", width = 1280, lang = "en") {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -10,7 +179,14 @@ async function openVoice(page: Page, fixture: string, theme = "dark", width = 12
   await page.addInitScript(() => {
     localStorage.setItem(
       "bycoda.voice",
-      JSON.stringify({ enabled: true, natural: true, python: "", whisperPath: "", ttsPath: "" }),
+      JSON.stringify({
+        enabled: true,
+        natural: true,
+        dictationEnabled: true,
+        python: "",
+        whisperPath: "",
+        ttsPath: "",
+      }),
     );
   });
   await page.goto(
@@ -55,14 +231,15 @@ for (const theme of ["light", "dark"]) {
         body: JSON.stringify({ theme, width, height: bounds!.height }),
         contentType: "application/json",
       });
-      // The status group stays compact; engine, conversation style and companion
-      // settings follow as their own groups, visible without a disclosure.
+      // Core controls stay visible; optional processing and visual controls unfold below.
       expect(bounds!.height).toBeLessThan(width < 600 ? 1040 : 680);
       const saved = await page.evaluate(() => localStorage.getItem("bycoda.voice"));
       await expect(
         group.getByRole("switch", { name: "I decide when my turn ends", exact: true }),
       ).toBeVisible();
       await expect(group.getByRole("switch", { name: "Memory", exact: true })).toBeVisible();
+      await group.getByText("Appearance and voice style", { exact: true }).click();
+      await group.getByText("Voice options", { exact: true }).click();
       await expect(
         group.getByRole("radiogroup", { name: "Visual style", exact: true }),
       ).toBeVisible();
@@ -200,6 +377,7 @@ for (const theme of ["light", "dark"]) {
     const gpuCaptures = join(process.cwd(), "temp/verification/2026-10-31-voice-gpu");
     await mkdir(gpuCaptures, { recursive: true });
     await group.screenshot({ path: join(gpuCaptures, `voice-gpu-offer-${theme}-1280.png`) });
+    await group.getByText("Voice options", { exact: true }).click();
     await group.getByRole("radio", { name: "CPU", exact: true }).click();
     await expect(
       group.getByRole("button", { name: "Install GPU support", exact: true }),

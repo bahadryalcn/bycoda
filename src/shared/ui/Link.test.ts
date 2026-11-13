@@ -56,3 +56,22 @@ it("leaves handled, modified and non-external clicks alone", () => {
   expect(onClick).toHaveBeenCalledOnce();
   expect(openUrl).not.toHaveBeenCalled();
 });
+
+it("keeps chip presentation opt-in without changing handled anchor activation", () => {
+  const onClick = vi.fn((event: { preventDefault(): void }) => event.preventDefault());
+  act(() =>
+    root.render(
+      createElement(
+        Link,
+        { href: "https://example.com/chip", appearance: "chip", onClick },
+        "Chip",
+      ),
+    ),
+  );
+  const anchor = container.querySelector("a")!;
+  expect(anchor.getAttribute("data-link-appearance")).toBe("chip");
+  expect(anchor.hasAttribute("appearance")).toBe(false);
+  click(anchor);
+  expect(onClick).toHaveBeenCalledOnce();
+  expect(openUrl).not.toHaveBeenCalled();
+});

@@ -213,7 +213,7 @@ export function WorktreesPage({
             {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
             {loadError && <SettingsFeedback state="error">{loadError}</SettingsFeedback>}
             {!data && !loadError && (
-              <LoadingText delay={false} className={styles.empty}>
+              <LoadingText delay={false} className="py-2">
                 {t("Loading worktrees…")}
               </LoadingText>
             )}

@@ -38,7 +38,7 @@ describe("SegmentBuilder", () => {
       createElement(SegmentBuilder, {
         client: asClient(mock),
         onClose: vi.fn(),
-        onCreated: vi.fn(),
+        onSaved: vi.fn(),
       }),
     );
     await flush();
@@ -53,9 +53,9 @@ describe("SegmentBuilder", () => {
 
   it("saves a dynamic list that carries the chosen filter", async () => {
     const mock: ClientMock = clientMock();
-    const onCreated = vi.fn();
+    const onSaved = vi.fn();
     const onClose = vi.fn();
-    host.render(createElement(SegmentBuilder, { client: asClient(mock), onClose, onCreated }));
+    host.render(createElement(SegmentBuilder, { client: asClient(mock), onClose, onSaved }));
     await flush();
 
     setFieldValue(document.querySelector("input")!, "X buyers");
@@ -75,7 +75,7 @@ describe("SegmentBuilder", () => {
       filter: { platforms: ["x"] },
       projectIds: [],
     });
-    expect(onCreated).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalled();
   });
 });

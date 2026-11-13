@@ -92,7 +92,7 @@ export function GitGraphCommitInspector({
   const deleted = files.data?.find((file) => file.relative === relative)?.status === "deleted";
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="shrink-0 border-b border-(--ui-pane-border) p-3">
+      <header {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 p-3")}>
         <div className="mb-2 flex items-center justify-between gap-2">
           <Code size="caption" tone="accent" className="select-all">
             {commit.shortSha}
@@ -140,7 +140,10 @@ export function GitGraphCommitInspector({
         open={filesOpen}
         onOpenChange={setFilesOpen}
         summary={t("Changed files")}
-        className="max-h-[30%] min-h-0 shrink-0 overflow-y-auto border-b border-(--ui-pane-border) px-2 py-1"
+        {...surfaceAttributes(
+          { frame: "pane", edge: "bottom" },
+          "max-h-[30%] min-h-0 shrink-0 overflow-y-auto px-2 py-1",
+        )}
       >
         <SearchInput
           type="search"

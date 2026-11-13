@@ -4,7 +4,7 @@ import { Text } from "../../../../shared/ui/Text";
 import { StatusDot } from "../../../../shared/ui/StatusDot";
 import type { StatusTextStatus } from "../common/StatusText";
 
-export type ContentState = StatusTextStatus | "draft" | "paused";
+export type ContentState = Exclude<StatusTextStatus, "completed"> | "draft" | "paused";
 
 const TONES: Record<ContentState, BadgeTone> = {
   succeeded: "success",

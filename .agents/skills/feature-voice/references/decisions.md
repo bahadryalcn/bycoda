@@ -63,3 +63,12 @@ Source references identify the original card's provenance; they are not acceptan
   closes the conversation to Ready with capture closed. Audio never leaves the machine
   before a match (local recognition only, held in memory). No other spoken mic or speaker
   commands. Phrase defaults follow the language until the owner types their own.
+
+- 2026-11-13, owner chat (translated):
+
+  > These should have been animated. None of them have any animation.
+
+  Consequence: live voice visuals include gentle listening motion even without
+  detected input. Their capped audio feedback does not inherit the automatic
+  high-refresh display fallback for unbounded decoration. Explicit motion-off,
+  reduced-motion and visibility choices remain authoritative.

@@ -46,6 +46,64 @@ function child(id: string, patch: Partial<Session> = {}, link: Partial<Delegatio
 
 const brief: Block = { id: "b-user", role: "user", text: "Fix the parser.", startedAt: 2_100 };
 
+it("keeps native calls without run metadata inspectable and skips internal calls", () => {
+  const native: Block = {
+    id: "native",
+    role: "tool",
+    text: "Agent: Review",
+    tool: { kind: "agent", status: "completed" },
+  };
+  const mapped = delegatedAgentBlock(
+    child("c1", { blocks: [brief, native, { ...native, id: "internal", internal: true }] }),
+  ).agentRun!.steps;
+  expect(mapped).toHaveLength(1);
+  expect(mapped[0]).toMatchObject({
+    id: "native",
+    toolKind: "subagent",
+    status: "completed",
+    agentRun: { steps: [] },
+  });
+  expect(mapped[0].agentRun?.name).toBeTruthy();
+});
+
+it("preserves a child's native subagent metadata and live updates", () => {
+  const native: Block = {
+    id: "native-review",
+    role: "tool",
+    text: "Review parser",
+    tool: { kind: "agent", status: "in_progress" },
+    agentRun: {
+      name: "Parser reviewer",
+      model: "claude:sonnet",
+      startedAt: 2200,
+      steps: [{ id: "read", kind: "tool", text: "Read parser", toolKind: "read" }],
+    },
+  };
+  const session = child("c1", { busy: true, blocks: [brief, native] });
+  expect(delegatedAgentBlock(session).agentRun?.steps[0]).toMatchObject({
+    id: native.id,
+    kind: "tool",
+    toolKind: "subagent",
+    status: "in_progress",
+    agentRun: native.agentRun,
+  });
+  const completed = {
+    ...native,
+    tool: { ...native.tool, status: "completed" },
+    agentRun: {
+      ...native.agentRun!,
+      endedAt: 3000,
+      steps: [
+        ...native.agentRun!.steps,
+        { id: "result", kind: "message" as const, text: "Parser verified" },
+      ],
+    },
+  };
+  const mapped = delegatedAgentBlock({ ...session, busy: false, blocks: [brief, completed] })
+    .agentRun?.steps[0];
+  expect(mapped).toMatchObject({ status: "completed", agentRun: completed.agentRun });
+});
+
 function toolStep(id: string, status = "completed"): Block {
   return {
     id,
@@ -288,6 +346,28 @@ it("matches bound child only to the parent shell of the same Host and project", 
     ),
   ).toEqual([]);
   expect(delegatedChildren([{ ...parent, id: "host-parent" }, run], "host-parent")).toHaveLength(1);
+});
+
+it("matches Host-bound children to the local Native parent that delegated them", () => {
+  const binding = {
+    kind: "local-host" as const,
+    machineId: "machine",
+    environmentId: "env",
+    projectId: "project",
+    sessionId: "host-child",
+    authorityGeneration: null,
+    created: true,
+  };
+  const parent = { ...newSession("codex", "/repo"), id: PARENT };
+  const run = child("host-child", { hostBinding: binding });
+  expect(delegatedChildren([parent, run], parent.id)).toEqual([run]);
+  expect(delegatedChildren([{ ...parent, cwd: "/other" }, run], parent.id)).toEqual([]);
+  expect(
+    delegatedChildren(
+      [parent, child("host-child", { hostBinding: binding }, { parentSessionId: "x" })],
+      parent.id,
+    ),
+  ).toEqual([]);
 });
 
 it("groups verified remote children under their mapped parent shell", () => {

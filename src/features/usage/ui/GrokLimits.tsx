@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { Heading } from "../../../shared/ui/Heading";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -23,6 +24,7 @@ export function GrokLimits({ refresh }: { refresh: number }) {
   const [initialNow] = useState(Date.now);
   const now = useMinuteNow(true) || initialNow;
   const showRemaining = useShowRemainingUsage();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Sync the shared Grok quota cache with the parent refresh generation.
   useEffect(() => {
     if (refresh > 0) void loadRateLimits("grok", "default", true);
   }, [refresh]);
@@ -54,7 +56,7 @@ export function GrokLimits({ refresh }: { refresh: number }) {
               leading="inherit"
               className="usage-quota-heading"
             >
-              <Heading size="item" level={4}>
+              <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
                 {kind === "weekly"
                   ? t("Weekly")
                   : kind === "monthly"
@@ -65,7 +67,7 @@ export function GrokLimits({ refresh }: { refresh: number }) {
                     ? t("Reset time unavailable")
                     : formatResetCountdown(window.resetsAt - now)}
                 </Text>
-              </Heading>
+              </SectionLabel>
               <Text as="p" size="inherit" tone="secondary">
                 <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
                   {Math.round(showRemaining ? 100 - window.usedPercent : window.usedPercent)}%

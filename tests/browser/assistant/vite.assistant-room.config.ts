@@ -13,18 +13,20 @@ export default defineConfig({
       enforce: "pre",
       transform(code, id) {
         if (id.replaceAll("\\", "/").endsWith("/src/styles/index.css"))
-          return code
-            .replace(
-              '@import "tailwindcss" source("..");',
-              '@import "tailwindcss" source(none);\n@source "../shared/ui";\n@source "../features/assistant";\n@source "../features/voice";\n@source "../features/sessions/ui";\n@source "../features/tasks/ui/AssistantTaskBadge.tsx";\n@source "../features/settings/ui/ShortcutSettings.tsx";',
-            )
-            .replaceAll(/@source "\.\.\/\.\.\/node_modules[^;]+;/g, "");
+          return code.replace(
+            '@import "tailwindcss" source("..");',
+            '@import "tailwindcss" source(none);\n@source "../shared/ui";\n@source "../features/assistant";\n@source "../features/notes";\n@source "../features/voice";\n@source "../features/sessions/ui";\n@source "../features/tasks/ui/AssistantTaskBadge.tsx";\n@source "../features/settings/ui/ShortcutSettings.tsx";',
+          );
       },
     },
     tailwindcss(),
   ],
   resolve: {
     alias: [
+      {
+        find: /(?:.*\/)assistantBuilderClient$/,
+        replacement: fileURLToPath(new URL("./interview-redesign-mocks.ts", import.meta.url)),
+      },
       ...[
         "localVoiceClient",
         "localVoice",
@@ -45,7 +47,13 @@ export default defineConfig({
   build: {
     outDir: "temp/build/assistant-room",
     emptyOutDir: false,
-    rolldownOptions: { input: ["tests/browser/assistant/assistant-room.html"] },
+    rolldownOptions: {
+      input: [
+        "tests/browser/assistant/assistant-room.html",
+        "tests/browser/assistant/interview-redesign.html",
+        "tests/browser/assistant/notes-redesign.html",
+      ],
+    },
   },
   server: { host: "127.0.0.1", port: 15632, strictPort: true },
   preview: { host: "127.0.0.1", port: 15632, strictPort: true },

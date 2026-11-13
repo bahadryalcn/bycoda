@@ -46,7 +46,6 @@
 /* Save/cancel sit directly in the group frame; align them with the rows above. */
 .settings-group-content > .integration-actions {
   padding: 10px 16px;
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 /* A stacked row lays its control out as a wrapping flex row: lists, code and actions each take a
    full line instead of sitting beside one another. */

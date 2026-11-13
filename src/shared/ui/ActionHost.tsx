@@ -6,7 +6,7 @@ import type {
   MouseEvent,
   PointerEvent,
 } from "react";
-import { Button, type ButtonProps } from "./Button";
+import { Button, controlPaddingStyle, type ButtonProps, type ControlPadding } from "./Button";
 import { MoreHorizontal } from "./icons";
 import type { TextSize, TextTone } from "./Text";
 import styles from "./ActionHost.module.css";
@@ -17,8 +17,21 @@ export type ActionHostProps = ComponentPropsWithRef<"div"> & {
   /** Rendered element. Default `div`; use `article` for a card or `li` for a list item so the
    *  host carries the right semantics. Event and ref types stay those of the div form. */
   as?: ActionHostElement;
+  /** Opt-in presentation: a flat card-radius row, a framed floating card, or a rectangular compound settings row.
+   * Omit to retain the standard control-radius host. Interaction states remain shared. */
+  variant?: "row" | "floating" | "settings";
   /** The row, tab or card is the current one; the host paints the selected fill. */
   selected?: boolean;
+  /** A compound settings row separates itself from its preceding peer without painting child controls. */
+  separator?: boolean;
+  /** A row-owned popup is open; retain the interaction slots while the pointer leaves. */
+  interactionOpen?: boolean;
+  /** Press lifecycle owned by a drag/long-press controller. */
+  pressed?: boolean;
+  /** An inert compound hover row keeps its child controls' press feedback without implying a whole-row action. */
+  pressFeedback?: boolean;
+  /** Opt-in interaction ink for the row without changing resting or selected ink. */
+  interactionTone?: "primary" | "neutral";
   /** A saved custom resting colour (any CSS colour, may be translucent). The host keeps
    *  it at rest and paints hover, pressed and selected as solid layers above it, so a
    *  custom ground never hides a state. Prefer this over an inline `backgroundColor`. */
@@ -32,22 +45,107 @@ export type ActionHostProps = ComponentPropsWithRef<"div"> & {
   tone?: TextTone;
   /** Type size of the row's own text, a Text size. Unset keeps the surrounding size. */
   size?: TextSize;
+  /** Density-aware compact row/tab height or fill the bounded parent, independent from typography `size`.
+   * Omit for content-sized cards and multi-line rows. */
+  controlHeight?: "compact" | "fill";
+  /** Density-aware minimum for multi-line rows, independent of the fixed/fill height. */
+  controlMinHeight?: "compact" | "control" | "large";
+  /** Shared control padding roles; ancestor container layout may override logical inline spacing variables. */
+  padding?: ControlPadding;
 };
+
+export type ActionHostAppearance = Pick<
+  ActionHostProps,
+  | "variant"
+  | "selected"
+  | "separator"
+  | "interactionOpen"
+  | "pressed"
+  | "pressFeedback"
+  | "interactionTone"
+  | "ground"
+  | "hoverReveal"
+  | "tone"
+  | "size"
+  | "controlHeight"
+  | "controlMinHeight"
+  | "padding"
+>;
+/**
+ * Shared row appearance on an existing element. Undefined retains only its placement class and no interaction host.
+ * @group layout
+ * @use A compound settings row that must retain its element identity while changing between stacked and interactive layout.
+ * @avoid A new row element: ActionHost. Static boxes: Surface.
+ */
+export function actionHostAttributes(
+  appearance: ActionHostAppearance | undefined,
+  className?: string,
+  style?: CSSProperties,
+) {
+  if (!appearance) return { className, style };
+  const {
+    variant,
+    selected,
+    separator,
+    interactionOpen,
+    pressed,
+    pressFeedback,
+    interactionTone,
+    ground,
+    hoverReveal,
+    tone,
+    size,
+    controlHeight,
+    controlMinHeight,
+    padding,
+  } = appearance;
+  return {
+    "data-action-host": "",
+    "data-variant": variant,
+    "data-selected": selected || undefined,
+    "data-separator": separator || undefined,
+    "data-action-open": interactionOpen || undefined,
+    "data-pressed": pressed || undefined,
+    "data-press-feedback": pressFeedback === false ? "false" : undefined,
+    "data-interaction-tone": interactionTone,
+    "data-ground": ground ? "" : undefined,
+    "data-hover-reveal": hoverReveal ? "" : undefined,
+    "data-tone": tone,
+    "data-size": size,
+    "data-control-height": controlHeight,
+    "data-control-min-height": controlMinHeight,
+    style: {
+      ...style,
+      ...controlPaddingStyle(padding),
+      ...(ground ? { "--action-host-ground": ground } : {}),
+    } as CSSProperties,
+    className: [styles.host, className].filter(Boolean).join(" "),
+  };
+}
 
 /**
  * A row, tab or card that owns its highlight while holding a primary control and compact inline actions. Hover, focus, press and selection paint on the host, so moving onto an inline action keeps the whole item lit and pressing it never paints the row as pressed.
  * Make the primary Button a direct child (or mark it `data-action-primary`) so it drops its own fills. Feature controllers keep roles, selection and drag.
  * @group layout
- * @use Rail rows, tabs and cards with a main action plus close/remove/more inline actions.
- * @avoid A plain list row with no inline actions: Button variant="item". One standalone icon action: Button iconOnly.
+ * @use Rail rows, tabs and cards with a main action plus close/remove/more inline actions. Use padding and control height roles to preserve density without control-size classes.
+ * @avoid A plain list row with no inline actions: Button variant="item". One standalone icon action: Button iconOnly. Static grouping without actions: Surface.
  */
 export function ActionHost({
   as,
+  variant,
   selected,
+  separator,
+  interactionOpen,
+  pressed,
+  pressFeedback,
+  interactionTone,
   ground,
   hoverReveal,
   tone,
   size,
+  controlHeight,
+  controlMinHeight,
+  padding,
   className,
   style,
   ...props
@@ -57,16 +155,112 @@ export function ActionHost({
   return (
     <Element
       {...props}
-      data-action-host=""
-      data-selected={selected || undefined}
-      data-ground={ground ? "" : undefined}
-      data-hover-reveal={hoverReveal ? "" : undefined}
-      data-tone={tone}
-      data-size={size}
-      style={ground ? ({ ...style, "--action-host-ground": ground } as CSSProperties) : style}
-      className={[styles.host, className].filter(Boolean).join(" ")}
+      {...actionHostAttributes(
+        {
+          variant,
+          selected,
+          separator,
+          interactionOpen,
+          pressed,
+          pressFeedback,
+          interactionTone,
+          ground,
+          hoverReveal,
+          tone,
+          size,
+          controlHeight,
+          controlMinHeight,
+          padding,
+        },
+        className,
+        style,
+      )}
     />
   );
+}
+
+export type ActionContentOptions = {
+  /** Search result text wraps on selection/touch; previews grow from one to six lines on selection, focus or fine-pointer hover. */
+  reveal?: "wrap" | "preview";
+  phase: "rest" | "interaction" | "always" | "hover-overlay";
+  /** A terminal overlay remains visible while its own controls or popup are open. */
+  open?: boolean;
+  /** visibility preserves the slot, display frees its width, screen-reader preserves the name; corner reserves an overlaid dismiss target; dim keeps secondary actions at 0.6 opacity until interaction. */
+  hide?: "opacity" | "visibility" | "display" | "screen-reader" | "corner" | "dim";
+  display?: "block" | "flex" | "inline-flex";
+  /** Preview actions may stay revealed after pointer focus enters any descendant. */
+  focus?: "within";
+  /** Preserve the desktop opacity policy on touch instead of always revealing actions. */
+  touch?: "preserve";
+  hidden?: boolean;
+  interactionTone?: "primary" | "neutral";
+};
+/**
+ * Content in an existing row/control swaps under the same shared interaction rules as its inline actions.
+ * @group layout
+ * @use An identity mark replaced by row actions, a status label yielding to controls, or a corner dismiss target. Apply to the existing child element.
+ * @avoid Action controls themselves: InlineAction. Static visibility unrelated to an interactive owner: feature layout.
+ */
+export function actionContentAttributes(
+  {
+    phase,
+    reveal,
+    hide = "display",
+    display = "block",
+    focus,
+    touch,
+    hidden,
+    open,
+    interactionTone,
+  }: ActionContentOptions,
+  className?: string,
+) {
+  return {
+    "data-action-content": phase,
+    "data-action-reveal": reveal,
+    "data-action-hide": hide,
+    "data-action-display": display,
+    "data-action-focus": focus,
+    "data-action-touch": touch,
+    "data-action-hidden": hidden || undefined,
+    "data-action-open": open || undefined,
+    "data-interaction-tone": interactionTone,
+    className: [styles.content, className].filter(Boolean).join(" "),
+  };
+}
+export type ActionDragAppearance = {
+  /** Sortable item lifted, or a source row faded to 0.4, by its existing data-dragging controller. */
+  appearance?: "lifted" | "faded";
+  /** Pointer-owned pane drag handle; does not opt into native draggable behavior. */
+  grab?: boolean;
+  /** Admission and lifecycle stay with the feature's native drag controller. */
+  target?: boolean;
+  dragging?: boolean;
+  before?: boolean;
+};
+/**
+ * Shared drag affordance and accepted-target/reorder cues on an existing row or lane.
+ * @group layout
+ * @use Native draggable lists and board lanes; the caller keeps all drag handlers and permissions.
+ * @avoid Static selected state: ActionHost. Freeform canvas artwork: its renderer.
+ */
+export function actionDragAttributes(
+  { target, dragging, before, appearance, grab }: ActionDragAppearance,
+  className?: string,
+) {
+  return {
+    "data-action-drag-appearance": appearance,
+    "data-action-grab": grab || undefined,
+    "data-action-drop-target": target || undefined,
+    "data-action-dragging": dragging || undefined,
+    "data-action-drop-before": before || undefined,
+    className: [styles.drag, className].filter(Boolean).join(" "),
+  };
+}
+
+/** @internal A layout-only compound control can own swaps without painting an ActionHost surface. */
+export function actionContentScopeAttributes(className?: string) {
+  return { "data-action-content-scope": "", className };
 }
 
 type InlineActionButtonProps = Omit<

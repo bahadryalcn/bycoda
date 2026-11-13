@@ -1,7 +1,11 @@
-import { useMemo, useSyncExternalStore } from "react";
-import { createStoredSetting } from "../../../shared/lib/storedSetting";
+import { resolveHelperModel } from "../../model-routing/public/helpers";
 import { mergeModelSettings, resolveModel } from "../../sessions/public/models";
-import { TEXT_HARNESSES, type GitGenerationChoice } from "./gitGenerationChoice";
+import type { HarnessId } from "../../sessions/public/session";
+import {
+  automaticGitChoice,
+  TEXT_HARNESSES,
+  type GitGenerationChoice,
+} from "./gitGenerationChoice";
 
 export function parseGitGenerationChoice(raw: string | null): GitGenerationChoice | undefined {
   try {
@@ -14,6 +18,8 @@ export function parseGitGenerationChoice(raw: string | null): GitGenerationChoic
     ) as Record<string, string>;
     return {
       harness: value.harness,
+      providerAccountId:
+        typeof value.providerAccountId === "string" ? value.providerAccountId : undefined,
       model: model.id,
       modelSettings: mergeModelSettings(model, settings),
     };
@@ -22,20 +28,16 @@ export function parseGitGenerationChoice(raw: string | null): GitGenerationChoic
   }
 }
 
-const defaults = createStoredSetting<string | null>({
-  key: "bycoda.gitGeneration.default.v1",
-  fallback: null,
-  parse: (raw) => raw,
-  serialize: (raw) => raw ?? "null",
-  event: "bycoda:git-generation-default",
-  storageEvents: true,
-});
-
-export function saveDefaultGitGenerationChoice(choice: GitGenerationChoice | undefined) {
-  defaults.save(choice ? JSON.stringify(choice) : null);
-}
-
-export function useDefaultGitGenerationChoice() {
-  const raw = useSyncExternalStore(defaults.subscribe, defaults.load, () => null);
-  return useMemo(() => parseGitGenerationChoice(raw), [raw]);
+export async function resolveGitGenerationChoice(
+  fallback?: GitGenerationChoice,
+  cwd?: string,
+  preferred?: HarnessId,
+) {
+  return (
+    (await resolveHelperModel("text.git", {
+      cwd,
+    })) ??
+    fallback ??
+    automaticGitChoice(preferred)
+  );
 }

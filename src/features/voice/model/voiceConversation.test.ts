@@ -1,3 +1,11 @@
+vi.mock("./voiceReplyModel", () => ({
+  voiceReplyModel: async (session: any) => ({
+    harness: session.harness,
+    model: session.model,
+    providerAccountId: session.providerAccountId,
+    modelSettings: session.modelSettings ?? {},
+  }),
+}));
 import { expect, it, vi } from "vitest";
 import type { Session } from "../../sessions/model/session";
 const { run, warmup } = vi.hoisted(() => ({ run: vi.fn(), warmup: vi.fn(async () => {}) }));

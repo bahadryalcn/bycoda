@@ -23,7 +23,7 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 
 - Dialogs: `Modal`/`Sheet` pad their body. Do not add body padding; pass `padding="none"` only for full-bleed content (lists with row padding, editors, previews, master–detail panes).
 - Forms: `Select` shows its label like `TextField`; `hideLabel` only in toolbars and compact filters.
-- `SegmentedControl` owns exclusive choices; `compact` gives equal-width steps for effort scales. Supply abbreviated labels with full `tooltip` text. Provider save destinations are a feature-owned multi-select, not an exclusive segmented choice.
+- `SegmentedControl` owns short exclusive choices; `EffortScale` owns ordered model effort and subagent ceiling bars. Supply translated full labels; the scale keeps them outside its bars and in tooltips. Provider save destinations are a feature-owned multi-select, not an exclusive segmented choice.
 - Raw tags listed in the catalog's Replaces column (`details`, `dl`, `label`, `table`, `time`, `role=tab`, …) are banned outside `src/shared/ui`; use the named component.
 - Deprecated components (catalog's last table) may not be imported in new code.
 - Actions use `Button` (or ActionHost inline actions); no screen-specific button styling.

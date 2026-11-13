@@ -4,10 +4,7 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { ChevronDown } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import { Button } from "../../../shared/ui/Button";
-import {
-  parseGitGenerationChoice,
-  useDefaultGitGenerationChoice,
-} from "../model/gitGenerationPreferences";
+import { parseGitGenerationChoice } from "../model/gitGenerationPreferences";
 const ModelPicker = lazy(() =>
   import("../../sessions")
     .then((entry) => entry.loadModelPicker())
@@ -43,7 +40,6 @@ function load(cwd: string): GitGenerationChoice | undefined {
 }
 
 export function useGitGenerationChoice(cwd: string) {
-  const defaultChoice = useDefaultGitGenerationChoice();
   const [saved, setSaved] = useState(() => ({ cwd, choice: load(cwd) }));
   if (saved.cwd !== cwd) setSaved({ cwd, choice: load(cwd) });
   const choice = saved.cwd === cwd ? saved.choice : load(cwd);
@@ -56,7 +52,7 @@ export function useGitGenerationChoice(cwd: string) {
       /* unavailable storage */
     }
   };
-  return [choice ?? defaultChoice, update, !!choice] as const;
+  return [choice, update, !!choice] as const;
 }
 
 export function GitGenerationModelControl({

@@ -5,7 +5,7 @@ import {
   canRunHarnessTextPrompt,
 } from "../../../integrations/harness/core/registry";
 import { isModelEnabled, modelBelongsToHarness } from "../../sessions/public/models";
-import { getSkillGroupingModel, type SkillGroupingModel } from "./skillGroupingModel";
+import { resolveSkillGroupingModel, type SkillGroupingModel } from "./skillGroupingModel";
 import type { SkillGroupInput } from "./skillGroups";
 export type GroupingSkill = { name: string; description: string };
 export type AutoGroupSkillsOptions = {
@@ -56,7 +56,7 @@ export function parseSkillGroupProposal(text: string, skills: GroupingSkill[]): 
 }
 /** Returns a proposal; never writes groups or changes skill enablement. */
 export async function autoGroupSkills(options: AutoGroupSkillsOptions): Promise<SkillGroupInput[]> {
-  const choice = options.model ?? getSkillGroupingModel();
+  const choice = options.model ?? (await resolveSkillGroupingModel());
   if (
     !choice ||
     !isModelEnabled(choice.model) ||

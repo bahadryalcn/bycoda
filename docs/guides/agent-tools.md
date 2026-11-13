@@ -14,6 +14,16 @@ Skills show only the saved owner preference: the switch on a skill's page, and *
 in the list. Bycoda does not observe skill readiness or activity, so the Skills
 screen does not display them.
 
+## Delegation readiness
+
+Host delegation checks the exact provider process's scoped bridge route. A missing,
+revoked or unreachable spawn grant uses the existing fallback guidance. Automatic
+may use built-in subagents without an effort ceiling; explicit model selections and
+ceilings stay enforced. A provider started without a grant receives no conversation
+MCP server configuration. Before a fresh or parked session starts, preflight prepares
+the upcoming spawn's grant and checks that scoped route. Spawn reuses that grant and
+endpoint. Checks of an existing process never issue replacement grants.
+
 ## Devices
 
 An installed Device Host starts only after **Connect devices**. Opening the panel
@@ -75,7 +85,8 @@ only for the tools it needs. Existing tool names remain available. Finding a too
 does not mean its machine, device or provider is connected or ready.
 
 For schema reads with `tools.describe`, omit `maxChars` to use the default
-10000-character chunk, or supply an integer from 256 to 12000. Follow `nextCursor`
+10000-character chunk, or supply an integer of at least 256; larger values are capped
+at 12000 instead of failing. Follow `nextCursor`
 until it is null. Invalid numeric arguments identify the field and allowed bounds;
 correct that argument before retrying the read.
 
@@ -219,10 +230,10 @@ member when a Host provider works, and for Antigravity members through Nano Bana
 
 ## Cross-provider advisor and subagents
 
-**Settings > Providers > Defaults** sets advisor and subagent defaults for new
-conversations. Provider and permission choices include icons; effort uses a
-stepped scale with the selected label beside it, and Fast / Service Tier uses
-segmented choices where supported.
+**Settings > Models > Subagents** sets advisor and subagent defaults for new
+conversations. **Chat defaults** holds provider, model, effort, permissions and
+Fast / Service Tier choices. Main-model effort uses a stepped scale; Subagent max
+effort uses a select.
 The apply bar separates provider scope from save destinations. **Apply to** chooses
 the current provider or **All providers**. All providers copies only supported,
 portable changes; model and account choices are never copied between providers.
@@ -341,6 +352,8 @@ runs. They do not appear in conversation lists, search results or workspace tabs
 Opening an old child link returns to its parent and opens that child's panel.
 The panel keeps the Advisor role distinct and shows the child's questions and approvals
 through its original Host connection. Hidden children can still request attention.
+The Host stores child transcripts. Opening a child's panel streams its tool steps and
+assistant replies into the parent view, including the final reply after it finishes.
 Open a child in the dock to read its
 steps, stop it, or message it directly. While it runs, your message steers it; once
 it has finished, the message starts a new turn in that child session. Cancelling
@@ -356,8 +369,12 @@ need your answer in the child panel.
 The assistant can wait for up to 16 runs together: up to 240 seconds for Claude,
 Codex and Grok, or 50 seconds for other providers.
 
-Limits: 16 subagents can run at once, and one advisor at a time. A subagent
-cannot start its own subagents or advisor, so delegation does not nest.
+Limits: 16 Host subagents can run at once, and one advisor at a time. Host delegation
+is one level: a delegated child's session catalog, discovery and MCP tool list omit
+all `agents.*` tools. Execution also rejects Host delegation. A child may use its
+provider's built-in subagents. Its panel lists running and past native runs with
+their names, models and status; expand a run to read its steps during execution or
+after it finishes. These runs stay under the child, outside the parent's composer menu.
 
 ## Terminal log capture
 
@@ -427,9 +444,14 @@ or the session is deleted.
 
 ## Secret requests
 
+Secret tools work in both Host-managed and local desktop conversations of the project;
+the desktop conversation does not need to be adopted into the Host store.
+
 An agent that needs a credential calls `secrets.request` with a `requestId`, a `name`
 such as `NPM_TOKEN`, and a `purpose`. bycoda shows a masked dialog in the source
 conversation, or in the application confirmation when that conversation is not visible.
+The source Host rechecks the original request before opening the input and before saving
+the value; another device or a revoked request cannot authorize it.
 The owner types the value there. Secrets persist per project until the owner removes
 them in Settings > Secrets. If a secret with the same name already exists in the project,
 `secrets.request` reuses it without asking; pass `replace: true` to ask the owner for a new

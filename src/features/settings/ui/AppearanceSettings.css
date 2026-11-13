@@ -22,9 +22,6 @@
   padding-block: 0 8px;
   /* Pulls the panels up over the grid gap, leaving one even space below the divider. */
   margin-block-end: calc(-1 * var(--settings-group-gap, 28px) + 8px);
-  border-block-end: 1px solid transparent;
-  /* Covers the few pixels between the page bar and the stuck generator. */
-  box-shadow: 0 -4px 0 0 var(--color-background-base);
   min-inline-size: 0;
 }
 .appearance-generator-sentinel {
@@ -32,9 +29,6 @@
   inline-size: 1px;
   block-size: 1px;
   pointer-events: none;
-}
-.appearance-generator[data-stuck] {
-  border-block-end-color: var(--ui-pane-border);
 }
 .appearance-settings [data-appearance-section] {
   position: relative;
@@ -79,25 +73,6 @@
   .appearance-palettes {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
-.appearance-settings .appearance-mode-card,
-.appearance-settings .appearance-palette {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  block-size: auto;
-  min-block-size: 0;
-  min-inline-size: 0;
-  padding: 6px;
-  border: 1px solid var(--ui-settings-hairline);
-  border-radius: var(--ui-radius-card);
-}
-.appearance-settings .appearance-mode-card[aria-checked="true"],
-.appearance-settings .appearance-palette[aria-pressed="true"] {
-  /* Selection is its own role (accent border), not the keyboard focus ring colour. */
-  border-color: var(--ui-border-accent);
-  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
 }
 .appearance-mode-preview {
   display: grid;

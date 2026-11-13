@@ -1,6 +1,6 @@
 ---
 name: feature-crews
-description: Use when changing Crew definitions, members, model pools and run controls. Not for task delivery; see feature-tasks-goals.
+description: Use when changing Crew definitions, members, model choices and run controls. Not for task delivery; see feature-tasks-goals.
 ---
 
 # Crews
@@ -26,8 +26,8 @@ Keep saved teams, reusable member profiles and executing run snapshots distinct.
 
 - Owner-started work runs with the crew's `policy.runtimeMode` (default supervised, capability `crews.access.v1`); task-started work keeps the task's mode and members follow the run's mode.
 - A member tool profile (`crews.tools.v1`) only narrows; the Host writes it into session model settings at start. `host/crews/crew-tools.ts` checks Host Conversation Tools before the existing authorization; `host/crews/crew-native-tools.ts` maps it onto provider-native tools (Claude, Codex; other providers refuse a read-only member), the MCP hub allowlist and the skill policy at the Host provider boundary.
-- Retain every role/instruction, fixed/custom and automatic model choices, independent model settings, candidate ratings, scope/groups and defaults tombstones.
-- Model pools (`crews.model-pools.v1`, `crews.pools.*`) are Host-wide and owner-only. A member with `pool` keeps the Host's resolved copy in `candidates`, refreshed on pool save and on member save; delete detaches. `pool` is a synced library field. New Host pool logic lives in `host/crews/crew-model-pools.ts`.
+- Retain every role/instruction, fixed/custom and automatic model choices, independent model settings, scope/groups and defaults tombstones.
+- Members select Default, Pool or Fixed through [model routing](../feature-model-routing/SKILL.md). Pools reference the Host-wide order. Resolve at run start and keep running snapshots fixed.
 - Keep roster rows focused on name, role, model and groups; full instructions belong in the member form, not repeated instruction-heading previews.
 - Saved-definition edits do not rewrite existing run/member/model snapshots. Device-local appearance must not change execution settings.
 - Resolve an attached coordinator from Host storage or verified same-machine native metadata, retaining project, provider, model and runtime-mode identity. Never substitute a foreign session or create a partial Host session to satisfy a lookup. Prepare native metadata outside Host SQL ownership; keep transaction-time authority checks bounded.

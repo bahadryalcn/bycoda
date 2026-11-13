@@ -1,3 +1,4 @@
+import { modelsSettingsEntries } from "./modelsSettingsEntries";
 import {
   createStoredSetting,
   storedFlag,
@@ -63,6 +64,7 @@ export type SettingsSectionId =
   | "chat"
   | "voice"
   | "providers"
+  | "models"
   | "crews"
   | "usage"
   | "limits"
@@ -260,12 +262,23 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Providers");
     },
     get description() {
-      return t(
-        "Provider accounts, agent CLIs and ACP agents for {p0}, plus defaults for new conversations.",
-        { p0: PRODUCT_IDENTITY.displayName },
-      );
+      return t("Provider accounts, agent CLIs and ACP agents for {p0}.", {
+        p0: PRODUCT_IDENTITY.displayName,
+      });
     },
     keywords: "account sign in login model harness claude codex cli default hooks",
+  },
+  {
+    id: "models",
+    group: "agents",
+    get label() {
+      return t("Models");
+    },
+    get description() {
+      return t("Model order, assignments, chat defaults and subagents.");
+    },
+    keywords:
+      "order routing pools roles limits default provider model effort permissions fast subagents advisor image models",
   },
   {
     id: "usage",
@@ -794,30 +807,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "explorer gitignore ignored hidden files tree",
   },
   {
-    id: "title-model-default",
+    id: "helper-models",
     section: "chat",
     get label() {
-      return t("Default title model");
+      return t("Translation, reprompt and title models");
     },
     keywords:
-      "conversation title regenerate rename model provider account haiku terra flash başlık isim yeniden oluştur varsayılan",
-  },
-  {
-    id: "translation-model-default",
-    section: "chat",
-    get label() {
-      return t("Default translation model");
-    },
-    keywords: "translation translate language model provider account default çeviri dil varsayılan",
-  },
-  {
-    id: "reprompt-model-default",
-    section: "chat",
-    get label() {
-      return t("Default reprompt model");
-    },
-    keywords:
-      "reprompt rewrite clarify prompt model provider account default yeniden yaz netleştir varsayılan",
+      "helper default translation translate reprompt rewrite title conversation model provider çeviri başlık yeniden yaz varsayılan",
   },
   {
     id: "git-generation-default",
@@ -926,21 +922,22 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     keywords: "unified editor review changes working tree",
   },
+  ...modelsSettingsEntries,
   {
     id: "agent-clis",
-    section: "providers",
+    section: "models",
     get label() {
-      return t("Providers and model defaults");
+      return t("Chat defaults");
     },
     get keywords() {
-      return `codex opencode cursor grok pi omp fx hermes antigravity google binary path default model effort reasoning fast advisor subagents compact ${t("Default provider")} ${t("Default model")}`;
+      return `codex opencode cursor grok pi omp fx hermes antigravity google default model effort reasoning permissions fast compact ${t("Default provider")} ${t("Default model")}`;
     },
   },
   {
     id: "enabled-models",
     section: "providers",
     get label() {
-      return t("Models");
+      return t("Catalog");
     },
     keywords: "model enable disable hide turn off sonnet opus haiku gpt default",
   },
@@ -1307,6 +1304,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "live-background": ["Neural tree", "Latent face", "Thought weaver", "ASCII mask"],
   "format-on-save": ["Editor", "Advanced editor settings"],
   "diff-view": ["Editor", "Unified", "Code review"],
+  "models-delegation": ["Subagents", "Advisor", "Subagent max effort", "Image models"],
   "agent-clis": [
     "Agent CLIs",
     "Model",
@@ -1485,6 +1483,7 @@ const SETTINGS_PRESENTATION: Record<SettingsSectionId, SettingsPresentation> = {
   groupLock: "bounded",
   policies: "bounded",
   providers: "wide",
+  models: "wide",
   mcp: "wide",
   connections: "wide",
   inbox: "bounded",

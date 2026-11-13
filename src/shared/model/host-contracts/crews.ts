@@ -1,3 +1,4 @@
+import { ModelRoutingItemChoiceSchema } from "./model-routing";
 import { z } from "zod";
 import { SafeCounterSchema, WIRE_UUID_V4_PATTERN } from "./schemas";
 import {
@@ -38,12 +39,9 @@ export const CrewCandidateSchema = z.strictObject({
   id: text,
   harness: SessionProviderSchema,
   model: text,
+  providerAccountId: text.optional(),
   modelSettings: ModelSettingsSchema,
   capabilities: CrewCapabilitiesSchema,
-  cost: z.number().optional(),
-  quality: z.number().optional(),
-  qualitySource: z.enum(["owner-estimate", "review-history"]).optional(),
-  samples: SafeCounterSchema.optional(),
 });
 export const CrewRoleSchema = z.enum(["coordinator", "specialist", "reviewer", "advisor"]);
 // Mirrors features/crews/model/memberAvatarTraits.ts (shared cannot import features);
@@ -79,6 +77,7 @@ export const CrewAgentSchema = z.strictObject({
   role: CrewRoleSchema,
   instructions: text,
   selection: z.enum(["fixed", "automatic"]),
+  modelChoice: ModelRoutingItemChoiceSchema.optional(),
   candidates: z.array(CrewCandidateSchema),
   groups: z.array(text).optional(),
   source: z.strictObject({ id: text, updatedAt: z.number() }).optional(),
@@ -86,14 +85,6 @@ export const CrewAgentSchema = z.strictObject({
   avatar: MemberAvatarChoiceSchema.optional(),
   handle: text.optional(),
   tools: CrewToolProfileSchema.optional(),
-  pool: z.strictObject({ id: text }).optional(),
-});
-/** Mirror of `CrewModelPool`; the Host re-parses it with `parseCrewModelPool`. */
-export const CrewModelPoolSchema = z.strictObject({
-  id: text,
-  name: text,
-  candidates: z.array(CrewCandidateSchema),
-  updatedAt: z.number(),
 });
 export const CrewAgentInputSchema = CrewAgentSchema.extend({
   projectId: text.optional(),
@@ -103,15 +94,9 @@ export const SavedCrewAgentSchema = CrewAgentInputSchema.extend({
   updatedAt: z.number(),
 });
 export const CrewPolicySchema = z.strictObject({
-  preset: z.enum(["economy", "balanced", "quality"]),
   maxParallel: z.number(),
   maxAssignments: z.number(),
   maxRunMinutes: z.number(),
-  maxEstimatedCost: z.number().optional(),
-  minimumQuality: z.number().optional(),
-  costWeight: z.number().optional(),
-  qualityWeight: z.number().optional(),
-  allowUnknownCost: z.boolean(),
   allowSubagents: z.boolean(),
   delegateApprovals: z.boolean().optional(),
   runtimeMode: SessionRuntimeModeSchema.optional(),
@@ -137,6 +122,24 @@ export const CrewMessageSchema = z.strictObject({
   taskId: text.optional(),
   createdAt: SafeCounterSchema,
   resolvedAt: SafeCounterSchema.optional(),
+  routingWait: z
+    .strictObject({
+      memberId: text,
+      requestFingerprint: text.optional(),
+      required: z.array(
+        z.enum([
+          "code",
+          "review",
+          "image-generation",
+          "vision",
+          "browser",
+          "terminal",
+          "subagents",
+        ]),
+      ),
+      nextResetAt: SafeCounterSchema.optional(),
+    })
+    .optional(),
 });
 export const CrewAssignmentSchema = z.strictObject({
   id: text,
@@ -160,6 +163,7 @@ export const CrewRunSchema = z.strictObject({
   status: z.enum(["active", "paused", "finished"]),
   coordinatorSessionId: text.optional(),
   coordinatorCandidate: CrewCandidateSchema.optional(),
+  routingWait: z.strictObject({ nextResetAt: SafeCounterSchema.optional() }).optional(),
   launch: z
     .strictObject({
       candidate: CrewCandidateSchema,
@@ -387,19 +391,7 @@ export const CrewsAgentDeleteParamsSchema = z.strictObject({
   ...project,
   agentId: text,
 });
-// Pools are Host-wide; `projectId` is accepted because crew clients stamp it on every call.
-const optionalProject = { projectId: text.optional() };
-export const CrewsPoolsListParamsSchema = z.strictObject(optionalProject);
-export const CrewsPoolsSaveParamsSchema = z.strictObject({
-  ...optionalProject,
-  pool: CrewModelPoolSchema.omit({ updatedAt: true }).extend({ updatedAt: z.number().optional() }),
-  ...revision,
-});
-export const CrewsPoolsDeleteParamsSchema = z.strictObject({
-  ...optionalProject,
-  poolId: text,
-  ...revision,
-});
+
 export const CrewsStartParamsSchema = z.strictObject({
   ...project,
   definitionId: text,
@@ -461,9 +453,6 @@ export const CrewsDeleteResultSchema = deleted;
 export const CrewsDeleteRunResultSchema = deleted;
 export const CrewsAgentSaveResultSchema = SavedCrewAgentSchema;
 export const CrewsAgentDeleteResultSchema = deleted;
-export const CrewsPoolsListResultSchema = z.strictObject({ pools: z.array(CrewModelPoolSchema) });
-export const CrewsPoolsSaveResultSchema = CrewModelPoolSchema;
-export const CrewsPoolsDeleteResultSchema = deleted;
 export const CrewsStartResultSchema = CrewRunSchema;
 export const CrewsGetResultSchema = CrewRunDetailSchema;
 export const CrewsAssignResultSchema = CrewAssignmentSchema;
@@ -569,18 +558,6 @@ export const CREWS_RPC_SCHEMAS = {
   "crews.agent.delete": {
     params: CrewsAgentDeleteParamsSchema,
     result: CrewsAgentDeleteResultSchema,
-  },
-  "crews.pools.list": {
-    params: CrewsPoolsListParamsSchema,
-    result: CrewsPoolsListResultSchema,
-  },
-  "crews.pools.save": {
-    params: CrewsPoolsSaveParamsSchema,
-    result: CrewsPoolsSaveResultSchema,
-  },
-  "crews.pools.delete": {
-    params: CrewsPoolsDeleteParamsSchema,
-    result: CrewsPoolsDeleteResultSchema,
   },
   "crews.start": {
     params: CrewsStartParamsSchema,

@@ -1,4 +1,8 @@
-import type { CrewAgent, CrewCandidate, CrewDefinition, CrewModelPool } from "./crew";
+import type {
+  ModelRoutingItemChoice,
+  ModelRoutingPool,
+} from "../../../shared/model/host-contracts/model-routing";
+import type { CrewAgent, CrewCandidate, CrewDefinition } from "./crew";
 
 /**
  * Bulk model assignment: every target member becomes a fixed member pinned to the
@@ -13,31 +17,41 @@ export function applyCandidate<T extends Pick<CrewAgent, "id" | "selection" | "c
   const targets = ids.length ? new Set(ids) : undefined;
   return agents.map((agent) =>
     !targets || targets.has(agent.id)
-      ? { ...agent, selection: "fixed" as const, candidates: [structuredClone(candidate)] }
+      ? {
+          ...agent,
+          modelChoice: { kind: "fixed" as const },
+          selection: "fixed" as const,
+          candidates: [structuredClone(candidate)],
+        }
       : agent,
   );
 }
 
 /**
- * Bulk pool assignment: every target member becomes an automatic member that takes its
- * candidates from the pool (the Host refreshes the copy on save). An empty `ids` list targets everyone.
+ * Bulk routing assignment keeps the concrete fallback and stores only a shared routing reference.
  */
-export function applyPool<T extends Pick<CrewAgent, "id" | "selection" | "candidates" | "pool">>(
+export function applyChoice<T extends Pick<CrewAgent, "id" | "selection" | "candidates">>(
   agents: readonly T[],
   ids: readonly string[],
-  pool: Pick<CrewModelPool, "id" | "candidates">,
+  modelChoice: ModelRoutingItemChoice,
 ): T[] {
   const targets = ids.length ? new Set(ids) : undefined;
   return agents.map((agent) =>
     !targets || targets.has(agent.id)
       ? {
           ...agent,
-          selection: "automatic" as const,
-          pool: { id: pool.id },
-          candidates: structuredClone(pool.candidates),
+          modelChoice,
+          selection: modelChoice.kind === "fixed" ? ("fixed" as const) : ("automatic" as const),
         }
       : agent,
   );
+}
+export function applyPool<T extends Pick<CrewAgent, "id" | "selection" | "candidates">>(
+  agents: readonly T[],
+  ids: readonly string[],
+  pool: Pick<ModelRoutingPool, "id">,
+): T[] {
+  return applyChoice(agents, ids, { kind: "pool", poolId: pool.id });
 }
 
 /** What a save sends: the stored name never keeps surrounding whitespace. */

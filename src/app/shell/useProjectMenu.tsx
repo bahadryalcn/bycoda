@@ -1,3 +1,4 @@
+import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { Alert } from "../../shared/ui/Alert";
 import { Text } from "../../shared/ui/Text";
@@ -1154,17 +1155,11 @@ export function useProjectMenu({
           onDismiss={closeNotificationMenu}
           className="space-y-1 overflow-y-auto p-3"
         >
-          <Text
-            as="p"
-            truncate
-            size="caption"
-            tone="primary"
-            weight="medium"
-            className="px-1"
-            title={notificationMenu.project.name}
-          >
-            {notificationMenu.project.name}
-          </Text>
+          <OverflowTooltip label={notificationMenu.project.name}>
+            <Text as="p" truncate size="caption" tone="primary" weight="medium" className="px-1">
+              {notificationMenu.project.name}
+            </Text>
+          </OverflowTooltip>
           <NotificationMuteDatePicker
             projectIds={[notificationMenu.project.id]}
             onCancel={closeNotificationMenu}

@@ -1,4 +1,7 @@
+import "./SheetGridView.css";
+import type { CSSProperties } from "react";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useId, useState, useRef, useEffect, useLayoutEffect } from "react";
@@ -43,11 +46,6 @@ export function SheetGridView({
   const headerHeight = Math.round(HEADER_HEIGHT * zoom);
   const rowHeaderWidth = Math.round(ROW_HEADER_WIDTH * zoom);
   const columnWidth = Math.round(COLUMN_WIDTH * zoom);
-  const cellStyle = {
-    width: columnWidth,
-    lineHeight: `${rowHeight}px`,
-    paddingInline: CELL_PADDING * zoom,
-  };
 
   // The anchored scroll lands in a layout effect; sync the windowing state
   // with it so the first painted frame already shows the right rows.
@@ -88,7 +86,7 @@ export function SheetGridView({
           as="div"
           size="micro"
           tone="secondary"
-          className="shrink-0 border-b border-stroke px-3 py-1"
+          {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-1")}
         >
           {t("Showing the first ")}
           {formatInteger(grid.rowCount)}
@@ -144,43 +142,61 @@ export function SheetGridView({
           setScrollTop(element.scrollTop);
         }}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-        className="min-h-0 flex-1 overflow-auto overscroll-contain select-text"
-        style={{ fontSize: FONT_SIZE * zoom }}
+        className="sheet-document-viewport min-h-0 flex-1 overflow-auto overscroll-contain select-text"
+        style={
+          {
+            "--document-font-size": `${FONT_SIZE * zoom}px`,
+            "--document-row-height": `${rowHeight}px`,
+            "--document-header-height": `${headerHeight}px`,
+            "--document-row-header-width": `${rowHeaderWidth}px`,
+            "--document-column-width": `${columnWidth}px`,
+            "--document-cell-padding": `${CELL_PADDING * zoom}px`,
+            "--document-width": `${width}px`,
+            "--document-height": `${headerHeight + grid.rowCount * rowHeight}px`,
+          } as CSSProperties
+        }
       >
-        <div
-          className="relative isolate"
-          style={{
-            width,
-            height: headerHeight + grid.rowCount * rowHeight,
-          }}
-        >
+        <div className="sheet-document-body relative isolate">
           <Text
             role="row"
             aria-rowindex={1}
             as="div"
             size="inherit"
             tone="secondary"
-            className="sticky top-0 z-2 flex border-b border-stroke bg-(--color-background-base)"
-            style={{
-              height: headerHeight,
-              width,
-              lineHeight: `${rowHeight}px`,
-            }}
+            {...surfaceAttributes(
+              { frame: "stroke", edge: "bottom", variant: "base" },
+              "sheet-document-header sticky top-0 z-2 flex",
+            )}
           >
             <div
               role="columnheader"
               aria-colindex={1}
               aria-label={t("Row")}
-              className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--color-background-base)"
-              style={{ width: rowHeaderWidth }}
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "right", variant: "base" },
+                "sticky left-0 z-1 shrink-0 [width:var(--layout-width)]",
+              )}
+              style={
+                {
+                  "--layout-width":
+                    rowHeaderWidth === undefined ? undefined : rowHeaderWidth + "px",
+                } as CSSProperties
+              }
             />
             {grid.columns.map((label, column) => (
               <div
                 key={label}
                 role="columnheader"
                 aria-colindex={column + 2}
-                className="shrink-0 border-r border-stroke text-center"
-                style={{ width: columnWidth }}
+                {...surfaceAttributes(
+                  { frame: "stroke", edge: "right" },
+                  "shrink-0 text-center [width:var(--layout-width)]",
+                )}
+                style={
+                  {
+                    "--layout-width": columnWidth === undefined ? undefined : columnWidth + "px",
+                  } as CSSProperties
+                }
               >
                 {label}
               </div>
@@ -199,12 +215,15 @@ export function SheetGridView({
                   key={index}
                   role="row"
                   aria-rowindex={index + 2}
-                  className="absolute left-0 flex border-b border-stroke"
-                  style={{
-                    top: headerHeight + index * rowHeight,
-                    height: rowHeight,
-                    width,
-                  }}
+                  {...surfaceAttributes(
+                    { frame: "stroke", edge: "bottom" },
+                    "sheet-document-row absolute left-0 flex",
+                  )}
+                  style={
+                    {
+                      "--document-row-top": `${headerHeight + index * rowHeight}px`,
+                    } as CSSProperties
+                  }
                 >
                   <Text
                     role="rowheader"
@@ -212,12 +231,10 @@ export function SheetGridView({
                     as="div"
                     size="inherit"
                     tone="secondary"
-                    className="sticky left-0 z-1 shrink-0 border-r border-stroke bg-(--color-background-base) text-right tabular-nums"
-                    style={{
-                      width: rowHeaderWidth,
-                      lineHeight: `${rowHeight}px`,
-                      paddingRight: CELL_PADDING * zoom,
-                    }}
+                    {...surfaceAttributes(
+                      { frame: "stroke", edge: "right", variant: "base" },
+                      "sheet-document-row-header sticky left-0 z-1 shrink-0 text-right tabular-nums",
+                    )}
                   >
                     {index + 1}
                   </Text>
@@ -239,15 +256,10 @@ export function SheetGridView({
                         as="div"
                         size="inherit"
                         tone="primary"
-                        className="shrink-0 border-r border-stroke"
-                        style={{
-                          ...cellStyle,
-                          outline:
-                            focused.row === index && focused.column === column
-                              ? "2px solid var(--color-accent, currentColor)"
-                              : undefined,
-                          outlineOffset: -2,
-                        }}
+                        {...surfaceAttributes(
+                          { frame: "stroke", edge: "right", selectionRing: "document" },
+                          "sheet-document-cell shrink-0",
+                        )}
                       >
                         <OverflowTooltip label={cell}>
                           <Text size="inherit" tone="inherit" truncate className="block">

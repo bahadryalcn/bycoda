@@ -84,6 +84,124 @@ async function selectTool(page: Page, name: string, scope: Page | Locator = page
   await scope.locator(".host-tools-compact-selector").getByRole("button").click();
   await page.getByRole("option", { name, exact: true }).click();
 }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`detached tools surfaces ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/host-tools/host-tools.html?theme=${theme}`);
+      await selectTool(page, "Logs");
+      await page.getByRole("button", { name: "Panel placement", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
+      const toolbar = page.locator(
+        ".tools-workspace-pane:has(.host-tools) > .tools-workspace-toolbar",
+      );
+      await expect(toolbar).toBeVisible();
+      const colors = await toolbar.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.background = "var(--ui-workspace-panel)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        const style = getComputedStyle(node);
+        return { background: style.backgroundColor, expected, border: style.borderBottomWidth };
+      });
+      expect(colors.background).toBe(colors.expected);
+      expect(colors.border).toBe("0px");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/tools-toolbar-${theme}-${width}.png`,
+      });
+      await page.goto(`/tests/browser/host-tools/host-tools.html?detached=1&theme=${theme}`);
+      const window = page.locator(".host-tools-window");
+      await expect(window).toBeVisible();
+      const windowColors = await window.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.background = "var(--ui-workspace-canvas-surface)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { actual: getComputedStyle(node).backgroundColor, expected };
+      });
+      expect(windowColors.actual).toBe(windowColors.expected);
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/tools-window-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`standalone desktop settings row dividers ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(
+        `/tests/browser/host-tools/host-tools.html?desktop-standalone&theme=${theme}`,
+      );
+      const rows = page.locator(".settings-row");
+      await expect(rows.first()).toBeVisible();
+      await expect.poll(() => rows.count()).toBeGreaterThan(1);
+      await expect(rows.first()).toHaveCSS("border-top-width", "0px");
+      const line = await rows.nth(1).evaluate((node) => {
+        const s = getComputedStyle(node);
+        const probe = document.createElement("span");
+        probe.style.borderTop = "1px solid var(--ui-settings-hairline)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).borderTopColor;
+        probe.remove();
+        return { width: s.borderTopWidth, color: s.borderTopColor, expected };
+      });
+      expect(line.width).toBe("1px");
+      expect(line.color).toBe(line.expected);
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/desktop-standalone-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`host browser chrome and recents surfaces ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.addInitScript(() =>
+        localStorage.setItem(
+          "bycoda.hostBrowser.recentUrls",
+          JSON.stringify(["https://example.com/one", "https://example.com/two"]),
+        ),
+      );
+      await page.goto(`/tests/browser/host-tools/host-tools.html?theme=${theme}`);
+      await selectTool(page, "Host browser");
+      const bar = page.locator(".host-browser-bar");
+      const rows = page.locator(".host-browser-recents li");
+      await expect(bar).toBeVisible();
+      await expect(page.locator(".host-browser-stage")).toHaveCSS("border-radius", "0px");
+      await expect(rows).toHaveCount(2);
+      const values = await bar.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.background = "var(--ui-workspace-panel)";
+        probe.style.borderBottom = "1px solid var(--ui-pane-border)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe);
+        const s = getComputedStyle(node);
+        const result = {
+          background: s.backgroundColor,
+          expectedBackground: expected.backgroundColor,
+          width: s.borderBottomWidth,
+          border: s.borderBottomColor,
+          expectedBorder: expected.borderBottomColor,
+        };
+        probe.remove();
+        return result;
+      });
+      expect(values.background).toBe(values.expectedBackground);
+      expect(values.width).toBe("1px");
+      expect(values.border).toBe(values.expectedBorder);
+      await expect(rows.nth(0)).toHaveCSS("border-top-width", "0px");
+      await expect(rows.nth(1)).toHaveCSS("border-top-width", "1px");
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/host-browser-chrome-${theme}-${width}.png`,
+      });
+    });
 test("tools share a compact responsive top bar", async ({ page }) => {
   for (const width of [390, 768, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
@@ -238,39 +356,65 @@ test("direct UI API opens devices on the right, selects a Mac, moves and closes 
   expect((await api("ui.tools.status")).open).toBe(false);
 });
 
-test("shows neutral log canvas, source prefixes and six distinct severity colors", async ({
-  page,
-}) => {
-  await page.goto(fixture + "?log-levels=1");
-  await selectTool(page, "Logs");
-  const timeline = page.locator(".runtime-logs-timeline");
-  await expect(timeline.locator('[data-level="success"]')).toHaveCount(1);
-  for (const kind of ["server", "browser"]) {
-    const row = timeline.locator(`.runtime-log-row[data-source="${kind}"]`).first();
-    await expect(row.locator(".runtime-log-meta > :first-child")).toHaveText(
-      `[${kind.toUpperCase()}]`,
-    );
+for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
+    test(`shows neutral log canvas, source prefixes and six distinct severity colors: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(fixture + `?log-levels=1&theme=${theme}`);
+      await selectTool(page, "Logs");
+      const timeline = page.locator(".runtime-logs-timeline");
+      await expect(timeline.locator('[data-level="success"]')).toHaveCount(1);
+      for (const kind of ["server", "browser"]) {
+        const row = timeline.locator(`.runtime-log-row[data-source="${kind}"]`).first();
+        await expect(row.locator(".runtime-log-meta > :first-child")).toHaveText(
+          `[${kind.toUpperCase()}]`,
+        );
+      }
+      const colors = await timeline.evaluate((area) =>
+        ["error", "warn", "info", "debug", "http", "success"].map(
+          (level) =>
+            getComputedStyle(area.querySelector(`[data-level="${level}"] .runtime-log-level`)!)
+              .color,
+        ),
+      );
+      expect(new Set(colors).size).toBe(6);
+      const neutral = await timeline.evaluate((area) => getComputedStyle(area).backgroundColor);
+      const channels = (neutral.match(/\d+(?:\.\d+)?/g) ?? []).slice(0, 3).map(Number);
+      expect(channels).toHaveLength(3);
+      expect(Math.max(...channels) - Math.min(...channels)).toBeLessThanOrEqual(8);
+      const first = timeline
+        .locator('.runtime-log-row[data-source="browser"][data-level="info"]')
+        .first();
+      await first.getByRole("checkbox").check();
+      await expect(first).toHaveAttribute("data-surface-variant", "selected");
+      await first.locator("summary").click();
+      await expect(first.locator(".runtime-log-full-message")).toBeVisible();
+      await expect(first.locator(".runtime-log-object-tree")).toContainText("example");
+      const error = timeline
+        .locator('.runtime-log-row[data-source="browser"][data-level="error"]')
+        .first();
+      await error.locator("summary").click();
+      await expect(error.locator("pre").last()).toContainText("loadActivity");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: `temp/verification/component-families/log-row-${theme}-${width}.png`,
+      });
+      await first.getByRole("checkbox").uncheck();
+      await page.getByRole("button", { name: "Filters", exact: true }).click();
+      const filters = page.getByRole("dialog", { name: "Log filters", exact: true });
+      await filters.getByRole("button", { name: "Log level: All levels", exact: true }).click();
+      await page.getByRole("option", { name: "HTTP", exact: true }).click();
+      await page.keyboard.press("Escape");
+      await expect(timeline.locator(".runtime-log-row")).toHaveCount(1);
+      await expect(timeline.getByText("GET /dashboard 200 in 12ms", { exact: true })).toBeVisible();
+    });
   }
-  const colors = await timeline.evaluate((area) =>
-    ["error", "warn", "info", "debug", "http", "success"].map(
-      (level) =>
-        getComputedStyle(area.querySelector(`[data-level="${level}"] .runtime-log-level`)!).color,
-    ),
-  );
-  expect(new Set(colors).size).toBe(6);
-  const neutral = await timeline.evaluate((area) => getComputedStyle(area).backgroundColor);
-  const channels = (neutral.match(/\d+(?:\.\d+)?/g) ?? []).slice(0, 3).map(Number);
-  expect(channels).toHaveLength(3);
-  expect(Math.max(...channels) - Math.min(...channels)).toBeLessThanOrEqual(8);
-  await page.screenshot({ path: "temp/verification/2026-10-13-logs-simplify/log-colors.png" });
-  await page.getByRole("button", { name: "Filters", exact: true }).click();
-  const filters = page.getByRole("dialog", { name: "Log filters", exact: true });
-  await filters.getByRole("button", { name: "Log level: All levels", exact: true }).click();
-  await page.getByRole("option", { name: "HTTP", exact: true }).click();
-  await page.keyboard.press("Escape");
-  await expect(timeline.locator(".runtime-log-row")).toHaveCount(1);
-  await expect(timeline.getByText("GET /dashboard 200 in 12ms", { exact: true })).toBeVisible();
-});
+}
 
 test("resource charts show empty and sampled states without overflow", async ({ page }) => {
   const errors: string[] = [];
@@ -1144,3 +1288,33 @@ test("shared host danger feedback preserves server selection and recovery in bot
     await expect(selected).toHaveAttribute("aria-pressed", "true");
   }
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`final browser panel states ${theme} ${width}`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?theme=${theme}`);
+      await selectTool(page, "Host browser");
+      await page.getByRole("button", { name: "Open website", exact: true }).click();
+      await expect(
+        page.getByRole("img", {
+          name: "Shared host browser screenshot; click to interact when controlling",
+        }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/goal-final-callers/browser-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
+      await expect(page.getByLabel("Text to type into host browser")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/goal-final-callers/browser-controls-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await expect(page.getByLabel("Text to type into host browser")).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });

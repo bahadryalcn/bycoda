@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -116,7 +117,7 @@ export function HarnessUpdateNotice() {
         ) : null
       }
     >
-      <div className="divide-y divide-stroke">
+      <div {...surfaceAttributes({ dividers: "stroke" })}>
         {updates.map((update) => (
           <HarnessUpdateRow
             key={update.harness}

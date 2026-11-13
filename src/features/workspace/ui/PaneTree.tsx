@@ -669,7 +669,7 @@ function PaneTreeComponent({
               }}
               onInputCapture={() => session && onSessionInteraction?.(session.id)}
               data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
-              className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${dragging ? "opacity-40" : ""}`}
+              className={`absolute ${hidden ? "hidden" : "flex"} min-h-0 min-w-0 flex-col overflow-hidden ${dragging ? "opacity-40" : ""}`}
               // The new pane focuses its composer or editor while it is still
               // offscreen, and focus scrolls this clip box to reveal it, which
               // fights the slide. Scroll events land before paint, so undoing
@@ -679,13 +679,16 @@ function PaneTreeComponent({
                 event.currentTarget.scrollLeft = 0;
                 event.currentTarget.scrollTop = 0;
               }}
-              style={{ display: hidden ? "none" : undefined, ...paneRectStyle(rect) }}
+              style={paneRectStyle(rect)}
             >
               {leaf.tabIds && leaf.tabIds.length > 1 ? (
                 <Tabs value={leaf.id} onValueChange={onFocus} panels="none">
                   <TabList
                     label={t("Pane sessions")}
-                    className="flex shrink-0 overflow-x-auto border-b border-stroke bg-surface"
+                    {...surfaceAttributes(
+                      { frame: "stroke", edge: "bottom" },
+                      "flex shrink-0 overflow-x-auto",
+                    )}
                   >
                     {leaf.tabIds.map((id) => (
                       <Tab
@@ -731,8 +734,11 @@ function PaneTreeComponent({
                           <span
                             data-pane-tab-drop={drop.tabPosition}
                             {...surfaceAttributes(
-                              { radius: "pill" },
-                              `pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) ${drop.tabPosition === "before" ? "start-0" : "end-0"} ${drop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`,
+                              {
+                                radius: "pill",
+                                variant: drop.invalid ? "drop-blocked" : "drop-line",
+                              },
+                              `pointer-events-none absolute inset-y-0 w-(--ui-drop-line-size) ${drop.tabPosition === "before" ? "start-0" : "end-0"}`,
                             )}
                           />
                         ) : null}

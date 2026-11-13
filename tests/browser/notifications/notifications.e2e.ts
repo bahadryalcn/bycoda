@@ -117,3 +117,31 @@ test("empty state, persisted preferences and clearing history", async ({ page })
     0,
   );
 });
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`shared request motion ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.goto(`/tests/browser/notifications/notifications.html?theme=${theme}&popup`);
+      const floating = page.locator('.notification-request[data-variant="floating"]');
+      await expect(floating.first()).toBeVisible();
+      await expect(floating.first()).toHaveAttribute("data-enter", "down");
+      await expect(floating.first()).toHaveCSS("animation-name", /(^|_)motion-enter(?:_|$)/);
+      await expect(floating.first()).toHaveCSS("opacity", "1");
+      await page.screenshot({
+        path: `temp/verification/component-inventory-skills/requests-floating-${theme}-${width}.png`,
+      });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await expect(floating.first()).toHaveCSS("animation-name", "none");
+      await page.getByRole("button", { name: "Notifications", exact: true }).click();
+      const inline = page
+        .getByRole("dialog", { name: "Notifications", exact: true })
+        .locator(".notification-request");
+      await expect(inline.first()).toHaveAttribute("data-variant", "row");
+      await expect(inline.first()).not.toHaveAttribute("data-enter", "down");
+      await expect(inline.first()).toHaveCSS("animation-name", "none");
+      await page.screenshot({
+        path: `temp/verification/component-inventory-skills/requests-inline-${theme}-${width}.png`,
+      });
+    });
+  }

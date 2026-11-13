@@ -10,8 +10,6 @@
 /* Controls hosted in the "More actions" popover sit on the raised sheet. */
 .popoverBody .tools {
   padding: 6px 8px;
-  background: transparent;
-  border-block-end: 0;
 }
 .field {
   flex: 1 1 120px;
@@ -66,23 +64,6 @@
   justify-content: flex-end;
   gap: 2px;
   padding: 2px;
-}
-@media (hover: hover) and (pointer: fine) {
-  .overlay {
-    opacity: 0;
-    pointer-events: none;
-  }
-  :global(.bycoda-terminal):hover > .overlay,
-  .overlay:focus-within,
-  .overlay[data-open] {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-/* Typing hides it until the pointer moves again (also on touch devices). */
-.overlay[data-typing]:not([data-open]):not(:focus-within) {
-  opacity: 0;
-  pointer-events: none;
 }
 .menuBody {
   padding: 4px;

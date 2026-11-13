@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
 for (const width of [1280, 800]) {
@@ -313,3 +314,141 @@ test("automation gallery, event picker, focus mode and scoped AI", async ({ page
     }
   }
 });
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`automation visual caller states ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/automations/automations.html?host=offline");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await expect(page.getByText(/tailm.*reachable right now/)).toBeVisible();
+      await mkdir("temp/verification/automations-devices-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/automations-devices-visual/${theme}-${width}-automations-offline.png`,
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: /Start from scratch/ }).click();
+      await page.getByRole("button", { name: "AI assistant", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "AI assistant", exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/automations-devices-visual/${theme}-${width}-automation-assistant.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`automation history feedback visual ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      for (const state of ["slow", "error"]) {
+        await page.goto(`/tests/browser/automations/automations.html?runs=${state}`);
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await page.getByRole("button", { name: "Open Daily review", exact: true }).click();
+        await page.getByRole("tab", { name: "Run history", exact: true }).click();
+        const message =
+          state === "slow"
+            ? page.getByRole("status").filter({ hasText: "Loading…" })
+            : page.getByText("Fixture: run history is unavailable right now", { exact: true });
+        await expect(message).toBeVisible();
+        await page.screenshot({
+          path: `temp/verification/automations-devices-visual/${theme}-${width}-history-${state}.png`,
+          animations: "disabled",
+        });
+      }
+    });
+  }
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`trigger row density ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/automations/automations.html?triggerDensity");
+      await page.evaluate(
+        (theme) => document.documentElement.classList.toggle("theme-light", theme),
+        light,
+      );
+      const row = page.locator('[data-control-min-height="large"]');
+      await expect(row).toBeVisible();
+      const heights: number[] = [];
+      for (const density of ["compact", "comfortable", "touch"]) {
+        await page.evaluate((value) => {
+          document.documentElement.dataset.controlDensity = value;
+        }, density);
+        const measured = await row.evaluate((node) => ({
+          height: node.getBoundingClientRect().height,
+          minimum: parseFloat(getComputedStyle(node).minBlockSize),
+          scroll: node.scrollHeight,
+          client: node.clientHeight,
+        }));
+        expect(measured.height).toBeGreaterThanOrEqual(measured.minimum);
+        expect(measured.scroll).toBeLessThanOrEqual(measured.client + 1);
+        heights.push(measured.height);
+      }
+      expect(heights[0]).toBeGreaterThanOrEqual(40);
+      expect(heights[1]).toBeGreaterThanOrEqual(heights[0]!);
+      expect(heights[2]).toBeGreaterThanOrEqual(heights[1]!);
+      await page.screenshot({
+        path: `temp/verification/feature-controls/trigger-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`automation surface geometry ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await mkdir("temp/verification/automation-terminal", { recursive: true });
+      for (const multiple of [false, true]) {
+        await page.goto(
+          `/tests/browser/automations/automations.html${multiple ? "?multiTriggers" : ""}`,
+        );
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        const card = page.getByRole("button", { name: "Open Daily review", exact: true });
+        await expect(card).toBeVisible();
+        const trigger = card.locator(":scope > span").first();
+        await expect(trigger).toHaveCSS("padding-inline-end", multiple ? "96px" : "56px");
+        const list = page.locator(".automation-list");
+        await expect(list).toHaveCSS("border-inline-end-width", "1px");
+        await page.screenshot({
+          path: `temp/verification/automation-terminal/automation-${theme}-${width}-${multiple ? "multi" : "single"}.png`,
+        });
+      }
+      const start = page.getByRole("button", { name: /Start from scratch/ });
+      await expect(start).toBeVisible();
+      const before = await start.boundingBox();
+      await expect(start).toHaveCSS("border-top-width", "1px");
+      await start.hover();
+      await expect(start).toHaveCSS(
+        "background-color",
+        await start.evaluate((el) => {
+          const probe = document.createElement("div");
+          probe.style.backgroundColor = "var(--ui-surface-hover)";
+          el.append(probe);
+          const value = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return value;
+        }),
+      );
+      expect(await start.boundingBox()).toEqual(before);
+      await page.screenshot({
+        path: `temp/verification/automation-terminal/automation-${theme}-${width}-start-hover.png`,
+      });
+      await page.setViewportSize({ width: 600, height: 900 });
+      await page.getByRole("button", { name: /Show automation list/ }).click();
+      await expect(page.locator(".automation-list")).toBeVisible();
+      await expect(page.locator(".automation-list")).toHaveCSS("border-inline-end-width", "0px");
+      await expect(page.locator(".automation-list")).toHaveCSS("border-block-end-width", "0px");
+    });
+  }

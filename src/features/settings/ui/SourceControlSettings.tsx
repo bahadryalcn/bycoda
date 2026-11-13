@@ -8,17 +8,11 @@ import {
   type DiffViewer,
 } from "../model/settings";
 import { Group, Row, Segmented, SettingsFeedback } from "./settingsControls";
-import { GitGenerationModelControl } from "../../source-control/public/GitGenerationSettings";
-import {
-  saveDefaultGitGenerationChoice,
-  useDefaultGitGenerationChoice,
-} from "../../source-control/public/gitGenerationPreferences";
-import { RotateCcw } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
+import { openModelsSettings } from "../public/modelsSettingsLink";
 
 export function SourceControlSettings() {
   useLocale();
-  const gitGenerationChoice = useDefaultGitGenerationChoice();
   const [diffViewer, setDiffViewer] = useStoredPreferenceState(loadDiffViewer, subscribeDiffViewer);
   const [diffError, setDiffError] = useState(false);
   const onDiffViewer = (next: DiffViewer) => {
@@ -27,19 +21,8 @@ export function SourceControlSettings() {
     setDiffViewer(saved);
     setDiffError(saved !== next);
   };
-  const [generationError, setGenerationError] = useState<{
-    choice: Parameters<typeof saveDefaultGitGenerationChoice>[0];
-  } | null>(null);
-  const onGenerationChoice = (choice: Parameters<typeof saveDefaultGitGenerationChoice>[0]) => {
-    try {
-      saveDefaultGitGenerationChoice(choice);
-      setGenerationError(null);
-    } catch {
-      setGenerationError({ choice });
-    }
-  };
   return (
-    <div className="source-control-settings settings-topics flex min-w-0 flex-col gap-7">
+    <div className="source-control-settings settings-topics flex min-w-0 flex-col gap-8">
       <Group
         title={t("Generation")}
         scope={t("Used across projects unless a project has its own generation selection.")}
@@ -47,36 +30,11 @@ export function SourceControlSettings() {
         <Row
           id="git-generation-default"
           label={t("Model")}
-          description={t("Used across projects unless a project has its own generation selection.")}
-          descriptionVisible={false}
-          feedback={
-            generationError ? (
-              <SettingsFeedback
-                state="error"
-                action={
-                  <Button onClick={() => onGenerationChoice(generationError.choice)}>
-                    {t("Retry")}
-                  </Button>
-                }
-              >
-                {t("Could not save changes")}
-              </SettingsFeedback>
-            ) : undefined
-          }
+          description={t("Model set in Settings > Models > Assignments.")}
         >
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            <GitGenerationModelControl choice={gitGenerationChoice} onChange={onGenerationChoice} />
-            <Button
-              size="sm"
-              variant="ghost"
-              iconOnly
-              label={t("Use automatic selection")}
-              disabled={!gitGenerationChoice}
-              onClick={() => onGenerationChoice(undefined)}
-            >
-              <RotateCcw className="icon-sm" />
-            </Button>
-          </div>
+          <Button variant="link" onClick={() => openModelsSettings("roles")}>
+            {t("Manage in Models")}
+          </Button>
         </Row>
 
         <Row

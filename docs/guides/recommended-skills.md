@@ -1,6 +1,9 @@
 # Recommended skills
 
 Open **Settings > Skills > Discover skills** to browse ranked recommendations.
+
+Searching Settings for skill folders opens **Advanced: skill controls and folders**
+in the Skills page. Closing that dialog keeps it closed until another reveal request.
 The order reflects broad usefulness, followed by specialized workflows; it is not
 a benchmark score. Search by name, purpose or category. Each entry links to the
 publisher's original repository and lists additional requirements. Open **Before you
@@ -72,4 +75,4 @@ AI grouping uses the selected skill grouping provider and model, falling back to
 
 Switch between **All skills** and **Groups** in the Skills library. Create groups from the toolbar or a skill’s actions menu. Right-click a skill to open the same actions, add it to several groups, or remove it from the current group. Drag a skill onto a group header to move it from its source group; drop onto **Ungrouped** to remove that source membership. Group headers offer rename, delete and collapse actions. Deleting a group keeps its skills installed. View and collapse preferences are remembered locally. Missing group members remain saved and appear in the header count.
 
-Choose a model beside **Group with AI**. Generation can be canceled. Review the proposed names and skills, then explicitly choose **Replace my groups** or **Add as new groups**. Cancel leaves existing groups unchanged.
+Use the settings icon beside **Group with AI** to open **Settings > Models > Assignments** directly. Generation can be canceled. Review the proposed names and skills, then explicitly choose **Replace my groups** or **Add as new groups**. Cancel leaves existing groups unchanged.

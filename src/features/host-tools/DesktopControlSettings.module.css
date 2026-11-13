@@ -9,10 +9,6 @@
   display: grid;
   min-inline-size: 0;
 }
-.rows > :global(.settings-row) + :global(.settings-row) {
-  border-block-start: 1px solid var(--ui-settings-hairline);
-}
-
 .toolbar {
   display: flex;
   justify-content: flex-end;

@@ -1,3 +1,5 @@
+/* Hallmark: shape: app screen; theme: locked Bycoda; scope: app; signature: aligned provider and account rows. */
+/* Critique: remove repeated state and stacked navigation; preserve compact shared controls. */
 /* Providers page: a sticky provider list beside a detail column of framed groups.
    Colors come from shared semantic tokens only; rows and frames come from settingsControls. */
 .provider-cli-container {
@@ -34,24 +36,6 @@
   display: none;
 }
 
-/* Defaults save bar: pinned to the bottom of the view while the form scrolls. It always says
-   whether the defaults on screen are saved, and where Save writes them. */
-.provider-save-bar {
-  position: sticky;
-  inset-block-end: 12px;
-  z-index: 2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  padding: 8px 8px 8px 16px;
-  /* Opaque: the form scrolls underneath it. */
-  border: 1px solid var(--ui-card-border);
-}
-.provider-save-bar[data-dirty] {
-  border-color: var(--ui-tone-warning-fg);
-}
 .provider-save-bar-status {
   display: flex;
   align-items: center;
@@ -112,7 +96,7 @@
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
-  gap: 0;
+  gap: 4px;
   min-inline-size: 0;
 }
 .provider-cli-option-name {
@@ -127,13 +111,6 @@
 .provider-cli-more {
   margin-block-start: 8px;
 }
-.provider-cli-more svg {
-  flex-shrink: 0;
-  transition: transform var(--motion-feedback-duration) var(--motion-ease-out);
-}
-.provider-cli-more svg[data-open] {
-  transform: rotate(90deg);
-}
 .provider-cli-missing {
   display: grid;
   gap: 2px;
@@ -144,11 +121,6 @@
 .provider-cli-add {
   margin-block-start: 8px;
   padding-block-start: 8px;
-}
-@media (prefers-reduced-motion: reduce) {
-  .provider-cli-more svg {
-    transition: none;
-  }
 }
 
 /* Detail column: header, Status, Accounts, then the selected provider's panel. The column gap is
@@ -209,9 +181,6 @@
   z-index: 1;
   padding: 8px 16px;
 }
-.provider-models-search + .settings-row {
-  border-block-start: 0;
-}
 .provider-model-name {
   display: inline-flex;
   align-items: center;
@@ -241,23 +210,12 @@
   min-inline-size: 0;
   padding: 10px 16px;
 }
-.provider-account-row
-  ~ :is(.provider-account-row, .provider-account-editor, .provider-account-empty),
-.provider-account-editor ~ :is(.provider-account-row, .provider-account-editor),
-.provider-accounts-body:not([hidden]) ~ .settings-row {
-  border-block-start: 1px solid var(--ui-settings-hairline);
-}
 .provider-account-empty {
   margin: 0;
 }
 .provider-account-main {
   flex: 1 1 0;
   min-inline-size: 0;
-}
-@media (hover: hover) and (pointer: fine) {
-  .provider-account-row:hover {
-    background: var(--ui-settings-row-hover);
-  }
 }
 .provider-account-identity {
   display: flex;
@@ -295,17 +253,12 @@
   flex: 1 1 0;
 }
 .provider-antigravity-box {
-  background: var(--ui-card-surface);
-  border-color: var(--ui-card-border);
   overflow: hidden;
 }
 
 /* "Show in picker" lives on each list row; only the one-column layout, which has no list, repeats it. */
 .provider-picker-narrow {
   display: none;
-}
-.provider-picker-narrow + .settings-row {
-  border-block-start: 1px solid var(--ui-settings-hairline);
 }
 
 @container provider-page (max-width: 640px) {
@@ -376,4 +329,20 @@
   flex-direction: column;
   gap: 12px;
   min-inline-size: 0;
+}
+
+.provider-account-status {
+  min-inline-size: 0;
+  margin-inline-start: auto;
+}
+.provider-account-name {
+  min-inline-size: 0;
+}
+@container provider-page (max-width: 640px) {
+  .provider-account-row {
+    flex-wrap: wrap;
+  }
+  .provider-account-status {
+    margin-inline-start: 0;
+  }
 }

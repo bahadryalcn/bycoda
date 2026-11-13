@@ -1,6 +1,7 @@
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Badge, StatusBadge } from "../../../shared/ui/Badge";
@@ -24,7 +25,12 @@ export function TaskListPreview({ items, explanation }: Props) {
       aria-label={t("Task progress")}
       className="mb-2 overflow-hidden"
     >
-      <div className="flex items-start gap-2 border-b border-(--ui-tone-neutral-border) px-2.5 py-2">
+      <div
+        {...surfaceAttributes(
+          { frame: "neutral", edge: "bottom" },
+          "flex items-start gap-2 px-2.5 py-2",
+        )}
+      >
         <ListEnd className="mt-0.5 icon-md shrink-0" tone="secondary" strokeWidth={1.75} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">

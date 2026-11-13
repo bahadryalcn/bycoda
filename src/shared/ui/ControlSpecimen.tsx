@@ -10,7 +10,6 @@ import { Switch } from "./Switch";
 import { Slider } from "./Slider";
 import { SegmentedControl } from "./SegmentedControl";
 import { Popover } from "./Popover";
-import { CapabilityStatus } from "./CapabilityStatus";
 import { BadgeSpecimen } from "./BadgeSpecimen";
 import { Alert } from "./Alert";
 import { Progress } from "./Progress";
@@ -350,7 +349,6 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
       <Family name="Status and feedback">
         <Cell state="badges">
           <BadgeSpecimen />
-          <CapabilityStatus permission="enabled" readiness="ready" activity="idle" />
         </Cell>
         <Cell state="alert">
           <Alert tone="danger">{LONG}</Alert>

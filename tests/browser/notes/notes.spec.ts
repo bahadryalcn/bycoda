@@ -680,3 +680,105 @@ test("compact notes refresh captures and tag filtering", async ({ page }) => {
     }
   }
 });
+
+test("exposes all formatting commands directly without an overflow menu", async ({ page }) => {
+  await page.goto("/tests/browser/notes/notes.html");
+  const toolbar = page.getByRole("toolbar", { name: "Markdown formatting", exact: true });
+  for (const mode of ["Document", "Source", "Split"]) {
+    await page.setViewportSize({ width: 1560, height: 900 });
+    await page.getByRole("tab", { name: mode, exact: true }).click();
+    if (mode === "Document")
+      await page.locator("[data-note-preview] .note-preview-content").first().click();
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const label of [
+        "Strikethrough",
+        "Numbered list",
+        "Quote",
+        "Code block",
+        "Table",
+        "Divider",
+      ]) {
+        await expect(toolbar.getByRole("button", { name: label, exact: true })).toBeInViewport();
+      }
+      await expect(
+        toolbar.getByRole("button", { name: "Markdown formatting", exact: true }),
+      ).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      for (const theme of ["light", "dark"]) {
+        await page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+        await page.screenshot({
+          path: `temp/verification/2026-11-13-notes-toolbar/${mode}-${width}-${theme}.png`,
+        });
+      }
+    }
+  }
+});
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`note shared frames preserve split draft ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/notes/notes.html?theme=${theme}&saveError`);
+      const mode = width === 1280 ? "Split" : "Source";
+      await page.getByRole("tab", { name: mode, exact: true }).click();
+      const panes = page.locator(".note-editor-pane");
+      await expect(panes).toHaveCount(width === 1280 ? 2 : 1);
+      if (width === 1280) await expect(panes.nth(1)).toHaveCSS("border-inline-start-width", "1px");
+      const editor = panes.first().locator(".cm-content");
+      await editor.click();
+      await page.keyboard.press("Control+End");
+      await page.keyboard.type("\nRetain note draft.");
+      await expect(editor).toContainText("Retain note draft.");
+      const retry = page.getByRole("button", { name: "Retry", exact: true });
+      await expect(retry).toBeVisible();
+      await page.mouse.move(0, 0);
+      await expect(retry).toHaveCSS("text-decoration-line", "underline");
+      await retry.hover();
+      await expect(retry).toHaveCSS("text-decoration-line", "none");
+      await page.screenshot({
+        path: `temp/verification/search-skills-notes/notes-${theme}-${width}.png`,
+      });
+      await retry.click();
+      await expect(retry).toHaveCount(0);
+      await page.getByRole("tab", { name: "Document", exact: true }).click();
+      await page.getByRole("tab", { name: mode, exact: true }).click();
+      await expect(editor).toContainText("Retain note draft.");
+      await page.setViewportSize({ width: 600, height: 900 });
+      await expect(page.locator(".note-mobile-navigation")).toBeVisible();
+      await expect(page.locator(".note-mobile-navigation")).toHaveCSS(
+        "border-block-end-width",
+        "1px",
+      );
+    });
+  }
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`session notes caller states ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/notes/notes.html?panel&theme=${theme}`);
+      const editor = page.getByRole("textbox", { name: "Note", exact: true });
+      await expect(editor).toHaveValue(/Release checklist/);
+      await page.getByRole("button", { name: "Switch note", exact: true }).click();
+      const picker = page.getByRole("dialog", { name: "Switch note", exact: true });
+      await expect(picker).toBeVisible();
+      await picker.getByRole("textbox", { name: "Search notes" }).fill("no such note");
+      await expect(picker).toContainText("No matching notes");
+      await page.screenshot({ path: info.outputPath(`notes-picker-${theme}-${width}.png`) });
+      await page.keyboard.press("Escape");
+      await expect(editor).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`notes-panel-${theme}-${width}.png`) });
+      await page.goto(`/tests/browser/notes/notes.html?panel&pendingNotes&theme=${theme}`);
+      await expect(page.getByText("Loading notes…")).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`notes-loading-${theme}-${width}.png`) });
+      await page.goto(`/tests/browser/notes/notes.html?panel&failedNotes&theme=${theme}`);
+      await expect(page.getByText(/Fixture notes unavailable/)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+      await page.screenshot({ path: info.outputPath(`notes-error-${theme}-${width}.png`) });
+    });

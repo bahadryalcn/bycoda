@@ -1,6 +1,8 @@
 /** Different job: Log disclosure expands structured output; it is not a committed value choice. */
 import { Code } from "../../../shared/ui/Code";
-import { Text } from "../../../shared/ui/Text";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Text, type TextTone } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { memo, useRef, useState } from "react";
 import { t, getLocale } from "../../../shared/i18n/technical";
@@ -22,6 +24,15 @@ export const LEVEL_LABELS: Record<RuntimeLogDisplayLevel, string> = {
   debug: "DEBUG",
   http: "HTTP",
   success: "SUCCESS",
+};
+
+const LEVEL_TONES: Record<RuntimeLogDisplayLevel, TextTone> = {
+  error: "danger",
+  warn: "warning",
+  info: "info",
+  debug: "secondary",
+  http: "feature",
+  success: "success",
 };
 
 export const RuntimeLogRow = memo(function RuntimeLogRow({
@@ -46,7 +57,10 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
   const file = runtimeLogFileTarget(cwd, entry.location);
   return (
     <li
-      className="runtime-log-row"
+      {...surfaceAttributes(
+        { variant: selectedCount > 0 ? "selected" : undefined, frame: "stroke", edge: "block-end" },
+        "runtime-log-row",
+      )}
       data-level={runtimeLogDisplayLevel(entry)}
       data-source={entry.source}
       data-selected={selectedCount > 0}
@@ -72,24 +86,35 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
               as="div"
               className="runtime-log-meta"
             >
-              <Text
+              <Code
                 size="caption"
-                tone="inherit"
-                leading="inherit"
+                tone={entry.source === "browser" ? "info" : "feature"}
                 weight="medium"
                 className="runtime-log-kind"
                 data-source={entry.source}
               >
                 {entry.source === "browser" ? "[BROWSER]" : "[SERVER]"}
-              </Text>
-              <Timestamp value={entry.timestamp} format="time-seconds" />
-              <span className="runtime-log-level">
+              </Code>
+              <Code>
+                <Timestamp
+                  value={entry.timestamp}
+                  format="time-seconds"
+                  size="caption"
+                  tone="secondary"
+                />
+              </Code>
+              <Text
+                as="span"
+                size="inherit"
+                tone={LEVEL_TONES[runtimeLogDisplayLevel(entry)]}
+                className="runtime-log-level"
+              >
                 {LEVEL_LABELS[runtimeLogDisplayLevel(entry)]}
-              </span>
+              </Text>
               <OverflowTooltip label={sourceLabel}>
                 <Text
                   size="inherit"
-                  tone="inherit"
+                  tone="secondary"
                   leading="inherit"
                   truncate
                   className="runtime-log-source-label"
@@ -110,7 +135,9 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
                   </Badge>
                 </Tooltip>
               ) : null}
-              <span className="runtime-log-details-trigger">{t("Details")}</span>
+              <Text tone="secondary" size="inherit" className="runtime-log-details-trigger">
+                {t("Details")}
+              </Text>
             </Text>
             <Text
               as="p"
@@ -120,7 +147,7 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
               truncate
               className="runtime-log-message"
             >
-              {entry.message || t("Empty log message")}
+              <Code>{entry.message || t("Empty log message")}</Code>
             </Text>
           </div>
         }
@@ -133,7 +160,9 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
             as="div"
             className="runtime-log-detail-body"
           >
-            <pre className="runtime-log-full-message">{entry.message}</pre>
+            <OutputBlock size="micro" tone="inherit" className="runtime-log-full-message">
+              {entry.message}
+            </OutputBlock>
             {entry.location ? (
               <div className="runtime-log-location">
                 {file && onOpenFile ? (
@@ -169,7 +198,9 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
             {entry.stack ? (
               <div>
                 <SectionLabel as="h4">{t("Stack trace")}</SectionLabel>
-                <pre>{entry.stack}</pre>
+                <OutputBlock size="micro" tone="inherit">
+                  {entry.stack}
+                </OutputBlock>
               </div>
             ) : null}
             {group.entries.length > 1 ? (

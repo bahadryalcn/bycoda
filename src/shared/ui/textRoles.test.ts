@@ -141,3 +141,12 @@ it("OutputBlock exposes inherited and relaxed leading", async () => {
     view.done();
   }
 });
+
+it("exposes glyph ink and title-only hover underline roles", () => {
+  const attrs = textAttributes({ size: "glyph", tone: "background-base", hoverUnderline: true });
+  expect(attrs).toMatchObject({
+    "data-size": "glyph",
+    "data-tone": "background-base",
+    "data-hover-underline": true,
+  });
+});

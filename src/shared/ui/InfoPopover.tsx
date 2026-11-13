@@ -9,7 +9,7 @@ import { Info } from "./icons";
  * with focus moved in and returned on close. `width` sizes the card; `className` styles the trigger only.
  * @group overlay
  * @use Optional explanation next to a label or setting that needs more than one line.
- * @avoid One-line hint on a control: Tooltip. Hover preview of an object: HoverCard. Required state, errors or approvals: visible in layout (InlineMessage, Alert). Forms or menus: Popover / DropdownMenu.
+ * @avoid One-line hint on a control: Tooltip. Hover preview of an object: useHoverCard. Required state, errors or approvals: visible in layout (InlineMessage, Alert). Forms or menus: Popover / DropdownMenu.
  */
 export function InfoPopover({
   label,

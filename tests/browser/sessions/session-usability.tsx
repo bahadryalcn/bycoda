@@ -1,6 +1,17 @@
+import { AccountUsageMeters } from "../../../src/features/providers/ui/ProviderAccountUsage";
+import { ProjectBackgroundDialog } from "../../../src/features/projects/ui/ProjectBackgroundDialog";
+import { RailBackgroundControls } from "../../../src/features/projects/ui/RailBackgroundControls";
+import { saveProjectChatBackgroundSettings } from "../../../src/features/projects/model/projectChatBackground";
+import { UsageProviderChip } from "../../../src/app/shell/UsageProviderChip";
+import { ResumeTurnRow } from "../../../src/features/sessions/ui/ResumeTurnRow";
+import { ProviderSignInPanel } from "../../../src/features/sessions/ui/ProviderSignInPanel";
+import { SessionImportDialog } from "../../../src/features/sessions/ui/SessionImportDialog";
+import { AdditionalDirsDialog } from "../../../src/features/projects/ui/AdditionalDirsDialog";
+import { saveAdditionalDirs } from "../../../src/features/projects/model/additionalDirs";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { mockIPC } from "@tauri-apps/api/mocks";
 import { SessionPane, type SessionPaneProps } from "../../../src/features/sessions/ui/SessionPane";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
 import { newSession, type Session, type Block } from "../../../src/features/sessions/model/session";
@@ -23,6 +34,99 @@ import { flushHostSessionBindings } from "../../../src/features/connections/publ
 import { languageReady } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import "../../../src/styles/index.css";
+
+if (new URLSearchParams(location.search).has("projectVisual")) {
+  mockIPC(() => null, { shouldMockEvents: true });
+  (window as any).__TAURI_INTERNALS__.convertFileSrc = () => "/crew/star-wars/yoda.svg";
+  saveProjectChatBackgroundSettings("/fixture/project", {
+    path: "/fixture/image.png",
+    emptyOpacity: 0.2,
+    sessionOpacity: 0.3,
+    scope: "empty",
+    effect: "none",
+  });
+}
+if (new URLSearchParams(location.search).has("controlDialogs")) {
+  saveAdditionalDirs("/fixture/project", ["/fixture/extra"]);
+  mockIPC(
+    (command) => {
+      if (command === "import_discover") {
+        const base = {
+          provider: "claude",
+          path: "/fixture/a.jsonl",
+          providerSessionId: "fixture-a",
+          cwd: "/fixture/project",
+          cwdExists: true,
+          resumable: true,
+          firstPrompt: "Fixture conversation",
+          startedAt: 1700000000000,
+          lastAt: 1700000100000,
+          sizeBytes: 2048,
+          kind: "interactive",
+          model: null,
+          archived: false,
+        };
+        const mode = new URLSearchParams(location.search).get("folderComposition");
+        const candidates = new URLSearchParams(location.search).has("manyImports")
+          ? Array.from({ length: 151 }, (_, index) => ({
+              ...base,
+              path: `/fixture/${index}.jsonl`,
+              providerSessionId: `fixture-${index}`,
+            }))
+          : mode
+            ? [
+                base,
+                {
+                  ...base,
+                  path: "/fixture/b.jsonl",
+                  providerSessionId: "fixture-b",
+                  cwd: "/fixture/other",
+                },
+                ...(mode === "mixed"
+                  ? ["missing-one", "missing-two"].map((id) => ({
+                      ...base,
+                      path: `/fixture/${id}.jsonl`,
+                      providerSessionId: id,
+                      cwd: `/lost/${id}`,
+                      cwdExists: false,
+                    }))
+                  : []),
+              ]
+            : [base];
+        return { candidates, filesScanned: candidates.length, filesSkipped: 0, elapsedMs: 5 };
+      }
+      if (command === "session_import_keys") return [];
+      if (command === "import_read_claude") throw new Error("Fixture transcript unavailable");
+      if (command.startsWith("plugin:event|")) return null;
+      return undefined;
+    },
+    { shouldMockEvents: true },
+  );
+}
+
+if (new URLSearchParams(location.search).has("reviewFixture")) {
+  mockIPC(
+    (command) => {
+      if (command === "session_checkpoint_status")
+        return {
+          files: [
+            {
+              path: "/fixture/src/example.ts",
+              relative: "src/example.ts",
+              status: "modified",
+              additions: 7,
+              deletions: 2,
+              exact: true,
+              undoable: true,
+            },
+          ],
+        };
+      if (command.startsWith("plugin:event|")) return null;
+      throw new Error(`Unavailable in review fixture: ${command}`);
+    },
+    { shouldMockEvents: true },
+  );
+}
 
 // The actual pane owns its Composer + PooledTranscript/AgentTranscript composition.
 // Only native/provider boundaries and the outer controller callbacks are simulated.
@@ -53,13 +157,26 @@ const modelSource = {
   available: () => true,
   probed: () => true,
   refresh: () => {},
+  ...(new URLSearchParams(location.search).has("accountFixture")
+    ? {
+        accounts: {
+          claude: [
+            { id: "work", label: "Work" },
+            { id: "personal", label: "Personal" },
+          ],
+        },
+      }
+    : {}),
 };
 const sessionId = "integrated-session-usability";
 const baseBlocks: Block[] = [
   {
     id: "user",
     role: "user",
-    text: "Inspect the attached report and explain the next safe step.",
+    durationMs: 1200,
+    text: new URLSearchParams(location.search).has("attachmentToken")
+      ? "Inspect [file1] and explain the next safe step."
+      : "Inspect the attached report and explain the next safe step.",
     attachments: [
       {
         id: "report",
@@ -82,6 +199,16 @@ const initial: Session = {
   id: sessionId,
   title: "Integrated usability conversation with a long project title",
   blocks: baseBlocks,
+  rewindHistory: new URLSearchParams(location.search).has("rewindFixture")
+    ? [
+        {
+          id: "rewind-1",
+          createdAt: 1700000000000,
+          fromBlockId: "old-user",
+          blocks: [{ id: "old-user", role: "user", text: "Earlier fixture message" }],
+        },
+      ]
+    : undefined,
   context: { used: 64000, window: 128000 },
 };
 setComposerDraft(sessionId, "Keep this integrated draft");
@@ -203,6 +330,7 @@ function Fixture() {
     onWorkspaceModeChange: noop,
     onWorktreeBaseChange: noop,
     onModelChange: (_id, harness, model) => setSession((value) => ({ ...value, harness, model })),
+    onSelectProviderAccount: noop,
     onModelSettingsChange: noop,
     onRuntimeModeChange: noop,
     onSubmit: () => {
@@ -245,6 +373,7 @@ function Fixture() {
     onQuestionReply: noop,
     onOpenFile: noop,
     onOpenDiff: noop,
+    onSecondOpinion: noop,
     onOpenPlan: noop,
     onBuildPlan: noop,
     onNewTerminal: noop,
@@ -268,7 +397,75 @@ void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <Fixture />
+      {new URLSearchParams(location.search).has("accountUsageFixture") ? (
+        <main>
+          <AccountUsageMeters now={1790000000000} limits={undefined} />
+          <AccountUsageMeters
+            now={1790000000000}
+            limits={{
+              provider: "codex",
+              session: { usedPercent: 42, windowMinutes: 300, resetsAt: 1790010000000 },
+              weekly: { usedPercent: 81, windowMinutes: 10080, resetsAt: 1790020000000 },
+              monthly: null,
+              updatedAt: 1790000000000,
+              error: null,
+              status: "ok",
+            }}
+          />
+        </main>
+      ) : new URLSearchParams(location.search).get("projectVisual") === "background" ? (
+        <ProjectBackgroundDialog project="/fixture/project" name="Fixture" onClose={() => {}} />
+      ) : new URLSearchParams(location.search).get("projectVisual") === "rail" ? (
+        <RailBackgroundControls
+          value={{ body: { color: "#123456", opacity: 25 } }}
+          color="#654321"
+          group
+          onChange={() => {}}
+        />
+      ) : new URLSearchParams(location.search).get("projectVisual") === "mascot" ? (
+        <UsageProviderChip
+          project="/fixture/project"
+          now={1790000000000}
+          limits={{
+            provider: "codex",
+            session: { usedPercent: 42, windowMinutes: 300, resetsAt: 1790010000000 },
+            weekly: { usedPercent: 81, windowMinutes: 10080, resetsAt: 1790020000000 },
+            monthly: null,
+            resetCredits: {
+              availableCount: 1,
+              credits: [
+                {
+                  id: "fixture",
+                  resetType: "codexRateLimits",
+                  status: "available",
+                  grantedAt: 1789990000000,
+                  expiresAt: 1790090000000,
+                  title: "Fixture reset",
+                  description: "Fixture",
+                },
+              ],
+            },
+            updatedAt: 1790000000000,
+            error: null,
+            status: "ok",
+          }}
+        />
+      ) : new URLSearchParams(location.search).has("resumeFixture") ? (
+        <ResumeTurnRow
+          block={{ id: "fixture-resume", role: "user", text: "Continue the retained draft." }}
+          kind="resume"
+        />
+      ) : new URLSearchParams(location.search).has("providerSignIn") ? (
+        <ProviderSignInPanel harness="claude" state="idle" onSignIn={() => {}} />
+      ) : new URLSearchParams(location.search).has("controlDialogs") ? (
+        new URLSearchParams(location.search).get("controlDialogs") === "folders" ? (
+          <AdditionalDirsDialog project="/fixture/project" name="Fixture" onClose={() => {}} />
+        ) : (
+          <SessionImportDialog onClose={() => {}} onImported={() => {}} />
+        )
+      ) : (
+        <Fixture />
+      )}
     </QueryClientProvider>,
   ),
 );

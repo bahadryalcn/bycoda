@@ -6,7 +6,10 @@ import { ListsSidebar, type ListsSidebarProps } from "./ListsSidebar";
 import {
   SEGMENT_LIST,
   STATIC_LIST,
+  bodyText,
   buttonByText,
+  clickMenuItem,
+  menuItem,
   mountHost,
   type MountedHost,
 } from "./audienceTestKit";
@@ -37,6 +40,8 @@ function renderSidebar(overrides: Partial<ListsSidebarProps> = {}) {
     onSelect: vi.fn(),
     onNewList: vi.fn(),
     onNewSegment: vi.fn(),
+    onEdit: vi.fn(),
+    onDelete: vi.fn(),
     ...overrides,
   };
   host.render(createElement(ListsSidebar, props));
@@ -87,11 +92,59 @@ describe("ListsSidebar", () => {
     expect(buttonByText("Buyers")?.textContent).not.toContain("Automatic");
   });
 
-  it("offers the two creation actions", () => {
+  it("offers the two creation actions as named icon buttons in their section headings", () => {
     const props = renderSidebar();
-    act(() => buttonByText("New list")!.click());
-    act(() => buttonByText("New segment")!.click());
+    const create = (name: string) =>
+      document.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`);
+    act(() => create("New list")!.click());
+    act(() => create("New segment")!.click());
     expect(props.onNewList).toHaveBeenCalledTimes(1);
     expect(props.onNewSegment).toHaveBeenCalledTimes(1);
+  });
+
+  it("says when there are no lists or segments yet instead of leaving the groups blank", () => {
+    renderSidebar({ lists: [] });
+    expect(bodyText()).toContain("No lists yet.");
+    expect(bodyText()).toContain("No segments yet.");
+  });
+});
+
+function openMenu(name: string) {
+  const trigger = document.querySelector<HTMLButtonElement>(
+    `button[aria-label="Actions for ${name}"]`,
+  );
+  if (!trigger) throw new Error(`No actions menu for ${name}`);
+  act(() => trigger.click());
+}
+
+describe("ListsSidebar row actions", () => {
+  it("renames or deletes a custom list from its own menu", () => {
+    const props = renderSidebar();
+    openMenu("Buyers");
+    clickMenuItem("Rename list…");
+    expect(props.onEdit).toHaveBeenCalledWith(STATIC_LIST);
+
+    openMenu("Buyers");
+    clickMenuItem("Delete…");
+    expect(props.onDelete).toHaveBeenCalledWith(STATIC_LIST);
+  });
+
+  it("edits the conditions of a segment from its menu", () => {
+    const props = renderSidebar();
+    openMenu("Turkish");
+    expect(menuItem("Rename list…")).toBeUndefined();
+    clickMenuItem("Edit segment…");
+    expect(props.onEdit).toHaveBeenCalledWith(SEGMENT_LIST);
+  });
+
+  it("protects the system Commenters list and says why in the menu", () => {
+    const props = renderSidebar();
+    openMenu("Commenters");
+    expect(menuItem("Rename list…")).toBeUndefined();
+    expect(menuItem("Delete…")).toBeUndefined();
+    expect(bodyText()).toContain("The Commenters rule fills this list");
+    act(() => menuItem("Automatic list")!.click());
+    expect(props.onEdit).not.toHaveBeenCalled();
+    expect(props.onDelete).not.toHaveBeenCalled();
   });
 });

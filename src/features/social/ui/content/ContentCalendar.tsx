@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { ClampText } from "../../../../shared/ui/ClampText";
 import { Text } from "../../../../shared/ui/Text";
@@ -37,6 +38,7 @@ export function ContentCalendar({
   onPickDay,
   onOpen,
 }: ContentCalendarProps) {
+  const [expandedDays, setExpandedDays] = useState<Set<string>>(() => new Set());
   const days = view === "week" ? weekDays(anchor) : monthCells(anchor);
   const byDay = entriesByDay(entries);
   const now = wallClockNow();
@@ -62,11 +64,11 @@ export function ContentCalendar({
         </Text>
       ) : null}
       <div className="content-calendar-grid">
-        {days.map((day) => {
+        {days.map((day, index) => {
           const key = dayKey(day);
           const dayEntries = byDay.get(key) ?? [];
           const { shown, more } =
-            view === "month"
+            view === "month" && !expandedDays.has(key)
               ? splitMonthEntries(dayEntries, MAX_MONTH_ENTRIES)
               : { shown: dayEntries, more: 0 };
           const outside = view === "month" && new Date(day).getMonth() !== month;
@@ -74,7 +76,14 @@ export function ContentCalendar({
           return (
             <section
               key={key}
-              className="content-day"
+              {...surfaceAttributes(
+                {
+                  frame: index ? "pane" : undefined,
+                  edge: index >= 7 ? (index % 7 ? "start" : "block-start") : "inline-start",
+                  variant: today ? "fill-faint" : undefined,
+                },
+                "content-day",
+              )}
               data-today={today || undefined}
               data-outside={outside || undefined}
               aria-label={formatDate(day, { weekday: "long", day: "numeric", month: "long" })}
@@ -96,7 +105,14 @@ export function ContentCalendar({
                     size={view === "month" ? "secondary" : "title"}
                     tone={today ? "accent-on-solid" : outside ? "muted" : "inherit"}
                     leading="none"
-                    {...surfaceAttributes({ radius: "pill" }, "content-day-number")}
+                    {...surfaceAttributes(
+                      {
+                        radius: "pill",
+                        tone: today ? "accent" : undefined,
+                        toneFill: today ? "solid" : undefined,
+                      },
+                      "content-day-number",
+                    )}
                   >
                     {formatDate(day, { day: "numeric" })}
                   </Text>
@@ -115,9 +131,16 @@ export function ContentCalendar({
                 </Button>
               </div>
               {shown.map((entry) => (
-                <ActionHost key={entry.id} className="content-chip-host">
+                <ActionHost
+                  key={entry.id}
+                  ground="var(--ui-fill-subtle)"
+                  {...surfaceAttributes({ radius: "control" }, "content-chip-host")}
+                >
                   <Button
                     variant="item"
+                    layout="stacked"
+                    fullWidth
+                    align="start"
                     size="sm"
                     className="content-entry"
                     onClick={() => onOpen(entry.campaignId)}
@@ -153,9 +176,17 @@ export function ContentCalendar({
                 </ActionHost>
               ))}
               {more ? (
-                <Text size="caption" tone="muted" leading="inherit" className="content-entry-more">
+                <Button
+                  variant="link"
+                  layout="text"
+                  aria-expanded={false}
+                  label={t("Show all posts on {p0}", {
+                    p0: formatDate(day, { day: "numeric", month: "long" }),
+                  })}
+                  onClick={() => setExpandedDays((current) => new Set([...current, key]))}
+                >
                   {t("{p0} more", { p0: more })}
-                </Text>
+                </Button>
               ) : null}
             </section>
           );

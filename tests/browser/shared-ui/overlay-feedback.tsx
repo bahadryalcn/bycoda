@@ -17,6 +17,8 @@ import { Skeleton } from "../../../src/shared/ui/Skeleton";
 import { toast, ToastRegion, type ToastOptions } from "../../../src/shared/ui/ToastRegion";
 import { TransientNotice } from "../../../src/shared/ui/TransientNotice";
 import { WorkingIndicator } from "../../../src/shared/ui/WorkingIndicator";
+import { LoadingText } from "../../../src/shared/ui/LoadingText";
+import { SurfaceLoading } from "../../../src/shared/ui/SurfaceLoading";
 import "../../../src/styles/index.css";
 import "./overlay-feedback.css";
 
@@ -517,6 +519,22 @@ function ProgressSection() {
   );
 }
 
+function LoadingSection() {
+  return (
+    <Section id="loading" title="Loading feedback">
+      <LoadingText delay={false}>Loading folders…</LoadingText>
+      <Frame name="loading-fill" height={180}>
+        <LoadingText layout="fill" delay={false} description="Waiting for workspace data">
+          Loading workspace…
+        </LoadingText>
+      </Frame>
+      <Frame name="loading-surface" height={180}>
+        <SurfaceLoading title="Loading editor…" delay={false} slowAfter={60000} />
+      </Frame>
+    </Section>
+  );
+}
+
 function Fixture() {
   const params = new URLSearchParams(location.search);
   if (params.get("view") === "boot")
@@ -524,6 +542,7 @@ function Fixture() {
   return (
     <main className="min-h-screen bg-(--ui-surface) text-(--color-content)">
       <StatusSection />
+      <LoadingSection />
       <NoticesSection />
       <EmptySection />
       <FailureSection />

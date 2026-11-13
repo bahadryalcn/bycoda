@@ -554,7 +554,6 @@ html.theme-light {
   --ui-navigation-panel: var(--ui-surface-panel);
   --ui-navigation-chrome: var(--color-background-base);
   --ui-navigation-quiet: var(--ui-surface-quiet);
-  --ui-navigation-control: transparent;
   --ui-navigation-selected: var(--ui-surface-selected);
   --ui-navigation-selected-layer: linear-gradient(
     var(--ui-navigation-selected),
@@ -747,6 +746,9 @@ html.theme-light {
   --ui-control-height-md: var(--ui-control-height);
   --ui-control-height-lg: 2.5rem;
   --ui-control-radius: 0.5rem;
+  --ui-drop-target-radius: 0.625rem;
+  --ui-preview-card-radius: 0.5625rem;
+  --ui-drop-target-border-width: 1.5px;
   --ui-control-checkbox-size: 1rem;
   /* Disabled model (one per control family, never both on one element):
      - Fields, rows, list items and composite surfaces dim as a whole with --ui-disabled-opacity,
@@ -1309,7 +1311,6 @@ html.has-native-glass:not(.theme-light) {
     transparent
   );
   --ui-navigation-quiet: color-mix(in srgb, var(--ui-surface) 72%, transparent);
-  --ui-navigation-control: var(--ui-navigation-quiet);
   --ui-navigation-selected: color-mix(in srgb, var(--ui-surface-selected) 72%, transparent);
 }
 
@@ -1382,14 +1383,6 @@ html.has-native-glass:not(.theme-light) .body-glass .bycoda-titlebar {
   .tab-closing {
     display: none;
   }
-}
-
-.workspace-tab:not([data-reordering]) > button:not([aria-selected="true"]):hover,
-.workspace-tab[data-dragging] > button:not([aria-selected="true"]),
-.project-reorder-item:not([data-reordering], [data-selected]):hover,
-.project-reorder-item[data-dragging]:not([data-selected]) {
-  background: var(--ui-fill-faint);
-  color: var(--color-content);
 }
 
 /* Keep project controls from appearing as rows pass beneath the pointer. */
@@ -2469,7 +2462,6 @@ html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane {
     --ui-navigation-panel: var(--ui-surface-panel);
     --ui-navigation-chrome: var(--color-background-base);
     --ui-navigation-quiet: var(--ui-surface-quiet);
-    --ui-navigation-control: transparent;
     --ui-navigation-selected: var(--ui-surface-selected);
     --ui-workspace-canvas: var(--color-background-base);
     --ui-workspace-panel: var(--ui-surface-panel);
@@ -2556,7 +2548,6 @@ html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) {
   --ui-navigation-panel: transparent;
   --ui-navigation-chrome: transparent;
   --ui-navigation-quiet: var(--ui-workspace-reading);
-  --ui-navigation-control: var(--ui-workspace-reading);
   --ui-navigation-selected: color-mix(in srgb, var(--ui-surface-selected) 80%, transparent);
   --ui-composer-surface: var(--ui-workspace-reading);
   background-color: var(--color-background-base);
@@ -2610,7 +2601,6 @@ html.has-workspace-background .bycoda-sidebar [data-session-card][data-selected]
     --ui-navigation-panel: var(--ui-surface-panel);
     --ui-navigation-chrome: var(--color-background-base);
     --ui-navigation-quiet: var(--ui-surface-quiet);
-    --ui-navigation-control: var(--ui-surface);
     --ui-navigation-selected: var(--ui-surface-selected);
     --ui-composer-surface: var(--ui-surface);
     background: var(--color-background-base);
@@ -2808,7 +2798,7 @@ html.theme-light .explorer-file-drag-preview {
 }
 
 @container composer-toolbar (width < 220px) {
-  [data-access-picker-trigger] > span,
+  [data-access-picker-trigger] > span:not([aria-hidden]),
   [data-access-picker-trigger] > svg:last-child {
     display: none;
   }
@@ -2836,8 +2826,9 @@ html.theme-light .explorer-file-drag-preview {
     display: none;
   }
 }
-@container composer-controls (width < 400px) {
-  [data-access-picker-trigger] > span,
+/* Collapse access before it pushes the model onto a separate toolbar row. */
+@container composer-controls (width < 560px) {
+  [data-access-picker-trigger] > span:not([aria-hidden]),
   [data-access-picker-trigger] > svg:last-child {
     display: none;
   }
@@ -3715,21 +3706,6 @@ html:not(.theme-light) .markdown-code-token {
   vertical-align: middle;
 }
 
-@keyframes approval-toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.approval-toast {
-  animation: approval-toast-in var(--motion-notice-duration) var(--motion-ease-out);
-}
-
 @keyframes linked-activity-notice-in {
   from {
     transform: translateY(-8px);
@@ -4564,6 +4540,10 @@ html[data-performance-no-blur] .popover-backdrop.popover-frosted {
  * crosses it. The /operator sparkles' cousin, in the accent color.
  */
 .btw-burst {
+  left: var(--btw-burst-left);
+  top: var(--btw-burst-top);
+  width: var(--btw-burst-width);
+  height: var(--btw-burst-height);
   --burst-color: color-mix(
     in srgb,
     var(--user-accent-color, var(--color-accent)) 70%,

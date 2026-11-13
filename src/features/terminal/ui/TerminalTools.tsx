@@ -1,3 +1,4 @@
+import { actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
@@ -403,13 +404,18 @@ export function TerminalTools({
         remoteShell.automatic &&
         ((remoteShell.state?.status === "suggestions" && !!remoteShell.state.suggestions?.length) ||
           !!preview?.suggestions.length)));
+  const overlayAppearance = actionContentAttributes(
+    { phase: "hover-overlay", hidden: typing, open: mode === "search" || menuOpen || helpOpen },
+    styles.overlay,
+  );
   return (
     <>
       <div
+        {...overlayAppearance}
         ref={overlayRef}
         {...surfaceAttributes(
           { frame: "pane", edge: "all", radius: "card", variant: "floating" },
-          styles.overlay,
+          overlayAppearance.className,
         )}
         data-open={mode === "search" || menuOpen || helpOpen || undefined}
         data-typing={typing || undefined}

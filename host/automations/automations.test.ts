@@ -1,3 +1,4 @@
+import { createHostModelRoutingService, hostModelRoutingService } from "../model-routing/runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -112,6 +113,14 @@ async function setup(start = at("2026-10-05T08:00:00"), linkedAncestor = false) 
   }
   const store = new HostStore(join(directory, "host.db"));
   const project = await store.addProject(directory, "Test");
+  createHostModelRoutingService({
+    store,
+    catalog: async () => ({ models: {} }),
+    readLimits: async () => {
+      throw new Error("Unexpected quota read");
+    },
+    command: async () => "unused",
+  });
   const turns: Array<{
     input: SendTurnInput;
     finish: () => void;
@@ -710,4 +719,73 @@ it("counts local-day starts without materializing history or counting skipped/se
   expect(await queries.dailyLimitSkip(automation, "self", f.clock.now)).toBe(
     "Skipped: reached the limit of 2 runs per day.",
   );
+});
+
+it("resolves automation routing before creating its session and freezes target and run limit", async () => {
+  const f = await setup();
+  const routing = hostModelRoutingService(f.store);
+  vi.spyOn(routing, "get").mockResolvedValue({
+    entries: [],
+    pools: [],
+    roles: {},
+    delegation: { global: {}, providers: {}, accounts: {} },
+    version: 0,
+    updatedAt: 0,
+    defaultMaxRunMinutes: 13,
+  });
+  const execution = {
+    harness: "claude" as const,
+    model: "claude:routed",
+    modelSettings: { effort: "high", crossAdvisor: "advisor" },
+  };
+  const resolve = vi.spyOn(routing, "resolve").mockResolvedValue({
+    ok: true,
+    target: execution,
+    source: { kind: "order", entryId: "first" },
+    skipped: [],
+  });
+  await f.automations.save(f.input({ modelChoice: { kind: "default" } }));
+  const original = f.engine.command.bind(f.engine);
+  vi.spyOn(f.engine, "command").mockImplementation(async (command) => {
+    if ((command as { type: string }).type === "create")
+      expect((await f.automations.runs("nightly"))[0]).toMatchObject({
+        execution,
+        maxRunMinutes: 13,
+        status: "pending",
+      });
+    return original(command);
+  });
+  const run = await f.automations.runNow("nightly");
+  expect(run).toMatchObject({ status: "running", execution, maxRunMinutes: 13 });
+  expect(resolve).toHaveBeenCalledWith(
+    expect.objectContaining({ role: "automation", choice: { kind: "default" } }),
+  );
+  await vi.waitFor(() =>
+    expect(f.turns[0]?.input).toMatchObject({
+      model: "claude:routed",
+      modelSettings: execution.modelSettings,
+    }),
+  );
+});
+
+it("skips exhausted routing without creating a session and retries at the next occurrence", async () => {
+  const f = await setup();
+  const routing = hostModelRoutingService(f.store);
+  const resolve = vi.spyOn(routing, "resolve").mockResolvedValue({
+    ok: false,
+    reason: "noEligibleEntry",
+    skipped: [{ entryId: "first", reason: "belowLimit" }],
+    nextResetAt: f.clock.now + 60_000,
+  });
+  await f.automations.save(f.input({ modelChoice: { kind: "order" } }));
+  const command = vi.spyOn(f.engine, "command");
+  const skipped = await f.automations.runNow("nightly");
+  expect(skipped).toMatchObject({
+    status: "skipped",
+    error: expect.stringContaining("first: belowLimit"),
+  });
+  expect(command).not.toHaveBeenCalled();
+  resolve.mockResolvedValue({ ok: false, reason: "notConfigured", skipped: [] });
+  const retried = await f.automations.runNow("nightly");
+  expect(retried).toMatchObject({ status: "running", execution: { model: "claude:test" } });
 });

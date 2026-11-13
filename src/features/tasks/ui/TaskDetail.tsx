@@ -1,3 +1,4 @@
+import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -126,9 +127,17 @@ export function TaskDetail({
         ref={detailRoot}
         aria-label={t("Task details")}
         aria-busy={actions.pending || undefined}
-        className="flex min-h-0 w-95 max-w-[45%] shrink-0 flex-col border-l border-(--ui-pane-border) @max-[640px]/task-area:w-full @max-[640px]/task-area:max-w-none @max-[640px]/task-area:border-is-0"
+        {...surfaceAttributes(
+          { frame: "pane", edge: "responsive-start" },
+          "flex min-h-0 w-95 max-w-[45%] shrink-0 flex-col @max-[640px]/task-area:w-full @max-[640px]/task-area:max-w-none @max-[640px]/task-area:[--surface-frame-visible:0]",
+        )}
       >
-        <div className="flex h-9 shrink-0 items-center gap-2 border-b border-(--ui-pane-border) px-3">
+        <div
+          {...surfaceAttributes(
+            { frame: "pane", edge: "bottom" },
+            "flex h-9 shrink-0 items-center gap-2 px-3",
+          )}
+        >
           {actions.pending ? <Spinner size="xs" label={t("Loading…")} /> : null}
           <Tooltip
             label={
@@ -230,7 +239,10 @@ export function TaskDetail({
                   </Button>
                 ) : null}
               </div>
-              <DescriptionList size="sm" className="task-detail-facts">
+              <DescriptionList
+                size="sm"
+                {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "task-detail-facts")}
+              >
                 <DescriptionItem term={t("Project")} truncate>
                   {project}
                 </DescriptionItem>
@@ -239,6 +251,10 @@ export function TaskDetail({
                 </DescriptionItem>
                 <DescriptionItem term={t("Agent")} truncate>
                   <HarnessIcon harness={task.harness} className="icon-sm mr-1 inline shrink-0" />
+                  <TaskModelChoiceLabel
+                    choice={task.modelChoice}
+                    machineId={task.machineId}
+                  /> ·{" "}
                   {model.name}
                 </DescriptionItem>
                 <DescriptionItem term={t("Created")} truncate>
@@ -379,7 +395,7 @@ export function TaskDetail({
               frame="none"
               scroll
               wrap={false}
-              className="max-h-48 rounded bg-(--ui-surface-raised) px-2 py-1.5"
+              {...surfaceAttributes({ radius: "sm", variant: "raised" }, "max-h-48 px-2 py-1.5")}
             >
               {task.diffStat}
             </OutputBlock>

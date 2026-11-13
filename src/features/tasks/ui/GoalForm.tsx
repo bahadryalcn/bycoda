@@ -1,3 +1,8 @@
+import { TaskModelChoiceField, useTaskModelRouting } from "./TaskModelChoiceField";
+import {
+  defaultModelSettings,
+  resolveModel as resolveTaskModel,
+} from "../../sessions/public/models";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { type FormEvent, useState } from "react";
@@ -45,7 +50,7 @@ import "./task-goals.css";
 
 /** The new goal form: the job, where it runs, how it runs, review and delivery, and limits. */
 export function GoalForm({
-  draft,
+  draft: inputDraft,
   recents,
   machines,
   machine,
@@ -64,11 +69,12 @@ export function GoalForm({
   saving: boolean;
   onChange: (draft: GoalDraft) => void;
   onCancel: () => void;
-  onSubmit: (event: FormEvent) => void;
+  onSubmit: (event: FormEvent, draft: GoalDraft) => void;
   limits: readonly MachineLimits[];
   onChangeLimits: (machineId: string, settings: Partial<HostSettings>) => void;
 }) {
   useLocale();
+  let draft = inputDraft;
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
   const [workspaceChecks, setWorkspaceChecks] = useState<Record<string, WorkspaceChecks>>({});
   const update = <K extends keyof GoalDraft>(key: K, value: GoalDraft[K]) =>
@@ -83,6 +89,12 @@ export function GoalForm({
   // Account profiles are local to this computer; other hosts keep their own account choice.
   const localAccounts = Boolean(target && isLocalSyncMachine(target));
   const lead = draft.leadCwd || draft.cwds[0] || "";
+  const { supported: routingSupported, choice } = useTaskModelRouting(
+    target,
+    true,
+    draft.modelChoice,
+  );
+  if (choice !== draft.modelChoice) draft = { ...draft, modelChoice: choice };
   const valid =
     !workspaceBusy &&
     draft.cwds.every((cwd) =>
@@ -110,7 +122,7 @@ export function GoalForm({
           event.preventDefault();
           return;
         }
-        onSubmit(event);
+        onSubmit(event, draft);
       }}
       className="task-form"
     >
@@ -127,6 +139,43 @@ export function GoalForm({
                 onChange={(event) => update("title", event.target.value)}
                 placeholder={t("Name the main job")}
               />
+              <TaskModelChoiceField
+                machine={target}
+                routingRole="goal.planner"
+                value={draft.modelChoice}
+                supported={routingSupported}
+                onChange={(choice) => update("modelChoice", choice)}
+                fixed={
+                  <ModelPicker
+                    harness={draft.harness}
+                    model={draft.model}
+                    values={draft.modelSettings}
+                    project={lead || "~"}
+                    accountChoices={localAccounts}
+                    accountId={draft.providerAccountId}
+                    onChange={(harness, model, accountId) =>
+                      onChange({
+                        ...draft,
+                        harness,
+                        model,
+                        modelChoice: routingSupported
+                          ? (draft.modelChoice ?? { kind: "fixed" })
+                          : undefined,
+                        modelSettings:
+                          harness === draft.harness && model === draft.model
+                            ? draft.modelSettings
+                            : defaultModelSettings(resolveTaskModel(harness, model)),
+                        providerAccountId: localAccounts
+                          ? (accountId ?? defaultAccountFor(harness))
+                          : harness === draft.harness
+                            ? draft.providerAccountId
+                            : defaultAccountFor(harness),
+                      })
+                    }
+                    onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+                  />
+                }
+              />
               <PromptField
                 label={t("Main job")}
                 surface="raised"
@@ -138,32 +187,15 @@ export function GoalForm({
                 )}
                 toolbarLeading={
                   <>
-                    <ModelPicker
-                      harness={draft.harness}
-                      model={draft.model}
-                      values={draft.modelSettings}
-                      project={lead || "~"}
-                      accountChoices={localAccounts}
-                      accountId={draft.providerAccountId}
-                      onChange={(harness, model, accountId) =>
-                        onChange({
-                          ...draft,
-                          harness,
-                          model,
-                          providerAccountId: localAccounts
-                            ? (accountId ?? defaultAccountFor(harness))
-                            : harness === draft.harness
-                              ? draft.providerAccountId
-                              : defaultAccountFor(harness),
-                        })
-                      }
-                      onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
-                    />
-                    <TaskAccountPicker
-                      harness={draft.harness}
-                      accountId={draft.providerAccountId}
-                      local={localAccounts}
-                    />
+                    {!routingSupported ||
+                    !draft.modelChoice ||
+                    draft.modelChoice.kind === "fixed" ? (
+                      <TaskAccountPicker
+                        harness={draft.harness}
+                        accountId={draft.providerAccountId}
+                        local={localAccounts}
+                      />
+                    ) : null}
                     {draft.harness !== "fx" ? (
                       <AccessPicker
                         value={draft.runtimeMode}
@@ -193,7 +225,7 @@ export function GoalForm({
             <GoalSection title={t("Where")} framed={false}>
               <div
                 {...surfaceAttributes(
-                  { frame: "card", edge: "all", radius: "card" },
+                  { frame: "card", edge: "all", radius: "card", dividers: "card" },
                   "goal-section-rows",
                 )}
               >
@@ -208,6 +240,7 @@ export function GoalForm({
                       onChange({
                         ...draft,
                         machineId,
+                        modelChoice: undefined,
                         cwds: [],
                         leadCwd: "",
                         workspaces: undefined,

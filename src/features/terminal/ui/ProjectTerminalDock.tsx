@@ -20,7 +20,7 @@ import {
   Terminal,
   X,
 } from "../../../shared/ui/icons";
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
@@ -44,6 +44,7 @@ import {
   useTerminalProfile,
   useTerminalProfiles,
 } from "../model/terminalProfiles";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 const TerminalView = lazySurface(async () => {
   const module = await import("./TerminalView");
@@ -241,15 +242,20 @@ function ProjectTerminalDockComponent({
   return (
     <section
       data-project-terminal-dock=""
-      className={`project-terminal-dock relative flex h-full min-h-0 min-w-0 ${
-        dock.side === "top"
-          ? "border-b"
-          : dock.side === "bottom"
-            ? "border-t"
-            : dock.side === "left"
-              ? "border-r"
-              : "border-l"
-      } border-stroke`}
+      {...surfaceAttributes(
+        {
+          frame: "stroke",
+          edge:
+            dock.side === "top"
+              ? "bottom"
+              : dock.side === "bottom"
+                ? "top"
+                : dock.side === "left"
+                  ? "right"
+                  : "left",
+        },
+        "project-terminal-dock relative flex h-full min-h-0 min-w-0",
+      )}
       onMouseDown={onFocus}
     >
       <Sash
@@ -417,9 +423,11 @@ function ProjectTerminalDockComponent({
         />
         <div
           className="terminal-canvas relative min-h-0 min-w-0 flex-1"
-          style={{
-            gridTemplateColumns: `repeat(${Math.max(1, visibleIds.length)}, minmax(0, 1fr))`,
-          }}
+          style={
+            {
+              "--layout-terminal-columns": Math.max(1, visibleIds.length),
+            } as CSSProperties
+          }
         >
           {dock.pane.files.map((file) => (
             <div
@@ -429,12 +437,13 @@ function ProjectTerminalDockComponent({
               aria-labelledby={`terminal-tab-${file.id}`}
               aria-hidden={!visibleIds.includes(file.id)}
               onMouseDown={() => onSelectTerminal(file.id)}
-              style={{
-                gridColumn: visibleIds.indexOf(file.id) + 1,
-                borderInlineStart:
-                  visibleIds.indexOf(file.id) > 0 ? "1px solid var(--terminal-border)" : undefined,
-              }}
-              className={visibleIds.includes(file.id) ? "terminal-split-pane" : "hidden"}
+              {...surfaceAttributes(
+                visibleIds.indexOf(file.id) > 0 ? { frame: "terminal", edge: "inline-start" } : {},
+                visibleIds.includes(file.id) ? "terminal-split-pane" : "hidden",
+              )}
+              style={
+                { "--layout-terminal-column": visibleIds.indexOf(file.id) + 1 } as CSSProperties
+              }
             >
               <TerminalView
                 id={file.id}

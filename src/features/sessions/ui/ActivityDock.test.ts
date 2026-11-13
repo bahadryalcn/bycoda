@@ -76,6 +76,14 @@ afterEach(() => {
 });
 
 describe("ActivityDock", () => {
+  it("shows application approval waiting and resumes after settlement", () => {
+    render({ busy: true, pendingOwnerApproval: true });
+    expect(visibleSessionTestText(container)).toContain("Needs your input");
+    render({ busy: true, pendingOwnerApproval: false });
+    expect(visibleSessionTestText(container)).toContain("Working");
+    expect(visibleSessionTestText(container)).not.toContain("Needs your input");
+  });
+
   it("renders a delegated provider's icon and exact account beside its model", () => {
     render({
       sessionId: "delegated-provider-identity",

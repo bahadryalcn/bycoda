@@ -39,11 +39,12 @@ export function ActivityFeed({ items, onUndo }: ActivityFeedProps) {
             {group.label}
           </SectionLabel>
           <div className="activity-timeline">
-            {group.items.map((item) => {
+            {group.items.map((item, index) => {
               const undoReason = undoBlockedReason(item);
               return (
                 <ActivityRow
                   key={item.id}
+                  connected={index < group.items.length - 1}
                   title={activityTitle(item)}
                   kind={activityKind(item)}
                   time={formatRelativeTime(item.at)}

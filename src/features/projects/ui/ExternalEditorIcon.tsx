@@ -25,8 +25,8 @@ export function ExternalEditorIcon({ id }: { id: string }) {
         tone="primary"
         weight="medium"
         {...surfaceAttributes(
-          { radius: "sm", frame: "pane", edge: "all" },
-          "grid size-4 place-items-center border-(--ui-pane-border) bg-(--ui-fill-subtle)",
+          { radius: "sm", frame: "pane", edge: "all", variant: "fill-subtle" },
+          "grid size-4 place-items-center",
         )}
       >
         {jetbrains[id as keyof typeof jetbrains]}

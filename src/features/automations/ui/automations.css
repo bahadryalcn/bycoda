@@ -7,7 +7,6 @@
 }
 .automation-list {
   inline-size: 17rem;
-  border-inline-end: 1px solid var(--ui-tone-neutral-border);
 }
 .automation-workspace {
   container-type: inline-size;
@@ -33,7 +32,7 @@
     flex: 1;
     inline-size: 100%;
     min-block-size: 0;
-    border-inline-end: 0;
+    --surface-frame-visible: 0;
   }
 }
 
@@ -76,12 +75,9 @@
 }
 .automation-start > .automation-start-option.automation-start-option[data-button-hierarchy] {
   padding: 12px;
-  background: transparent;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
-.automation-start > .automation-start-option.automation-start-option[data-button-hierarchy]:hover {
-  background: var(--ui-surface-hover);
+.automation-trigger-summary {
+  padding-inline-end: var(--layout-trigger-reserve);
 }
 .automation-template-search {
   inline-size: min(100%, 16rem);

@@ -1,3 +1,5 @@
+import { ActionHost, actionContentAttributes } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/git";
 import { prettyCwd, projectName } from "../../../shared/lib/paths";
@@ -47,7 +49,13 @@ export function WorktreeRow({
   const statusTone =
     tree.missing || tree.dirty ? "warning" : tree.dirty == null ? "neutral" : "success";
   return (
-    <div role="listitem" className={`settings-collection-row ${styles.row}`}>
+    <ActionHost
+      role="listitem"
+      {...surfaceAttributes(
+        { radius: "none", separator: "block" },
+        `settings-collection-row ${styles.row}`,
+      )}
+    >
       <StatusDot
         tone={tree.missing ? "warning" : "secondary"}
         size="compact"
@@ -115,7 +123,12 @@ export function WorktreeRow({
         {warning && <InlineMessage tone="warning">{warning}</InlineMessage>}
         {revealError && <DetailedInlineError error={revealError} retry={{ onRetry: onReveal }} />}
       </div>
-      <div className={`settings-collection-actions ${styles.rowActions}`}>
+      <div
+        {...actionContentAttributes(
+          { phase: "rest", hide: "dim" },
+          `settings-collection-actions ${styles.rowActions}`,
+        )}
+      >
         <Button
           size="sm"
           iconOnly
@@ -144,6 +157,6 @@ export function WorktreeRow({
           <Trash2 className="icon-sm" />
         </Button>
       </div>
-    </div>
+    </ActionHost>
   );
 }

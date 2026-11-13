@@ -357,6 +357,10 @@ it("keeps a blocked goal recoverable and follows running children while its job 
     active: requested,
   }));
   const f = await fixture({ keepAwake: awake });
+  // Keep the default 09:00 briefing lookahead from independently requesting wakefulness.
+  const noon = new Date(f.clock.now);
+  noon.setHours(12, 0, 0, 0);
+  f.clock.now = noon.getTime();
   const { job, goal, task } = await f.seed();
   task.status = "blocked";
   await f.saveTask(task);
@@ -641,6 +645,37 @@ it("keeps the last good presence through one failed read, then reports away and 
   snapshot = await f.snapshot();
   expect(snapshot.effectivePresence).toBe("away");
   expect(snapshot.automaticPresence).toBeUndefined();
+});
+
+it("rereads an away computer within seconds of owner activity instead of the next minute tick", async () => {
+  const observation = { supported: true, locked: false, idleMs: 3600000 };
+  const readPresence = vi.fn(async () => observation);
+  const f = await fixture({ readPresence });
+  await f.configure();
+  await f.service.tick();
+  expect(await f.service.nativePresenceStatus()).toMatchObject({
+    state: "away",
+    choice: "present",
+  });
+  observation.idleMs = 0;
+  // Within the 15 s floor the last reading stands.
+  f.clock.now += 5000;
+  f.service.refreshPresenceSoon();
+  await vi.waitFor(() => expect(readPresence).toHaveBeenCalledTimes(1));
+  f.clock.now += 11000;
+  f.service.refreshPresenceSoon();
+  f.service.refreshPresenceSoon();
+  await vi.waitFor(async () =>
+    expect(await f.service.nativePresenceStatus()).toMatchObject({ state: "present" }),
+  );
+  expect(readPresence).toHaveBeenCalledTimes(2);
+  // A present owner is not reread on every activity beat.
+  f.clock.now += 16000;
+  f.service.refreshPresenceSoon();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(readPresence).toHaveBeenCalledTimes(2);
+  await f.request({ op: "presence.set", state: "dnd" });
+  expect(await f.service.nativePresenceStatus()).toMatchObject({ state: "dnd", choice: "dnd" });
 });
 
 it("reports away when the desktop presence has never been read", async () => {

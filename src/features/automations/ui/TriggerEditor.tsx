@@ -113,7 +113,11 @@ export function TriggerRow({
       : 0;
 
   return (
-    <ActionHost className="-mx-2 min-h-10 gap-2.5 px-2 py-1">
+    <ActionHost
+      controlMinHeight="large"
+      padding={{ inline: "md", block: "xs" }}
+      className="-mx-2 gap-2.5"
+    >
       <TriggerMark kind={trigger.kind} className="icon-sm shrink-0" tone="muted" />
       <Text
         as="div"

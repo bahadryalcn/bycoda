@@ -551,8 +551,10 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   const group = container.querySelector<HTMLElement>('[data-project-group="clients"]')!;
   const groupRow = group.firstElementChild as HTMLElement;
   expect(groupRow.classList).toContain("project-reorder-item");
-  expect(groupRow.classList).toContain("h-(--ui-control-height-compact)");
-  expect(groupRow.classList).toContain("px-2");
+  expect(groupRow.getAttribute("data-control-height")).toBe("compact");
+  expect(groupRow.style.paddingInline).toBe(
+    "var(--control-padding-inline, calc(var(--space-1) * 2))",
+  );
   const options = button("Client work group options");
   expect(options.getAttribute("aria-haspopup")).toBe("menu");
   expect(options.closest("[data-project-group]")).toBe(group);
@@ -560,8 +562,11 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   const header = button("Client work, 1 project");
   expect(header.getAttribute("aria-expanded")).toBe("true");
   expect(group.classList).toContain("overflow-hidden");
-  expect(group.classList).toContain("rounded-md");
+  expect(group.getAttribute("data-surface-radius")).toBe("row");
+  expect(group.getAttribute("role")).toBe("group");
+  expect(group.getAttribute("aria-label")).toBe("Client work");
   // The expanded group is separated by spacing, not a tinted fill.
+  expect(group.getAttribute("data-surface-variant")).toBeNull();
   expect(group.classList).not.toContain("bg-content/3");
   expect(group.getAttribute("style")).toBeNull();
   expect(group.querySelector("[data-project-group-items]")?.classList).toContain("p-1");
@@ -585,12 +590,16 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   act(() => body.dispatchEvent(transitionEnd));
   expect(collapsedGroup.classList).not.toContain("bg-content/3");
   expect(collapsedGroup.querySelector("[data-project-group-items]")).toBeNull();
-  expect(collapsedGroup.querySelector("[data-group-mascot]")?.classList).toContain(
-    "group-hover:hidden",
-  );
-  expect(collapsedGroup.querySelector("[data-group-chevron]")?.classList).toContain(
-    "group-hover:block",
-  );
+  expect(
+    collapsedGroup.querySelector("[data-group-mascot]")?.getAttribute("data-action-content"),
+  ).toBe("rest");
+  expect(
+    collapsedGroup.querySelector("[data-group-chevron]")?.getAttribute("data-action-content"),
+  ).toBe("interaction");
+  for (const selector of ["[data-group-mascot]", "[data-group-chevron]"])
+    expect(collapsedGroup.querySelector(selector)?.getAttribute("data-action-hide")).toBe(
+      "display",
+    );
 
   act(() => root.unmount());
   root = createRoot(container);

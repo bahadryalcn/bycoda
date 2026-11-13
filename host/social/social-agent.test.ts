@@ -57,3 +57,23 @@ it("an unsupported or unauthenticated saved runner fails without selecting anoth
   expect(mocks.run).toHaveBeenCalledTimes(1);
   expect(mocks.run.mock.calls[0][0].harness).toBe("antigravity");
 });
+
+it("passes saved account and effort to the text runner", async () => {
+  mocks.run.mockResolvedValue("Reply");
+  await socialAgentGenerator("host-social")(
+    {
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      providerAccountId: "work",
+      modelSettings: { reasoningEffort: "high" },
+    },
+    "Prompt",
+    new AbortController().signal,
+  );
+  expect(mocks.run).toHaveBeenCalledWith(
+    expect.objectContaining({
+      providerAccountId: "work",
+      modelSettings: { reasoningEffort: "high" },
+    }),
+  );
+});

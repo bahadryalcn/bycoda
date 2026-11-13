@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -51,7 +52,7 @@ export function SkillMachinesPanel({
   const sendable = canTransferSkill(shown.skill);
   const shownOn = shown.machine?.environmentId ?? "local";
   return (
-    <ul className={styles.machines} aria-label={t("Machines")}>
+    <ul {...surfaceAttributes({ dividers: "pane" }, styles.machines)} aria-label={t("Machines")}>
       {lists.map((list) => {
         const id = list.machine?.environmentId ?? "local";
         const name = list.machine?.name ?? t("This computer");

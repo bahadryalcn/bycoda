@@ -42,6 +42,10 @@ import {
 } from "../../settings/model/workspaceFeatures";
 import { WORKSPACE_FEATURE_CHOICES } from "../../settings/ui/WorkspaceFeatureSettings";
 /** The default palette, shown in the mode tiles before the user changes it in Settings. */
+const { className: CHOICE_FRAME_CLASS, ...CHOICE_FRAME_DATA } = surfaceAttributes({
+  frame: "card",
+  radius: "card",
+});
 const DEFAULT_TINT: Tint = {
   hue: THEME_HUE_DEFAULT,
   saturation: THEME_SATURATION_DEFAULT,
@@ -64,6 +68,7 @@ function SwitchRow({
 }) {
   return (
     <Switch
+      appearance="card"
       className="onboarding-row"
       label={label}
       labelPosition="start"
@@ -104,7 +109,10 @@ export function OnboardingWorkspace() {
       </div>
       <div className="onboarding-scroll">
         <div className="onboarding-feature-grid">
-          <div className="onboarding-feature" data-fixed="">
+          <div
+            {...surfaceAttributes({ frame: "card", radius: "card" }, "onboarding-feature")}
+            data-fixed=""
+          >
             <CodeBlock aria-hidden tone="muted" className="icon-lg" />
             <div>
               <Text as="strong" size="inherit" tone="inherit" weight="medium" leading="inherit">
@@ -122,6 +130,7 @@ export function OnboardingWorkspace() {
           {WORKSPACE_FEATURE_CHOICES.map(({ id, label, description, icon: Icon }) => (
             <Checkbox
               key={id}
+              appearance="card"
               className="onboarding-feature"
               checked={features[id]}
               onChange={(event) => workspaceFeatureSettings[id].save(event.target.checked)}
@@ -231,12 +240,14 @@ export function OnboardingAppearance() {
           <RadioTiles
             label={t("Appearance")}
             className="onboarding-mode-grid"
-            tileClassName="onboarding-choice onboarding-mode"
+            tileClassName={`${CHOICE_FRAME_CLASS} onboarding-choice onboarding-mode`}
+            tile={{ selectionIndicator: "accent-inset" }}
             value={theme}
             onChange={changeTheme}
             options={modes.map(({ value, label }) => ({
               value,
               id: `onboarding-appearance-${value}`,
+              data: CHOICE_FRAME_DATA,
               children: (
                 <>
                   <ModePreview
@@ -264,7 +275,8 @@ export function OnboardingAppearance() {
           <RadioTiles
             label={t("Agent crew")}
             className="onboarding-crew-grid"
-            tileClassName="onboarding-choice onboarding-crew-card"
+            tileClassName={`${CHOICE_FRAME_CLASS} onboarding-choice onboarding-crew-card`}
+            tile={{ selectionIndicator: "accent-inset" }}
             value={crew}
             onChange={(value) => {
               if (value === "none") saveCrewSceneEnabled(false);
@@ -276,13 +288,14 @@ export function OnboardingAppearance() {
             options={crewChoices.map(({ value, title, caption, detail }) => ({
               value,
               id: `onboarding-crew-${value}`,
+              data: CHOICE_FRAME_DATA,
               tooltip: detail,
               children: (
                 <>
                   {value === "none" ? (
                     <span
                       {...surfaceAttributes(
-                        { variant: "transparent" },
+                        { variant: "transparent", frame: "card", borderStyle: "dashed" },
                         "onboarding-crew-preview onboarding-crew-none",
                       )}
                       aria-hidden="true"

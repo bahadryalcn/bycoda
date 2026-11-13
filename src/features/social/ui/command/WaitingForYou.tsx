@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Heading } from "../../../../shared/ui/Heading";
-import { Surface } from "../../../../shared/ui/Surface";
+import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
 
 export type WaitingForYouProps = {
   approvalCount: number;
@@ -38,7 +38,9 @@ export function WaitingForYou({ approvalCount, humanCount = 0, children }: Waiti
             : t("{p0} actions wait for your approval.", { p0: approvalCount })}
         </p>
       ) : null}
-      <div className="command-frame-body">{children}</div>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "command-frame-body")}>
+        {children}
+      </div>
     </Surface>
   );
 }

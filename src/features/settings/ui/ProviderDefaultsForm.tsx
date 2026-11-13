@@ -1,5 +1,11 @@
+import {
+  CROSS_SUBAGENTS_KEY,
+  CROSS_ADVISOR_KEY,
+  CROSS_SUBAGENT_MAX_EFFORT_KEY,
+} from "../../../shared/model/host-contracts/delegation";
+import { IMAGE_MODELS_KEY } from "../../../shared/model/host-contracts/image-models";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { EffortScale } from "../../../shared/ui/EffortScale";
 import { RUNTIME_MODE_ICONS } from "../../sessions/public/runtimeModeOptions";
 import { WandSparkles } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
@@ -16,7 +22,11 @@ import {
 import { getAllRateLimits, subscribeRateLimits } from "../../providers/public/rateLimitsCache";
 import { HARNESSES } from "../../sessions";
 import { offeredDelegationSetting } from "../../sessions/public/claudeAdvisor";
-import { menuSettings, signedOutAccountKeys } from "../../sessions/public/modelPickerData";
+import {
+  ascendingEffortOptions,
+  menuSettings,
+  signedOutAccountKeys,
+} from "../../sessions/public/modelPickerData";
 import {
   defaultModelId,
   hasLiveCatalog,
@@ -59,7 +69,11 @@ export function ProviderDefaultsForm({
   accountId,
   scopeControl,
   picker,
+  section,
+  providerControl,
 }: {
+  section?: "chat" | "delegation";
+  providerControl?: ReactNode;
   harness: HarnessId;
   selectedModel: string;
   inheritedDefaults?: ProviderSessionDefaults;
@@ -160,22 +174,17 @@ export function ProviderDefaultsForm({
               },
             ]
           : []),
-        ...effort.options.map((option, index) => ({
+        ...ascendingEffortOptions(effort.options).map((option) => ({
           ...option,
           label: t(option.label),
-          icon: (
-            <Text size="caption" tone="accent">
-              {"▁▂▃▄▅▆▇█"[Math.round((index * 7) / Math.max(1, effort.options.length - 1))]}
-            </Text>
-          ),
         })),
       ]
     : [];
   return (
     <Group
-      id="agent-clis"
+      id={section === "delegation" ? "models-delegation" : "agent-clis"}
       layout="full"
-      title={t("New conversation defaults")}
+      title={section === "delegation" ? t("Subagents") : t("New conversation defaults")}
       description={
         inherits
           ? t(
@@ -184,146 +193,149 @@ export function ProviderDefaultsForm({
           : t("Applies to new conversations. Existing conversations keep their settings.")
       }
     >
+      {providerControl}
       {scopeControl}
-      {picker && available ? (
-        <Row label={picker.locked ? t("Hidden globally") : t("Show in picker")}>
-          <Toggle
-            label={t("Show {p0} in the project model picker", { p0: HARNESS_TITLE[harness] })}
-            on={picker.inPicker}
-            onChange={picker.onChange}
-            disabled={picker.locked}
-          />
-        </Row>
-      ) : null}
-      {current ? (
-        <Row
-          label={t("Model")}
-          description={
-            inherits
-              ? modelOverride
-                ? accountId
-                  ? t("Account override. Global: {p0}", {
-                      p0: modelDisplayName(harness, globalModel),
-                    })
-                  : t("Project override. Global: {p0}", {
-                      p0: modelDisplayName(harness, globalModel),
-                    })
-                : t("Follows the global model")
-              : undefined
-          }
-          modified={inherits && Boolean(modelOverride)}
-          onReset={onModelReset}
-          resetLabel={t("Use global model")}
-        >
-          <SearchableSelect
-            hideLabel
-            label={t("{p0} model", { p0: HARNESS_TITLE[harness] })}
-            triggerProps={{
-              onClick: (event) => {
-                if (event.currentTarget.getAttribute("aria-expanded") !== "true")
-                  refreshProviderCatalog(harness, { force: true }).catch(() => undefined);
-              },
-            }}
-            value={current.id}
-            onChange={onModelChange}
-            options={models.map((item) => ({
-              value: item.id,
-              label: item.name,
-              keywords: item.id,
-              icon: <ModelLabel model={item.id} harness={harness} iconOnly />,
-            }))}
-          />
-        </Row>
-      ) : (
-        <Row label={t("Model")}>
-          <Text size="caption" tone="muted">
-            {available ? t("Loading models…") : t("Available after CLI setup")}
-          </Text>
-        </Row>
-      )}
-      {effort ? (
-        <Row
-          label={t("Effort")}
-          modified={Boolean(scopeDefaults.effort)}
-          onReset={() => onSessionDefaultsChange({ ...scopeDefaults, effort: undefined })}
-          resetLabel={resetLabel}
-        >
-          <div className="provider-effort">
-            <div className="provider-effort-segments">
-              <SegmentedControl
-                label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
-                value={scopeDefaults.effort && validEffort ? scopeDefaults.effort : ""}
-                compact
-                options={effortOptions.map((option) => ({
-                  ...option,
-                  tooltip: option.label,
-                  iconOnly: true,
-                }))}
-                onValueChange={(next) =>
-                  onSessionDefaultsChange({ ...scopeDefaults, effort: next || undefined })
-                }
+      {section !== "delegation" ? (
+        <>
+          {picker && available ? (
+            <Row label={picker.locked ? t("Hidden globally") : t("Show in picker")}>
+              <Toggle
+                label={t("Show {p0} in the project model picker", { p0: HARNESS_TITLE[harness] })}
+                on={picker.inPicker}
+                onChange={picker.onChange}
+                disabled={picker.locked}
               />
-            </div>
-            <Text size="caption" tone="muted" className="provider-effort-selected">
-              {effortOptions.find((option) => option.value === (scopeDefaults.effort ?? ""))?.label}
-            </Text>
-          </div>
-        </Row>
-      ) : null}
-      <Row
-        label={t("Permissions")}
-        modified={Boolean(scopeDefaults.runtimeMode)}
-        onReset={() => onSessionDefaultsChange({ ...scopeDefaults, runtimeMode: undefined })}
-        resetLabel={resetLabel}
-      >
-        <Select
-          hideLabel
-          label={t("{p0} default permissions", { p0: HARNESS_TITLE[harness] })}
-          value={scopeDefaults.runtimeMode ?? ""}
-          options={[
-            {
-              value: "",
-              label: inheritedChoiceLabel(
-                inheritedRuntimeMode ? t(RUNTIME_MODE_LABEL[inheritedRuntimeMode]) : undefined,
-                validInheritedRuntimeMode,
-              ),
-              icon: <WandSparkles className="icon-sm" />,
-            },
-            ...(scopeDefaults.runtimeMode &&
-            runtimeModeUnavailableReason(harness, scopeDefaults.runtimeMode)
-              ? [
-                  {
-                    value: scopeDefaults.runtimeMode,
-                    label: `${t(RUNTIME_MODE_LABEL[scopeDefaults.runtimeMode])} (${t("Unavailable")})`,
+            </Row>
+          ) : null}
+          {current ? (
+            <Row
+              label={t("Model")}
+              description={
+                inherits
+                  ? modelOverride
+                    ? accountId
+                      ? t("Account override. Global: {p0}", {
+                          p0: modelDisplayName(harness, globalModel),
+                        })
+                      : t("Project override. Global: {p0}", {
+                          p0: modelDisplayName(harness, globalModel),
+                        })
+                    : t("Follows the global model")
+                  : undefined
+              }
+              modified={inherits && Boolean(modelOverride)}
+              onReset={onModelReset}
+              resetLabel={t("Use global model")}
+            >
+              <SearchableSelect
+                hideLabel
+                label={t("{p0} model", { p0: HARNESS_TITLE[harness] })}
+                triggerProps={{
+                  onClick: (event) => {
+                    if (event.currentTarget.getAttribute("aria-expanded") !== "true")
+                      refreshProviderCatalog(harness, { force: true }).catch(() => undefined);
                   },
-                ]
-              : []),
-            ...RUNTIME_MODES.filter((mode) => !runtimeModeUnavailableReason(harness, mode)).map(
-              (mode) => {
-                const Icon = RUNTIME_MODE_ICONS[mode];
-                return {
-                  value: mode,
-                  label: t(RUNTIME_MODE_LABEL[mode]),
-                  icon: (
-                    <Icon
-                      className="icon-sm"
-                      tone={mode === "full-access" ? "warning" : "secondary"}
-                    />
+                }}
+                value={current.id}
+                onChange={onModelChange}
+                options={models.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                  keywords: item.id,
+                  icon: <ModelLabel model={item.id} harness={harness} iconOnly />,
+                }))}
+              />
+            </Row>
+          ) : (
+            <Row label={t("Model")}>
+              <Text size="caption" tone="muted">
+                {available ? t("Loading models…") : t("Available after CLI setup")}
+              </Text>
+            </Row>
+          )}
+          {effort ? (
+            <Row
+              label={t("Effort")}
+              modified={Boolean(scopeDefaults.effort)}
+              onReset={() => onSessionDefaultsChange({ ...scopeDefaults, effort: undefined })}
+              resetLabel={resetLabel}
+            >
+              <div className="provider-effort">
+                <EffortScale
+                  label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
+                  value={scopeDefaults.effort ?? ""}
+                  options={effortOptions}
+                  onValueChange={(next) =>
+                    onSessionDefaultsChange({ ...scopeDefaults, effort: next || undefined })
+                  }
+                />
+              </div>
+            </Row>
+          ) : null}
+          <Row
+            label={t("Permissions")}
+            modified={Boolean(scopeDefaults.runtimeMode)}
+            onReset={() => onSessionDefaultsChange({ ...scopeDefaults, runtimeMode: undefined })}
+            resetLabel={resetLabel}
+          >
+            <Select
+              hideLabel
+              label={t("{p0} default permissions", { p0: HARNESS_TITLE[harness] })}
+              value={scopeDefaults.runtimeMode ?? ""}
+              options={[
+                {
+                  value: "",
+                  label: inheritedChoiceLabel(
+                    inheritedRuntimeMode ? t(RUNTIME_MODE_LABEL[inheritedRuntimeMode]) : undefined,
+                    validInheritedRuntimeMode,
                   ),
-                };
-              },
-            ),
-          ]}
-          onChange={(next) =>
-            onSessionDefaultsChange({
-              ...scopeDefaults,
-              runtimeMode: (next || undefined) as RuntimeMode | undefined,
-            })
-          }
-        />
-      </Row>
+                  icon: <WandSparkles className="icon-sm" />,
+                },
+                ...(scopeDefaults.runtimeMode &&
+                runtimeModeUnavailableReason(harness, scopeDefaults.runtimeMode)
+                  ? [
+                      {
+                        value: scopeDefaults.runtimeMode,
+                        label: `${t(RUNTIME_MODE_LABEL[scopeDefaults.runtimeMode])} (${t("Unavailable")})`,
+                      },
+                    ]
+                  : []),
+                ...RUNTIME_MODES.filter((mode) => !runtimeModeUnavailableReason(harness, mode)).map(
+                  (mode) => {
+                    const Icon = RUNTIME_MODE_ICONS[mode];
+                    return {
+                      value: mode,
+                      label: t(RUNTIME_MODE_LABEL[mode]),
+                      icon: (
+                        <Icon
+                          className="icon-sm"
+                          tone={mode === "full-access" ? "warning" : "secondary"}
+                        />
+                      ),
+                    };
+                  },
+                ),
+              ]}
+              onChange={(next) =>
+                onSessionDefaultsChange({
+                  ...scopeDefaults,
+                  runtimeMode: (next || undefined) as RuntimeMode | undefined,
+                })
+              }
+            />
+          </Row>
+        </>
+      ) : null}
       <ProviderDefaultExtras
-        extras={extras}
+        extras={extras.filter((setting) => {
+          const delegation = [
+            CROSS_SUBAGENTS_KEY,
+            CROSS_ADVISOR_KEY,
+            CROSS_SUBAGENT_MAX_EFFORT_KEY,
+            IMAGE_MODELS_KEY,
+          ].includes(setting.id);
+          return !section || (section === "delegation" ? delegation : !delegation);
+        })}
         harness={harness}
         inheritedDefaults={inheritedDefaults}
         scopeDefaults={scopeDefaults}

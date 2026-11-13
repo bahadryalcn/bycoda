@@ -198,14 +198,10 @@ function ImageView({
           clearTimeout(clickTimer.current);
           imageZoom.bindings.onDoubleClick(event);
         }}
-        className="grid min-h-0 flex-1 place-items-center overflow-clip overscroll-contain p-4"
-        style={{
-          // A checkerboard so transparent PNGs read as transparent rather than
-          // as whatever the theme background happens to be.
-          backgroundImage: "var(--ui-transparency-grid-image)",
-          backgroundSize: "16px 16px",
-          backgroundPosition: "0 0, 8px 8px",
-        }}
+        {...surfaceAttributes(
+          { variant: "transparency-grid" },
+          "grid min-h-0 flex-1 place-items-center overflow-clip overscroll-contain p-4",
+        )}
       >
         <img
           ref={imageRef}

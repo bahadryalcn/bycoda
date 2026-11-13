@@ -2,6 +2,79 @@ import { test, expect } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
 for (const theme of ["dark", "light"]) {
+  for (const width of [390, 800, 1280]) {
+    test(`skill grouping toolbar ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=skills&skills=1&theme=${theme}&lang=en`,
+      );
+      const grouping = page.getByRole("button", { name: "Group with AI", exact: true });
+      const create = page.getByRole("button", { name: "New group", exact: true });
+      const settings = page.getByRole("button", { name: "Manage in Models", exact: true });
+      await expect(grouping).toBeVisible();
+      await expect(settings).toBeVisible();
+      await expect(page.getByText(/Model set in Settings/)).toHaveCount(0);
+      const boxes = await Promise.all(
+        [create, grouping, settings].map((button) => button.boundingBox()),
+      );
+      expect(new Set(boxes.map((box) => Math.round(box!.y))).size).toBe(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      mkdirSync("temp/verification/2026-11-13-skill-grouping", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/2026-11-13-skill-grouping/toolbar-${theme}-${width}.png`,
+      });
+      // This SettingsView fixture has no workspace navigation owner. Verify its
+      // public navigation request without pretending to exercise the app shell.
+      await page.evaluate(() => {
+        window.addEventListener(
+          "bycoda:open-models-settings",
+          (event) => {
+            document.documentElement.dataset.requestedModelsTab = (
+              event as CustomEvent<string>
+            ).detail;
+          },
+          { once: true },
+        );
+      });
+      await settings.click();
+      await expect(page.locator("html")).toHaveAttribute("data-requested-models-tab", "roles");
+    });
+  }
+}
+
+for (const theme of ["dark", "light"]) {
+  for (const width of [800, 1280]) {
+    test(`skill folder search reveal ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=general&skills=1&theme=${theme}&lang=en`,
+      );
+      const reveal = async () => {
+        await page.getByRole("button", { name: "Search settings", exact: true }).click();
+        await page
+          .getByRole("combobox", { name: "Search settings", exact: true })
+          .fill("Skill folders");
+        await page.getByRole("option").first().click();
+      };
+      await reveal();
+      const folders = page.locator('[role="dialog"] [data-setting-id="skill-folders"]');
+      await expect(folders).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/component-families/skill-search-${theme}-${width}.png`,
+      });
+      await page.keyboard.press("Escape");
+      await expect(folders).toHaveCount(0);
+      await reveal();
+      await expect(folders).toBeVisible();
+    });
+  }
+}
+
+for (const theme of ["dark", "light"]) {
   for (const width of [390, 768, 1024, 1440]) {
     test(`skills workspace ${theme} ${width}`, async ({ page }) => {
       const errors: string[] = [];
@@ -127,3 +200,55 @@ for (const theme of ["dark", "light"]) {
     });
   }
 }
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`shared collection presentation ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 860 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const dir = "temp/verification/component-inventory-skills";
+      mkdirSync(dir, { recursive: true });
+      for (const section of ["terminal", "notifications"]) {
+        await page.goto(
+          `/tests/browser/settings/settings.html?section=${section}&${section}=1&theme=${theme}`,
+        );
+        const collection = page.locator(".settings-collection").first();
+        await expect(collection).toHaveAttribute("data-surface-variant", "card");
+        const row = collection.locator("[data-action-host]").first();
+        await expect(row).toBeVisible();
+        await row.scrollIntoViewIfNeeded();
+        await row.hover();
+        expect(await row.evaluate((el) => getComputedStyle(el).backgroundImage)).toContain(
+          "linear-gradient",
+        );
+        const button = row.getByRole("button").first();
+        await button.focus();
+        await expect(button).toBeFocused();
+        await page.screenshot({ path: `${dir}/${section}-${theme}-${width}.png` });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+      }
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=skills&skills=1&machines=1&theme=${theme}`,
+      );
+      const skill = page.getByRole("button", { name: "remote-notes", exact: true });
+      const row = skill.locator("xpath=ancestor::*[@data-action-host][1]");
+      await expect(row).toHaveCount(1);
+      await skill.focus();
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      await expect(skill).toBeFocused();
+      expect(await skill.evaluate((el) => getComputedStyle(el).outlineWidth)).not.toBe("0px");
+      const action = row.getByRole("button", { name: "Actions for remote-notes", exact: true });
+      await expect(action).toHaveCSS("opacity", "1");
+      await row.hover();
+      await page.screenshot({ path: `${dir}/skill-row-${theme}-${width}.png` });
+      await skill.click();
+      // At 800px the preview replaces the visible library; its retained row remains selected.
+      await expect(
+        page.locator('[data-action-host][data-selected="true"]').filter({
+          has: page.locator('button[aria-label="remote-notes"]'),
+        }),
+      ).toHaveCount(1);
+    });
+  }

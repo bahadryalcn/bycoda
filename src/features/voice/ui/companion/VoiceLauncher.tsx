@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useEffect, type ReactNode, type Ref } from "react";
 import { IS_MAC } from "../../../../platform/tauri/platform";
 import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
@@ -118,7 +119,13 @@ export function VoiceLauncher({
         leading="none"
       />
       {tone && (
-        <StatusDot className={styles.launcherDot} tone={tone} size="fixed" appearance="solid" />
+        <StatusDot
+          className={styles.launcherDot}
+          tone={tone}
+          size="fixed"
+          appearance="solid"
+          halo="floating"
+        />
       )}
     </span>
   ) : (
@@ -131,7 +138,9 @@ export function VoiceLauncher({
         shape="pill"
         variant={slot ? "ghost" : "secondary"}
         iconOnly={compact}
-        className={styles.launcherButton}
+        {...(slot
+          ? { className: styles.launcherButton }
+          : surfaceAttributes({ variant: "floating", frame: "neutral" }, styles.launcherButton))}
         data-docked={slot ? "" : undefined}
         label={label}
         tooltip={compact ? label : name ? t("Voice assistant") : undefined}

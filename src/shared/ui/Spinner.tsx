@@ -2,10 +2,11 @@ import type { ComponentPropsWithoutRef } from "react";
 import styles from "./Spinner.module.css";
 import { optionalTextAttributes, type TextTone } from "./Text";
 
-export type SpinnerSize = "xs" | "sm" | "md";
+export type SpinnerSize = "micro" | "xs" | "sm" | "md";
 
 export type SpinnerProps = Omit<ComponentPropsWithoutRef<"span">, "children"> & {
-  /** `sm` (default) matches `icon-sm` (14px), `xs` `icon-xs` (12px), `md` `icon-md` (16px). */
+  /** `sm` (default) matches `icon-sm` (14px), `xs` `icon-xs` (12px), `md` `icon-md` (16px).
+   * `micro` keeps dense inline provider-status slots at 10px. */
   size?: SpinnerSize;
   /** Accessible name. Omit when the initiating control already announces progress (aria-busy). */
   label?: string;

@@ -29,12 +29,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   overflow: hidden;
-}
-.task-ops-frame > * + * {
-  border-block-start: 1px solid var(--ui-card-border);
 }
 .task-ops-setting,
 .task-ops-row {

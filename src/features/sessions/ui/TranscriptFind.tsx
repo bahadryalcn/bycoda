@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { Portal } from "../../../shared/ui/Portal";
@@ -201,7 +202,10 @@ export const TranscriptFind = memo(function TranscriptFind({
         <div
           role="search"
           aria-label={t("Find in conversation")}
-          className="pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-floating) p-1 shadow-(--ui-elevation-floating)"
+          {...surfaceAttributes(
+            { variant: "floating", frame: "neutral", radius: "card", elevation: "floating" },
+            "pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 p-1",
+          )}
         >
           <PopoverSearchHeader
             ref={input}
@@ -217,6 +221,7 @@ export const TranscriptFind = memo(function TranscriptFind({
             }}
             onSubmit={(event) => step("shiftKey" in event && event.shiftKey ? -1 : 1)}
             className="w-44"
+            headerClassName="min-w-0 flex-1"
             trailing={
               <>
                 <Text

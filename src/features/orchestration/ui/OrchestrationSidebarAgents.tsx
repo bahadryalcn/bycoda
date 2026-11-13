@@ -123,7 +123,7 @@ export function OrchestrationSidebarAgents({
               key={task.sessionId}
               data-orchestration-agent={task.sessionId}
               // Expanding lights the whole row, header and detail together.
-              {...surfaceAttributes({ radius: "row" }, `${open ? "bg-selection" : ""}`)}
+              {...surfaceAttributes({ radius: "row", variant: open ? "selection" : "transparent" })}
             >
               <Button
                 variant="item"
@@ -189,7 +189,7 @@ export function OrchestrationSidebarAgents({
               </Button>
               {/* Indented to the title's column: the icon slot and its gap. */}
               {open && (
-                <div className="space-y-2 pb-3 pl-6.5 pr-2">
+                <div className="space-y-2 pb-3 [padding-inline-start:calc(1rem+0.625rem)] pr-2">
                   <Tooltip label={`${model} · ${HARNESS_TITLE[task.harness]}`} asChild>
                     <Text
                       as="p"

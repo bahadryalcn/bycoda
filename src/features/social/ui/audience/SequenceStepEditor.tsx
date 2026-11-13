@@ -2,13 +2,17 @@ import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
+import { Plus } from "../../../../shared/ui/icons";
 import { NumberField } from "../../../../shared/ui/NumberField";
+import { Select } from "../../../../shared/ui/Select";
 import { Switch } from "../../../../shared/ui/Switch";
 import { TextField } from "../../../../shared/ui/TextField";
 import { TextareaField } from "../../../../shared/ui/TextareaField";
 import type { EmailAccount, OutreachChannel } from "../../model/outreach";
+import { ChannelIcon } from "./ChannelIcon";
 import { LabeledSelect } from "./LabeledSelect";
 import { channelLabel } from "./audienceModel";
+import { useTouched } from "./formFooter";
 
 export const OUTREACH_CHANNELS: readonly OutreachChannel[] = [
   "dm",
@@ -51,7 +55,10 @@ export type SequenceStepEditorProps = {
   onRemove: () => void;
 };
 
-/** One step: channel, wait, message text, optional variants and personalisation. */
+/**
+ * One numbered step: channel and wait first, then the message, its variants and personalisation.
+ * Everything a step needs lives in this group, so steps read top to bottom as the order they send.
+ */
 export function SequenceStepEditor({
   index,
   step,
@@ -60,23 +67,39 @@ export function SequenceStepEditor({
   onChange,
   onRemove,
 }: SequenceStepEditorProps) {
+  const { touched, touch } = useTouched();
   const isEmail = step.channel === "email";
   const selectedEmail = emailAccounts.find((account) => account.id === step.accountId);
+  const delay = step.delayHours.trim() === "" ? Number.NaN : Number(step.delayHours);
   return (
     <FieldGroup legend={t("Step {p0}", { p0: index + 1 })} variant="card">
       <div className="audience-stack">
-        <LabeledSelect
-          label={t("Channel")}
-          value={step.channel}
-          disabled={disabled}
-          options={OUTREACH_CHANNELS.map((channel) => ({
-            value: channel,
-            label: channelLabel(channel),
-          }))}
-          onChange={(value) =>
-            onChange({ ...step, channel: value as OutreachChannel, accountId: "" })
-          }
-        />
+        <div className="audience-pair">
+          <Select
+            label={t("Channel")}
+            value={step.channel}
+            disabled={disabled}
+            options={OUTREACH_CHANNELS.map((channel) => ({
+              value: channel,
+              label: channelLabel(channel),
+              icon: <ChannelIcon channel={channel} />,
+            }))}
+            onValueChange={(value) =>
+              onChange({ ...step, channel: value as OutreachChannel, accountId: "" })
+            }
+          />
+          <NumberField
+            label={t("Wait before this step (hours)")}
+            min={0}
+            max={24 * 90}
+            value={step.delayHours}
+            disabled={disabled}
+            error={
+              Number.isNaN(delay) || delay < 0 ? t("Enter a wait of 0 hours or more.") : undefined
+            }
+            onChange={(event) => onChange({ ...step, delayHours: event.target.value })}
+          />
+        </div>
         {isEmail ? (
           <LabeledSelect
             label={t("Send from")}
@@ -92,20 +115,14 @@ export function SequenceStepEditor({
             onChange={(accountId) => onChange({ ...step, accountId })}
           />
         ) : null}
-        <NumberField
-          label={t("Wait before this step (hours)")}
-          min={0}
-          max={24 * 90}
-          value={step.delayHours}
-          disabled={disabled}
-          onChange={(event) => onChange({ ...step, delayHours: event.target.value })}
-        />
         <TextareaField
           label={t("Message")}
           value={step.template}
           minRows={3}
           maxRows={8}
           disabled={disabled}
+          error={touched("message") && !step.template.trim() ? t("Write the message.") : undefined}
+          onBlur={() => touch("message")}
           onChange={(event) => onChange({ ...step, template: event.target.value })}
         />
         {step.variants.map((variant, position) => (
@@ -138,30 +155,6 @@ export function SequenceStepEditor({
             </Button>
           </div>
         ))}
-        <div className="audience-row">
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={disabled || step.variants.length >= 4}
-            onClick={() =>
-              onChange({
-                ...step,
-                variants: [
-                  ...step.variants,
-                  { id: `${step.id}-v${step.variants.length + 1}-${Date.now()}`, text: "" },
-                ],
-              })
-            }
-          >
-            {t("Add variant")}
-          </Button>
-          <Switch
-            label={t("Personalise each message")}
-            checked={step.personalize}
-            disabled={disabled}
-            onCheckedChange={(personalize) => onChange({ ...step, personalize })}
-          />
-        </div>
         {isEmail && selectedEmail && !selectedEmail.unsubscribeUrl ? (
           <Text
             as="p"
@@ -173,8 +166,33 @@ export function SequenceStepEditor({
             {t("Email steps need an unsubscribe link. Add one to this email account first.")}
           </Text>
         ) : null}
-        <div>
-          <Button variant="ghost" size="sm" disabled={disabled} onClick={onRemove}>
+        <div className="audience-row audience-between">
+          <span className="audience-row">
+            <Button
+              variant="ghost"
+              size="sm"
+              startIcon={<Plus className="icon-sm" aria-hidden="true" />}
+              disabled={disabled || step.variants.length >= 4}
+              onClick={() =>
+                onChange({
+                  ...step,
+                  variants: [
+                    ...step.variants,
+                    { id: `${step.id}-v${step.variants.length + 1}-${Date.now()}`, text: "" },
+                  ],
+                })
+              }
+            >
+              {t("Add variant")}
+            </Button>
+            <Switch
+              label={t("Personalise each message")}
+              checked={step.personalize}
+              disabled={disabled}
+              onCheckedChange={(personalize) => onChange({ ...step, personalize })}
+            />
+          </span>
+          <Button variant="ghost" size="sm" tone="danger" disabled={disabled} onClick={onRemove}>
             {t("Remove step")}
           </Button>
         </div>

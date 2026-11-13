@@ -1,6 +1,7 @@
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
+import { motionAttributes } from "../../../shared/ui/Motion";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
@@ -39,7 +40,11 @@ export function NotificationRequestCard({
   return (
     <ActionHost
       as="article"
-      className="approval-toast notification-request pointer-events-auto flex-col items-stretch gap-0 overflow-clip"
+      variant={onDismiss ? "floating" : "row"}
+      {...motionAttributes(
+        { enter: onDismiss ? "down" : undefined, transition: "colors", duration: "standard" },
+        "approval-toast notification-request pointer-events-auto flex-col items-stretch gap-0 overflow-clip",
+      )}
       role="status"
     >
       <Button
@@ -60,7 +65,7 @@ export function NotificationRequestCard({
           tone="neutral"
           weight="medium"
           leading="snug"
-          className={`notification-request-title ${onDismiss ? "pe-7" : ""}`}
+          className={`notification-request-title ${onDismiss ? "pe-[calc(1.5rem+0.25rem)]" : ""}`}
         >
           {title}
         </ClampText>
@@ -70,6 +75,7 @@ export function NotificationRequestCard({
           expandable={false}
           size="caption"
           tone="secondary"
+          weight="regular"
           leading="relaxed"
           className="notification-request-preview"
         >

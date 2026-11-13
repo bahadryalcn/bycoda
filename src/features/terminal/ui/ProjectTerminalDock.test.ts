@@ -255,6 +255,17 @@ it("splits the targeted row and keeps both canvases visible while changing focus
     );
     expect(host.querySelectorAll('[role="tabpanel"][aria-hidden="false"]')).toHaveLength(2);
     expect(host.querySelectorAll("button button")).toHaveLength(0);
+    const panels = host.querySelectorAll<HTMLElement>(".terminal-split-pane");
+    expect(
+      host
+        .querySelector<HTMLElement>(".terminal-canvas")!
+        .style.getPropertyValue("--layout-terminal-columns"),
+    ).toBe("2");
+    expect(panels[0]!.style.getPropertyValue("--layout-terminal-column")).toBe("1");
+    expect(panels[0]!.hasAttribute("data-surface-frame")).toBe(false);
+    expect(panels[1]!.style.getPropertyValue("--layout-terminal-column")).toBe("2");
+    expect(panels[1]!.getAttribute("data-surface-frame")).toBe("terminal");
+    expect(panels[1]!.getAttribute("data-surface-edge")).toBe("inline-start");
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[aria-label="Split — Terminal 1"]')!.click(),
     );

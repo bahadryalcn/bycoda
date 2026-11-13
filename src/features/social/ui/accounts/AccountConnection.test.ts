@@ -65,6 +65,18 @@ function fakeClient(patch: Record<string, unknown> = {}) {
   };
 }
 
+it("requests the owner's chosen OAuth operations instead of always requesting publishing", async () => {
+  const client = fakeClient();
+  render(client, { capabilities: [expiredPublish, { ...expiredPublish, operation: "reply" }] });
+  const reply = [...element.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
+    (input) => input.closest("label")?.textContent?.includes("Replies"),
+  );
+  expect(reply).toBeTruthy();
+  await act(async () => reply!.click());
+  await act(async () => button("Connect in browser")!.click());
+  expect(client.oauthBegin).toHaveBeenCalledWith("a1", undefined, ["publish", "reply"]);
+});
+
 function render(
   client: ReturnType<typeof fakeClient>,
   props: {
@@ -155,7 +167,7 @@ it("keeps an organization account from starting until the numeric organization I
   render(client, { account: account({ platform: "linkedin", accountType: "organization" }) });
   const start = () => button("Connect in browser");
   expect(start()?.disabled).toBe(true);
-  const field = element.querySelector<HTMLInputElement>("input");
+  const field = element.querySelector<HTMLInputElement>('input:not([type="checkbox"])');
   typeInto(field, "12ab");
   expect(start()?.disabled).toBe(true);
   typeInto(field, "123456");
@@ -172,7 +184,7 @@ it("starts the browser sign-in from the row, the owner finishes it there, and a 
       { ...expiredPublish, reasonCode: "browser.reconnect", source: "browser" } as Capability,
     ],
   });
-  await act(async () => button("Connect")?.click());
+  await act(async () => button("Sign in again in the browser")?.click());
   expect(client.browserBegin).toHaveBeenCalledWith("a1", undefined);
   expect(element.textContent).toContain("Waiting for you");
   expect(button("Sign in again in the browser")).toBeTruthy();
@@ -181,7 +193,7 @@ it("starts the browser sign-in from the row, the owner finishes it there, and a 
   expect(element.textContent).toContain("Connected");
   // The Host owns the verified state; starting or checking the sign-in never writes a grant.
   expect(client.request).not.toHaveBeenCalled();
-  expect(onChanged).not.toHaveBeenCalled();
+  expect(onChanged).toHaveBeenCalledTimes(1);
 });
 
 it("labels the first browser sign-in differently from signing in again", () => {
@@ -258,6 +270,65 @@ it("starts nothing while the Host is offline", () => {
 });
 
 it("says on which computer the account is connected", () => {
-  render(fakeClient(), { onThisComputer: false });
+  render(fakeClient(), { account: account({ connected: true }), onThisComputer: false });
   expect(element.textContent).toContain("This account is connected on another computer.");
+});
+
+it("shows OAuth waiting feedback and refreshes only after a verified connection", async () => {
+  const client = fakeClient({
+    oauthStatus: vi.fn(async () => ({ status: "connected", candidates: [] })),
+  });
+  const onChanged = render(client);
+  await act(async () => button("Connect in browser")?.click());
+  expect(element.textContent).toContain("Waiting for you");
+  expect(onChanged).not.toHaveBeenCalled();
+  await act(async () => button("Check connection")?.click());
+  expect(onChanged).toHaveBeenCalledTimes(1);
+});
+
+it("does not claim a disconnected account is connected on another computer", () => {
+  render(fakeClient(), { onThisComputer: false });
+  expect(element.textContent).not.toContain("This account is connected on another computer.");
+  expect(element.textContent).toContain("Connection needed");
+});
+
+it("offers one connection flow and no capability-row shortcut around organization validation", async () => {
+  const client = fakeClient();
+  render(client, {
+    account: account({ platform: "linkedin", accountType: "organization" }),
+    capabilities: [expiredPublish],
+  });
+  expect(button("Connect")).toBeUndefined();
+  expect(button("Connect in browser")?.disabled).toBe(true);
+  expect(client.oauthBegin).not.toHaveBeenCalled();
+});
+
+it("keeps capability details in compact status groups without hiding the connection action", () => {
+  render(fakeClient(), {
+    capabilities: [
+      expiredPublish,
+      { ...expiredPublish, operation: "reply", status: "available", reasonCode: "api.ready" },
+      {
+        ...expiredPublish,
+        operation: "analytics",
+        status: "unsupported",
+        reasonCode: "unsupported.not_yet",
+      },
+    ],
+  });
+  const groups = [...element.querySelectorAll("details")].filter(
+    (group) => group.querySelector("summary")?.textContent !== "Permissions",
+  );
+  expect(groups).toHaveLength(3);
+  expect(groups.map((group) => group.querySelector("summary")?.textContent)).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining("Available"),
+      expect.stringContaining("Connection needed"),
+      expect.stringContaining("Unavailable"),
+    ]),
+  );
+  expect(groups.every((group) => !group.open)).toBe(true);
+  expect(element.textContent).toContain("Publishing");
+  expect(element.textContent).toContain("Analytics");
+  expect(button("Connect in browser")?.disabled).toBe(false);
 });

@@ -529,3 +529,21 @@ it("preserves the captured authenticated caller guard inside canonical automatio
   expect((await f.rpc(f.input())).job!.status).toBe("waiting");
   expect(await f.automations.list()).toEqual([]);
 });
+
+it("persists a default routing choice for a model-free quick automation without starting a run", async () => {
+  const f = await fixture();
+  const result = await f.rpc({
+    ...f.input("model-routing-default"),
+    quickAction: { ...f.action, model: "", runtimeMode: "auto" },
+  });
+  expect(result.job?.status).toBe("done");
+  const created = (await f.automations.list())[0];
+  expect(created).toMatchObject({
+    modelChoice: { kind: "default" },
+    model: "unrelated-profile-model",
+    runtimeMode: "auto",
+    maxRunMinutes: f.action.maxRunMinutes,
+  });
+  expect(await f.automations.runs(created.id)).toEqual([]);
+  expect(f.engine.command).not.toHaveBeenCalled();
+});

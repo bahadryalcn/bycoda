@@ -13,6 +13,7 @@ import type { ImportResult } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
 import { DisabledReason } from "../common/DisabledReason";
 import { LabeledSelect } from "./LabeledSelect";
+import { PlatformIcon } from "../common/PlatformIcon";
 import { errorMessage } from "./audienceModel";
 import {
   IMPORT_FIELDS,
@@ -232,6 +233,7 @@ export function ImportDialog({ client, accounts, lists, onClose, onImported }: I
                 { value: "", label: t("Choose an account") },
                 ...accounts.map((account) => ({
                   value: account.id,
+                  icon: <PlatformIcon platform={account.platform} />,
                   label: `${SOCIAL_PLATFORM_NAMES[account.platform]} · ${account.name}`,
                 })),
               ]}

@@ -729,7 +729,9 @@ describe("UsageProviderChip", () => {
     const mascot = document.querySelector('[data-reset-mascot-mood="happy"]');
     expect(mascot?.getAttribute("data-mascot-name")).toBe("link");
     act(() => saveTabGroupCustomColor(projectKey(project), "#123456"));
-    expect((mascot as HTMLElement).style.color).toBe("#123456");
+    const mascotSvg = mascot?.querySelector("svg");
+    expect(mascotSvg).toBeInstanceOf(SVGElement);
+    expect(mascotSvg!.style.color).toBe("#123456");
   });
 
   it("hides the banked resets card when no resets are available", async () => {

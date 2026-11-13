@@ -184,6 +184,44 @@ it("closes on confirmation and settles an uncertain background removal from Host
   ).toHaveLength(1);
 });
 
+it("deletes before a slow preview finishes and reuses that preview in the background", async () => {
+  let finishPlan!: (plan: ReturnType<typeof cleanupPlan>) => void;
+  const calls: string[] = [];
+  vi.mocked(workspaceRequest).mockImplementation(async (method) => {
+    calls.push(method);
+    if (method === "workspaces.get") return workspace as never;
+    if (method === "workspaces.cleanup.plan")
+      return new Promise((resolve) => {
+        finishPlan = resolve;
+      }) as never;
+    if (method === "workspaces.cleanup.apply") return {} as never;
+    if (method === "workspaces.cleanup.status")
+      return { workspace: { ...workspace, directoryState: "removed" }, operations: [] } as never;
+    throw new Error(method);
+  });
+  const close = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(WorkspaceDirectoryRemoval, {
+        workspace,
+        context: { cwd: "/repo" },
+        onClose: close,
+      }),
+    ),
+  );
+  // The owner is not held behind the Host's directory scan.
+  expect(button("Delete directory").disabled).toBe(false);
+  await act(async () => button("Delete directory").click());
+  expect(close).toHaveBeenCalledOnce();
+  await act(async () => finishPlan(cleanupPlan()));
+  expect(calls).toEqual([
+    "workspaces.get",
+    "workspaces.cleanup.plan",
+    "workspaces.cleanup.apply",
+    "workspaces.cleanup.status",
+  ]);
+});
+
 it("closes a stale active record before retiring its missing folder", async () => {
   const calls: string[] = [];
   vi.mocked(workspaceRequest).mockImplementation(async (method) => {

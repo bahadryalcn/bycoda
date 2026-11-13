@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { FilePickerError } from "./FilePickerError";
@@ -315,7 +316,10 @@ export function FilePicker({
             as="div"
             size="inherit"
             tone="secondary"
-            className="flex items-center gap-2 border-b border-stroke py-2.5 px-2"
+            {...surfaceAttributes(
+              { frame: "stroke", edge: "bottom" },
+              "flex items-center gap-2 py-2.5 px-2",
+            )}
           >
             <Search className="icon-sm shrink-0" strokeWidth={1.75} />
             <SearchInput

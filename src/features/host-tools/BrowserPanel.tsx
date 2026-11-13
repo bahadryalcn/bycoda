@@ -820,7 +820,12 @@ function ProjectBrowserPanel({
         {t("Shared host browser")}
         {hostLabel ? ` · ${hostLabel}` : ""}
       </Heading>
-      <div className="host-browser-bar">
+      <div
+        {...surfaceAttributes(
+          { variant: "workspace-panel", frame: "pane", edge: "block-end" },
+          "host-browser-bar",
+        )}
+      >
         <form
           className="host-browser-toolbar"
           aria-label={t("Open a website")}
@@ -1055,7 +1060,7 @@ function ProjectBrowserPanel({
         </Text>
       ) : null}
       <div className="host-browser-workspace" data-has-selection={Boolean(selection)}>
-        <div className="host-browser-stage">
+        <div {...surfaceAttributes({ radius: "none" }, "host-browser-stage")}>
           {selecting ? (
             <Text
               size="micro"
@@ -1097,9 +1102,10 @@ function ProjectBrowserPanel({
                   ref={previewImage}
                   src={frame.src}
                   alt={t("Shared host browser screenshot; click to interact when controlling")}
-                  className={
-                    canInput ? "host-browser-frame host-frame-interactive" : "host-browser-frame"
-                  }
+                  {...surfaceAttributes(
+                    { focusRing: "preview-inset" },
+                    canInput ? "host-browser-frame host-frame-interactive" : "host-browser-frame",
+                  )}
                   style={canPageInput && cursor ? { cursor } : undefined}
                   draggable={false}
                   tabIndex={canInput ? 0 : -1}
@@ -1358,12 +1364,14 @@ function ProjectBrowserPanel({
                           className="host-browser-box-model"
                           data-part={part}
                           aria-hidden
-                          style={{
-                            insetInlineStart: `${(bounds.x / frame.width) * 100}%`,
-                            insetBlockStart: `${(bounds.y / frame.height) * 100}%`,
-                            inlineSize: `${(bounds.width / frame.width) * 100}%`,
-                            blockSize: `${(bounds.height / frame.height) * 100}%`,
-                          }}
+                          style={
+                            {
+                              "--inspector-inline-start": `${(bounds.x / frame.width) * 100}%`,
+                              "--inspector-block-start": `${(bounds.y / frame.height) * 100}%`,
+                              "--inspector-inline-size": `${(bounds.width / frame.width) * 100}%`,
+                              "--inspector-block-size": `${(bounds.height / frame.height) * 100}%`,
+                            } as CSSProperties
+                          }
                         />
                       ),
                     )
@@ -1374,12 +1382,14 @@ function ProjectBrowserPanel({
                       key={`child-${index}`}
                       className="host-browser-box-model host-browser-child-bound"
                       aria-hidden
-                      style={{
-                        insetInlineStart: `${(bounds.x / frame.width) * 100}%`,
-                        insetBlockStart: `${(bounds.y / frame.height) * 100}%`,
-                        inlineSize: `${(bounds.width / frame.width) * 100}%`,
-                        blockSize: `${(bounds.height / frame.height) * 100}%`,
-                      }}
+                      style={
+                        {
+                          "--inspector-inline-start": `${(bounds.x / frame.width) * 100}%`,
+                          "--inspector-block-start": `${(bounds.y / frame.height) * 100}%`,
+                          "--inspector-inline-size": `${(bounds.width / frame.width) * 100}%`,
+                          "--inspector-block-size": `${(bounds.height / frame.height) * 100}%`,
+                        } as CSSProperties
+                      }
                     />
                   ))}
                 {selecting
@@ -1389,12 +1399,14 @@ function ProjectBrowserPanel({
                           key={index}
                           className="host-browser-highlight"
                           data-selected={index === 0}
-                          style={{
-                            insetInlineStart: `${(element.bounds.x / frame.width) * 100}%`,
-                            insetBlockStart: `${(element.bounds.y / frame.height) * 100}%`,
-                            inlineSize: `${(element.bounds.width / frame.width) * 100}%`,
-                            blockSize: `${(element.bounds.height / frame.height) * 100}%`,
-                          }}
+                          style={
+                            {
+                              "--inspector-inline-start": `${(element.bounds.x / frame.width) * 100}%`,
+                              "--inspector-block-start": `${(element.bounds.y / frame.height) * 100}%`,
+                              "--inspector-inline-size": `${(element.bounds.width / frame.width) * 100}%`,
+                              "--inspector-block-size": `${(element.bounds.height / frame.height) * 100}%`,
+                            } as CSSProperties
+                          }
                         >
                           {index === 1 ? (
                             <Text
@@ -1455,7 +1467,10 @@ function ProjectBrowserPanel({
           onDismiss={() => setSelectionOpen(false)}
         >
           <section
-            className="host-browser-side-section host-browser-selection"
+            {...surfaceAttributes(
+              { variant: "transparent", radius: "none" },
+              "host-browser-side-section host-browser-selection",
+            )}
             aria-label={t("Selected browser element")}
           >
             {selection ? (

@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { InboxStatusBadge } from "./InboxStatusBadge";
 import { Alert } from "../../../shared/ui/Alert";
@@ -6,7 +7,6 @@ import { Heading } from "../../../shared/ui/Heading";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -284,9 +284,13 @@ export function InboxDetail({
       as="div"
       data-inbox-detail-identity
       data-inbox-detail-fixed-header={panel ? "" : undefined}
-      className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${
-        panel ? "h-9 shrink-0 border-b border-(--ui-tone-neutral-border) px-4 pe-8.5" : ""
-      }`}
+      {...surfaceAttributes(
+        {
+          frame: panel ? "neutral" : undefined,
+          edge: panel ? "bottom" : undefined,
+        },
+        `flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${panel ? "h-9 shrink-0 px-4 pe-10" : ""}`,
+      )}
     >
       <InboxProviderMark provider={item.provider} className="icon-sm shrink-0" />
       <span className="shrink-0">
@@ -332,11 +336,14 @@ export function InboxDetail({
         >
           <div
             data-inbox-detail-header
-            className={`relative border-b border-(--ui-tone-neutral-border) ${panel ? "" : "shrink-0"}`}
+            {...surfaceAttributes(
+              { frame: "neutral", edge: "bottom" },
+              `relative ${panel ? "" : "shrink-0"}`,
+            )}
           >
             <div className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"}`}>
               <header className={`flex flex-col ${panel ? "gap-2" : "gap-2.5"}`}>
-                <Heading size="page" className="break-words">
+                <Heading size="page" lines={3} className="break-words">
                   {item.title}
                 </Heading>
                 {panel ? null : identityRow}
@@ -347,19 +354,26 @@ export function InboxDetail({
                   className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
                 >
                   {authorName ? (
-                    <InboxPerson
-                      name={authorName}
-                      avatarUrl={inboxPersonAvatarUrl(
-                        item.provider,
-                        authorName,
-                        details?.authorAvatarUrl,
-                      )}
-                      size="sm"
-                    />
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <Text size="inherit" tone="muted">
+                        {jira ? t("Reporter") : t("Author")}
+                      </Text>
+                      <InboxPerson
+                        name={authorName}
+                        avatarUrl={inboxPersonAvatarUrl(
+                          item.provider,
+                          authorName,
+                          details?.authorAvatarUrl,
+                        )}
+                        size="sm"
+                      />
+                    </span>
                   ) : null}
                   {showAssignment ? (
                     <>
-                      {authorName ? <span aria-hidden>·</span> : null}
+                      <Text size="inherit" tone="muted">
+                        {t("Assignee")}
+                      </Text>
                       {extraAssignees.length > 0 ? (
                         <span className="flex min-w-0 flex-wrap items-center gap-2">
                           {extraAssignees.map((person) => (
@@ -428,7 +442,7 @@ export function InboxDetail({
                   ) : null}
                   <BadgeList
                     label={t("Labels")}
-                    rows={2}
+                    rows={1}
                     items={inboxLabelItems(item.labels)}
                     className="min-w-0 max-w-full"
                   />
@@ -516,15 +530,13 @@ export function InboxDetail({
                           </Text>
                         ) : null}
                         {chooseStartProject ? (
-                          <Tooltip label={t("Agent working folder")}>
-                            <div className="min-w-0 max-w-full">
-                              <InboxProjectPicker
-                                projects={projects}
-                                value={startProject}
-                                onChange={setStartProject}
-                              />
-                            </div>
-                          </Tooltip>
+                          <div className="min-w-0 max-w-full">
+                            <InboxProjectPicker
+                              projects={projects}
+                              value={startProject}
+                              onChange={setStartProject}
+                            />
+                          </div>
                         ) : null}
                       </div>
                     ) : null}

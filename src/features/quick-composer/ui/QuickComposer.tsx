@@ -1,3 +1,4 @@
+import { PickerListRoot } from "../../../shared/ui/picker/PickerList";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Tooltip } from "../../../shared/ui/Tooltip";
@@ -7,9 +8,9 @@ import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
 import { PromptField } from "../../../shared/ui/PromptField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { projectDisplayName } from "../../projects/model/projectNames";
+import { projectDisplayName } from "../../projects/public/projectNames";
 import { t, useLocale } from "../../../shared/i18n";
-import { useComposerSpelling } from "../../settings/model/composerSpelling";
+import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useWorkspaceCreation } from "../../workspaces/model/workspaceCreation";
 import { WorkspaceCreationStatus } from "../../workspaces/ui/WorkspaceCreationStatus";
@@ -51,6 +52,9 @@ import {
 } from "../../sessions/model/session";
 import { Popover } from "../../../shared/ui/Popover";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
+import { ComposerHighlight } from "../../sessions/ui/ComposerHighlight";
+import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
+import { skillTextParts } from "../../skills/model/skills";
 import {
   attachmentTokens,
   insertAtSelection,
@@ -61,22 +65,18 @@ import { quickLaunchAttachments } from "../model/quickAttachments";
 import { useQuickAttachments } from "./useQuickAttachments";
 import { isScreenRecordingBlocked } from "../model/screenCaptureAccess";
 import { openPrivacySettings } from "../../../platform/tauri/privacySettings";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { QuickPermissionIcon, QuickPermissions } from "./QuickPermissions";
 import { QuickModelSelector } from "./QuickModelSelector";
 import { useQuickPromptBridge } from "./useQuickPromptBridge";
 import { useQuickNativeListeners } from "./useQuickNativeListeners";
-import { MODE_COMMANDS, useQuickPickers } from "./useQuickPickers";
+import { quickModeCommands, useQuickPickers } from "./useQuickPickers";
 import { useQuickPickerMotion } from "./useQuickPickerMotion";
 import { OPERATOR_COMMAND } from "../../sessions/model/operatorCommand";
 import { ORCHESTRATOR_COMMAND } from "../../sessions/model/orchestratorCommand";
 import { PLAN_COMMAND } from "../../sessions/model/plan";
 import { DRAFT_COMMAND } from "../../sessions/model/draftCommand";
-import {
-  leadingModeCommand,
-  MODE_COMMAND_STYLES,
-  ModeCommandText,
-} from "../../sessions/ui/modeCommands";
+import { leadingModeCommand, MODE_COMMAND_STYLES } from "../../sessions/ui/modeCommands";
 import {
   initialQuickChoice,
   initialQuickProject,
@@ -97,9 +97,9 @@ import {
 /** Tallest the prompt grows before it scrolls, in px. */
 const PROMPT_MAX_HEIGHT = 220;
 
-const MODE_NAMES: ReadonlySet<string> = new Set(
-  [OPERATOR_COMMAND, ...MODE_COMMANDS].map((command) => command.name),
-);
+function modeNames(): ReadonlySet<string> {
+  return new Set([OPERATOR_COMMAND, ...quickModeCommands()].map((command) => command.name));
+}
 /** Sized for the 16px prompt, as the main composer's indent is for 14px. */
 const MODE_INDENT = "15px";
 /** The mode a prompt starts with, and the prompt the session should get. */
@@ -108,7 +108,7 @@ export function quickPromptMode(text: string): {
   mode: string | null;
 } {
   const match = text.match(/^\/([a-z]+)(?=\s|$)\s*/);
-  const mode = match?.[1] && MODE_NAMES.has(match[1]) ? match[1] : null;
+  const mode = match?.[1] && modeNames().has(match[1]) ? match[1] : null;
   if (!mode || mode === OPERATOR_COMMAND.name) return { prompt: text, mode };
   return { prompt: text.slice(match![0].length), mode };
 }
@@ -203,7 +203,15 @@ export function QuickComposer({
   // Only what the user picked is stored. Until then the mode follows the
   // selected harness's default for a new session, so it tracks the limits a
   // workspace window reports after the panel opened.
-  const leadingMode = leadingModeCommand(prompt, MODE_NAMES);
+  const leadingMode = leadingModeCommand(prompt, modeNames());
+  const { skills } = useComposerSkills({
+    harness: choice.harness,
+    executionCwd: cwd ?? "",
+    pickerOpen: false,
+  });
+  const skillNames = new Set(
+    skills.filter((skill) => skill.kind !== "template").map((skill) => skill.invocation),
+  );
   const [error, setError] = useState<string | null>(null);
   const [uiBusy, setBusy] = useState(false);
   const busy = uiBusy || owner.launching;
@@ -686,22 +694,19 @@ export function QuickComposer({
         editorClassName="scrollbar-none select-text"
         overlayRef={highlightRef}
         overlay={
-          <>
-            {leadingMode ? (
-              <>
-                <ModeCommandText
-                  text={prompt}
-                  mode={leadingMode}
-                  indent={MODE_INDENT}
-                  iconClassName="size-4"
-                />
-                {prompt.slice(leadingMode.end)}
-              </>
-            ) : (
-              prompt
-            )}
-            {prompt.endsWith("\n") ? "\n" : null}
-          </>
+          <ComposerHighlight
+            text={prompt}
+            mode={leadingMode}
+            modeIndent={MODE_INDENT}
+            modeIconClassName="size-4"
+            names={skillNames}
+            skillParts={skillTextParts}
+            mentions={new Map()}
+            mcpTags={[]}
+            attachments={attachments.files}
+            citations={0}
+            field={promptRef}
+          />
         }
         ref={promptRef}
         value={prompt}
@@ -915,11 +920,11 @@ export function QuickComposer({
       {picker && picker !== "attachments" ? (
         <div ref={pickerRef} key={picker} className="flex min-h-0 flex-col">
           {picker === "commands" ? (
-            <div
+            <PickerListRoot
               ref={listRef}
               id="quick-composer-commands"
-              role="listbox"
-              aria-label={t("Commands")}
+
+              label={t("Commands")}
               className="shrink-0 border-t border-stroke p-2"
             >
               {commandOptions.length === 0 ? (
@@ -952,7 +957,7 @@ export function QuickComposer({
                   </Button>
                 ))
               )}
-            </div>
+            </PickerListRoot>
           ) : null}
           {picker === "model" ? (
             <QuickModelSelector
@@ -1005,10 +1010,10 @@ export function QuickComposer({
                   className="min-w-0 flex-1"
                 />
               </Text>
-              <div
+              <PickerListRoot
                 ref={listRef}
-                role="listbox"
-                aria-label={t("Projects")}
+
+                label={t("Projects")}
                 className="min-h-0 max-h-64 overflow-y-auto overscroll-none px-2 pb-2"
               >
                 {optionCount === 0 ? (
@@ -1047,7 +1052,7 @@ export function QuickComposer({
                     </Button>
                   ))
                 )}
-              </div>
+              </PickerListRoot>
             </div>
           ) : null}
         </div>

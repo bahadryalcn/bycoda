@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "../../../src/shared/ui/Button";
+import { RailToolGroup } from "../../../src/app/shell/RailToolGroup";
 import { ConfirmDialog } from "../../../src/shared/ui/ConfirmDialog";
 import { Modal } from "../../../src/shared/ui/Modal";
 import { NativePopupHost } from "../../../src/shared/ui/NativePopupHost";
@@ -356,6 +357,51 @@ function NativeHostScene() {
   );
 }
 
+function OverlayAcceptance() {
+  const [active, setActive] = useState(0);
+  const [child, setChild] = useState(false);
+  const [parent, setParent] = useState(false);
+  return (
+    <div data-testid="overlay-acceptance" className="w-64">
+      <RailToolGroup
+        label="Acceptance tools"
+        tools={["Files", "Settings"].map((label, index) => ({
+          id: label,
+          label,
+          icon: index ? <Settings /> : <Plus />,
+          active: active === index,
+          dot: "Unseen items",
+          onSelect: () => setActive(index),
+        }))}
+      />
+      <Button
+        data-testid="open-modal-pair"
+        onClick={() => {
+          setChild(true);
+          setParent(true);
+        }}
+      >
+        Open nested dialogs
+      </Button>
+      {parent ? (
+        <Modal title="Parent dialog" size="lg" onClose={() => setParent(false)}>
+          <TextField label="Parent field" />
+          <p>Parent dialog content remains beneath the child's blur.</p>
+          <Button data-testid="reopen-child" onClick={() => setChild(true)}>
+            Open child
+          </Button>
+          {child ? (
+            <Modal title="Child dialog" onClose={() => setChild(false)}>
+              <TextField label="Child field" />
+              <Button variant="primary">Child action</Button>
+            </Modal>
+          ) : null}
+        </Modal>
+      ) : null}
+    </div>
+  );
+}
+
 function App() {
   const [scene, setScene] = useState<string | null>(
     new URLSearchParams(location.search).get("scene"),
@@ -399,6 +445,7 @@ function App() {
     ) : null;
   return (
     <Workbench>
+      <OverlayAcceptance />
       {[
         "modal-sm",
         "modal-md",

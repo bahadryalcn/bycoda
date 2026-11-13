@@ -8,6 +8,7 @@ import {
   canSetAssistantPresence,
   emptyAssistantPresence,
   nativeAssistantPresencePort,
+  selectedAssistantPresence,
   type AssistantPresenceChoice,
   type AssistantPresencePort,
   type AssistantPresenceView,
@@ -103,6 +104,8 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
   const error = localError || view.statusError || view.writeError;
   // A failed or pending read keeps the last confirmed status; none at all means offline.
   const state = assistantPresencePresentation(view.status?.state).state;
+  // The mark is the owner's choice; the trigger and badge show the effective state.
+  const selected = selectedAssistantPresence(view.status);
   const label = t(
     view.pending || busy ? "Updating availability..." : assistantPresencePresentation(state).label,
   );
@@ -116,7 +119,7 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
         id: choice,
         label: t(assistantPresencePresentation(choice).label),
         icon: createElement(AssistantPresenceIndicator, { state: choice, markOnly: true }),
-        checked: state === choice,
+        checked: selected === choice,
         selectionRole: "radio",
         disabled: busy || localError || !canSetAssistantPresence(view, token ?? null),
       })),

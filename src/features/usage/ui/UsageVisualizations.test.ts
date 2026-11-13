@@ -71,7 +71,7 @@ async function renderDay(samples: UsageSample[] = []) {
 it("keeps one time column and one date column for a single day", async () => {
   const host = await renderDay();
   const grid = host.querySelector<HTMLElement>('[role="grid"]')!;
-  expect(grid.style.gridTemplateColumns).toBe("3.5rem repeat(1, minmax(0, 1fr))");
+  expect(grid.style.getPropertyValue("--usage-week-columns")).toBe("1");
   expect(grid.hasAttribute("data-single-day")).toBe(false);
   expect(grid.querySelectorAll('[role="rowheader"]')).toHaveLength(24);
   expect(grid.querySelectorAll('[role="gridcell"]')).toHaveLength(24);

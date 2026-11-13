@@ -12,11 +12,11 @@
 .host-browser-surface[data-selecting="true"] img {
   cursor: crosshair;
 }
-.host-browser-surface img:focus-visible {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: calc(var(--ui-focus-offset) * -1);
-}
 .host-browser-highlight {
+  inset-inline-start: var(--inspector-inline-start);
+  inset-block-start: var(--inspector-block-start);
+  inline-size: var(--inspector-inline-size);
+  block-size: var(--inspector-block-size);
   position: absolute;
   pointer-events: none;
   border: 2px dashed var(--ui-tone-accent-solid);
@@ -53,21 +53,9 @@
 .browser-annotation-details pre {
   white-space: pre-wrap;
 }
-.browser-annotation-chip > summary {
-  cursor: pointer;
-}
-.browser-annotation-chip > summary:focus-visible {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: var(--ui-focus-offset);
-}
-.browser-annotation-chip > summary:active {
-  color: var(--ui-tone-accent-fg);
-}
 .browser-annotation-chip {
   max-inline-size: min(100%, 520px);
   padding: 8px;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
 }
 .browser-annotation-attachment {
   display: flex;
@@ -79,9 +67,4 @@
 .browser-annotation-attachment .browser-annotation-chip {
   min-inline-size: 0;
   flex: 1;
-}
-@media (hover: hover) and (pointer: fine) {
-  .browser-annotation-chip > summary:hover {
-    color: var(--ui-tone-accent-fg);
-  }
 }

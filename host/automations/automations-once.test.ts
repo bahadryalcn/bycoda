@@ -1,3 +1,4 @@
+import { createHostModelRoutingService, hostModelRoutingService } from "../model-routing/runtime";
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +19,14 @@ async function setup() {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-automations-once-"));
   const store = new HostStore(join(directory, "host.db"));
   const project = await store.addProject(directory, "Test");
+  createHostModelRoutingService({
+    store,
+    catalog: async () => ({ models: {} }),
+    readLimits: async () => {
+      throw new Error("Unexpected quota read");
+    },
+    command: async () => "unused",
+  });
   const sent: unknown[] = [];
   const provider: HostProvider = {
     send: vi.fn(
@@ -62,7 +71,7 @@ async function setup() {
     enabled: true,
     ...overrides,
   });
-  return { automations, clock, input, sent };
+  return { automations, clock, input, sent, store };
 }
 
 it("runs a one-time automation once at its time and then turns itself off", async () => {
@@ -108,4 +117,32 @@ it("keeps the arming through a pause edit but drops it when the schedule changes
   expect((await f.automations.list())[0].nextRunAt).toBe(runAt);
   await f.automations.save(f.input({ time: "10:30" }));
   expect((await f.automations.list())[0].nextRunAt).toBeLessThan(runAt);
+});
+
+it("records an exhausted one-time run as skipped and rearms it at the quota reset", async () => {
+  const f = await setup();
+  const resolve = vi.spyOn(hostModelRoutingService(f.store), "resolve").mockResolvedValue({
+    ok: false,
+    reason: "noEligibleEntry",
+    skipped: [{ entryId: "entry", reason: "belowLimit" }],
+    nextResetAt: f.clock.now + 120_000,
+  });
+  await f.automations.save(f.input({ modelChoice: { kind: "default" } }));
+  await f.automations.scheduleOnce("once", f.clock.now + 1000);
+  f.clock.now += 1000;
+  await f.automations.tick();
+  expect((await f.automations.runs("once"))[0]).toMatchObject({
+    status: "skipped",
+    error: expect.stringContaining("belowLimit"),
+  });
+  expect((await f.automations.list())[0]).toMatchObject({
+    enabled: true,
+    nextRunAt: f.clock.now + 119_000,
+  });
+  expect(f.sent).toHaveLength(0);
+  resolve.mockResolvedValue({ ok: false, reason: "notConfigured", skipped: [] });
+  f.clock.now += 119_000;
+  await f.automations.tick();
+  await vi.waitFor(() => expect(f.sent).toHaveLength(1));
+  expect((await f.automations.list())[0].enabled).toBe(false);
 });

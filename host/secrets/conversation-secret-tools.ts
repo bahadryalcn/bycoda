@@ -57,6 +57,8 @@ export class ConversationSecretTools {
     private readonly store: Pick<HostStore, "project" | "session">,
     private readonly desktop: SecretDesktopPort,
     private readonly secrets: SecretStore,
+    // Desktop conversations need not have an adopted row in the Host store.
+    private readonly session: HostStore["session"] = async (id) => await store.session(id),
   ) {}
 
   /** Startup cleanup of expired refs and orphan files; resolves once it has run. */
@@ -98,7 +100,7 @@ export class ConversationSecretTools {
     };
     await check();
     await this.store.project(principal.projectId);
-    const caller = await this.store.session(principal.sessionId);
+    const caller = await this.session(principal.sessionId);
     if (caller.projectId !== principal.projectId)
       throw new Error("Session belongs to another project.");
     if (action === "secrets.request")

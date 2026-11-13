@@ -114,7 +114,12 @@ export const ChangeRow = memo(function ChangeRow({
   });
   return (
     <li
-      style={style}
+      style={
+        {
+          ...style,
+          "--control-padding-start": tree ? `${8 + depth * 12}px` : "0.5rem",
+        } as CSSProperties
+      }
       role="option"
       aria-selected={selected}
       aria-posinset={position}
@@ -132,11 +137,12 @@ export const ChangeRow = memo(function ChangeRow({
       <ActionHost
         selected={selected}
         hoverReveal
-        style={tree ? { paddingLeft: 8 + depth * 12 } : undefined}
-        className={`flex w-full items-center gap-1 ${tree ? "" : "pl-2"}`}
+        padding={{ start: "md" }}
+        className="flex w-full items-center gap-1"
       >
         <Button
           size="sm"
+          controlHeight="fill"
           variant="item"
           motion="none"
           type="button"
@@ -152,7 +158,7 @@ export const ChangeRow = memo(function ChangeRow({
             if (canOpen && !event.ctrlKey && !event.metaKey && !event.shiftKey)
               onOpenFile(file.path, kind, true);
           }}
-          className="flex h-full min-w-0 flex-1 select-none items-center gap-1.5 text-left "
+          className="flex min-w-0 flex-1 select-none items-center gap-1.5 text-left "
         >
           {tree ? <span className="size-4 shrink-0" /> : null}
           <FileTypeIcon name={name} isDir={false} />

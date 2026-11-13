@@ -1,3 +1,5 @@
+import { actionDragAttributes } from "../../../shared/ui/ActionHost";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import type { BadgeTone } from "../../../shared/ui/Badge";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
@@ -134,6 +136,10 @@ export function TaskBoardColumns({
         <div className="task-board-columns">
           {TASK_COLUMNS.map((status) => {
             const column = columns.get(status)!;
+            const frame = surfaceAttributes(
+              { variant: "card", frame: "card", radius: "card" },
+              "bycoda-task-column flex min-h-0 min-w-0 flex-col",
+            );
             return (
               <section
                 key={status}
@@ -178,11 +184,12 @@ export function TaskBoardColumns({
                   );
                   if (dragged) dropTask(dragged, status);
                 }}
-                className="bycoda-task-column flex min-h-0 min-w-0 flex-col"
+                {...frame}
+                {...actionDragAttributes({ target: dropColumn === status }, frame.className)}
               >
                 <SectionLabel
                   as="h2"
-                  className="shrink-0 px-3"
+                  {...surfaceAttributes({ frame: "none" }, "shrink-0 px-3")}
                   count={column.length}
                   icon={
                     COLUMN_TONES[status] ? (
@@ -213,6 +220,10 @@ export function TaskBoardColumns({
                             ),
                           ))
                       }
+                      {...actionDragAttributes({
+                        dragging: draggedKey === `${task.machineId}:${task.id}`,
+                        before: dropBeforeKey === `${task.machineId}:${task.id}`,
+                      })}
                       data-dragging={draggedKey === `${task.machineId}:${task.id}` || undefined}
                       data-drop-before={
                         dropBeforeKey === `${task.machineId}:${task.id}` ? true : undefined

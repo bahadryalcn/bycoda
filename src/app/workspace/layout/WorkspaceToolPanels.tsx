@@ -98,6 +98,8 @@ export interface WorkspaceToolPanelsProps {
   onAskInboxItem: InboxProps["onAsk"];
   onRestartInboxAsk: InboxProps["onAskRestart"];
   setInboxAskPortal: InboxProps["onAskMount"];
+  onOpenSocialSession?: ComponentProps<typeof SocialView>["onOpenSession"];
+  onSocialSessionMount?: ComponentProps<typeof SocialView>["onSessionMount"];
   inboxRelatedSessions: InboxProps["sessions"];
   repairSessions: InboxProps["repairSessions"];
   onRepairChecks: InboxProps["onRepairChecks"];
@@ -157,6 +159,8 @@ function WorkspaceToolPanelsComponent({
   onAskInboxItem,
   onRestartInboxAsk,
   setInboxAskPortal,
+  onOpenSocialSession,
+  onSocialSessionMount,
   inboxRelatedSessions,
   repairSessions,
   onRepairChecks,
@@ -585,6 +589,8 @@ function WorkspaceToolPanelsComponent({
       <ToolPanel active={automationsViewOpen && socialBoardShown}>
         <NavigationBoundary name="Social Media" onBack={onLeaveAutomations}>
           <SocialView
+            onOpenSession={onOpenSocialSession}
+            onSessionMount={onSocialSessionMount}
             cwd={socialPanelCwd || projectCwd}
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}

@@ -6,7 +6,6 @@
   --settings-column: 80rem;
   --settings-column-maximized: 96rem;
   --settings-group-gap: 28px;
-  background: var(--ui-workspace-canvas);
   container-type: inline-size;
   container-name: settings-workbench;
 }
@@ -33,7 +32,6 @@
   z-index: 2;
   flex-shrink: 0;
   /* Sticky text must occlude the form while it scrolls underneath. */
-  background: var(--color-background-base);
 }
 .settings-page-bar-inner {
   display: flex;
@@ -75,8 +73,6 @@
   flex-shrink: 0;
   width: 200px;
   padding: 12px 8px 24px;
-  background: var(--ui-workspace-panel);
-  border-inline-end: 1px solid var(--ui-pane-border);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -118,49 +114,11 @@
   }
   .bycoda-settings-categories {
     display: none;
-    flex-direction: row;
-    align-items: center;
-    gap: 0;
-    width: auto;
-    padding: 6px 14px;
-    border-inline-end: 0;
-    border-block-end: 1px solid var(--color-stroke);
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-  .bycoda-settings-category-group,
-  .bycoda-settings-category-tabs {
-    flex-direction: row;
-    flex-shrink: 0;
-  }
-  .bycoda-settings-category-group + .bycoda-settings-category-group {
-    margin-inline-start: 8px;
-    padding-inline-start: 8px;
-    border-inline-start: 1px solid var(--color-stroke);
-  }
-  .bycoda-settings-category-label {
-    display: none;
-  }
-  .bycoda-settings-category-tabs > button {
-    gap: 6px;
-    inline-size: auto;
-    flex: none;
-  }
-  .bycoda-settings-category-tabs > button > span {
-    max-inline-size: 18rem;
-    white-space: nowrap;
   }
   /* The picker supplies the visible identity; the heading stays for navigation by heading. */
   .settings-page-bar .settings-page-title[data-size] {
-    position: absolute;
+    @apply sr-only;
     flex: none;
-    inline-size: 1px;
-    block-size: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
   .settings-page-bar-inner {
     padding: 12px 16px 4px;
@@ -209,7 +167,7 @@
 }
 @container settings-workbench (max-width: 760px) {
   .bycoda-settings-form {
-    padding: 8px 16px 60px;
+    padding: 8px 16px 48px;
   }
 }
 
@@ -279,16 +237,8 @@
 .settings-group[data-settings-variant][data-settings-layout] > .settings-group-content {
   align-self: start;
   min-inline-size: 0;
-  border: 1px solid var(--ui-settings-group-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-settings-group-surface);
   overflow: visible;
   container: settings-group / inline-size;
-}
-/* A collection (own frame) or nested topic inside a frame must not draw a second one. */
-.settings-group-content > :is(.settings-collection, .settings-topics) {
-  border: 0;
-  border-radius: 0;
 }
 
 /* One row padding (10px/16px) and one minimum height for every row. Dividers are hairlines
@@ -300,27 +250,6 @@
   min-block-size: 3rem;
   padding: 10px 16px;
   gap: 12px 24px;
-  border-radius: 0;
-}
-.settings-group-content
-  > :is(.settings-row, .settings-advanced)
-  ~ :is(.settings-row, .settings-advanced),
-.settings-advanced > .settings-row,
-.settings-advanced > .settings-advanced-content > .settings-row {
-  border-block-start: 1px solid var(--ui-settings-hairline);
-}
-.settings-group-content > :first-child {
-  border-start-start-radius: calc(var(--ui-radius-card) - 0.0625rem);
-  border-start-end-radius: calc(var(--ui-radius-card) - 0.0625rem);
-}
-.settings-group-content > :last-child {
-  border-end-start-radius: calc(var(--ui-radius-card) - 0.0625rem);
-  border-end-end-radius: calc(var(--ui-radius-card) - 0.0625rem);
-}
-@media (hover: hover) and (pointer: fine) {
-  .settings-row:not([data-stacked]):hover {
-    background: var(--ui-settings-row-hover);
-  }
 }
 /* Dependent sub-row: indented under its parent; dimmed and inert (with a tooltip reason) when the
    parent is off. The reason is never repeated as visible text. */
@@ -338,28 +267,6 @@
 .settings-dependency {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
-}
-
-/* A search hit lands as a calm selected fill that settles; no accent frame. */
-@keyframes settings-reveal-flash {
-  0%,
-  60% {
-    background-color: var(--ui-surface-selected);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-.settings-row[data-revealed],
-.settings-group[data-revealed][data-settings-layout] > .settings-group-content {
-  background-color: var(--ui-surface-selected);
-  animation: settings-reveal-flash 2.4s var(--motion-ease-out, ease-out) forwards;
-}
-@media (prefers-reduced-motion: reduce) {
-  .settings-row[data-revealed],
-  .settings-group[data-revealed][data-settings-layout] > .settings-group-content {
-    animation: none;
-  }
 }
 
 /* Label block flexes; the control column holds 12-18rem, right aligned, and wraps below it. */
@@ -529,7 +436,6 @@
 .settings-advanced-toggle {
   min-block-size: 3rem;
   padding-inline: 16px;
-  border-radius: 0;
   justify-content: flex-start;
 }
 .settings-advanced-toggle svg {
@@ -554,13 +460,9 @@
 .settings-advanced {
   min-inline-size: 0;
   margin-block: 12px;
-  border: 1px solid var(--ui-settings-group-border);
-  border-radius: var(--ui-radius-card);
 }
 .settings-group-content > .settings-advanced {
   margin: 0;
-  border: 0;
-  border-radius: 0;
 }
 .bycoda-settings-workbench .bycoda-settings-form section > h3 {
   cursor: auto;

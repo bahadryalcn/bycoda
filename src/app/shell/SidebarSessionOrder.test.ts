@@ -127,14 +127,14 @@ it("keeps a completed row in place while it is open, then returns it to recency"
   expect(order()).toEqual(["older-done", "done", "history"]);
 });
 
-it("lifts a row holding an unsent draft, except the one being typed in", () => {
+it("keeps an unsent draft lifted when opened", () => {
   props.sessions = [session("newest", 300), session("middle", 200), session("typed", 100)];
   render();
   act(() => setComposerDraft("typed", "half a thought"));
   expect(order()).toEqual(["typed", "newest", "middle"]);
   props = { ...props, activeSessionId: "typed" };
   render();
-  expect(order()).toEqual(["newest", "middle", "typed"]);
+  expect(order()).toEqual(["typed", "newest", "middle"]);
   act(() => clearComposerDraft("typed"));
 });
 

@@ -1,11 +1,23 @@
+import { writeGeneratorValue } from "../../../src/features/settings/ui/appearance/controls/themeGeneratorSession";
+import { ImageDropZone } from "../../../src/features/settings/ui/appearance/controls/ImageDropZone";
+import { AdvancedSettings, Row } from "../../../src/features/settings/ui/settingsControls";
+import { AntigravityAccountSettings } from "../../../src/features/settings/ui/AntigravityAccountSettings";
 import { seedProvidersFixture, providersFixtureCommand } from "./settings-providers-fixture";
 import { useState } from "react";
+import { VoiceAssistantFixture } from "./voice-assistant-fixture";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAppearancePreferences } from "../../../src/features/settings/model/appearancePreferences";
 import { createRoot } from "react-dom/client";
+import { ModelOrderLimits } from "../../../src/features/model-routing/ui/order/ModelOrderLimits";
+import { orderDraft } from "../../../src/features/model-routing/model/modelRoutingDraft";
+import { EMPTY_MODEL_ROUTING } from "../../../src/shared/model/host-contracts/model-routing";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { activityFixture } from "./settings-activity-fixture";
 import { SettingsView } from "../../../src/features/settings/ui/SettingsView";
+import { InboxScopeCollection } from "../../../src/features/settings/ui/InboxScopeCollection";
+import { WorktreeRow } from "../../../src/features/source-control/ui/WorktreeRow";
+import { WorkspaceManagedRow } from "../../../src/features/workspaces/ui/WorkspaceManagedRow";
+import { MessagingAccountsCard } from "../../../src/features/settings/ui/integrations/MessagingAccountsCard";
 import { FeedbackDialog } from "../../../src/features/account";
 import { WorkspaceSettingsSurface } from "../../../src/app/workspace/layout/WorkspaceSettingsSurface";
 import {
@@ -114,6 +126,57 @@ const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
 }));
 mockIPC(
   (command, args) => {
+    if (
+      command === "list_background_library" &&
+      new URLSearchParams(location.search).has("libraryProbe")
+    )
+      return [
+        {
+          id: "fixture-image",
+          path: "/fixture/image.png",
+          createdMs: 1,
+          bytes: 10,
+          source: "added",
+          prompt: null,
+        },
+      ];
+    if (
+      command === "messaging_list_accounts" &&
+      new URLSearchParams(location.search).has("collectionMessaging")
+    )
+      return [
+        {
+          id: "fixture",
+          provider: "email",
+          label: "Work email",
+          identity: "person@example.test",
+          config: {},
+          connected: true,
+        },
+        {
+          id: "slack-fixture",
+          provider: "slack",
+          label: "Work Slack",
+          identity: "Example workspace",
+          config: {},
+          connected: true,
+        },
+      ];
+    if (new URLSearchParams(location.search).has("collectionLinear")) {
+      if (command === "linear_status") return { connected: true };
+      if (command === "linear_list_teams")
+        return [
+          { id: "eng", name: "Engineering", key: "ENG" },
+          { id: "ops", name: "Operations", key: "OPS" },
+        ];
+    }
+    if (new URLSearchParams(location.search).has("collectionJira")) {
+      if (command === "jira_status")
+        return { connected: true, site: "https://example.test", email: "person@example.test" };
+      if (command === "jira_list_projects") return [{ id: "1", name: "Engineering", key: "ENG" }];
+      if (command === "jira_list_boards")
+        return [{ id: 1, name: "Engineering board", type: "scrum" }];
+    }
     const providerFixture = providersFixtureCommand(command, args);
     if (providerFixture !== undefined) return providerFixture;
     if (command.startsWith("canonical_store_")) return canonicalFixture(command, args);
@@ -147,8 +210,22 @@ mockIPC(
         if (args.method === "environment.describe")
           return {
             environmentId: machine.environmentId,
-            capabilities: ["voice.local.v1", "voice.local.setup.v1"],
+            capabilities: [
+              "voice.local.v1",
+              "voice.local.setup.v1",
+              "assistant.v1",
+              "desktop.control.v1",
+            ],
           };
+        if (
+          ["assistant.request", "desktop.request", "desktop.helper.request"].includes(
+            args.method as string,
+          )
+        ) {
+          return import("../assistant/assistant-room-mocks").then(({ hostToolRequest }) =>
+            hostToolRequest("", "assistant.v1", args.method as string, args.params),
+          );
+        }
         if (args.method === "voice.local.inspect" && voiceFixture === "stalled")
           return new Promise(() => {});
         if (args.method === "voice.local.inspect")
@@ -478,8 +555,19 @@ mockIPC(
   },
   { shouldMockEvents: true },
 );
+if (new URLSearchParams(location.search).has("libraryProbe")) {
+  (window as any).__TAURI_INTERNALS__.convertFileSrc = () =>
+    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E";
+}
 
 seedProvidersFixture();
+if (new URLSearchParams(location.search).has("generatorSuggestions")) {
+  writeGeneratorValue(
+    "suggestions",
+    [{ name: "Fixture meadow", hue: 140, saturation: 24, accent: "#69b68e" }],
+    [],
+  );
+}
 const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "light" ? "light" : "dark";
 saveThemePreference(theme);
@@ -487,6 +575,29 @@ applyThemePreference(theme);
 initAppearancePreferences();
 const language = params.get("lang");
 const initial = params.get("section");
+function ModelLimitsFixture() {
+  const uncertain = params.has("uncertain");
+  const reached = params.has("reached");
+  const usage = {
+    machineId: "fixture",
+    machineName: "Workstation",
+    maxRunningTasks: 2,
+    dailyAgentMinutes: params.has("unlimited") ? 0 : 120,
+    usedMinutes: reached ? 125 : 75,
+    limitReached: reached,
+    usageUncertain: uncertain,
+  };
+  const [draft, setDraft] = useState(() =>
+    orderDraft({ ...EMPTY_MODEL_ROUTING, version: 0, updatedAt: 0 }, usage),
+  );
+  return (
+    <main className="min-h-screen bg-background-base p-6 text-content">
+      <div className="mx-auto max-w-xl">
+        <ModelOrderLimits draft={draft} usage={usage} onChange={setDraft} />
+      </div>
+    </main>
+  );
+}
 function Fixture() {
   const [section, setSection] = useState<SettingsSectionId>(
     SETTINGS_SECTIONS.find((entry) => entry.id === initial)?.id ?? "general",
@@ -528,6 +639,7 @@ function Fixture() {
       ) : (
         <button onClick={() => setOpen(true)}>Reopen settings</button>
       )}
+      {params.has("voice") && <VoiceAssistantFixture />}
     </main>
   );
 }
@@ -599,7 +711,102 @@ void Promise.all([
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      {params.get("dialog") === "1" ? <DialogFixture /> : <Fixture />}
+      {params.has("dropzoneProbe") ? (
+        <main style={{ display: "grid", gridTemplateColumns: "repeat(3,176px)", gap: 16 }}>
+          <ImageDropZone hasImage={false} busy={false} onChoose={() => {}} />
+          <ImageDropZone hasImage busy={false} onChoose={() => {}}>
+            Existing image
+          </ImageDropZone>
+          <ImageDropZone hasImage={false} busy onChoose={() => {}} />
+        </main>
+      ) : params.has("standaloneAdvancedProbe") ? (
+        <main className="bycoda-settings-workbench p-4">
+          <AdvancedSettings title="Standalone advanced" defaultOpen keepMounted>
+            <Row label="Standalone row">
+              <input aria-label="Standalone draft" defaultValue="draft" />
+            </Row>
+          </AdvancedSettings>
+        </main>
+      ) : params.has("antigravityVisual") ? (
+        <main className="settings-topics p-4">
+          <AntigravityAccountSettings embedded />
+        </main>
+      ) : params.has("collectionMessaging") && !params.has("section") ? (
+        <main className="settings-topics p-4">
+          <MessagingAccountsCard
+            provider="email"
+            emptyLabel="No accounts"
+            addLabel="Add account"
+            describe={(account) => account.identity}
+            Form={() => null}
+          />
+        </main>
+      ) : params.has("collectionWorktrees") ? (
+        <main className="settings-topics p-4">
+          <div className="settings-collection">
+            <div className="settings-collection-list" role="list">
+              <WorktreeRow
+                tree={
+                  {
+                    path: "/fixture/project-feature",
+                    head: "12345678",
+                    branch: "feature/settings",
+                    dirty: false,
+                    unpushed: 0,
+                  } as never
+                }
+                selected={false}
+                sessionCount={2}
+                identityHint="project-feature"
+                onReveal={() => {}}
+                onDelete={() => {}}
+              />
+              <WorkspaceManagedRow
+                workspace={
+                  {
+                    id: "workspace-a",
+                    path: "/fixture/managed",
+                    owner: { kind: "session", id: "session-a" },
+                    branchRef: "refs/heads/feature/managed",
+                    state: "active",
+                    directoryState: "present",
+                    pinned: false,
+                  } as never
+                }
+                title="Managed workspace"
+                reviewDisabled={false}
+                pinning={false}
+                onReview={() => {}}
+                onReveal={() => {}}
+                pin={{ onToggle: () => {} }}
+                remove={{ label: "Delete directory", onRemove: () => {} }}
+              />
+            </div>
+          </div>
+        </main>
+      ) : params.has("collectionScope") ? (
+        <main className="settings-topics p-4">
+          <InboxScopeCollection
+            label="Projects"
+            searchLabel="Search projects"
+            items={[
+              { id: "one", title: "Product engineering", meta: "ENG" },
+              { id: "two", title: "Customer support", meta: "SUP" },
+            ]}
+            selectedIds={["one"]}
+            onChange={() => {}}
+            summary={(selected, total) => `${selected} of ${total} selected`}
+            emptyLabel="No projects"
+            noMatchLabel="No matches"
+          />
+        </main>
+      ) : params.has("modelLimits") ? (
+        <ModelLimitsFixture />
+      ) : params.get("dialog") === "1" ? (
+        <DialogFixture />
+      ) : (
+        <Fixture />
+      )}
       {/* The app mounts this globally (WorkspaceNotices); Settings rows open it. */}
       <FeedbackDialog />
     </QueryClientProvider>,

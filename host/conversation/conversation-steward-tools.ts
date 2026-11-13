@@ -107,6 +107,7 @@ export class ConversationStewardTools {
           id,
           projectId: principal.projectId,
           harness: session.harness,
+          providerAccountId: session.providerAccountId,
           model: session.model,
           modelSettings: session.modelSettings,
           runtimeMode: session.runtimeMode,

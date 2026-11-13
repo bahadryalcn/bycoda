@@ -25,6 +25,21 @@ class FakeIntersectionObserver {
 
 const mounted: Root[] = [];
 
+it("keeps the compact working dot decorative and on the shared offscreen observer", () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  mounted.push(root);
+  act(() => root.render(createElement(WorkingIndicator, { variant: "dot" })));
+  const indicator = container.querySelector<HTMLElement>('[data-working-variant="dot"]')!;
+  expect(indicator).not.toBeNull();
+  expect(indicator.getAttribute("aria-hidden")).toBe("true");
+  expect(indicator.className).toContain("working-dot");
+  expect(indicator.children).toHaveLength(0);
+  expect(observers[0].observed.has(indicator)).toBe(true);
+  act(() => observers[0].callback([{ target: indicator, isIntersecting: false }]));
+  expect(indicator.getAttribute("data-offscreen")).toBe("true");
+});
+
 function render(container: HTMLElement) {
   const root = createRoot(container);
   mounted.push(root);

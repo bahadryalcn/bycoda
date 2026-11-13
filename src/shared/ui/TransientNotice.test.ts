@@ -10,6 +10,44 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 
+it.each(["top-end", "bottom-end"] as const)(
+  "keeps %s container notices inside their owner and preserves dismissal",
+  (placement) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const onDismiss = vi.fn();
+    try {
+      act(() =>
+        root.render(
+          createElement(TransientNotice, {
+            anchor: "container",
+            placement,
+            durationMs: null,
+            message: "New activity",
+            onDismiss,
+          }),
+        ),
+      );
+      const notice = container.querySelector<HTMLElement>('[role="status"]')!;
+      expect(notice).not.toBeNull();
+      expect(notice.classList.contains("absolute")).toBe(true);
+      expect(
+        placement === "top-end" ? notice.style.insetBlockStart : notice.style.insetBlockEnd,
+      ).toBe("12px");
+      act(() =>
+        notice.querySelector<HTMLButtonElement>('button[aria-label="Dismiss notice"]')!.click(),
+      );
+      expect(onDismiss).toHaveBeenCalledOnce();
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
 it("expires stacked errors only after ten seconds of window focus, preserving remaining time", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();

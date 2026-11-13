@@ -1,7 +1,9 @@
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useId, useState } from "react";
 import type { AssistantMemory } from "../../../shared/model/host-contracts/assistant";
 import { assistantRequest } from "../model/assistantClient";
 import { t } from "../../../shared/i18n";
+import { Save, X } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
@@ -66,12 +68,18 @@ export function MemoryEditor({
       footerStart={error ? <InlineError>{error}</InlineError> : undefined}
       footer={
         <ModalActions>
-          <Button variant="ghost" disabled={pending} onClick={onClose}>
+          <Button
+            startIcon={<X className="icon-sm" />}
+            variant="ghost"
+            disabled={pending}
+            onClick={onClose}
+          >
             {t("Cancel")}
           </Button>
           <Button
             type="submit"
             form={formId}
+            startIcon={<Save className="icon-sm" />}
             variant="primary"
             loading={pending}
             disabled={!text.trim()}
@@ -119,14 +127,20 @@ export function MemoryEditor({
             onValueChange={(value) => setScope(value as typeof scope)}
           />
         </div>
-        <TextField
-          label={t("Forbidden words")}
-          description={t(
-            "Optional, separated by commas. Text outputs are checked before delivery.",
-          )}
-          value={terms}
-          onChange={(event) => setTerms(event.currentTarget.value)}
-        />
+        <Disclosure
+          summary={t("Forbidden words")}
+          defaultOpen={Boolean(original?.forbiddenTerms.length)}
+          tone="secondary"
+        >
+          <TextField
+            label={t("Forbidden words")}
+            description={t(
+              "Optional, separated by commas. Text outputs are checked before delivery.",
+            )}
+            value={terms}
+            onChange={(event) => setTerms(event.currentTarget.value)}
+          />
+        </Disclosure>
       </form>
     </Modal>
   );

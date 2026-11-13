@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-/** Owner-chosen local folders the global Assistant Room may read and change, plus the owner's
- * "run commands without asking" choice. Carried only by the `folders.*` operations; the
+/** Owner-chosen local folders the global Assistant Room may read and change, plus separate
+ * command and file-change grants. Carried only by the `folders.*` operations; the
  * Room, voice and every other non-owner principal can read it but never write it. */
 export const ASSISTANT_FOLDERS_MAX = 20;
 
@@ -17,6 +17,8 @@ export type AssistantFolder = z.infer<typeof AssistantFolderSchema>;
 export const AssistantFoldersResponseSchema = z.strictObject({
   folders: z.array(AssistantFolderSchema).max(ASSISTANT_FOLDERS_MAX),
   runWithoutAsking: z.boolean(),
+  /** Explicit unified access choice. Missing on older Hosts means changes still ask. */
+  allowChangesWithoutAsking: z.boolean().optional(),
   version: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
 });
@@ -28,5 +30,6 @@ export const AssistantFoldersSetSchema = z.strictObject({
   expectedVersion: z.number().int().nonnegative(),
   paths: z.array(z.string().min(1).max(4096)).max(ASSISTANT_FOLDERS_MAX),
   runWithoutAsking: z.boolean(),
+  allowChangesWithoutAsking: z.boolean().optional(),
 });
 export const AssistantFoldersOps = [AssistantFoldersGetSchema, AssistantFoldersSetSchema] as const;

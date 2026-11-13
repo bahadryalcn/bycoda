@@ -177,7 +177,8 @@ it("edits the subagent ceiling as a draft without changing the main effort", () 
     root.render(
       createElement(ProviderDefaultExtras, {
         harness: "claude",
-        scopeDefaults: { effort: "low" },
+        scopeDefaults: { effort: "low", extras: { crossSubagentMaxEffort: "high" } },
+        inheritedDefaults: { extras: { crossSubagentMaxEffort: "max" } },
         projectScope: false,
         resetLabel: "Reset",
         onSessionDefaultsChange: change,
@@ -189,6 +190,10 @@ it("edits the subagent ceiling as a draft without changing the main effort", () 
             value: "",
             options: [
               { value: "", label: "Automatic" },
+              { value: "none", label: "None" },
+              { value: "minimal", label: "Minimal" },
+              { value: "low", label: "Low" },
+              { value: "high", label: "High" },
               { value: "max", label: "Max" },
             ],
           },
@@ -196,12 +201,22 @@ it("edits the subagent ceiling as a draft without changing the main effort", () 
       }),
     ),
   );
-  const max = container.querySelector<HTMLButtonElement>('[role="radio"][aria-label="Max"]');
+  const radios = [...container.querySelectorAll<HTMLButtonElement>('[role="radio"]')];
+  expect(radios.map((option) => option.getAttribute("aria-label"))).toEqual(["Low", "High", "Max"]);
+  expect(radios[1].getAttribute("aria-checked")).toBe("true");
+  const max = radios[2];
   expect(max).not.toBeNull();
   act(() => max!.click());
   expect(change).toHaveBeenLastCalledWith({
     effort: "low",
     extras: { crossSubagentMaxEffort: "max" },
+  });
+  const automatic = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(automatic.getAttribute("aria-checked")).toBe("false");
+  act(() => automatic.click());
+  expect(change).toHaveBeenLastCalledWith({
+    effort: "low",
+    extras: { crossSubagentMaxEffort: "" },
   });
   act(() => root.unmount());
   container.remove();
@@ -290,6 +305,7 @@ it.each([undefined, "auto", "[]"])(
         (node) => node.textContent === label,
       )!;
     render(initial);
+    expect(mode(initial === "[]" ? "Off" : "Automatic").getAttribute("aria-checked")).toBe("true");
     act(() => mode("Custom").click());
     expect(change).not.toHaveBeenCalled();
     act(() => container.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!.click());
@@ -369,3 +385,47 @@ it.each(["auto", "[]", JSON.stringify([{ harness: "codex", model: "codex:test" }
     vi.unstubAllGlobals();
   },
 );
+
+it("offers one Automatic entry without redundant wand decoration in extras", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const node = document.createElement("div");
+  document.body.append(node);
+  const root = createRoot(node);
+  try {
+    act(() =>
+      root.render(
+        createElement(ProviderDefaultExtras, {
+          harness: "claude",
+          scopeDefaults: {},
+          projectScope: false,
+          resetLabel: "Reset",
+          onSessionDefaultsChange: vi.fn(),
+          extras: [
+            {
+              id: "custom",
+              label: "Custom extra",
+              kind: "select",
+              value: "",
+              options: [
+                { value: "", label: "Automatic" },
+                { value: "custom", label: "Custom" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+    const trigger = node.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!;
+    expect(trigger.querySelectorAll("svg")).toHaveLength(1); // Shared chevron only.
+    act(() => trigger.click());
+    expect(
+      [...document.querySelectorAll('[role="option"]')].filter(
+        (option) => option.textContent?.trim() === "Automatic",
+      ),
+    ).toHaveLength(1);
+  } finally {
+    act(() => root.unmount());
+    node.remove();
+    vi.unstubAllGlobals();
+  }
+});

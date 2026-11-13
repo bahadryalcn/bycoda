@@ -1,5 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
-import { Text } from "../../../shared/ui/Text";
+import { Badge } from "../../../shared/ui/Badge";
+import { Sparkles } from "../../../shared/ui/icons";
 import { skillTextParts } from "../../skills/model/skills";
 import type { HarnessId } from "../model/session";
 import { useComposerSkills } from "./useComposerSkills";
@@ -36,17 +37,17 @@ export function SkillTokenText({ text }: { text: string }) {
   const names = useContext(TranscriptSkillNames);
   return skillTextParts(text, names).map((part, index) =>
     part.skill ? (
-      <Text
+      <Badge
         key={index}
-        as="span"
-        size="inherit"
-        tone="inherit"
-        weight="medium"
+        size="xs"
+        tone="accent"
+        appearance="subtle"
+        icon={<Sparkles />}
         className="text-skill"
         data-skill-token="true"
       >
         {part.text}
-      </Text>
+      </Badge>
     ) : (
       part.text
     ),

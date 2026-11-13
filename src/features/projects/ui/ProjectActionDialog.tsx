@@ -1,4 +1,6 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
+import { Code } from "../../../shared/ui/Code";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
@@ -13,7 +15,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Field } from "../../../shared/ui/Field";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { CodeBlock, Globe, Play, Terminal, Wrench } from "../../../shared/ui/icons";
+import { Check, CodeBlock, Globe, Play, Terminal, Wrench } from "../../../shared/ui/icons";
 import { prettyCwd } from "../../../shared/lib/paths";
 import {
   quickComposerShortcutLabel,
@@ -77,7 +79,7 @@ export function ProjectActionDialog({
   cwd: string;
   editing: boolean;
   error: string;
-  onSave: (action: ProjectAction) => void;
+  onSave: (action: ProjectAction) => boolean | void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -90,6 +92,7 @@ export function ProjectActionDialog({
   }));
   const [shortcutHint, setShortcutHint] = useState("");
   const [detected, setDetected] = useState<ProjectActionPreset[]>([]);
+  // Suggestions belong to the current project; saved actions remain visible and disabled.
   useEffect(() => {
     if (editing) return;
     let live = true;
@@ -105,9 +108,8 @@ export function ProjectActionDialog({
     };
   }, [cwd, editing]);
   const added = new Set(actions.map((item) => item.command.trim()));
-  const suggestions = detected.filter((preset) => !added.has(preset.command));
-  const chips = suggestions.length ? suggestions.slice(0, CHIP_LIMIT) : examples;
-  const more = suggestions.slice(CHIP_LIMIT);
+  const chips = detected.length ? detected.slice(0, CHIP_LIMIT) : examples;
+  const more = detected.slice(CHIP_LIMIT);
   const applyPreset = ({ name, command, icon, url, devServer }: (typeof chips)[number]) =>
     setDraft({
       ...draft,
@@ -134,7 +136,7 @@ export function ProjectActionDialog({
   return (
     <Modal
       title={editing ? t("Edit action") : t("Add action")}
-      description={t("Runs in {p0} from the top bar or a keybinding.", { p0: prettyCwd(cwd) })}
+      description={prettyCwd(cwd)}
       size="md"
       onClose={onClose}
       footerStart={
@@ -147,7 +149,7 @@ export function ProjectActionDialog({
       footer={
         <ModalActions>
           <Button type="button" variant="secondary" onClick={onClose}>
-            {t("Cancel")}
+            {t(editing ? "Cancel" : "Close")}
           </Button>
           <Button type="submit" form={formId} disabled={Boolean(missing)} variant="primary">
             {t("Save action")}
@@ -159,21 +161,35 @@ export function ProjectActionDialog({
         id={formId}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!missing)
-            onSave({
+          if (!missing) {
+            const saved = onSave({
               ...draft,
               name: draft.name.trim(),
               command: draft.command.trim(),
               url: draft.url.trim(),
             });
+            if (!editing && saved !== false) {
+              setDraft({
+                id: crypto.randomUUID(),
+                name: "",
+                command: "",
+                url: "",
+                icon: "play",
+                shortcut: "",
+                openUrlOnRun: true,
+                devServer: false,
+              });
+              setShortcutHint("");
+            }
+          }
         }}
       >
-        <div className="space-y-3 px-5 pb-4 pt-1">
+        <div className="space-y-3">
           {!editing ? (
             <div className="flex flex-wrap items-center gap-1.5">
               <Text size="caption" tone="muted" className="mr-1">
-                {suggestions.length
-                  ? t("Scripts from {p0}", { p0: suggestions[0].source })
+                {detected.length
+                  ? t("Scripts from {p0}", { p0: detected[0].source })
                   : t("Examples")}
               </Text>
               {chips.map((preset) => (
@@ -181,9 +197,16 @@ export function ProjectActionDialog({
                   type="button"
                   key={preset.name}
                   variant="secondary"
-                  tooltip={suggestions.length ? preset.command : undefined}
+                  disabled={added.has(preset.command.trim())}
+                  aria-label={
+                    added.has(preset.command.trim()) ? `${preset.name}: ${t("Added")}` : undefined
+                  }
+                  tooltip={detected.length ? preset.command : undefined}
                   onClick={() => applyPreset(preset)}
                 >
+                  {added.has(preset.command.trim()) ? (
+                    <Check className="icon-sm" aria-hidden="true" />
+                  ) : null}
                   {preset.name}
                 </Button>
               ))}
@@ -197,6 +220,8 @@ export function ProjectActionDialog({
                     value: preset.name,
                     label: preset.name,
                     description: preset.command,
+                    disabled: added.has(preset.command.trim()),
+                    meta: added.has(preset.command.trim()) ? t("Added") : undefined,
                   }))}
                   onChange={(name) => {
                     const preset = more.find((item) => item.name === name);
@@ -205,6 +230,30 @@ export function ProjectActionDialog({
                 />
               ) : null}
             </div>
+          ) : null}
+          {!editing && actions.length ? (
+            <Text as="section" aria-label={t("Project actions")} className="space-y-1">
+              <Text as="p" size="caption" tone="muted">
+                {t("Saved")}
+              </Text>
+              <Text as="ul" className="max-h-24 space-y-1 overflow-y-auto">
+                {actions.map((saved) => (
+                  <Text
+                    as="li"
+                    key={saved.id}
+                    className="flex min-w-0 items-center gap-3"
+                    size="secondary"
+                  >
+                    <Text truncate className="min-w-0 flex-1">
+                      {saved.name}
+                    </Text>
+                    <Text size="caption" tone="muted" truncate className="min-w-0 flex-1">
+                      <Code>{saved.command || saved.url}</Code>
+                    </Text>
+                  </Text>
+                ))}
+              </Text>
+            </Text>
           ) : null}
           <Field label={t("Name")}>
             {(control) => (
@@ -244,6 +293,7 @@ export function ProjectActionDialog({
           <TextareaField
             label={t("Command")}
             rows={2}
+            minRows={2}
             monospace
             className="resize-y"
             leading="relaxed"
@@ -252,30 +302,32 @@ export function ProjectActionDialog({
             onChange={(event) => setDraft({ ...draft, command: event.target.value })}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <TextField
-              label={t("Keybinding")}
-              readOnly
-              title={t("Backspace clears the shortcut.")}
-              placeholder={t("Click here and press a shortcut")}
-              value={draft.shortcut ? quickComposerShortcutLabel(draft.shortcut) : ""}
-              aria-invalid={Boolean(shortcutError)}
-              onKeyDown={(event) => {
-                if (event.key === "Tab") return;
-                event.preventDefault();
-                event.stopPropagation();
-                if (event.key === "Backspace" || event.key === "Delete") {
-                  setDraft({ ...draft, shortcut: "" });
-                  setShortcutHint("");
-                  return;
-                }
-                const value = shortcutFromKeyEvent(event);
-                if (value) {
-                  setDraft({ ...draft, shortcut: value });
-                  setShortcutHint("");
-                } else if (!["Control", "Meta", "Alt", "Shift"].includes(event.key))
-                  setShortcutHint("Include Ctrl, Alt or Command with another key.");
-              }}
-            />
+            <Tooltip label={t("Backspace clears the shortcut.")}>
+              <TextField
+                label={t("Keybinding")}
+                readOnly
+
+                placeholder={t("Click here and press a shortcut")}
+                value={draft.shortcut ? quickComposerShortcutLabel(draft.shortcut) : ""}
+                aria-invalid={Boolean(shortcutError)}
+                onKeyDown={(event) => {
+                  if (event.key === "Tab") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (event.key === "Backspace" || event.key === "Delete") {
+                    setDraft({ ...draft, shortcut: "" });
+                    setShortcutHint("");
+                    return;
+                  }
+                  const value = shortcutFromKeyEvent(event);
+                  if (value) {
+                    setDraft({ ...draft, shortcut: value });
+                    setShortcutHint("");
+                  } else if (!["Control", "Meta", "Alt", "Shift"].includes(event.key))
+                    setShortcutHint("Include Ctrl, Alt or Command with another key.");
+                }}
+              />
+            </Tooltip>
             <TextField
               label={`${t("Web address")} ${t("(optional)")}`}
               type="url"
@@ -288,17 +340,17 @@ export function ProjectActionDialog({
           {shortcutError || shortcutHint ? (
             <InlineMessage tone="warning">{shortcutError || shortcutHint}</InlineMessage>
           ) : null}
-          <div className="space-y-2.5 rounded-lg bg-(--ui-surface-muted) px-3 py-2.5">
+          <div className="space-y-2.5">
             <Checkbox
+              size="secondary"
               checked={draft.devServer}
               onChange={(event) => setDraft({ ...draft, devServer: event.target.checked })}
               label={t("Manage as development server")}
-              description={t(
-                "Runs on this project's host with server status and logs in Conversation tools.",
-              )}
+              description={t("Track server status and logs.")}
             />
             {!draft.devServer ? (
               <Checkbox
+                size="secondary"
                 checked={draft.openUrlOnRun && Boolean(draft.url.trim())}
                 disabled={!draft.url.trim()}
                 onChange={(event) => setDraft({ ...draft, openUrlOnRun: event.target.checked })}

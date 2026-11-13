@@ -6,6 +6,7 @@ import { Select } from "../../../../shared/ui/Select";
 
 import { TextField } from "../../../../shared/ui/TextField";
 import { DisabledReason } from "../common/DisabledReason";
+import { PlatformIcon } from "../common/PlatformIcon";
 import {
   SOCIAL_PLATFORMS,
   SOCIAL_PLATFORM_NAMES,
@@ -64,6 +65,7 @@ export function CharacterLimits({ client, policies, onChanged }: CharacterLimits
             ...SOCIAL_PLATFORMS.map((platform) => ({
               value: platform,
               label: SOCIAL_PLATFORM_NAMES[platform],
+              icon: <PlatformIcon platform={platform} />,
             })),
           ]}
           onValueChange={(value) => setScope(value as PolicyScope)}

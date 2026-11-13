@@ -2,6 +2,88 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
+async function openRoomSection(page: Page, section: string) {
+  const group = ["Jobs", "Sessions"].includes(section)
+    ? "Work"
+    : ["Notes", "History", "Memory"].includes(section)
+      ? "Records"
+      : section;
+  await page.getByRole("tab", { name: new RegExp(`^${group}(?:\\s|$)`) }).click();
+  if (group !== section) await page.getByRole("tab", { name: section, exact: true }).click();
+}
+
+async function openWrittenBrief(page: Page) {
+  await openRoomSection(page, "Jobs");
+  const disclosure = page
+    .locator("details")
+    .filter({ has: page.locator("summary").filter({ hasText: "Use a written brief" }) })
+    .first();
+  if (!(await disclosure.getAttribute("open"))) {
+    if (!(await disclosure.evaluate((element) => (element as HTMLDetailsElement).open)))
+      await disclosure.locator("summary").click();
+  }
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`rich Room chat preserves voice and drafts ${theme} ${width}`, async ({
+      page,
+      context,
+    }) => {
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&chat-redesign`);
+      await page.getByRole("tab", { name: "Conversations", exact: true }).click();
+      const answer = page
+        .locator('article[data-author="assistant"]')
+        .filter({ hasText: "Recovery status" });
+      await expect(answer.getByRole("heading", { name: "Recovery status" })).toBeVisible();
+      await expect(answer.getByRole("table")).toContainText("Draft recovery");
+      await expect
+        .poll(() =>
+          answer
+            .locator("ul")
+            .first()
+            .evaluate((list) => getComputedStyle(list).listStyleType),
+        )
+        .toBe("disc");
+      await expect(answer.locator("pre")).toContainText("restoreDraft(threadId)");
+      await expect(answer.getByRole("link", { name: "Review the guide" })).toBeVisible();
+      await expect(answer.getByText("Voice", { exact: true })).toBeVisible();
+      await answer.getByRole("button", { name: "Copy response", exact: true }).click();
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toContain("## Recovery status");
+      await answer.getByText("Recorded actions", { exact: true }).click();
+      await expect(answer).toContainText("files.read");
+      const input = page.getByRole("textbox", { name: /^Message / });
+      await input.fill("Keep this draft");
+      await input.press("Shift+Enter");
+      await input.pressSequentially("second line");
+      const threads = page.getByRole("complementary", { name: "Conversations" });
+      await threads.getByRole("button", { name: /^Upstream/ }).click();
+      await expect(input).toHaveValue("");
+      await threads.getByRole("button", { name: /^Global/ }).click();
+      await expect(input).toHaveValue("Keep this draft\nsecond line");
+      await expect
+        .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+      const output = join(
+        process.cwd(),
+        "temp/verification/assistant-redesign-20261113/conversations",
+      );
+      await mkdir(output, { recursive: true });
+      await page.screenshot({
+        path: join(output, `${theme}-${width}-rich-chat.png`),
+        animations: "disabled",
+      });
+      await answer.getByRole("button", { name: "Delete message", exact: true }).click();
+      await expect(page.getByRole("dialog")).toContainText("Delete message?");
+      await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(answer).toBeVisible();
+    });
+  }
+
 const setupTitles = [
   "Identity",
   "Language",
@@ -387,7 +469,7 @@ async function openSettingsGroup(page: Page, name: string) {
     Identity: "Personal",
     Language: "Personal",
     "Conversation behavior": "Personal",
-    Jobs: "Work",
+    Jobs: "Access",
     Models: "Work",
     "Presence and hours": "Work",
     "Cost and context": "Advanced",
@@ -401,15 +483,25 @@ async function openSettingsGroup(page: Page, name: string) {
   const disclosureName =
     name === "Conversation behavior"
       ? "Personality and conversation"
-      : name === "Jobs"
-        ? "Customize"
+      : name === "Jobs" || name === "Computer use"
+        ? "Customize access"
         : undefined;
   if (disclosureName) {
-    const disclosure = page
-      .getByRole("dialog")
-      .getByRole("button", { name: disclosureName, exact: true });
-    await expect(disclosure).toBeVisible();
-    if ((await disclosure.getAttribute("aria-expanded")) !== "true") await disclosure.click();
+    if (disclosureName === "Customize access") {
+      const disclosure = page
+        .getByRole("dialog")
+        .locator("details")
+        .filter({ has: page.locator("summary").filter({ hasText: disclosureName }) })
+        .first();
+      if (!(await disclosure.evaluate((element) => (element as HTMLDetailsElement).open)))
+        await disclosure.locator("summary").click();
+    } else {
+      const disclosure = page
+        .getByRole("dialog")
+        .getByRole("button", { name: disclosureName, exact: true });
+      await expect(disclosure).toBeVisible();
+      if ((await disclosure.getAttribute("aria-expanded")) !== "true") await disclosure.click();
+    }
   }
   if (name === "Computer use")
     return page
@@ -420,7 +512,7 @@ async function openSettingsGroup(page: Page, name: string) {
   // Settings pages are flat sections titled by a heading; the page tab shows them.
   return page
     .getByRole("dialog")
-    .locator("section")
+    .locator("section:visible")
     .filter({ has: page.getByRole("heading", { name: headings[name] ?? name, exact: true }) })
     .first();
 }
@@ -456,7 +548,7 @@ for (const theme of ["light", "dark"])
       await capture("presence");
       await page.keyboard.press("Escape");
       for (const tab of ["Conversations", "Jobs", "Sessions", "Notes", "History", "Memory"]) {
-        await room.getByRole("tab", { name: new RegExp(`^${tab}`) }).click();
+        await openRoomSection(page, tab);
         await capture(tab.toLowerCase());
       }
       await room.getByRole("button", { name: "Add memory", exact: true }).click();
@@ -465,16 +557,19 @@ for (const theme of ["light", "dark"])
         .getByRole("dialog", { name: "Add memory", exact: true })
         .getByRole("button", { name: "Cancel", exact: true })
         .click();
-      await room.getByRole("tab", { name: "Notes", exact: true }).click();
+      await openRoomSection(page, "Notes");
       await room.getByRole("button", { name: "New note", exact: true }).click();
-      const note = page.getByRole("dialog", { name: "New note", exact: true });
-      await note.getByRole("textbox", { name: "Title", exact: true }).fill("Retained owner draft");
+      const note = page.getByRole("region", { name: "New note", exact: true });
+      await note
+        .getByRole("textbox", { name: "Note title", exact: true })
+        .fill("Retained owner draft");
       await capture("note-editor");
-      await note.getByRole("button", { name: "Cancel", exact: true }).click();
-      await room.getByRole("tab", { name: /^Jobs/ }).click();
+      await note.getByRole("button", { name: "Close", exact: true }).click();
+      await openRoomSection(page, "Jobs");
       await room.getByRole("button", { name: "Improve session recovery", exact: true }).click();
       await capture("job-detail");
       await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
+      await openWrittenBrief(page);
       const draft = room.getByRole("textbox", { name: "Give Arif a job", exact: true });
       await draft.fill("Review the saved release draft");
       await room.getByRole("button", { name: "Review jobs", exact: true }).click();
@@ -483,8 +578,9 @@ for (const theme of ["light", "dark"])
         .getByRole("dialog", { name: "Review jobs", exact: true })
         .getByRole("button", { name: "Cancel", exact: true })
         .click();
-      await room.getByRole("tab", { name: "Notes", exact: true }).click();
-      await room.getByRole("tab", { name: /^Jobs/ }).click();
+      await openRoomSection(page, "Notes");
+      await openRoomSection(page, "Jobs");
+      await openWrittenBrief(page);
       await expect(draft).toHaveValue("Review the saved release draft");
       await room.getByRole("button", { name: "Settings", exact: true }).click();
       const settings = page.getByRole("dialog", { name: "Settings · Arif", exact: true });
@@ -520,7 +616,7 @@ for (const theme of ["light", "dark"])
         "History",
         "Memory",
       ]) {
-        await page.getByRole("tab", { name: new RegExp(`^${tab}`) }).click();
+        await openRoomSection(page, tab);
         await capture(`empty-${tab.toLowerCase()}`);
       }
     });
@@ -729,7 +825,7 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/assistant/assistant-room.html?theme=${theme}&delete-bundle=1`,
       );
-      await page.getByRole("tab", { name: /^Jobs(?: \d+)?$/ }).click();
+      await openRoomSection(page, "Jobs");
       await page.getByRole("button", { name: "Job actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Delete...", exact: true }).click();
       const review = page.getByRole("dialog", { name: "Delete job?", exact: true });
@@ -777,7 +873,7 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/assistant/assistant-room.html?theme=${theme}&delete-bundle=1&delete-success=1`,
       );
-      await page.getByRole("tab", { name: /^Jobs(?: \d+)?$/ }).click();
+      await openRoomSection(page, "Jobs");
       await page.getByRole("button", { name: "Job actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Delete...", exact: true }).click();
       const review = page.getByRole("dialog", { name: "Delete job?", exact: true });
@@ -834,6 +930,7 @@ for (const theme of ["light", "dark"])
         `/tests/browser/assistant/assistant-room.html?theme=${theme}&quick-automation=1`,
       );
       page.setDefaultTimeout(15000);
+      await openWrittenBrief(page);
       await page
         .getByRole("textbox", { name: "Give Arif a job", exact: true })
         .fill("Create a scheduled morning review");
@@ -843,10 +940,11 @@ for (const theme of ["light", "dark"])
       await page.getByRole("option", { name: "Create scheduled automation", exact: true }).click();
       await expect(
         review.getByRole("button", { name: "Create automations", exact: true }),
-      ).toBeDisabled();
-      await review
-        .getByRole("button", { name: "Choose a provider and model", exact: true })
-        .click();
+      ).toBeEnabled();
+      // Model routing supplies the default; a manual picker selection is no longer required.
+      await expect(
+        review.getByRole("group", { name: "Execution model", exact: true }),
+      ).toBeVisible();
       await review
         .getByRole("textbox", { name: "Automation prompt", exact: true })
         .fill(
@@ -880,7 +978,7 @@ for (const theme of ["light", "dark"])
       await review.getByRole("button", { name: "Check and retry", exact: true }).click();
       await expect(review).toHaveCount(0);
       await expect(page.locator("body")).toHaveAttribute("data-automation-creates", "1");
-      await page.getByRole("tab", { name: /^Jobs(?: \d+)?$/ }).click();
+      await openRoomSection(page, "Jobs");
       await page
         .getByRole("button", { name: "Create a scheduled morning review", exact: true })
         .click();
@@ -913,8 +1011,8 @@ for (const theme of ["light", "dark"])
       await page.getByRole("option", { name: "Create scheduled automation", exact: true }).click();
       await expect(
         page.getByRole("button", { name: "Create automations", exact: true }),
-      ).toBeDisabled();
-      await page.getByRole("button", { name: "Choose a provider and model", exact: true }).click();
+      ).toBeEnabled();
+      await expect(page.getByRole("group", { name: "Execution model", exact: true })).toBeVisible();
       await page.screenshot({
         animations: "disabled",
         path: join(output, `automation-voice-review-${theme}-${width}.png`),
@@ -1037,7 +1135,8 @@ for (const theme of ["light", "dark"])
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&multi=1`);
-      await page.getByRole("tab", { name: /^Jobs(?: \d+)?$/ }).click();
+      await openRoomSection(page, "Jobs");
+      await openWrittenBrief(page);
       await page
         .getByRole("textbox", { name: "Give Arif a job", exact: true })
         .fill("Coordinate frontend and backend");
@@ -1115,7 +1214,7 @@ for (const theme of ["light", "dark"])
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&privacy=1`);
-      await page.getByRole("tab", { name: /^Jobs(?: \d+)?$/ }).click();
+      await openRoomSection(page, "Jobs");
       await page
         .getByRole("checkbox", { name: "Select Secret project request", exact: true })
         .check();
@@ -1143,7 +1242,7 @@ for (const theme of ["light", "dark"])
         path: join(output, `privacy-conversations-${theme}-${width}.png`),
       });
       await search.fill("");
-      await page.getByRole("tab", { name: "History", exact: true }).click();
+      await openRoomSection(page, "History");
       await expect(page.locator("body")).not.toContainText("Secret source activity");
       await page.screenshot({
         animations: "disabled",
@@ -1166,7 +1265,7 @@ for (const theme of ["light", "dark"])
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&manual=1`);
-      await page.getByRole("tab", { name: "Sessions", exact: true }).click();
+      await openRoomSection(page, "Sessions");
       const section = page.getByRole("region", { name: "Manual session supervision", exact: true });
       await expect(
         section.getByText("Execution changed. Enroll again to supervise this source.", {
@@ -1430,7 +1529,7 @@ test("searches all conversations and saved memory through the Host adapter", asy
   ).toBeVisible();
   await page.getByRole("searchbox", { name: "Search this section", exact: true }).fill("Nightly");
   await expect(page.getByText("Nightly follow-up across projects", { exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Memory", exact: true }).click();
+  await openRoomSection(page, "Memory");
   await page.getByRole("searchbox", { name: "Search this section", exact: true }).fill("concise");
   await expect(
     page.getByText("Prefer concise updates with source evidence.", {
@@ -1482,7 +1581,7 @@ for (const theme of ["light", "dark"] as const)
         "History",
         "Memory",
       ]) {
-        await page.getByRole("tab", { name: new RegExp(`^${tab}(?:\\s|$)`) }).click();
+        await openRoomSection(page, tab);
         await expect(page.locator("#assistant-content")).toHaveAttribute("aria-label", tab);
         if (tab === "Sessions") {
           await expect(page.getByText("Context ready", { exact: true })).toBeVisible();
@@ -1541,7 +1640,7 @@ for (const theme of ["light", "dark"] as const)
         path: join(output, `${theme}-${width}-recently-deleted.png`),
       });
       await page.getByRole("dialog").getByRole("button", { name: "Close", exact: true }).click();
-      await page.getByRole("tab", { name: /^Jobs(?:\s|$)/ }).click();
+      await openRoomSection(page, "Jobs");
       await page.getByRole("button", { name: "Improve session recovery", exact: true }).click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.screenshot({
@@ -1558,18 +1657,18 @@ for (const theme of ["light", "dark"])
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&note-retry=1`);
-      await page.getByRole("tab", { name: "Notes", exact: true }).click();
+      await openRoomSection(page, "Notes");
       await page.getByRole("button", { name: "New note", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "New note", exact: true });
+      const dialog = page.getByRole("region", { name: "New note", exact: true });
       await dialog
-        .getByRole("textbox", { name: "Title", exact: true })
+        .getByRole("textbox", { name: "Note title", exact: true })
         .fill("Owner's retained note");
-      await dialog
-        .getByRole("textbox", { name: "Note", exact: true })
-        .fill("Keep this exact body when the native save reply is lost.");
+      await dialog.getByRole("tab", { name: "Source", exact: true }).click();
+      const source = dialog.locator(".cm-content:visible");
+      await source.fill("Keep this exact body when the native save reply is lost.");
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
       await expect(dialog.getByRole("alert")).toContainText("after note commit");
-      await expect(dialog.getByRole("textbox", { name: "Note", exact: true })).toBeDisabled();
+      await expect(source).toHaveAttribute("contenteditable", "false");
       const first = await page.evaluate(() =>
         JSON.parse(localStorage.getItem("bycoda.assistant.note-draft:new:record")!),
       );
@@ -1579,11 +1678,10 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `note-unknown-${theme}-${width}.png`),
       });
-      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await dialog.getByRole("button", { name: "Close", exact: true }).click();
       await page.getByRole("button", { name: "New note", exact: true }).click();
-      await expect(dialog.getByRole("textbox", { name: "Note", exact: true })).toHaveValue(
-        first.body,
-      );
+      await dialog.getByRole("tab", { name: "Source", exact: true }).click();
+      await expect(source).toHaveText(first.body);
       await page.screenshot({
         animations: "disabled",
         path: join(output, `note-reopened-${theme}-${width}.png`),
@@ -1705,7 +1803,7 @@ for (const theme of ["light", "dark"])
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&note-trash=1`);
-      await page.getByRole("tab", { name: "Notes", exact: true }).click();
+      await openRoomSection(page, "Notes");
       await page.getByRole("button", { name: "Delete note", exact: true }).click();
       await page
         .getByRole("dialog", { name: "Delete note?", exact: true })
@@ -1748,7 +1846,7 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&completion=1`);
-      await page.getByRole("tab", { name: /^Jobs\b/ }).click();
+      await openRoomSection(page, "Jobs");
       await page.getByRole("button", { name: "Job actions", exact: true }).click();
       await page.getByRole("menuitem", { name: "Priority", exact: true }).click();
       await page.getByRole("button", { name: "Priority: Normal", exact: true }).click();
@@ -1784,7 +1882,7 @@ for (const theme of ["light", "dark"])
         path: join(output, `job-filters-${theme}-${width}.png`),
       });
       await page.keyboard.press("Escape");
-      await page.getByRole("tab", { name: "Notes", exact: true }).click();
+      await openRoomSection(page, "Notes");
       await page.getByRole("button", { name: "Summarize today", exact: true }).click();
       await expect(page.getByText(/Today's saved fixture summary:/)).toBeVisible();
       await page.screenshot({
@@ -1857,3 +1955,422 @@ async function saveProfileSettings(page: Page) {
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
 }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`assistant source visual states ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const output = "temp/verification/assistant-callers-visual";
+      await mkdir(output, { recursive: true });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&real-controls&setup`,
+      );
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.screenshot({
+        path: `${output}/${theme}-${width}-setup.png`,
+        animations: "disabled",
+      });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&global-room&slow-recovery&notification-recovery-fixture`,
+      );
+      await expect(page.getByText("History · fixture")).toBeVisible();
+      await page.getByText("Task notification recovery", { exact: true }).click();
+      await page.getByRole("button", { name: /^Project\b/ }).click();
+      await page.getByRole("option", { name: "Fixture project", exact: true }).click();
+      await page.getByRole("button", { name: "Check notifications", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "Check notifications", exact: true }),
+      ).toBeDisabled();
+      await page.screenshot({
+        path: `${output}/${theme}-${width}-recovery-loading.png`,
+        animations: "disabled",
+      });
+      await expect(page.getByText("Outcome unknown")).toBeVisible();
+      await page.screenshot({
+        path: `${output}/${theme}-${width}-recovery.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`assistant activity states ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&job-state-fixture`,
+      );
+      await expect(page.getByText("Fixture activity unavailable")).toBeVisible();
+      await expect(page.getByText("No notes mention this job yet.")).toBeVisible();
+      await expect(page.getByText("Loading...", { exact: true })).toBeVisible();
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/${theme}-${width}-job-states.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`assistant recovery and folder errors ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await mkdir("temp/verification/assistant-recovery-visual", { recursive: true });
+      for (const [name, text] of [
+        ["draft", "Fixture draft unavailable"],
+        ["trash", "Recently deleted"],
+        ["folders", "Fixture folders unavailable"],
+      ]) {
+        await page.goto(
+          `/tests/browser/assistant/assistant-room.html?theme=${theme}&${name}-state-fixture`,
+        );
+        await expect(page.getByText(text, { exact: true }).first()).toBeVisible();
+        await page.screenshot({
+          path: `temp/verification/assistant-recovery-visual/${theme}-${width}-${name}.png`,
+          animations: "disabled",
+        });
+      }
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`assistant remaining caller states ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await mkdir("temp/verification/assistant-remaining-visual", { recursive: true });
+      for (const [name, text] of [
+        ["owner", "Choose the result"],
+        ["remote", "Remote Room access"],
+        ["supervision", "Fixture supervision unavailable"],
+        ["usage", "Keep conversation messages"],
+      ]) {
+        await page.goto(
+          `/tests/browser/assistant/assistant-room.html?theme=${theme}&${name}-state-fixture`,
+        );
+        await expect(page.getByText(text, { exact: true }).first()).toBeVisible();
+        if (name === "owner") {
+          await page.getByText("Focused change", { exact: true }).click();
+          await page.getByRole("button", { name: "Send answer", exact: true }).click();
+          await expect(
+            page.getByText("Fixture question unavailable", { exact: true }),
+          ).toBeVisible();
+        }
+        await page.screenshot({
+          path: `temp/verification/assistant-remaining-visual/${theme}-${width}-${name}.png`,
+          animations: "disabled",
+        });
+      }
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`job row shared reveal ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&job-row-fixture`,
+      );
+      const checkbox = page.getByRole("checkbox");
+      await expect(checkbox).toHaveCSS("opacity", "0");
+      await checkbox.focus();
+      await expect(checkbox).toHaveCSS("opacity", "1");
+      await checkbox.check();
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/job-row-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`assistant collections dividers ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&collections-fixture`,
+      );
+      const activity = page.locator("ol > li");
+      const memory = page.locator("section article");
+      await expect(activity).toHaveCount(2);
+      await expect(memory).toHaveCount(2);
+      for (const rows of [activity, memory]) {
+        await expect(rows.first()).toHaveCSS("border-top-width", "0px");
+        await expect(rows.nth(1)).toHaveCSS("border-top-width", "1px");
+      }
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/collections-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`job note separators ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&job-notes-fixture`,
+      );
+      const sections = page.locator("main section");
+      await expect(sections).toHaveCount(2);
+      await expect(sections.first()).toHaveCSS("border-bottom-width", "1px");
+      await expect(sections.nth(1)).toHaveCSS("border-bottom-width", "0px");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/job-notes-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`trash rows separators ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&trash-rows-fixture`,
+      );
+      const rows = page.getByRole("dialog", { name: "Recently deleted" }).locator("ul > li");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first()).toHaveCSS("border-top-width", "0px");
+      await expect(rows.nth(1)).toHaveCSS("border-top-width", "1px");
+      await expect(rows.first()).toHaveCSS("border-radius", "0px");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/trash-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`avatar picker ring ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&avatar-picker-fixture`,
+      );
+      const radio = page.getByRole("radio").first();
+      await expect(radio).toHaveAttribute("aria-checked", "true");
+      await expect(radio).toHaveCSS("border-radius", "9999px");
+      const metrics = await radio.evaluate((node) => {
+        const s = getComputedStyle(node);
+        return { shadow: s.boxShadow, border: s.borderRadius };
+      });
+      expect(metrics.shadow).toContain("2px");
+      const next = page.getByRole("radio").nth(1);
+      await next.click();
+      await expect(next).toHaveAttribute("aria-checked", "true");
+      await expect(next).toHaveCSS("border-radius", "9999px");
+      await expect(radio).toHaveAttribute("aria-checked", "false");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/avatar-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`notes selection and timeline ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&notes-components-fixture`,
+      );
+      const checkbox = page.getByRole("checkbox");
+      await expect(checkbox).toHaveCSS("opacity", "0");
+      await checkbox.focus();
+      await expect(checkbox).toHaveCSS("opacity", "1");
+      await checkbox.check();
+      const rows = page.locator("article ol > li");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first()).toHaveCSS("border-bottom-width", "1px");
+      await expect(rows.nth(1)).toHaveCSS("border-bottom-width", "0px");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/notes-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [480, 800, 1280]) {
+    test(`notes layout frame ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&notes-layout-fixture`,
+      );
+      const list = page.getByRole("list", { name: "Notes" });
+      await expect(list).toBeVisible();
+      const pane = list.locator("..");
+      await expect(pane).toHaveCSS("border-right-width", width === 480 ? "0px" : "1px");
+      const reader = page.locator("main article");
+      const listBox = await pane.boundingBox();
+      const readerBox = await reader.boundingBox();
+      expect(listBox && readerBox).toBeTruthy();
+      if (width === 480) expect(readerBox!.y).toBeGreaterThanOrEqual(listBox!.y + listBox!.height);
+      else expect(readerBox!.x).toBeGreaterThan(listBox!.x + listBox!.width);
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/notes-layout-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`builder preview dividers ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&builder-preview-fixture`,
+      );
+      const rows = page.locator("main ul > li");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first()).toHaveCSS("border-top-width", "0px");
+      await expect(rows.nth(1)).toHaveCSS("border-top-width", "1px");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/builder-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`conversation canvas and user bubble paints ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&conversation-message-fixture`,
+      );
+      const bubbles = page.locator("main article > div:nth-child(2)");
+      await expect(bubbles).toHaveCount(2);
+      const values = await bubbles.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const s = getComputedStyle(node);
+          return {
+            bg: s.backgroundColor,
+            bl: s.borderBottomLeftRadius,
+            br: s.borderBottomRightRadius,
+          };
+        }),
+      );
+      expect(values[0].bl).toBe("0px");
+      expect(values[0].br).toBe("0px");
+      expect(values[1].bl).toBe("8px");
+      expect(values[1].br).toBe("8px");
+      expect(values[0].bg).not.toBe(values[1].bg);
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/bubbles-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`presence marks ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&presence-marks-fixture`,
+      );
+      const marks = page.locator("[data-presence-state] > span:first-child");
+      await expect(marks).toHaveCount(4);
+      for (const mark of await marks.all()) await expect(mark).toHaveCSS("width", "9px");
+      await expect(marks.last()).toHaveCSS("border-top-width", "1px");
+      await expect(marks.last()).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/presence-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await page.emulateMedia({ forcedColors: "active" });
+      for (const mark of await marks.all()) await expect(mark).toHaveCSS("border-top-width", "1px");
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`job session boundaries ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&job-sessions-fixture`,
+      );
+      const rows = page.locator("[data-assistant-session]");
+      await expect(rows).toHaveCount(3);
+      for (const row of await rows.all()) await expect(row).toHaveCSS("border-bottom-width", "1px");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/job-sessions-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`manual supervision notice frame ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      for (const chief of [true, false]) {
+        await page.goto(
+          `/tests/browser/assistant/assistant-room.html?theme=${theme}&manual-notices-fixture${chief ? "&chief" : ""}`,
+        );
+        const notice = page.locator("[class*=notices]");
+        await expect(notice).toHaveCSS("border-top-width", chief ? "0px" : "1px");
+        await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+        await page.screenshot({
+          path: `temp/verification/assistant-callers-visual/manual-${theme}-${width}-${chief}.png`,
+          animations: "disabled",
+        });
+      }
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`job review boundaries ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&job-review-fixture`,
+      );
+      const rows = page.locator("[class*=reviewJob]");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first()).toHaveCSS("border-top-width", "0px");
+      await expect(rows.nth(1)).toHaveCSS("border-top-width", "1px");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/review-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`briefing multiple approvals ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/assistant/assistant-room.html?theme=${theme}&briefing&multi-approvals`,
+      );
+      const card = page.getByRole("region", { name: "While you were away", exact: true });
+      await card.getByRole("button", { name: "Go to approvals", exact: true }).click();
+      const rows = card.locator('[data-surface-dividers="pane"] > div');
+      await expect(rows).toHaveCount(2);
+      await expect(rows.first()).toHaveCSS("border-bottom-width", "1px");
+      await expect(rows.last()).toHaveCSS("border-bottom-width", "0px");
+      await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/assistant-callers-visual/approvals-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }

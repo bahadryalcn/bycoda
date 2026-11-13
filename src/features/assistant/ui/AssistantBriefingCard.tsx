@@ -4,8 +4,8 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Heading } from "../../../shared/ui/Heading";
-import { Surface } from "../../../shared/ui/Surface";
-import { X } from "../../../shared/ui/icons";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
+import { X, Mic, Volume2, Square, File, Check, Languages } from "../../../shared/ui/icons";
 import type { AssistantSnapshot } from "../../../shared/model/host-contracts/assistant";
 import {
   findAssistantApprovals,
@@ -257,9 +257,12 @@ export function AssistantBriefingCard({
       ))}
       <div className={briefingStyles.actions}>
         {!snapshot.profile.voiceSetupComplete ? (
-          <Button onClick={onSetupVoice}>{t("Set up voice")}</Button>
+          <Button startIcon={<Mic />} onClick={onSetupVoice}>
+            {t("Set up voice")}
+          </Button>
         ) : speaking === "idle" ? (
           <Button
+            startIcon={<Volume2 />}
             disabled={activeVoice || unknownLanguage}
             disabledReason={
               activeVoice
@@ -272,6 +275,7 @@ export function AssistantBriefingCard({
           </Button>
         ) : (
           <Button
+            startIcon={<Square />}
             onClick={() => {
               playback.current?.abort();
               playback.current = null;
@@ -281,8 +285,11 @@ export function AssistantBriefingCard({
             {t("Stop listening")}
           </Button>
         )}
-        <Button onClick={onOpenNotes}>{t("Open notes")}</Button>
+        <Button startIcon={<File />} onClick={onOpenNotes}>
+          {t("Open notes")}
+        </Button>
         <Button
+          startIcon={<Check />}
           loading={busy === "approvals"}
           disabled={!!busy}
           onClick={() => void run("approvals", checkApprovals)}
@@ -311,7 +318,9 @@ export function AssistantBriefingCard({
           <Text as="span" tone="muted" leading="inherit" className={briefingStyles.muted}>
             {t("Speak once or choose a language before listening.")}
           </Text>
-          <Button onClick={onChooseLanguage}>{t("Choose language")}</Button>
+          <Button startIcon={<Languages />} onClick={onChooseLanguage}>
+            {t("Choose language")}
+          </Button>
         </div>
       )}
       {audioError && <InlineError>{t(audioError)}</InlineError>}
@@ -326,7 +335,7 @@ export function AssistantBriefingCard({
         <InlineError>{t("Some approval sources could not be checked. Try again.")}</InlineError>
       )}
       {approvals && approvals.length > 0 && (
-        <div className={briefingStyles.approvals}>
+        <div {...surfaceAttributes({ dividers: "pane" }, briefingStyles.approvals)}>
           {approvals
             .filter((target) => canSeeProject(target.projectId))
             .map((target) => (

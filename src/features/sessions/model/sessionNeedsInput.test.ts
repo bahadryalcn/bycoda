@@ -47,6 +47,12 @@ describe("hasPendingApproval memo", () => {
 describe("sessionNeedsInput", () => {
   const base = { worktreeRemoved: false } as unknown as Session;
 
+  it("recognizes application-owned approval without a provider question or block", () => {
+    const session = { ...base, blocks: [], pendingOwnerApproval: true } as Session;
+    expect(sessionNeedsInput(session)).toBe(true);
+    expect(sessionNeedsInput({ ...session, worktreeRemoved: true })).toBe(false);
+  });
+
   it("follows approvals, questions and removed worktrees", () => {
     const pending = [block("a", { decided: false })];
     const done = [block("a", { decided: true })];

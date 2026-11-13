@@ -8,7 +8,7 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const render = async (pending: number, saveState: DefaultsSaveState) => {
+  const render = async (pending: number, saveState: DefaultsSaveState, saving = false) => {
     await act(async () =>
       root.render(
         createElement(ProviderDefaultsSaveBar, {
@@ -17,6 +17,7 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
           onTargetChange: vi.fn(),
           pending,
           saveState,
+          saving,
           onSave: vi.fn(),
           onDiscard: vi.fn(),
         }),
@@ -43,6 +44,13 @@ it("confirms saved defaults in the action while retaining unsaved counts and sav
     expect(
       [...container.querySelectorAll("button")].some((button) => button.textContent === "Retry"),
     ).toBe(true);
+    await render(2, { state: "idle" }, true);
+    for (const label of ["Save", "Discard"]) {
+      const button = [...container.querySelectorAll("button")].find(
+        (node) => node.textContent === label,
+      )!;
+      expect(button.getAttribute("aria-disabled")).toBe("true");
+    }
   } finally {
     await act(async () => root.unmount());
     container.remove();

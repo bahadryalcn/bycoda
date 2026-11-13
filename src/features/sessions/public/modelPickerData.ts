@@ -7,3 +7,6 @@ export {
   DelegationSubagentsControl,
 } from "../ui/DelegationSettings";
 export { signedOutAccountKeys } from "../model/accountModelChoices";
+export { SubagentEffortSwitch } from "../ui/SubagentEffortSwitch";
+
+export { ascendingEffortOptions } from "../model/modelPanelData";

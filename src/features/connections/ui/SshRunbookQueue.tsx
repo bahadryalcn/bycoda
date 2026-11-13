@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "../../../shared/i18n";
@@ -60,7 +61,10 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
         <Text
           as="div"
           tone="inherit"
-          className="flex shrink-0 items-center justify-end gap-2 border-b border-stroke px-3 py-1"
+          {...surfaceAttributes(
+            { frame: "stroke", edge: "bottom" },
+            "flex shrink-0 items-center justify-end gap-2 px-3 py-1",
+          )}
         >
           <Button variant="ghost" onClick={() => setOpen(true)}>
             {t("SSH reviews")} · {queue.intents.length}
@@ -86,7 +90,10 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
                 key={intent.id}
                 as="div"
                 tone="inherit"
-                className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-b border-stroke py-2"
+                {...surfaceAttributes(
+                  { frame: "stroke", edge: "bottom" },
+                  "flex min-w-0 flex-wrap items-center justify-between gap-2 py-2",
+                )}
               >
                 <span className="min-w-0 break-all">
                   {t(intent.trigger === "startup" ? "Startup" : "Scheduled")} ·{" "}

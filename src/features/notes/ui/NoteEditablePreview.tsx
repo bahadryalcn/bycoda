@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Button } from "../../../shared/ui/Button";
@@ -33,6 +34,7 @@ export function NoteEditablePreview({
   inputObserver,
   stateObserver,
   canMutate,
+  readOnly = false,
 }: {
   value: string;
   cwd?: string;
@@ -40,12 +42,13 @@ export function NoteEditablePreview({
   rangeRef: MutableRefObject<{ from: number; to: number } | null>;
   onChange: (value: string) => void;
   onSave: () => void;
-  onPasteImages: (files: File[]) => void;
+  onPasteImages?: (files: File[]) => void;
   onEditingChange: (editing: boolean) => void;
   onFocus: () => void;
   inputObserver?: NativeInputObserver;
   stateObserver?: NativeInputObserver;
   canMutate?: () => boolean;
+  readOnly?: boolean;
 }) {
   useLocale();
   const previewRoot = useRef<HTMLDivElement>(null);
@@ -104,7 +107,7 @@ export function NoteEditablePreview({
   const blocks = useMemo(() => parser.current!.parse(previewValue), [previewValue]);
   const referencesFor = useMemo(() => notePreviewReferences(blocks), [blocks]);
   const start = (from: number, to: number) => {
-    if (canMutate && !canMutate()) return;
+    if (readOnly || (canMutate && !canMutate())) return;
     if (!currentActive && deferredValue !== value) return;
     if (currentActive && from >= currentActive.previewTo) {
       const shift = currentActive.to - currentActive.previewTo;
@@ -129,7 +132,7 @@ export function NoteEditablePreview({
     });
   };
   const append = () => {
-    if (canMutate && !canMutate()) return;
+    if (readOnly || (canMutate && !canMutate())) return;
     const next = value.trim() && !value.endsWith("\n\n") ? `${value}\n\n` : value;
     localValue.current = next;
     setActive({
@@ -153,8 +156,8 @@ export function NoteEditablePreview({
           <ActionHost
             key={block.key}
             data-note-block-from={block.from}
-            className="note-preview-block items-start gap-1"
-            style={{ contentVisibility: "auto", containIntrinsicSize: "auto 64px" }}
+            className="note-preview-block items-start gap-1 [content-visibility:auto] [contain-intrinsic-size:var(--layout-contain-intrinsic-size)]"
+            style={{ "--layout-contain-intrinsic-size": "auto 64px" } as CSSProperties}
           >
             <div
               role="button"
@@ -214,6 +217,7 @@ export function NoteEditablePreview({
             {...surfaceAttributes({ radius: "control", variant: "selected" }, "note-active-block")}
           >
             <NoteMarkdownEditor
+              readOnly={readOnly}
               inputObserver={inputObserver}
               viewRef={viewRef}
               value={value.slice(currentActive.from, currentActive.to)}
@@ -222,7 +226,7 @@ export function NoteEditablePreview({
               showLineNumbers={false}
               onFocus={onFocus}
               onChange={(next) => {
-                if (canMutate && !canMutate()) return;
+                if (readOnly || (canMutate && !canMutate())) return;
                 const updated = replacePreviewBlock(
                   value,
                   currentActive.from,

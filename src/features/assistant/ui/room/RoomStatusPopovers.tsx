@@ -21,6 +21,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
     pending,
     mutate,
     returnToAssistant,
+    roomPrivacy,
   } = room;
 
   return (
@@ -34,6 +35,11 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
         >
           <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
             <AssistantPresenceStatus snapshot={snapshot} details />
+            {roomPrivacy.pending && (
+              <Text as="p" tone="secondary" leading="normal">
+                {t("Confirming Room privacy protection...")}
+              </Text>
+            )}
             <Text as="p" leading="normal">
               {snapshot.lastHeartbeatAt
                 ? t("Last checked: {p0}", {

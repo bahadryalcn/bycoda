@@ -251,3 +251,30 @@ export const SEGMENT_LIST = {
   projectIds: [],
   createdAt: 1,
 } as SocialList;
+
+/** Chooses an option of a shared Select: opens the trigger the label points at, then clicks the option. */
+export function pickOption(label: string, optionText: string): void {
+  const trigger = fieldByLabel(label) as unknown as HTMLButtonElement;
+  act(() => trigger.click());
+  const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).find(
+    (item) => item.textContent?.trim() === optionText,
+  );
+  if (!option) throw new Error(`No option "${optionText}" for "${label}"`);
+  act(() => option.click());
+}
+
+/** The options a shared Select offers: opens the trigger the label points at, reads the real options, closes it again. */
+export function optionLabels(label: string): string[] {
+  const trigger = fieldByLabel(label) as unknown as HTMLButtonElement;
+  act(() => trigger.click());
+  const labels = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]')).map(
+    (item) => item.textContent?.trim() ?? "",
+  );
+  act(() => trigger.click());
+  return labels;
+}
+
+/** What a shared Select shows as its committed choice. */
+export function selectedLabel(label: string): string {
+  return fieldByLabel(label).textContent?.trim() ?? "";
+}

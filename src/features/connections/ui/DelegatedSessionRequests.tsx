@@ -10,7 +10,12 @@ import { remoteSessionFor, useRemoteMachines } from "../model/connections";
 import { remoteProjectFor } from "../model/remoteProjects";
 import { hostExecutionProject, hostSessionBinding } from "../model/sessionExecutionBinding";
 import { isLocalSyncMachine } from "../model/localSync";
+import { desktopCopyOf } from "../model/adoptedSessions";
+import { sameProjectPath } from "../../projects/public/recents";
+import { setSessions } from "../../sessions/public/sessionsStore";
 import { RemoteSession } from "./RemoteSession";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
+import type { HostSession } from "../model/protocol";
 
 /** Mounts the existing Host owner for a child; requests stay in the parent sheet.
  * A background owner (`renderRequests` false) keeps its notices out of the pane. */
@@ -46,6 +51,26 @@ function SessionRequests({
     (owner
       ? !!owner.projectId && owner.sessionId === child.id && matches.length === 1
       : remoteSessionFor(child.id) === child.id && matches.length === 1);
+  const onSnapshot = useStableCallback((id: string, snapshot?: HostSession) => {
+    // The sheet reads child.blocks outside this owner's render; keep its reader current.
+    // Host remains the writer, and a disconnect retains the last received content.
+    if (!snapshot || id !== child.id || snapshot.session.id !== child.id) return;
+    setSessions((sessions) =>
+      sessions.map((session) =>
+        session.id === id
+          ? {
+              ...session,
+              ...desktopCopyOf(snapshot, session.cwd, sameProjectPath),
+              busy: false,
+              pendingQuestion: snapshot.session.pendingQuestion,
+              submittedQuestions: snapshot.session.submittedQuestions,
+              historyPartial: snapshot.history?.before !== undefined,
+              historyLoading: snapshot.historyLoading,
+            }
+          : session,
+      ),
+    );
+  });
   if (!valid)
     return (
       <InlineError>
@@ -59,6 +84,7 @@ function SessionRequests({
       compactPresentation
       shell={child}
       visible={visible}
+      onSnapshot={onSnapshot}
       onOpenFile={onOpenFile ?? (() => {})}
       onOpenDiff={(path) => {
         if (path) onOpenDiff?.(path);

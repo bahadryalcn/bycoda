@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
@@ -226,7 +227,13 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
             return (
               <div
                 key={entry.line}
-                className={`flex whitespace-pre ${first ? "border-t border-(--ui-pane-border)" : ""}`}
+                {...surfaceAttributes(
+                  {
+                    frame: first ? "pane" : undefined,
+                    edge: first ? "top" : undefined,
+                  },
+                  "flex whitespace-pre",
+                )}
               >
                 <Button
                   variant="ghost"

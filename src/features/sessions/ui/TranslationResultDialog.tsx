@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { SkeletonBar } from "../../../shared/ui/Skeleton";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -31,7 +32,10 @@ import { ModelPicker } from "./ModelPicker";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import styles from "./TranslationResultDialog.module.css";
-import { translationContextWithDefault } from "../model/translationPreferences";
+import {
+  translationContextWithDefault,
+  queryTranslationContext,
+} from "../model/translationPreferences";
 
 export function TranslationResultDialog({
   text,
@@ -51,10 +55,24 @@ export function TranslationResultDialog({
   const t = useT();
   const id = useId();
   const reprompt = target === "reprompt";
-  const [translator, setTranslator] = useState(() =>
-    translationContextWithDefault(context, reprompt ? "reprompt" : "translation"),
-  );
+  const [translator, setTranslator] = useState(() => translationContextWithDefault(context));
   const [requested, setRequested] = useState(true);
+  const [modelEdited, setModelEdited] = useState(false);
+  const routing = useQuery({
+    queryKey: ["translation-role", context, reprompt ? "reprompt" : "translation"] as const,
+    queryFn: queryTranslationContext,
+    retry: false,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const routingReady = !routing.isPending;
+  const [seededRouting, setSeededRouting] = useState<typeof routing.data>();
+  if (routing.data && routing.data !== seededRouting) {
+    setSeededRouting(routing.data);
+    if (!modelEdited) setTranslator(routing.data);
+  }
   const source = useModelSource();
   useSyncExternalStore(
     subscribeHarnessAvailability,
@@ -92,7 +110,7 @@ export function TranslationResultDialog({
     [],
   );
   useEffect(() => {
-    if (!requested || !runnable) return;
+    if (!routingReady || !requested || !runnable) return;
     const controller = new AbortController();
     setPending(true);
     setError(null);
@@ -117,7 +135,17 @@ export function TranslationResultDialog({
         if (!controller.signal.aborted) setPending(false);
       });
     return () => controller.abort();
-  }, [text, target, attempt, translator, requested, reprompt, surroundingText, runnable]);
+  }, [
+    text,
+    target,
+    attempt,
+    translator,
+    requested,
+    reprompt,
+    surroundingText,
+    runnable,
+    routingReady,
+  ]);
   const hintText = pending
     ? elapsed >= 12
       ? t("Taking longer than usual. You can cancel or choose another model.")
@@ -232,6 +260,7 @@ export function TranslationResultDialog({
             accountId={translator.providerAccountId}
             accountChoices
             onChange={(harness, model, accountId) => {
+              setModelEdited(true);
               setRequested(false);
               setPending(false);
               setResult("");
@@ -248,6 +277,7 @@ export function TranslationResultDialog({
               });
             }}
             onSettingsChange={(modelSettings) => {
+              setModelEdited(true);
               setRequested(false);
               setPending(false);
               setResult("");

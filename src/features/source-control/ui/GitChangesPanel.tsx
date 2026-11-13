@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { GitCommitActions } from "./GitCommitActions";
@@ -86,7 +87,7 @@ import type { HarnessId } from "../../sessions";
 import { recordInboxSelfActivity } from "../../inbox/model/inboxSelfActivity";
 import { loadChangesView, saveChangesView } from "../../settings/public/appearance";
 import type { ChangesView } from "../../settings";
-import { generatePrContent } from "../../../integrations/harness";
+import { generatePrContent } from "../model/gitTextGeneration";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
@@ -395,7 +396,7 @@ export function GitChangesPanel({
     <div
       ref={paneRef}
       data-git-repository={repository ? cwd : undefined}
-      className={`@container/changes flex min-h-0 flex-col ${repository ? `shrink-0 ${styles.repository}` : "h-full flex-1 overflow-hidden"}`}
+      className={`@container/changes flex min-h-0 flex-col ${repository ? "shrink-0" : "h-full flex-1 overflow-hidden"}`}
       onContextMenu={embedded ? undefined : preferences.onContextMenu}
     >
       {preferences.menu}
@@ -1297,7 +1298,9 @@ function ChangedFiles({
 
   return (
     <aside className={`flex min-h-0 min-w-0 flex-col ${fill ? "flex-1" : "shrink-0"}`}>
-      <div className={`shrink-0 ${styles.commitSection}`}>
+      <div
+        {...surfaceAttributes({ frame: fill ? "stroke" : undefined, edge: "bottom" }, "shrink-0")}
+      >
         <div className="flex flex-col gap-1.5 p-2">
           <div className="relative min-w-0">
             <TextareaField

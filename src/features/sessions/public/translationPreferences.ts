@@ -1,11 +1,3 @@
 /** Public sessions contract; exports stay explicit to preserve load isolation. */
-export {
-  defaultTextActionChoice,
-  saveDefaultRepromptChoice,
-  saveDefaultTranslationChoice,
-  useDefaultRepromptChoice,
-  useDefaultTranslationChoice,
-} from "../model/translationPreferences";
+export { defaultTextActionChoice } from "../model/translationPreferences";
 export type { TranslationChoice } from "../model/translationPreferences";
-
-export { parseTranslationChoice } from "../model/translationPreferences";

@@ -1,7 +1,7 @@
 import { Text } from "../../../../shared/ui/Text";
 import type { AssistantNote } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
-import { ActionHost } from "../../../../shared/ui/ActionHost";
+import { ActionHost, actionContentAttributes } from "../../../../shared/ui/ActionHost";
 import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
@@ -41,7 +41,15 @@ export function NotesList({
             selected={note.id === selectedId || isChecked}
           >
             <Checkbox
-              {...motionAttributes({ transition: "opacity", easing: "standard" }, styles.check)}
+              {...motionAttributes({ transition: "opacity", easing: "standard" })}
+              {...actionContentAttributes(
+                {
+                  phase: selectionMode || isChecked ? "always" : "interaction",
+                  hide: "opacity",
+                  focus: "within",
+                },
+                styles.check,
+              )}
               data-action-inline=""
               data-visible={selectionMode || undefined}
               aria-label={t("Select {p0}", { p0: note.title })}

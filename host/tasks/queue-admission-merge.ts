@@ -1,6 +1,7 @@
+import { parseHostTask } from "./routing-input";
 import { isDeepStrictEqual } from "node:util";
 import { assertExpectedConfiguration } from "../configurationConflict";
-import { parseHostTask, type HostTask } from "../../src/features/tasks/model/hostTasks";
+import { type HostTask } from "../../src/features/tasks/model/hostTasks";
 
 /** Apply only the prepared transition, preserving unrelated concurrent updates. */
 export function mergeQueueAdmission(

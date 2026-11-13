@@ -131,13 +131,14 @@ export function LocalMedia({
           <Button
             variant="item"
             layout="media"
+            controlHeight="fill"
             motion="none"
             fullWidth
             type="button"
             aria-label={label}
             onClick={onOpen}
             onContextMenu={onContextMenu}
-            className="size-full min-w-0"
+            className="min-w-0"
           >
             {image}
           </Button>

@@ -35,19 +35,8 @@
   min-width: 0;
   max-width: 100%;
   padding: 0.5rem 0.75rem;
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-fill-subtle);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.message[data-outbound="true"] .bubble {
-  background: var(--ui-tone-accent-subtle);
-  border-end-end-radius: var(--ui-radius-control);
-}
-
-.message:not([data-outbound="true"]) .bubble {
-  border-end-start-radius: var(--ui-radius-control);
 }
 
 .attachments {

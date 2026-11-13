@@ -114,4 +114,10 @@ it("groups the timeline by day under Today and Yesterday labels", () => {
   expect(groups.map((group) => group.querySelectorAll(".social-activity-row").length)).toEqual([
     2, 1,
   ]);
+  expect(
+    groups.map((group) => group.querySelectorAll(".social-activity-connector").length),
+  ).toEqual([1, 0]);
+  expect(
+    element.querySelector(".social-activity-row:last-child .social-activity-connector"),
+  ).toBeNull();
 });

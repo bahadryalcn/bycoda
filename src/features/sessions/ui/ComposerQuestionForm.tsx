@@ -23,6 +23,7 @@ export function ComposerQuestionForm({
   return (
     <QuestionForm
       {...rest}
+      docked
       prompt={question}
       onReply={onReply}
       sessionId={sessionId}

@@ -27,7 +27,7 @@ export const appearanceRules = {
   "inline-style-property":
     'style={{ … }} sets a CSS property directly; an inline style may only carry custom properties (style={{ "--x": value }}) that a class reads',
   "spacing-step":
-    "gap, padding or margin with a literal off the spacing scale: a bare px/rem value other than 0, 4, 6, 8, 10, 12, 14, 16, 20 or 24 px, or a Tailwind step other than 0, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6 (var(--space-*) is always allowed)",
+    "gap, padding or margin with a literal off the spacing scale: a bare px/rem value other than 0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 32, 40 or 48 px, or a Tailwind step other than 0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12 (var(--space-*) is always allowed)",
 };
 
 /**
@@ -134,6 +134,65 @@ export const isBespokeSurface = (file) => bespokeSurfaces.has(file);
  * entry carries a one-line reason; prefer the narrowest one that works.
  */
 export const bespokeParts = [
+  {
+    file: "src/features/host-tools/BrowserPanel.css",
+    rules: ["surface-style"],
+    selector: /^\.host-browser-(?:box-model(?:\[data-part="(?:margin|padding)"\])?|child-bound)$/,
+    reason:
+      "Pointer-inert inspector rectangles visualize measured page box-model and child bounds, not application surfaces.",
+  },
+  {
+    file: "src/features/host-tools/browser-annotation.css",
+    rules: ["surface-style", "interaction-state"],
+    selector: /^\.host-browser-highlight(?:\[data-selected="true"\])?$/,
+    reason:
+      "Pointer-inert page hit-test rectangles distinguish hovered and selected measured elements; adjacent controls retain shared presentation.",
+  },
+  {
+    file: "src/features/voice/ui/companion/VoiceCompanionParts.module.css",
+    rules: ["surface-style"],
+    selector: /^\.meter > i(?:\[data-on\])?$/,
+    reason:
+      "Decorative input-level segments encode the bounded microphone measurement also exposed by the accessible Meter.",
+  },
+  {
+    file: "src/features/files/ui/SheetGridView.css",
+    rules: ["feature-typography"],
+    selector: /^\.sheet-document-viewport$/,
+    token: "--document-font-size",
+    reason:
+      "Spreadsheet document glyphs scale with zoom and virtualized row geometry independently of control density.",
+  },
+  {
+    file: "src/features/files/ui/SheetGridView.css",
+    rules: ["feature-typography"],
+    selector:
+      /^\.sheet-document-(?:header|row-header|cell)\[data-size="inherit"\]\[data-leading="inherit"\]$/,
+    token: "--document-row-height",
+    reason:
+      "Spreadsheet header and cell line boxes track the zoomed document row height used by virtualization and keyboard scrolling.",
+  },
+  {
+    file: "src/features/usage/ui/UsageAnalytics.css",
+    rules: ["surface-style"],
+    selector: /^\.usage-rank-track(?: > span)?$/,
+    reason:
+      "Drawn usage ranking track and data bar encode the measured fraction and provider color.",
+  },
+  {
+    file: "src/features/usage/ui/UsageAnalytics.css",
+    rules: ["surface-style"],
+    selector:
+      /^(?:\.usage-week-grid \.usage-hour-cell|\.usage-heat-legend > i)(?:\[data-level="[1-4]"\])?$|^\.usage-quota-point$/,
+    reason:
+      "Heatmap cells and matching legend encode amount quartiles; quota chart dots encode account and observed usage. Control interaction states stay shared.",
+  },
+  {
+    file: "src/features/voice/ui/DictationButton.module.css",
+    rules: ["surface-style"],
+    selector: /^\.wave i$/,
+    reason: "Drawn dictation audio waveform bars.",
+  },
   {
     file: "src/features/onboarding/ui/onboarding.css",
     rules: ["feature-motion"],
@@ -347,6 +406,14 @@ export const bespokeParts = [
     reason: "User-controlled code editor font size and line grid belong to code surface.",
   },
   {
+    file: "src/features/source-control/ui/conflict-layout.css",
+    rules: ["surface-style"],
+    selector:
+      /^\.(?:conflict-side-dot|conflict-source-(?:change|word)|conflict-result-(?:pending|resolved))(?:\[data-merge-active="true"\])?$/,
+    reason:
+      "CodeMirror line/word/merge-region decorations and their matching side legend encode document provenance, not control appearance.",
+  },
+  {
     file: "src/features/voice/ui/VoiceToolActivityPanel.module.css",
     rules: ["feature-typography"],
     selector: new RegExp("^" + ".count".replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$"),
@@ -532,6 +599,260 @@ export const bespokeParts = [
     token: "--ui-terminal-suggestion",
     reason: "Suggestion ink is the terminal's ghost-text colour.",
   },
+  // Drawn, media and specimen surfaces: the paint is the content itself.
+  {
+    file: "src/features/settings/ui/appearance/controls/GradientStrip.module.css",
+    rules: ["surface-style"],
+    selector: /^\.(?:gradient|presetDot)$/,
+    token: "--gradient-image",
+    reason:
+      "Gradient artwork displays the current workspace background or a two-colour preset; shared Surface owns its frame.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/StateLadder.css",
+    rules: ["interaction-state"],
+    selector: /^\.state-preview-row:(?:hover|active)$/,
+    reason:
+      "Theme comparison specimens demonstrate real pointer hover/press over their pinned sample states.",
+  },
+  {
+    file: "src/features/settings/ui/AppearanceSettings.css",
+    rules: ["surface-style"],
+    selector: /^\.appearance-tone(?: > [ib]|::after)?$/,
+    reason:
+      "Mode option miniature draws its own base, raised shapes and accent from the option palette.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/ToneSliders.css",
+    rules: ["surface-style"],
+    selector: /^\.tone-step\[data-step="(?:base|surface|line|selected)"\] > \.tone-swatch$/,
+    reason:
+      "Four labelled theme samples display the live base, surface, divider and selected colours.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/InterfaceSections.css",
+    rules: ["surface-style"],
+    selector: /^\.diff-swatch-bars > span:(?:first|last)-child$/,
+    reason: "Two miniature diff bars display the option's add and delete colours.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/GradientStrip.module.css",
+    rules: ["surface-style"],
+    selector: /^\.needle::before$/,
+    reason:
+      "Rotated angle indicator draws the selected gradient direction inside the shared dial control.",
+  },
+  {
+    file: "src/features/assistant/ui/AssistantAvatar.module.css",
+    rules: ["surface-style"],
+    selector: /^\.tileImage$/,
+    reason: "Avatar art image clipped to its pill frame.",
+  },
+  {
+    file: "src/features/assistant/ui/builder/AssistantBuilder.module.css",
+    rules: ["surface-style"],
+    selector: /^\.avatarPreview$/,
+    reason: "Avatar art preview clipped to its pill frame.",
+  },
+  {
+    file: "src/features/assistant/ui/room/RoomShell.module.css",
+    rules: ["surface-style"],
+    selector: /^\.avatar$/,
+    reason: "Assistant avatar art clipped to its pill frame.",
+  },
+  {
+    file: "src/features/host-tools/BrowserPanel.css",
+    rules: ["surface-style"],
+    selector:
+      /^\.(?:host-browser-highlight-label|host-browser-box-model|host-browser-child-bound)$/,
+    reason: "Drawn inspector overlays over the live browser preview.",
+  },
+  {
+    file: "src/features/host-tools/BrowserPanel.css",
+    rules: ["surface-style"],
+    selector: /^\.host-browser-panel \.host-browser-preview(?: \.host-browser-surface)?$/,
+    reason: "Borderless preview stage and hairline frame around the live browser image.",
+  },
+  {
+    file: "src/features/host-tools/browser-annotation.css",
+    rules: ["surface-style"],
+    selector: /^\.host-browser-highlight$/,
+    reason: "Drawn element annotation box over the page preview.",
+  },
+  {
+    file: "src/features/devices/DevicePanel.css",
+    rules: ["surface-style"],
+    selector: /^\.device-panel-preview-control img, \.device-panel-live$/,
+    reason: "Device screen image and live video clipped to the rounded display edge.",
+  },
+  {
+    file: "src/features/onboarding/ui/onboarding.css",
+    rules: ["surface-style"],
+    selector: /^\.onboarding-crew-preview$/,
+    reason: "Drawn crew scene stage on a fixed dark palette.",
+  },
+  {
+    file: "src/features/settings/ui/AppearanceSettings.css",
+    rules: ["surface-style"],
+    selector: /^\.appearance-mode-preview$/,
+    reason: "Light, dark and system mode specimen in the appearance settings.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/BackgroundImage.module.css",
+    rules: ["surface-style"],
+    selector: /^\.dropWrap \.drop\[data-has-image\]$/,
+    reason: "Background image drop frame that clips the chosen image.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/LayerStack.module.css",
+    rules: ["surface-style"],
+    selector: /^\.(?:thumbnail|glassSwatch)$/,
+    reason: "Layer thumbnail image and the glass specimen gradient.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/StateLadder.css",
+    rules: ["surface-style"],
+    selector: /^\.state-preview$|^\.state-preview-row(?:\[data-state="(?:hover|pressed)"\])?$/,
+    reason: "Interaction-state specimen that previews the theme's hover and pressed fills.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/ThemeControls.css",
+    rules: ["surface-style"],
+    selector: /^\.(?:theme-swatch-strip|theme-suggestion-thumb|theme-palette-swatches)$/,
+    reason: "Theme specimens: colour swatch strips and a suggested background thumbnail.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/controls/ToneSliders.css",
+    rules: ["surface-style"],
+    selector: /^\.tone-swatch$/,
+    reason: "Tone specimen swatch of the appearance tone steps.",
+  },
+  {
+    file: "src/features/settings/ui/appearance/sections/ThemeSection.css",
+    rules: ["surface-style"],
+    selector: /^\.theme-preview-main\[data-image\] \.theme-preview-reply$/,
+    reason: "Reply bubble of the theme preview over a background image.",
+  },
+  {
+    file: "src/features/social/ui/common/common.css",
+    rules: ["surface-style"],
+    selector: /^\.social-avatar-image, \.social-avatar-initials$/,
+    reason: "Social account avatar art clipped to its pill frame.",
+  },
+  {
+    file: "src/features/voice/ui/VoiceCompanion.module.css",
+    rules: ["surface-style"],
+    selector: /^\.launcherMark$/,
+    reason: "Launcher avatar mark clipped to its pill frame.",
+  },
+  {
+    file: "src/app/shell/LastSessionsSection.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/app/shell/ProjectRail.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/app/shell/useSessionProjectAppearance.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/features/automations/ui/AutomationsView.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/features/inbox/ui/InboxPresentation.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/features/notes/ui/NoteMiniCard.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/features/notes/ui/NotesView.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/features/notifications/ui/ProjectNotificationSettings.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/features/projects/ui/NewSessionProjectDialog.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/features/projects/ui/SearchableProjectPicker.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/features/settings/ui/ProjectScopeIcon.tsx",
+    rules: ["surface-style"],
+    token: "rounded-sm",
+    reason: "Project logo image clipped to its rounded frame.",
+  },
+  {
+    file: "src/app/shell/Sidebar.tsx",
+    rules: ["surface-style"],
+    token: "rounded-full",
+    reason: "Drawn session dwell ring: the disc behind its countdown ring.",
+  },
+  {
+    file: "src/app/shell/Sidebar.tsx",
+    rules: ["surface-style"],
+    token: "bg-(--ui-surface-raised)",
+    reason: "Drawn session dwell ring: the disc fill behind its countdown ring.",
+  },
+  {
+    file: "src/features/projects/ui/ProjectBackgroundDialog.tsx",
+    rules: ["surface-style"],
+    token: "border",
+    reason: "Background image preview frame: the chosen image is clipped inside it.",
+  },
+  {
+    file: "src/features/projects/ui/ProjectBackgroundDialog.tsx",
+    rules: ["surface-style"],
+    token: "bg-background-base",
+    reason: "Background image preview frame: the fill behind the previewed image.",
+  },
+  {
+    file: "src/features/projects/ui/ProjectBackgroundDialog.tsx",
+    rules: ["surface-style"],
+    token: "bg-[var(--ui-surface-hover)]",
+    reason: "Background image preview frame: the fill behind the previewed image.",
+  },
+  {
+    file: "src/features/sessions/ui/PromptOutline.tsx",
+    rules: ["surface-style"],
+    token: "rounded-full",
+    reason: "Drawn prompt outline: each mark is a bar of the outline minimap.",
+  },
+  {
+    file: "src/features/sessions/ui/PromptOutline.tsx",
+    rules: ["surface-style"],
+    token: "bg-(--ui-tone-neutral-solid)",
+    reason: "Drawn prompt outline: each mark is a bar of the outline minimap.",
+  },
 ];
 
 const tokenPattern = (token) =>
@@ -574,10 +895,6 @@ const spacingUtility = String.raw`-?(?:p|px|py|ps|pe|pt|pb|pl|pr|m|mx|my|ms|me|m
 /** Order matters: a class reported by an earlier rule is not reported again by a later one. */
 const classRules = [
   [
-    "surface-style",
-    /(?<![\w-])[\w-]*(?:badge|chip|progress-bar|progress-track|progress-fill)(?:-[\w-]+)?(?![\w-])/g,
-  ],
-  [
     "interaction-state",
     /(?<![\w-])[\w-]*(?:tab-bar|tab-list|segmented-row|segmented-control)(?:-[\w-]+)?(?![\w-])/g,
   ],
@@ -612,7 +929,24 @@ const classRules = [
 ];
 
 const spacingClass = tw(String.raw`${spacingUtility}-(\d+(?:\.\d+)?|px)` + end);
-const spacingSteps = new Set(["0", "1", "1.5", "2", "2.5", "3", "3.5", "4", "5", "6"]);
+// 0.5 (2px) is the micro step of compact label stacks; 8, 10 and 12 are the layout steps of
+// pages, empty states and section gaps.
+const spacingSteps = new Set([
+  "0",
+  "0.5",
+  "1",
+  "1.5",
+  "2",
+  "2.5",
+  "3",
+  "3.5",
+  "4",
+  "5",
+  "6",
+  "8",
+  "10",
+  "12",
+]);
 /** The same steps in px: 4 px per Tailwind step. */
 const spacingPixels = new Set([...spacingSteps].map((step) => step * 4));
 /** A bare px/rem length off the spacing scale; tokens, percentages and keywords are not lengths. */
@@ -683,10 +1017,33 @@ export function classRanges(source) {
   return merged;
 }
 
+/** Keep class literal contents and offsets, excluding JavaScript identifiers in expressions. */
+function classLiteralText(text) {
+  const result = Array(text.length).fill(" ");
+  function code(start, stop) {
+    for (let index = start; index < stop; index++) {
+      const quote = text[index];
+      if (quote !== '"' && quote !== "'" && quote !== "`") continue;
+      for (index++; index < stop && text[index] !== quote; index++) {
+        if (text[index] === "\\") {
+          result[index] = text[index];
+          if (++index < stop) result[index] = text[index];
+        } else if (quote === "`" && text[index] === "$" && text[index + 1] === "{") {
+          const end = balancedEnd(text, index + 1, "{", "}");
+          code(index + 2, end - 1);
+          index = end - 1;
+        } else result[index] = text[index];
+      }
+    }
+  }
+  code(0, text.length);
+  return result.join("");
+}
+
 /** Appearance findings in the class lists and inline styles of a feature TSX file. */
 export function scanAppearanceTsx(source, add) {
   for (const [start, stop] of classRanges(source)) {
-    const text = source.slice(start, stop);
+    const text = classLiteralText(source.slice(start, stop));
     for (const [rule, pattern] of classRules)
       for (const match of text.matchAll(pattern)) {
         if (
@@ -717,6 +1074,21 @@ const controlSelector =
   /(?:^|[\s>+~,(])(?:button|input|select|textarea)(?![\w-])|\[role=["']?button/;
 const spacingProperty = /^(?:gap|row-gap|column-gap|(?:padding|margin)(?:-[a-z-]+)?)$/;
 
+function targetsControl(selector) {
+  // Functional selectors retain the existing conservative match; their arguments
+  // can select a control even when it is not written in the final compound.
+  if (/[()]/.test(selector)) return controlSelector.test(selector);
+  return selector.split(",").some((branch) => {
+    const normalized = branch.replace(/\[[^\]]*\]/g, (attribute) => attribute.replace(/\s/g, ""));
+    const target =
+      normalized
+        .trim()
+        .split(/[\s>+~]+/)
+        .at(-1) ?? "";
+    return controlSelector.test(target);
+  });
+}
+
 /** The appearance rule a feature CSS declaration breaks, if any. */
 export function appearanceRuleOfDeclaration({ property, value: raw, selectors }) {
   if (property.startsWith("--")) return null;
@@ -745,7 +1117,7 @@ export function appearanceRuleOfDeclaration({ property, value: raw, selectors })
   if (property.startsWith("scrollbar-")) return "scrollbar-style";
   if (
     /^(?:height|min-height|block-size|min-block-size)$/.test(property) &&
-    controlSelector.test(selectors.at(-1) ?? "")
+    targetsControl(selectors.at(-1) ?? "")
   )
     return "fixed-control-size";
   if (spacingProperty.test(property)) {

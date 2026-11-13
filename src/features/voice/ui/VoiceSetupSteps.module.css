@@ -22,7 +22,6 @@
 }
 
 .details {
-  border-block-start: 1px solid var(--ui-tone-neutral-border);
   padding-block-start: 12px;
   min-inline-size: 0;
 }
@@ -30,7 +29,6 @@
 .transcript {
   margin: 0;
   padding: 12px;
-  border-inline-start: 2px solid var(--ui-tone-success-border);
   overflow-wrap: anywhere;
 }
 

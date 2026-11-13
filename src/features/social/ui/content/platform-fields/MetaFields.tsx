@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
@@ -18,7 +19,7 @@ export function MetaFields({ account, value, disabled, onChange }: PlatformField
   return (
     <FieldGroup
       legend={t("{p0} destination", { p0: name })}
-      className="content-platform"
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
       disabled={disabled}
     >
       <NativeSelect

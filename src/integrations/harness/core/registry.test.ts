@@ -110,7 +110,10 @@ describe("harness registry", () => {
             ? { ready: false }
             : invokeOriginal(command, args),
         );
-        const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+        const sendTurn = vi.fn(async (input: SendTurnInput) => {
+          input.onAccepted?.();
+          input.onAccepted?.();
+        });
         registerHarness(stub("codex", { sendTurn }));
         const onEvent = vi.fn();
         const modelSettings = {
@@ -136,6 +139,9 @@ describe("harness registry", () => {
           key: "delegation-unavailable",
           text: expected,
         });
+        expect(
+          onEvent.mock.calls.filter(([event]) => event.key === "delegation-unavailable"),
+        ).toHaveLength(1);
         const sent = sendTurn.mock.calls[0][0];
         expect(sent.runtimeInstructions).toContain(guidance);
         expect(sent.text).toBe("Keep my queued text.");
@@ -153,7 +159,10 @@ describe("harness registry", () => {
       nativeInvoke.mockImplementation(async (command, args) =>
         command === "harness_conversation_tools_bridge" ? { ready } : invokeOriginal(command, args),
       );
-      const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+      const sendTurn = vi.fn(async (input: SendTurnInput) => {
+        input.onAccepted?.();
+        input.onAccepted?.();
+      });
       registerHarness(stub("codex", { sendTurn }));
       const onEvent = vi.fn();
       const modelSettings = { crossSubagents: "auto" };
@@ -928,6 +937,7 @@ describe("harness registry", () => {
   });
 
   it("warns once when a running turn goes silent and clears the notice when the provider speaks", async () => {
+    await setLanguagePreference("tr");
     vi.useFakeTimers();
     let emit!: (event: HarnessEvent) => void;
     let finish!: () => void;
@@ -959,7 +969,11 @@ describe("harness registry", () => {
     expect(notices()).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(notices()).toEqual([
-      { type: "status", key: TURN_INACTIVITY_STATUS_KEY, text: expect.stringContaining("claude") },
+      {
+        type: "status",
+        key: TURN_INACTIVITY_STATUS_KEY,
+        text: "Claude Code 10 dk 00 sn boyunca yanıt vermedi. Hâlâ çalışıyor olabilir. Turu bitirmek için Durdur’a basın.",
+      },
     ]);
     // Silence is reported once; the turn keeps running.
     await vi.advanceTimersByTimeAsync(TURN_INACTIVITY_WARNING_MS * 3);
@@ -1594,7 +1608,8 @@ describe("harness registry", () => {
     expect(steerTurn).not.toHaveBeenCalled();
     expect(cancelTurn).toHaveBeenCalledOnce();
   });
-  afterEach(() => {
+  afterEach(async () => {
+    await setLanguagePreference("en");
     nativeEnabled.mockReset().mockReturnValue(false);
     nativeInvoke.mockReset().mockResolvedValue(undefined);
     resetHarnessModelOverlays();

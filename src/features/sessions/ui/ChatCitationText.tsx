@@ -9,6 +9,7 @@ import { Popover } from "../../../shared/ui/Popover";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { chatCitationPreview, chatCitationToken, type ChatCitation } from "../model/chatCitation";
 import { SkillTokenText } from "./SkillTokenText";
+import { WorkItemMentionChip } from "./WorkItemMentionChip";
 import { tokenLabel } from "../model/attachmentTokens";
 import { findCitationTokens } from "../model/citationTokens";
 import { highlightChatCitation } from "../model/chatCitationHighlight";
@@ -31,13 +32,11 @@ export function workItemMentionParts(text: string): { text: string; workItem?: t
   return parts;
 }
 
-/** Tracker refs lack a persisted URL; preserve literal, selectable text without a guessed link. */
+/** Tracker tokens render as chips that look up their item on click. */
 export function WorkItemMentionText({ text }: { text: string }) {
   return workItemMentionParts(text).map((part, index) =>
     part.workItem ? (
-      <Text key={index} size="inherit" tone="accent" data-work-item-mention="">
-        {part.text}
-      </Text>
+      <WorkItemMentionChip key={index} token={part.text} />
     ) : (
       <SkillTokenText key={index} text={part.text} />
     ),
@@ -72,7 +71,14 @@ export function CitationTokenPill({ token, citation }: { token: string; citation
         as="span"
         size="inherit"
         tone={unavailable ? "secondary" : "accent"}
-        {...surfaceAttributes({ radius: "control" }, styles.token)}
+        {...surfaceAttributes(
+          {
+            radius: "control",
+            tone: unavailable ? "neutral" : "accent",
+            ring: unavailable ? "tone-neutral" : "tone-accent",
+          },
+          styles.token,
+        )}
         data-unavailable={unavailable || undefined}
       >
         <BlockQuote className={styles.tokenIcon} aria-hidden />
@@ -120,7 +126,10 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
               as="span"
               size="inherit"
               tone="accent"
-              {...surfaceAttributes({ radius: "control" }, styles.token)}
+              {...surfaceAttributes(
+                { radius: "control", tone: "accent", ring: "tone-accent" },
+                styles.token,
+              )}
             >
               {tokenLabel(token)}
             </Text>
@@ -170,7 +179,12 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
                 <X className="icon-sm" />
               </Button>
             </Text>
-            <Text as="blockquote" size="secondary" leading="inherit" className={styles.quote}>
+            <Text
+              as="blockquote"
+              size="secondary"
+              leading="inherit"
+              {...surfaceAttributes({ bar: "accent" }, styles.quote)}
+            >
               {citation.text}
             </Text>
             {citation.comment ? (

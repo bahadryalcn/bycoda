@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "re
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
+import { Text } from "../../../../shared/ui/Text";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { BrowserViewFrame, BrowserViewInput } from "../../model/socialActions";
 import type { SocialClient } from "../../model/socialClient";
@@ -94,14 +95,16 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
   };
 
   return (
-    <section aria-label={t("Live browser view")}>
-      <header>
+    <section aria-label={t("Live browser view")} className="flex min-w-0 flex-col gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-2">
         <Heading size="item">{t("Browser window")}</Heading>
         <Button variant="ghost" size="sm" onClick={onClose}>
           {t("Close view")}
         </Button>
       </header>
-      <p>{message[status]}</p>
+      <Text as="p" tone={status === "error" ? "danger" : "secondary"}>
+        {message[status]}
+      </Text>
       {frame ? (
         <Button variant="item" layout="media" type="button" onClick={onImageClick}>
           <img
@@ -110,38 +113,40 @@ export function LiveBrowserPanel({ client, accountId, onClose }: LiveBrowserPane
             alt={t("Live view of the browser window")}
             width={frame.width}
             height={frame.height}
-            style={{ maxWidth: "100%", height: "auto" }}
+            className="max-w-full h-auto"
           />
         </Button>
       ) : null}
-      <form onSubmit={submitText} autoComplete="off">
+      <form onSubmit={submitText} autoComplete="off" className="flex min-w-0 flex-col gap-2">
         <TextField
           label={t("Text to type")}
           value={text}
           disabled={busy}
           onChange={(event) => setText(event.target.value)}
         />
-        <Button type="submit" size="sm" disabled={busy || text.length === 0}>
-          {t("Type")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={busy}
-          onClick={() => sendInput({ type: "key", key: "Enter" })}
-        >
-          {t("Enter")}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={busy}
-          onClick={() => sendInput({ type: "key", key: "Tab" })}
-        >
-          {t("Tab")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" size="sm" disabled={busy || text.length === 0}>
+            {t("Type")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => sendInput({ type: "key", key: "Enter" })}
+          >
+            {t("Enter")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => sendInput({ type: "key", key: "Tab" })}
+          >
+            {t("Tab")}
+          </Button>
+        </div>
       </form>
     </section>
   );

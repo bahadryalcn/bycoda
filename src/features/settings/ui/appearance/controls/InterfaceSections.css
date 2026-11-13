@@ -18,9 +18,6 @@
   flex: 2 1 32rem;
   min-inline-size: 0;
 }
-.interface-scrollbar-controls > .settings-row + .settings-row {
-  border-block-start: 1px solid var(--ui-settings-hairline);
-}
 .interface-scrollbar-sample {
   display: grid;
   align-items: center;

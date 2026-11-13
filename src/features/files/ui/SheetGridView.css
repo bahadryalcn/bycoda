@@ -1,0 +1,28 @@
+/* Spreadsheet document geometry scales with viewer zoom, independent of control density. */
+.sheet-document-viewport {
+  font-size: var(--document-font-size);
+}
+.sheet-document-body {
+  width: var(--document-width);
+  height: var(--document-height);
+}
+.sheet-document-header[data-size="inherit"][data-leading="inherit"] {
+  width: var(--document-width);
+  height: var(--document-header-height);
+  line-height: var(--document-row-height);
+}
+.sheet-document-row {
+  top: var(--document-row-top);
+  height: var(--document-row-height);
+  width: var(--document-width);
+}
+.sheet-document-row-header[data-size="inherit"][data-leading="inherit"] {
+  width: var(--document-row-header-width);
+  line-height: var(--document-row-height);
+  padding-right: var(--document-cell-padding);
+}
+.sheet-document-cell[data-size="inherit"][data-leading="inherit"] {
+  width: var(--document-column-width);
+  line-height: var(--document-row-height);
+  padding-inline: var(--document-cell-padding);
+}

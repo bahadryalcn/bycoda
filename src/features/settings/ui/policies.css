@@ -44,7 +44,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   /* Reading canvas: no extra surface, only the structural pane edge. */
-  border-inline-start: 1px solid var(--color-stroke);
   padding-inline-start: clamp(1rem, 3cqi, 2rem);
 }
 .policy-reader-context {
@@ -75,8 +74,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .policy-reader {
-    border-inline-start: 0;
-    border-block-start: 1px solid var(--color-stroke);
+    --surface-frame-stacked: 1;
     padding: 16px 0 0;
   }
 }

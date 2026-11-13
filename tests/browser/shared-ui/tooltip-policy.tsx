@@ -28,6 +28,7 @@ const blocks: Block[] = [
     tool: {
       kind: "search",
       title: "Search project",
+      output: "Fixture search results",
       status: "completed",
       preview: { kind: "search", query: "tooltip" },
     },

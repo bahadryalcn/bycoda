@@ -85,6 +85,11 @@ existing code is counted in the baseline and only new findings fail.
 | Shared resize observer     | No `new ResizeObserver` in `src/`. One observer per component means one callback per component on every layout.                                                                                                                                                                                                                                                                                                                                                                                       | `observeResize(element, listener)` in `src/shared/lib/observeResize.ts`: one shared observer per window, returns the unsubscribe function.                                                               | plugin `bycoda/shared-resize-observer`                         | `bycoda/shared-resize-observer`                         |
 | Live-resize work           | During a live resize (a `Sash` drag or the window being resized) pane sizes change every frame. Work that is expensive per size change (PTY resize, clearing measured sizes, un-containing off-screen content, canvas redraw, layout bookkeeping) runs once when the resize ends, not per frame. Nothing toggles a class or an inherited style on `<html>`/`<body>` for a drag: that restyles the whole document.                                                                                     | `deferDuringResize(run)` / `resizeGestureActive()` / `onResizeGestureEnd()` in `src/shared/lib/resizeGesture.ts`; the shared `Sash` reports the gesture and shows the drag cursor on one shield element. | Review + regression test (no static rule yet)                  | none, review and regression tests                       |
 
+The compiler guard distinguishes a plain TanStack `useQuery` `queryFn` callback
+from expressions evaluated while creating its options. Query keys and invoked
+option expressions remain render reads. Unknown option spreads and render-prefetch
+or suspense options keep the conservative guard.
+
 A kept effect names its reason on the line above:
 
 ```ts

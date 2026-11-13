@@ -1,5 +1,23 @@
 # Voice companion
 
+In **Settings > Voice assistant**, voice and dictation have separate groups.
+Core voice controls and speaker selection stay visible. **Dictation options** holds
+the recognition provider, model and credentials; its language remains beside the
+dictation switch. **Sleep and wake** holds idle sleep, return calls and wake phrases.
+**Advanced turn detection** contains the optional OpenAI detector. **Appearance and
+voice style** contains visual previews and the style editor. These sections retain
+their drafts and settings while closed. Opening them never starts capture.
+
+The identity link opens the shared **Assistant settings**; name and personality are
+managed there. Microphone status, pending prompts, blocked access and errors remain
+visible; optional explanations are under the information buttons.
+
+Voice reply models are configured in **Settings > Models > Where models are
+used**, under the voice reply role. The assistant uses the same Host-wide order,
+pools and limits; Room no longer has a separate model pool editor. Selection is
+resolved when execution starts and never switches a running session. See
+[Models](models.md) and [Assistant](assistant.md) for shared routing and jobs.
+
 Settings show permission, verified readiness and current activity separately.
 Enabling a preference does not verify the microphone or engine. Opening settings
 never starts voice. Readiness comes from a successful check; a failed refresh
@@ -223,18 +241,35 @@ setup prevent the call. With the setting off, returning keeps the microphone clo
 
 The expanded companion has one header with a **More voice options** button for its
 secondary actions, such as finishing the turn and muting the speaker. The status
-row shows the connection state and the **Global** scope toggle. Your speech and
-replies appear as chat bubbles.
+row shows the assistant's avatar inside the voice core, the connection state and
+readouts: the voice engine (hover or focus it to see where audio goes) and, while
+connected, the microphone input level and the session time. The core's rings turn
+while voice is connected, turn faster while a reply is prepared, react to your
+voice and the assistant's, and stop when voice is off or the microphone is paused.
+The **Global** scope toggle sits below. Your speech and replies appear as chat
+bubbles.
 
 Drag any edge or corner of the expanded companion to resize it. The opposite
 edge stays in place, and the panel stays inside the window. Size and position
-are saved on this device. The header resize button also supports arrow keys;
-double-click it to return to automatic sizing.
+are saved on this device. Double-click an edge to return to automatic sizing.
 
 Choose **Settings → Voice assistant → Companion → Visual style** to select
 **bycoda mark** (default), **Wave**, **Dots** or **Orb**. Each option has a live
-preview. Changing the style updates an open companion immediately and keeps the
+preview. The style applies to the launcher, the compact companion and the
+floating overlay; the expanded companion always shows the voice core. Changing
+the style updates an open companion immediately and keeps the
 voice connection running. The choice is saved on this device.
+
+The expanded floating window uses the same voice core, assistant avatar and
+conversation bubbles as the in-app companion. Drag its header to move it, or
+focus the header and use arrow keys. Double-click the header to compact it.
+Returning to the app keeps the microphone and voice session running.
+
+Live voice visuals animate gently while listening, even before sound is detected.
+Their painting is capped at about 30 frames per second, so a high-refresh display's
+automatic decorative-motion fallback does not freeze them. Turning decorative motion
+off explicitly, or following the system's reduced-motion setting, still stops these
+animations. Hidden and offscreen visuals pause their frame work.
 
 The visual distinguishes disconnected, connecting, listening, your speech,
 preparing a reply, assistant playback, microphone paused and error states through
@@ -257,10 +292,6 @@ Choose **Expand voice companion**, or double-click the pill's visual, to restore
 the full panel and its controls. Drag the pill's visual, or focus that move
 control and use arrow keys, to reposition it. Both sizes stay within the viewport
 when moved, resized or expanded; position is saved independently of visual style.
-
-To make the expanded panel larger, drag the resize grip in its header up and
-away from the nearer window edge, or focus it and use the arrow keys. The size is
-saved; double-click the grip to return to the automatic size.
 
 An open question or job review slides out in its own panel beside the
 companion, on the side with room (above it when neither side fits), so the
@@ -834,6 +865,11 @@ language changes until you type your own (2 to 40 characters). Without the local
 voice pack the indicator says **Wake phrase needs the local voice pack**; after
 many bursts of background speech it pauses for five minutes. The semantic turn
 experiment does not enable the wake phrase.
+
+Wake listening pauses while dictation is active and resumes afterward only if
+the wake setting and presence checks still allow it. Editing a phrase preserves
+your unsaved text when settings change elsewhere; untouched fields follow the
+latest saved value.
 
 Synthetic offline Turkish audio and subscription-login smoke checks can verify
 the individual runtime paths. They do not prove physical microphone acoustics,

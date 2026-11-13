@@ -1,9 +1,11 @@
+import { actionDragAttributes } from "../../../shared/ui/ActionHost";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { CrewManagedBar, useCrewManagedSession } from "../../crews/public/managed";
 import { AssistantManagedBadge } from "./AssistantManagedBadge";
+import { SessionPanelTargetsContext, SessionPanelTargetHost } from "./SessionPanelTargets";
 import { AssistantSessionControl } from "./AssistantSessionControl";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Alert } from "../../../shared/ui/Alert";
@@ -16,6 +18,7 @@ import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -102,6 +105,7 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
 import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { ActivityDock } from "./ActivityDock";
+import { sessionSubagents } from "../model/sessionSubagents";
 import { InterruptedNotice } from "./InterruptedNotice";
 import { CONTINUE_PROMPT } from "../model/inFlight";
 import { useSubagentSheet } from "./SubagentSheet";
@@ -143,6 +147,7 @@ import { getComposerDraft, setComposerDraft } from "../model/draftCache";
 import { BycodaWelcome } from "./BycodaWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { userPromptHistory } from "../model/composerHistory";
+import { currentSessionAccessor } from "../model/paneSessionAccess";
 import {
   lastTurnRecall,
   lastUserTurnBlock,
@@ -168,12 +173,7 @@ import type { SessionOrganizationResult } from "../model/sessionOrganizationStor
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/public/RemoteSession";
 import { useHostSessionBinding } from "../../connections/public/useHostSessionBinding";
-import {
-  getSessions,
-  sameOptionalSessionIgnoringStreamingText,
-  selectSessionById,
-  usePaneSession,
-} from "../model/sessionsStore";
+import { sameOptionalSessionIgnoringStreamingText, usePaneSession } from "../model/sessionsStore";
 import {
   LiveSessionBackground,
   LiveSessionBlocks,
@@ -196,6 +196,8 @@ export type SessionPaneProps = {
   composerFocusToken?: number;
   recents: RecentProject[];
   hideProjectPicker?: boolean;
+  /** Feature-owned panel: keep the real transcript/composer and hide repository chrome. */
+  embedded?: boolean;
   onFocus: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
@@ -336,7 +338,21 @@ function sameRemoteFeatures(a: Props["remoteFeatures"], b: Props["remoteFeatures
   );
 }
 
-export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
+export function SessionPane(props: SessionPaneProps) {
+  const target = useContext(SessionPanelTargetsContext);
+  return target?.sessionIds.includes(props.session.id) ? (
+    <SessionPanelTargetHost
+      sessionId={props.session.id}
+      visible={props.visible}
+      focused={props.focused}
+      inSplit={props.inSplit}
+    />
+  ) : (
+    <OwnedSessionPane {...props} />
+  );
+}
+
+const OwnedSessionPane = memo(function OwnedSessionPane(props: SessionPaneProps) {
   useLocale();
   // The shell hands down sessions that lag behind by streamed text. This
   // subscription re-renders the pane for status, approval, tool and other
@@ -368,30 +384,12 @@ export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
   return <LocalSessionPane {...props} session={paneSession} />;
 });
 
-/** An event-time view of the pane's session: the store's current one, or the rendered one for a remote session. */
-function currentSessionAccessor(
-  renderedSession: { current: Session },
-  renderedRemote: { current: boolean },
-): { readonly current: Session } {
-  return {
-    get current(): Session {
-      const rendered = renderedSession.current;
-      return renderedRemote.current
-        ? rendered
-        : (selectSessionById(getSessions(), rendered.id) ?? rendered);
-    },
-  };
-}
-
-function approvalContextFor(
-  currentSessionRef: { readonly current: Session },
-  dispatch: Props["onApproval"],
-) {
+function approvalContextFor(getSession: () => Session, dispatch: Props["onApproval"]) {
   return {
     get session() {
-      return currentSessionRef.current;
+      return getSession();
     },
-    getSession: () => currentSessionRef.current,
+    getSession,
     dispatch,
   };
 }
@@ -419,6 +417,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   composerFocusToken,
   recents,
   hideProjectPicker,
+  embedded = false,
   onFocus,
   onClose,
   onCwdChange: onCwdChangeProp,
@@ -592,13 +591,16 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const remote = remoteSession;
   const activeSessionIdRef = useRef(session.id);
-  activeSessionIdRef.current = session.id;
   // The pane's `session` keeps its identity across streamed text, so event-time
   // reads go to the store for the current one (a remote session is not in it).
   const renderedSession = useRef(session);
-  renderedSession.current = session;
   const renderedRemote = useRef(remote);
-  renderedRemote.current = remote;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Publishes the committed session and execution source to rewind and approval handlers without mutating refs during render.
+  useLayoutEffect(() => {
+    activeSessionIdRef.current = session.id;
+    renderedSession.current = session;
+    renderedRemote.current = remote;
+  }, [session, remote]);
   const currentSessionRef = useMemo(
     () => currentSessionAccessor(renderedSession, renderedRemote),
     [],
@@ -726,10 +728,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (requestId: number, decision: ApprovalDecision) => onApproval(session.id, requestId, decision),
     [onApproval, session.id],
   );
-  const approvalContext = useMemo(
-    () => approvalContextFor(currentSessionRef, onApproval),
-    [onApproval, currentSessionRef],
-  );
+  const readCurrentSession = useStableCallback(() => currentSessionRef.current);
+  const approvalContext = approvalContextFor(readCurrentSession, onApproval);
   const replyQuestion = useCallback(
     (requestId: number, reply: UserQuestionReply) => onQuestionReply(session.id, requestId, reply),
     [onQuestionReply, session.id],
@@ -881,6 +881,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
     native: subagentSheet,
     btwOpen: btw.open,
   });
+  const sessionSubagentRows = useMemo(
+    () => sessionSubagents(stableBlocks, !!session.busy, delegatedAgents),
+    [stableBlocks, session.busy, delegatedAgents],
+  );
   const jumpRequest = useSyncExternalStore(
     subscribeTranscriptJump,
     () => peekTranscriptJump(session.id),
@@ -950,9 +954,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const showDeckProjectPicker = isEmpty && !looksLikeProject(session.cwd);
   const dockComposer =
     remoteSessionLoading ||
-    ((!draftBlock || savedDraftProjection.ready) && (!isEmpty || inSplit || !!session.inboxAsk));
-  const composerDockMotion = useComposerDockMotion(dockComposer);
-  const composerEngagement = useComposerEngagement(composerDockMotion.dockedRef);
+    ((!draftBlock || savedDraftProjection.ready) &&
+      (!isEmpty || inSplit || embedded || !!session.inboxAsk));
+  const {
+    centeredRef: composerCenteredRef,
+    dockedRef: composerDockedRef,
+    captureLaunch: captureComposerLaunch,
+  } = useComposerDockMotion(dockComposer);
+  const composerEngagement = useComposerEngagement(composerDockedRef);
   // Reading history with focus elsewhere: the one mounted composer shows its
   // compact geometry. Anything needing the full layout keeps it.
   const composerReading = composerReadingActive({
@@ -960,13 +969,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
     engaged: composerEngagement.engaged,
     blocked: !!session.pendingQuestion || editingLastTurn || btw.open,
   });
-  useComposerReadingMotion(composerDockMotion.dockedRef, dockComposer, composerReading);
-  const draftRef = useRef<string | undefined>(getComposerDraft(session.id));
+  useComposerReadingMotion(composerDockedRef, dockComposer, composerReading);
+  const [composerDraft, setComposerDraftState] = useState(() => getComposerDraft(session.id));
+  const draftRef = useRef<string | undefined>(composerDraft);
   const parentChanged = useParentInputClosure({
     kind: "session-parent",
     sessionId: session.id,
     snapshot: () => ({
       draft: draftRef.current,
+      committedDraft: composerDraft,
       composerSeed: session.composerSeed,
       inboxCard: session.inboxCard,
       noteCard: session.noteCard,
@@ -990,6 +1001,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // latest closure, so it re-renders only when something it shows changed.
   const composerDraftChange = useStableCallback((text: string) => {
     draftRef.current = text;
+    setComposerDraftState(text);
     setComposerDraft(session.id, text);
     parentChanged();
   });
@@ -1009,7 +1021,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composerCwdChange = useStableCallback((cwd: string) => onCwdChange(session.id, cwd));
   const composerBranchChange = useStableCallback(() => onBranchChange(session.id));
   const composerWorktreeChange = useStableCallback(
-    onWorktreeChange ? (tree: Worktree) => onWorktreeChange(session.id, tree) : undefined,
+    onWorktreeChangeProp ? (tree: Worktree) => onWorktreeChange!(session.id, tree) : undefined,
   );
   const composerWorkspaceModeChange = useStableCallback((mode: WorkspaceMode, base?: string) =>
     onWorkspaceModeChange(session.id, mode, base),
@@ -1046,7 +1058,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       options?: ComposerTurnOptions,
       original?: ParentAdmission,
     ) => {
-      if (!dockComposer) composerDockMotion.captureLaunch();
+      if (!dockComposer) captureComposerLaunch();
       if (projectedDraft && draftBlock && !options?.draftBlockId) {
         options = { ...options, draftBlockId: draftBlock.id };
       }
@@ -1077,11 +1089,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onPlaceSessionInFolder(session.id, target),
   );
   const composerResumeProviderSession = useStableCallback(
-    onResumeProviderSession
+    onResumeProviderSessionProp
       ? (original?: ParentAdmission) =>
           original
             ? rootMutation(() => onResumeProviderSessionProp?.(session.id), original)
-            : onResumeProviderSession(session.id)
+            : onResumeProviderSession!(session.id)
       : undefined,
   );
   const composerDeleteQueuedMessage = useStableCallback((messageId: string) =>
@@ -1095,11 +1107,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onQueuedMessageEditingChange(session.id, messageId),
   );
   const composerReorderQueuedMessages = useStableCallback(
-    onReorderQueuedMessages
+    onReorderQueuedMessagesProp
       ? (messageIds: string[], original?: ParentAdmission) =>
           original
             ? rootMutation(() => onReorderQueuedMessagesProp!(session.id, messageIds), original)
-            : onReorderQueuedMessages(session.id, messageIds)
+            : onReorderQueuedMessages!(session.id, messageIds)
       : undefined,
   );
   const composerSteerQueuedMessage = useStableCallback((messageId: string) =>
@@ -1236,6 +1248,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           blocks={stableBlocks}
           busy={sessionBusy}
           pendingQuestion={hasPendingQuestion}
+          pendingOwnerApproval={session.pendingOwnerApproval}
           questionPresented={hasPendingQuestion}
           deliveryUnconfirmed={stableSession.queuedMessages?.some(
             (message) => message.deliveryUnknown,
@@ -1259,6 +1272,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sessionBusy,
       hasPendingQuestion,
       session.backgroundTasks,
+      session.pendingOwnerApproval,
       session.backgroundAgents,
       visible,
       dockAtEnd,
@@ -1283,6 +1297,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
         workspaceSwitchingSessionId === session.id ||
         windowMovingSessionIds?.has(session.id)
       }
+      subagents={sessionSubagentRows}
+      onOpenSubagent={openDockAgent}
       remoteSession={remoteSession}
       remoteOrigin={remoteOrigin(session)}
       managedWorkspaceCreationReady={managedWorkspaceCreationReady}
@@ -1309,11 +1325,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
       sessionId={session.id}
       compactSupported={canCompactHarnessContext(session.harness)}
       recents={recents}
-      hideProjectPicker={!!session.inboxAsk || (hideProjectPicker ? !showDeckProjectPicker : false)}
-      hideBranchPicker={managed}
+      hideProjectPicker={
+        embedded || !!session.inboxAsk || (hideProjectPicker ? !showDeckProjectPicker : false)
+      }
+      hideBranchPicker={embedded || managed}
       // An inbox Ask keeps the standard composer layout; its folder comes from the
       // inbox working-folder picker and the host refuses app control for it.
-      hideOrchestrator={!!session.inboxAsk}
+      hideOrchestrator={embedded || !!session.inboxAsk}
       context={session.context}
       contextBlocks={stableBlocks}
       contextEmpty={
@@ -1334,7 +1352,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       quoteRequest={quoteRequest}
       initialDraft={
         savedDraftProjection.initialDraft ??
-        draftRef.current ??
+        composerDraft ??
         (session.inboxCard || session.noteCard || session.handoffCard
           ? undefined
           : session.composerSeed)
@@ -1356,6 +1374,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onBranchChange={composerBranchChange}
       onWorktreeChange={composerWorktreeChange}
       draftWorkspace={
+        !embedded &&
         !session.inboxAsk &&
         !session.worktreeRemoved &&
         !managed &&
@@ -1387,7 +1406,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onBtwCommand={composerBtwCommand}
       onStop={composerStop}
       onCompactContext={composerCompactContext}
-      onNewSession={onNewSession ? composerNewSession : undefined}
+      onNewSession={onNewSessionProp ? composerNewSession : undefined}
       onPlaceInFolder={composerPlaceInFolder}
       onResumeProviderSession={composerResumeProviderSession}
       queuedMessages={session.queuedMessages}
@@ -1400,7 +1419,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onSteerQueuedMessage={composerSteerQueuedMessage}
       onResumeQueue={composerResumeQueue}
       usageLimit={session.usageLimit}
-      onUsageLimitResume={onUsageLimitResume ? composerUsageLimitResume : undefined}
+      onUsageLimitResume={onUsageLimitResumeProp ? composerUsageLimitResume : undefined}
       onUsageLimitResumeAtReset={composerUsageLimitResumeAtReset}
       onUsageLimitDismiss={composerUsageLimitDismiss}
       providerAccountId={
@@ -1408,7 +1427,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
           ? (session.nextProviderAccountId ?? sessionAccountId)
           : undefined
       }
-      onSelectProviderAccount={onSelectProviderAccount ? composerSelectProviderAccount : undefined}
+      onSelectProviderAccount={
+        onSelectProviderAccountProp ? composerSelectProviderAccount : undefined
+      }
       onOpenFile={onOpenFile}
       busy={!!session.busy || !!session.continuingElsewhere}
       backgroundOnly={isBackgroundOnly(
@@ -1443,6 +1464,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // its own; only a real split needs per-pane identity, focus and a drag handle.
   // (`onPaneDragStart` is always supplied by the pane tree, so it can't decide this.)
   const hasPaneHeader = inSplit;
+  const paneHeaderSurface = surfaceAttributes(
+    { frame: "neutral", edge: "bottom" },
+    "session-pane-header shrink-0 touch-none items-center gap-1.5 px-2 select-none",
+  );
+  const paneHeaderDrag = actionDragAttributes(
+    { grab: !!onPaneDragStart },
+    paneHeaderSurface.className,
+  );
   const titleBarSlot = useTitleBarActionsSlot();
   const workingBadge = workingMachine ? (
     <Badge tone="neutral" role="status" data-working-machine className="min-w-0">
@@ -1533,9 +1562,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
       {hasPaneHeader ? (
         <div
           data-session-header
-          className={`session-pane-header shrink-0 touch-none items-center gap-1.5 border-b border-(--ui-tone-neutral-border) px-2 select-none ${
-            onPaneDragStart ? "cursor-grab active:cursor-grabbing" : ""
-          }`}
+          {...paneHeaderSurface}
+          {...paneHeaderDrag}
           onDragStart={(event) => event.preventDefault()}
           onPointerDown={(event) => {
             if (event.button !== 0 || !onPaneDragStart) return;
@@ -1553,8 +1581,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
             ) : null}
             <span
               {...surfaceAttributes(
-                { radius: "pill", variant: focused ? undefined : "transparent" },
-                `size-2 shrink-0  ${focused ? "bg-(--ui-tone-accent-subtle)" : ""}`,
+                {
+                  radius: "pill",
+                  variant: focused ? undefined : "transparent",
+                  tone: focused ? "accent" : undefined,
+                },
+                "size-2 shrink-0",
               )}
             />
             <OverflowTooltip label={title}>
@@ -1583,7 +1615,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
         </div>
       ) : null}
-      {!hasPaneHeader ? (
+      {!hasPaneHeader && !embedded ? (
         titleBarSlot ? (
           // A lone chat's actions live in the title bar's chrome row beside its tab (pane-hosted portal,
           // not a popover: the target is the title bar slot).
@@ -1732,9 +1764,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {remoteSessionLoading ? (
             <SurfaceLoading title={t("Loading conversation…")} />
           ) : isEmpty ? (
-            session.inboxAsk ? (
+            embedded || session.inboxAsk ? (
               <ScrollArea scrollbar="hidden" className="h-full min-h-0">
-                <DiscussionEmpty message="Explore this item with your agent." />
+                <DiscussionEmpty
+                  message={
+                    embedded
+                      ? t("Plan and manage your social accounts here.")
+                      : "Explore this item with your agent."
+                  }
+                />
               </ScrollArea>
             ) : (
               <EmptySession
@@ -1742,7 +1780,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 hasChatBackground={Boolean(projectBackground || globalBackgroundPath)}
                 composer={
                   dockComposer ? undefined : (
-                    <div ref={composerDockMotion.centeredRef} data-session-composer>
+                    <div ref={composerCenteredRef} data-session-composer>
                       {composer}
                     </div>
                   )
@@ -1790,6 +1828,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                       modelSettings={session.modelSettings}
                       providerAccountId={session.providerAccountId}
                       pendingQuestion={!!session.pendingQuestion}
+                      pendingOwnerApproval={session.pendingOwnerApproval}
                       questionBehavior={session.pendingQuestion?.behavior}
                       liveStatusInDock
                       backgroundTasks={session.backgroundTasks}
@@ -1896,7 +1935,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         </div>
         {dockComposer ? (
           <div
-            ref={composerDockMotion.dockedRef}
+            ref={composerDockedRef}
             data-session-composer
             inert={btw.open}
             className="mx-auto w-full max-w-4xl shrink-0"
@@ -1911,9 +1950,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           providerAccountId={session.providerAccountId}
           visible={visible}
           origin={() =>
-            composerDockMotion.dockedRef.current?.querySelector<HTMLElement>(
-              "[data-composer-box]",
-            ) ?? null
+            composerDockedRef.current?.querySelector<HTMLElement>("[data-composer-box]") ?? null
           }
           onSaveNote={notesEnabled ? saveNote : undefined}
           onOpenFile={onOpenFile}

@@ -212,20 +212,6 @@ not a new product build or UI test suite.
   existing forms. These are native form owners with shared semantic styling;
   searchable controlled collections still use SearchableSelect. Checkbox also
   supports an indeterminate visual/ARIA state without controlling its value.
-- `NativeSearchableSelect` adds searchable presentation to single-value native
-  forms. A real select retains `name`, `form`, `required`, native change events,
-  controlled `value` or uncontrolled `defaultValue`, reset, disabled option
-  metadata and `HTMLSelectElement`
-  refs. `options` uses the shared selection metadata. Invalid submission displays
-  the browser's validation message and focuses the visible trigger; imperative
-  select focus and external labels also route there. Reset synchronization runs
-  after the native default action and honors cancelled resets. Social's project,
-  account and verified-fact form fields use this bridge. Disabled fields retain
-  native omission from FormData; existing explicit edit payload owners remain.
-  This is a real select bridge, not hidden-input-only serialization. The six
-  initial growing Social form choices were migrated; that count is consumer
-  evidence, not a restriction on reuse. checkValidity/reportValidity and custom
-  validation messages retain visible recovery feedback and trigger focus.
 - `Badge`, `Alert` and `EmptyState` expose adapted official free Arc source through
   application adapters and shared semantic tones. Social retains domain status
   mapping, labels, operation callbacks and recovery actions. Alert supports

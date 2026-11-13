@@ -81,33 +81,29 @@ export function useComposerSlashInventory(input: {
     loadPromptTemplates,
     emptyPromptTemplates,
   );
-  const templateItems = useMemo(() => promptTemplates.map(templateSkill), [promptTemplates]);
+  const templateItems = promptTemplates.map(templateSkill);
   // The CLI's own commands never replace a Bycoda command or a skill that
   // Bycoda already lists under the same name.
-  const takenNames = useMemo(
-    () =>
-      new Set([
-        ...[
-          PLAN_COMMAND,
-          COMPACT_COMMAND,
-          NEW_SESSION_COMMAND,
-          CLEAR_SESSION_COMMAND,
-          SESSION_FOLDER_COMMAND,
-          MCP_COMMAND,
-          OPERATOR_COMMAND,
-          ORCHESTRATOR_COMMAND,
-          DRAFT_COMMAND,
-          BTW_COMMAND,
-          RESUME_COMMAND,
-          SUBAGENTS_COMMAND,
-          TASK_COMMAND,
-        ].map((command) => command.name),
-        "mono",
-        "bycoda",
-        ...skills.map((skill) => skill.name),
-      ]),
-    [skills],
-  );
+  const takenNames = new Set([
+    ...[
+      PLAN_COMMAND,
+      COMPACT_COMMAND,
+      NEW_SESSION_COMMAND,
+      CLEAR_SESSION_COMMAND,
+      SESSION_FOLDER_COMMAND,
+      MCP_COMMAND,
+      OPERATOR_COMMAND,
+      ORCHESTRATOR_COMMAND,
+      DRAFT_COMMAND,
+      BTW_COMMAND,
+      RESUME_COMMAND,
+      SUBAGENTS_COMMAND,
+      TASK_COMMAND,
+    ].map((command) => command.name),
+    "mono",
+    "bycoda",
+    ...skills.map((skill) => skill.name),
+  ]);
   const cliCommands = useCliCommands({
     harness,
     localCwd: executionCwd,

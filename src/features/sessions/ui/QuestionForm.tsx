@@ -45,6 +45,8 @@ type Props = {
   dismissLabel?: string;
   /** A retained owner card can postpone the whole prompt without answering earlier fields. */
   dismissEntirePrompt?: boolean;
+  /** Share the composer's background when this question is docked above it. */
+  docked?: boolean;
   attachmentsSupported?: boolean;
   remote?: boolean;
   onReply: (requestId: number, reply: UserQuestionReply) => void;
@@ -77,6 +79,7 @@ function QuestionFormContent({
   sessionId,
   dismissLabel,
   dismissEntirePrompt,
+  docked = false,
   attachmentsSupported = true,
   remote = false,
   onReply,
@@ -381,7 +384,12 @@ function QuestionFormContent({
         size="inherit"
         tone="neutral"
         {...surfaceAttributes(
-          { frame: "card", edge: "all", radius: "card", variant: "transparent" },
+          {
+            frame: "card",
+            edge: "all",
+            radius: "card",
+            variant: docked ? "composer-glass" : "transparent",
+          },
           `bycoda-arc ${styles.form}`,
         )}
         aria-label={t("Question")}
@@ -504,7 +512,9 @@ function QuestionFormContent({
             />
           </div>
         </FieldGroup>
-        <div {...surfaceAttributes({ variant: "inset" }, styles.footer)}>
+        <div
+          {...surfaceAttributes({ variant: "inset", frame: "editor", edge: "top" }, styles.footer)}
+        >
           {canAttach ? (
             <Button
               variant="ghost"

@@ -58,6 +58,9 @@ for (const theme of ["light", "dark"])
         `/tests/browser/settings/settings.html?section=terminal&terminal=1&theme=${theme}&lang=en`,
       );
       const terminal = page.locator(".terminal-settings");
+      const collectionFrame = terminal.locator(".settings-group-content > .settings-collection");
+      await expect(collectionFrame).toHaveCSS("border-top-width", "0px");
+      await expect(collectionFrame).toHaveCSS("border-top-left-radius", "7px");
       const local = terminal.getByRole("button", { name: /^Default terminal profile:/ });
       // TS-12: the local-sync machine shares this computer's one shell preference, so only
       // "This computer" and genuinely remote servers get an editable default.

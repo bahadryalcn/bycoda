@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { t } from "../../../../../shared/i18n";
 import { FieldGroup } from "../../../../../shared/ui/FieldGroup";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -7,7 +8,11 @@ import type { PlatformFieldProps } from "./PlatformFields";
 export function RedditFields({ value, disabled, onChange }: PlatformFieldProps) {
   const options = value.reddit ?? { subreddit: "", flair: "" };
   return (
-    <FieldGroup legend={t("Reddit")} className="content-platform" disabled={disabled}>
+    <FieldGroup
+      legend={t("Reddit")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
+      disabled={disabled}
+    >
       <TextField
         label={t("Subreddit")}
         required

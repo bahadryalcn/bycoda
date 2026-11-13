@@ -89,3 +89,13 @@ Recorded decision: components with the same job share one appearance and owner. 
 separate and explain their choice in catalog JSDoc. Shared wrappers own Arc and native popup access;
 feature code uses those wrappers. The UI drift and catalog ratchets enforce imports, floating-surface
 ownership, family metadata, unused exports and known hand-written control recipes.
+
+## Navigation tool group ground
+
+Owner decision, 2026-11-13, source: owner chat:
+
+> buranın arka plan rengi farklı. Bunun arka planla aynı olması gerekiyordu. Hover ı var fakat selected ı gözükmüyor bununda gözükmesi gerekiyordu
+
+Recorded decision: `ButtonGroup surface="navigation"` paints no fill in any theme, glass and
+workspace artwork included; the joined tools share their bar's ground and keep the group outline.
+The selected tool always shows the gliding plate across its whole segment.

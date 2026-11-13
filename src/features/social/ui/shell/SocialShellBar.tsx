@@ -18,6 +18,8 @@ export type SocialShellBarProps = {
   projects: HostProject[];
   projectId?: string;
   aiStopped: boolean;
+  hostOnline?: boolean;
+  loading?: boolean;
   onWorkspaceChange: (choice: WorkspaceChoice) => void;
   onAiStateChange: (stopped: boolean) => void;
 };
@@ -34,6 +36,8 @@ export function SocialShellBar({
   projects,
   projectId,
   aiStopped,
+  hostOnline = true,
+  loading = false,
   onWorkspaceChange,
   onAiStateChange,
 }: SocialShellBarProps) {
@@ -55,7 +59,7 @@ export function SocialShellBar({
 
   // Stop is one click to confirm; resume is confirmed too. The Host decides who may resume.
   const toggleAi = () => {
-    if (!client) return;
+    if (!client || !hostOnline || loading) return;
     const request = aiStopped
       ? {
           title: t("Resume AI?"),
@@ -99,7 +103,11 @@ export function SocialShellBar({
         />
       </div>
       <div className="social-shell-ai">
-        {aiStopped ? (
+        {loading || !hostOnline ? (
+          <Badge tone="neutral" size="sm">
+            {loading ? t("Checking…") : t("Host offline")}
+          </Badge>
+        ) : aiStopped ? (
           <Badge tone="warning" size="sm">
             {t("AI stopped")}
           </Badge>
@@ -120,9 +128,16 @@ export function SocialShellBar({
           tone={aiStopped ? "success" : "danger"}
           onClick={toggleAi}
           {...gateProps(
-            client
+            client && hostOnline && !loading
               ? { disabled: false }
-              : { disabled: true, disabledReason: t("Connect a bycoda Host first.") },
+              : {
+                  disabled: true,
+                  disabledReason: loading
+                    ? t("Checking…")
+                    : !hostOnline
+                      ? t("Could not reach this computer.")
+                      : t("Connect a bycoda Host first."),
+                },
           )}
         >
           {aiStopped ? t("Resume AI") : t("Stop all AI")}

@@ -1,3 +1,8 @@
+import { parseProviderAccountId } from "../../providers/public/providerAccountId";
+import {
+  ModelRoutingItemChoiceSchema,
+  type ModelRoutingItemChoice,
+} from "../../../shared/model/host-contracts/model-routing";
 import { isRemoteProvider } from "../../connections/public/protocol";
 import { type RemoteProvider } from "../../connections";
 import {
@@ -28,6 +33,8 @@ export type HostStewardInput = AutomationSchedule & {
   projectId: string;
   enabled: boolean;
   harness: RemoteProvider;
+  providerAccountId?: string;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -124,6 +131,12 @@ export function parseHostSteward(input: unknown): HostStewardInput {
     projectId: v.projectId,
     enabled: v.enabled !== false,
     harness: v.harness,
+    ...(v.modelChoice === undefined
+      ? {}
+      : { modelChoice: ModelRoutingItemChoiceSchema.parse(v.modelChoice) }),
+    ...(v.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: parseProviderAccountId(v.providerAccountId, v.harness) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,

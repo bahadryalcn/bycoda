@@ -16,7 +16,7 @@ export function AttachmentIdentity({
   const Icon =
     kind === "audio" ? AudioLines : kind === "video" ? Play : kind === "image" ? ImagePlus : null;
   return Icon ? (
-    <Icon style={{ width: iconSize, height: iconSize }} aria-hidden="true" />
+    <Icon size={iconSize} aria-hidden="true" />
   ) : (
     <FileTypeIcon
       name={

@@ -36,11 +36,16 @@ for (const theme of ["light", "dark"])
         return panel.screenshot({ path: join(output, `${theme}-${width}-${name}.png`) });
       };
       await page.evaluate(() => ((window as any).fixtureVoice.audioLevel.current = 0));
-      await expect(panel.locator('[data-hearing="false"]:visible')).toHaveCount(1);
+      await expect(panel.getByRole("meter", { name: "Input" })).toHaveAttribute(
+        "aria-valuenow",
+        "0",
+      );
       await capture("full-silent");
       await page.evaluate(() => ((window as any).fixtureVoice.audioLevel.current = 0.8));
-      await expect(panel.locator('[data-hearing="true"]:visible')).toHaveCount(1);
-      await expect(panel.getByText("Microphone is receiving sound", { exact: true })).toBeVisible();
+      await expect(panel.getByRole("meter", { name: "Input" })).toHaveAttribute(
+        "aria-valuenow",
+        "80",
+      );
       await capture("full-hearing");
       await panel.getByRole("button", { name: "Reply when I pause", exact: true }).click();
       await expect(page.getByRole("menu")).toHaveCSS("opacity", "1");
@@ -69,9 +74,14 @@ for (const theme of ["light", "dark"])
       expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await page.emulateMedia({ reducedMotion: "reduce" });
       await panel.getByRole("button", { name: "Resume", exact: true }).click();
-      await expect(panel.locator('[data-hearing="true"]:visible')).toHaveCount(1);
-      await expect(panel.getByText("Sound detected", { exact: true })).toBeVisible();
+      await expect(panel).toHaveAttribute("data-voice-state", "listening");
       await capture("compact-reduced-motion");
+      await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
+      await page.evaluate(() => ((window as any).fixtureVoice.audioLevel.current = 0.8));
+      await expect(panel.getByRole("meter", { name: "Input" })).toHaveAttribute(
+        "aria-valuenow",
+        "80",
+      );
       await page.emulateMedia({ reducedMotion: "no-preference" });
       await panel.getByRole("button", { name: "Disconnect voice", exact: true }).click();
       expect(await page.evaluate(() => (window as any).fixtureVoice.stops)).toBe(0);

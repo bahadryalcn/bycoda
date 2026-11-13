@@ -5,6 +5,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DescriptionItem, DescriptionList } from "./DescriptionList";
+import { surfaceAttributes } from "./Surface";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -38,6 +39,17 @@ it("renders dl with grouped dt/dd pairs", async () => {
   expect(first.querySelector("dt")?.textContent).toBe("Source");
   expect(first.querySelector("dd")?.textContent).toBe("main");
   expect(dl!.querySelectorAll("dd")[1].className).toContain("mono");
+});
+
+it("forwards semantic and shared surface attributes to its list", async () => {
+  await render({
+    ...surfaceAttributes({ frame: "stroke" }),
+    "aria-label": "Usage",
+    children: null,
+  });
+  const list = host.querySelector("dl")!;
+  expect(list.getAttribute("aria-label")).toBe("Usage");
+  expect(list.getAttribute("data-surface-frame")).toBe("stroke");
 });
 
 it("exposes the column mode and size", async () => {

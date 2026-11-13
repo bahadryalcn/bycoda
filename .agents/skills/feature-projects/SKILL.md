@@ -10,6 +10,7 @@ Use for project rail/pickers, groups, add/rename/remove/archive, remote project 
 ## Source starts
 
 - `src/app/shell/ProjectRail.tsx`, `src/app/shell/Sidebar.tsx`, `src/app/shell/useProjectMenu.tsx`: rail, compact flyouts and shell composition.
+- `src/app/shell/AddProjectButton.tsx`: shared rail launch menu for local folders, workspaces, remote folders and session imports.
 - `src/features/projects/`: project models, pickers, search, naming and removal dialogs.
 - `src/features/projects/model/contribute*.ts`, `ui/ContributePrompt.tsx`: the contribute invitation (local use counters) and the clone-and-open flow; it opens the clone through the `OPEN_PROJECT_PATH_EVENT` handled in `useProjectOpen`.
 - `src/features/connections/`: remote ownership and machine selection.

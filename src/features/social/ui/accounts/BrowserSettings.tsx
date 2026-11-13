@@ -5,7 +5,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
-import { Heading } from "../../../../shared/ui/Heading";
 
 import { Select } from "../../../../shared/ui/Select";
 import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
@@ -75,7 +74,6 @@ export function BrowserSettings({
         {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
         aria-label={t("Browser")}
       >
-        <Heading size="item">{t("Browser")}</Heading>
         {loadError ? (
           <InlineError>{loadError}</InlineError>
         ) : (
@@ -111,7 +109,6 @@ export function BrowserSettings({
       {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
       aria-label={t("Browser")}
     >
-      <Heading size="item">{t("Browser")}</Heading>
       {needsHuman ? (
         <p className="social-field-row">
           <StatusText status="needs_human" />
@@ -184,7 +181,7 @@ export function BrowserSettings({
       {live ? (
         <Surface
           variant="card"
-          padding="none"
+          padding="sm"
           className="social-live-view"
           aria-label={t("Live view of {p1}", { p1: accountName })}
         >

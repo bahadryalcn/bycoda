@@ -16,6 +16,9 @@ export type VoiceOverlayState = {
   visualState: VoiceVisualState;
   statusText: string;
   title: string;
+  name?: string;
+  avatar?: string;
+  chatTurns?: readonly { id: number; role: "owner" | "assistant"; text: string }[];
   muted: boolean;
   speakerMuted?: boolean;
   working: boolean;

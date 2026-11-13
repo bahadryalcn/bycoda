@@ -1,106 +1,136 @@
-import { describe, expect, it } from "vitest";
-import type { AssistantModelPoolRow } from "../../../src/shared/model/assistantModelPool";
-import type { AssistantProfile } from "../../../src/shared/model/host-contracts/assistant";
+import { describe, expect, it, vi } from "vitest";
 import {
-  AssistantModelsHeldError,
-  chooseAssistantExecution,
+  EMPTY_MODEL_ROUTING,
+  type ModelRoutingState,
+} from "../../../src/shared/model/host-contracts/model-routing";
+import type { AssistantProfile } from "../../../src/shared/model/host-contracts/assistant";
+import { selectModelRouting } from "../../model-routing/selector";
+import type { ModelRoutingService } from "../../model-routing/service";
+import {
   createAssistantModelSelector,
+  chooseAssistantExecution,
 } from "./assistant-model-execution";
-import type { AssistantQuotaReading } from "./assistant-quota-reader";
+import { modelHoldRecord, modelHoldNotification } from "../work/assistant-model-hold";
 
-const base = {
-  harness: "claude",
-  modelSettings: {},
-  runtimeMode: "auto",
-  maxRunMinutes: 60,
-} as const;
-const row = (id: string, extra: Partial<AssistantModelPoolRow> = {}): AssistantModelPoolRow => ({
-  ...base,
-  id,
-  model: `m-${id}`,
-  roles: ["worker"],
-  minRemainingPercent: 10,
-  unknownLimit: "use",
-  ...extra,
-});
 const profile = {
-  execution: { ...base, model: "profile-model" },
-} as unknown as AssistantProfile;
-function selector(rows: AssistantModelPoolRow[] | null, left: Record<string, number | "unknown">) {
-  const record = rows
-    ? {
-        id: "model-pool",
-        version: 1,
-        createdAt: 1,
-        updatedAt: 1,
-        value: { rows },
-      }
-    : undefined;
-  return createAssistantModelSelector({
-    repository: {
-      get: async () => record,
-      put: async () => undefined,
-    } as never,
-    quota: {
-      reading: (_h: string, _a: string | undefined, model: string): AssistantQuotaReading => {
-        const value = left[model] ?? 100;
-        return value === "unknown"
-          ? { unknown: true, reason: "noSample" }
-          : { leftPercent: value, resetsAt: 5000, sampledAt: 1 };
-      },
+  execution: {
+    harness: "codex",
+    model: "profile-model",
+    modelSettings: {},
+    runtimeMode: "supervised",
+    maxRunMinutes: 42,
+  },
+} as AssistantProfile;
+const state = (): ModelRoutingState => ({
+  ...structuredClone(EMPTY_MODEL_ROUTING),
+  version: 1,
+  updatedAt: 1,
+  entries: ["a", "b"].map((id) => ({
+    id,
+    harness: "codex",
+    model: id,
+    providerAccountId: "work",
+    modelSettings: { effort: "high" },
+    minRemainingPercent: 20,
+    unknownLimit: "use",
+  })),
+  pools: [{ id: "replies", name: "Replies", entryIds: ["b"] }],
+  roles: {
+    "assistant.reply": { kind: "pool", poolId: "replies" },
+    "assistant.chief": {
+      kind: "fixed",
+      target: { harness: "claude", model: "chief", modelSettings: {} },
     },
-  });
+  },
+});
+function setup(draft = state(), limited = false) {
+  const resolve = vi.fn(async (input) =>
+    selectModelRouting(draft, input, {
+      available: () => true,
+      signedIn: () => true,
+      quota: () => ({ leftPercent: limited ? 0 : 100, resetsAt: 5000 }),
+    }),
+  );
+  return {
+    selector: createAssistantModelSelector({
+      routing: () => ({ resolve }) as unknown as ModelRoutingService,
+    }),
+    resolve,
+  };
 }
-
-describe("model selector", () => {
-  it("returns null for a derived pool so the profile applies unchanged", async () => {
-    expect(await selector(null, {})("worker", profile)).toBeNull();
-  });
-  it("uses the first row and carries a non-default account", async () => {
-    const choice = await selector([row("a", { providerAccountId: "work" }), row("b")], {})(
-      "worker",
-      profile,
-    );
-    expect(choice).toMatchObject({
+describe("assistant routing", () => {
+  it("resolves order, per-role pool and fixed binding, retaining profile permissions and deadline", async () => {
+    const { selector } = setup();
+    expect(await selector("worker", profile)).toMatchObject({
       rowId: "a",
-      reason: "first",
-      execution: { harness: "claude", model: "m-a", providerAccountId: "work" },
+      execution: {
+        model: "a",
+        providerAccountId: "work",
+        runtimeMode: "supervised",
+        maxRunMinutes: 42,
+      },
     });
+    expect(await selector("reply", profile)).toMatchObject({
+      rowId: "b",
+      execution: { model: "b" },
+    });
+    expect(await selector("chief", profile)).toMatchObject({
+      rowId: "fixed",
+      execution: { model: "chief" },
+    });
+    expect(await selector("planning", profile)).toMatchObject({ execution: { model: "a" } });
   });
-  it("omits the default account and skips a row below its threshold", async () => {
-    const choice = await selector([row("a"), row("b", { providerAccountId: "default" })], {
-      "m-a": 5,
-    })("worker", profile);
-    expect(choice).toMatchObject({ rowId: "b", reason: "skipped:a" });
-    expect((choice as { execution: object }).execution).not.toHaveProperty("providerAccountId");
+  it("unconfigured routing keeps profile role execution", async () => {
+    const draft = state();
+    draft.entries = [];
+    draft.roles = {};
+    expect(await setup(draft).selector("worker", profile)).toBeNull();
   });
-  it("holds with the earliest reset when every row is limited", async () => {
-    const choice = await selector([row("a"), row("b")], { "m-a": 1, "m-b": 2 })("worker", profile);
-    expect(choice).toEqual({ held: "limits", nextResetAt: 5000 });
-    await expect(
-      chooseAssistantExecution(selector([row("a")], { "m-a": 1 }), "worker", profile),
-    ).rejects.toMatchObject({
-      name: "AssistantModelsHeldError",
+  it("noEligibleEntry feeds the existing hold and stable notification identity", async () => {
+    const { selector } = setup(state(), true);
+    expect(await selector("worker", profile)).toEqual({
       held: "limits",
       nextResetAt: 5000,
+      reason: "noEligibleEntry",
     });
+    try {
+      await chooseAssistantExecution(selector, "worker", profile);
+      throw new Error("expected hold");
+    } catch (error) {
+      expect(error).toMatchObject({ name: "AssistantModelsHeldError", nextResetAt: 5000 });
+      const one = modelHoldNotification(
+        { id: "job", title: "Job" },
+        modelHoldRecord(error as never, 10),
+      );
+      const two = modelHoldNotification(
+        { id: "job", title: "Job" },
+        modelHoldRecord(error as never, 20),
+      );
+      expect(one.id).toBe(two.id);
+      expect(one.body).toContain("No eligible model");
+    }
   });
-  it("selects separate rows per role and reports a role without rows", async () => {
-    const pick = selector(
-      [row("w"), row("r", { roles: ["reply"] }), row("c", { roles: ["chief"] })],
-      {},
-    );
-    expect(await pick("reply", profile)).toMatchObject({ rowId: "r" });
-    expect(await pick("chief", profile)).toMatchObject({ rowId: "c" });
-    expect(await pick("planning", profile)).toEqual({ held: "noRow" });
-    await expect(chooseAssistantExecution(pick, "planning", profile)).rejects.toBeInstanceOf(
-      AssistantModelsHeldError,
-    );
+  it("never resolves an existing provider thread again, including an existing thread", async () => {
+    const { selector, resolve } = setup();
+    expect(await selector("chief", profile, "old-thread")).toBeNull();
+    expect(resolve).not.toHaveBeenCalled();
   });
-  it("follows unknownLimit for unreadable quota", async () => {
-    const pick = selector([row("a", { unknownLimit: "skip" }), row("b")], {
-      "m-a": "unknown",
+  it("persists a concrete target before reusing a Chief provider thread", async () => {
+    const records = new Map<string, unknown>();
+    const routing = setup();
+    const selector = createAssistantModelSelector({
+      routing: () => ({ resolve: routing.resolve }) as unknown as ModelRoutingService,
+      repository: {
+        get: async (_table: string, id: string) => records.get(id),
+        put: async (_table: string, row: { id: string }) => {
+          records.set(row.id, row);
+        },
+      } as never,
     });
-    expect(await pick("worker", profile)).toMatchObject({ rowId: "b" });
+    const choice = await chooseAssistantExecution(selector, "chief", profile);
+    await selector.rememberThread!("thread", choice!);
+    routing.resolve.mockClear();
+    expect(await selector("chief", profile, "thread")).toEqual(choice);
+    expect(routing.resolve).not.toHaveBeenCalled();
   });
 });

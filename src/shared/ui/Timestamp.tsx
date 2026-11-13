@@ -20,7 +20,7 @@ export type TimestampFormat =
  * the current year) and `datetime-seconds` are computed on render. The full date is the title by default.
  * @group text
  * @use Show a past or scheduled point in time (last run, created, updated) as a date, clock or age.
- * @avoid Event history list: Timeline. Durations or numbers: format with src/shared/i18n helpers.
+ * @avoid Event history list: Timeline. Durations or numbers: format with src/shared/i18n helpers. Already formatted date text without time semantics: Text.
  * @replaces time
  */
 export function Timestamp({

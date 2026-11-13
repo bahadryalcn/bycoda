@@ -19,6 +19,16 @@ export function emptyFindPeopleForm(accountId = ""): FindPeopleForm {
   return { kind: "own_post_comments", accountId, postRef: "", query: "", handle: "" };
 }
 
+/** The form state that would build `source`, so an existing rule can be edited in the same form. */
+export function formFromSource(source: CaptureSource): FindPeopleForm {
+  const form = emptyFindPeopleForm(source.accountId);
+  form.kind = source.kind;
+  if ("postRef" in source && source.postRef) form.postRef = source.postRef;
+  if ("query" in source) form.query = source.query;
+  if ("handle" in source) form.handle = source.handle;
+  return form;
+}
+
 export function captureSourceLabel(kind: CaptureSourceKind): string {
   switch (kind) {
     case "own_post_comments":

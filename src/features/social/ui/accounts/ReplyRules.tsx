@@ -4,7 +4,7 @@ import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
-import { Heading } from "../../../../shared/ui/Heading";
+
 import { Text } from "../../../../shared/ui/Text";
 
 import { Switch } from "../../../../shared/ui/Switch";
@@ -69,6 +69,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
 
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
   const projectId = rules?.[0]?.projectId ?? projects[0]?.id;
+  const emptyMessage = t("No reply rules for this account yet.");
   const reviewGate: ActionGate = disabled
     ? { disabled: true, disabledReason: t("Connect to this computer to change this account.") }
     : is("simplify")
@@ -76,7 +77,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
       : !rules
         ? { disabled: true, disabledReason: t("Loading…") }
         : !rules.length
-          ? { disabled: true, disabledReason: t("No reply rules for this account yet.") }
+          ? { disabled: true, disabledReason: emptyMessage }
           : !projectId
             ? { disabled: true, disabledReason: t("Choose a project first.") }
             : { disabled: false };
@@ -130,7 +131,6 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
       aria-label={t("Reply rules")}
     >
       <div className="social-card-head">
-        <Heading size="item">{t("Reply rules")}</Heading>
         <DisabledReason
           variant="secondary"
           size="sm"
@@ -144,12 +144,12 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
       {loadError ? (
         <InlineError retry={{ onRetry: reload, label: t("Try again") }}>{loadError}</InlineError>
       ) : null}
-      {rules && !rules.length ? (
+      {rules?.length === 0 && reviewGate.disabled && reviewGate.disabledReason !== emptyMessage ? (
         <EmptyState
           size="inline"
           kind="empty"
           className="social-muted"
-          description={t("No reply rules for this account yet.")}
+          description={emptyMessage}
         />
       ) : null}
       {rules?.map((rule) => (

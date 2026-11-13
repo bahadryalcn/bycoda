@@ -4,6 +4,10 @@ import type {
   ContextualSessionInput,
 } from "../../src/features/connections/model/protocol";
 import { previewContextualSession } from "./contextual-session";
+import {
+  DELEGATION_LIMITS,
+  isReservedDelegationKey,
+} from "../../src/shared/model/host-contracts/delegation";
 function source(): HostSession {
   return {
     projectId: "project",
@@ -47,6 +51,21 @@ const input: ContextualSessionInput = {
   modelSettings: {},
 };
 describe("authoritative contextual preview", () => {
+  it.each(["crossSubagents", "crossAdvisor", "crossSubagentMaxEffort", "imageModels"])(
+    "admits command-sized %s and retains ordinary setting bounds",
+    (key) => {
+      expect(isReservedDelegationKey(key)).toBe(true);
+      const value = source();
+      value.session.modelSettings = { [key]: "x".repeat(DELEGATION_LIMITS.valueBytes) };
+      expect(() => previewContextualSession(value, input)).not.toThrow();
+      value.session.modelSettings[key] += "x";
+      expect(() => previewContextualSession(value, input)).toThrow(/review limit/);
+      value.session.modelSettings = { ordinary: "x".repeat(129) };
+      expect(() => previewContextualSession(value, input)).toThrow(/review limit/);
+      value.session.modelSettings.ordinary = "x".repeat(128);
+      expect(() => previewContextualSession(value, input)).not.toThrow();
+    },
+  );
   it("bounds the outgoing packet independently of huge historical tool output", () => {
     const value = source();
     value.session.blocks[1]!.tool!.output = "unrelated output ".repeat(100_000);

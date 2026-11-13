@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -220,7 +221,7 @@ export function WorktreePicker({
             as="div"
             size="caption"
             tone="inherit"
-            className="shrink-0 border-t border-stroke p-1"
+            {...surfaceAttributes({ frame: "stroke", edge: "top" }, "shrink-0 p-1")}
           >
             <Button
               variant="item"

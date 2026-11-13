@@ -9,6 +9,23 @@ import { Disclosure, type DisclosureProps } from "./Disclosure";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let cleanup: (() => Promise<void>) | undefined;
+
+it("supports accent hover and press ink without changing default", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  await act(async () =>
+    root.render(
+      createElement(Disclosure, { summary: "Details", interactionTone: "accent" }, "Body"),
+    ),
+  );
+  expect(host.querySelector("details")?.getAttribute("data-interaction-tone")).toBe("accent");
+  const css = readFileSync(join(process.cwd(), "src/shared/ui/Disclosure.module.css"), "utf8");
+  expect(css).toContain('data-interaction-tone="accent"');
+  expect(css).toContain("color: var(--ui-tone-accent-fg)");
+  await act(async () => root.unmount());
+  host.remove();
+});
 afterEach(async () => {
   await cleanup?.();
   cleanup = undefined;
@@ -123,4 +140,18 @@ it("renders the count with an accessible label", async () => {
   expect(details().querySelector('[data-variant="count"]')?.getAttribute("aria-label")).toBe(
     "3 items",
   );
+});
+
+it("applies body dividers without remounting a draft when disclosure closes", async () => {
+  const child = createElement("input", { defaultValue: "Draft", "aria-label": "Draft" });
+  const view = await mount({ open: true, bodyDividers: "pane", children: child });
+  const body = view.details().querySelector(":scope > div")!;
+  expect(body.getAttribute("data-surface-dividers")).toBe("pane");
+  const input = body.querySelector("input")!;
+  input.value = "Unsaved";
+  await view.render({ open: false, bodyDividers: "pane", children: child });
+  expect(view.details().querySelector(":scope > div")).toBe(body);
+  expect(body.querySelector("input")).toBe(input);
+  expect(input.value).toBe("Unsaved");
+  expect(view.details().hasAttribute("bodyDividers")).toBe(false);
 });

@@ -16,7 +16,12 @@ import { ChevronDown } from "./icons";
 import { Popover } from "./Popover";
 import { SelectTrigger, SelectOption, SelectValue } from "./arc/select/select";
 
-/** The bordered field trigger, for menus that read as a select (for example multi-pick lists). */
+/**
+ * The bordered field trigger, for menus that read as a select (for example multi-pick lists).
+ * @group choice
+ * @use A custom select-like trigger whose owner provides the popup and selection state.
+ * @avoid A complete short exclusive-choice field: Select. Searchable choices: SearchableSelect.
+ */
 export { SelectTrigger };
 import { ComboboxStatus } from "./arc/combobox/combobox";
 import { PickerChoice } from "./picker/PickerChoice";

@@ -101,8 +101,15 @@ export function StateLadder() {
                   onClick={() => setOpen(true)}
                 >
                   <span
-                    {...surfaceAttributes({ frame: "stroke", edge: "all" }, "state-custom-dot")}
-                    style={{ background: value.customColor ?? themePalette.hexA3ACB8 }}
+                    {...surfaceAttributes(
+                      { frame: "stroke", edge: "all", radius: "circle", variant: "user-color" },
+                      "state-custom-dot",
+                    )}
+                    style={
+                      {
+                        "--surface-user-color": value.customColor ?? themePalette.hexA3ACB8,
+                      } as React.CSSProperties
+                    }
                   />
                 </Button>
               )}
@@ -152,7 +159,10 @@ export function StateLadder() {
                   tone="inherit"
                   leading="inherit"
                   key={row.state}
-                  className="state-preview-row"
+                  {...surfaceAttributes(
+                    { variant: row.state === "selected" ? "selected" : undefined },
+                    "state-preview-row",
+                  )}
                   data-state={row.state}
                 >
                   <row.Icon size={14} aria-hidden="true" />

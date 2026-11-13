@@ -1,12 +1,9 @@
 .pane:global(.bycoda-sidebar.body-glass) {
   container: workspace-pane / inline-size;
-  /* Override the legacy opaque canvas fill, while the more specific native
-     glass selector in index.css retains ownership of its transparency. */
-  background: var(--ui-surface-panel);
 }
 
-.folder[data-folder-dragging="true"] {
-  opacity: 0.4;
+.folder {
+  padding-inline-start: var(--session-folder-indent, 0px);
 }
 
 /* Groups and sections (Pinned, Reminders, a folder) are told apart by space, never by rules
@@ -18,14 +15,6 @@
     + li:not([data-section-divided], [aria-hidden])
   ) {
   margin-block-end: var(--space-3);
-}
-
-/* A group's subgroups and sessions sit under its header with no guide line. The indent puts
-   their titles on the group name's line (header inset + mark + gap, less the row's own
-   inset), so the hierarchy reads from alignment alone. */
-.folderChildren {
-  padding-block: 0 var(--space-1);
-  padding-inline-start: 1.375rem;
 }
 
 /* Let the location use spare space and shrink only when the toolbar needs it. */

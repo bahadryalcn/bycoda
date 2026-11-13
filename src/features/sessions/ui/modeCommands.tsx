@@ -175,8 +175,8 @@ export function ModeCommandText({
       <span className="relative">
         <span className="text-transparent">{text[0]}</span>
         <mode.style.Icon
-          className={`absolute top-1/2 -translate-y-1/2 ${iconClassName}`}
-          style={{ left: `-${indent}` }}
+          className={`absolute top-1/2 -translate-y-1/2 left-(--mode-icon-offset) ${iconClassName}`}
+          style={{ "--mode-icon-offset": `-${indent}` } as React.CSSProperties}
         />
       </span>
       <span key={mode.name} className="composer-mode-shimmer">

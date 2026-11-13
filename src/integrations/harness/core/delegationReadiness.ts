@@ -26,17 +26,18 @@ export function delegationNotice(guidance: string) {
     : "Host subagents are unavailable this turn; the model may not start subagents outside your selected models and effort limit.";
 }
 
-/** A fresh scoped initialize, never a cached metadata answer. Older backends fail closed. */
+/** Prepare an upcoming spawn when absent; probe an existing process without issuing grants. */
 export async function conversationDelegationReady(sessionId: string): Promise<boolean> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       invokeProviderCommand<{ ready?: boolean } | null>("harness_conversation_tools_bridge", {
-        sessionId: sessionId.replace(/#\d+$/, ""),
+        sessionId,
         checkReady: true,
+        prepareSpawn: true,
       }).then((answer) => answer?.ready === true),
       new Promise<boolean>((resolve) => {
-        timer = setTimeout(() => resolve(false), 1500);
+        timer = setTimeout(() => resolve(false), 5000);
       }),
     ]);
   } catch {

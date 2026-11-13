@@ -2,6 +2,7 @@ import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Text } from "../../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import type {
   AssistantJob,
   AssistantNote,
@@ -49,7 +50,7 @@ export function JobDetailNotes({
       />
     );
   return (
-    <div className={styles.block}>
+    <div {...surfaceAttributes({ dividers: "pane" }, styles.block)}>
       {hits.map(({ note, lines }) => (
         <Text
           as="section"

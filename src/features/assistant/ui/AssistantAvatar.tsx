@@ -120,6 +120,7 @@ export function AssistantAvatarPicker({
         label={t("Avatar")}
         className={styles.tiles}
         tileClassName={styles.tile}
+        tile={{ shape: "pill", selectionIndicator: "border-ring" }}
         value={view.kind === "image" ? assistantAvatarPresetValue(view.id) : (current ?? "")}
         onValueChange={(next) => onChange({ avatar: next })}
         options={[

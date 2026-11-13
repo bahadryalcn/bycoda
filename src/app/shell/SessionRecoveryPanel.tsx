@@ -44,6 +44,7 @@ import type { WorkspaceSessionStub } from "../../features/workspace/model/worksp
 import { getSession } from "../../features/sessions/data/sessionStore";
 import { MoreHorizontal, Search, X } from "../../shared/ui/icons";
 import { RecoveryVerification } from "./RecoveryVerification";
+import { surfaceAttributes } from "../../shared/ui/Surface";
 import "./session-recovery.css";
 
 const stubPath = (stub: WorkspaceSessionStub) => stub.cwd;
@@ -428,12 +429,16 @@ export function SessionRecoveryPanel({
       {listError ? <Alert tone="danger">{listError}</Alert> : null}
       <div className="recovery-body">
         {shown.length ? (
-          <ul className="recovery-list divide-y divide-stroke" aria-label={t("Recovered sessions")}>
+          <ul
+            {...surfaceAttributes({ dividers: "stroke" }, "recovery-list")}
+            aria-label={t("Recovered sessions")}
+          >
             {shown.map(({ stub, title, status, machine, activityAt, verification, readError }) => (
               <li key={stub.id}>
                 <ActionHost
                   selected={selected.has(stub.id)}
-                  className="recovery-row flex flex-wrap items-start gap-2 py-2"
+                  padding={{ block: "md" }}
+                  className="recovery-row flex flex-wrap items-start gap-2"
                 >
                   <Checkbox
                     checked={selected.has(stub.id)}
@@ -541,7 +546,7 @@ export function SessionRecoveryPanel({
           />
         )}
       </div>
-      <div className="recovery-footer border-t border-stroke">
+      <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "recovery-footer")}>
         {openError ? (
           <Alert tone="danger">
             {openError}

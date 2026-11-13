@@ -6,6 +6,7 @@ import {
   DECORATIVE_MOTION_KEY,
   applyThemeDecorativeMotion,
   decorativeMotionEnabled,
+  audioFeedbackMotionEnabled,
   loadDecorativeMotionEnabled,
   noteDisplayRefreshRate,
   loadFollowSystemMotionEnabled,
@@ -212,6 +213,23 @@ it("ignores the system reduce-motion request only while Follow system setting is
 
 describe("high refresh displays", () => {
   afterEach(() => noteDisplayRefreshRate(null));
+
+  it("keeps capped audio feedback live while honoring explicit, system and visibility choices", () => {
+    const { listener } = subscribe();
+    noteDisplayRefreshRate(240);
+    expect(decorativeMotionEnabled()).toBe(false);
+    expect(audioFeedbackMotionEnabled()).toBe(true);
+    listener.mockClear();
+    saveDecorativeMotionEnabled(false);
+    expect(audioFeedbackMotionEnabled()).toBe(false);
+    expect(listener).toHaveBeenCalled();
+    saveDecorativeMotionEnabled(true);
+    reduced = true;
+    expect(audioFeedbackMotionEnabled()).toBe(false);
+    reduced = false;
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    expect(audioFeedbackMotionEnabled()).toBe(false);
+  });
 
   it("turns decorative motion off by default at 120 Hz and above unless the user chose it", () => {
     const { listener } = subscribe();

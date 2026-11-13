@@ -7,6 +7,7 @@ import { TransientNotice } from "../../shared/ui/TransientNotice";
 import { ErrorDetails, errorHeadline, fitsOneLine } from "../../shared/ui/ErrorDetails";
 import { setNativeFullscreen } from "../../platform/tauri/fullscreen";
 import { refreshWindowState, useNativeWindowState } from "../../platform/tauri/windowState";
+import { surfaceAttributes } from "../../shared/ui/Surface";
 
 export async function toggleWindowMaximize(): Promise<void> {
   const win = getCurrentWindow();
@@ -52,7 +53,10 @@ function NativeWindowControls() {
   return (
     <div
       data-window-controls
-      className="flex h-full shrink-0 items-stretch border-s border-stroke"
+      {...surfaceAttributes(
+        { frame: "stroke", edge: "inline-start" },
+        "flex h-full shrink-0 items-stretch",
+      )}
       data-tauri-drag-region="false"
     >
       {error ? (
@@ -98,7 +102,6 @@ function NativeWindowControls() {
         label={t("Close window")}
         tooltip={t("Close")}
         variant="ghost"
-        tone="danger"
         motion="none"
         data-tauri-drag-region="false"
         onClick={handleClose}

@@ -17,8 +17,9 @@
   background: var(--ui-surface);
 }
 
+/* Navigation tools share their bar's ground in every theme; only the outline groups them. */
 .group[data-surface="navigation"] {
-  background: var(--ui-navigation-control);
+  background: transparent;
 }
 
 .group[data-surface="transparent"] {

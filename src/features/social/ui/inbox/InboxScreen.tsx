@@ -2,8 +2,12 @@ import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
+import { Button } from "../../../../shared/ui/Button";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import { socialQueryScope } from "../../model/socialQuery";
 import { Switch } from "../../../../shared/ui/Switch";
-import { EmptyHint } from "../common/EmptyHint";
+import { LoadingText } from "../../../../shared/ui/LoadingText";
 import type { SocialScreenProps } from "../shell/screens";
 import { inboxApi } from "./inboxApi";
 import { InboxFilters } from "./InboxFilters";
@@ -23,15 +27,20 @@ function targetThreadId(target: unknown): string | undefined {
 }
 
 /** Unified inbox: filters, one list of comments and messages, the selected conversation and a reply box. */
-export function InboxScreen({ client, active, target }: SocialScreenProps) {
+export function InboxScreen(props: SocialScreenProps) {
+  return <HostInboxScreen key={socialQueryScope(props.client).join(":")} {...props} />;
+}
+
+function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenProps) {
   useLocale();
   const api = inboxApi(client);
   const invalidate = useInboxInvalidate(client);
-  const snapshot = useInboxSnapshot(client);
+  const snapshot = useInboxSnapshot(client, active);
   const [filter, setFilter] = useState<InboxFilterState>(NO_FILTER);
   const [chosen, setChosen] = useState<string | undefined>(() => targetThreadId(target));
   const [settingsError, setSettingsError] = useState("");
   const [checking, setChecking] = useState(false);
+  const [savingRefresh, setSavingRefresh] = useState(false);
 
   const autoRefresh = snapshot.data?.pollingEnabled;
   const list = useInboxList(client, filter, {
@@ -48,12 +57,15 @@ export function InboxScreen({ client, active, target }: SocialScreenProps) {
   const filtered = filter.status !== "all" || filter.accountId !== "" || filter.query.trim() !== "";
 
   const toggleAutoRefresh = async (next: boolean) => {
+    setSavingRefresh(true);
     setSettingsError("");
     try {
       await api.setAutoRefresh(next);
       await invalidate();
     } catch {
       setSettingsError(t("Could not change auto-refresh. Try again."));
+    } finally {
+      setSavingRefresh(false);
     }
   };
 
@@ -92,36 +104,106 @@ export function InboxScreen({ client, active, target }: SocialScreenProps) {
             aria-label={t("Auto-refresh")}
             compact
             checked={autoRefresh === true}
-            disabled={autoRefresh === undefined}
+            disabled={autoRefresh === undefined || savingRefresh}
             onCheckedChange={(next) => void toggleAutoRefresh(next).catch(() => undefined)}
           />
         </Text>
+        <Button
+          variant="secondary"
+          size="sm"
+          loading={checking}
+          loadingLabel={t("Checking…")}
+          disabled={!accounts.some((account) => account.connected)}
+          disabledReason={
+            !accounts.some((account) => account.connected)
+              ? t("Connect an account first.")
+              : undefined
+          }
+          onClick={() =>
+            void checkNow().catch(() => setSettingsError(t("Could not load the inbox. Try again.")))
+          }
+        >
+          {t("Check now")}
+        </Button>
       </InboxFilters>
 
-      {list.isError ? <InlineError>{t("Could not load the inbox. Try again.")}</InlineError> : null}
+      {snapshot.isError ? (
+        <InlineError
+          retry={{
+            label: t("Try again"),
+            pending: snapshot.isFetching,
+            onRetry: () => {
+              void snapshot.refetch().catch(() => undefined);
+            },
+          }}
+        >
+          {t("Could not load accounts. Try again.")}
+        </InlineError>
+      ) : null}
+      {list.isError ? (
+        <InlineError
+          retry={{
+            label: t("Try again"),
+            pending: list.isFetching,
+            onRetry: () => {
+              void list.refetch().catch(() => undefined);
+            },
+          }}
+        >
+          {t("Could not load the inbox. Try again.")}
+        </InlineError>
+      ) : null}
 
       <div className="inbox-body">
         <div className="inbox-column">
-          {!list.isPending && items.length === 0 ? (
-            <EmptyHint
-              message={
-                filtered
-                  ? t("No conversations match these filters.")
-                  : t("No conversations yet. New messages and comments appear here.")
-              }
-              action={
-                filtered
-                  ? undefined
-                  : {
-                      label: checking ? t("Checking…") : t("Check now"),
-                      disabled: false,
-                      onClick: () =>
-                        void checkNow().catch(() =>
-                          setSettingsError(t("Could not load the inbox. Try again.")),
-                        ),
-                    }
-              }
-            />
+          {!list.isPending && items.length === 0 && !list.isError && !snapshot.isError ? (
+            snapshot.isPending ? (
+              <LoadingText>{t("Loading accounts…")}</LoadingText>
+            ) : accounts.length === 0 ? (
+              <EmptyState
+                kind="empty"
+                description={t("Add an account to read messages and comments.")}
+                action={
+                  <Button variant="primary" size="sm" onClick={() => onNavigate("accounts")}>
+                    {t("Add account")}
+                  </Button>
+                }
+              />
+            ) : filtered ? (
+              <EmptyState
+                kind="filtered"
+                description={t("No conversations match these filters.")}
+                onReset={() => setFilter(NO_FILTER)}
+                resetLabel={t("Clear filters")}
+              />
+            ) : unreadable.length > 0 ? (
+              <EmptyState
+                kind="unavailable"
+                description={t(
+                  "Messages are unavailable for these accounts. Review their connection and inbox support.",
+                )}
+                action={
+                  <Button variant="secondary" size="sm" onClick={() => onNavigate("accounts")}>
+                    {t("Manage accounts")}
+                  </Button>
+                }
+              />
+            ) : !accounts.some((account) => account.connected) ? (
+              <EmptyState
+                kind="unavailable"
+                description={t("Connect an account to check for new conversations.")}
+                action={
+                  <Button variant="secondary" size="sm" onClick={() => onNavigate("accounts")}>
+                    {t("Manage accounts")}
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState
+                kind="empty"
+                description={t("No conversations yet. New messages and comments appear here.")}
+              />
+            )
           ) : (
             <InboxList
               items={items}
@@ -134,8 +216,9 @@ export function InboxScreen({ client, active, target }: SocialScreenProps) {
             />
           )}
         </div>
-        <div className="inbox-detail">
+        <div {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, "inbox-detail")}>
           <ConversationView
+            key={selectedId}
             client={client}
             threadId={selectedId}
             item={selectedItem}

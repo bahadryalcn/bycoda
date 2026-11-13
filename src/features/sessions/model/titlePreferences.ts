@@ -1,42 +1,13 @@
-import { useMemo, useSyncExternalStore } from "react";
-import { createStoredSetting } from "../../../shared/lib/storedSetting";
+import { resolveHelperModel } from "../../model-routing/public/helpers";
 import { defaultSessionChoice, defaultModelSettings, isModelEnabled, modelsFor } from "./models";
 import type { HarnessId } from "./session";
-import { parseTranslationChoice, type TranslationChoice } from "./translationPreferences";
+import { type TranslationChoice } from "./translationPreferences";
 import {
   defaultProviderAccountId,
   supportsProviderAccounts,
 } from "../../providers/model/providerAccounts";
 
 export type TitleGenerationChoice = TranslationChoice;
-export const TITLE_CHOICE_KEY = "bycoda.title.default.v1";
-const preference = createStoredSetting<string | null>({
-  key: TITLE_CHOICE_KEY,
-  fallback: null,
-  parse: (raw) => raw,
-  serialize: (raw) => raw ?? "null",
-  event: "bycoda:title-default",
-  storageEvents: true,
-});
-
-export function loadDefaultTitleChoice(): TitleGenerationChoice | undefined {
-  return parseTranslationChoice(preference.load());
-}
-
-/** Report failed writes instead of presenting a preference that was never saved. */
-export function saveDefaultTitleChoice(choice: TitleGenerationChoice | undefined): void {
-  const serialized = JSON.stringify(choice ?? null);
-  localStorage.setItem(TITLE_CHOICE_KEY, serialized);
-  if (localStorage.getItem(TITLE_CHOICE_KEY) !== serialized)
-    throw new Error("Could not save changes");
-  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bycoda:title-default"));
-}
-
-export function useDefaultTitleChoice() {
-  const raw = useSyncExternalStore(preference.subscribe, preference.load, () => null);
-  return useMemo(() => parseTranslationChoice(raw), [raw]);
-}
-
 /** Match actual enabled catalog entries; never substitute an expensive conversation model. */
 export function defaultTitleChoice(
   harness: HarnessId = defaultSessionChoice().harness,
@@ -72,7 +43,7 @@ export function defaultTitleChoice(
 }
 
 export function titleGenerationChoice(harness?: HarnessId): TitleGenerationChoice | undefined {
-  const choice = loadDefaultTitleChoice() ?? defaultTitleChoice(harness);
+  const choice = defaultTitleChoice(harness);
   if (!choice) return;
   return {
     ...choice,
@@ -80,4 +51,12 @@ export function titleGenerationChoice(harness?: HarnessId): TitleGenerationChoic
       ? (choice.providerAccountId ?? defaultProviderAccountId(choice.harness))
       : undefined,
   };
+}
+
+export async function resolveTitleGenerationChoice(harness?: HarnessId, cwd?: string) {
+  return (
+    (await resolveHelperModel("text.title", {
+      cwd,
+    })) ?? titleGenerationChoice(harness)
+  );
 }

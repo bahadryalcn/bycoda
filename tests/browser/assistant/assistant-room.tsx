@@ -1,4 +1,76 @@
+import { snapshot } from "./assistant-room-mocks";
+import { JobRow } from "../../../src/features/assistant/ui/room/JobRow";
+import { AssistantAvatarPicker } from "../../../src/features/assistant/ui/AssistantAvatar";
+import { AssistantSessions } from "../../../src/features/assistant/ui/AssistantSessions";
+import { ManualSessionSupervision } from "../../../src/features/assistant/ui/ManualSessionSupervision";
+import { AssistantPresenceIndicator } from "../../../src/features/assistant/ui/AssistantPresenceIndicator";
+import { NotesList } from "../../../src/features/assistant/ui/room/NotesList";
+import { NotesReader } from "../../../src/features/assistant/ui/room/NotesReader";
+import { JobReviewDialog } from "../../../src/features/assistant/ui/room/JobReviewDialog";
+import {
+  ConversationMessage,
+  ConversationDayLabel,
+} from "../../../src/features/assistant/ui/room/ConversationMessage";
+import { BuilderPreview } from "../../../src/features/assistant/ui/builder/BuilderPreview";
+import { NotesTab } from "../../../src/features/assistant/ui/room/NotesTab";
+import { AssistantRoomContext } from "../../../src/features/assistant/ui/room/assistantRoomContext";
+import { AssistantHistory } from "../../../src/features/assistant/ui/AssistantHistory";
+import { AssistantMemoryPanel } from "../../../src/features/assistant/ui/AssistantMemoryPanel";
+
+function NotesComponentFixture() {
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  const note = {
+    ...snapshot.notes[0],
+    title: "Assistant · 2026-11-13",
+    tags: ["assistant"],
+    body: "- 10:00 UTC · First item\n- 11:00 UTC · Second item",
+  };
+  return (
+    <main style={{ padding: 24, maxWidth: 720 }}>
+      <NotesList
+        notes={[note]}
+        selectedId={undefined}
+        onSelect={() => {}}
+        checked={checked}
+        onCheck={(id, value) => setChecked(value ? new Set([id]) : new Set())}
+      />
+      <NotesReader note={note} onEdit={() => {}} onDelete={() => {}} />
+    </main>
+  );
+}
+
+function AvatarPickerFixture() {
+  const [avatar, setAvatar] = useState<string | undefined>();
+  return (
+    <AssistantAvatarPicker
+      value={avatar}
+      hideLabel={false}
+      onChange={(patch) => setAvatar(patch.avatar)}
+    />
+  );
+}
+
+function JobRowFixture() {
+  const [selected, setSelected] = useState(false);
+  return (
+    <JobRow
+      job={snapshot.jobs[0]}
+      projectName="Fixture project"
+      selected={selected}
+      selectionMode={selected}
+      busy={false}
+      disabled={false}
+      error=""
+      onSelect={setSelected}
+      onDetails={() => {}}
+      onControl={() => {}}
+    />
+  );
+}
+
+import { RecordsDatasetToggle } from "./records-redesign-data";
 import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 import { AssistantView } from "../../../src/features/assistant/ui/AssistantView";
 import { AssistantSetup } from "../../../src/features/assistant/ui/AssistantSetup";
@@ -35,6 +107,14 @@ import { AssistantSessionControl } from "../../../src/features/sessions/ui/Assis
 import { AssistantTaskBadge } from "../../../src/features/tasks/ui/AssistantTaskBadge";
 import { AccountPermissions } from "../../../src/features/social/ui/accounts/AccountPermissions";
 import { AssistantNotificationRecovery } from "../../../src/features/assistant/ui/AssistantNotificationRecovery";
+import { JobDetailActivity } from "../../../src/features/assistant/ui/room/JobDetailActivity";
+import { JobDetailNotes } from "../../../src/features/assistant/ui/room/JobDetailNotes";
+import { TrashPanel } from "../../../src/features/assistant/ui/room/TrashPanel";
+import { ConversationDraftRecovery } from "../../../src/features/assistant/ui/room/ConversationDraftRecovery";
+import { AssistantFoldersSettings } from "../../../src/features/assistant/ui/settings/folders/AssistantFoldersSettings";
+import { AssistantOwnerQuestions } from "../../../src/features/assistant/ui/AssistantOwnerQuestions";
+import { AssistantRemoteAccess } from "../../../src/features/assistant/ui/AssistantRemoteAccess";
+import { AssistantRetentionField } from "../../../src/features/assistant/ui/settings/AssistantUsageSettings";
 const params = new URLSearchParams(location.search);
 if (params.has("real-controls")) {
   Object.defineProperty(navigator, "mediaDevices", {
@@ -86,31 +166,342 @@ if (params.has("chat-launcher")) document.documentElement.dataset.canvasBackgrou
 await setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
 document.body.style.margin = "0";
 createRoot(document.getElementById("root")!).render(
-  <ModelSourceContext.Provider
-    value={params.has("real-controls") ? setupModelSource : LOCAL_MODEL_SOURCE}
-  >
-    {params.has("notification-recovery-fixture") ? (
-      <NotificationRecoveryFixture />
-    ) : params.has("room-author") ? (
-      <RoomAuthorFixture />
-    ) : params.has("account-grants") ? (
-      <AccountGrantFixture />
-    ) : params.has("setup") ? (
-      <AssistantSetupFixture />
-    ) : params.has("session-controls") ? (
-      <SessionControlsFixture />
-    ) : params.has("keybindings") ? (
-      <KeybindingsPage />
-    ) : params.has("session-filter") ? (
-      <ManagedSessionFilterFixture />
-    ) : params.has("voice-delete") ? (
-      <VoiceDeleteReviewFixture />
-    ) : params.has("voice-jobs") ? (
-      <VoiceJobReviewFixture />
-    ) : (
-      <AssistantRoomFixture />
-    )}
-  </ModelSourceContext.Provider>,
+  <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <ModelSourceContext.Provider
+      value={params.has("real-controls") ? setupModelSource : LOCAL_MODEL_SOURCE}
+    >
+      {params.has("owner-state-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720 }}>
+          <AssistantOwnerQuestions
+            environmentId="fixture"
+            visibleProjectIds={["p"]}
+            questions={[
+              {
+                id: "fixture-question",
+                version: 1,
+                jobId: "job",
+                projectIds: ["p"],
+                sourceToken: "a".repeat(64),
+                sourceCurrent: true,
+                origin: "chief",
+                status: "open",
+                createdAt: 1,
+                updatedAt: 1,
+                prompt: {
+                  requestId: 7,
+                  occurrenceId: "fixture-occurrence",
+                  title: "Scope choice",
+                  behavior: "nonBlocking",
+                  questions: [
+                    {
+                      id: "choice",
+                      prompt: "Choose the result",
+                      multiSelect: false,
+                      allowCustom: true,
+                      options: [{ id: "focused", label: "Focused change" }],
+                    },
+                  ],
+                },
+              } as never,
+            ]}
+            request={() => Promise.reject(new Error("Fixture question unavailable"))}
+          />
+        </main>
+      ) : params.has("remote-state-fixture") ? (
+        <AssistantRemoteAccess
+          threadId="fixture"
+          environmentId="fixture"
+          sourceStatus="unavailable"
+          open
+          onClose={() => {}}
+        />
+      ) : params.has("supervision-state-fixture") ? (
+        <main style={{ padding: 24 }}>
+          <ManualSessionSupervision
+            projects={[]}
+            controller={
+              {
+                data: null,
+                pending: false,
+                stopping: false,
+                error: "Fixture supervision unavailable",
+                chief: null,
+              } as never
+            }
+          />
+        </main>
+      ) : params.has("usage-state-fixture") ? (
+        <main style={{ padding: 24 }}>
+          <AssistantRetentionField
+            value={30}
+            disabled={false}
+            onChange={() => {}}
+            usage={{ chiefTokens: 123, workerTokens: 456 } as never}
+          />
+        </main>
+      ) : params.has("draft-state-fixture") ? (
+        <ConversationDraftRecovery
+          c={
+            {
+              draftRecovery: {
+                threadId: "fixture",
+                environmentId: "fixture",
+                selected: "",
+                backups: [],
+                loading: false,
+                error: "Fixture draft unavailable",
+              },
+              setDraftRecovery: () => {},
+              setError: () => {},
+              loadDraftBackups: async () => {},
+              selectDraftBackup: async () => {},
+              restoreDraftBackup: async () => {},
+            } as never
+          }
+        />
+      ) : params.has("trash-state-fixture") ? (
+        <TrashPanel
+          entries={[]}
+          request={async () => ({}) as never}
+          onRestored={() => {}}
+          onClose={() => {}}
+        />
+      ) : params.has("folders-state-fixture") ? (
+        <main style={{ padding: 24 }}>
+          <AssistantFoldersSettings
+            request={() => Promise.reject(new Error("Fixture folders unavailable"))}
+          />
+        </main>
+      ) : params.has("job-review-fixture") ? (
+        <AssistantRoomContext.Provider
+          value={
+            {
+              projects: [],
+              snapshot,
+              pending: null,
+              error: null,
+              jobReview: [
+                {
+                  id: "one",
+                  kind: "project",
+                  request: "First request",
+                  title: "First request",
+                  projectIds: [],
+                  projectId: "",
+                },
+                {
+                  id: "two",
+                  kind: "project",
+                  request: "Second request",
+                  title: "Second request",
+                  projectIds: [],
+                  projectId: "",
+                },
+              ],
+              setJobReview: () => {},
+              jobReviewFrozen: false,
+              reviewedDraft: (draft: unknown) => draft,
+              visibleDraft: () => true,
+              updateJobDraft: () => {},
+              submitJobs: async () => {},
+              jobDraftVisible: true,
+              reviewHasAutomation: false,
+            } as never
+          }
+        >
+          <JobReviewDialog />
+        </AssistantRoomContext.Provider>
+      ) : params.has("manual-notices-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720 }}>
+          <ManualSessionSupervision
+            settings
+            projects={[{ id: "one", path: "/fixture", name: "Fixture" }]}
+            controller={
+              {
+                data: {
+                  policy: { version: 1, enabled: false, projectIds: ["one"] },
+                  grants: [],
+                  candidates: [],
+                },
+                pending: null,
+                stopping: false,
+                error: "",
+                chief: params.has("chief"),
+              } as never
+            }
+          />
+        </main>
+      ) : params.has("job-sessions-fixture") ? (
+        <main style={{ padding: 24 }}>
+          <AssistantSessions
+            jobs={snapshot.jobs}
+            query=""
+            filter=""
+            projectName={() => "Fixture project"}
+            onOpenSession={() => {}}
+          />
+        </main>
+      ) : params.has("presence-marks-fixture") ? (
+        <main style={{ padding: 24, display: "flex", gap: 16 }}>
+          {(["present", "away", "dnd", "offline"] as const).map((state) => (
+            <AssistantPresenceIndicator key={state} state={state} />
+          ))}
+        </main>
+      ) : params.has("conversation-message-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720 }}>
+          <ConversationDayLabel at={Date.now()} />
+          {(["assistant", "user"] as const).map((role) => (
+            <ConversationMessage
+              key={role}
+              message={
+                {
+                  id: role,
+                  role,
+                  text: `${role} message`,
+                  createdAt: Date.now(),
+                  jobIds: [],
+                } as never
+              }
+              authorName="Assistant"
+              jobs={[]}
+              clearing={false}
+              onJob={() => {}}
+              onDelete={() => {}}
+            />
+          ))}
+        </main>
+      ) : params.has("builder-preview-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720 }}>
+          <BuilderPreview
+            proposal={
+              {
+                kind: "proposal",
+                summary: "Suggested settings",
+                profile: { name: "Arif", addressAs: "Alex" },
+              } as never
+            }
+            current={{}}
+            onBack={() => {}}
+            onApply={() => {}}
+          />
+        </main>
+      ) : params.has("notes-layout-fixture") ? (
+        <main style={{ padding: 24 }}>
+          <AssistantRoomContext.Provider
+            value={
+              {
+                environmentId: "fixture",
+                privacy: { key: "fixture" },
+                canReadBriefing: () => true,
+                view: "Notes",
+                query: "",
+                errorFor: () => null,
+                empty: () => null,
+              } as never
+            }
+          >
+            <NotesTab snapshot={snapshot} />
+          </AssistantRoomContext.Provider>
+        </main>
+      ) : params.has("notes-components-fixture") ? (
+        <NotesComponentFixture />
+      ) : params.has("avatar-picker-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720 }}>
+          <AvatarPickerFixture />
+        </main>
+      ) : params.has("trash-rows-fixture") ? (
+        <TrashPanel
+          entries={[
+            snapshot.trash[0],
+            { ...snapshot.trash[0], id: "second-trash", title: "Another deleted request" },
+          ]}
+          request={async () => ({}) as never}
+          onRestored={() => {}}
+          onClose={() => {}}
+        />
+      ) : params.has("job-notes-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720 }}>
+          <JobDetailNotes
+            job={snapshot.jobs[0]}
+            notes={
+              [
+                { id: "note-a", title: "First note", body: `About ${snapshot.jobs[0].title}` },
+                { id: "note-b", title: "Second note", body: `More ${snapshot.jobs[0].title}` },
+              ] as never
+            }
+            onOpenNote={() => {}}
+          />
+        </main>
+      ) : params.has("collections-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720, display: "grid", gap: 24 }}>
+          <AssistantHistory
+            entries={[snapshot.activity[0], { ...snapshot.activity[0], id: "second-activity" }]}
+            filtered={false}
+            onJob={() => {}}
+          />
+          <AssistantMemoryPanel
+            entries={[snapshot.memory[0], { ...snapshot.memory[0], id: "second-memory" }]}
+            ruleCount={2}
+            query=""
+            searching={false}
+            pending={false}
+            searchError={null}
+            errorFor={() => null}
+            onQuery={() => {}}
+            onAdd={() => {}}
+            onEdit={() => {}}
+            onToggle={() => {}}
+            onDelete={() => {}}
+          />
+        </main>
+      ) : params.has("job-row-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720 }}>
+          <JobRowFixture />
+        </main>
+      ) : params.has("job-state-fixture") ? (
+        <main style={{ padding: 24, maxWidth: 720 }}>
+          <h1>Job states</h1>
+          <section aria-label="Loading activity">
+            <JobDetailActivity jobId="loading" request={() => new Promise(() => {})} />
+          </section>
+          <section aria-label="Failed activity">
+            <JobDetailActivity
+              jobId="error"
+              request={() => Promise.reject(new Error("Fixture activity unavailable"))}
+            />
+          </section>
+          <section aria-label="Empty notes">
+            <JobDetailNotes
+              job={{ id: "job", title: "Fixture job" } as never}
+              notes={[]}
+              onOpenNote={() => {}}
+            />
+          </section>
+        </main>
+      ) : params.has("notification-recovery-fixture") ? (
+        <NotificationRecoveryFixture />
+      ) : params.has("room-author") ? (
+        <RoomAuthorFixture />
+      ) : params.has("account-grants") ? (
+        <AccountGrantFixture />
+      ) : params.has("setup") ? (
+        <AssistantSetupFixture />
+      ) : params.has("session-controls") ? (
+        <SessionControlsFixture />
+      ) : params.has("keybindings") ? (
+        <KeybindingsPage />
+      ) : params.has("session-filter") ? (
+        <ManagedSessionFilterFixture />
+      ) : params.has("voice-delete") ? (
+        <VoiceDeleteReviewFixture />
+      ) : params.has("voice-jobs") ? (
+        <VoiceJobReviewFixture />
+      ) : (
+        <AssistantRoomFixture />
+      )}
+      <RecordsDatasetToggle />
+    </ModelSourceContext.Provider>
+  </QueryClientProvider>,
 );
 function NotificationRecoveryFixture() {
   return (
@@ -119,8 +510,10 @@ function NotificationRecoveryFixture() {
       <AssistantNotificationRecovery
         environmentId="fixture-host"
         projects={[{ id: "fixture-project", name: "Fixture project" }]}
-        request={async (input) =>
-          input.op === "threads.open"
+        request={async (input) => {
+          if (params.has("slow-recovery") && input.op === "observation.delivery.list")
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          return input.op === "threads.open"
             ? { thread: { id: "fixture-room" } as never }
             : {
                 observationDeliveries: [
@@ -130,8 +523,8 @@ function NotificationRecoveryFixture() {
                     state: input.op === "observation.delivery.refresh" ? "unknown" : "unknown",
                   },
                 ],
-              }
-        }
+              };
+        }}
       />
     </main>
   );

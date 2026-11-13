@@ -520,6 +520,21 @@ for (const theme of ["light", "dark"] as const) {
         await f.target.locator("#action").evaluate((node) => {
           node.parentElement!.style.display = "flex";
         });
+        const preview = page.locator(".host-browser-surface img");
+        await page.keyboard.press("Tab");
+        await preview.focus();
+        await expect(preview).toBeFocused();
+        const focus = await preview.evaluate((node) => {
+          const style = getComputedStyle(node);
+          return {
+            outline: style.outlineStyle,
+            width: style.outlineWidth,
+            offset: style.outlineOffset,
+          };
+        });
+        expect(focus.outline).toBe("solid");
+        expect(parseFloat(focus.width)).toBeGreaterThan(0);
+        expect(parseFloat(focus.offset)).toBeLessThan(0);
         await mark(page, f.target);
         await expect(page.locator(".host-browser-box-model").first()).toBeVisible();
         await page.getByRole("button", { name: "Select parent" }).click();
@@ -527,6 +542,11 @@ for (const theme of ["light", "dark"] as const) {
         await expect(page.getByRole("button", { name: "Select first child" })).toBeVisible();
         await page.getByText("Details", { exact: true }).click();
         await expect(page.getByText("Layout", { exact: true })).toBeVisible();
+        const selectedDetails = page.locator(
+          ".host-browser-selection-popover .host-browser-selection",
+        );
+        await expect(selectedDetails).toHaveCSS("border-radius", "0px");
+        await expect(selectedDetails).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
         await page.locator(".host-browser-selection").scrollIntoViewIfNeeded();
         await page.screenshot({
           path: `temp/verification/2026-11-04-session-tools/inspector-${theme}-${width}.png`,

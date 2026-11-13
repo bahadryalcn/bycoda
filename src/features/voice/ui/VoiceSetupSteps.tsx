@@ -251,7 +251,7 @@ export function VoiceSetupSteps({
             />
           </div>
           <Disclosure
-            className={styles.details}
+            {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, styles.details)}
             summary={t("Voice settings")}
             onOpenChange={setAdvanced}
           >
@@ -342,7 +342,10 @@ export function VoiceSetupSteps({
           </div>
           <LiveText
             {...surfaceAttributes(
-              { variant: transcript ? "plain" : undefined },
+              {
+                variant: transcript ? "plain" : undefined,
+                bar: transcript ? "success" : undefined,
+              },
               transcript ? styles.transcript : "sr-only",
             )}
             leading="normal"

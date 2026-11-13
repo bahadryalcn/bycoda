@@ -1,5 +1,6 @@
 /** Different job: Selection toolbar and comment editor act on transcript ranges; they are not a value picker. */
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import {
@@ -347,7 +348,9 @@ export function TranscriptSelectionMenu({
           </Button>
         </Text>
         <Text as="div" size="caption" tone="secondary" leading="relaxed">
-          <blockquote className={styles.quote}>{selection.text}</blockquote>
+          <blockquote {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, styles.quote)}>
+            {selection.text}
+          </blockquote>
         </Text>
         <TextareaField
           label={t("Comment")}

@@ -5,14 +5,8 @@
   min-inline-size: 0;
 }
 
-/* A search hit lands as the shared selected fill, never an accent frame. */
-.project-notification-collection[data-highlighted] {
-  background: var(--ui-surface-selected);
-}
-
 .project-notification-item {
   min-inline-size: 0;
-  border-radius: var(--ui-control-radius);
 }
 
 /* The group body stacks the item rows without its default gap, as the bare fieldset did. */
@@ -20,9 +14,8 @@
   gap: 0;
 }
 
-.project-notification-item + .project-notification-item {
-  border-block-start: 1px solid var(--ui-settings-hairline);
-  border-radius: 0;
+.project-notification-item[data-nested-project] {
+  padding-inline-start: 1rem;
 }
 
 .project-notification-item-heading {

@@ -420,11 +420,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           ) : null}
           {notice && <InlineMessage tone="success">{notice}</InlineMessage>}
           {machines.length > 0 ? (
-            <Surface
-              variant="outline"
-              padding="none"
-              className="divide-y divide-(--ui-card-border) overflow-hidden"
-            >
+            <Surface variant="outline" padding="none" dividers="card" className="overflow-hidden">
               {machines.map((machine) => (
                 <MachineRow
                   key={machine.id}

@@ -18,6 +18,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { errorText } from "./serverActionFeedback";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 import {
   forwardRuntimeId,
@@ -112,7 +113,13 @@ export function ServerForwards({
           const running =
             status?.state === "running" || status?.state === "starting" || stopping || unknown;
           return (
-            <div key={rule.id} className="flex min-w-0 flex-col gap-2 border-b border-stroke pbe-3">
+            <div
+              key={rule.id}
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "bottom" },
+                "flex min-w-0 flex-col gap-2 pbe-3",
+              )}
+            >
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <Text
                   as="span"

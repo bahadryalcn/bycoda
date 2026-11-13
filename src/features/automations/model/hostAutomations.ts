@@ -2,6 +2,11 @@ import { isRemoteProvider, type RemoteProvider } from "../../connections/model/p
 import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 import { isScheduleKind, type AutomationSchedule } from "./automationSchedule";
 import type { AutomationRunStatus } from "./automations";
+import {
+  ModelRoutingItemChoiceSchema,
+  type ModelRoutingItemChoice,
+  type ModelRoutingTarget,
+} from "../../../shared/model/host-contracts/model-routing";
 
 /** Automations a machine's host runs on its own schedule, whether or not a
  * desktop is open. The host advertises this capability when it has them. */
@@ -14,10 +19,12 @@ export type HostAutomationInput = AutomationSchedule & {
   /** The host's ID for the project folder. */
   projectId: string;
   harness: RemoteProvider;
+  providerAccountId?: string;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
-  /** Run limits; zero means off. See automationLimits.ts. */
+  /** Zero run time inherits the routing default; zero daily runs means no limit. */
   maxRunMinutes: number;
   maxRunsPerDay: number;
   enabled: boolean;
@@ -38,6 +45,8 @@ export type HostAutomation = HostAutomationInput & {
 };
 
 export type HostAutomationRun = {
+  execution?: ModelRoutingTarget;
+  maxRunMinutes?: number;
   /** Already-owned reservation compensation; no provider/workspace launch. */
   cleanupPending?: boolean;
   id: string;
@@ -82,6 +91,13 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
   if (typeof v.projectId !== "string" || !ID.test(v.projectId))
     throw new Error("Choose a project for this automation.");
   if (!isRemoteProvider(v.harness)) throw new Error("Invalid automation agent");
+  if (
+    v.providerAccountId !== undefined &&
+    (typeof v.providerAccountId !== "string" ||
+      !v.providerAccountId.trim() ||
+      v.providerAccountId.length > 200)
+  )
+    throw new Error("Invalid automation provider account");
   if (typeof v.model !== "string" || !v.model.trim() || v.model.length > 200)
     throw new Error("Invalid automation model");
   if (!RUNTIME_MODES.includes(v.runtimeMode as never))
@@ -106,6 +122,12 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
     prompt: v.prompt,
     projectId: v.projectId,
     harness: v.harness,
+    ...(v.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: v.providerAccountId as string }),
+    ...(v.modelChoice === undefined
+      ? {}
+      : { modelChoice: ModelRoutingItemChoiceSchema.parse(v.modelChoice) }),
     model: v.model,
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,

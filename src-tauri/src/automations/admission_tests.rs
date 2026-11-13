@@ -39,6 +39,8 @@ fn terminal_run_cannot_be_restarted_or_completed_again() {
         None,
         None,
         11,
+        None,
+        None,
         || {},
     )
     .unwrap();
@@ -50,6 +52,8 @@ fn terminal_run_cannot_be_restarted_or_completed_again() {
             None,
             None,
             12,
+            None,
+            None,
             || {}
         )
         .is_err());
@@ -154,6 +158,8 @@ fn selected_session_closure_refuses_all_seven_global_automation_writes_before_sq
         Some("other-session".into()),
         None,
         60,
+        None,
+        None,
         || {}
     ));
     assert_eq!(entered.get(), 0);
@@ -196,6 +202,8 @@ fn all_seven_actual_operations_preserve_results_and_notify_only_after_sql_unlock
             Some("original-session".into()),
             None,
             11,
+            None,
+            None,
             notify,
         )
     })
@@ -396,4 +404,40 @@ fn ssh_ownership_refusal_preserves_original_row_and_error() {
     );
     assert!(!notified.get());
     assert_eq!(snapshot(&store), before);
+}
+
+#[test]
+fn routing_execution_is_saved_at_admission_and_not_replaced_when_attaching_session() {
+    let store = SessionStore::open_in_memory().unwrap();
+    let automation = automations_upsert_with(&store, input("routed"), || {}).unwrap();
+    let run = automation_run_now_with(&store, automation.id, 10, || {}).unwrap();
+    let execution =
+        serde_json::json!({"harness":"codex","model":"codex:routed","modelSettings":{}});
+    let admitted = automation_run_update_with(
+        &store,
+        run.id.clone(),
+        "running".into(),
+        None,
+        None,
+        11,
+        Some(execution.clone()),
+        Some(15),
+        || {},
+    )
+    .unwrap();
+    assert_eq!(admitted.execution, Some(execution.clone()));
+    let attached = automation_run_update_with(
+        &store,
+        run.id,
+        "running".into(),
+        Some("session".into()),
+        None,
+        12,
+        Some(serde_json::json!({"model":"other"})),
+        Some(2),
+        || {},
+    )
+    .unwrap();
+    assert_eq!(attached.execution, Some(execution));
+    assert_eq!(attached.max_run_minutes, Some(15));
 }

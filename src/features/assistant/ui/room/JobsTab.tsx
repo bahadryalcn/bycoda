@@ -1,3 +1,11 @@
+import {
+  Play,
+  CheckList,
+  Square,
+  Trash2,
+  RotateCcw,
+  ListBullet,
+} from "../../../../shared/ui/icons";
 import { Text } from "../../../../shared/ui/Text";
 import { errorText } from "../../../../shared/lib/errors";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
@@ -7,6 +15,8 @@ import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { PromptField } from "../../../../shared/ui/PromptField";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
+import { JobDiscussion } from "./JobDiscussion";
 import { assistantJobProjectIds } from "../../model/assistantJobs";
 import styles from "./Jobs.module.css";
 import { finished } from "./assistantRoomHelpers";
@@ -78,33 +88,46 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
 
   return (
     <section className={styles.section}>
-      <PromptField
-        label={t("Give {p0} a job", { p0: identity.name })}
-        frameClassName={styles.composer}
-        value={jobDraftVisible ? jobText : ""}
-        disabled={!jobDraftVisible}
-        minRows={1}
-        maxRows={4}
-        maxLength={16000}
-        placeholder={t("Give {p0} a job", { p0: identity.name })}
-        onChange={(event) => setJobText(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" || event.shiftKey || isImeComposition(event.nativeEvent))
-            return;
-          event.preventDefault();
-          start();
-        }}
-        toolbarTrailing={
-          <Button
-            variant="primary"
-            disabled={!canStart}
-            loading={pending?.key === "jobs.create"}
-            onClick={start}
-          >
-            {t(confirmJobs ? "Review jobs" : "Start")}
+      {view === "Jobs" && <JobDiscussion />}
+      {view === "Today" && (
+        <div className={styles.discussionActions}>
+          <Button variant="primary" onClick={() => setView("Jobs")}>
+            {t("Discuss a job")}
           </Button>
-        }
-      />
+        </div>
+      )}
+      <Disclosure summary={t("Use a written brief")}>
+        <PromptField
+          label={t("Give {p0} a job", { p0: identity.name })}
+          frameClassName={styles.composer}
+          value={jobDraftVisible ? jobText : ""}
+          disabled={!jobDraftVisible}
+          minRows={1}
+          maxRows={4}
+          maxLength={16000}
+          placeholder={t("Give {p0} a job", { p0: identity.name })}
+          onChange={(event) => setJobText(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" || event.shiftKey || isImeComposition(event.nativeEvent))
+              return;
+            event.preventDefault();
+            start();
+          }}
+          toolbarTrailing={
+            <Button
+              startIcon={
+                confirmJobs ? <CheckList className="icon-sm" /> : <Play className="icon-sm" />
+              }
+              variant="primary"
+              disabled={!canStart}
+              loading={pending?.key === "jobs.create"}
+              onClick={start}
+            >
+              {t(confirmJobs ? "Review jobs" : "Start")}
+            </Button>
+          }
+        />
+      </Disclosure>
       {!jobDraftVisible && (
         <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.notice}>
           {t("The selected project is no longer visible.")}
@@ -121,12 +144,18 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
         {visibleSelectedCount > 0 && (
           <Text as="div" size="caption" tone="secondary" leading="inherit" className={styles.bulk}>
             <span>{t("{p0} selected", { p0: visibleSelectedCount })}</span>
-            <Button size="sm" disabled={Boolean(pending)} onClick={() => bulk("stop")}>
+            <Button
+              size="sm"
+              startIcon={<Square className="icon-sm" />}
+              disabled={Boolean(pending)}
+              onClick={() => bulk("stop")}
+            >
               {t("Stop")}
             </Button>
             <Button
               size="sm"
               disabled={Boolean(pending)}
+              startIcon={<Trash2 className="icon-sm" />}
               tone="danger"
               onClick={() => bulk("delete")}
             >
@@ -135,7 +164,11 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           </Text>
         )}
         {view === "Today" && active.length > TODAY_JOB_LIMIT && (
-          <Button variant="link" onClick={() => setView("Jobs")}>
+          <Button
+            variant="link"
+            startIcon={<ListBullet className="icon-sm" />}
+            onClick={() => setView("Jobs")}
+          >
             {t("View all")}
           </Button>
         )}
@@ -178,6 +211,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           </Heading>
           {filtered ? (
             <Button
+              startIcon={<RotateCcw className="icon-sm" />}
               variant="secondary"
               onClick={() => {
                 setQuery("");
@@ -188,9 +222,7 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
             >
               {t("Reset")}
             </Button>
-          ) : (
-            <p>{t("Give {p0} a job", { p0: identity.name })}</p>
-          )}
+          ) : null}
         </Text>
       ) : null}
       {errorFor("bulk")}

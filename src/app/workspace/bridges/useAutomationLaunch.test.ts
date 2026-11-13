@@ -2,8 +2,13 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 import { useAutomationLaunch, type AutomationLaunchDeps } from "./useAutomationLaunch";
-import type { Automation, AutomationRun } from "../../../features/automations/model/automations";
+import {
+  newAutomationDraft,
+  type Automation,
+  type AutomationRun,
+} from "../../../features/automations/model/automations";
 
 const mocks = vi.hoisted(() => ({ update: vi.fn() }));
 vi.mock("../../../features/automations/model/automations", async (importOriginal) => ({
@@ -76,11 +81,40 @@ it("does not alter or submit a run when another launcher already claimed it", as
   const root = createRoot(document.createElement("div"));
   try {
     await act(async () => root.render(createElement(Harness)));
-    await expect(launch({ id: "a" } as Automation, { id: "r" } as AutomationRun)).rejects.toThrow(
+    const execution = {
+      harness: "claude" as const,
+      model: "claude:stored",
+      modelSettings: { effort: "high" },
+      providerAccountId: "work",
+    };
+    const automation: Automation = {
+      ...newAutomationDraft("/project", "claude", "claude:stored"),
+      ...execution,
+      id: "a",
+      createdAt: 1,
+      updatedAt: 1,
+      nextRunAt: 1,
+    };
+    const run: AutomationRun = {
+      id: "r",
+      automationId: "a",
+      trigger: "scheduled",
+      status: "pending",
+      scheduledFor: 1,
+      createdAt: 1,
+      execution,
+      maxRunMinutes: 12,
+    };
+    const sessionsBefore = sessionsRef.current;
+    await expect(launch(automation, run)).rejects.toThrow(
       "Invalid automation run status transition.",
     );
     expect(mocks.update).toHaveBeenCalledTimes(1);
-    expect(mocks.update).toHaveBeenCalledWith("r", "running");
+    expect(mocks.update).toHaveBeenCalledWith("r", "running", {
+      execution,
+      maxRunMinutes: 12,
+    });
+    expect(sessionsRef.current).toBe(sessionsBefore);
     expect(action).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());

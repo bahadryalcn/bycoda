@@ -216,3 +216,24 @@ it("keeps unavailable manual policy unknown and offers refresh recovery", async 
   await act(() => button("Refresh").click());
   expect(refresh).toHaveBeenCalledOnce();
 });
+
+it("keeps disabled supervision compact during a background refresh", async () => {
+  const controller: ManualSupervisionController = {
+    data: { policy: { enabled: false, version: 1, projectIds: [] }, grants: [], candidates: [] },
+    pending: "list",
+    stopping: false,
+    error: "",
+    chief: true,
+    refresh: vi.fn(),
+    enroll: vi.fn(),
+    revoke: vi.fn(),
+    save: vi.fn(),
+    off: vi.fn(),
+  };
+  await act(() =>
+    root.render(createElement(ManualSessionSupervision, { controller, projects: [] })),
+  );
+  expect(container.textContent).toContain("Off");
+  expect(container.textContent).not.toContain("Turn off supervision");
+  expect(container.textContent).not.toContain("No visible conversations");
+});

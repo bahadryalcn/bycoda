@@ -1,3 +1,4 @@
+import { actionContentScopeAttributes } from "../../../shared/ui/ActionHost";
 import type { ISearchOptions } from "@xterm/addon-search";
 import { loadAppearancePreferences } from "../../settings/model/appearancePreferences";
 import { Terminal } from "@xterm/xterm";
@@ -589,6 +590,7 @@ export function TerminalView({
 
   return (
     <div
+      {...actionContentScopeAttributes()}
       ref={outerRef}
       className="bycoda-terminal relative flex h-full w-full min-h-0 min-w-0 flex-col"
       onMouseDown={() => termRef.current?.focus()}

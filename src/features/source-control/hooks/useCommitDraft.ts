@@ -1,7 +1,7 @@
 import { gitHeadMessage, type GitDiffIndex } from "../../../platform/tauri/fs";
 import { useLayoutEffect, useRef } from "react";
 import type { HarnessId } from "../../sessions";
-import { generateCommitMessage } from "../../../integrations/harness";
+import { generateCommitMessage } from "../model/gitTextGeneration";
 import { t } from "../../../shared/i18n/git";
 import {
   retainGitPanelRuntime,

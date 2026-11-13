@@ -1,3 +1,4 @@
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
@@ -197,7 +198,14 @@ export function ProjectNotificationSettings({
         </div>
       </div>
       <div
-        className="project-notification-collection settings-collection"
+        {...surfaceAttributes(
+          {
+            variant: highlighted ? "selected" : "card",
+            frame: "settings",
+            radius: "card",
+          },
+          "project-notification-collection settings-collection",
+        )}
         data-highlighted={highlighted || undefined}
       >
         {preferencesUnavailable ? (
@@ -266,9 +274,15 @@ export function ProjectNotificationSettings({
               ) : null}
             </CollectionToolbar>
             {selecting ? (
-              <div className="settings-collection-row">
+              <ActionHost
+                {...surfaceAttributes(
+                  { radius: "none", separator: "block" },
+                  "settings-collection-row",
+                )}
+              >
                 <ProjectSelection
-                  className="flex cursor-pointer items-center gap-2.5 hover:text-(--ui-tone-neutral-fg)"
+                  className="flex cursor-pointer items-center gap-2.5"
+                  interactionTone="neutral"
                   label={t("Select all known projects")}
                   text={
                     selectedIds.length
@@ -290,11 +304,14 @@ export function ProjectNotificationSettings({
                     <NotificationMuteControl projectIds={selectedIds} />
                   </div>
                 ) : null}
-              </div>
+              </ActionHost>
             ) : null}
             <ScrollArea
               gutter="stable"
-              className="project-notification-list settings-collection-list"
+              {...surfaceAttributes(
+                { separator: "block" },
+                "project-notification-list settings-collection-list",
+              )}
               role="region"
               aria-label={t("Project notifications")}
               tabIndex={0}
@@ -311,7 +328,7 @@ export function ProjectNotificationSettings({
                   }}
                 />
               ) : null}
-              {visibleProjects.map((project) => {
+              {visibleProjects.map((project, index) => {
                 const path = projectPathOf(project);
                 const key = path ? projectKey(path) : null;
                 const seed = path ? projectName(path) : project.name;
@@ -335,14 +352,20 @@ export function ProjectNotificationSettings({
                     key={project.id}
                     ref={project.id === targetId ? targetCard : undefined}
                     tabIndex={-1}
-                    className="project-notification-item"
+                    {...surfaceAttributes(
+                      { radius: index === 0 ? "control" : "none", separator: "block" },
+                      "project-notification-item",
+                    )}
                     legend={`${project.name} (${project.detail})`}
                     hideLegend
-                    style={{
-                      paddingInlineStart: /^\s*\u21b3/.test(project.name) ? "1rem" : undefined,
-                    }}
+                    data-nested-project={/^\s*\u21b3/.test(project.name) ? "" : undefined}
                   >
-                    <div className="project-notification-item-heading settings-collection-row">
+                    <ActionHost
+                      {...surfaceAttributes(
+                        { radius: "none", separator: "block" },
+                        "project-notification-item-heading settings-collection-row",
+                      )}
+                    >
                       <div className="flex min-w-[min(100%,200px)] flex-1 items-center gap-3">
                         {selecting ? (
                           <ProjectSelection
@@ -436,7 +459,7 @@ export function ProjectNotificationSettings({
                           )}
                         </InfoPopover>
                       </div>
-                    </div>
+                    </ActionHost>
                     {error?.projectId === project.id ? (
                       <div className="project-notification-error">
                         <SettingsFeedback
@@ -465,7 +488,7 @@ export function ProjectNotificationSettings({
                       id={panelId}
                       hidden={!isExpanded}
                       {...surfaceAttributes(
-                        { radius: "control", variant: "panel" },
+                        { radius: "control", variant: "transparent" },
                         "project-notification-categories",
                       )}
                     >
@@ -530,6 +553,7 @@ function ProjectSelection({
   label,
   text,
   className,
+  interactionTone,
   checked,
   mixed = false,
   onChange,
@@ -538,6 +562,7 @@ function ProjectSelection({
   /** Visible text beside the box; omit for a bare box named by `label`. */
   text?: string;
   className?: string;
+  interactionTone?: "neutral";
   checked: boolean;
   mixed?: boolean;
   onChange: (checked: boolean) => void;
@@ -550,6 +575,7 @@ function ProjectSelection({
       size="caption"
       tone="secondary"
       className={className}
+      interactionTone={interactionTone}
       checked={checked}
       indeterminate={mixed}
       onChange={(event) => onChange(event.target.checked)}

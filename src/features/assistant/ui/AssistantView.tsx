@@ -20,7 +20,6 @@ import noteStyles from "./AssistantNoteCard.module.css";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
-import { TabStrip } from "../../../shared/ui/Tabs";
 import { Alert } from "../../../shared/ui/Alert";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
@@ -45,8 +44,8 @@ import { assistantJobVisible } from "../model/assistantJobs";
 import { AssistantSetup } from "./AssistantSetup";
 import styles from "./AssistantView.module.css";
 import shell from "./room/RoomShell.module.css";
-import { NoteEditor } from "./AssistantNoteEditor";
-import { tabs, type AssistantViewProps } from "./room/assistantRoomHelpers";
+import { type AssistantViewProps } from "./room/assistantRoomHelpers";
+import { RoomNavigation } from "./room/RoomNavigation";
 import { AssistantRoomContext, type AssistantRoom } from "./room/assistantRoomContext";
 import { useAssistantRoomState } from "./room/useAssistantRoomState";
 import { useAssistantRoomJobs } from "./room/useAssistantRoomJobs";
@@ -86,7 +85,7 @@ export function AssistantView(props: AssistantViewProps) {
       ? () => void recoverRoomPrivacyProjection().catch(() => undefined)
       : undefined;
   const jobs = useAssistantRoomJobs(core);
-  const room: AssistantRoom = { ...core, ...jobs };
+  const room: AssistantRoom = { ...core, ...jobs, isAppQuitting };
   const {
     environmentId,
     assistantRequest,
@@ -128,8 +127,6 @@ export function AssistantView(props: AssistantViewProps) {
     setDetail,
     memoryEdit,
     setMemoryEdit,
-    noteEdit,
-    setNoteEdit,
     manual,
     defaultProjectId,
     mutate,
@@ -298,11 +295,6 @@ export function AssistantView(props: AssistantViewProps) {
             ]}
           />
         )}
-        {roomPrivacy.pending && (
-          <InlineMessage className={shell.notice} tone="info">
-            {t("Confirming Room privacy protection...")}
-          </InlineMessage>
-        )}
         {roomPrivacy.error && (
           <Alert
             className={shell.notice}
@@ -425,20 +417,14 @@ export function AssistantView(props: AssistantViewProps) {
             )}
             {errorFor("chief.retry")}
             <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, shell.tabRow)}>
-              <TabStrip
-                label={t("Room sections")}
-                value={view}
-                onValueChange={(value) => {
+              <RoomNavigation
+                view={view}
+                activeJobs={active.length}
+                onChange={(value) => {
                   setView(value);
                   setQuery("");
                   setFilter("");
                 }}
-                controls="assistant-content"
-                items={tabs.map((value) => ({
-                  value,
-                  label: t(value),
-                  count: value === "Jobs" ? active.length || null : null,
-                }))}
               />
             </div>
             <section
@@ -469,15 +455,20 @@ export function AssistantView(props: AssistantViewProps) {
                   <Heading size="page">{t("Sessions")}</Heading>
                 </div>
               )}
-              <CollectionToolbar snapshot={snapshot} />
-              {view === "Today" && <TodayTab snapshot={snapshot} />}
-              {(view === "Today" || view === "Jobs") && <JobsTab snapshot={snapshot} />}
+              {!(view === "Notes" && room.noteEdit) && <CollectionToolbar snapshot={snapshot} />}
+              {view === "Today" && (
+                <TodayTab snapshot={snapshot} jobs={<JobsTab snapshot={snapshot} />} />
+              )}
+              {view === "Jobs" && <JobsTab snapshot={snapshot} />}
               {view === "Conversations" && (
                 <ConversationPanel
                   key={privacy.key}
                   request={assistantRequest}
                   environmentId={environmentId}
-                  snapshot={snapshot}
+                  snapshot={{
+                    ...snapshot,
+                    threads: snapshot.threads.filter((thread) => thread.purpose !== "job-planning"),
+                  }}
                   source={canonicalSnapshot!}
                   privacy={privacy}
                   canSeeProject={canSeeProject}
@@ -495,11 +486,6 @@ export function AssistantView(props: AssistantViewProps) {
               {view === "History" && <HistoryTab snapshot={snapshot} />}
               {view === "Memory" && <MemoryTab snapshot={snapshot} />}
             </section>
-            {pending && (
-              <footer {...surfaceAttributes({ frame: "pane", edge: "block-start" }, shell.footer)}>
-                <span>{pending.label}</span>
-              </footer>
-            )}
           </>
         )}
         <RoomUndoBars />
@@ -553,15 +539,6 @@ export function AssistantView(props: AssistantViewProps) {
             request={assistantRequest}
             entry={memoryEdit}
             onClose={() => setMemoryEdit(null)}
-          />
-        )}
-        {noteEdit && (
-          <NoteEditor
-            request={ownerRequest}
-            environmentId={environmentId}
-            note={noteEdit}
-            onSaved={refresh}
-            onClose={() => setNoteEdit(null)}
           />
         )}
         {confirm && confirmPrivacy.current === privacy.key && (

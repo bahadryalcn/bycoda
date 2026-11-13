@@ -29,6 +29,40 @@ const proposal = (profile: unknown) =>
   JSON.stringify({ kind: "proposal", summary: "A calm helper.", profile, avatarPrompt: "A fox" });
 
 describe("assistant builder interview", () => {
+  it("keeps interview locale separate from the assistant profile language", () => {
+    const prompt = interviewPrompt({ ...base, locale: "en-US", current: { language: "tr-TR" } });
+    expect(prompt).toContain('locale: "en-US"');
+    expect(prompt).toContain("Preserve current.language unless an owner answer explicitly asks");
+    expect(prompt).toContain(JSON.stringify(JSON.stringify({ language: "tr-TR" })));
+  });
+  it("rejects blank questions and summaries rather than displaying an empty successful turn", () => {
+    expect(
+      parseInterviewReply(JSON.stringify({ kind: "question", question: " \n ", options: [] })),
+    ).toBeNull();
+    expect(
+      parseInterviewReply(JSON.stringify({ kind: "proposal", summary: " \n ", profile: {} })),
+    ).toBeNull();
+  });
+  it("asks for owner input before proposing even when the current profile is complete", async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(proposal({ name: "Ada" }))
+      .mockResolvedValueOnce(question);
+    const result = await runAssistantInterview(
+      { ...base, current: { name: "Ada", language: "German", tone: "friendly" } },
+      run,
+    );
+    expect(result.kind).toBe("question");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]?.[0].prompt).toContain("previous reply was a proposal");
+  });
+
+  it("rejects repeated premature proposals instead of showing an unchanged review", async () => {
+    const run = vi.fn(async () => proposal({ name: "Ada" }));
+    await expect(runAssistantInterview(base, run)).rejects.toThrow(/question/);
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
   it("parses a question reply from a fenced answer", async () => {
     const run = vi.fn(async () => "```json\n" + question + "\n```");
     await expect(runAssistantInterview(base, run)).resolves.toEqual({

@@ -150,8 +150,45 @@ describe("Assistant folder settings", () => {
     expect(await getAssistantFolders(deps())).toMatchObject({
       folders: [],
       runWithoutAsking: false,
+      allowChangesWithoutAsking: false,
       version: 0,
     });
+  });
+
+  it("grants file changes only through an explicit owner save and allows revocation", async () => {
+    const d = deps();
+    const input = {
+      op: "folders.set" as const,
+      expectedVersion: 0,
+      paths: [],
+      runWithoutAsking: true,
+      allowChangesWithoutAsking: true,
+    };
+    await expect(assistantFoldersOp(input, "assistant", d)).rejects.toThrow(/owner/);
+    expect((await getAssistantFolders(d)).allowChangesWithoutAsking).toBe(false);
+    const full = await assistantFoldersOp(input, "owner", d);
+    expect(full.assistantFolders.allowChangesWithoutAsking).toBe(true);
+    const revoked = await assistantFoldersOp(
+      {
+        ...input,
+        expectedVersion: full.assistantFolders.version,
+        allowChangesWithoutAsking: false,
+      },
+      "owner",
+      d,
+    );
+    expect(revoked.assistantFolders.allowChangesWithoutAsking).toBe(false);
+    const legacy = await assistantFoldersOp(
+      {
+        op: "folders.set",
+        expectedVersion: revoked.assistantFolders.version,
+        paths: [],
+        runWithoutAsking: true,
+      },
+      "owner",
+      d,
+    );
+    expect(legacy.assistantFolders.allowChangesWithoutAsking).toBe(false);
   });
 
   it("saves canonical, de-duplicated folders with a stable id and bumps the version", async () => {

@@ -1,10 +1,11 @@
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import type { AssistantNote } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
-import { Trash2 } from "../../../../shared/ui/icons";
+import { Trash2, Pencil } from "../../../../shared/ui/icons";
 import { AgentMarkdown } from "../../../sessions/public/AgentMarkdown";
 import { stripAssistantEventMarkers } from "../../model/assistantEventMarkers";
 import { dailyNoteDay, noteLines } from "./assistantNoteDisplay";
@@ -39,8 +40,8 @@ export function NotesReader({
           />
         </div>
         <div className={styles.readerActions}>
-          <Button variant="secondary" onClick={onEdit}>
-            {t("Edit")}
+          <Button iconOnly variant="ghost" label={t("Edit")} onClick={onEdit}>
+            <Pencil className="icon-sm" />
           </Button>
           <Button iconOnly variant="ghost" label={t("Delete note")} onClick={onDelete}>
             <Trash2 className="icon-sm" />
@@ -54,7 +55,7 @@ export function NotesReader({
             size="secondary"
             tone="inherit"
             leading="normal"
-            className={styles.timeline}
+            {...surfaceAttributes({ dividers: "pane" }, styles.timeline)}
           >
             {lines.map((line, index) => (
               <li key={index} className={styles.entry}>

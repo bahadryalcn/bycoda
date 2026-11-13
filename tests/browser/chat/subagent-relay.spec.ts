@@ -1,5 +1,75 @@
 import { expect, test } from "@playwright/test";
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`command scroll keyboard focus ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?theme=${theme}`);
+      await page.getByRole("button", { name: "Open command" }).click();
+      const dialog = page.getByRole("dialog");
+      const command = dialog.getByRole("region", { name: "Command" }).locator("pre[tabindex='0']");
+      const output = dialog.getByRole("region", { name: "Output" }).locator("[tabindex='0']");
+      await expect(command).toContainText("echo focused-command");
+      await expect(output).toContainText("command output fixture");
+      const fill = await command.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.background = "var(--ui-card-surface)";
+        node.appendChild(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return { actual: getComputedStyle(node).backgroundColor, expected };
+      });
+      expect(fill.actual).toBe(fill.expected);
+      await page.keyboard.press("Tab");
+      for (const node of [command, output]) {
+        await node.focus();
+        const outline = await node.evaluate((element) => {
+          const s = getComputedStyle(element);
+          const probe = document.createElement("span");
+          probe.style.outline = "2px solid var(--ui-focus-ring-color)";
+          element.appendChild(probe);
+          const expected = getComputedStyle(probe).outlineColor;
+          probe.remove();
+          return {
+            width: s.outlineWidth,
+            offset: s.outlineOffset,
+            color: s.outlineColor,
+            expected,
+          };
+        });
+        expect(outline).toEqual({
+          width: "2px",
+          offset: "-2px",
+          color: outline.expected,
+          expected: outline.expected,
+        });
+      }
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/command-focus-${theme}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`subagent caller visual ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?status-colors&theme=${theme}`);
+      const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+      await dock.locator("button[data-dock-toggle]").click();
+      await expect(dock.locator("[data-dock-agent]")).toHaveCount(5);
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/activity-dock-${theme}-${width}.png`,
+      });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?layout&theme=${theme}`);
+      await page.getByRole("button", { name: "Open reviewer", exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/subagent-${theme}-${width}.png`,
+      });
+    });
+
 for (const theme of ["dark", "light"]) {
   for (const width of [800, 1280]) {
     test(`compact activity identities and state icons at ${width}px ${theme}`, async ({
@@ -160,3 +230,30 @@ test("blocked shortcut and rejected submission preserve drafts", async ({ page }
       await expect(page.getByRole("dialog").getByRole("status")).toContainText("not accepted");
   }
 });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`shared subagent label interaction ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?inline-status&theme=${theme}`);
+      const label = page
+        .locator('[data-action-content="always"][data-interaction-tone="neutral"]')
+        .first();
+      const before = await label.evaluate((node) => getComputedStyle(node).color);
+      await label.hover();
+      const actual = await label.evaluate((node) => {
+        const p = document.createElement("span");
+        p.style.color = "var(--ui-tone-neutral-fg)";
+        node.appendChild(p);
+        const expected = getComputedStyle(p).color;
+        p.remove();
+        return { actual: getComputedStyle(node).color, expected };
+      });
+      expect(actual.actual).toBe(actual.expected);
+      await page.screenshot({
+        path: `temp/verification/session-last-interactions/subagent-${theme}-${width}.png`,
+      });
+      await page.mouse.move(0, 0);
+      await expect(label).toHaveCSS("color", before);
+    });

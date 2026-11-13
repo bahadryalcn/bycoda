@@ -1,4 +1,5 @@
 import { Text } from "../../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -13,22 +14,20 @@ import { CrewDialogHost, type OpenCrewSession } from "../CrewDialogHost";
 import type { CrewDialog } from "../crewMenuItems";
 import { CrewLibrary } from "../CrewLibrary";
 import { CrewsActive } from "./CrewsActive";
-import { CrewsModelPools } from "./CrewsModelPools";
 import { CrewsLoadState } from "./CrewsLoadState";
 import { CrewsTeams } from "./CrewsTeams";
 import { CrewsWork } from "./CrewsWork";
 
-type CrewsTab = "active" | "teams" | "members" | "models" | "work";
+type CrewsTab = "active" | "teams" | "members" | "work";
 
 /** The page's tabs in order; a new tab is one entry here plus its branch in `CrewsPage`. */
-function crewsTabs(activeCount: number | null, models: boolean): TabItem<CrewsTab>[] {
+function crewsTabs(activeCount: number | null): TabItem<CrewsTab>[] {
   return [
     ...(activeCount === null
       ? []
       : [{ value: "active" as const, label: t("Active"), count: activeCount }]),
     { value: "teams", label: t("Teams") },
     { value: "members", label: t("Members") },
-    ...(models ? [{ value: "models" as const, label: t("Models") }] : []),
     { value: "work", label: t("Work") },
   ];
 }
@@ -130,13 +129,10 @@ export function CrewsPage({
         >
           {navigation}
         </PaneHeader>
-        <div className="border-b border-stroke px-3 py-1.5">
+        <div {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "px-3 py-1.5")}>
           <TabList
             label={t("Crews sections")}
-            items={crewsTabs(
-              supported ? (activeItems?.length ?? 0) : null,
-              state.data?.modelPoolsSupported === true,
-            )}
+            items={crewsTabs(supported ? (activeItems?.length ?? 0) : null)}
           />
         </div>
         <TabPanel className="min-h-0 flex-1 overflow-y-auto">
@@ -176,8 +172,6 @@ export function CrewsPage({
                   <div className="settings-topics p-4">
                     <CrewLibrary cwd={cwd} state={state} data={data} />
                   </div>
-                ) : tab === "models" ? (
-                  <CrewsModelPools data={data} />
                 ) : (
                   <CrewsWork
                     key={workTarget.nonce}

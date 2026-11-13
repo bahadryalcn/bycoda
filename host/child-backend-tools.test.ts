@@ -32,7 +32,7 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
     if (![...valid.values()].includes(token)) {
       res.writeHead(401, { "X-Bycoda-Auth-Stage": "before-dispatch" });
       res.end("expired");
-    } else res.end(JSON.stringify({ result: "ok" }));
+    } else res.end(JSON.stringify({ id: 1, result: { protocolVersion: "2025-11-25" } }));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const endpoint = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -99,6 +99,14 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
     return events.find((event) => event.id === marker)!;
   };
   try {
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: id,
+        checkReady: true,
+        prepareSpawn: true,
+      }),
+    ).toEqual({ ready: true });
+    expect(issuers.get("conversation")).toHaveBeenCalledOnce();
     const bridges = [];
     for (const command of [
       "harness_conversation_tools_bridge",
@@ -107,6 +115,19 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
     ])
       bridges.push(await backend.invoke<{ mcpUrl: string }>(command, { sessionId: id }));
     const original = await launch();
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: id,
+        checkReady: true,
+      }),
+    ).toEqual({ ready: true });
+    expect(issuers.get("conversation")).toHaveBeenCalledOnce();
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: "session",
+        checkReady: true,
+      }),
+    ).toEqual({ ready: false });
     for (const [index, group] of ["conversation", "runtime-logs", "social"].entries()) {
       const env =
         group === "conversation"
@@ -153,6 +174,24 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
       constructionId: replacement.constructionId,
     });
     expect(state.conversationEnvironments.has(id)).toBe(false);
+    const count = issuers.get("conversation")!.mock.calls.length;
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: id,
+        checkReady: true,
+      }),
+    ).toEqual({ ready: false });
+    expect(issuers.get("conversation")).toHaveBeenCalledTimes(count);
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: id,
+        checkReady: true,
+        prepareSpawn: true,
+      }),
+    ).toEqual({ ready: true });
+    const resumed = await launch();
+    expect(issuers.get("conversation")).toHaveBeenCalledTimes(count + 1);
+    expect((await send(resumed, "conversation", "after-park")).status).toBe(200);
     expect(calls.length).toBeGreaterThanOrEqual(11);
   } finally {
     unlisten();
@@ -253,6 +292,92 @@ it("issues no session grants for management and utility children, which have no 
   } finally {
     warn.mockRestore();
     await backend.close();
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
+it("readiness never issues a fresh grant for a child that has not started", async () => {
+  const backend = new HostChildBackend();
+  const issueSessionGrant = vi.fn();
+  backend.setConversationAccess(
+    { issueSessionGrant } as unknown as RuntimeLogAccess,
+    "http://127.0.0.1:1",
+  );
+  try {
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: "session#2",
+        checkReady: true,
+      }),
+    ).toEqual({ ready: false });
+    expect(issueSessionGrant).not.toHaveBeenCalled();
+  } finally {
+    await backend.close();
+  }
+});
+
+it("starts without conversation MCP config when the spawn grant fails and logs once", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-no-grant-"));
+  const script = join(directory, "provider.cjs");
+  await writeFile(
+    script,
+    "console.log(JSON.stringify(process.argv.slice(2))); process.stdin.resume();",
+  );
+  const backend = new HostChildBackend();
+  const issueSessionGrant = vi.fn(async () => {
+    throw new Error("grant refused");
+  });
+  backend.setConversationAccess(
+    { issueSessionGrant } as unknown as RuntimeLogAccess,
+    "http://127.0.0.1:1",
+  );
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const lines: string[] = [];
+  const unlisten = await backend.listen<{ line: string }>("harness-stdout", ({ payload }) =>
+    lines.push(payload.line),
+  );
+  try {
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: "no-grant",
+        checkReady: true,
+        prepareSpawn: true,
+      }),
+    ).toEqual({ ready: false });
+    await backend.invoke("harness_spawn", {
+      sessionId: "no-grant",
+      binaryProvider: "codex",
+      command: script,
+      cwd: directory,
+      args: [
+        "-c",
+        'mcp_servers.bycoda-conversation.url="loopback"',
+        "-c",
+        'mcp_servers.custom.url="keep"',
+      ],
+    });
+    await vi.waitFor(() => expect(lines.length).toBeGreaterThan(0));
+    expect(JSON.parse(lines[0])).toEqual(["-c", 'mcp_servers.custom.url="keep"']);
+    expect(issueSessionGrant).toHaveBeenCalledOnce();
+    expect(
+      await backend.invoke("harness_conversation_tools_bridge", {
+        sessionId: "no-grant",
+        checkReady: true,
+        prepareSpawn: true,
+      }),
+    ).toEqual({ ready: false });
+    expect(issueSessionGrant).toHaveBeenCalledOnce();
+    const outcomes = warn.mock.calls.filter(([text]) =>
+      String(text).includes("conversation grant="),
+    );
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0][0]).toContain(
+      "provider=codex session=no-grant conversation grant=failed reason=grant unavailable",
+    );
+  } finally {
+    unlisten();
+    await backend.close();
+    warn.mockRestore();
     await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });

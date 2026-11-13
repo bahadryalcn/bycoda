@@ -59,6 +59,18 @@ it("shares exact original native menu source and renders actual locked-away ACK"
   expect(port.set).toHaveBeenCalledWith("host-a", "present");
   expect(container.textContent).toContain("Away");
 });
+it("marks the owner's Here choice while the computer reads Away", async () => {
+  port.read = vi.fn(async () => ({
+    ...ready,
+    status: { ...ready.status!, state: "away" as const, choice: "present" as const },
+  }));
+  port.refresh = port.read;
+  await render();
+  expect(container.textContent).toContain("Away");
+  await open();
+  expect(choice("Here").getAttribute("aria-checked")).toBe("true");
+  expect(choice("Away").getAttribute("aria-checked")).toBe("false");
+});
 it("disables stale open menu after selected Host changes instead of adopting its token", async () => {
   await render();
   await open();

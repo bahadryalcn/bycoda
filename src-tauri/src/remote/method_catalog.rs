@@ -2,6 +2,10 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
     matches!(
         method,
         "social.request"
+            | "modelRouting.get"
+            | "modelRouting.resolve"
+            | "modelRouting.save"
+            | "modelRouting.status"
             | "assistant.request"
             | "approvals.mirror"
             | "approvals.list"

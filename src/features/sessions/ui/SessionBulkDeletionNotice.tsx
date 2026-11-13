@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -45,7 +46,7 @@ export function SessionBulkDeletionNotice({
             })
           : undefined
       }
-      className="shrink-0 border-b border-(--ui-pane-border) px-3 py-2"
+      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-2")}
     >
       <span className="flex min-w-0 items-center gap-2">
         <OverflowTooltip label={text}>

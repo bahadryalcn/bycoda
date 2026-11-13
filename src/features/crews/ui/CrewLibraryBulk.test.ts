@@ -46,3 +46,21 @@ it("saves each profile with the fixed candidate in order and reports failures", 
   expect(saved).toMatchObject({ selection: "fixed", candidates: [candidate] });
   expect(saved).not.toHaveProperty("updatedAt");
 });
+
+it("applies a routing reference to profiles without copying pool candidates", async () => {
+  const save = vi.fn(async () => {});
+  const original = { ...profile("a"), candidates: [candidate] };
+  const result = await applyCandidateToProfiles([original], undefined, save, {
+    kind: "pool",
+    poolId: "shared",
+  });
+  expect(result.updated).toBe(1);
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      selection: "automatic",
+      modelChoice: { kind: "pool", poolId: "shared" },
+      candidates: [candidate],
+    }),
+    1,
+  );
+});

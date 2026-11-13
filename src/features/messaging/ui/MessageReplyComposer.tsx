@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
@@ -85,7 +86,10 @@ export function MessageReplyComposer({
     <form
       onSubmit={onSubmit}
       aria-busy={sending}
-      className="flex shrink-0 flex-col gap-1.5 border-t border-(--ui-tone-neutral-border) px-4 py-2"
+      {...surfaceAttributes(
+        { frame: "neutral", edge: "top" },
+        "flex shrink-0 flex-col gap-1.5 px-4 py-2",
+      )}
     >
       <TextareaField
         hideLabel

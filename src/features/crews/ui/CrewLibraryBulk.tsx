@@ -1,3 +1,5 @@
+import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
+import { applyChoice } from "../model/crewBulk";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
@@ -22,8 +24,9 @@ export function bulkTargets<T extends { id: string }>(visible: T[], selected: Re
 /** Saves each profile with the fixed candidate, one after another; a failure does not stop the rest. */
 export async function applyCandidateToProfiles(
   targets: SavedCrewAgent[],
-  candidate: CrewCandidate,
+  candidate: CrewCandidate | undefined,
   save: (profile: Omit<SavedCrewAgent, "updatedAt">, expectedUpdatedAt: number) => Promise<unknown>,
+  choice: ModelRoutingItemChoice = { kind: "fixed" },
 ) {
   const failures: BulkFailure[] = [];
   let updated = 0;
@@ -31,7 +34,10 @@ export async function applyCandidateToProfiles(
     const { updatedAt, ...profile } = agent;
     try {
       await save(
-        { ...profile, selection: "fixed", candidates: [structuredClone(candidate)] },
+        {
+          ...applyChoice([profile], [], choice)[0]!,
+          ...(candidate ? { candidates: [structuredClone(candidate)] } : {}),
+        },
         updatedAt,
       );
       updated += 1;
@@ -70,7 +76,7 @@ export function CrewLibraryBulkBar({
   const gate = useRef(false);
   const chosen = visible.filter((agent) => selected.has(agent.id)).length;
   const targets = bulkTargets(visible, selected);
-  const apply = async (candidate: CrewCandidate) => {
+  const apply = async (candidate?: CrewCandidate, choice?: ModelRoutingItemChoice) => {
     if (gate.current || !targets.length) return false;
     gate.current = true;
     setApplying(true);
@@ -81,6 +87,7 @@ export function CrewLibraryBulkBar({
         targets,
         candidate,
         (agent, expectedUpdatedAt) => state.call("crews.agent.save", { agent, expectedUpdatedAt }),
+        choice,
       );
       setDone(result.updated);
       setFailures(result.failures);
@@ -99,6 +106,9 @@ export function CrewLibraryBulkBar({
         <CrewBulkModelBar
           cwd={cwd}
           catalog={data.catalog}
+          machineId={data.machine.id}
+          supported={data.modelPoolsSupported}
+          onApplyChoice={(choice) => apply(undefined, choice).catch(() => false)}
           targetCount={targets.length}
           onApply={(candidate) => apply(candidate).catch(() => false)}
           disabled={applying || !targets.length}

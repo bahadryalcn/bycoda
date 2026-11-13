@@ -6,7 +6,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { WandSparkles, X } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
-import { generateCommitMessage } from "../../../integrations/harness";
+import { generateCommitMessage } from "../model/gitTextGeneration";
 import { MOD } from "../../../platform/tauri/platform";
 
 type Busy = "stash" | "commit" | null;

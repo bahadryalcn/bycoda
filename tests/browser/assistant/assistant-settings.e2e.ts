@@ -1,6 +1,6 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Locator } from "@playwright/test";
 
 // Real production controls, synthetic Host/provider ports. No native or provider acceptance.
 const translations: Record<string, string> = JSON.parse(
@@ -8,6 +8,165 @@ const translations: Record<string, string> = JSON.parse(
 );
 const tr = (key: string) => translations[key] ?? key;
 const output = "temp/verification/2026-11-04-assistant-settings-terra";
+
+async function assertSettingsGeometry(dialog: Locator, region: Locator) {
+  const problems = await region.evaluate((content) => {
+    const issues: string[] = [];
+    const bounds = content.getBoundingClientRect();
+    for (const row of content.querySelectorAll<HTMLElement>(".settings-row")) {
+      const rowBounds = row.getBoundingClientRect();
+      if (!rowBounds.height) continue;
+      const label = row.querySelector(":scope > .settings-row-label");
+      const control = row.querySelector(":scope > .settings-row-control");
+      const name = label?.textContent?.trim().slice(0, 65) ?? "row";
+      if (rowBounds.left < bounds.left - 1 || rowBounds.right > bounds.right + 1)
+        issues.push(`${name}: row exceeds scroll region`);
+      if (rowBounds.left > bounds.left + 40) issues.push(`${name}: nested row indentation`);
+      if (label && control) {
+        const a = label.getBoundingClientRect();
+        const b = control.getBoundingClientRect();
+        if (/^(Idle after|Away after|Stall timeout)$/.test(name) && a.bottom <= b.top) {
+          const trigger = control.querySelector("button")?.getBoundingClientRect();
+          if (trigger && Math.abs(trigger.left - a.left) > 2)
+            issues.push(`${name}: stacked preset is not aligned with its label`);
+        }
+        if (
+          a.width &&
+          b.width &&
+          Math.min(a.right, b.right) > Math.max(a.left, b.left) + 1 &&
+          Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top) + 1
+        )
+          issues.push(`${name}: label overlaps control`);
+      }
+      for (const field of row.querySelectorAll<HTMLElement>(
+        "input,textarea,button,[role='radiogroup'],.settings-row-control",
+      )) {
+        const box = field.getBoundingClientRect();
+        if (!box.width || !box.height || getComputedStyle(field).opacity === "0") continue;
+        if (
+          box.left < rowBounds.left - 1 ||
+          box.right > rowBounds.right + 1 ||
+          box.top < rowBounds.top - 1 ||
+          box.bottom > rowBounds.bottom + 1
+        )
+          issues.push(`${name}: ${field.getAttribute("aria-label") ?? field.tagName} exceeds row`);
+      }
+    }
+    return issues;
+  });
+  expect(problems).toEqual([]);
+  const lastControl = region
+    .locator(
+      "button:visible,input:not([type='checkbox']):visible,textarea:visible,[role='switch']:not(input):visible",
+    )
+    .last();
+  await lastControl.scrollIntoViewIfNeeded();
+  const box = (await lastControl.boundingBox())!;
+  const footer = (await dialog
+    .getByRole("button", { name: "Save profile settings", exact: true })
+    .boundingBox())!;
+  const regionBox = (await region.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(regionBox.y - 1);
+  expect(box.y + box.height).toBeLessThanOrEqual(regionBox.y + regionBox.height + 1);
+  expect(box.y + box.height).toBeLessThan(footer.y);
+  expect(
+    await lastControl.evaluate((control) => {
+      const box = control.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return hit === control || (hit !== null && control.contains(hit));
+    }),
+  ).toBe(true);
+}
+
+for (const [theme, width] of [
+  ["light", 1280],
+  ["dark", 1280],
+  ["light", 800],
+  ["dark", 800],
+  ["dark", 560],
+] as const)
+  test(`assistant settings compact row containment ${theme} ${width}`, async ({ page }) => {
+    const directory = "temp/verification/assistant-settings-layout-20261113/after";
+    await mkdir(directory, { recursive: true });
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(
+      `/tests/browser/assistant/assistant-room.html?real-controls&desktop&manual&settings-layout&theme=${theme}`,
+    );
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+    const dialog = page.getByRole("dialog").first();
+    for (const tab of ["Personal", "Work", "Access", "Advanced"]) {
+      await dialog.getByRole("tab", { name: tab, exact: true }).click();
+      const region = dialog
+        .locator('[data-axis="y"]')
+        .and(dialog.getByRole("region", { name: tab, exact: true }));
+      const capture = async (state: string) => {
+        await page.mouse.move(0, 0);
+        await expect(page.getByRole("tooltip")).toHaveCount(0);
+        return page.screenshot({
+          path: join(directory, `${theme}-${width}-${tab}-${state}.png`),
+          animations: "disabled",
+        });
+      };
+      await capture("top");
+      if (tab === "Personal") {
+        await dialog.getByRole("button", { name: "Avatar", exact: true }).click();
+        const avatarField = await dialog
+          .getByRole("textbox", { name: "Emoji or initials", exact: true })
+          .boundingBox();
+        const rowLabel = await region.locator(".settings-row-label").first().boundingBox();
+        expect(avatarField).not.toBeNull();
+        expect(rowLabel).not.toBeNull();
+        expect(Math.abs(avatarField!.x - rowLabel!.x)).toBeLessThanOrEqual(1);
+        await dialog
+          .getByRole("button", { name: "Generate avatar", exact: true })
+          .scrollIntoViewIfNeeded();
+        await capture("avatar");
+        await dialog
+          .getByRole("button", { name: "Personality and conversation", exact: true })
+          .click();
+      } else if (tab === "Work") {
+        await dialog.getByRole("button", { name: "Inactivity and recovery", exact: true }).click();
+        await dialog.getByRole("button", { name: /^Notifications/ }).click();
+      } else if (tab === "Access") {
+        await dialog.getByRole("radio", { name: "Full access", exact: true }).click();
+        await expect(
+          dialog.getByRole("switch", { name: "Enable computer use", exact: true }),
+        ).toHaveCount(0);
+        await expect(
+          dialog.getByRole("switch", { name: "Allow physical input", exact: true }),
+        ).toHaveCount(0);
+        await expect(
+          dialog.getByRole("switch", { name: "Run commands without asking", exact: true }),
+        ).toHaveCount(0);
+        await capture("full-access");
+        await dialog.getByRole("radio", { name: "Custom", exact: true }).click();
+        await dialog
+          .locator(".settings-row")
+          .filter({ has: page.getByText("Assistant folders", { exact: true }) })
+          .scrollIntoViewIfNeeded();
+        await capture("folders");
+        await expect(
+          dialog.getByText(/International-Platform-Development/, { exact: false }).first(),
+        ).toBeVisible();
+        await dialog.getByRole("button", { name: "Custom helper", exact: true }).click();
+        await dialog
+          .getByRole("textbox", { name: "Helper file", exact: true })
+          .fill(
+            "C:\\Program Files\\International Platform Development\\Assistant Computer Use Helper\\agent-desktop.exe",
+          );
+        await dialog
+          .getByRole("textbox", { name: "Helper file", exact: true })
+          .scrollIntoViewIfNeeded();
+        await capture("helper");
+        await dialog.locator("summary").filter({ hasText: "All checks" }).click();
+      } else {
+        await dialog.getByRole("button", { name: "Supervisor limits", exact: true }).click();
+        await dialog.getByRole("button", { name: "Worker context limits", exact: true }).click();
+      }
+      await assertSettingsGeometry(dialog, region);
+      await capture("expanded-bottom");
+    }
+  });
 
 async function requests(page: Page) {
   return page.evaluate(() => (window as any).__setupRequests ?? []) as Promise<
@@ -55,8 +214,8 @@ for (const theme of ["light", "dark"])
                   name: tr(
                     (
                       {
-                        Personality: "Language",
-                        Conversation: "Language",
+                        Personality: "Conversation",
+                        Conversation: "Conversation",
                         Jobs: "Work mode",
                       } as Record<string, string>
                     )[name] ?? name,
@@ -115,22 +274,10 @@ for (const theme of ["light", "dark"])
       await tab("Personal").focus();
       await page.keyboard.press("ArrowRight");
       await expect(tab("Work")).toHaveAttribute("aria-selected", "true");
-      const worker = dialog.getByRole("group", {
-        name: tr("Model {p0}").replace("{p0}", "1"),
-        exact: true,
-      });
-      await expect(worker).toContainText("Fixture worker");
-      await worker.getByRole("button", { name: /Fixture worker/ }).click();
-      // Reasoning is an inline radio row in the model panel's settings column.
-      await page
-        .getByRole("dialog", { name: tr("Model and settings"), exact: true })
-        .getByRole("radio", { name: tr("High"), exact: true })
-        .click();
-      await page.keyboard.press("Escape");
-      const workerBefore = await worker.innerText();
+      await expect(
+        dialog.getByRole("button", { name: tr("Manage in Models"), exact: true }),
+      ).toBeVisible();
       await capture("work");
-      await dialog.getByRole("button", { name: tr("Customize"), exact: true }).click();
-      await sectionCapture("Jobs", "autonomy");
 
       await tab("Schedule").click();
       const workHours = dialog.getByRole("switch", { name: tr("Work hours"), exact: true });
@@ -156,6 +303,7 @@ for (const theme of ["light", "dark"])
       await sectionCapture("Manual session supervision", "manual-supervision");
 
       await tab("Computer use").click();
+      await dialog.getByRole("radio", { name: tr("Custom"), exact: true }).click();
       const helperPath = dialog.getByRole("textbox", {
         name: tr("Helper file"),
         exact: true,
@@ -179,6 +327,7 @@ for (const theme of ["light", "dark"])
       await sectionCapture("Computer use", "computer-all");
 
       await tab("Advanced").click();
+      await dialog.getByRole("button", { name: tr("Supervisor limits"), exact: true }).click();
       await dialog
         .getByRole("spinbutton", { name: tr("Review reservation"), exact: true })
         .fill("9000");
@@ -193,7 +342,9 @@ for (const theme of ["light", "dark"])
       await sectionCapture("Retention and usage", "retention");
 
       await tab("Work").click();
-      await expect.poll(() => worker.innerText()).toBe(workerBefore);
+      await expect(
+        dialog.getByRole("button", { name: tr("Manage in Models"), exact: true }),
+      ).toBeVisible();
       await tab("Personal").click();
       await expect(
         dialog.getByRole("textbox", { name: tr("Assistant name"), exact: true }),
@@ -224,10 +375,10 @@ for (const theme of ["light", "dark"])
         perWakeTokenCap: 9000,
         summaryRefreshMessages: 25,
       });
-      // The footer Save also applies the model list draft, with its own version.
-      const poolSave = (await requests(page)).find((r) => r.input.op === "models.pool.set");
-      expect(poolSave?.input.expectedVersion).toBe(0);
-      expect(((poolSave?.input.rows ?? []) as any[])[0].modelSettings.reasoningEffort).toBe("high");
+      // Models are managed globally; saving the assistant cannot rewrite their pool.
+      expect((await requests(page)).filter((r) => r.input.op === "models.pool.set")).toHaveLength(
+        0,
+      );
       await tab("Personal").click();
       const unsavedAddress = dialog.getByRole("textbox", {
         name: tr("How should I address you?"),
@@ -302,7 +453,7 @@ for (const theme of ["light", "dark"])
 const poolOutput = "temp/verification/2026-11-10-voice-operator";
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
-    test(`assistant model pool editor ${theme} ${width}`, async ({ page }) => {
+    test(`assistant global model management link ${theme} ${width}`, async ({ page }) => {
       await mkdir(poolOutput, { recursive: true });
       await page.setViewportSize({ width, height: 1500 });
       await page.goto(
@@ -315,15 +466,14 @@ for (const theme of ["light", "dark"])
         .locator("section")
         .filter({ has: page.getByRole("heading", { name: "Models", exact: true }) })
         .first();
-      await expect(models.locator("fieldset")).toHaveCount(3);
-      await expect(models).toContainText("Limit unknown");
-      await expect(models).toContainText("48% left");
-      await expect(models).toContainText("12% left");
-      // Let the dialog grow so the whole group is captured, not only its scrolled part.
-      await dialog.evaluate((node) => {
-        node.style.blockSize = "1300px";
-        node.style.maxBlockSize = "none";
+      await expect(models.locator("fieldset")).toHaveCount(0);
+      await page.evaluate(() => {
+        window.addEventListener("bycoda:open-models-settings", (event) => {
+          (window as any).__openedModelsTab = (event as CustomEvent).detail;
+        });
       });
+      await models.getByRole("button", { name: "Manage in Models", exact: true }).click();
+      expect(await page.evaluate(() => (window as any).__openedModelsTab)).toBe("roles");
       await models.scrollIntoViewIfNeeded();
       await models.screenshot({
         path: join(poolOutput, `pool-${theme}-${width}.png`),

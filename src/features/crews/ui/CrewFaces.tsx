@@ -75,8 +75,8 @@ export function CrewFaces({
             key={member.id}
             aria-hidden
             {...surfaceAttributes(
-              { radius: "pill", variant: "raised" },
-              "relative grid place-items-center overflow-hidden ring-2 ring-(--ui-surface-panel)",
+              { radius: "pill", variant: "raised", ring: "panel-outer" },
+              "relative grid place-items-center overflow-hidden",
             )}
             style={faceStyle(index)}
           >
@@ -94,7 +94,10 @@ export function CrewFaces({
           aria-hidden
           size="xs"
           appearance="subtle"
-          className="relative justify-center p-0 whitespace-nowrap ring-2 ring-(--ui-surface-panel)"
+          {...surfaceAttributes(
+            { ring: "panel-outer" },
+            "relative justify-center p-0 whitespace-nowrap",
+          )}
           leading="none"
           minWidth={size}
           style={faceStyle(shown.length)}

@@ -90,7 +90,7 @@ for (const dark of [false, true]) {
 test("project, find, notes and close share one working group", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/chat/chat-chrome.html?count=10");
-  const toolbar = page.getByRole("toolbar", { name: "Project actions", exact: true });
+  const toolbar = page.locator("header");
   await expect(toolbar.getByRole("button")).toHaveCount(5);
   await toolbar.getByRole("button", { name: "Project actions", exact: true }).click();
   await expect(page.getByRole("menuitem").filter({ hasText: "Add action" })).toBeVisible();
@@ -105,3 +105,79 @@ test("project, find, notes and close share one working group", async ({ page }) 
   await toolbar.getByRole("button", { name: "Close pane", exact: true }).click();
   await expect(page.locator("output")).toContainText("Pane closed");
 });
+
+for (const dark of [false, true]) {
+  for (const width of [1280, 800]) {
+    test(`header actions stay fixed with named tooltips ${dark ? "dark" : "light"} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.addInitScript(() => {
+        localStorage.setItem("bycoda.language", "en");
+        localStorage.setItem(
+          "bycoda.projectActions.v1",
+          JSON.stringify({
+            "c:/project": [{ id: "dev", name: "dev", icon: "play", command: "pnpm dev", url: "" }],
+          }),
+        );
+        Object.assign(window, {
+          __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
+          __TAURI_INTERNALS__: {
+            metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+            transformCallback: () => 1,
+            invoke: async (command: string) => (command === "plugin:event|listen" ? 1 : false),
+          },
+        });
+      });
+      await page.goto(
+        `/tests/browser/chat/chat-chrome.html?count=10&caption${dark ? "&dark" : ""}`,
+      );
+      const header = page.locator("header");
+      await expect(header.getByRole("button", { name: "Run dev", exact: true })).toBeVisible();
+      await expect(header.locator("[data-ebg-item]")).toHaveCount(0);
+      await expect(
+        header.getByRole("button", { name: "Close window", exact: true }),
+      ).toHaveAttribute("data-button-tone", "neutral");
+      const buttons = header.getByRole("button");
+      for (let i = 0; i < (await buttons.count()); i++) {
+        const button = buttons.nth(i);
+        const before = await button.boundingBox();
+        await button.hover();
+        const tooltip = page.getByRole("tooltip");
+        await expect(tooltip).toBeVisible();
+        await expect(tooltip).toContainText(
+          /dev|Project actions|Open project in|Find in conversation|Notes|Close pane|Minimize|Maximize|Close/,
+        );
+        const after = await button.boundingBox();
+        expect(after?.width).toBe(before?.width);
+        await page.mouse.move(0, 100);
+        await expect(tooltip).toBeHidden();
+      }
+      await header.screenshot({
+        path: `temp/verification/2026-11-13-titlebar/header-${dark ? "dark" : "light"}-${width}.png`,
+      });
+    });
+  }
+}
+
+for (const dark of [false, true])
+  for (const width of [800, 1280])
+    test(`transcript find surface ${dark ? "dark" : "light"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/tests/browser/chat/chat-chrome.html?count=10${dark ? "&dark" : ""}`);
+      await page.getByRole("button", { name: "Find in conversation", exact: true }).click();
+      const search = page.getByRole("search", { name: "Find in conversation" });
+      await expect(search).toBeVisible();
+      await search.getByRole("textbox", { name: "Find in conversation" }).fill("message");
+      const searchBox = (await search.boundingBox())!;
+      for (const label of ["Previous match", "Next match", "Close find"]) {
+        const bounds = (await search.getByRole("button", { name: label }).boundingBox())!;
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(
+          Math.min(searchBox.x + searchBox.width, width) + 1,
+        );
+      }
+      await page.screenshot({
+        animations: "disabled",
+        path: `temp/verification/feature-controls/transcript-find-${dark ? "dark" : "light"}-${width}.png`,
+      });
+    });

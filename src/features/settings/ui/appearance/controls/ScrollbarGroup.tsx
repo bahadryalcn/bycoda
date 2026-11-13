@@ -59,7 +59,7 @@ export function ScrollbarGroup() {
       onReset={() => saveScrollbarStyle(SCROLLBAR_STYLE_DEFAULT)}
     >
       <div className="interface-scrollbar-layout">
-        <div className="interface-scrollbar-controls">
+        <div {...surfaceAttributes({ layout: "settings-rows" }, "interface-scrollbar-controls")}>
           <Row
             id="scrollbar-color"
             label={t("Scrollbar color")}
@@ -92,8 +92,11 @@ export function ScrollbarGroup() {
                   onClick={() => setOpen(true)}
                 >
                   <span
-                    {...surfaceAttributes({ frame: "stroke", edge: "all" }, "state-custom-dot")}
-                    style={{ background: customColor }}
+                    {...surfaceAttributes(
+                      { frame: "stroke", edge: "all", radius: "circle", variant: "user-color" },
+                      "state-custom-dot",
+                    )}
+                    style={{ "--surface-user-color": customColor } as React.CSSProperties}
                   />
                 </Button>
               )}

@@ -10,14 +10,15 @@ import {
   bodyText,
   buttonByText,
   buttonsByText,
-  clientMock,
   clickButton,
   clickMenuItem,
+  clientMock,
   deferred,
   fieldByLabel,
   flush,
   mountHost,
   person,
+  pickOption,
   setFieldValue,
   tabByText,
   type MountedHost,
@@ -263,7 +264,7 @@ describe("AudienceScreen person panel", () => {
     await loaded();
     expect(mock.people.get).toHaveBeenCalledWith("p1");
 
-    setFieldValue(fieldByLabel("Change stage"), "contacted");
+    pickOption("Change stage", "Contacted");
     await flush();
     const row = document.querySelector("tbody tr");
     expect(row?.textContent).toContain("Contacted");
@@ -299,7 +300,8 @@ describe("AudienceScreen empty results", () => {
       await new Promise((resolve) => setTimeout(resolve, 400));
     });
     await flush();
-    expect(bodyText()).toContain("No one matches this list or search.");
+    expect(bodyText()).toContain("No one matches this search.");
+    expect(buttonByText("Clear search")).toBeDefined();
     expect(bodyText()).not.toContain("No people yet.");
   });
 });

@@ -7,6 +7,7 @@ import { handleAssistantBuilderRpc } from "./rpc-assistant-builder";
 import { handleBrowserRpc } from "./rpc-browser";
 import { handleConversationRpc } from "./rpc-conversation";
 import { handleCrewsRpc } from "./rpc-crews";
+import { handleModelRoutingRpc } from "./rpc-model-routing";
 import { handleDesktopRpc } from "./rpc-desktop";
 import { handleDevelopmentRpc } from "./rpc-development";
 import { handleDevicesRpc } from "./rpc-devices";
@@ -508,6 +509,10 @@ const handlers: Record<
   "providers.center.read": handleProvidersRpc,
   "providers.acp.patchMetadata": handleProvidersRpc,
   "models.list": handleProvidersRpc,
+  "modelRouting.get": handleModelRoutingRpc,
+  "modelRouting.save": handleModelRoutingRpc,
+  "modelRouting.status": handleModelRoutingRpc,
+  "modelRouting.resolve": handleModelRoutingRpc,
   "appearance.themeSuggestions": handleAppearanceRpc,
   "appearance.backgroundSuggestions": handleAppearanceRpc,
   "appearance.backgroundImage": handleAppearanceRpc,
@@ -645,9 +650,6 @@ const handlers: Record<
   "crews.deleteRun": handleCrewsRpc,
   "crews.agent.save": handleCrewsRpc,
   "crews.agent.delete": handleCrewsRpc,
-  "crews.pools.list": handleCrewsRpc,
-  "crews.pools.save": handleCrewsRpc,
-  "crews.pools.delete": handleCrewsRpc,
   "crews.start": handleCrewsRpc,
   "crews.get": handleCrewsRpc,
   "crews.assign": handleCrewsRpc,

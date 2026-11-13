@@ -1249,7 +1249,7 @@ export function NotesView({
           </Text>
         </ToolHeader>
       </PaneHeader>
-      <div className="note-mobile-navigation">
+      <div {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "note-mobile-navigation")}>
         <TabStrip
           label={t("Notes sections")}
           value={mobileListVisible ? "list" : "editor"}
@@ -1271,7 +1271,10 @@ export function NotesView({
               as="div"
               size="caption"
               tone="secondary"
-              className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2"
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "bottom" },
+                "flex flex-wrap items-center gap-2 px-5 py-2",
+              )}
             >
               {t("This note is outside the current filters.")}
               <Button variant="ghost" size="sm" type="button" onClick={clearFilters}>
@@ -2072,6 +2075,10 @@ function NoteEditor({
     sourceCwd,
   };
 
+  const editorFrame = surfaceAttributes(
+    { frame: "card", radius: "card" },
+    "note-editor-body relative",
+  );
   return (
     <div
       ref={(node) => {
@@ -2189,7 +2196,14 @@ function NoteEditor({
                   autoFocus
                   className="note-details-popover"
                 >
-                  <Text as="div" weight="medium" className="note-details-title wrap-anywhere">
+                  <Text
+                    as="div"
+                    weight="medium"
+                    {...surfaceAttributes(
+                      { frame: "stroke", edge: "block-end" },
+                      "note-details-title wrap-anywhere",
+                    )}
+                  >
                     {title.trim() || note.title || t("Untitled")}
                   </Text>
                   <DescriptionList size="sm">
@@ -2274,7 +2288,8 @@ function NoteEditor({
                 loading={saveAction === "retry"}
                 disabled={recovering || (saving && saveAction !== "retry")}
                 onClick={() => void saveFromAction("retry")}
-                className="shrink-0 underline hover:no-underline"
+                textDecoration="rest-underline"
+                className="shrink-0"
               >
                 {t("Retry")}
               </Button>
@@ -2355,9 +2370,10 @@ function NoteEditor({
             tabIndex={undefined}
             data-external-drop-owner="note-images"
             aria-busy={imageBusy}
+            {...editorFrame}
             {...motionAttributes(
               { transition: "colors", duration: "standard" },
-              "note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-card-border)",
+              editorFrame.className,
             )}
             {...dropZoneHandlers}
           >

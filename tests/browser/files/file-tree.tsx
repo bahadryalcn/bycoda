@@ -1,6 +1,9 @@
+import { SheetGridView } from "../../../src/features/files/ui/SheetGridView";
+import { FilePreview } from "../../../src/features/files/ui/FilePreview";
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import { FileTree } from "../../../src/features/files/ui/FileTree";
+import { BinaryFileView } from "../../../src/features/files/ui/BinaryFileView";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import {
   handleFilePreviewFindKey,
@@ -76,6 +79,8 @@ Object.assign(window, {
     },
     unregisterCallback: (id: number) => callbacks.delete(id),
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
+      if (command === "read_binary_file")
+        return (await fetch("/brand/bycoda-tasks.png")).arrayBuffer();
       if (command === "reveal_path" && operationState.hold)
         await new Promise<void>((resolve) => {
           operationState.finish = resolve;
@@ -131,7 +136,40 @@ function Fixture() {
   const preview = new URLSearchParams(location.search).has("preview");
   return (
     <main className="flex h-dvh min-w-0 bg-[var(--ui-surface)] text-content">
-      {preview ? (
+      {new URLSearchParams(location.search).has("sheet") ? (
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <SheetGridView
+            grid={{
+              name: "Fixture budget",
+              columns: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"],
+              rowCount: 1000,
+              totalRows: 1000,
+              totalColumns: 10,
+              truncated: false,
+              budgetLimited: false,
+              cells: { "0:0": "Revenue", "0:1": "1200", "999:9": "Last cell" },
+            }}
+          />
+        </section>
+      ) : new URLSearchParams(location.search).has("tool-preview") ? (
+        <section className="min-w-0 flex-1 p-4">
+          <FilePreview
+            preview={{
+              kind: "read",
+              path: "/fixture/src/deep.ts",
+              lines: [{ kind: "context", text: "export const fixture = true;" }],
+            }}
+            status="accepted"
+            cwd="/fixture"
+            onOpenFile={setOpened}
+          />
+          <output aria-label="Opened file">{opened}</output>
+        </section>
+      ) : new URLSearchParams(location.search).has("binary") ? (
+        <section className="min-w-0 flex-1">
+          <BinaryFileView cwd="/fixture" path="/fixture/preview.png" />
+        </section>
+      ) : preview ? (
         <FilePreviewSearch active contentVersion="fixture">
           <section className="markdown-preview p-4" aria-label="Markdown preview" tabIndex={0}>
             <p>First needle appears here.</p>

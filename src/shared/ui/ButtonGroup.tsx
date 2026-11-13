@@ -24,7 +24,7 @@ export type ButtonGroupProps =
   | (ExpandingButtonGroupProps & { variant: "expanding" });
 
 /**
- * Joined action surface with shared hover/press. Children stay ordinary Buttons with their own hit target, focus, tooltip and busy/disabled state; `aria-label` names the group. `surface="navigation"` for navigation bars; `surface="transparent"` for ghost actions without an outer fill or border.
+ * Joined action surface with shared hover/press. Children stay ordinary Buttons with their own hit target, focus, tooltip and busy/disabled state; `aria-label` names the group. `surface="navigation"` for navigation bars: no fill, the tools share the bar's ground inside the group outline; `surface="transparent"` for ghost actions without an outer fill or border.
  * `selection="plate"` drops the dividers between segments and lets one `ButtonGroupSelection`, rendered inside the selected Button, glide between them.
  * `variant="expanding"` reveals command labels on intent through the existing Arc renderer.
  * FloatingButtonGroup owns a contextual toolbar's roving focus and transient action feedback.
@@ -76,6 +76,7 @@ function JoinedButtonGroup({
  * @group actions
  * @status internal
  * @use Render inside the selected Button of ButtonGroup selection="plate".
+ * @avoid Choice and keyboard behavior: ButtonGroup.
  */
 export function ButtonGroupSelection() {
   const reduced = useReducedMotion();

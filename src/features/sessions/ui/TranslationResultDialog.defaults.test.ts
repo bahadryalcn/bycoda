@@ -1,20 +1,14 @@
+import { QueryClient, QueryClientProvider, notifyManager } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TranslationResultDialog } from "./TranslationResultDialog";
-import { TranslationSettings } from "../../settings/ui/TranslationSettings";
+import { HelperModelsSettings } from "../../settings/ui/HelperModelsSettings";
 import { translateSelection } from "../model/translation";
 import { defaultProviderAccountId } from "../../providers/model/providerAccounts";
-import {
-  loadDefaultTranslationChoice,
-  parseTranslationChoice,
-  saveDefaultTranslationChoice,
-  loadDefaultRepromptChoice,
-  saveDefaultRepromptChoice,
-  defaultTextActionChoice,
-  type TranslationChoice,
-} from "../model/translationPreferences";
+import { defaultTextActionChoice, type TranslationChoice } from "../model/translationPreferences";
 
 vi.mock("../model/translation", async (original) => ({
   ...(await original<typeof import("../model/translation")>()),
@@ -34,6 +28,13 @@ vi.mock("./ModelPicker", () => ({
     ),
 }));
 
+const routing = vi.hoisted(() => ({ resolve: vi.fn(), open: vi.fn() }));
+vi.mock("../../model-routing/public/helpers", async (original) => ({
+  ...(await original<typeof import("../../model-routing/public/helpers")>()),
+  resolveHelperModel: routing.resolve,
+}));
+vi.mock("../../settings/public/modelsSettingsLink", () => ({ openModelsSettings: routing.open }));
+
 const choice: TranslationChoice = {
   harness: "codex",
   model: "codex:gpt-6.1",
@@ -46,9 +47,16 @@ const context = {
   model: "claude:sonnet-5",
   providerAccountId: "conversation-account",
 };
+let client: QueryClient;
+function render(node: ReactNode) {
+  root.render(createElement(QueryClientProvider, { client }, node));
+}
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 beforeEach(() => {
+  notifyManager.setScheduler((callback) => callback());
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  routing.resolve.mockResolvedValue(undefined);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   vi.clearAllMocks();
@@ -60,12 +68,14 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  client.clear();
+  notifyManager.setScheduler((callback) => setTimeout(callback, 0));
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 async function open(target: "en" | "reprompt" = "en") {
   await act(async () =>
-    root.render(
+    render(
       createElement(TranslationResultDialog, {
         text: "selam",
         target,
@@ -77,9 +87,8 @@ async function open(target: "en" | "reprompt" = "en") {
   );
 }
 
-it("uses the independent reprompt default and leaves it unchanged by dialog model changes", async () => {
-  saveDefaultTranslationChoice({ ...choice, providerAccountId: "translator" });
-  saveDefaultRepromptChoice({ ...choice, providerAccountId: "rewriter" });
+it("uses the reprompt role and leaves it unchanged by dialog model changes", async () => {
+  routing.resolve.mockResolvedValue({ ...choice, providerAccountId: "rewriter" });
   await open("reprompt");
   expect(translateSelection).toHaveBeenCalledWith(
     "selam",
@@ -94,33 +103,21 @@ it("uses the independent reprompt default and leaves it unchanged by dialog mode
     (button) => button.textContent === "Change model",
   )!;
   await act(async () => change.click());
-  expect(loadDefaultRepromptChoice()?.providerAccountId).toBe("rewriter");
-  expect(loadDefaultTranslationChoice()?.providerAccountId).toBe("translator");
 });
 
-it("saves and resets reprompt settings without changing translation settings", async () => {
-  saveDefaultTranslationChoice(choice);
-  await act(async () => root.render(createElement(TranslationSettings, { action: "reprompt" })));
-  const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Change model",
+it("links helper model settings to Models roles", async () => {
+  routing.resolve.mockResolvedValue(choice);
+  await act(async () => render(createElement(HelperModelsSettings)));
+  const manage = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Manage in Models",
   )!;
-  await act(async () => change.click());
-  expect(loadDefaultRepromptChoice()).toMatchObject({
-    harness: "claude",
-    model: "claude:sonnet-5",
-    providerAccountId: "temporary",
-  });
-  expect(loadDefaultTranslationChoice()).toEqual(choice);
-  const reset = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.getAttribute("aria-label") === "Restore default",
-  )!;
-  await act(async () => reset.click());
-  expect(loadDefaultRepromptChoice()).toBeUndefined();
-  expect(loadDefaultTranslationChoice()).toEqual(choice);
+  await act(async () => manage.click());
+  expect(routing.open).toHaveBeenCalledWith("roles");
+  expect(container.textContent).not.toContain("Change model");
 });
 
-it("starts with the persisted translation account and model while keeping the caller project", async () => {
-  saveDefaultTranslationChoice(choice);
+it("starts with the Host translation account and model while keeping the caller project", async () => {
+  routing.resolve.mockResolvedValue(choice);
   await open();
   expect(translateSelection).toHaveBeenCalledWith(
     "selam",
@@ -134,12 +131,11 @@ it("starts with the persisted translation account and model while keeping the ca
     (button) => button.textContent === "Change model",
   )!;
   await act(async () => change.click());
-  expect(loadDefaultTranslationChoice()).toEqual(choice);
 });
 
-it("returns to the Settings default model and account after resetting the action default", async () => {
-  saveDefaultTranslationChoice(choice);
-  saveDefaultTranslationChoice(undefined);
+it("returns to the Settings default model and account for an unbound role", async () => {
+  routing.resolve.mockResolvedValue(choice);
+  routing.resolve.mockResolvedValue(undefined);
   await open();
   expect(translateSelection).toHaveBeenCalledWith(
     "selam",
@@ -151,46 +147,28 @@ it("returns to the Settings default model and account after resetting the action
   );
 });
 
-it("saves the settings picker selection and resets it to the conversation model", async () => {
-  await act(async () => root.render(createElement(TranslationSettings)));
-  const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Change model",
-  )!;
-  await act(async () => change.click());
-  expect(loadDefaultTranslationChoice()).toMatchObject({
-    harness: "claude",
-    model: "claude:sonnet-5",
-    providerAccountId: "temporary",
-  });
-  const reset = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.getAttribute("aria-label") === "Restore default",
-  )!;
-  await act(async () => reset.click());
-  expect(loadDefaultTranslationChoice()).toBeUndefined();
-});
-
-it("does not inherit the conversation account when the default has no account", async () => {
-  saveDefaultTranslationChoice({ ...choice, providerAccountId: undefined });
+it("uses the Host role while retaining the calling project", async () => {
+  routing.resolve.mockResolvedValue({ ...choice, providerAccountId: "role-account" });
   await open();
-  expect(vi.mocked(translateSelection).mock.calls[0][2].providerAccountId).toBe(
-    defaultProviderAccountId(choice.harness),
+  expect(translateSelection).toHaveBeenCalledWith(
+    "selam",
+    "en",
+    { ...context, ...choice, providerAccountId: "role-account" },
+    expect.any(AbortSignal),
+    undefined,
+    expect.any(Function),
   );
 });
 
-it("ignores corrupt saved choices and filters invalid model settings", () => {
-  for (const raw of [
-    "invalid",
-    "null",
-    '{"harness":"unknown","model":"x"}',
-    '{"harness":"codex","model":""}',
-  ]) {
-    expect(parseTranslationChoice(raw)).toBeUndefined();
-  }
-  expect(
-    parseTranslationChoice(
-      JSON.stringify({ ...choice, modelSettings: { effort: "medium", invalid: false } }),
-    )?.modelSettings,
-  ).toEqual({ effort: "medium" });
+it("does not inherit the conversation account when the default has no account", async () => {
+  routing.resolve.mockResolvedValue({
+    ...choice,
+    providerAccountId: defaultProviderAccountId("codex"),
+  });
+  await open();
+  expect(vi.mocked(translateSelection).mock.calls[0][2].providerAccountId).toBe(
+    defaultProviderAccountId("codex"),
+  );
 });
 
 it.each(["en", "reprompt"] as const)(
@@ -230,8 +208,29 @@ it("explains a slow request and ignores output after closing", async () => {
   await act(async () => vi.advanceTimersByTimeAsync(12000));
   expect(document.body.textContent).toContain("Taking longer than usual");
   expect(document.body.textContent).toContain("12s");
-  act(() => root.render(null));
+  act(() => render(null));
   expect(request[3].aborted).toBe(true);
   act(() => request[5]?.("Late output"));
   expect(document.body.textContent).not.toContain("Late output");
+});
+
+it("preserves owner selection while the initial role lookup finishes", async () => {
+  let finish!: (choice: TranslationChoice) => void;
+  routing.resolve.mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await open();
+  const button = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === label,
+    )!;
+  await act(async () => button("Change model").click());
+  await act(async () => finish(choice));
+  await act(async () => button("Translate selected text").click());
+  expect(vi.mocked(translateSelection).mock.lastCall?.[2]).toMatchObject({
+    harness: "claude",
+    providerAccountId: "temporary",
+  });
 });

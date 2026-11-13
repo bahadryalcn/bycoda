@@ -1,3 +1,4 @@
+import { actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
@@ -109,34 +110,74 @@ export function SessionRowStatus({
       {kind === "failed" || kind === "retrying" ? (
         <>
           {alert}
-          <span className="session-row-status-label">
+          <span
+            {...actionContentAttributes(
+              { phase: "rest", hide: "screen-reader" },
+              "session-row-status-label",
+            )}
+          >
             {t(kind === "retrying" ? "Retrying" : "Failed")}
           </span>
         </>
       ) : kind === "interrupted" ? (
         <>
           {alert}
-          <span className="session-row-status-label">{t("Interrupted")}</span>
+          <span
+            {...actionContentAttributes(
+              { phase: "rest", hide: "screen-reader" },
+              "session-row-status-label",
+            )}
+          >
+            {t("Interrupted")}
+          </span>
         </>
       ) : kind === "input" ? (
         <>
           {alert}
-          <span className="session-row-status-label">{needsInputLabel}</span>
+          <span
+            {...actionContentAttributes(
+              { phase: "rest", hide: "screen-reader" },
+              "session-row-status-label",
+            )}
+          >
+            {needsInputLabel}
+          </span>
         </>
       ) : kind === "opening" ? (
         <>
           <Spinner size="xs" className="shrink-0" />
-          <span className="session-row-status-label">{t("Opening…")}</span>
+          <span
+            {...actionContentAttributes(
+              { phase: "rest", hide: "screen-reader" },
+              "session-row-status-label",
+            )}
+          >
+            {t("Opening…")}
+          </span>
         </>
       ) : kind === "done" ? (
         <>
           <Check className="icon-xs" strokeWidth={2} />
-          <span className="session-row-status-label">{t("Done")}</span>
+          <span
+            {...actionContentAttributes(
+              { phase: "rest", hide: "screen-reader" },
+              "session-row-status-label",
+            )}
+          >
+            {t("Done")}
+          </span>
         </>
       ) : (
         <>
           <PenLine className="icon-xs" strokeWidth={1.75} />
-          <span className="session-row-status-label">{t("Draft")}</span>
+          <span
+            {...actionContentAttributes(
+              { phase: "rest", hide: "screen-reader" },
+              "session-row-status-label",
+            )}
+          >
+            {t("Draft")}
+          </span>
         </>
       )}
     </Badge>

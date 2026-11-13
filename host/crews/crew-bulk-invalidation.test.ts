@@ -64,7 +64,6 @@ function agent(id: string, role: "coordinator" | "specialist" | "reviewer", larg
             ]),
           )
         : {},
-      cost: 1,
     })),
   });
 }

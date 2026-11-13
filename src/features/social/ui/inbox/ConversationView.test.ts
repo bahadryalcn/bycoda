@@ -335,3 +335,54 @@ it("starts an empty reply draft when the owner opens another conversation", asyn
   await mount(client, { threadId: "t2", item: item({ threadId: "t2" }) });
   expect(element.querySelector<HTMLTextAreaElement>(".inbox-reply textarea")?.value).toBe("");
 });
+
+it("retries a failed conversation read without any writes", async () => {
+  let failed = true;
+  const fake = fakeClient({
+    "thread.read": () => {
+      if (failed) throw new Error("offline");
+      return thread([event("recovered", 1, "Recovered message")]);
+    },
+  });
+  await mount(fake.client, { threadId: "t1", item: item({ person: undefined }) });
+  expect(button("Try again")).toBeDefined();
+  failed = false;
+  await act(async () => button("Try again")!.click());
+  await flush();
+  expect(lineTexts()).toEqual(["Recovered message"]);
+  expect(fake.writes()).toEqual([]);
+});
+
+it("does not describe an unreadable timeline as an empty conversation", async () => {
+  const fake = fakeClient({
+    "inbox.timeline": () => {
+      throw new Error("offline");
+    },
+  });
+  await mount(fake.client, { threadId: "t1", item: item({ person: { id: "p1", name: "Ana" } }) });
+  expect(element.textContent).toContain("Could not load the timeline.");
+  expect(element.textContent).not.toContain("No messages in this conversation yet.");
+  expect(button("Try again")).toBeDefined();
+});
+
+it("keeps loaded messages but reports and retries a later conversation read failure", async () => {
+  let failed = false;
+  const fake = fakeClient({
+    "thread.read": () => {
+      if (failed) throw new Error("offline");
+      return thread([event("kept", 1, "Previously loaded message")]);
+    },
+  });
+  await mount(fake.client, { threadId: "t1", item: item({ person: undefined }) });
+  failed = true;
+  await openStatusMenu();
+  await act(async () => statusItem("Mark as Done")!.click());
+  await flush();
+  expect(lineTexts()).toEqual(["Previously loaded message"]);
+  expect(element.textContent).toContain("This conversation could not be opened.");
+  expect(button("Try again")).toBeDefined();
+  failed = false;
+  await act(async () => button("Try again")!.click());
+  await flush();
+  expect(element.textContent).not.toContain("This conversation could not be opened.");
+});

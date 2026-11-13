@@ -16,11 +16,17 @@ for (const theme of ["light", "dark"]) {
       // Adding is one entry point: the form offers SSH or a host URL.
       await root.getByRole("button", { name: "Add machine", exact: true }).click();
       await expect(root.getByText("Connect to an existing host by URL")).toHaveCount(0);
-      await root.getByRole("radio", { name: "Host URL", exact: true }).click();
+      await root
+        .getByRole("radio", { name: "Host URL", exact: true })
+        .locator("..")
+        .locator('span[aria-hidden="true"]')
+        .first()
+        .click();
+      await expect(root.getByRole("radio", { name: "Host URL", exact: true })).toBeChecked();
       const urlField = root.getByRole("textbox", { name: "Host URL", exact: true });
       await urlField.fill("https://saved.example.com");
-      await root.getByRole("radio", { name: "SSH", exact: true }).click();
-      await root.getByRole("radio", { name: "Host URL", exact: true }).click();
+      await root.getByText("SSH", { exact: true }).first().click();
+      await root.getByText("Host URL", { exact: true }).click();
       await expect(urlField).toHaveValue("https://saved.example.com");
       await root.getByRole("button", { name: "Cancel", exact: true }).click();
       // Connection details stay hidden until requested from the machine's action menu.
@@ -63,7 +69,7 @@ for (const theme of ["light", "dark"]) {
       await expect(phone).toBeVisible();
       await expect(address).not.toBeVisible();
       // The phone tab pairs inline: the access check runs by itself and one action shows the code.
-      await expect(phone.getByRole("radiogroup", { name: "Phone network" })).toBeVisible();
+      await expect(phone.getByRole("group", { name: "Phone network" })).toBeVisible();
       await expect(phone.getByRole("radio", { name: "Same Wi-Fi", exact: true })).toBeChecked();
       const showCode = phone.getByRole("button", { name: "Show QR code", exact: true });
       await expect(showCode).toBeVisible();
@@ -86,11 +92,11 @@ for (const theme of ["light", "dark"]) {
         (await computer.boundingBox())!.y + (await computer.boundingBox())!.height,
       );
       expect(gap).toBeLessThan(40);
-      await tunnels.locator("input").first().fill("4567");
+      await tunnels.getByRole("textbox", { name: "Local URL or port" }).fill("4567");
       await root.getByRole("tab", { name: "Machines", exact: true }).click();
       await expect(address).toHaveValue("owner@new-machine");
       await root.getByRole("tab", { name: "Sharing", exact: true }).click();
-      await expect(tunnels.locator("input").first()).toHaveValue("4567");
+      await expect(tunnels.getByRole("textbox", { name: "Local URL or port" })).toHaveValue("4567");
       expect(await root.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
       await page.screenshot({
         path: `${evidence}/${theme}-${width}-tunnels.png`,

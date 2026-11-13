@@ -129,3 +129,13 @@
     transition: none;
   }
 }
+
+.switch[data-choice-appearance="card"] {
+  border: 1px solid var(--ui-card-border);
+  border-radius: var(--ui-radius-card);
+}
+@media (hover: hover) and (pointer: fine) {
+  .switch[data-choice-appearance="card"]:not(:disabled):hover {
+    background: var(--ui-surface-hover);
+  }
+}

@@ -300,6 +300,7 @@ describe("session folder drag indicator", () => {
     await renderWithFolders();
     const over = folderRow("work");
     dragFolder("later", over, 120);
+    expect(folder("later").getAttribute("data-dragging")).toBe("true");
     expect(over.getAttribute("data-drop-indicator")).toBe("inside");
     expect(document.querySelectorAll("[data-drop-indicator]")).toHaveLength(1);
     expect(document.querySelectorAll(".pointer-drop-hint")).toHaveLength(1);
@@ -316,6 +317,7 @@ describe("session folder drag indicator", () => {
     expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
     expect(document.querySelector("[data-folder-dragging]")).toBeNull();
+    expect(document.querySelector("[data-session-folder][data-dragging]")).toBeNull();
     expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
   });
 
@@ -332,9 +334,13 @@ describe("session folder drag indicator", () => {
 
   it("clears the folder mark when the sidebar unmounts mid-drag", async () => {
     await renderWithFolders();
+    const source = folder("later");
     dragFolder("later", folderRow("work"), 120);
+    expect(source.getAttribute("data-dragging")).toBe("true");
     expect(document.querySelector("[data-drop-indicator]")).not.toBeNull();
     act(() => root.unmount());
+    expect(source.hasAttribute("data-dragging")).toBe(false);
+    expect(source.hasAttribute("data-folder-dragging")).toBe(false);
     expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
     root = createRoot(container);

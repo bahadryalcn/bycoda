@@ -2,10 +2,41 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SOCIAL_POLICIES,
   effectiveSocialPolicy,
+  parseSocialAgent,
   parseSocialPolicies,
   socialCharacterCount,
 } from "./socialPolicy";
 describe("Social global/platform policy", () => {
+  it("preserves the selected provider account and model settings", () => {
+    expect(
+      parseSocialAgent({
+        provider: "codex",
+        model: "gpt-6.1-sol",
+        providerAccountId: "work",
+        modelSettings: { reasoningEffort: "high" },
+      }),
+    ).toEqual({
+      provider: "codex",
+      model: "gpt-6.1-sol",
+      providerAccountId: "work",
+      modelSettings: { reasoningEffort: "high" },
+    });
+  });
+
+  it("rejects malformed and unbounded model options and account identities", () => {
+    for (const patch of [
+      { modelSettings: [] },
+      { modelSettings: { effort: 5 } },
+      { modelSettings: { effort: "x".repeat(129) } },
+      { providerAccountId: "bad\naccount" },
+      { model: "bad\u0000model" },
+      { modelSettings: { "bad\u001fkey": "x" } },
+      { modelSettings: { effort: "bad\nvalue" } },
+      { providerAccountId: "x".repeat(513) },
+    ]) {
+      expect(() => parseSocialAgent({ provider: "codex", ...patch })).toThrow();
+    }
+  });
   it("inherits global fields and overrides only configured platform fields", () => {
     const policies = parseSocialPolicies({
       global: {

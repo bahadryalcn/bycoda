@@ -97,3 +97,71 @@ for (const width of [390, 1000])
       path: `temp/verification/2026-10-16-ui-system/W7-ORCHESTRATION-captures/review-${width}-${test.info().project.name}.png`,
     });
   });
+
+for (const light of [true, false])
+  for (const width of [800, 1280])
+    test(`worker row density ${light ? "light" : "dark"} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/orchestration/orchestration.html");
+      await page.evaluate(
+        (theme) => document.documentElement.classList.toggle("theme-light", theme),
+        light,
+      );
+      const row = page.locator('[data-control-min-height="control"]').first();
+      await expect(row).toBeVisible();
+      const agent = page.getByRole("button", { name: "Agent details: Interrupted worker" });
+      await agent.click();
+      const expanded = page.locator("[data-orchestration-agent]").filter({ has: agent });
+      await expect(expanded).toHaveAttribute("data-surface-variant", "selection");
+      await expect(expanded.locator(":scope > div").last()).toHaveCSS(
+        "padding-inline-start",
+        "26px",
+      );
+      const heights: number[] = [];
+      for (const density of ["compact", "comfortable", "touch"]) {
+        await page.evaluate((value) => {
+          document.documentElement.dataset.controlDensity = value;
+        }, density);
+        const measured = await row.evaluate((node) => ({
+          height: node.getBoundingClientRect().height,
+          minimum: parseFloat(getComputedStyle(node).minBlockSize),
+          scroll: node.scrollHeight,
+          client: node.clientHeight,
+        }));
+        expect(measured.height).toBeGreaterThanOrEqual(measured.minimum);
+        expect(measured.scroll).toBeLessThanOrEqual(measured.client + 1);
+        heights.push(measured.height);
+      }
+      expect(heights[0]).toBeGreaterThanOrEqual(36);
+      expect(heights[1]).toBeGreaterThanOrEqual(heights[0]!);
+      expect(heights[2]).toBeGreaterThanOrEqual(heights[1]!);
+      await page.screenshot({
+        path: `temp/verification/feature-controls/worker-${light ? "light" : "dark"}-${width}.png`,
+      });
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`final proposal surface ${theme} ${width}`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/orchestration/orchestration.html");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await expect(
+        page.getByRole("button", { name: "Confirm & start", exact: true }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Details for UI task", exact: true }).click();
+      await expect(
+        page.getByRole("textbox", { name: "Instructions for task 1", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/goal-final-callers/proposal-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });

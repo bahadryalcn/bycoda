@@ -7,6 +7,7 @@ export const NATIVE_FORMAT_MAX_RESULT_BYTES = 4 * 1024 * 1024;
 const empty = z.strictObject({});
 const assistantPresence = z.strictObject({
   state: z.enum(["present", "idle", "away", "dnd"]),
+  choice: z.enum(["present", "away", "dnd"]).optional(),
   assistantName: z.string().optional(),
   setupComplete: z.boolean(),
 });
@@ -252,6 +253,7 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
         "assistant.notification.status",
         "desktop.act.authorize",
         "management.write.authorize",
+        "secrets.input.authorize",
         "preferences.read",
         "preferences.templateRead",
         "preferences.patch",
@@ -266,6 +268,7 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
         "servers.list",
         "servers.get",
         "servers.ssh.execute",
+        "servers.ssh.execute.permission",
         "servers.ssh.status",
         "servers.ssh.cancel",
         "servers.ssh.save",
@@ -279,7 +282,10 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
         "ptyMobile.close",
       ]),
     }),
-    result: z.strictObject({ authorized: z.boolean() }),
+    result: z.union([
+      z.strictObject({ authorized: z.literal(false) }),
+      z.strictObject({ authorized: z.literal(true), fullAccess: z.boolean().optional() }),
+    ]),
   },
   "native.services.social.bridge.describe": { params: empty, result: describe },
   "native.services.social.access.issue": { params: access, result: grant },

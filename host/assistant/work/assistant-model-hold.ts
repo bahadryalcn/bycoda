@@ -2,7 +2,12 @@ import { assistantJobProjectIds } from "../../../src/shared/model/assistantProje
 import { isoTimestamp } from "../../../src/shared/lib/time/timestamps";
 import { AssistantModelsHeldError } from "../models/assistant-model-execution";
 
-export type AssistantModelHold = { held: "limits" | "noRow"; nextResetAt?: number; at: number };
+export type AssistantModelHold = {
+  held: "limits" | "noRow";
+  nextResetAt?: number;
+  reason?: "noEligibleEntry";
+  at: number;
+};
 type Choice = { rowId: string; model: string; providerAccountId?: string; reason: string };
 export type AssistantGoalSubmission = { goalId: string; modelChoice?: Choice };
 
@@ -31,6 +36,7 @@ export async function loadModelHolds(db: {
 export function modelHoldRecord(error: AssistantModelsHeldError, at: number): AssistantModelHold {
   return {
     held: error.held,
+    ...(error.reason ? { reason: error.reason } : {}),
     ...(error.nextResetAt === undefined ? {} : { nextResetAt: error.nextResetAt }),
     at,
   };
@@ -46,11 +52,13 @@ export function modelHoldNotification(
     kind: "job.waiting" as const,
     title: job.title,
     body:
-      hold.held === "limits"
-        ? isoTimestamp(hold.nextResetAt) === undefined
-          ? "All models in the pool are at their limit."
-          : `All models in the pool are at their limit until ${isoTimestamp(hold.nextResetAt)}.`
-        : "No model in the pool can run this job.",
+      hold.reason === "noEligibleEntry"
+        ? "No eligible model is available for this job. Work is queued and will retry. Check Settings > Models."
+        : hold.held === "limits"
+          ? isoTimestamp(hold.nextResetAt) === undefined
+            ? "All models in the pool are at their limit."
+            : `All models in the pool are at their limit until ${isoTimestamp(hold.nextResetAt)}.`
+          : "No model in the pool can run this job.",
   };
 }
 

@@ -1,3 +1,6 @@
+import { AutomationModelChoice } from "./AutomationModelChoice";
+import { useAutomationRoutingHost } from "../hooks/useAutomationRoutingHost";
+import { resolveModel } from "../../sessions/model/models";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
 import { ClampText } from "../../../shared/ui/ClampText";
@@ -56,13 +59,13 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   useSyncExternalStore,
   type ElementType,
   type FormEvent,
   type ReactNode,
 } from "react";
 import { loadModelControls, subscribeModelControls } from "../../settings/model/settings";
-import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import { Row } from "../../settings/ui/settingsControls";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
@@ -87,7 +90,6 @@ import {
   Trash2,
   Zap,
 } from "../../../shared/ui/icons";
-import { ModelControlPills, ModelPicker } from "../../sessions/ui/ModelPicker";
 import { Popover } from "../../../shared/ui/Popover";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
@@ -128,7 +130,6 @@ import {
 import { backgroundMachineFor } from "../model/hostAutomationClient";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
-import { resolveModel } from "../../sessions/model/models";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
@@ -188,8 +189,8 @@ export function AutomationsView({
       role="region"
       aria-label={t("Automations")}
       data-app-automations
-      style={{ containerType: "inline-size", containerName: "automations" }}
-      className="flex min-h-0 min-w-0 flex-1 flex-col"
+
+      className="flex min-h-0 min-w-0 flex-1 flex-col [container-type:inline-size] [container-name:automations]"
     >
       <PaneHeader
         chromeInset={besideRail ? (compactRail ? "compact" : false) : true}
@@ -634,7 +635,12 @@ function AutomationsContent({
       ) : null}
       <div className="automation-body flex min-h-0 min-w-0 flex-1">
         {showList ? (
-          <aside className="automation-list flex shrink-0 flex-col">
+          <aside
+            {...surfaceAttributes(
+              { frame: "neutral", edge: "responsive-end" },
+              "automation-list flex shrink-0 flex-col",
+            )}
+          >
             <div ref={listLock} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
               {loading ? (
                 <SurfaceLoading />
@@ -864,7 +870,12 @@ function AutomationCard({
         <Text
           size="caption"
           tone="muted"
-          className={`flex min-w-0 items-center gap-1.5 ${otherTriggers.length > 0 ? "pr-24" : "pr-14"}`}
+          className="automation-trigger-summary flex min-w-0 items-center gap-1.5"
+          style={
+            {
+              "--layout-trigger-reserve": otherTriggers.length > 0 ? "6rem" : "3.5rem",
+            } as CSSProperties
+          }
         >
           <TriggerMark
             kind={automationTriggers(automation)[0]?.kind ?? automation.triggerKind}
@@ -1055,7 +1066,7 @@ function AutomationPicker({
             onClick={onBlank}
             variant="item"
             layout="stacked"
-            className="automation-start-option"
+            {...surfaceAttributes({ frame: "card", radius: "card" }, "automation-start-option")}
           >
             <span className="flex gap-3">
               <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">
@@ -1078,7 +1089,7 @@ function AutomationPicker({
               variant="item"
               layout="stacked"
               aria-haspopup="dialog"
-              className="automation-start-option"
+              {...surfaceAttributes({ frame: "card", radius: "card" }, "automation-start-option")}
             >
               <span className="flex gap-3">
                 <Text
@@ -1102,7 +1113,7 @@ function AutomationPicker({
             </Button>
           ) : null}
         </div>
-        <section className="mt-7" aria-labelledby="automation-templates-title">
+        <section className="mt-8" aria-labelledby="automation-templates-title">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <Heading id="automation-templates-title" size="item" level={2} className="me-auto">
               {t("Start from a template")}
@@ -1182,8 +1193,7 @@ function RunRow({
           void onOpenSession(sessionId);
         }}
         variant="item"
-        className={`${RUN_GRID} min-w-[480px] w-full`}
-        style={{ display: "grid" }}
+        className={[`${RUN_GRID} min-w-[480px] w-full`, "grid"].filter(Boolean).join(" ")}
       >
         <Text size="inherit" tone="neutral" className="flex min-w-0 items-center gap-2">
           <TriggerMark kind={trigger.kind} className="icon-sm shrink-0" tone="muted" />
@@ -1336,6 +1346,9 @@ function AutomationEditor({
   onOpenSession: (sessionId: string) => void | Promise<void>;
 }) {
   useLocale();
+  const routingHost = useAutomationRoutingHost(
+    draft.runInBackground ? backgroundMachineId : undefined,
+  );
   const extrasBeside = useSyncExternalStore(subscribeModelControls, loadModelControls) === "beside";
   const [tab, setTab] = useState<"settings" | "history">("settings");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1540,35 +1553,12 @@ function AutomationEditor({
                     cwd={draft.cwd}
                     onChange={(prompt) => update("prompt", prompt)}
                     toolbarLeading={
-                      <div className="flex shrink-0 items-center gap-1">
-                        <ModelPicker
-                          harness={draft.harness}
-                          model={draft.model}
-                          values={draft.modelSettings}
-                          project={draft.cwd}
-                          onChange={(harness, model) => onChange({ ...draft, harness, model })}
-                          onSettingsChange={(modelSettings) =>
-                            update("modelSettings", modelSettings)
-                          }
-                        />
-                        {/* Chat settings "Extras summary: beside" also shows the active options here; the menu stays complete. */}
-                        {extrasBeside ? (
-                          <ModelControlPills
-                            harness={draft.harness}
-                            model={draft.model}
-                            values={draft.modelSettings}
-                            onSettingsChange={(modelSettings) =>
-                              update("modelSettings", modelSettings)
-                            }
-                          />
-                        ) : null}
-                        {draft.harness !== "fx" ? (
-                          <AccessPicker
-                            value={draft.runtimeMode}
-                            onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
-                          />
-                        ) : null}
-                      </div>
+                      <AutomationModelChoice
+                        draft={draft}
+                        onChange={onChange}
+                        routingHost={routingHost}
+                        extrasBeside={extrasBeside}
+                      />
                     }
                   />
                 </div>
@@ -1805,7 +1795,7 @@ function AutomationEditor({
                     <span className="text-right">{t("Duration")}</span>
                   </Text>
                   <Divider decorative />
-                  <ul className="divide-y divide-stroke">
+                  <ul {...surfaceAttributes({ dividers: "stroke" })}>
                     {runs.slice(0, 100).map((run) => (
                       <RunRow key={run.id} run={run} draft={draft} onOpenSession={onOpenSession} />
                     ))}

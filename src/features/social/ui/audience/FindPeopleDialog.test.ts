@@ -9,11 +9,12 @@ import {
   asClient,
   bodyText,
   buttonByText,
-  clientMock,
   clickButton,
+  clientMock,
   fieldByLabel,
   flush,
   mountHost,
+  pickOption,
   setFieldValue,
   type ClientMock,
   type MountedHost,
@@ -79,7 +80,7 @@ describe("FindPeopleDialog", () => {
     const mock = clientMock();
     renderDialog(mock);
     await flush();
-    setFieldValue(fieldByLabel("Add them to"), "");
+    pickOption("Add them to", "Only All people");
     clickButton("Find people");
     await flush();
     expect(mock.audience.collect).toHaveBeenCalledWith(
@@ -91,7 +92,7 @@ describe("FindPeopleDialog", () => {
     const mock = clientMock();
     renderDialog(mock);
     await flush();
-    setFieldValue(fieldByLabel("Where to look"), "hashtag");
+    pickOption("Where to look", "Hashtag");
     await flush();
 
     expect(buttonByText("Find people")?.disabled).toBe(true);
@@ -109,7 +110,7 @@ describe("FindPeopleDialog", () => {
     const mock = clientMock();
     renderDialog(mock);
     await flush();
-    setFieldValue(fieldByLabel("Where to look"), "account_commenters");
+    pickOption("Where to look", "Commenters on another account's posts");
     await flush();
     expect(bodyText()).toContain("Enter the account handle.");
     setFieldValue(fieldByLabel("Account handle"), "@rival");
@@ -126,7 +127,7 @@ describe("FindPeopleDialog", () => {
     const mock = clientMock();
     renderDialog(mock, { accounts: [ACCOUNT, second] });
     await flush();
-    setFieldValue(fieldByLabel("Account"), "acc2");
+    pickOption("Account", "Instagram · Studio");
     clickButton("Find people");
     await flush();
     expect(mock.audience.collect).toHaveBeenCalledWith(

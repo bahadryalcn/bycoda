@@ -10,6 +10,7 @@ import {
   clientMock,
   flush,
   mountHost,
+  pickOption,
   setFieldValue,
   type ClientMock,
   type MountedHost,
@@ -57,12 +58,12 @@ describe("SequenceEditor", () => {
 
     expect(buttonByText("Save sequence")?.disabled).toBe(true);
     setFieldValue(document.querySelector("input")!, "Spring follow-up");
-    setFieldValue(document.querySelectorAll("select")[0]!, "l1");
+    pickOption("People", "Buyers");
     await flush();
 
-    setFieldValue(document.querySelectorAll("select")[1]!, "email");
+    pickOption("Channel", "Email");
     await flush();
-    setFieldValue(document.querySelectorAll("select")[2]!, "e1");
+    pickOption("Send from", "Ops <ops@example.com>");
     await flush();
 
     expect(bodyText()).toContain("Email steps need an unsubscribe link.");
@@ -80,7 +81,7 @@ describe("SequenceEditor", () => {
     );
     await flush();
     setFieldValue(document.querySelector("input")!, "Follow-up");
-    setFieldValue(document.querySelectorAll("select")[0]!, "l1");
+    pickOption("People", "Buyers");
     await flush();
     expect(buttonByText("Save sequence")?.disabled).toBe(true);
     expect(bodyText()).toContain("Each step needs a message");

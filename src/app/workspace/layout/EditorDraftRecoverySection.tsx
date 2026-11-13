@@ -16,6 +16,7 @@ import {
 } from "../files/useEditorDraftRecovery";
 import type { EditorDraftRecoveryMetadata } from "../../../features/files/data/editorDraftRecovery";
 import { pathKey } from "../../../shared/lib/paths";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 
 export type EditorDraftRecoverySectionProps = {
   recovery: ReturnType<typeof useEditorDraftRecovery>;
@@ -121,7 +122,7 @@ export function EditorDraftRecoverySection({
       ) : null}
       <div className="recovery-body">
         {rows.length ? (
-          <ul className="divide-y divide-stroke" aria-label={t("File recovery copies")}>
+          <ul {...surfaceAttributes({ dividers: "stroke" })} aria-label={t("File recovery copies")}>
             {rows.map((row) => {
               const key = editorDraftRecoveryKey(row);
               const pending = recovery.pendingKeys.has(key);
@@ -228,7 +229,7 @@ export function EditorDraftRecoverySection({
           />
         )}
       </div>
-      <div className="recovery-footer border-t border-stroke">
+      <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "recovery-footer")}>
         <Text as="p" size="caption" tone="secondary">
           {t(
             "Open a separate unsaved file tab. The original recovery copy stays available; files are not written until you save.",

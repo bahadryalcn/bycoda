@@ -31,6 +31,8 @@ export function hostModelSource(
   const modelsFor = (harness: HarnessId) => catalog?.models[harness as RemoteProvider] ?? [];
   return {
     id,
+    // Missing account metadata on older Hosts must not select desktop credentials.
+    accounts: catalog?.accounts ?? {},
     modelsFor,
     resolve: (harness, model = "") => {
       const controls = remoteModelControls(

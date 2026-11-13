@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import "./task-ops.css";
@@ -12,7 +13,13 @@ export function SettingFrame({
   "children"
 >) {
   return (
-    <div {...props} className={["task-ops-frame", className].filter(Boolean).join(" ")}>
+    <div
+      {...props}
+      {...surfaceAttributes(
+        { frame: "card", radius: "card", dividers: "card" },
+        ["task-ops-frame", className].filter(Boolean).join(" "),
+      )}
+    >
       {children}
     </div>
   );

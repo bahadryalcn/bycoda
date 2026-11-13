@@ -174,10 +174,7 @@ export default function SegmentedControl({
                 aria-pressed={selectionRole === "pressed" ? value === option.value : undefined}
                 tabIndex={index === tabStop ? 0 : -1}
                 disabled={option.disabled}
-                aria-label={
-                  option.tooltip ??
-                  (option.iconOnly && option.icon != null ? option.label : undefined)
-                }
+                aria-label={option.label}
                 onClick={() => onValueChange(option.value)}
                 onKeyDown={onKeyDown}
                 onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}

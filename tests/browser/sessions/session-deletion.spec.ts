@@ -9,19 +9,23 @@ for (const theme of ["light", "dark"]) {
       const row = page.locator("[data-session-delete-status]");
       await expect(row).toHaveCount(1);
       await expect(page.locator("[data-session-deletion-detail]")).toHaveCount(0);
-      const title = row.locator(".truncate");
+      const title = row.getByText(
+        "A long conversation title that must wrap while conversation data is being removed",
+        { exact: true },
+      );
       const counter = row.getByText("8/10", { exact: true });
       await expect(counter).toBeVisible();
       const trash = row.locator("svg").last();
-      const geometry = await row.evaluate((element) => {
-        const title = element.querySelector<HTMLElement>(".truncate")!;
-        return {
+      const geometry = {
+        ...(await row.evaluate((element) => ({
           overflow: element.scrollWidth > element.clientWidth,
-          clippedTitle: title.scrollWidth > title.clientWidth,
-          whiteSpace: getComputedStyle(title).whiteSpace,
           height: element.getBoundingClientRect().height,
-        };
-      });
+        }))),
+        ...(await title.evaluate((element) => ({
+          clippedTitle: element.scrollWidth > element.clientWidth,
+          whiteSpace: getComputedStyle(element).whiteSpace,
+        }))),
+      };
       expect(geometry.overflow).toBe(false);
       expect(geometry.clippedTitle).toBe(true);
       expect(geometry.whiteSpace).toBe("nowrap");

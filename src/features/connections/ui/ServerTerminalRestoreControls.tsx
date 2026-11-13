@@ -12,6 +12,7 @@ import {
   useServerTerminalRestoreState,
 } from "../model/serverTerminalRestoreState";
 import type { ServerTerminalRestoreTab } from "../model/serverTerminalRestore";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ServerTerminalRestorePreview } from "./ServerTerminalRestorePreview";
 
 function PendingServerTabs({
@@ -86,7 +87,7 @@ export function ServerTerminalRestoreControls({
       size="caption"
       tone="inherit"
       aria-label={t("Saved SSH tabs")}
-      className="shrink-0 border-t border-stroke px-3"
+      {...surfaceAttributes({ frame: "stroke", edge: "top" }, "shrink-0 px-3")}
     >
       <SectionLabel
         collapsible

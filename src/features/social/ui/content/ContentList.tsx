@@ -4,17 +4,22 @@ import { ClampText } from "../../../../shared/ui/ClampText";
 import { Text } from "../../../../shared/ui/Text";
 import { formatDate, t } from "../../../../shared/i18n";
 import { Badge } from "../../../../shared/ui/Badge";
-import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { Button } from "../../../../shared/ui/Button";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { NativeSelect } from "../../../../shared/ui/Select";
+import { Select } from "../../../../shared/ui/Select";
 import type { SocialAccount, SocialCampaign, SocialJob } from "../../model/social";
 import type { SocialProgram } from "../../model/socialProgram";
 import { PlatformMark } from "../common/PlatformIcon";
-import type { StatusTextStatus } from "../common/StatusText";
-import { ContentStateBadge } from "./ContentStatus";
+import { ContentStateBadge, type ContentState } from "./ContentStatus";
 
-export type ContentListStatus = "all" | "draft" | "scheduled" | "sent" | "failed" | "review";
+export type ContentListStatus =
+  | "all"
+  | "draft"
+  | "scheduled"
+  | "sent"
+  | "failed"
+  | "cancelled"
+  | "review";
 
 export type ContentListProps = {
   campaigns: SocialCampaign[];
@@ -29,10 +34,7 @@ export type ContentListProps = {
 };
 
 /** The campaign's state in one word: its newest job, or Draft / Paused when it has none. */
-export function campaignState(
-  campaign: SocialCampaign,
-  jobs: SocialJob[],
-): StatusTextStatus | "draft" | "paused" {
+export function campaignState(campaign: SocialCampaign, jobs: SocialJob[]): ContentState {
   const latest = jobs
     .filter((job) => job.campaignId === campaign.id && job.kind === "publish")
     .sort((a, b) => b.scheduledAt - a.scheduledAt)[0];
@@ -51,9 +53,11 @@ function matchesStatus(state: string, filter: ContentListStatus): boolean {
     case "sent":
       return state === "succeeded";
     case "failed":
-      return state === "failed" || state === "cancelled";
+      return state === "failed";
+    case "cancelled":
+      return state === "cancelled";
     case "review":
-      return state === "review";
+      return state === "review" || state === "needs_human" || state === "delivery";
   }
 }
 
@@ -79,34 +83,57 @@ export function ContentList({
   return (
     <div className="content-list">
       <div className="content-list-filters">
-        <NativeSelect
-          aria-label={t("Account")}
-          value={accountFilter}
-          onChange={(event) => onAccountFilter(event.target.value)}
-        >
-          <option value="">{t("All accounts")}</option>
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name}
-            </option>
-          ))}
-        </NativeSelect>
-        <NativeSelect
-          aria-label={t("Status")}
-          value={statusFilter}
-          onChange={(event) => onStatusFilter(event.target.value as ContentListStatus)}
-        >
-          <option value="all">{t("All statuses")}</option>
-          <option value="draft">{t("Draft")}</option>
-          <option value="scheduled">{t("Scheduled")}</option>
-          <option value="sent">{t("Sent")}</option>
-          <option value="failed">{t("Failed")}</option>
-          <option value="review">{t("Needs review")}</option>
-        </NativeSelect>
+        <div className="content-list-filter">
+          <Select
+            fieldVariant="compact"
+            label={t("Account")}
+            hideLabel
+            value={accountFilter}
+            options={[
+              { value: "", label: t("All accounts") },
+              ...accounts.map((account) => ({
+                value: account.id,
+                label: account.name,
+                icon: <PlatformMark platform={account.platform} size="xs" />,
+              })),
+            ]}
+            onValueChange={onAccountFilter}
+          />
+        </div>
+        <div className="content-list-filter">
+          <Select
+            fieldVariant="compact"
+            label={t("Status")}
+            hideLabel
+            value={statusFilter}
+            options={[
+              { value: "all", label: t("All statuses") },
+              { value: "draft", label: t("Draft") },
+              { value: "scheduled", label: t("Scheduled") },
+              { value: "sent", label: t("Sent") },
+              { value: "failed", label: t("Failed") },
+              { value: "cancelled", label: t("Cancelled") },
+              { value: "review", label: t("Needs review") },
+            ]}
+            onValueChange={(value) => onStatusFilter(value as ContentListStatus)}
+          />
+        </div>
+        {accountFilter || statusFilter !== "all" ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onAccountFilter("");
+              onStatusFilter("all");
+            }}
+          >
+            {t("Clear filters")}
+          </Button>
+        ) : null}
       </div>
       {rows.length ? (
         <ul {...surfaceAttributes({ frame: "pane", edge: "all", radius: "card" }, "content-rows")}>
-          {rows.map(({ campaign, state }) => {
+          {rows.map(({ campaign, state }, index) => {
             const platforms = [
               ...new Set(
                 campaign.variants
@@ -123,9 +150,18 @@ export function ContentList({
             const at = first?.scheduledAt;
             const preview = first?.text.trim();
             return (
-              <ActionHost key={campaign.id} as="li" className="content-row-host">
+              <li
+                key={campaign.id}
+                {...surfaceAttributes(
+                  index ? { frame: "pane", edge: "block-start" } : {},
+                  "content-row-host",
+                )}
+              >
                 <Button
                   variant="item"
+                  layout="stacked"
+                  fullWidth
+                  align="start"
                   size="sm"
                   className="content-row"
                   data-action-primary=""
@@ -147,6 +183,15 @@ export function ContentList({
                       >
                         {campaign.name}
                       </Text>
+                      <Text size="caption" tone="muted" truncate>
+                        {campaign.variants
+                          .map(
+                            (variant) =>
+                              accounts.find((account) => account.id === variant.accountId)?.name,
+                          )
+                          .filter(Boolean)
+                          .join(", ")}
+                      </Text>
                       {preview ? (
                         <ClampText
                           as="span"
@@ -161,27 +206,22 @@ export function ContentList({
                         </ClampText>
                       ) : null}
                     </span>
-                    <Text
-                      size="caption"
-                      tone="secondary"
-                      leading="inherit"
-                      className="content-row-meta"
-                    >
+                    <span className="content-row-meta">
                       {at ? (
-                        <span className="content-row-time">
+                        <Text size="caption" tone="secondary" className="content-row-time">
                           {formatDate(at, {
                             day: "numeric",
                             month: "short",
                             hour: "2-digit",
                             minute: "2-digit",
                           })}
-                        </span>
+                        </Text>
                       ) : null}
                       <ContentStateBadge state={state} />
-                    </Text>
+                    </span>
                   </span>
                 </Button>
-              </ActionHost>
+              </li>
             );
           })}
         </ul>
@@ -191,6 +231,18 @@ export function ContentList({
           kind="filtered"
           className="content-platform-note"
           description={t("No posts match these filters.")}
+          action={
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                onAccountFilter("");
+                onStatusFilter("all");
+              }}
+            >
+              {t("Clear filters")}
+            </Button>
+          }
         />
       )}
       {programs.length ? (

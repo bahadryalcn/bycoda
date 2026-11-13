@@ -4,6 +4,7 @@ import { OPEN_NOTE_LIBRARY_EVENT } from "../../../features/notes/noteNavigation"
 import { OPEN_CREWS_PAGE_EVENT, setCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 import { OPEN_USAGE_GUIDE_EVENT } from "../../../features/onboarding/model/usageGuide";
 import { START_TOUR_EVENT } from "../../../features/onboarding/model/tourState";
+import { subscribeInboxItemRequests } from "../../../features/inbox/public/workItemMentions";
 
 export interface SurfaceOpenersDeps {
   projectCwd: string;
@@ -90,6 +91,9 @@ export function useSurfaceOpeners({
       setInboxViewOpen(true);
     });
   }, []);
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- store listener for chat work-item chips; the Inbox view takes the request on mount.
+  useEffect(() => subscribeInboxItemRequests(() => void onOpenInbox()), [onOpenInbox]);
 
   const onLeaveInbox = useCallback(() => {
     setInboxViewOpen(false);

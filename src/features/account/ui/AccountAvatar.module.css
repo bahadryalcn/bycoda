@@ -5,8 +5,6 @@
   place-items: center;
   inline-size: 1.5rem;
   block-size: 1.5rem;
-  border-radius: 50%;
-  background: var(--ui-fill-subtle);
 }
 
 .root[data-size="lg"] {
@@ -14,16 +12,11 @@
   block-size: 3.5rem;
 }
 
-.root[data-signed-in="true"] {
-  background: var(--ui-tone-accent-solid);
-}
-
 .face {
   display: grid;
   place-items: center;
   inline-size: 100%;
   block-size: 100%;
-  border-radius: inherit;
   overflow: hidden;
 }
 
@@ -40,5 +33,4 @@
   display: grid;
   place-items: center;
   padding: 0.125rem;
-  border-radius: 50%;
 }

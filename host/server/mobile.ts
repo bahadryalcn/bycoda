@@ -17,6 +17,7 @@ export function createMobileRuntime(
     | "mcpHub"
     | "social"
     | "conversationAccess"
+    | "conversationDelegation"
     | "runtimeLogAccess"
     | "runtimeLogs"
     | "refreshLogSources"
@@ -89,6 +90,7 @@ export function createMobileRuntime(
     store: dependencies.engine.store,
     social: dependencies.social,
     conversationAccess: dependencies.conversationAccess,
+    isDelegationChild: (sessionId) => dependencies.conversationDelegation.isChild(sessionId),
     runtimeLogAccess: dependencies.runtimeLogAccess,
     runtimeLogs: dependencies.runtimeLogs,
     refreshLogSources: dependencies.refreshLogSources,

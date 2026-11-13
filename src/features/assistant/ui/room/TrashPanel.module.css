@@ -19,10 +19,6 @@
 .row {
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 0;
-}
-.row + .row {
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 .text {
   display: flex;

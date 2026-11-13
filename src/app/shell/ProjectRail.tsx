@@ -1,9 +1,11 @@
+import { AddProjectButton } from "./AddProjectButton";
+import { actionContentAttributes } from "../../shared/ui/ActionHost";
+import { Divider } from "../../shared/ui/Divider";
 import { Text } from "../../shared/ui/Text";
 import { Badge } from "../../shared/ui/Badge";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { InlineError } from "../../shared/ui/InlineError";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
-import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
@@ -23,7 +25,6 @@ import {
 } from "../../features/projects/model/projectSelection";
 import {
   AlertCircle,
-  Archive,
   Globe,
   BellOff,
   Check,
@@ -44,7 +45,6 @@ import {
   File,
   FileDiff,
   StickyNote,
-  Plus,
   Sparkles,
   Zap,
   DashboardSquare,
@@ -157,9 +157,6 @@ import type { SettingsSectionId } from "../../features/settings/model/settings";
 import { InboxNotificationMenu } from "./sidebarSurfaces";
 import { useProjectNotificationPreferences } from "../../features/notifications/hooks/useProjectNotificationPreferences";
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
-import { OPEN_REMOTE_PROJECT_EVENT } from "../../features/connections/model/connections";
-import { OPEN_CODE_WORKSPACE_EVENT } from "../../features/projects/model/codeWorkspace";
-import { OPEN_SESSION_IMPORT_EVENT } from "../../features/sessions/import/importModel";
 import {
   useRemoteMachineOnline,
   useRemoteMachines,
@@ -203,6 +200,7 @@ import {
 } from "./useRailSections";
 import { commitProjectRailOrder, useProjectRailData } from "./useProjectRailData";
 import { useRetainedWhileClosing } from "./useRetainedWhileClosing";
+import { surfaceAttributes } from "../../shared/ui/Surface";
 
 /** Dismissal key for the Projects section shown open for the active project. */
 const PROJECTS_REVEAL_ID = "section:projects";
@@ -938,7 +936,7 @@ export function ProjectRail({
           />
           <div
             hidden={rail.folded || rail.collapsed.groups}
-            className={`flex-col gap-px px-2 ${rail.folded || rail.collapsed.groups ? "hidden" : "flex"}`}
+            className={`flex-col gap-0.5 px-2 ${rail.folded || rail.collapsed.groups ? "hidden" : "flex"}`}
           >
             {groupedProjectSections.grouped
               .filter((entry) => !entry.parentId)
@@ -1040,7 +1038,10 @@ export function ProjectRail({
       data-side-pane="rail"
       data-usage-guide="project-navigation"
       aria-label={t("Projects")}
-      className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-(--ui-pane-border) pe-1.5 ${visible ? "flex" : "hidden"}`}
+      {...surfaceAttributes(
+        { frame: "pane", edge: "right" },
+        `bycoda-project-rail sidebar-glass relative shrink-0 flex-col pe-1.5 ${visible ? "flex" : "hidden"}`,
+      )}
     >
       {groupMutationError && (
         <InlineError>{t("Could not add projects to the group. Please try again.")}</InlineError>
@@ -1236,7 +1237,7 @@ export function ProjectRail({
                   lockOverscroll(el);
                   scrollRef.current = el;
                 }}
-                className={`bycoda-project-ledger flex flex-1 flex-col overflow-y-auto overscroll-none pb-2 ${navigator ? "min-h-0" : "min-h-32 [@container_rail_(max-height:640px)]:flex-none [@container_rail_(max-height:640px)]:overflow-y-visible"}`}
+                className={`@max-[140px]/rail:[--control-padding-inline:0px] @max-[140px]/rail:[--control-padding-start:0px] @max-[140px]/rail:[--control-padding-end:0px] bycoda-project-ledger flex flex-1 flex-col overflow-y-auto overscroll-none pb-2 ${navigator ? "min-h-0" : "min-h-32 [@container_rail_(max-height:640px)]:flex-none [@container_rail_(max-height:640px)]:overflow-y-visible"}`}
               >
                 {/* The popup has one scroll owner: its live summary scrolls with the list. */}
                 {navigator ? <div className="bycoda-rail-status">{liveStatus}</div> : null}
@@ -1394,7 +1395,7 @@ function ProjectSection({
       ) : null}
       <div
         hidden={drag.folded || collapsed}
-        className={`flex-col gap-px px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
+        className={`flex-col gap-0.5 px-2 ${drag.folded || collapsed ? "hidden" : "flex"}`}
       >
         {items.map((item) => (
           <ProjectCard
@@ -1789,9 +1790,12 @@ function ProjectGroupSection({
   return (
     <div
       ref={(el) => sortableGroups.setItemRef(group.id, el)}
-      className={`reorder-item rail-reorder-block project-group-section shrink-0 overflow-hidden rounded-md ${
-        showBody ? "mb-1.5" : ""
-      }`}
+      {...surfaceAttributes(
+        { radius: "row" },
+        `reorder-item rail-reorder-block project-group-section shrink-0 overflow-hidden ${
+          showBody ? "mb-1.5" : ""
+        }`,
+      )}
       data-project-group={group.id}
       data-workspace-root={workspaceRoot ?? undefined}
       data-folded={folded || undefined}
@@ -1799,12 +1803,18 @@ function ProjectGroupSection({
       aria-label={group.name}
     >
       <ActionHost
+        controlHeight="compact"
+        padding={{ inline: "md" }}
         selected={workspaceSelected}
         hoverReveal
         tone="primary"
         data-group-row
         data-group-overview-open={overviewOpen || undefined}
-        className={`project-reorder-item group relative flex h-(--ui-control-height-compact) items-stretch rounded-md px-2 @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
+        interactionOpen={overviewOpen}
+        {...surfaceAttributes(
+          { radius: "row" },
+          `project-reorder-item group relative flex items-stretch ${RAIL_DRAG_HANDLE}`,
+        )}
         ground={railBackgroundColor(headerBackground)}
         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
         onPointerDown={(event) => {
@@ -1847,14 +1857,15 @@ function ProjectGroupSection({
           tooltip={group.name}
           tooltipDetails={[locked ? t("Locked") : countLabel]}
           onClick={onToggleCollapsed}
-          className="size-6 shrink-0 @max-[140px]/rail:flex-1"
+          iconTarget="compact"
+          className="shrink-0 @max-[140px]/rail:flex-1"
         >
           <div className="grid size-4 shrink-0 place-items-center">
             {collapsed ? (
               <>
                 <span
                   data-group-mascot
-                  className="grid size-4 place-items-center group-hover:hidden group-has-[button:focus-visible]:hidden"
+                  {...actionContentAttributes({ phase: "rest" }, "grid size-4 place-items-center")}
                 >
                   <ProjectMascot
                     project={group.id}
@@ -1865,7 +1876,7 @@ function ProjectGroupSection({
                 </span>
                 <ChevronRight
                   data-group-chevron
-                  className="icon-sm hidden group-hover:block group-has-[button:focus-visible]:block"
+                  {...actionContentAttributes({ phase: "interaction" }, "icon-sm")}
                   strokeWidth={1.75}
                 />
               </>
@@ -1895,7 +1906,8 @@ function ProjectGroupSection({
               onClick={() => onSelect(workspaceRoot)}
               size="sm"
               // With its 1px border, this starts the name where a plain group's `ps-1` label does.
-              className="min-w-8 flex-1 justify-start ps-1 text-left"
+              padding={{ start: "xs" }}
+              className="min-w-8 flex-1 justify-start text-left"
             >
               <Text
                 as="span"
@@ -1930,7 +1942,10 @@ function ProjectGroupSection({
                 data-group-workspace-mark
                 size="inherit"
                 tone="secondary"
-                className="grid size-4 shrink-0 place-items-center @max-[200px]/rail:hidden"
+                {...actionContentAttributes(
+                  { phase: "rest" },
+                  "grid size-4 shrink-0 place-items-center @max-[200px]/rail:hidden @min-[200px]/group-section:[--action-rest-active-display:grid]",
+                )}
               >
                 <FolderTree className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
               </Text>
@@ -1960,7 +1975,10 @@ function ProjectGroupSection({
               variant="count"
               size="xs"
               data-group-git
-              className="my-auto shrink-0 @max-[140px]/rail:hidden"
+              {...actionContentAttributes(
+                { phase: "rest" },
+                "my-auto shrink-0 @max-[140px]/rail:hidden",
+              )}
             >
               {gitSummary.dirty}
             </Badge>
@@ -1968,7 +1986,10 @@ function ProjectGroupSection({
         ) : null}
         <div
           data-group-actions
-          className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden!"
+          {...actionContentAttributes(
+            { phase: "interaction", display: "flex" },
+            "my-auto shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden!",
+          )}
         >
           <div data-action-slot="collapse" className="flex items-center gap-0.5">
             {group.workspaceFile && !locked && !linkStatus ? (
@@ -2088,9 +2109,21 @@ function ProjectGroupSection({
             <div
               data-project-group-items
               // Members sit indented under the header, on a guide line below its chevron.
-              className="relative flex flex-col gap-0 p-1 ps-5 before:absolute before:inset-y-1 before:start-5 before:w-px before:bg-(--ui-pane-border) @max-[140px]/rail:ps-1 @max-[140px]/rail:before:hidden"
-              style={{ backgroundColor: railBackgroundColor(bodyBackground) }}
+              {...surfaceAttributes(
+                { variant: "user-color" },
+                "relative flex flex-col gap-0 p-1 ps-5 @max-[140px]/rail:ps-1",
+              )}
+              style={
+                {
+                  "--surface-user-color": railBackgroundColor(bodyBackground),
+                } as React.CSSProperties
+              }
             >
+              <Divider
+                orientation="vertical"
+                decorative
+                className="pointer-events-none absolute inset-y-1 start-5 @max-[140px]/rail:hidden"
+              />
               {members.map(({ kind, id }) => {
                 const item = itemByPath.get(id);
                 if (kind === "group" || !item) return children?.(id, sortable);
@@ -2237,6 +2270,8 @@ function ProjectCard({
 
   return (
     <ActionHost
+      controlHeight="compact"
+      padding={{ inline: "md" }}
       ref={(el) => sortable.setItemRef(item.path, el)}
       selected={selected || multiSelected}
       hoverReveal
@@ -2246,7 +2281,10 @@ function ProjectCard({
       data-project-working={busy || undefined}
       data-multi-selected={multiSelected || undefined}
       data-project-row=""
-      className="reorder-item project-reorder-item group relative flex h-(--ui-control-height-compact) cursor-default touch-none items-stretch rounded-md px-2 @max-[140px]/rail:px-0"
+      {...surfaceAttributes(
+        { radius: "row" },
+        "reorder-item project-reorder-item group relative flex cursor-default touch-none items-stretch",
+      )}
       onPointerDown={(event) => {
         if (multi?.active || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.button !== 0) return;
@@ -2338,11 +2376,19 @@ function ProjectCard({
         onFocus={focusHint ? undefined : (event) => event.preventDefault()}
         aria-label={cardAriaLabel}
         aria-current={selected ? "true" : undefined}
-        className={`project-card-primary flex min-w-0 flex-1 cursor-default items-center gap-2 border-0 ps-1 text-left ${showReconnect ? "pe-7" : "pe-0"} @max-[140px]/rail:justify-center @max-[140px]/rail:px-0!`}
+        padding={{ start: "xs", end: "none" }}
+        reserveEndAction={showReconnect ? "inline" : !change ? "interaction" : undefined}
+        {...surfaceAttributes(
+          { frame: "none" },
+          "project-card-primary flex min-w-0 flex-1 cursor-default items-center gap-2 text-left @max-[140px]/rail:justify-center",
+        )}
       >
         <div
           data-project-pinnable={!multi?.active && !!onTogglePin ? "" : undefined}
-          className="project-card-logo grid size-4 shrink-0 place-items-center @max-[140px]/rail:opacity-100!"
+          {...actionContentAttributes(
+            { phase: !multi?.active && !!onTogglePin ? "rest" : "always", hide: "opacity" },
+            "project-card-logo grid size-4 shrink-0 place-items-center @max-[140px]/rail:opacity-100!",
+          )}
         >
           {logoPath && !busy ? (
             <ProjectLogoIcon
@@ -2429,7 +2475,10 @@ function ProjectCard({
           ) : null}
           {change ? (
             <span
-              className="project-card-stats shrink-0 @max-[140px]/rail:hidden!"
+              {...actionContentAttributes(
+                { phase: "rest", hide: "opacity" },
+                "project-card-stats shrink-0 @max-[140px]/rail:hidden!",
+              )}
               data-project-git=""
               data-git-bucket={detailBucket ?? undefined}
             >
@@ -2660,73 +2709,6 @@ function ProjectGitChangeMark({ change }: { change: ProjectGitChange }) {
           </Badge>
         ) : null}
       </Text>
-    </>
-  );
-}
-
-/** Adds a folder on this computer, or one on a connected machine. */
-function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
-  const t = useT();
-  const anchor = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <InlineAction
-        reveal="always"
-        label={t("Open project")}
-        motion="none"
-        ref={anchor}
-        type="button"
-        data-no-drag
-        aria-label={t("Open project")}
-        data-usage-guide="project-add"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="shrink-0"
-      >
-        <Plus className="icon-sm" strokeWidth={1.75} />
-      </InlineAction>
-      {open ? (
-        <DropdownMenu
-          anchor={anchor}
-          label={t("Open project")}
-          align="start"
-          width={290}
-          returnFocusRef={anchor}
-          onClose={() => setOpen(false)}
-          onPick={(id) => {
-            if (id === "folder") onOpenFolder();
-            else window.dispatchEvent(new Event(id));
-          }}
-          items={[
-            {
-              kind: "item",
-              id: "folder",
-              label: t("Open folder…"),
-              icon: <FolderPlus className="icon-sm" />,
-            },
-            {
-              kind: "item",
-              id: OPEN_CODE_WORKSPACE_EVENT,
-              label: t("Open VS Code workspace…"),
-              icon: <FolderPlus className="icon-sm" />,
-            },
-            {
-              kind: "item",
-              id: OPEN_REMOTE_PROJECT_EVENT,
-              label: t("Open folder on a machine…"),
-              icon: <Internet className="icon-sm" />,
-            },
-            {
-              kind: "item",
-              id: OPEN_SESSION_IMPORT_EVENT,
-              label: t("Import Claude Code / Codex sessions…"),
-              icon: <Archive className="icon-sm" />,
-            },
-          ]}
-        />
-      ) : null}
     </>
   );
 }

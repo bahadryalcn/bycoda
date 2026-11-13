@@ -902,7 +902,8 @@ export function ToolsWorkspace({
       <div className="tools-workspace-main">{children}</div>
       {panes.length || roomPane ? (
         <div
-          style={{ display: visiblePanes.length || roomPane ? "contents" : "none" }}
+          className="tools-workspace-dock"
+          data-visible={!!visiblePanes.length || !!roomPane}
           aria-hidden={!visiblePanes.length && !roomPane}
         >
           <ToolDock
@@ -921,7 +922,10 @@ export function ToolsWorkspace({
                 >
                   <PaneHeader
                     as="header"
-                    className="tools-workspace-toolbar"
+                    {...surfaceAttributes(
+                      { variant: "workspace-panel" },
+                      "tools-workspace-toolbar",
+                    )}
                     icon={<Wrench className="icon-sm" aria-hidden />}
                     titleAs="div"
                     title={t("Browser")}
@@ -959,12 +963,16 @@ export function ToolsWorkspace({
                     "tools-workspace-pane",
                   )}
                   key={pane.id}
-                  style={{ display: visiblePanes.includes(pane) ? undefined : "none" }}
+                  data-visible={visiblePanes.includes(pane)}
                   aria-hidden={!visiblePanes.includes(pane)}
                 >
                   <PaneHeader
                     as="header"
-                    className="tools-workspace-toolbar"
+                    bordered={false}
+                    {...surfaceAttributes(
+                      { variant: "workspace-panel" },
+                      "tools-workspace-toolbar",
+                    )}
                     icon={<Wrench className="icon-sm" aria-hidden />}
                     titleAs="div"
                     title={pane.onlyTab ? t("Logs") : t("Conversation tools")}

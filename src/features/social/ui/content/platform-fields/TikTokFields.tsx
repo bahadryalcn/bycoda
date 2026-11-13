@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
 import { Text } from "../../../../../shared/ui/Text";
 import { t } from "../../../../../shared/i18n";
@@ -35,7 +36,11 @@ export function TikTokFields({ value, media, disabled, creator, onChange }: Plat
     { key: "allowStitch", label: t("Allow stitches"), blocked: creator?.stitchDisabled },
   ];
   return (
-    <FieldGroup legend={t("TikTok")} className="content-platform" disabled={locked}>
+    <FieldGroup
+      legend={t("TikTok")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "content-platform")}
+      disabled={locked}
+    >
       {!creator ? (
         <LoadingText delay={false} className="content-platform-note">
           {t("Loading your TikTok options…")}

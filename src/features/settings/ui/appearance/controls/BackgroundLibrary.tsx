@@ -1,3 +1,7 @@
+import {
+  actionContentAttributes,
+  actionContentScopeAttributes,
+} from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { useEffect, useRef } from "react";
@@ -80,11 +84,12 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
           {images.map((image) => {
             const generated = image.source === "generated";
             return (
-              <li key={image.id} className={styles.item}>
+              <li key={image.id} {...actionContentScopeAttributes(styles.item)}>
                 <Button
                   variant="item"
-                  className={styles.tile}
+                  {...surfaceAttributes({ variant: "selected", radius: "row" }, styles.tile)}
                   selected={image.id === currentId}
+                  selectionIndicator="accent-ring"
                   aria-label={generated ? t("Generated image") : t("Added image")}
                   tooltip={image.prompt ?? undefined}
                   onClick={() => apply(image)}
@@ -106,7 +111,10 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   iconOnly
                   size="sm"
                   variant="ghost"
-                  className={styles.remove}
+                  {...actionContentAttributes(
+                    { phase: "interaction", hide: "opacity", focus: "within", touch: "preserve" },
+                    styles.remove,
+                  )}
                   label={t("Delete image")}
                   onClick={() => remove(image)}
                 >

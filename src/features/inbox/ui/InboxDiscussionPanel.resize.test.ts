@@ -10,11 +10,13 @@ let container: HTMLDivElement | undefined;
 afterEach(async () => {
   if (root) await act(async () => root!.unmount());
   container?.remove();
+  localStorage.removeItem("bycoda.session-panel.width");
   vi.unstubAllGlobals();
 });
 it("resizes the Ask panel with keyboard bounds and default reset", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("innerWidth", 1440);
+  localStorage.setItem("bycoda.session-panel.width", "680");
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -43,6 +45,7 @@ it("resizes the Ask panel with keyboard bounds and default reset", async () => {
     expect(pane.style.width).toBe(`${expected}px`);
     expect(separator.getAttribute("aria-valuenow")).toBe(String(expected));
   };
+  expect(separator.getAttribute("aria-valuenow")).toBe("440");
   expect(separator.getAttribute("aria-valuemin")).toBe("360");
   expect(separator.getAttribute("aria-valuemax")).toBe("790");
   await press("Home", 360);
@@ -50,4 +53,5 @@ it("resizes the Ask panel with keyboard bounds and default reset", async () => {
   await press("Enter", 440);
   await press("ArrowLeft", 450);
   await press("ArrowRight", 440);
+  expect(localStorage.getItem("bycoda.session-panel.width")).toBe("680");
 });

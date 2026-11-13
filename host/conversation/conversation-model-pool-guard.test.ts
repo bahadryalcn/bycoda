@@ -5,7 +5,7 @@ import {
 } from "../../src/shared/model/voiceToolScope";
 import { VOICE_CAPABILITY_COVERAGE } from "../voice/voice-capability-coverage";
 import { CONVERSATION_TOOLS } from "./conversation-tools";
-import { assertPoolExecution } from "./conversation-model-pool-guard";
+import { assertPoolExecution, assertPoolModel } from "./conversation-model-pool-guard";
 import { callModelPoolTool } from "./conversation-model-pool-source";
 
 const row = (over: Record<string, unknown>) => ({
@@ -50,4 +50,11 @@ it("lists the pool for the voice model in both voice scopes", async () => {
     ["b", "high", "work"],
   ]);
   await expect(callModelPoolTool("models.pool.list", { x: 1 }, async () => pool)).rejects.toThrow();
+});
+
+it("guards membership in the main order without role or quota filtering", () => {
+  const order = { rows: [row({ roles: ["reply"], unknownLimit: "skip" })] };
+  expect(assertPoolExecution(undefined, order).model).toBe("gpt");
+  expect(() => assertPoolModel({ harness: "codex", model: "gpt" }, order)).not.toThrow();
+  expect(() => assertPoolModel({ harness: "claude", model: "gpt" }, order)).toThrow();
 });

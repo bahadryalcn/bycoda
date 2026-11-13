@@ -2,7 +2,10 @@ import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import type { AssistantProfilePatch } from "../../../../shared/model/host-contracts/assistant";
 import { Button } from "../../../../shared/ui/Button";
+import { Check, Square, X } from "../../../../shared/ui/icons";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../../shared/ui/Modal";
+import { Select } from "../../../../shared/ui/Select";
 import { canRunHarnessTextPrompt } from "../../../../integrations/harness";
 import {
   defaultTextActionChoice,
@@ -12,8 +15,7 @@ import { BuilderInterview } from "./BuilderInterview";
 import { BuilderModelStep } from "./BuilderModelStep";
 import { BuilderPreview } from "./BuilderPreview";
 import { useAssistantInterview } from "./useAssistantInterview";
-
-type Stage = "model" | "interview";
+import styles from "./AssistantBuilder.module.css";
 
 /**
  * "Create with AI": choose a text model, answer its interview questions, review the proposed
@@ -25,28 +27,26 @@ export function AssistantBuilderDialog({
   onApply,
   onClose,
 }: {
-  /** The caller's draft now: the model skips what is decided and the preview compares against it. */
+  /** The caller's draft provides context and the preview compares against it. */
   current: AssistantProfilePatch;
   onApply: (patch: AssistantProfilePatch) => void;
   onClose: () => void;
 }) {
   const [choice, setChoice] = useState<TranslationChoice>(defaultTextActionChoice);
-  const [stage, setStage] = useState<Stage>("model");
   /** The typed, unsent answer; kept across Back so it is never lost. */
   const [answer, setAnswer] = useState("");
   const interview = useAssistantInterview(choice, current);
   const available = canRunHarnessTextPrompt(choice.harness);
   const { proposal } = interview;
+  const canFinish =
+    interview.transcript.some((turn) => turn.role === "owner") || Boolean(answer.trim());
 
   function close() {
     interview.cancel();
     onClose();
   }
-  function start() {
-    setStage("interview");
-    if (interview.transcript.length === 0) interview.begin();
-  }
   function finish() {
+    if (!available || interview.busy || !canFinish) return;
     const text = answer.trim();
     setAnswer("");
     interview.finish(text);
@@ -57,50 +57,39 @@ export function AssistantBuilderDialog({
     <Modal
       title={title}
       onClose={close}
-      size="md"
+      size="lg"
       fitViewport
-      initialFocus={stage === "interview" && !proposal ? "input, textarea" : undefined}
+      initialFocus={!proposal ? "textarea" : undefined}
       footer={
-        proposal ? undefined : stage === "model" ? (
-          <ModalActions>
-            <Button variant="ghost" type="button" onClick={close}>
-              {t("Cancel")}
-            </Button>
-            <Button
-              variant="primary"
-              type="button"
-              disabled={!available}
-              disabledReason={
-                available
-                  ? undefined
-                  : t("Choose a model that supports text actions to create an assistant.")
-              }
-              onClick={start}
-            >
-              {interview.transcript.length > 0 ? t("Continue") : t("Start")}
-            </Button>
-          </ModalActions>
-        ) : (
+        proposal ? undefined : (
           <ModalActions>
             <Button
               variant="ghost"
               type="button"
-              onClick={() => {
-                interview.cancel();
-                setStage("model");
-              }}
+              startIcon={<X className="icon-sm" />}
+              onClick={close}
             >
-              {t("Back")}
+              {t("Cancel")}
             </Button>
-            <Button
-              variant="primary"
-              type="button"
-              loading={interview.busy}
-              loadingLabel={t("Working…")}
-              onClick={finish}
-            >
-              {t("Finish and show preview")}
-            </Button>
+            {interview.busy ? (
+              <Button
+                type="button"
+                startIcon={<Square className="icon-sm" />}
+                onClick={interview.cancel}
+              >
+                {t("Stop waiting")}
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                type="button"
+                startIcon={<Check className="icon-sm" />}
+                disabled={!canFinish || !available || interview.failure !== null}
+                onClick={finish}
+              >
+                {t("Finish and show preview")}
+              </Button>
+            )}
           </ModalActions>
         )
       }
@@ -115,19 +104,54 @@ export function AssistantBuilderDialog({
             onClose();
           }}
         />
-      ) : stage === "model" ? (
-        <BuilderModelStep choice={choice} onChange={setChoice} />
       ) : (
-        <BuilderInterview
-          transcript={interview.transcript}
-          options={interview.options}
-          busy={interview.busy}
-          failure={interview.failure}
-          draft={answer}
-          onDraftChange={setAnswer}
-          onAnswer={interview.answer}
-          onRetry={interview.retry}
-        />
+        <div className={styles.stage}>
+          {!available && (
+            <InlineMessage tone="warning">
+              {t("Choose a model that supports text actions to create an assistant.")}
+            </InlineMessage>
+          )}
+          <BuilderInterview
+            controls={
+              <div className={styles.interviewControls}>
+                <Select
+                  label={t("Language")}
+                  hideLabel
+                  fieldSize="sm"
+                  value={interview.language}
+                  disabled={interview.busy}
+                  onValueChange={interview.setLanguage}
+                  options={[
+                    { value: "tr-TR", label: "Türkçe" },
+                    { value: "en-US", label: "English" },
+                    { value: "de-DE", label: "Deutsch" },
+                    { value: "fr-FR", label: "Français" },
+                    { value: "es-ES", label: "Español" },
+                    { value: "pt-PT", label: "Português" },
+                    { value: "zh-CN", label: "简体中文" },
+                    { value: "ja-JP", label: "日本語" },
+                  ]}
+                />
+                <BuilderModelStep
+                  choice={choice}
+                  onChange={(next) => {
+                    interview.cancel();
+                    setChoice(next);
+                  }}
+                />
+              </div>
+            }
+            transcript={interview.transcript}
+            options={interview.options}
+            busy={interview.busy}
+            failure={interview.failure}
+            draft={answer}
+            onDraftChange={setAnswer}
+            onAnswer={interview.answer}
+            onRetry={interview.retry}
+            disabled={!available}
+          />
+        </div>
       )}
     </Modal>
   );

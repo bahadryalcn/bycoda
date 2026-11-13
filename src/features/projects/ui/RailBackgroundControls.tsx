@@ -38,10 +38,10 @@ function ColorSwatchButton({
         <span
           aria-hidden="true"
           {...surfaceAttributes(
-            { frame: "pane", edge: "all" },
+            { frame: "pane", edge: "all", variant: "user-color" },
             "block icon-md rounded-(--ui-radius-control) border-(--ui-pane-border)",
           )}
-          style={{ background: value }}
+          style={{ "--surface-user-color": value } as React.CSSProperties}
         />
       </Button>
       {open ? (
@@ -79,7 +79,7 @@ export function RailBackgroundControls({
   const t = useT();
   const parts = group ? (["header", "body"] as const) : (["header"] as const);
   return (
-    <div className="flex flex-col gap-1 border-t border-(--ui-pane-border) pt-2">
+    <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "flex flex-col gap-1 pt-2")}>
       <SectionLabel variant="menu" as="div">
         {t("Background colors")}
       </SectionLabel>

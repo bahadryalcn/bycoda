@@ -1,3 +1,4 @@
+import { SkillAdvancedDialog } from "./SkillAdvancedDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
@@ -12,7 +13,6 @@ import { useSkillGroupView, startSkillDrag } from "./useSkillGroupView";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
-import { Modal } from "../../../shared/ui/Modal";
 import { SkillList } from "./SkillList";
 import { TextField } from "../../../shared/ui/TextField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -29,7 +29,7 @@ import type { EditorView } from "@codemirror/view";
 import styles from "./SkillsPage.module.css";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { RefreshCw, X } from "../../../shared/ui/icons";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -64,7 +64,7 @@ import { remoteProjectMachines } from "../../connections/model/localSync";
 import { machineFailure } from "../model/skillMachineFailure";
 import { cachedMachineSkills, listMachineSkills } from "../model/machineSkills";
 import { canDeleteSkill } from "../model/deleteSkill";
-import { Segmented, Toggle } from "../../settings/ui/settingsControls";
+import { RevealedSetting, Segmented, Toggle } from "../../settings/ui/settingsControls";
 import { cacheSkillPolicy, cachedSkillPolicy } from "../model/skillPreferences";
 import {
   parseSkillPolicy,
@@ -83,13 +83,27 @@ import {
   type SkillMachine as Machine,
 } from "../model/skillLibrary";
 
-export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode }): ReactNode {
+export function SkillsPage({
+  cwd,
+  header,
+  revealRequest,
+}: {
+  cwd: string;
+  header?: ReactNode;
+  revealRequest?: number;
+}): ReactNode {
   useLocale();
   const skillGroups = useSkillGroups();
   const groupView = useSkillGroupView();
   const [groupEdit, setGroupEdit] = useState<GroupEdit | null>(null);
   const [groupError, setGroupError] = useState<string | null>(null);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const revealed = useContext(RevealedSetting);
+  const [advancedOpen, setAdvancedOpen] = useState(revealed === "skill-folders");
+  const [lastReveal, setLastReveal] = useState({ id: revealed, request: revealRequest });
+  if (lastReveal.id !== revealed || lastReveal.request !== revealRequest) {
+    setLastReveal({ id: revealed, request: revealRequest });
+    if (revealed === "skill-folders") setAdvancedOpen(true);
+  }
   const previewId = useId();
   const previewOpener = useRef<string | null>(null);
   const previewButtons = useRef(new Map<string, HTMLButtonElement>());
@@ -852,7 +866,10 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         />
       ) : null}
       <section
-        {...surfaceAttributes({ variant: "workspace-panel" }, styles.library)}
+        {...surfaceAttributes(
+          { variant: "workspace-panel", frame: "pane", edge: "responsive-end" },
+          styles.library,
+        )}
         aria-label={t("Skills")}
       >
         <header className={styles.libraryHeader}>
@@ -981,42 +998,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           </Button>
         </footer>
       </section>
-      {advancedOpen ? (
-        <Modal
-          title={t("Advanced: skill controls and folders")}
-          size="md"
-          onClose={() => setAdvancedOpen(false)}
-        >
-          <Text
-            as="p"
-            size="secondary"
-            leading="relaxed"
-            id="setting-skill-folders"
-            data-setting-id="skill-folders"
-            tabIndex={-1}
-            className={styles.message}
-          >
-            {t(
-              "Disabled skills stay on disk. {p0} blocks their names across all sources on the selected machine, including search, reads and explicit invocations. Project skills live in {p1}, personal skills in {p2}; harness folders are also included.",
-              {
-                p0: PRODUCT_IDENTITY.displayName,
-                p1: ".agents/skills",
-                p2: "~/.agents/skills",
-              },
-            )}
-          </Text>
-          <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
-            {t(
-              "Changes apply to subsequent turns. Running turns and previously loaded context cannot be erased. Enabling in bycoda does not override provider restrictions.",
-            )}
-          </Text>
-          <Text as="p" size="secondary" leading="relaxed" className={styles.message}>
-            {t(
-              "Native skill controls: Codex, Claude, OpenCode, Pi and OMP. Cursor, Grok, FX, Hermes, Antigravity and generic ACP receive current restrictions as instructions; their native skill loading cannot be controlled individually through the connected protocol.",
-            )}
-          </Text>
-        </Modal>
-      ) : null}
+      {advancedOpen ? <SkillAdvancedDialog onClose={() => setAdvancedOpen(false)} /> : null}
       <div className={styles.workspace}>
         {previewSkill && shownCopy ? (
           <aside id={previewId} aria-label={t("Skill preview")} className={styles.detail}>
@@ -1206,7 +1188,10 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                   ) : editingSource || split ? (
                     <div className={split ? styles.split : styles.editPane}>
                       <section
-                        className={styles.rawPane}
+                        {...surfaceAttributes(
+                          split ? { frame: "stroke", edge: "responsive-end" } : {},
+                          styles.rawPane,
+                        )}
                         aria-label={editable ? t("Skill instructions") : t("Source")}
                       >
                         {editable ? (

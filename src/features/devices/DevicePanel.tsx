@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../shared/ui/Surface";
@@ -1083,7 +1084,10 @@ function DevicePanelSurface({
     >
       {error && (
         <Disclosure
-          className="device-panel-error"
+          {...surfaceAttributes(
+            { frame: "danger", edge: "bottom", tone: "danger" },
+            "device-panel-error",
+          )}
           role="alert"
           size="sm"
           summary={
@@ -1103,7 +1107,7 @@ function DevicePanelSurface({
         </Disclosure>
       )}
       {!status && !error && (
-        <LoadingText size="caption" leading="inherit" className="device-panel-state">
+        <LoadingText size="caption" leading="inherit" className="px-4 py-5">
           {t("Checking device support…")}
         </LoadingText>
       )}
@@ -1228,8 +1232,13 @@ function DevicePanelSurface({
           >
             <div className="device-panel-viewport">
               <div
-                className="device-panel-canvas"
-                style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }}
+                className="device-panel-canvas [width:var(--layout-width)] [height:var(--layout-height)]"
+                style={
+                  {
+                    "--layout-width": `${zoom * 100}%`,
+                    "--layout-height": `${zoom * 100}%`,
+                  } as CSSProperties
+                }
               >
                 {annotating && draft ? (
                   <ImageAnnotationCanvas
@@ -1495,14 +1504,24 @@ function DevicePanelSurface({
                 axis="both"
                 scrollbar="hidden"
                 {...surfaceAttributes(
-                  { frame: "pane", edge: "all", radius: "pill", variant: "floating" },
+                  {
+                    frame: "pane",
+                    edge: "all",
+                    radius: "pill",
+                    variant: "floating",
+                    elevation: "floating",
+                  },
                   "device-panel-toolbar device-panel-rail",
                 )}
                 role="toolbar"
                 aria-orientation="vertical"
                 aria-label={t("Device actions")}
               >
-                <div className="device-panel-group" role="group" aria-label={t("Control")}>
+                <div
+                  {...surfaceAttributes({ separator: "pane-block" }, "device-panel-group")}
+                  role="group"
+                  aria-label={t("Control")}
+                >
                   <Button
                     variant="ghost"
                     iconOnly
@@ -1607,6 +1626,7 @@ function DevicePanelSurface({
                   </Button>
                 </div>
                 <Button
+                  {...surfaceAttributes({ separator: "pane-block" })}
                   variant="ghost"
                   iconOnly
                   tooltipSide="left"
@@ -1628,7 +1648,11 @@ function DevicePanelSurface({
                 >
                   <CursorMagicSelection className="icon-sm" aria-hidden />
                 </Button>
-                <div className="device-panel-group" role="group" aria-label={t("Mark")}>
+                <div
+                  {...surfaceAttributes({ separator: "pane-block" }, "device-panel-group")}
+                  role="group"
+                  aria-label={t("Mark")}
+                >
                   <Button
                     variant="ghost"
                     iconOnly
@@ -1655,7 +1679,11 @@ function DevicePanelSurface({
                     </Button>
                   ) : null}
                 </div>
-                <div className="device-panel-group" role="group" aria-label={t("View")}>
+                <div
+                  {...surfaceAttributes({ separator: "pane-block" }, "device-panel-group")}
+                  role="group"
+                  aria-label={t("View")}
+                >
                   <Button
                     variant="ghost"
                     iconOnly
@@ -1700,7 +1728,10 @@ function DevicePanelSurface({
                   size="micro"
                   tone="primary"
                   leading="inherit"
-                  className="device-panel-frame-state"
+                  {...surfaceAttributes(
+                    { variant: "floating", frame: "pane", radius: "pill", elevation: "floating" },
+                    "device-panel-frame-state",
+                  )}
                 >
                   {annotating
                     ? t("Marking · Frozen frame")
@@ -1716,7 +1747,13 @@ function DevicePanelSurface({
             {annotating && draft && (
               <div
                 {...surfaceAttributes(
-                  { variant: "floating", frame: "pane", edge: "all", radius: "pill" },
+                  {
+                    variant: "floating",
+                    frame: "pane",
+                    edge: "all",
+                    radius: "pill",
+                    elevation: "floating",
+                  },
                   "device-panel-mark-tools",
                 )}
               >
@@ -2038,7 +2075,10 @@ function DevicePanelSurface({
               {!inspection || inspection.supported === false ? (
                 <p>{t("This device does not provide a structured accessibility tree.")}</p>
               ) : (
-                <div className="device-panel-nodes" aria-label={t("Accessibility nodes")}>
+                <div
+                  {...surfaceAttributes({ frame: "stroke", edge: "block" }, "device-panel-nodes")}
+                  aria-label={t("Accessibility nodes")}
+                >
                   {filteredNodes.length ? (
                     filteredNodes.slice(0, 500).map((value, index) => (
                       <Button

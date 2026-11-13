@@ -19,7 +19,13 @@ vi.mock("../../model/crewActive", () => ({
 vi.mock("../../model/crewClient", () => ({
   useProjectCrews: () => ({
     isSuccess: true,
-    data: { machine: { id: "host" }, project: { id: "p" }, definitions: [], runs: [] },
+    data: {
+      modelPoolsSupported: true,
+      machine: { id: "host" },
+      project: { id: "p" },
+      definitions: [],
+      runs: [],
+    },
   }),
 }));
 vi.mock("../../model/crewActiveTarget", () => ({
@@ -127,4 +133,9 @@ it("honors a landing request for the Work tab of one crew", () => {
   expect(worked).toHaveBeenLastCalledWith(
     expect.objectContaining({ definitionId: "d9", initialRunId: "r9" }),
   );
+});
+
+it("keeps model management out of the Crews tabs on routing-aware Hosts", () => {
+  mount();
+  expect(tabs()).not.toContain("Models");
 });

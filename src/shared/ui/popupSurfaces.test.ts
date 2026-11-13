@@ -11,7 +11,7 @@ import {
   PopupBackdrop,
   nativePopupFrameClassName,
 } from "./NativePopupHost";
-import { Popover } from "./Popover";
+import { NativePopover, Popover, useNativePopoverHost } from "./Popover";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -192,6 +192,37 @@ it("renders native-window choices through the same row and label components", as
   } finally {
     host.remove();
   }
+});
+
+it("hosts native popover children and clears the owner ref", async () => {
+  let host: HTMLDivElement | null = null;
+  function Content() {
+    const native = useNativePopoverHost();
+    return createElement(Popover, {
+      anchor: null,
+      onDismiss: vi.fn(),
+      children: createElement("span", { "data-native-child": native }, "Native choices"),
+    });
+  }
+  await act(async () =>
+    root.render(
+      createElement(NativePopover, {
+        ref: (node: HTMLDivElement | null) => {
+          host = node;
+        },
+        maxHeight: 520,
+        children: createElement(Content),
+      }),
+    ),
+  );
+  expect(host).toBe(container.firstElementChild);
+  expect(container.querySelector('[data-native-child="true"]')?.textContent).toBe("Native choices");
+  expect(container.querySelectorAll("[data-popover-flow]")).toHaveLength(1);
+  expect(
+    container.querySelector('[style*="--native-popup-max-height"]')?.getAttribute("style"),
+  ).toContain("520px");
+  await act(async () => root.render(null));
+  expect(host).toBeNull();
 });
 
 it("shares native frame/backdrop and reports bounded outer dimensions on mount and resize", async () => {

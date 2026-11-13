@@ -2,6 +2,24 @@ import { test, expect, type Page } from "@playwright/test";
 const shots = "temp/verification/2026-10-25-crew-management-v2";
 
 for (const theme of ["light", "dark"] as const) {
+  for (const width of [800, 1280]) {
+    test(`member library collection visual ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/crews/crews.html?groupRetry&theme=${theme}`);
+      await openCrewsTab(page, "Members");
+      const collection = page.locator(".settings-collection").first();
+      await expect(collection).toBeVisible();
+      await expect(collection).toHaveCSS("border-top-width", "0px");
+      await expect(collection).toHaveCSS("border-top-left-radius", "7px");
+      await collection.screenshot({
+        path: `temp/verification/settings-collection-finish/crew-library-${theme}-${width}.png`,
+      });
+    });
+  }
+}
+
+for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
     test(`rail heading remains readable and independently collapsible ${theme} ${width}`, async ({
       page,
@@ -1425,3 +1443,214 @@ for (const theme of ["light", "dark"] as const) {
     });
   }
 }
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [800, 1280]) {
+    test(`visual callers crews ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(90_000);
+      page.setDefaultTimeout(10_000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const shot = async (state: string) =>
+        page.screenshot({
+          path: `temp/verification/visual-callers-crews/${state}-${theme}-${width}.png`,
+        });
+      await page.goto(`/tests/browser/crews/crews.html?rich&theme=${theme}`);
+      await openCrewsTab(page, "Members");
+      await expect(page.locator(".settings-collection").first()).toBeVisible();
+      await shot("library");
+      await editCrew(page);
+      const dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      await expect(dialog.getByRole("checkbox", { name: "Select all", exact: true })).toBeVisible();
+      await expect(dialog.getByText("All changes saved", { exact: true })).toBeVisible();
+      await shot("editor");
+      await dialog.getByRole("button", { name: /^UI/ }).click();
+      const member = dialog.getByRole("textbox", { name: "Member name", exact: true });
+      await expect(member).toBeVisible();
+      await member.scrollIntoViewIfNeeded();
+      await shot("member-identity");
+      await dialog
+        .getByRole("textbox", { name: "Instructions", exact: true })
+        .scrollIntoViewIfNeeded();
+      await shot("member-form");
+      const performance = dialog.locator("summary").filter({ hasText: /^Performance$/ });
+      await performance.click();
+      await expect(dialog.getByText("Could not load performance", { exact: true })).toBeVisible();
+      const error = dialog.getByRole("alert").filter({ hasText: "Could not load performance" });
+      await expect(error).toHaveCount(1);
+      await expect(error.locator("svg")).toHaveCount(1);
+      await error.getByRole("button", { name: "Retry", exact: true }).click();
+      await expect(error).toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (
+                window as unknown as { crewFixtureOperations: string[] }
+              ).crewFixtureOperations.filter((method) => method === "crews.inspect").length,
+          ),
+        )
+        .toBe(2);
+      await shot("performance-error");
+      await dialog
+        .getByRole("button", { name: /^Codex GPT/ })
+        .last()
+        .scrollIntoViewIfNeeded();
+      await shot("member-model");
+      const advanced = dialog
+        .locator("summary")
+        .filter({ hasText: /^Advanced$/ })
+        .last();
+      if (!(await advanced.evaluate((node) => node.closest("details")?.open)))
+        await advanced.click();
+      await dialog.getByRole("button", { name: "Crew icon and color", exact: true }).click();
+      await expect(
+        page.getByRole("dialog", { name: "Crew icon and color", exact: true }),
+      ).toBeVisible();
+      await shot("appearance");
+      await page.keyboard.press("Escape");
+      await dialog.getByRole("button", { name: "Add members", exact: true }).click();
+      await expect(dialog.getByRole("tablist", { name: "Add from", exact: true })).toBeVisible();
+      await shot("member-picker");
+      await page.goto(`/tests/browser/crews/crews.html?rich&multiple&theme=${theme}`);
+      const work = await openWork(page);
+      const composer = work.getByRole("textbox", { name: /Message/ }).first();
+      await expect(composer).toBeVisible();
+      await composer.scrollIntoViewIfNeeded();
+      await shot("owner-actions");
+      await page.goto(`/tests/browser/crews/crews.html?rich&multiple&theme=${theme}`);
+      const content = await openCrewsTab(page, "Work");
+      await content.getByRole("radio", { name: "Finished", exact: true }).click();
+      await content.getByRole("button", { name: /^Audit landing page/ }).click();
+      const summary = content.getByRole("region", { name: "Work summary", exact: true });
+      await expect(summary).toBeVisible();
+      await summary.scrollIntoViewIfNeeded();
+      await shot("work-summary");
+    });
+  }
+}
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [800, 1280]) {
+    test(`visual callers crews feedback ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(90_000);
+      page.setDefaultTimeout(10_000);
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const shot = async (state: string) =>
+        page.screenshot({
+          path: `temp/verification/visual-callers-crews/${state}-${theme}-${width}.png`,
+        });
+      await page.goto(`/tests/browser/crews/crews.html?longRoster&saveError&theme=${theme}`);
+      await editCrew(page);
+      let dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      const search = dialog.getByRole("textbox", {
+        name: "Search members by name, role, model or group",
+        exact: true,
+      });
+      await search.fill("unmatched-fixture-member");
+      await expect(dialog.getByText("No matching members.", { exact: true })).toHaveCount(4);
+      await expect(dialog.getByText("No matching members.", { exact: true }).first()).toBeVisible();
+      await shot("roster-empty");
+      await dialog
+        .getByRole("textbox", { name: "Crew name", exact: true })
+        .fill("Fixture draft preserved");
+      await expect(
+        dialog.getByText("The Host rejected this crew: storage is read-only right now."),
+      ).toBeVisible();
+      await expect(dialog.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+      await shot("footer-error");
+      await page.goto(`/tests/browser/crews/crews.html?library=empty&theme=${theme}`);
+      await editCrew(page);
+      dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      await dialog.getByRole("button", { name: "Add members", exact: true }).click();
+      await dialog.getByRole("tab", { name: /^Library/ }).click();
+      await expect(dialog.getByText("Your member library is empty", { exact: true })).toBeVisible();
+      await shot("picker-empty");
+      await page.goto(`/tests/browser/crews/crews.html?failOperation=crews.request&theme=${theme}`);
+      const work = await openWork(page);
+      await work.getByRole("textbox", { name: "Message", exact: true }).fill("Fixture owner note");
+      await work.getByRole("button", { name: "Send", exact: true }).click();
+      await expect(
+        work.getByText("The Host could not complete this action. Try again in a moment."),
+      ).toBeVisible();
+      await expect(work.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+        "Fixture owner note",
+      );
+      await shot("owner-error");
+    });
+  }
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`shared static consumers ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/crews/crews.html?shared-static-fixture&theme=${theme}`);
+      const faces = page.getByRole("img").first();
+      await expect(faces).toBeVisible();
+      const dot = page.locator("[data-account-color]");
+      await expect(dot).toHaveCSS("width", "8px");
+      await page.screenshot({
+        path: `temp/verification/2026-10-25-crew-management-v2/shared-static-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`shared settings boundaries ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/crews/crews.html?shared-settings-fixture&theme=${theme}`);
+      const first = page.getByText("Fixture agent A", { exact: true });
+      const second = page.getByText("Fixture agent B", { exact: true });
+      await expect(first).toBeVisible();
+      await expect(second).toBeVisible();
+      for (const node of [first, second])
+        await expect(node.locator("../..")).toHaveCSS("border-bottom-width", "1px");
+      const scan = page.getByRole("button", { name: "Scan with these settings" });
+      await expect(scan).toBeEnabled();
+      await expect(scan.locator("../..")).toHaveCSS("border-top-width", "1px");
+      await page.screenshot({
+        path: `temp/verification/2026-10-25-crew-management-v2/shared-settings-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+      await scan.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `temp/verification/2026-10-25-crew-management-v2/shared-scan-${theme}-${width}.png`,
+        animations: "disabled",
+      });
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`current crew work list ground ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/crews/crews.html?manyRuns&theme=${theme}`);
+      await page
+        .getByRole("region", { name: "Crew work", exact: true })
+        .getByRole("button", { name: "Manage", exact: true })
+        .click();
+      const dialog = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      const nav = dialog.getByRole("navigation", { name: "Crew work", exact: true });
+      const list = nav.getByRole("list", { name: "Work list", exact: true });
+      await expect(list).toBeVisible();
+      await expect(nav).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      expect(await list.getByRole("listitem").count()).toBeGreaterThan(2);
+      await page.screenshot({
+        path: `temp/verification/crew-work-current/list-${theme}-${width}.png`,
+      });
+      const item = list.getByRole("button", { name: /^Work item 3/ });
+      await item.click();
+      await expect(dialog.locator('[data-crew-run="many-2"]')).toBeVisible();
+      if (!(await list.isVisible()))
+        await dialog.getByRole("button", { name: "Back to work list", exact: true }).click();
+      await expect(item).toHaveAttribute("aria-pressed", "true");
+      await page.screenshot({
+        path: `temp/verification/crew-work-current/selected-${theme}-${width}.png`,
+      });
+    });
+  }

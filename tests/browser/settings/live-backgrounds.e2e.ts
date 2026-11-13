@@ -220,3 +220,28 @@ for (const effect of ambientEffects) {
     expect((await canvas.screenshot()).equals(still)).toBe(true);
   });
 }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`scene strip visual ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/settings/settings.html?section=appearance&lang=en");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await page
+        .getByRole("tablist", { name: "Appearance", exact: true })
+        .getByRole("tab", { name: "Background", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: /Animated scene that moves behind the workspace/ })
+        .click();
+      const picker = page.getByRole("radiogroup", { name: "Live background scene", exact: true });
+      await expect(picker).toBeVisible();
+      await expect(picker.getByRole("radio")).toHaveCount(sceneChoices.length);
+      await page.screenshot({
+        path: `temp/verification/component-families/scene-strip-${theme}-${width}.png`,
+      });
+    });

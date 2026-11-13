@@ -8,7 +8,6 @@
 
 .layer {
   position: relative;
-  border: 1px solid var(--ui-settings-group-border);
   overflow: hidden;
 }
 
@@ -97,7 +96,6 @@
 
 .content {
   padding: 0.75rem 0.875rem 0.875rem;
-  border-top: 1px solid var(--ui-settings-group-border);
   min-width: 0;
 }
 
@@ -122,19 +120,12 @@
 
 .content
   :global(.settings-group[data-settings-variant][data-settings-layout] > .settings-group-content) {
-  border: 0;
   padding: 0;
-  background: transparent;
   min-width: 0;
 }
 
 .content :global(.settings-row) {
   padding: 8px 0;
-  border: 0;
-}
-
-.content :global(.settings-row:hover) {
-  background: transparent;
 }
 
 .content :global(.settings-group-content > .settings-feedback) {

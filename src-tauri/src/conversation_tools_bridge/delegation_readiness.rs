@@ -1,57 +1,27 @@
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::io::Read;
-use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::AppHandle;
 
-// Reuse credentials, never readiness. Initialize still revalidates session authority every turn.
-type ProbeGrant = (String, String, Value);
-fn probe_grants() -> &'static Mutex<HashMap<String, ProbeGrant>> {
-    static GRANTS: OnceLock<Mutex<HashMap<String, ProbeGrant>>> = OnceLock::new();
-    GRANTS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Fresh scoped initialize, off the UI thread. Metadata cannot prove session authority.
-pub(super) fn delegation_bridge_ready(app: &AppHandle, session: &str) -> bool {
-    if crate::session_tools_bridge::optional_host_deadline().is_none() {
+/// Probe the same broker route and capability supplied to the provider spawn.
+/// Missing, revoked and replaced routes fail closed; readiness never issues grants.
+pub(super) fn delegation_bridge_ready(_app: &AppHandle, session: &str) -> bool {
+    let Some(grant) = crate::session_tools_bridge::conversation_grant(session) else {
         return false;
-    }
-    let deadline = std::time::Instant::now() + Duration::from_millis(1_000);
+    };
     let check = || -> Result<bool, String> {
-        let service = crate::remote::NativeServiceChannel::connect_until(app, Some(deadline))?;
-        let cached = probe_grants()
-            .lock()
-            .map_err(|_| "Probe credentials unavailable")?
-            .get(session)
-            .filter(|(endpoint, environment, _)| {
-                endpoint == service.endpoint() && environment == service.environment_id()
-            })
-            .map(|(_, _, grant)| grant.clone());
-        let grant = if let Some(grant) = cached {
-            grant
-        } else {
-            service.project_until(
-                "conversation.access.issue",
-                json!({"sessionId": session}),
-                deadline,
-                |value| Ok(value.clone()),
-            )?
-        };
-        let token = grant["token"].as_str().ok_or("Missing scoped credential")?;
-        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-        if remaining.is_zero() {
-            return Ok(false);
-        }
         let response = ureq::AgentBuilder::new()
             .redirects(0)
-            .timeout(remaining)
+            .timeout(Duration::from_millis(1_000))
             .build()
             .post(&format!(
                 "{}/mcp/conversation",
-                service.endpoint().trim_end_matches('/')
+                grant["endpoint"].as_str().unwrap()
             ))
-            .set("Authorization", &format!("Bearer {token}"))
+            .set(
+                "Authorization",
+                &format!("Bearer {}", grant["token"].as_str().unwrap()),
+            )
             .set("Content-Type", "application/json")
             .set("Accept", "application/json, text/event-stream")
             .send_string(
@@ -63,39 +33,17 @@ pub(super) fn delegation_bridge_ready(app: &AppHandle, session: &str) -> bool {
             )
             .map_err(|_| "Conversation initialize unavailable")?;
         let mut body = String::new();
-        std::io::Read::read_to_string(&mut response.into_reader().take(65_536), &mut body)
+        response
+            .into_reader()
+            .take(65_536)
+            .read_to_string(&mut body)
             .map_err(|_| "Conversation initialize interrupted")?;
         let value: Value =
             serde_json::from_str(&body).map_err(|_| "Invalid initialize response")?;
-        service.check()?;
-        let ready = initialized(&value);
-        if ready {
-            let mut grants = probe_grants()
-                .lock()
-                .map_err(|_| "Probe credentials unavailable")?;
-            if grants.len() >= 256 && !grants.contains_key(session) {
-                if let Some(key) = grants.keys().next().cloned() {
-                    grants.remove(&key);
-                }
-            }
-            grants.insert(
-                session.to_owned(),
-                (
-                    service.endpoint().to_owned(),
-                    service.environment_id().to_owned(),
-                    grant,
-                ),
-            );
-        }
-        Ok(ready)
+        Ok(initialized(&value)
+            && crate::session_tools_bridge::conversation_grant(session).as_ref() == Some(&grant))
     };
-    let ready = check().unwrap_or(false);
-    if !ready {
-        if let Ok(mut grants) = probe_grants().lock() {
-            grants.remove(session);
-        }
-    }
-    ready
+    check().unwrap_or(false)
 }
 
 fn initialized(value: &Value) -> bool {

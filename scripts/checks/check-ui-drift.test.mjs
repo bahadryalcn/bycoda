@@ -77,6 +77,24 @@ test("flags token drift but keeps defined, inline-set and Arc-rooted variables",
   );
 });
 
+test("control sizing reads the control class, not JSX supplied through another prop", () => {
+  const file = "src/features/demo/Choice.tsx";
+  assert.ok(
+    !rulesOf(file, '<Select options={[{ icon: <Choice className="size-4" /> }]} />').includes(
+      "fixed-control-size",
+    ),
+  );
+  assert.ok(
+    rulesOf(
+      file,
+      '<Select options={[{ icon: <Choice className="icon-sm" /> }]} className="h-8" />',
+    ).includes("fixed-control-size"),
+  );
+  assert.ok(
+    rulesOf(file, '<Select className={wide ? "h-8" : "h-7"} />').includes("fixed-control-size"),
+  );
+});
+
 test("JSX attribute rules read the whole opening tag", () => {
   const tsx = [
     '<Button\n  title={t("Save")}\n  className="h-7"\n/>',
@@ -351,7 +369,7 @@ test("component families enforce wrapper imports including aliases and lazy modu
     'export { X } from "../../shared/ui/arc/menu";',
     'const module = import("@/shared/ui/arc/menu");',
     'import { NativePopupHost } from "../../shared/ui/NativePopupHost";',
-    'import { openNativeContextMenu } from "../../shared/lib/nativeContextMenu";',
+    'import { popupNativeActionMenu } from "../../shared/ui/nativeActionMenu";',
   ])
     assert.ok(rulesOf("src/features/demo/View.tsx", text).includes("ui-wrapper-import"), text);
   assert.ok(
@@ -363,6 +381,33 @@ test("component families enforce wrapper imports including aliases and lazy modu
     !rulesOf("src/features/demo/View.tsx", 'import { Select } from "@/shared/ui/Select";').includes(
       "ui-wrapper-import",
     ),
+  );
+});
+
+test("shared component implementations may compose Arc from nested folders", () => {
+  for (const file of [
+    "src/shared/ui/date-time/PickerShell.tsx",
+    "src/shared/ui/picker/PickerList.tsx",
+  ])
+    assert.ok(
+      !rulesOf(file, 'import { SelectTrigger } from "../arc/select/select";').includes(
+        "ui-wrapper-import",
+      ),
+    );
+  assert.ok(
+    rulesOf(
+      "src/features/demo/ui/PickerShell.tsx",
+      'import { SelectTrigger } from "@/shared/ui/arc/select/select";',
+    ).includes("ui-wrapper-import"),
+  );
+});
+
+test("bootstrap native context-menu guard is not a rendered menu primitive", () => {
+  assert.ok(
+    !rulesOf(
+      "src/main.tsx",
+      'import { installNativeContextMenuGuard } from "./shared/lib/nativeContextMenu";',
+    ).includes("ui-wrapper-import"),
   );
 });
 
@@ -392,6 +437,23 @@ test("floating surfaces have one placement owner and semantic popups use wrapper
   );
 });
 
+test("canonical shared dialog, sheet, media and toast owners may place their own portals", () => {
+  for (const name of ["Modal", "Sheet", "ImageLightbox", "ToastRegion"])
+    assert.ok(
+      !rulesOf(
+        `src/shared/ui/${name}.tsx`,
+        'createPortal(<div className="fixed" />, document.body)',
+      ).includes("portal-outside-shared"),
+      name,
+    );
+  assert.ok(
+    rulesOf(
+      "src/shared/ui/TransientNotice.tsx",
+      'createPortal(<div className="fixed" />, document.body)',
+    ).includes("portal-outside-shared"),
+  );
+});
+
 test("hand-written loading and native tooltips name shared replacements", () => {
   for (const animation of [
     "animate-spin",
@@ -409,6 +471,12 @@ test("hand-written loading and native tooltips name shared replacements", () => 
       rulesOf("src/features/demo/View.tsx", `<${tag} title={name} />`).includes("native-title"),
     );
   assert.ok(!rulesOf("src/features/demo/View.tsx", '<span title="" />').includes("native-title"));
+  assert.ok(
+    !rulesOf("src/features/demo/View.tsx", '<iframe title="HTML preview" />').includes(
+      "native-title",
+    ),
+    "iframe title provides its accessible name, not a hover tooltip",
+  );
   assert.ok(
     !rulesOf("src/features/demo/View.tsx", '<SectionHeader title="Settings" />').includes(
       "native-title",

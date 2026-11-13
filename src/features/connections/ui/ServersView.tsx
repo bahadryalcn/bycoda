@@ -418,7 +418,12 @@ export function ServersView({
           </Text>
         </ToolHeader>
       </PaneHeader>
-      <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
+      <div
+        {...surfaceAttributes(
+          { frame: "stroke", edge: "bottom" },
+          "flex flex-wrap items-center gap-2 px-3 py-2",
+        )}
+      >
         <div className="servers-search-actions flex min-w-0 basis-64 flex-1 items-center gap-2">
           {showCollectionTools ? (
             <>
@@ -482,7 +487,7 @@ export function ServersView({
                       checked={favoritesOnly}
                       onCheckedChange={setFavoritesOnly}
                     />
-                    <div className="border-t border-stroke pt-3">
+                    <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pt-3")}>
                       <Switch
                         label={t("Recently used first")}
                         checked={recentFirst}
@@ -778,7 +783,12 @@ export function ServersView({
               aria-label={t("Server details")}
               className="flex min-h-0 min-w-0 flex-col"
             >
-              <div className="flex min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-4 py-3">
+              <div
+                {...surfaceAttributes(
+                  { frame: "stroke", edge: "bottom" },
+                  "flex min-w-0 shrink-0 items-center gap-2 px-4 py-3",
+                )}
+              >
                 <Server aria-hidden className="icon-md shrink-0" tone="muted" />
                 <OverflowTooltip label={selected.name}>
                   <Heading size="section" truncate className="min-w-0 flex-1">

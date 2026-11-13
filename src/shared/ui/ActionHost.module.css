@@ -13,6 +13,10 @@
     border-radius: var(--ui-control-radius);
   }
 
+  .host[data-control-height="compact"] {
+    block-size: var(--ui-control-height-compact);
+  }
+
   /* The row's own ink and size, the same roles as Text. They live in the components layer
      so a caller's utility (group-hover, state classes) still wins over them. */
   .host[data-tone="secondary"] {
@@ -83,6 +87,15 @@
   --action-host-selected: linear-gradient(var(--ui-surface-selected), var(--ui-surface-selected));
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
+.host[data-variant="floating"] {
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-popup);
+  background-color: var(--ui-surface-floating);
+  box-shadow: var(--ui-elevation-floating);
+}
+.host[data-variant="row"] {
+  border-radius: var(--ui-radius-card);
+}
 /* A saved custom colour is the resting ground. States are solid layers painted above
    it as background images, so neither an inline colour nor the ground can mask them. */
 .host[data-ground] {
@@ -95,7 +108,11 @@
     background-image: var(--action-host-hover);
   }
 }
-.host:has(:focus-visible) {
+.host:is(:focus-visible, :has(:focus-visible)) {
+  background-image: var(--action-host-hover);
+}
+/* Sortable hosts retain the shared hover cue while lifted away from the pointer. */
+.host[data-dragging] {
   background-image: var(--action-host-hover);
 }
 .host[data-selected] {
@@ -105,7 +122,10 @@
    inline action, or on a control that opts out of the row (data-no-drag), belongs to
    that control and leaves the row as it was. Touch and keyboard activation set :active
    on the pressed control, so they follow the same rule. */
-.host:active:not(:has([data-action-inline]:active, [data-no-drag]:active)) {
+.host:not([data-variant="settings"]):not([data-press-feedback="false"]):is(
+    :active,
+    [data-pressed]
+  ):not(:has([data-action-inline]:active, [data-no-drag]:active)) {
   background-image: var(--action-host-pressed);
 }
 
@@ -207,5 +227,438 @@
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
   :global([data-action-host]) :global([data-action-yield]) {
     transition: none;
+  }
+}
+
+@layer components {
+  .host[data-control-height="fill"] {
+    block-size: 100%;
+  }
+  .host[data-control-min-height="compact"] {
+    min-block-size: var(--ui-control-height-compact);
+  }
+  .host[data-control-min-height="control"] {
+    min-block-size: var(--ui-control-height);
+  }
+  .host[data-control-min-height="large"] {
+    min-block-size: var(--ui-control-height-lg);
+  }
+}
+
+/* Compound settings rows own hover and keyboard containment, while each child retains its own press and fill. */
+.host[data-variant="settings"] {
+  border-radius: 0;
+  background: transparent;
+}
+.host[data-variant="settings"][data-separator] + .host[data-variant="settings"][data-separator] {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.host[data-variant="settings"]:focus-within {
+  background: var(--ui-settings-row-hover);
+  background-image: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  .host[data-variant="settings"]:hover {
+    background: var(--ui-settings-row-hover);
+    background-image: none;
+  }
+}
+/* Keep clipped interaction controls in the keyboard order. display:none would remove a Tab candidate during the blur/focus handoff. */
+.content[data-action-content="interaction"] {
+  display: block;
+  inline-size: 0;
+  max-inline-size: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.content[data-action-content="interaction"][data-action-display="flex"] {
+  display: flex;
+}
+.content[data-action-content="interaction"][data-action-display="inline-flex"] {
+  display: inline-flex;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="interaction"] {
+  inline-size: revert-layer;
+  max-inline-size: none;
+  overflow: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="interaction"][data-action-display="contents"] {
+  display: contents;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="rest"][data-action-hide="visibility"],
+.content[data-action-content="rest"][data-action-hide="visibility"][data-action-hidden] {
+  visibility: hidden;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="rest"][data-action-hide="opacity"],
+.content[data-action-content="rest"][data-action-hide="opacity"][data-action-hidden] {
+  opacity: 0;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="rest"][data-action-hide="display"],
+.content[data-action-content="rest"][data-action-hide="display"][data-action-hidden] {
+  display: var(--action-rest-active-display, none);
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="rest"][data-action-hide="screen-reader"] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-interaction-tone="primary"],
+.host[data-interaction-tone="primary"]:is(:hover, :focus-visible, :has(:focus-visible)) {
+  color: var(--color-content);
+}
+.content[data-action-content="interaction"][data-action-hide="corner"] {
+  inline-size: revert-layer;
+  max-inline-size: none;
+  overflow: visible;
+  clip-path: inset(50%);
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    clip-path 0s var(--motion-duration-fast);
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="interaction"][data-action-hide="corner"] {
+  clip-path: none;
+  transition-delay: var(--motion-duration-standard);
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="rest"][data-action-hide="corner"] {
+  clip-path: polygon(0 0, 65% 0, 65% 35%, 100% 35%, 100% 100%, 0 100%);
+}
+@media (hover: none), (pointer: coarse) {
+  :is(
+      :global([data-action-host]),
+      :global([data-action-content-scope]),
+      :global(button[data-button-hierarchy])
+    )
+    .content[data-action-content="interaction"]:not([data-action-touch="preserve"]) {
+    inline-size: revert-layer;
+    max-inline-size: none;
+    overflow: visible;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  :is(
+      :global([data-action-host]),
+      :global([data-action-content-scope]),
+      :global(button[data-button-hierarchy])
+    )
+    .content[data-action-content="interaction"]:not(
+      [data-action-touch="preserve"]
+    )[data-action-hide="corner"] {
+    clip-path: none;
+    transition: none;
+  }
+  :is(
+      :global([data-action-host]),
+      :global([data-action-content-scope]),
+      :global(button[data-button-hierarchy])
+    )
+    .content[data-action-content="interaction"]:not(
+      [data-action-touch="preserve"]
+    )[data-action-hide="corner"]::before {
+    inset: 0;
+  }
+  :is(
+      :global([data-action-host]),
+      :global([data-action-content-scope]),
+      :global(button[data-button-hierarchy])
+    )
+    .content[data-action-content="rest"][data-action-hide="visibility"] {
+    visibility: hidden;
+  }
+  :is(
+      :global([data-action-host]),
+      :global([data-action-content-scope]),
+      :global(button[data-button-hierarchy])
+    )
+    .content[data-action-content="rest"][data-action-hide="opacity"] {
+    opacity: 0;
+  }
+  :is(
+      :global([data-action-host]),
+      :global([data-action-content-scope]),
+      :global(button[data-button-hierarchy])
+    )
+    .content[data-action-content="rest"][data-action-hide="display"] {
+    display: var(--action-rest-active-display, none);
+  }
+  :is(
+      :global([data-action-host]),
+      :global([data-action-content-scope]),
+      :global(button[data-button-hierarchy])
+    )
+    .content[data-action-content="rest"][data-action-hide="corner"] {
+    clip-path: polygon(0 0, 65% 0, 65% 35%, 100% 35%, 100% 100%, 0 100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .content[data-action-content="interaction"][data-action-hide="corner"] {
+    transition: none;
+  }
+}
+
+/* Secondary row actions stay discoverable and retain their existing hit area at rest. */
+.content[data-action-content="rest"][data-action-hide="dim"] {
+  opacity: 0.6;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):is(
+    :hover,
+    :focus-visible,
+    :has(:focus-visible),
+    [data-action-open],
+    [data-selected]:not([data-hover-reveal])
+  )
+  .content[data-action-content="rest"][data-action-hide="dim"] {
+  opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .content[data-action-content="rest"][data-action-hide="dim"] {
+    opacity: 1;
+  }
+}
+
+/* Drag controllers expose state; these cues never admit or perform a drop. */
+.drag.drag[data-action-drop-target] {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  background: var(--ui-surface-selected);
+}
+.drag[data-action-drop-before]::before {
+  content: "";
+  display: block;
+  block-size: 3px;
+  margin-block-end: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--ui-focus-ring-color);
+}
+.drag[data-action-dragging] > :global([data-action-host]) {
+  outline: var(--ui-focus-width) dashed var(--ui-tone-neutral-border);
+  background: var(--ui-surface-pressed);
+}
+.drag[draggable="true"] {
+  cursor: grab;
+}
+.drag[draggable="true"]:active {
+  cursor: grabbing;
+}
+.content[data-action-content="interaction"][data-action-hide="opacity"] {
+  inline-size: revert-layer;
+  max-inline-size: none;
+  overflow: visible;
+}
+
+/* Opacity-only preview actions retain their original box, hit area and Tab stop. */
+.content[data-action-content="interaction"][data-action-hide="opacity"] {
+  pointer-events: auto;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):focus-within
+  .content[data-action-content="interaction"][data-action-focus="within"] {
+  inline-size: revert-layer;
+  max-inline-size: none;
+  overflow: visible;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.drag[data-action-drag-appearance="lifted"][data-dragging] {
+  border-radius: var(--ui-radius-row);
+  background: var(--ui-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):focus-within
+  .content[data-action-content="rest"][data-action-hide="dim"][data-action-focus="within"] {
+  opacity: 1;
+}
+
+.drag[data-action-grab] {
+  cursor: grab;
+}
+.drag[data-action-grab]:active {
+  cursor: grabbing;
+}
+:is(
+    :global([data-action-host]),
+    :global([data-action-content-scope]),
+    :global(button[data-button-hierarchy])
+  ):hover
+  .content[data-interaction-tone="neutral"] {
+  color: var(--ui-tone-neutral-fg);
+}
+
+.drag[data-action-drag-appearance="faded"][data-dragging] {
+  opacity: 0.4;
+}
+
+/* Floating terminal controls: owner focus alone must never cover a typing prompt. */
+.content[data-action-content="hover-overlay"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: hover) and (pointer: fine) {
+  .content[data-action-content="hover-overlay"] {
+    opacity: 0;
+    pointer-events: none;
+  }
+  :is([data-action-content-scope], [data-action-host]):hover
+    > .content[data-action-content="hover-overlay"],
+  .content[data-action-content="hover-overlay"]:focus-within,
+  .content[data-action-content="hover-overlay"][data-action-open] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.content[data-action-content="hover-overlay"][data-action-hidden]:not([data-action-open]):not(
+    :focus-within
+  ) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.content[data-action-reveal="wrap"] {
+  overflow: clip;
+  white-space: nowrap;
+}
+[data-action-content-scope][aria-selected="true"] .content[data-action-reveal="wrap"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (hover: none), (pointer: coarse) {
+  .content[data-action-reveal="wrap"] {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+.content[data-action-reveal="preview"] {
+  display: block;
+  max-block-size: 1lh;
+  overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+[data-action-content-scope]:is([aria-selected="true"], :focus-visible)
+  .content[data-action-reveal="preview"] {
+  max-block-size: 6lh;
+}
+@media (hover: hover) and (pointer: fine) {
+  [data-action-content-scope]:hover .content[data-action-reveal="preview"] {
+    max-block-size: 6lh;
   }
 }

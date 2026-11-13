@@ -20,7 +20,7 @@
 /* Header and stepper */
 .onboarding-header {
   flex: none;
-  padding-block: 18px 14px;
+  padding-block: 16px 14px;
   padding-inline: clamp(16px, 3vw, 28px);
 }
 .onboarding-topline {
@@ -92,7 +92,7 @@
   flex-direction: column;
   min-block-size: 0;
   overflow: hidden;
-  padding-block-start: 18px;
+  padding-block-start: 16px;
   padding-inline: clamp(16px, 3vw, 28px);
 }
 .onboarding-body > [role="alert"] {
@@ -133,7 +133,7 @@
 
 /* Sections and setting rows */
 .onboarding-section {
-  margin-block-start: 18px;
+  margin-block-start: 16px;
 }
 .onboarding-section:first-child {
   margin-block-start: 0;
@@ -148,14 +148,7 @@
   gap: 12px;
   min-block-size: 44px;
   padding: 8px 12px;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   cursor: pointer;
-}
-@media (hover: hover) and (pointer: fine) {
-  .onboarding-row:hover {
-    background: var(--ui-surface-hover);
-  }
 }
 
 /* Step 1: even grid, whole-card selection */
@@ -173,8 +166,6 @@
 .onboarding-feature {
   min-block-size: 64px;
   padding: 12px;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   cursor: pointer;
 }
 .onboarding-feature[data-fixed] {
@@ -191,19 +182,6 @@
 }
 .onboarding-feature > svg {
   flex: none;
-}
-@media (hover: hover) and (pointer: fine) {
-  .onboarding-feature:not([data-fixed]):hover {
-    background: var(--ui-surface-hover);
-  }
-}
-.onboarding-feature:has(input:checked) {
-  border-color: var(--ui-tone-accent-border);
-  background: var(--ui-surface-selected);
-}
-.onboarding-feature:has(input:focus-visible) {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: var(--ui-focus-offset);
 }
 .onboarding-included {
   display: flex;
@@ -232,14 +210,7 @@
   min-block-size: 0;
   min-inline-size: 0;
   padding: 8px;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   text-align: start;
-}
-.onboarding-panel .onboarding-choice[aria-checked="true"] {
-  /* Selection is the accent border (the same role as the Settings tiles), not the focus ring. */
-  border-color: var(--ui-border-accent);
-  box-shadow: inset 0 0 0 1px var(--ui-border-accent);
 }
 .onboarding-choice-text strong {
 }
@@ -266,14 +237,10 @@
   block-size: 100%;
   object-fit: contain;
 }
-.onboarding-crew-none {
-  border: 1px dashed var(--ui-card-border);
-}
 
 /* Step 3: agents. Name and status on the left; one fixed right column keeps rows aligned. */
 .onboarding-agent-list {
   display: grid;
-  border-block: 1px solid var(--color-stroke);
 }
 .onboarding-agent-list:empty {
   display: none;
@@ -288,9 +255,6 @@
   align-items: center;
   gap: 12px;
   padding-block: 10px;
-}
-.onboarding-agent + .onboarding-agent {
-  border-block-start: 1px solid var(--color-stroke);
 }
 .onboarding-agent-identity {
   display: flex;
@@ -400,8 +364,6 @@
   margin: 0;
 }
 .onboarding-projects-frame {
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
   overflow: clip;
 }
 .onboarding-selection {
@@ -423,14 +385,6 @@
 }
 div.onboarding-project {
   cursor: default;
-}
-.onboarding-project + .onboarding-project {
-  border-block-start: 1px solid var(--color-stroke);
-}
-@media (hover: hover) and (pointer: fine) {
-  label.onboarding-project:hover {
-    background: var(--ui-surface-hover);
-  }
 }
 .onboarding-project > strong {
   flex: none;

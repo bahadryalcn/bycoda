@@ -1,3 +1,4 @@
+import { WindowControls } from "../../../src/app/shell/WindowControls";
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PromptOutline } from "../../../src/features/sessions/ui/PromptOutline";
@@ -41,12 +42,14 @@ function Fixture() {
       >
         <ProjectQuickActions
           cwd="C:/project"
+          onRun={() => undefined}
           additionalItems={[
             ...(find ? [find] : []),
             { id: "notes", label: "Notes", icon: <File />, onSelect: () => setNotes(true) },
             { id: "close", label: "Close pane", icon: <X />, onSelect: () => setClosed(true) },
           ]}
         />
+        {params.has("caption") ? <WindowControls /> : null}
       </header>
       <div ref={scope} data-outline-scope className="@container relative min-h-0 flex-1">
         <div ref={setScroller} className="agent-transcript h-full overflow-auto">

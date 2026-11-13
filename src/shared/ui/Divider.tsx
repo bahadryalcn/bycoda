@@ -19,7 +19,7 @@ export type DividerProps = Omit<ComponentPropsWithRef<"div">, "children"> & {
  * unless `decorative`.
  * @group layout
  * @use A rule between stacked sections or between items in a row, with or without a caption ("Earlier").
- * @avoid Group heading over a list: SectionLabel. Boxed grouping: a bordered container, not nested frames. Never a local border-t spacer div.
+ * @avoid Group heading over a list: SectionLabel. Boxed grouping: a bordered container, not nested frames. Never a local border-t spacer div. A group with its own static frame: Surface.
  *
  * @example
  * <Divider />

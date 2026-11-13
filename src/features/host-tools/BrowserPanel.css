@@ -21,8 +21,6 @@
   gap: 4px 8px;
   min-block-size: 2.5rem;
   padding: 4px 8px;
-  border-block-end: 1px solid var(--ui-pane-border);
-  background: var(--ui-workspace-panel);
 }
 
 .host-browser-bar > .host-browser-progress {
@@ -85,6 +83,10 @@
 }
 
 .host-browser-box-model {
+  inset-inline-start: var(--inspector-inline-start);
+  inset-block-start: var(--inspector-block-start);
+  inline-size: var(--inspector-inline-size);
+  block-size: var(--inspector-block-size);
   position: absolute;
   pointer-events: none;
   border: 1px solid var(--ui-tone-info-fg);
@@ -133,7 +135,6 @@
   min-inline-size: 0;
   padding: 0;
   gap: 0;
-  border-radius: 0;
   overflow: hidden;
 }
 
@@ -228,10 +229,6 @@
   padding-inline-end: 4px;
 }
 
-.host-browser-recents li + li {
-  border-block-start: 1px solid var(--ui-pane-border);
-}
-
 .host-browser-recents li > :first-child {
   flex: 1;
   min-inline-size: 0;
@@ -264,8 +261,6 @@
 .host-browser-selection-popover .host-browser-side-section {
   padding: 0;
   gap: 8px;
-  background: none;
-  border-radius: 0;
 }
 
 .host-browser-selection-popover .host-browser-target {

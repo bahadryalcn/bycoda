@@ -1,4 +1,5 @@
 import { nativeRuntimeLogMethods } from "./native-runtime-log-methods";
+import * as modelRoutingDto from "./model-routing";
 import { desktopStatusMethods } from "./desktop-status-methods";
 import {
   DEVICE_LIFECYCLE_RPC_SCHEMAS,
@@ -568,9 +569,34 @@ export const HOST_RPC_METHODS = Object.freeze({
   "crews.deleteRun": crewOperation("crews.deleteRun"),
   "crews.agent.save": crewOperation("crews.agent.save"),
   "crews.agent.delete": crewOperation("crews.agent.delete"),
-  "crews.pools.list": crewOperation("crews.pools.list"),
-  "crews.pools.save": crewOperation("crews.pools.save"),
-  "crews.pools.delete": crewOperation("crews.pools.delete"),
+  "modelRouting.get": {
+    ...read(
+      modelRoutingDto.ModelRoutingGetParamsSchema,
+      modelRoutingDto.ModelRoutingGetResultSchema,
+    ),
+    requiredCapability: modelRoutingDto.HOST_MODEL_ROUTING,
+  },
+  "modelRouting.save": {
+    ...control(
+      modelRoutingDto.ModelRoutingSaveParamsSchema,
+      modelRoutingDto.ModelRoutingSaveResultSchema,
+    ),
+    requiredCapability: modelRoutingDto.HOST_MODEL_ROUTING,
+  },
+  "modelRouting.status": {
+    ...read(
+      modelRoutingDto.ModelRoutingStatusParamsSchema,
+      modelRoutingDto.ModelRoutingStatusResultSchema,
+    ),
+    requiredCapability: modelRoutingDto.HOST_MODEL_ROUTING,
+  },
+  "modelRouting.resolve": {
+    ...read(
+      modelRoutingDto.ModelRoutingResolveParamsSchema,
+      modelRoutingDto.ModelRoutingResolveResultSchema,
+    ),
+    requiredCapability: modelRoutingDto.HOST_MODEL_ROUTING,
+  },
   "crews.start": crewOperation("crews.start"),
   "crews.get": crewOperation("crews.get"),
   "crews.assign": crewOperation("crews.assign"),

@@ -29,7 +29,6 @@ export type VoiceCompanionViewProps = {
   handle: ReactNode;
   /** Pointer handlers that let the whole header, not only the handle, move the panel. */
   headerDrag?: HTMLAttributes<HTMLElement>;
-  visual: Parameters<typeof VoiceVisualizer>[0]["visual"];
   visualState: Parameters<typeof VoiceVisualizer>[0]["state"];
   working: boolean;
   audioLevel: { readonly current: number };
@@ -46,6 +45,8 @@ export type VoiceCompanionViewProps = {
   statusText: string;
   sessionStatusText: string;
   startDisabled: boolean;
+  /** Who runs the voice: the realtime provider's name or this computer. */
+  engine: string;
   privacy: string;
   pushHint: string;
   workspace: boolean;
@@ -98,7 +99,13 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
   const toggleLabel = t(p.compact ? "Expand voice companion" : "Compact voice companion");
   return (
     <>
-      <header className={styles.header} {...p.headerDrag}>
+      <header
+        {...surfaceAttributes(
+          { frame: p.compact ? "none" : p.error ? "danger" : "neutral", edge: "block-end" },
+          styles.header,
+        )}
+        {...p.headerDrag}
+      >
         {p.handle}
         {p.error ? (
           <VoiceErrorMark error={p.error} onShow={p.compact ? p.onToggleCompact : undefined} />
@@ -135,6 +142,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
         {p.compact ? (
           <>
             <Button
+              touchTarget="control"
               iconOnly
               variant={canTalk || (live && !p.muted) ? "primary" : "secondary"}
               tone={p.muted ? "danger" : undefined}
@@ -152,7 +160,13 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               )}
             </Button>
             {p.status !== "idle" && (
-              <Button iconOnly variant="danger" label={t("Disconnect voice")} onClick={p.onClose}>
+              <Button
+                touchTarget="control"
+                iconOnly
+                variant="danger"
+                label={t("Disconnect voice")}
+                onClick={p.onClose}
+              >
                 <Square className="icon-sm" />
               </Button>
             )}
@@ -168,12 +182,17 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           </>
         ) : (
           <>
-            <VoiceToolActivityPanel entries={p.toolActivities} onStopWaiting={p.onStopWaiting} />
+            <VoiceToolActivityPanel
+              touchTarget="control"
+              entries={p.toolActivities}
+              onStopWaiting={p.onStopWaiting}
+            />
             <VoiceOptionsMenu onFloat={p.canDetach ? p.onFloat : undefined} />
             {p.resize}
           </>
         )}
         <Button
+          touchTarget="control"
           ref={toggleRef}
           iconOnly
           label={toggleLabel}
@@ -183,24 +202,29 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
           {p.compact ? <Maximize2 className="icon-sm" /> : <Minimize2 className="icon-sm" />}
         </Button>
         {!p.compact && (
-          <Button iconOnly label={t("Close voice companion")} onClick={p.onDismiss}>
+          <Button
+            touchTarget="control"
+            iconOnly
+            label={t("Close voice companion")}
+            onClick={p.onDismiss}
+          >
             <X className="icon-sm" />
           </Button>
         )}
       </header>
-      <LiveText {...surfaceAttributes({ frame: "none" }, styles.srOnly)} text={p.liveText} />
+      <LiveText {...surfaceAttributes({ frame: "none" }, "sr-only")} text={p.liveText} />
       {/* Unmounted when compact so open menus and popovers close with the expanded panel. */}
       {!p.compact && (
         <>
           <div className={styles.body}>
             <VoiceCompanionStatus
-              visual={p.visual}
               visualState={p.visualState}
               working={p.working}
               audioLevel={audioLevel}
               statusText={p.statusText}
               sessionStatusText={p.sessionStatusText}
-              idle={p.status === "idle"}
+              live={live}
+              engine={p.engine}
               privacy={p.privacy}
               workspace={p.workspace}
               globalScope={p.globalScope}
@@ -214,7 +238,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
             {p.error ? <VoiceErrorNotice error={p.error} onDismiss={p.onDismissError} /> : null}
             <LiveText
               mode="assertive"
-              {...surfaceAttributes({ frame: "none" }, styles.srOnly)}
+              {...surfaceAttributes({ frame: "none" }, "sr-only")}
               text={[...new Set(p.error ? [voiceErrorTitle(p.error), p.error] : [])].join(": ")}
             />
             {p.recovery}

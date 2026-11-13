@@ -264,7 +264,12 @@ export const PromptOutline = memo(function PromptOutline({
       role="toolbar"
       aria-label={t("Prompts")}
       aria-orientation="vertical"
-      style={{ width: BAR_WIDTH_LIFTED_PX, maxHeight: stackBudget }}
+      style={
+        {
+          "--outline-width": `${BAR_WIDTH_LIFTED_PX}px`,
+          "--outline-max-height": `${stackBudget}px`,
+        } as React.CSSProperties
+      }
       onMouseEnter={() => {
         pointerInside.current = true;
       }}
@@ -272,7 +277,7 @@ export const PromptOutline = memo(function PromptOutline({
       onBlur={blurRail}
       onKeyDown={onKeyDown}
       // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
-      className="absolute top-1/2 right-4 z-(--layer-pane-sheet) flex -translate-y-1/2 flex-col items-end @max-[58rem]:hidden"
+      className="absolute top-1/2 right-4 z-(--layer-pane-sheet) flex -translate-y-1/2 flex-col items-end w-(--outline-width) max-h-(--outline-max-height) @max-[58rem]:hidden"
     >
       {bars.map((prompt, index) => {
         const lift = barLift(index, hoverIndex);

@@ -103,25 +103,36 @@ function mustPropose(params: Params) {
   return params.finish === true || answers >= MAX_OWNER_ANSWERS;
 }
 
+function mustAsk(params: Params) {
+  return (
+    !mustPropose(params) &&
+    !params.transcript.some((turn) => turn.role === "owner" && turn.text.trim())
+  );
+}
+
 /** Prompt the model answers with JSON only; the transcript and draft are quoted data. */
 export function interviewPrompt(params: Params, note?: string): string {
   return [
     "You are an assistant-design interviewer. You help the owner design their personal AI assistant",
     "for a developer app by asking short questions, then proposing its profile settings.",
     `Write every question, option and the summary in the language of this locale: ${JSON.stringify(params.locale)}.`,
+    "This is only the interview language, not a request to change the assistant's language. Preserve current.language unless an owner answer explicitly asks to change the assistant's language.",
     "Reply with ONLY one JSON object, no prose and no code fence. Either",
     '{"kind":"question","question":string (max 600 chars),"options":[up to 6 short quick answers, max 120 chars each]}',
     "or",
     '{"kind":"proposal","summary":string (2-3 sentences describing the assistant, max 1200 chars),"profile":{...},"avatarPrompt":string (one sentence describing a square avatar portrait that fits the personality, max 400 chars)}.',
-    "Ask exactly one question at a time. Cover in roughly this order, skipping topics the current draft",
-    "already answers unless the owner wants changes:",
+    "Ask exactly one question at a time. Existing draft values are context, not answers from this interview.",
+    "Begin by asking what the owner wants their voice assistant to do or change. Follow their answer;",
+    "skip a topic only when their interview answers settle it. Cover relevant topics in roughly this order:",
     "1. name, and how to address the owner; 2. language; 3. personality, tone, profanity and persona;",
     "4. conversation behavior (routine questions, voice narration, proactive speech);",
     "5. working style (plan approval, confirming jobs, daily token budget);",
     "6. schedule (work hours, quiet hours, idle and away minutes); 7. notifications.",
-    mustPropose(params)
-      ? "You must reply with a proposal now. Do not ask another question."
-      : `After at most ${MAX_OWNER_ANSWERS} owner answers you must reply with a proposal; propose earlier when the topics are covered.`,
+    mustAsk(params)
+      ? "You must reply with a question now. The owner has not answered yet; do not propose settings."
+      : mustPropose(params)
+        ? "You must reply with a proposal now. Do not ask another question."
+        : `After at most ${MAX_OWNER_ANSWERS} owner answers you must reply with a proposal; propose earlier when the topics are covered.`,
     "In a proposal, fill every field you can decide from the interview and the draft; leave a field out",
     "when nothing points either way. Hours are 0-23. The profile may only contain these fields, with",
     "these allowed values:",
@@ -163,7 +174,7 @@ export function parseInterviewReply(output: string): AssistantProfileInterviewRe
     const avatar = z.string().min(1).max(400).safeParse(reply.avatarPrompt);
     const result = AssistantProfileInterviewResultSchema.safeParse({
       kind: "proposal",
-      summary: reply.summary,
+      summary: typeof reply.summary === "string" ? reply.summary.trim() : reply.summary,
       profile: cleanProfile(reply.profile),
       ...(avatar.success ? { avatarPrompt: avatar.data } : {}),
     });
@@ -171,7 +182,7 @@ export function parseInterviewReply(output: string): AssistantProfileInterviewRe
   }
   const result = AssistantProfileInterviewResultSchema.safeParse({
     kind: "question",
-    question: reply.question,
+    question: typeof reply.question === "string" ? reply.question.trim() : reply.question,
     options: Array.isArray(reply.options) ? reply.options.slice(0, 6) : [],
   });
   return result.success ? result.data : null;
@@ -203,6 +214,7 @@ export async function runAssistantInterview(
   const cwd = join(tmpdir(), "bycoda-assistant-builder");
   await mkdir(cwd, { recursive: true, mode: 0o700 });
   const required = mustPropose(params);
+  const questionRequired = mustAsk(params);
   let last = "";
   let note: string | undefined;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
@@ -218,10 +230,19 @@ export async function runAssistantInterview(
       timeoutMs: TIMEOUT_MS,
     });
     const result = parseInterviewReply(last);
-    if (result && !(required && result.kind === "question")) return result;
+    if (
+      result &&
+      !(required && result.kind === "question") &&
+      !(questionRequired && result.kind === "proposal")
+    )
+      return result;
     note = result
-      ? 'Your previous reply was a question. Reply now with ONLY a {"kind":"proposal",...} JSON object.'
+      ? result.kind === "proposal"
+        ? 'Your previous reply was a proposal before any owner answer. Reply now with ONLY a {"kind":"question",...} JSON object asking what the owner wants.'
+        : 'Your previous reply was a question. Reply now with ONLY a {"kind":"proposal",...} JSON object.'
       : "Your previous reply was not the required JSON. Reply with ONLY one valid JSON object.";
   }
+  if (questionRequired && parseInterviewReply(last)?.kind === "proposal")
+    throw new Error("The model did not ask a question before proposing settings. Try again.");
   throw new Error(describeUnusableInterviewReply(last));
 }

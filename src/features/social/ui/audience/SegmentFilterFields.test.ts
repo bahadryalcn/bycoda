@@ -130,4 +130,40 @@ describe("SegmentFilterFields", () => {
     });
     expect(latest).toEqual({ tags: ["vip"] });
   });
+
+  it("summarises the chosen conditions in one line and says when there are none", () => {
+    host.render(createElement(Harness));
+    expect(document.body.textContent).toContain("No conditions yet.");
+    act(() => checkbox("X").click());
+    act(() => checkbox("Replied").click());
+    expect(document.body.textContent).toContain(
+      "People who match all of: Accounts on X; Stage Replied.",
+    );
+  });
+
+  it("shows a platform logo beside each platform name", () => {
+    host.render(createElement(Harness));
+    const label = Array.from(document.querySelectorAll("label")).find(
+      (item) => item.textContent?.trim() === "Instagram",
+    );
+    expect(label?.querySelector("svg")).toBeTruthy();
+  });
+
+  it("keeps the optional conditions closed until one is set, then opens them by themselves", () => {
+    host.render(createElement(Harness));
+    expect(document.querySelector("details")?.open).toBe(false);
+    host.unmount();
+    host = mountHost();
+    host.render(createElement(Harness, { initial: { language: "tr", tags: ["vip"] } }));
+    expect(document.querySelector("details")?.open).toBe(true);
+    expect(fieldByLabel("Language").value).toBe("tr");
+  });
+
+  it("keeps the exact filter shape the Host expects when several fields change", () => {
+    host.render(createElement(Harness));
+    act(() => checkbox("X").click());
+    act(() => checkbox("New").click());
+    setFieldValue(fieldByLabel("Minimum interest score"), "0");
+    expect(latest).toEqual({ platforms: ["x"], stages: ["new"], minScore: 0 });
+  });
 });

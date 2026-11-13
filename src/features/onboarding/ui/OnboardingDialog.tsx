@@ -450,7 +450,9 @@ function Projects({
             </div>
           ) : null}
           {listing && folders.length > 0 ? (
-            <div className="onboarding-projects-frame">
+            <div
+              {...surfaceAttributes({ frame: "card", radius: "card" }, "onboarding-projects-frame")}
+            >
               <Text
                 as="div"
                 size="caption"
@@ -492,7 +494,7 @@ function Projects({
                   </Text>
                 ) : null}
               </Text>
-              <div className="onboarding-projects">
+              <div {...surfaceAttributes({ dividers: "stroke" }, "onboarding-projects")}>
                 {folders.map((folder) => {
                   const parent = parentPath(folder.path);
                   return (
@@ -566,6 +568,7 @@ function Projects({
                           </Tooltip>
                         </>
                       }
+                      appearance="row"
                       className="onboarding-project"
                       key={folder.key}
                     />

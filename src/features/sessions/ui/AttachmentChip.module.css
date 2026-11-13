@@ -8,7 +8,6 @@
   flex-shrink: 0;
   padding: 6px;
   --chip-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
-  background: color-mix(in srgb, var(--chip-ink) 14%, transparent);
   color: var(--chip-ink);
 }
 /* Thumbnail only: the message text carries the reference and size. */
@@ -64,17 +63,4 @@
 .metadata {
   display: block;
   max-width: 100%;
-}
-/* Insert and remove stay out of the way until the card is hovered or holds focus;
-   touch input has no hover, so it always shows them. */
-.action {
-  opacity: 0;
-}
-.card:is(:hover, :focus-within) .action {
-  opacity: 1;
-}
-@media (hover: none), (pointer: coarse) {
-  .action {
-    opacity: 1;
-  }
 }

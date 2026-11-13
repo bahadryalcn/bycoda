@@ -12,8 +12,6 @@ import { Popover } from "../../../shared/ui/Popover";
 import { ModelExtrasPanel, useModelExtrasSummary } from "./ModelExtras";
 import { ModelBrowser, type ModelBrowserProps } from "./ModelBrowser";
 
-import "./ModelPicker.css";
-
 const MODEL_MENU_WIDTH = 310;
 const SUBMENU_OVERLAP = -4;
 const PROVIDER_TAB_SIZE = 32;
@@ -71,10 +69,8 @@ export function ModelFlyout({
         onDismiss?.(reason);
       }}
       data-model-picker
-      style={{
-        height: menuHeight,
-      }}
-      className="flex min-h-0 overflow-hidden"
+      style={{ "--model-flyout-height": `${menuHeight}px` } as React.CSSProperties}
+      className="flex min-h-0 overflow-hidden h-(--model-flyout-height)"
     >
       {view === "extras" && extras ? (
         <ExtrasView extras={extras} onBack={() => setView("models")} />

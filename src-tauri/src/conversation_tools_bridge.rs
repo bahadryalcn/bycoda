@@ -1123,6 +1123,28 @@ fn grants() -> &'static Mutex<HashMap<String, Value>> {
     GRANTS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+pub(crate) fn cached_spawn_grant(session: &str) -> Value {
+    grants()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(session).cloned())
+        .unwrap_or(Value::Null)
+}
+
+pub(crate) fn restore_spawn_grant(
+    session: &str,
+    stamp: (u64, u64),
+    mut grant: Value,
+    fallback: &Value,
+) {
+    for field in ["appEndpoint", "appToken"] {
+        if fallback[field].is_string() {
+            grant[field] = fallback[field].clone();
+        }
+    }
+    crate::session_tools_bridge::cache_grant(session, stamp, grants(), grant);
+}
+
 pub(crate) fn clear_grants(session: Option<&str>) {
     if let Ok(mut map) = grants().lock() {
         if let Some(session) = session {
@@ -1138,9 +1160,7 @@ pub fn authorize_acp_frame(session_id: &str, line: String) -> String {
         .lock()
         .ok()
         .and_then(|map| map.get(session_id).cloned());
-    grant
-        .map(|grant| decorate_frame(line.clone(), &grant))
-        .unwrap_or(line)
+    decorate_frame(line, &grant.unwrap_or(Value::Null))
 }
 
 fn decorate_frame(line: String, grant: &Value) -> String {
@@ -1160,6 +1180,10 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     else {
         return line;
     };
+    if grant["token"].as_str().is_none() {
+        servers.retain(|server| server["name"].as_str() != Some("bycoda-conversation"));
+        return request.to_string();
+    }
     for server in servers {
         if server.get("name").and_then(Value::as_str) != Some("bycoda-conversation")
             || server.get("command").and_then(Value::as_str).is_none()
@@ -1200,9 +1224,13 @@ pub async fn harness_conversation_tools_bridge(
     app: AppHandle,
     session_id: String,
     check_ready: Option<bool>,
+    prepare_spawn: Option<bool>,
 ) -> Result<Option<Value>, String> {
     crate::harness::run_blocking("harness_conversation_tools_bridge", move || {
         if check_ready == Some(true) {
+            if prepare_spawn == Some(true) {
+                crate::harness::tool_grants::prepare_conversation_spawn(&app, &session_id);
+            }
             return Ok(Some(
                 json!({"ready": delegation_readiness::delegation_bridge_ready(&app, &session_id)}),
             ));
@@ -1336,6 +1364,20 @@ mod tests {
         request["projectId"] = json!("project-one");
         request
     }
+    #[test]
+    fn failed_grant_does_not_advertise_acp_conversation_tools() {
+        let line = json!({"method":"session/new","params":{"mcpServers":[
+            {"name":"bycoda-conversation","command":"node"},
+            {"name":"custom","command":"keep"}
+        ]}})
+        .to_string();
+        let frame: Value = serde_json::from_str(&decorate_frame(line, &Value::Null)).unwrap();
+        assert_eq!(
+            frame["params"]["mcpServers"],
+            json!([{"name":"custom","command":"keep"}])
+        );
+    }
+
     #[test]
     fn desktop_approval_thread_subject_preserves_all_exact_operation_hashes() {
         let request = desktop_thread_approval_fixture();

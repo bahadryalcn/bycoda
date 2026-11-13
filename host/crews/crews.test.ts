@@ -12,7 +12,7 @@ const stores: HostStore[] = [];
 afterEach(async () => {
   await forEachAsync(stores.splice(0), async (store) => await store.close());
 });
-async function setup(costLimit?: number) {
+async function setup() {
   const store = new HostStore(":memory:");
   stores.push(store);
   const project = await store.addProject("/crew-fixture", "Crew fixture");
@@ -64,7 +64,6 @@ async function setup(costLimit?: number) {
         model: role === "reviewer" ? "claude:fixture" : "codex:fixture",
         modelSettings: {},
         capabilities: {},
-        cost: 1,
       },
     ],
   });
@@ -77,7 +76,7 @@ async function setup(costLimit?: number) {
       makeAgent("worker", "specialist"),
       makeAgent("reviewer", "reviewer"),
     ],
-    policy: { ...defaultCrewPolicy, maxEstimatedCost: costLimit },
+    policy: { ...defaultCrewPolicy },
     updatedAt: 0,
   };
   await service.save(definition);
@@ -599,12 +598,14 @@ describe("host crews", () => {
       ),
     ).rejects.toThrow("different input");
   });
-  it("reserves reviewer cost and does not overspend on parallel submissions", async () => {
-    const f = await setup(3);
+  it("ignores legacy crew cost limits for parallel submissions", async () => {
+    const f = await setup();
     await f.start();
     const results = await Promise.allSettled([f.assign("first"), f.assign("second")]);
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    expect((await f.service.list(f.project.id)).runs[0]!.assignments[0]!.estimatedCost).toBe(2);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(2);
+    expect(
+      (await f.service.list(f.project.id)).runs[0]!.assignments[0]!.estimatedCost,
+    ).toBeUndefined();
   });
   it("requires independent review before acceptance and resolves member requests", async () => {
     const f = await setup();

@@ -6,6 +6,7 @@ import { calls } from "./host-tools-mocks";
 import { registerLogsComposer } from "../../../src/features/host-tools/logsComposer";
 import "../../../src/styles/index.css";
 import { ToolsWorkspace } from "../../../src/features/host-tools/ToolsWorkspace";
+import { DesktopControlSettings } from "../../../src/features/host-tools/DesktopControlSettings";
 import HostToolsWindow from "../../../src/features/host-tools/HostToolsWindow";
 import { registerBrowserComposer } from "../../../src/features/host-tools/browserComposer";
 import { registerDeviceImageComposer } from "../../../src/features/devices/deviceImageComposer";
@@ -60,7 +61,11 @@ Object.assign(window, {
     requestToolsUi(context, action, input),
 });
 createRoot(document.getElementById("root")!).render(
-  query.get("detached") === "1" ? (
+  query.has("desktop-standalone") ? (
+    <main className="p-4">
+      <DesktopControlSettings />
+    </main>
+  ) : query.get("detached") === "1" ? (
     <HostToolsWindow {...tools} />
   ) : (
     <ToolsWorkspace>

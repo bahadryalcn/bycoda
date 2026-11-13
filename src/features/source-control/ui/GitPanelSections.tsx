@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { ContextMenu } from "../../../shared/ui/ContextMenu";
 import { Divider } from "../../../shared/ui/Divider";
@@ -109,9 +110,10 @@ export function GitPanelSections({
       {shown.graph ? (
         <div
           ref={graphBoxRef}
-          className={`shrink-0 overflow-hidden border-t border-stroke ${
-            graphExpanded ? "min-h-0" : "h-7"
-          }`}
+          {...surfaceAttributes(
+            { frame: "stroke", edge: "top" },
+            `shrink-0 overflow-hidden ${graphExpanded ? "min-h-0" : "h-7"}`,
+          )}
           // Cap the shown height, not the saved one, so a shorter window keeps the
           // file list visible and the chosen height returns when it grows again.
           style={

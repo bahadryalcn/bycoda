@@ -147,34 +147,3 @@ html[data-control-density="touch"] .clear[data-search-clear] {
 :is(.input, .group)[data-search-appearance="quiet"]:hover:not(:focus-within, :disabled) {
   background: var(--ui-surface-hover);
 }
-
-/* A button that looks like the search text but opens a search surface elsewhere.
-   It paints nothing of its own: the group frame is the only surface (hover border,
-   focus ring), so no second box appears inside the field. */
-.trigger {
-  display: flex;
-  min-inline-size: 0;
-  flex: 1;
-  align-items: center;
-  block-size: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--ui-text-muted);
-  font: inherit;
-  text-align: start;
-  cursor: text;
-  outline: none;
-}
-.trigger > span {
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.group:is([data-search-appearance="field"], [data-search-appearance="quiet"]):has(
-    .trigger:focus-visible
-  ) {
-  border-color: var(--ui-field-border-focus);
-}

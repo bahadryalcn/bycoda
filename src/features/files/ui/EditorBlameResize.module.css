@@ -1,0 +1,6 @@
+.handle {
+  position: absolute;
+  left: var(--blame-resize-left);
+  top: var(--blame-resize-top);
+  bottom: var(--blame-resize-bottom);
+}

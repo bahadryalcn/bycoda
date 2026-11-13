@@ -38,8 +38,10 @@ export function voiceActionLabel(name: string) {
 export function VoiceToolActivityPanel({
   entries,
   onStopWaiting,
+  touchTarget,
 }: {
   entries: readonly VoiceToolActivityEntry[];
+  touchTarget?: "control";
   onStopWaiting: (id: string) => void;
 }) {
   const [, refresh] = useState(0);
@@ -57,6 +59,7 @@ export function VoiceToolActivityPanel({
   return (
     <>
       <Button
+        touchTarget={touchTarget}
         iconOnly
         variant="ghost"
         className={styles.trigger}
@@ -73,7 +76,12 @@ export function VoiceToolActivityPanel({
           size="micro"
           leading="tight"
           tone="inherit"
-          {...surfaceAttributes({ radius: "pill" }, styles.count)}
+          {...surfaceAttributes(
+            running
+              ? { radius: "pill", variant: "info-foreground" }
+              : { radius: "pill", tone: "neutral", toneFill: "solid" },
+            styles.count,
+          )}
           aria-hidden="true"
         >
           {entries.length > 99 ? "99+" : entries.length}

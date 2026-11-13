@@ -1,3 +1,5 @@
+import type { ModelRoutingItemChoice } from "../../../shared/model/host-contracts/model-routing";
+import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
 import { remoteRequest } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import {
@@ -77,6 +79,7 @@ export type GoalDraft = {
   leadCwd: string;
   harness: HarnessId;
   providerAccountId?: string;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
@@ -93,7 +96,12 @@ export function goalMachines(fresh = false): Promise<RemoteMachine[]> {
   return backgroundMachines(HOST_GOALS, fresh);
 }
 
-export function newGoalDraft(cwd: string, harness: HarnessId, model: string): GoalDraft {
+export function newGoalDraft(
+  cwd: string,
+  harness: HarnessId,
+  model: string,
+  routingSupported = false,
+): GoalDraft {
   return {
     finalReview: true,
     title: "",
@@ -107,7 +115,8 @@ export function newGoalDraft(cwd: string, harness: HarnessId, model: string): Go
     defaultProviderAccountId(harness) !== "default"
       ? { providerAccountId: defaultProviderAccountId(harness) }
       : {}),
-    modelSettings: {},
+    ...(routingSupported ? { modelChoice: { kind: "default" as const } } : {}),
+    modelSettings: defaultModelSettings(resolveModel(harness, model)),
     runtimeMode: "auto",
     maxRunMinutes: 0,
     approvePlan: false,
@@ -166,6 +175,7 @@ export function hostGoalFromDraft(
     ...(draft.providerAccountId === undefined
       ? {}
       : { providerAccountId: draft.providerAccountId }),
+    ...(draft.modelChoice ? { modelChoice: draft.modelChoice } : {}),
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,

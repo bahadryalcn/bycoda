@@ -1,5 +1,25 @@
 import { expect, test, type Page } from "@playwright/test";
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`markdown mode caller visual ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/files/file-save.html");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      await expect(page.getByRole("tab", { name: "Preview", exact: true })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/markdown-preview-${theme}-${width}.png`,
+      });
+      await page.getByRole("tab", { name: "Source", exact: true }).click();
+      await expect(page.locator(".cm-content")).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/sessions-callers/markdown-source-${theme}-${width}.png`,
+      });
+    });
+
 /** Save state of a Markdown file sits beside Save in the view shell, not in the footer (plain files use the footer). */
 const saveStatus = (page: Page) => page.locator("[role=status]:not([aria-label])");
 
@@ -7,7 +27,7 @@ test("Ctrl+S distinguishes a saved source from a failed format without claiming 
   page,
 }, info) => {
   await page.goto("/tests/browser/files/file-save.html?format-error");
-  await page.getByRole("radio", { name: "Source", exact: true }).click();
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
   const editor = page.locator(".cm-content:visible");
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -48,7 +68,7 @@ test("native draft save reporting never marks edits made during an older disk wr
   page,
 }) => {
   await page.goto("/tests/browser/files/file-save.html?native-draft&hold-write");
-  await page.getByRole("radio", { name: "Source", exact: true }).click();
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
   const editor = page.locator(".cm-content:visible");
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -108,7 +128,7 @@ test("native draft fixture retains actual source edits and retries storage witho
 }, info) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/files/file-save.html?native-draft&draft-error");
-  await page.getByRole("radio", { name: "Source", exact: true }).click();
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
   const editor = page.locator(".cm-content:visible");
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -205,7 +225,7 @@ test("same-name file tabs keep independent drafts and expose their full path fro
   await page.setViewportSize({ width: 390, height: 700 });
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/files/file-save.html?same-name");
-  await page.getByRole("radio", { name: "Source", exact: true }).click();
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
   // Both tabs are named notes.md; the fixture opens /fixture/notes.md before /fixture/archive/notes.md.
   const first = page.getByRole("tab", { name: /^notes\.md/ }).nth(0);
   const second = page.getByRole("tab", { name: /^notes\.md/ }).nth(1);
@@ -221,7 +241,7 @@ test("same-name file tabs keep independent drafts and expose their full path fro
   await expect(page.getByRole("tooltip")).toContainText("/fixture/archive/notes.md");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("tooltip")).toHaveCount(0);
-  await page.getByRole("radio", { name: "Source", exact: true }).click();
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
   await expect(editor).toContainText("Archived text");
   await editor.click();
   await page.keyboard.press("Control+End");
@@ -258,7 +278,7 @@ for (const light of [false, true]) {
   }, info) => {
     await page.setViewportSize({ width: 320, height: 700 });
     await page.goto(`/tests/browser/files/file-save.html?save-error${light ? "&light" : ""}`);
-    await page.getByRole("radio", { name: "Source", exact: true }).click();
+    await page.getByRole("tab", { name: "Source", exact: true }).click();
     const editor = page.locator(".cm-content");
     await editor.click();
     await page.keyboard.press("Control+End");
@@ -310,8 +330,8 @@ test("save works from editor, Explorer and preview without taking over chat", as
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/browser/files/file-save.html");
   const save = page.getByRole("button", { name: "Save", exact: true });
-  const source = page.getByRole("radio", { name: "Source", exact: true });
-  const preview = page.getByRole("radio", { name: "Preview", exact: true });
+  const source = page.getByRole("tab", { name: "Source", exact: true });
+  const preview = page.getByRole("tab", { name: "Preview", exact: true });
   await source.click();
   const editor = page.locator(".cm-content");
   await editor.click();

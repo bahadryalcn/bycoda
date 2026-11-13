@@ -2,7 +2,15 @@ import type { ComponentPropsWithRef, CSSProperties, Ref } from "react";
 import styles from "./Text.module.css";
 
 /** Body type sizes; `inherit` keeps the size of the surrounding text. */
-export type TextSize = "caption" | "micro" | "secondary" | "body" | "title" | "heading" | "inherit";
+export type TextSize =
+  | "caption"
+  | "micro"
+  | "secondary"
+  | "body"
+  | "title"
+  | "heading"
+  | "glyph"
+  | "inherit";
 
 /** Ink roles; `inherit` keeps the colour of the surrounding text. */
 export type TextTone =
@@ -12,6 +20,7 @@ export type TextTone =
   | "disabled"
   | "neutral"
   | "accent"
+  | "feature"
   | "info"
   | "success"
   | "warning"
@@ -20,6 +29,7 @@ export type TextTone =
   | "removed"
   | "on-solid"
   | "accent-on-solid"
+  | "background-base"
   | "inherit";
 
 /** Line heights; `inherit` keeps the line height of the surrounding text. */
@@ -62,6 +72,8 @@ export type TextRoles = {
   leading?: TextLeading;
   truncate?: boolean;
   tracking?: TextTracking;
+  /** Underline only when pointer hovers this text. */
+  hoverUnderline?: boolean;
 };
 
 /**
@@ -122,6 +134,8 @@ export type TextProps = Omit<ComponentPropsWithRef<"span">, "ref"> & {
    * `wider` 0.08em.
    */
   tracking?: TextTracking;
+  /** Underline only when pointer hovers this text. */
+  hoverUnderline?: boolean;
 };
 
 /**
@@ -153,6 +167,7 @@ export function Text({
   leading,
   truncate = false,
   tracking,
+  hoverUnderline,
   className,
   ref,
   ...props
@@ -165,7 +180,10 @@ export function Text({
       data-lines={lines || undefined}
       style={lines ? ({ ...style, "--clamp-lines": lines } as CSSProperties) : style}
       ref={ref as Ref<HTMLSpanElement>}
-      {...textAttributes({ size, tone, weight, leading, truncate, tracking }, className)}
+      {...textAttributes(
+        { size, tone, weight, leading, truncate, tracking, hoverUnderline },
+        className,
+      )}
     />
   );
 }
@@ -180,7 +198,8 @@ export function optionalTextAttributes(roles: TextRoles, className?: string) {
     roles.weight ||
     roles.leading ||
     roles.truncate ||
-    roles.tracking
+    roles.tracking ||
+    roles.hoverUnderline
     ? textAttributes(roles, className)
     : { className };
 }
@@ -199,11 +218,13 @@ export function textAttributes(
     leading = size === "inherit" ? "inherit" : undefined,
     truncate,
     tracking,
+    hoverUnderline,
   }: TextRoles,
   className?: string,
 ) {
   return {
     "data-tracking": tracking,
+    "data-hover-underline": hoverUnderline || undefined,
     "data-size": size,
     "data-tone": tone,
     "data-weight": weight,

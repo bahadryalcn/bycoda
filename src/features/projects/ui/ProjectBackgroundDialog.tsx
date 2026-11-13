@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ClampText } from "../../../shared/ui/ClampText";
 import { Alert } from "../../../shared/ui/Alert";
 import { Slider } from "../../../shared/ui/Slider";
@@ -197,8 +198,8 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
                   src={previewSrc}
                   alt=""
                   draggable={false}
-                  className="h-40 w-full object-cover"
-                  style={{ opacity: emptyOpacity }}
+                  className="h-40 w-full object-cover opacity-(--background-preview-opacity)"
+                  style={{ "--background-preview-opacity": emptyOpacity } as React.CSSProperties}
                 />
               )
             ) : (
@@ -227,7 +228,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         </div>
 
         {path ? (
-          <div className="border-t border-stroke pt-4">
+          <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pt-4")}>
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <Text size="secondary" tone="primary" weight="medium">
@@ -324,7 +325,12 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
 function ProjectBackgroundRow({ label, children }: { label: string; children: ReactNode }) {
   useLocale();
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-stroke pt-4">
+    <div
+      {...surfaceAttributes(
+        { frame: "stroke", edge: "top" },
+        "flex items-center justify-between gap-4 pt-4",
+      )}
+    >
       <Text size="secondary" tone="primary" weight="medium">
         {label}
       </Text>

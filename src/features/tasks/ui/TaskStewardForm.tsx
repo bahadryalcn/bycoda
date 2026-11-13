@@ -1,3 +1,14 @@
+import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../providers/public/providerAccounts";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { RemoteMachine } from "../../connections/public/protocol";
+import { TaskModelChoiceField, useTaskModelRouting } from "./TaskModelChoiceField";
+import {
+  defaultModelSettings,
+  resolveModel as resolveTaskModel,
+} from "../../sessions/public/models";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import type { FormEvent, ReactNode } from "react";
@@ -72,9 +83,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 /** The steward form: the project, what to look for, when to look, and the
  * agent that does it, in titled sections with one primary action. */
 export function StewardForm({
-  draft,
+  draft: inputDraft,
   recents,
   machine,
+  target,
   saving,
   error,
   onChange,
@@ -84,15 +96,23 @@ export function StewardForm({
   draft: StewardDraft;
   recents: RecentProject[];
   machine?: string;
+  target?: RemoteMachine;
   saving: boolean;
   error: string | null;
   onChange: (draft: StewardDraft) => void;
   onCancel: () => void;
-  onSubmit: (event: FormEvent) => void;
+  onSubmit: (event: FormEvent, draft: StewardDraft) => void;
 }) {
   useLocale();
+  let draft = inputDraft;
   const update = <K extends keyof StewardDraft>(key: K, value: StewardDraft[K]) =>
     onChange({ ...draft, [key]: value });
+  const { supported: routingSupported, choice } = useTaskModelRouting(
+    target,
+    !draft.id,
+    draft.modelChoice,
+  );
+  if (choice !== draft.modelChoice) draft = { ...draft, modelChoice: choice };
   const valid = looksLikeProject(draft.cwd) && draft.model.length > 0 && machine != null;
   const number = (
     label: string,
@@ -119,7 +139,7 @@ export function StewardForm({
     <form
       aria-label={draft.id ? t("Edit steward") : t("New steward")}
       aria-busy={saving}
-      onSubmit={onSubmit}
+      onSubmit={(event) => onSubmit(event, draft)}
       {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, "task-ops-form")}
     >
       <FieldGroup variant="bare" disabled={saving} inert={saving}>
@@ -141,7 +161,14 @@ export function StewardForm({
                   <SearchableProjectPicker
                     cwd={draft.cwd}
                     recents={recents}
-                    onSelectProject={(cwd) => update("cwd", cwd)}
+                    onSelectProject={(cwd) =>
+                      onChange({
+                        ...draft,
+                        cwd,
+                        modelChoice: undefined,
+                        providerAccountId: undefined,
+                      })
+                    }
                   />
                 )}
               </SettingRow>
@@ -230,13 +257,45 @@ export function StewardForm({
           <Section title={t("Agent")}>
             <SettingFrame>
               <SettingRow title={t("Model")}>
-                <ModelPicker
-                  harness={draft.harness}
-                  model={draft.model}
-                  values={draft.modelSettings}
-                  project={draft.cwd}
-                  onChange={(harness, model) => onChange({ ...draft, harness, model })}
-                  onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+                <TaskModelChoiceField
+                  machine={target}
+                  routingRole="steward"
+                  value={draft.modelChoice}
+                  supported={routingSupported}
+                  onChange={(choice) => update("modelChoice", choice)}
+                  fixed={
+                    <ModelPicker
+                      harness={draft.harness}
+                      model={draft.model}
+                      values={draft.modelSettings}
+                      project={draft.cwd}
+                      accountChoices={Boolean(target && isLocalSyncMachine(target))}
+                      accountId={draft.providerAccountId}
+                      onChange={(harness, model, providerAccountId) =>
+                        onChange({
+                          ...draft,
+                          harness,
+                          model,
+                          providerAccountId:
+                            target &&
+                            isLocalSyncMachine(target) &&
+                            supportsProviderAccounts(harness)
+                              ? (providerAccountId ?? defaultProviderAccountId(harness))
+                              : harness === draft.harness
+                                ? draft.providerAccountId
+                                : undefined,
+                          modelChoice: routingSupported
+                            ? (draft.modelChoice ?? { kind: "fixed" })
+                            : undefined,
+                          modelSettings:
+                            harness === draft.harness && model === draft.model
+                              ? draft.modelSettings
+                              : defaultModelSettings(resolveTaskModel(harness, model)),
+                        })
+                      }
+                      onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
+                    />
+                  }
                 />
               </SettingRow>
               {draft.harness !== "fx" ? (

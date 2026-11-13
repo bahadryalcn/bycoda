@@ -36,8 +36,8 @@ describe("BtwQuestionBurst", () => {
     );
 
     const burst = container.querySelector<HTMLElement>(".btw-burst");
-    expect(burst?.style.left).toBe("10px");
-    expect(burst?.style.width).toBe("300px");
+    expect(burst?.style.getPropertyValue("--btw-burst-left")).toBe("10px");
+    expect(burst?.style.getPropertyValue("--btw-burst-width")).toBe("300px");
     expect(container.querySelectorAll(".btw-burst-mark").length).toBe(16);
     expect(container.textContent).toContain("?");
 

@@ -2,6 +2,7 @@ import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { Check, X } from "../../../../shared/ui/icons";
 import type { Capability } from "../../model/social";
 import { capabilityReasonText, needsConnection, operationText } from "./capabilityText";
@@ -11,10 +12,12 @@ export type CapabilityListProps = {
   capabilities: Pick<Capability, "operation" | "status" | "reasonCode">[];
   /** Opens the connection flow. Shown only on rows whose fix is a connection. */
   onConnect?: () => void;
+  /** Compact account overview. Every operation remains available inside its status group. */
+  grouped?: boolean;
 };
 
 /** What an account can do: a check for each available operation, a cross with the plain reason otherwise. */
-export function CapabilityList({ capabilities, onConnect }: CapabilityListProps) {
+export function CapabilityList({ capabilities, onConnect, grouped = false }: CapabilityListProps) {
   if (!capabilities.length)
     return (
       <EmptyState
@@ -24,6 +27,40 @@ export function CapabilityList({ capabilities, onConnect }: CapabilityListProps)
         description={t("Nothing reported yet.")}
       />
     );
+  if (grouped) {
+    const groupFor = (row: CapabilityListProps["capabilities"][number]) =>
+      row.status === "available"
+        ? "available"
+        : needsConnection(row)
+          ? "connection"
+          : row.status === "pending"
+            ? "pending"
+            : "unavailable";
+    const groups = [
+      { id: "available", label: t("Available") },
+      { id: "connection", label: t("Connection needed") },
+      { id: "pending", label: t("Checking…") },
+      { id: "unavailable", label: t("Unavailable") },
+    ];
+    return (
+      <div className="flex min-w-0 flex-col gap-2">
+        {groups.map((group) => {
+          const items = capabilities.filter((row) => groupFor(row) === group.id);
+          return items.length ? (
+            <Disclosure
+              key={group.id}
+              summary={group.label}
+              count={items.length}
+              variant="row"
+              size="sm"
+            >
+              <CapabilityList capabilities={items} onConnect={onConnect} />
+            </Disclosure>
+          ) : null;
+        })}
+      </div>
+    );
+  }
   return (
     <ul className="social-capability-list" aria-label={t("What this account can do")}>
       {capabilities.map((row) => {

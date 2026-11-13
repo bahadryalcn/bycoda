@@ -19,6 +19,8 @@ export type BycodaImageCompareProps = ImageCompareProps & {
  * and a centre-divider reset.
  * @group media
  * @status internal
+ * @use Comparison body inside ImageLightbox.
+ * @avoid The complete image viewer and toolbar: ImageLightbox.
  */
 export function ImageCompare({
   toolbar = false,

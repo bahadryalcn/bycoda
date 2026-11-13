@@ -8,6 +8,7 @@ import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { SkillsPage } from "./SkillsPage";
+import { RevealedSetting } from "../../settings/ui/settingsControls";
 import { createSkillGroup, listSkillGroups } from "../index";
 import { SettingsView } from "../../settings/ui/SettingsView";
 import type { DiscoveredSkill } from "../../../platform/tauri/fs";
@@ -104,6 +105,35 @@ it("keeps Advanced controls outside the single skill scroller", async () => {
   expect(dialog.textContent).toContain("Disabled skills stay on disk.");
   expect(scroller.contains(dialog)).toBe(false);
   expect(button("Personal guide")).toBeDefined();
+});
+
+it("reveals skill folders from Settings search and keeps manual dismissal", async () => {
+  const reveal = async (id: string | null, revealRequest = 0) => {
+    await act(async () =>
+      root.render(
+        createElement(
+          RevealedSetting.Provider,
+          { value: id },
+          createElement(SkillsPage, { cwd: "D:/repo", revealRequest }),
+        ),
+      ),
+    );
+  };
+  await reveal(null);
+  expect(document.querySelector('[data-setting-id="skill-folders"]')).toBeNull();
+  await reveal("skill-folders");
+  expect(
+    document.querySelector('[role="dialog"] [data-setting-id="skill-folders"]'),
+  ).not.toBeNull();
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  await reveal("skill-folders");
+  expect(document.querySelector('[data-setting-id="skill-folders"]')).toBeNull();
+  await reveal("skill-folders", 1);
+  expect(
+    document.querySelector('[role="dialog"] [data-setting-id="skill-folders"]'),
+  ).not.toBeNull();
 });
 
 it("collapses skill groups without creating another scroll owner", async () => {
@@ -1073,6 +1103,26 @@ it("opens the shared actions on right click and adds a skill to a group", async 
   expect(listSkillGroups().find((item) => item.id === group.id)?.skillNames).toEqual([
     "Project guide",
   ]);
+});
+
+it("opens the preview when pointer capture retargets a grouped row click to its drag wrapper", async () => {
+  createSkillGroup({ name: "Writing", skillNames: ["Project guide"] });
+  await render();
+  await click("Groups");
+  const name = container.querySelector<HTMLButtonElement>('button[aria-label="Project guide"]');
+  // Name button sits in the row; the row sits in the drag wrapper that captures the pointer.
+  const wrapper = name?.parentElement?.parentElement;
+  expect(wrapper).toBeTruthy();
+  const original = document.elementFromPoint;
+  document.elementFromPoint = () => name ?? null;
+  try {
+    await act(async () => {
+      wrapper!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+  } finally {
+    document.elementFromPoint = original;
+  }
+  expect(container.querySelector('[aria-label="Skill instructions"]')).not.toBeNull();
 });
 
 it("renders saved groups, missing members, search and a source removal action", async () => {

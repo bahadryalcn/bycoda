@@ -211,7 +211,9 @@ export function GitGraphBranches({
                         <ActionHost
                           key={reference(branch)}
                           selected={current}
-                          className="mx-1 min-h-(--ui-control-height-compact) pe-1"
+                          controlMinHeight="compact"
+                          padding={{ end: "xs" }}
+                          className="mx-1"
                         >
                           <Button
                             variant="item"

@@ -110,7 +110,8 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
                       </span>
                     </>
                   }
-                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 px-2 py-1.5"
+                  padding={{ inline: "md", block: "sm" }}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5"
                 />
               </ActionHost>
             </li>

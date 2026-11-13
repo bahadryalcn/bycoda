@@ -91,18 +91,6 @@
 .row .rowActions {
   justify-self: end;
   gap: 4px;
-  opacity: 0.6;
-}
-
-.row:hover .rowActions,
-.row:focus-within .rowActions {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .row .rowActions {
-    opacity: 1;
-  }
 }
 
 .empty {

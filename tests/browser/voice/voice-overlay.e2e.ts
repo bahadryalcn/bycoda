@@ -311,6 +311,8 @@ for (const theme of ["light", "dark"])
       await expect(panel.getByRole("button", { name: "Finish turn", exact: true })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-manual.png`) });
       await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
+      await expect(panel).toHaveAttribute("data-surface-radius", "pill");
+      await expect(panel).toHaveCSS("border-top-left-radius", "9999px");
       await panel.screenshot({ path: join(output, `${theme}-${width}-compact.png`) });
       await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
       await page.evaluate(() =>
@@ -319,21 +321,16 @@ for (const theme of ["light", "dark"])
           true,
         ),
       );
-      const attention = panel.getByRole("button", { name: "Voice needs attention", exact: true });
-      await expect(attention).toHaveAttribute("aria-expanded", "false");
+      await expect(panel.getByRole("img", { name: "Voice needs attention" })).toBeVisible();
+      const errorMessage = "Voice input cleanup was not confirmed. Start voice again.";
+      await expect(panel.getByText(errorMessage, { exact: true })).toBeVisible();
       await expect(panel.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-attention.png`) });
-      await attention.click();
-      const errorDetails = page.getByRole("dialog", { name: "Voice needs attention", exact: true });
-      await expect(
-        errorDetails.getByText("Voice input cleanup was not confirmed. Start voice again.", {
-          exact: true,
-        }),
-      ).toBeVisible();
+      await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
+      await panel.getByRole("button", { name: "Voice needs attention", exact: true }).click();
+      await expect(panel.getByText(errorMessage, { exact: true })).toBeVisible();
+      await expect(panel.getByRole("button", { name: "Dismiss", exact: true })).toBeVisible();
       await page.screenshot({ path: join(output, `${theme}-${width}-error-details.png`) });
-      await page.keyboard.press("Escape");
-      await expect(errorDetails).toHaveCount(0);
-      await expect(attention).toBeFocused();
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect.poll(() => page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(2);
       expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(1);
@@ -374,7 +371,9 @@ for (const theme of ["light", "dark"])
       );
       await expect(mirror.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
       await mirror.screenshot({ path: join(output, `${theme}-${width}-floating-attention.png`) });
-      await mirror.locator('summary:has-text("Error details")').click();
+      await expect(
+        mirror.getByRole("alert").getByRole("button", { name: "Dismiss" }),
+      ).toBeVisible();
       await expect(
         mirror.getByText("Voice input cleanup was not confirmed. Start voice again.", {
           exact: true,
@@ -593,6 +592,8 @@ for (const theme of ["light", "dark"])
       await expect(
         panel.getByRole("group", { name: "Which project should I follow?", exact: true }),
       ).toBeVisible();
+      const form = panel.locator("[data-question-form] > form");
+      await expect(form).toHaveCSS("border-top-width", "1px");
       await panel.screenshot({ path: join(output, `${theme}-${width}-overlay-choice.png`) });
       await panel.getByRole("radio", { name: "Clinic", exact: true }).click();
       await panel.getByRole("button", { name: "Send answer", exact: true }).click();
@@ -672,6 +673,8 @@ for (const theme of ["light", "dark"])
       await expect(
         panel.getByRole("group", { name: "Which project should I follow?", exact: true }),
       ).toBeVisible();
+      const form = panel.locator("[data-question-form] > form");
+      await expect(form).toHaveCSS("border-top-width", "1px");
       await panel.screenshot({ path: join(output, `${theme}-${width}-choice.png`) });
       await panel.getByRole("radio", { name: /Clinic/ }).click();
       await panel.getByRole("button", { name: "Send answer", exact: true }).click();
@@ -766,11 +769,24 @@ for (const theme of ["light", "dark"]) {
     expect(height).toBeGreaterThan(120);
     await page.setViewportSize({ width: 380, height });
     await expect(panel.getByText("Testler geçti mi")).toBeVisible();
+    await expect(panel.locator("[data-spoke]")).toHaveCount(40);
+    await expect(panel.getByRole("listitem")).toHaveCount(2);
+    await expect(panel.locator("header button[aria-label^='Move voice']")).toHaveCount(0);
     await page.screenshot({ path: join(captures, `${theme}-expanded.png`) });
 
-    await panel
-      .getByRole("button", { name: "Move voice window. Use arrow keys to reposition." })
-      .press("ArrowRight");
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await panel.screenshot({
+        path: join(
+          process.cwd(),
+          "temp/verification/2026-11-13-voice-detached",
+          `${theme}-${width}-expanded.png`,
+        ),
+      });
+    }
+
+    await panel.locator("header").press("ArrowRight");
     const nudges = await page.evaluate(() =>
       (window as any).fixtureOverlay.calls.filter(
         (call: any) => call.cmd === "voice_overlay_nudge",
@@ -804,3 +820,27 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
       });
     });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`voice side question geometry ${theme} ${width}`, async ({ page }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/voice/voice-visual-styles.html?theme=${theme}&global&confirm-jobs`,
+      );
+      await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
+      const panel = page.locator("section[data-voice-state]");
+      await panel.getByRole("button", { name: "Start voice", exact: true }).click();
+      await page.evaluate(() => (window as any).fixtureVoice.speech("show choices"));
+      const side = page.getByRole("complementary", { name: "Question" });
+      await expect(side).toBeVisible();
+      await expect(side.getByRole("radio", { name: "Clinic" })).toBeVisible();
+      const left = await side.evaluate((el) => parseFloat(getComputedStyle(el).left));
+      await panel.getByRole("button", { name: /^Move voice window/ }).press("ArrowLeft");
+      await expect
+        .poll(() => side.evaluate((el) => parseFloat(getComputedStyle(el).left)))
+        .toBe(left - 16);
+      await side.screenshot({ path: info.outputPath(`voice-side-${theme}-${width}.png`) });
+    });
+  }

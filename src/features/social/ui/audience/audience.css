@@ -176,11 +176,6 @@
   min-width: 0;
 }
 
-.audience-frame > li + li,
-.audience-frame > * + * {
-  border-top: 1px solid var(--ui-pane-border);
-}
-
 .audience-rule,
 .audience-seq {
   display: flex;
@@ -204,14 +199,26 @@
   gap: 0.375rem;
 }
 
+/* A sequence row: details on the left, Start/Pause and Edit on the right; stacked in narrow panes. */
 .audience-seq {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
-.audience-seq[data-selected="true"] {
-  background: var(--ui-surface-selected);
+.audience-seq-main {
+  display: flex;
+  flex: 1 1 16rem;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.audience-seq-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .audience-seq-head {
@@ -236,13 +243,6 @@
 .audience-chain > li {
   display: inline-flex;
   align-items: center;
-}
-
-.audience-chain > li + li::before {
-  content: "";
-  inline-size: 1rem;
-  border-top: 1px solid var(--ui-pane-border);
-  margin-inline: 0.25rem;
 }
 
 .audience-badges {
@@ -277,7 +277,6 @@
 
 .audience-panel-section + .audience-panel-section {
   padding-top: 1rem;
-  border-top: 1px solid var(--ui-pane-border);
 }
 
 .audience-pipeline {
@@ -291,21 +290,65 @@
 
 .audience-pipeline li {
   padding: 0.125rem 0.5rem;
-  border: 1px solid var(--ui-pane-border);
-}
-
-.audience-pipeline li[data-current="true"] {
-  border-color: var(--ui-tone-accent-border);
-  background: var(--ui-tone-accent-subtle);
-}
-
-.audience-stats {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-card-surface);
 }
 
 .audience-stat-meter {
   margin-top: 0.25rem;
+}
+
+/* Collection rows: the name button takes the row, the actions menu sits at its end. */
+.audience-collection-row {
+  min-width: 0;
+}
+
+.audience-collection-main {
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.audience-collection-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.audience-collection-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.audience-collection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-start: auto;
+}
+
+/* A platform glyph beside its name inside a checkbox label. */
+.audience-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+/* Two or three short fields share a row and wrap when the dialog is narrow. */
+.audience-pair,
+.audience-triple {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  inline-size: 100%;
+}
+
+.audience-pair {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+
+.audience-triple {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
 }

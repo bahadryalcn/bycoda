@@ -1,3 +1,4 @@
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 /** Different job: Commit rows align graph lanes and metadata columns; they are not popup choices. */
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
@@ -214,12 +215,17 @@ export function GitGraphList({
             <Text
               as="div"
               weight={workspace ? "regular" : "medium"}
-              className={`sticky top-0 z-1 grid items-center border-b border-(--ui-pane-border) bg-(--ui-surface-panel) ${workspace ? styles.workspaceHeader : ""}`}
-              style={{
-                height: WIDE_HEADER_PX,
-                gridTemplateColumns: workspace ? undefined : columns,
-                minWidth: workspace ? 360 + graphWidth : undefined,
-              }}
+              {...surfaceAttributes(
+                { variant: "panel", frame: "pane", edge: "bottom" },
+                `sticky top-0 z-1 grid items-center ${styles.graphHeader} ${workspace ? styles.workspaceHeader : ""}`,
+              )}
+              style={
+                {
+                  "--graph-header-height": `${WIDE_HEADER_PX}px`,
+                  "--graph-columns": workspace ? undefined : columns,
+                  "--graph-min-width": workspace ? `${360 + graphWidth}px` : undefined,
+                } as CSSProperties
+              }
             >
               {!workspace ? (
                 <Text size="inherit" tone="inherit" truncate className="pl-3">
@@ -289,11 +295,21 @@ export function GitGraphList({
           {empty}
           <ul
             hidden={!!empty}
-            className="min-w-0 max-w-full"
-            style={{ minWidth: workspace ? 360 + graphWidth : undefined }}
+            className={`min-w-0 max-w-full ${styles.graphList}`}
+            style={
+              {
+                "--graph-min-width": workspace ? `${360 + graphWidth}px` : undefined,
+              } as CSSProperties
+            }
             onKeyDown={onKeyDown}
           >
-            {range.padTop > 0 ? <li aria-hidden style={{ height: range.padTop }} /> : null}
+            {range.padTop > 0 ? (
+              <li
+                aria-hidden
+                className={styles.graphSpacer}
+                style={{ "--graph-spacer-height": `${range.padTop}px` } as CSSProperties}
+              />
+            ) : null}
             {items.slice(range.start, range.end).map((item) => {
               const { commit } = item;
               const rowProps = {
@@ -312,7 +328,13 @@ export function GitGraphList({
                 <CompactRow key={commit.sha} {...rowProps} />
               );
             })}
-            {range.padBottom > 0 ? <li aria-hidden style={{ height: range.padBottom }} /> : null}
+            {range.padBottom > 0 ? (
+              <li
+                aria-hidden
+                className={styles.graphSpacer}
+                style={{ "--graph-spacer-height": `${range.padBottom}px` } as CSSProperties}
+              />
+            ) : null}
           </ul>
           <CollectionFooter
             standalone
@@ -417,12 +439,20 @@ const CompactRow = memo(function CompactRow(props: RowProps) {
   const button = rowButtonProps(props, hover);
   return (
     // The row is the container the author and date hide against.
-    <li className="git-graph-row min-w-0 overflow-visible" style={{ height: GRAPH_ROW_PX }}>
+    <li
+      className="git-graph-row min-w-0 overflow-visible [height:var(--layout-height)]"
+      style={
+        {
+          "--layout-height": GRAPH_ROW_PX === undefined ? undefined : GRAPH_ROW_PX + "px",
+        } as CSSProperties
+      }
+    >
       <Button
         variant="item"
+        controlHeight="fill"
         motion="none"
         {...button}
-        className={`${button.className} flex h-full items-stretch`}
+        className={`${button.className} flex items-stretch`}
       >
         {plain ? null : <GraphLane row={row} />}
         <span className="ml-1 flex min-w-0 flex-1 items-center">
@@ -462,12 +492,20 @@ const WideRow = memo(function WideRow(props: RowProps & { columns: string; works
   const button = rowButtonProps(props, hover);
   const dim = isMergeCommit(commit) && row.kind !== "HEAD" ? "text-[var(--ui-text-secondary)]" : "";
   return (
-    <li className="min-w-0 overflow-visible" style={{ height: GRAPH_ROW_PX }}>
+    <li
+      className="min-w-0 overflow-visible [height:var(--layout-height)]"
+      style={
+        {
+          "--layout-height": GRAPH_ROW_PX === undefined ? undefined : GRAPH_ROW_PX + "px",
+        } as CSSProperties
+      }
+    >
       <Button
         variant="item"
+        controlHeight="fill"
         motion="none"
         {...button}
-        className={`${button.className} grid h-full items-center ${workspace ? styles.workspaceRow : ""}`}
+        className={`${button.className} grid items-center ${workspace ? styles.workspaceRow : ""}`}
         style={workspace ? undefined : { gridTemplateColumns: columns }}
       >
         {!workspace ? (

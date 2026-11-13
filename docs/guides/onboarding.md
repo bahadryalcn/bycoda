@@ -102,8 +102,8 @@ optional action and remains available in Settings.
 
 ## Manage providers after setup
 
-**Settings > Providers** has five tabs: **Accounts**, **CLI**, **Defaults**,
-**Models** and **Decision models**. Settings search opens the relevant tab.
+**Settings > Providers** has four tabs: **Accounts**, **CLI**, **Catalog**
+and **Decision models**. Settings search opens the relevant tab.
 
 - **Accounts** shows a provider rail with a **Default** badge and an account
   summary. Choose a provider to manage its accounts. **Edit account** changes the
@@ -120,12 +120,12 @@ optional action and remains available in Settings.
   Check or update one provider, or use **Check all** and **Update all**. Open a
   provider's path control to configure its executable; missing providers offer
   **Set up**. Custom ACP providers use **Add provider**.
-- **Defaults** sets the provider, model, effort, permissions and agent choices for
-  new conversations. Effort uses a stepped scale with the selected label beside it.
+- **Settings > Models > Chat defaults** sets the provider, model, effort and permissions
+  for new conversations. **Subagents** holds advisor, subagent and image model defaults. Effort uses a stepped scale with the selected label beside it.
   Use the apply bar to choose provider scope and several save
   destinations, then save. See [provider defaults](agent-tools.md#cross-provider-advisor-and-subagents)
   for inheritance, skipped fields and retrying failed destinations.
-- **Models** controls which models appear in pickers. The header and search stay
+- **Catalog** controls which models appear in pickers. The header and search stay
   in place while the list scrolls; search appears for longer lists. Changes save
   immediately, and at least one model must remain enabled per provider. The header
   refresh button checks the catalog. Successful checks stay quiet, including when

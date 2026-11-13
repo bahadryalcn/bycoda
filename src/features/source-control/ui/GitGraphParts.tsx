@@ -1,3 +1,4 @@
+import styles from "./GitGraphList.module.css";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -76,20 +77,24 @@ export function GraphAvatar({
     <Tooltip label={name || t("Unknown author")} asChild>
       <Text
         as="span"
-        size="inherit"
-        tone="inherit"
+        size="glyph"
+        tone="background-base"
         weight="medium"
         leading="none"
         aria-hidden
 
-        className={`grid shrink-0 place-items-center rounded-full select-none ${className}`}
-        style={{
-          width: size,
-          height: size,
-          fontSize: Math.round(size * 0.5),
-          backgroundColor: authorColor(name),
-          color: "var(--color-background-base)",
-        }}
+        {...surfaceAttributes(
+          { radius: "pill", variant: "user-color" },
+          `grid shrink-0 place-items-center select-none ${styles.graphAvatar} ${className}`,
+        )}
+        style={
+          {
+            "--graph-avatar-size": `${size}px`,
+            fontSize: Math.round(size * 0.5),
+            color: "var(--color-background-base)",
+            "--surface-user-color": authorColor(name),
+          } as React.CSSProperties
+        }
       >
         {authorInitials(name)}
       </Text>
@@ -121,28 +126,24 @@ export function RefPill({ refInfo }: { refInfo: GraphRefChip }) {
     <Tooltip label={refTitle(refInfo)} asChild>
       <Text
         as="span"
-        tone={refInfo.color ? "inherit" : "secondary"}
+        tone={refInfo.color ? "background-base" : "secondary"}
         weight={refInfo.current ? "medium" : undefined}
         leading="none"
 
         {...surfaceAttributes(
           {
-            radius: refInfo.kind === "tag" ? undefined : "pill",
-            variant: refInfo.color ? undefined : "inset",
+            radius: refInfo.kind === "tag" ? "control" : "pill",
+            ring: refInfo.current ? "pane-outer" : undefined,
+            variant: refInfo.color ? "user-color" : "inset",
           },
-          `flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 ${
-            refInfo.kind === "tag" ? "rounded-(--ui-radius-control)" : ""
-          }  ${refInfo.current ? "ring-1 ring-(color:--ui-pane-border)" : ""}`,
+          `flex h-4 min-w-0 shrink items-center gap-0.5 px-1.5 ${styles.refPill}`,
         )}
-        style={{
-          maxWidth: PILL_MAX_PX,
-          ...(refInfo.color
-            ? {
-                backgroundColor: refInfo.color,
-                color: "var(--color-background-base)",
-              }
-            : null),
-        }}
+        style={
+          {
+            "--graph-pill-max": `${PILL_MAX_PX}px`,
+            "--surface-user-color": refInfo.color,
+          } as React.CSSProperties
+        }
       >
         {refInfo.kind === "tag" ? (
           <TagGlyph />
@@ -182,8 +183,8 @@ export function RefPills({
   if (refs.length === 0) return null;
   return (
     <span
-      className={`flex min-w-0 items-center gap-1 overflow-hidden ${className}`}
-      style={{ maxWidth }}
+      className={`flex min-w-0 items-center gap-1 overflow-hidden ${styles.refGroup} ${className}`}
+      style={{ "--graph-refs-max": maxWidth } as React.CSSProperties}
     >
       {shown.map((ref) => (
         <RefPill key={`${ref.kind}:${ref.name}`} refInfo={ref} />

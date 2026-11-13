@@ -1,4 +1,6 @@
 import { isSkillGroupPickerItem, skillGroupInsertion } from "../../skills/public/skillGroups";
+import { SessionSubagentsMenu } from "./SessionSubagentsMenu";
+import type { DockAgent } from "../model/activityDock";
 import { ComposerAction } from "./ComposerAction";
 import { Text } from "../../../shared/ui/Text";
 export { ComposerAction } from "./ComposerAction";
@@ -272,6 +274,8 @@ import {
 import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
 import { useComposerMentionSources } from "./useComposerMentionSources";
 import { workItemMentionOf } from "../model/workItemMentionRows";
+import { rememberWorkItemMention } from "../../inbox/public/workItemMentions";
+import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { keepEqualToken } from "./keepEqualToken";
 import { recheckSessionFolderState } from "./recheckSessionFolderState";
 import { useComposerWorkMode } from "./useComposerWorkMode";
@@ -304,6 +308,9 @@ type Props = {
    */
   reading?: boolean;
   placeholder?: string;
+  /** This session's subagents, past and running; the top-right control is hidden when empty. */
+  subagents?: readonly DockAgent[];
+  onOpenSubagent?: (agent: DockAgent) => void;
   inputAriaLabel?: string;
   disabled?: boolean;
   allowedModelHarnesses?: readonly HarnessId[];
@@ -516,6 +523,8 @@ export const Composer = memo(function Composer({
   compact = false,
   reading = false,
   placeholder,
+  subagents,
+  onOpenSubagent,
   inputAriaLabel,
   disabled = false,
   harness,
@@ -681,6 +690,8 @@ export const Composer = memo(function Composer({
   const accountProvider = supportsProviderAccounts(harness) ? harness : undefined;
   useEffect(() => () => inputResize.cancel(), [inputResize]);
   const boxRef = useRef<HTMLDivElement>(null);
+  const subagentList = onOpenSubagent && subagents?.length ? subagents : undefined;
+  const hasSubagents = !!subagentList;
   const plusRef = useRef<HTMLButtonElement>(null);
   const modeRef = useRef<HTMLButtonElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
@@ -1721,6 +1732,7 @@ export const Composer = memo(function Composer({
       }
       const workItem = workItemMentionOf(file);
       const hint = workItem?.kind === "hint";
+      if (workItem?.kind === "item") rememberWorkItemMention(workItem.item);
       const label =
         workItem?.token ??
         (remote || isNoteMentionPath(file.path)
@@ -3366,7 +3378,10 @@ export const Composer = memo(function Composer({
           onPointerDown={focusFromComposerSpace}
           data-composer-editing={resendEdited ? "" : undefined}
           // z-10: in-pane stacking above sibling layers; no in-pane layer scale exists, so the literal stays.
-          className={`relative z-(--layer-pane-sheet) rounded-xl border ${resendEdited ? "edit-last-turn-composer" : ""}`}
+          {...surfaceAttributes(
+            { variant: "composer-glass" },
+            `relative z-(--layer-pane-sheet) rounded-xl border ${resendEdited ? "edit-last-turn-composer" : ""}`,
+          )}
         >
           <ComposerCitations
             citations={citations}
@@ -3468,6 +3483,11 @@ export const Composer = memo(function Composer({
           ) : null}
 
           <div className="relative">
+            {subagentList && onOpenSubagent ? (
+              <div className="absolute top-1.5 right-1.5 z-1 flex">
+                <SessionSubagentsMenu agents={subagentList} onOpen={onOpenSubagent} />
+              </div>
+            ) : null}
             {!plainDraft ? (
               <div
                 ref={highlightRef}
@@ -3475,19 +3495,21 @@ export const Composer = memo(function Composer({
                 style={{ textIndent: modeIndent }}
                 className={`composer-highlight pointer-events-none absolute inset-0 max-h-40 overflow-hidden whitespace-pre-wrap wrap-break-word px-3 text-ui-body leading-5.5 text-(--ui-tone-neutral-fg) font-sans ${
                   shell ? "py-4" : "py-3"
-                }`}
+                } ${hasSubagents ? "pe-16" : ""}`}
               >
-                <ComposerHighlight
-                  text={draft}
-                  mode={leadingMode}
-                  names={skillNames}
-                  skillParts={skillTextParts}
-                  mentions={mentionIndex.labels}
-                  mcpTags={selectedMcp}
-                  attachments={attachments}
-                  citations={citations.length}
-                  field={ref}
-                />
+                <WorkItemMentionCwd value={cwd}>
+                  <ComposerHighlight
+                    text={draft}
+                    mode={leadingMode}
+                    names={skillNames}
+                    skillParts={skillTextParts}
+                    mentions={mentionIndex.labels}
+                    mcpTags={selectedMcp}
+                    attachments={attachments}
+                    citations={citations.length}
+                    field={ref}
+                  />
+                </WorkItemMentionCwd>
               </div>
             ) : null}
             {/* ui-drift-ignore: raw-native-control -- bespoke composer editor: overlay highlight, auto-resize, mention/skill keyboard */}
@@ -3522,7 +3544,7 @@ export const Composer = memo(function Composer({
               disabled={disabled}
               className={`composer-field scrollbar-none relative max-h-40 w-full resize-none overflow-x-hidden whitespace-pre-wrap wrap-break-word bg-transparent px-3 text-ui-body leading-5.5 placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap font-sans ${
                 shell ? "py-4" : "py-3"
-              }`}
+              } ${hasSubagents ? "pe-16" : ""}`}
               onFocus={onFocus}
               onKeyDown={onKeyDown}
               onPaste={onPaste}
@@ -4115,3 +4137,4 @@ export const Composer = memo(function Composer({
 const MemoModelPicker = memo(ModelPicker);
 // A stable default keeps the memoized picker from re-rendering on every keystroke.
 const NO_MODEL_SETTINGS: Record<string, string> = {};
+import { surfaceAttributes } from "../../../shared/ui/Surface";

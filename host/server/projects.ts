@@ -159,6 +159,7 @@ export function createProjectsRuntime(
       directory: secretsDirectory,
       values: osSecretValues(secretsDirectory, dependencies.engine.store.environmentId),
     }),
+    dependencies.featureSession,
   );
   const pullRequestWatch = new PullRequestWatches({
     file: join(dirname(dependencies.engine.store.attachmentDir), "pull-request-watches.json"),

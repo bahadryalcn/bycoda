@@ -17,7 +17,21 @@ Read only the section affected by the change. UI owners are in [source owners](s
 - Presence uses shared labeled success/warning/danger/neutral roles; a failed read
   keeps the last confirmed state and a missing Host status shows offline.
 
+- Menus (account menu and tray) check the owner's choice (`choice` in the native
+  presence status); the trigger and badge show the effective state. Owner activity
+  in a focused window, and choosing Here, reread an idle or away computer at once,
+  one read at a time with a 15 s floor; a present owner is not reread per beat.
+
 ## Room identity and drafts
+
+- Job planning uses a persisted `job-planning` thread purpose, separate from normal
+  Room conversations. Planning replies are text-only; they never enter management
+  tool dispatch. The owner reviews one complete brief before existing job admission.
+  Reuse the conversation draft/receipt owners rather than inventing a local transcript.
+
+- Assistant Notes reuse the Notes Document/Source/Split editor through its public
+  contract. Assistant note drafts, exact-write recovery and explicit Save remain
+  separate from the library autosave owner.
 
 - Room uses one header and contextual toolbar. Disclose diagnostics; retain
   drafts, status, errors, owner decisions and emergency Stop.

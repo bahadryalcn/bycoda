@@ -9,16 +9,12 @@
 .task-board-columns > section.bycoda-task-column {
   flex: 1 1 0;
   min-inline-size: 12.5rem;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-card-surface);
 }
 .task-board-columns > section.bycoda-task-column[data-empty] {
   flex: 0.6 1 0;
   min-inline-size: 8.5rem;
 }
 .task-board-columns > section.bycoda-task-column > h2 {
-  border-block-end: 0;
   margin-block-end: 0;
   block-size: 2.25rem;
 }
@@ -51,23 +47,6 @@
 
 /* Drop cues use theme tokens only: the lane that would accept the card, and a line
    where a reorder lands. Both clear on drop, cancel (dragend) and leave. */
-.bycoda-task-column[data-drop-active="true"] {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  background: var(--ui-surface-selected);
-}
-.bycoda-task-column li[data-drop-before]::before {
-  content: "";
-  display: block;
-  block-size: 0.1875rem;
-  margin-block-end: 0.25rem;
-  border-radius: var(--radius-pill);
-  background: var(--ui-focus-ring-color);
-}
-.bycoda-task-column li[data-dragging] > article {
-  outline: var(--ui-focus-width) dashed var(--ui-tone-neutral-border);
-  background: var(--ui-surface-pressed);
-}
-
 @container task-area (max-width: 640px) {
   .task-board-column-picker {
     display: block;
@@ -132,19 +111,7 @@
   position: absolute;
   inset-block-start: 0.75rem;
   inset-inline-end: 0.5rem;
-  opacity: 0;
 }
-[draggable="true"]:hover .task-drag-grip,
-[draggable="true"]:focus-within .task-drag-grip {
-  opacity: 1;
-}
-.bycoda-tasks [draggable="true"] {
-  cursor: grab;
-}
-.bycoda-tasks [draggable="true"]:active {
-  cursor: grabbing;
-}
-
 /* Actions stay on one line: the primary button shrinks, the overflow action stays. */
 .task-card-actions > button:not([aria-haspopup]) {
   min-inline-size: 0;

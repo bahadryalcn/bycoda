@@ -18,6 +18,26 @@
   color: transparent;
 }
 
+.linkPrefix {
+  position: relative;
+}
+
+.linkMark {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 1px;
+  display: inline-flex;
+  inline-size: 0.75em;
+  block-size: 0.75em;
+  text-indent: 0;
+  transform: translateY(-50%);
+}
+
+.linkMark > * {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
 /* The scheme's remaining characters reserve the room the open badge sits in. */
 .badge {
   position: relative;

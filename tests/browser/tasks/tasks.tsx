@@ -643,7 +643,7 @@ Object.assign(window, {
             platform: machine.localHost ? "win32" : "darwin",
             capabilities: [
               "tasks",
-              ...(query.has("suspendedForms") ? ["stewards"] : []),
+              ...(query.has("suspendedForms") || query.has("visualSteward") ? ["stewards"] : []),
               ...(query.has("managedDelivery")
                 ? ["workspaces.managed.v1", "workspaces.delivery.v1"]
                 : []),
@@ -695,7 +695,33 @@ Object.assign(window, {
         case "tasks.list":
           return structuredClone(tasks[machineId]);
         case "stewards.list":
-          return [];
+          return query.has("visualSteward") && machineId === "machine-local"
+            ? [
+                {
+                  id: "visual-steward",
+                  projectId: "local-project",
+                  enabled: true,
+                  harness: "claude",
+                  model: "claude:fixture",
+                  modelSettings: {},
+                  runtimeMode: "auto",
+                  focus: "Review project health",
+                  maxProposals: 5,
+                  maxOpen: 10,
+                  autoStart: false,
+                  scheduleKind: "daily",
+                  minute: 0,
+                  time: "09:00",
+                  dayOfWeek: 1,
+                  nextRunAt: 1900000000000,
+                  lastRunStatus: "succeeded",
+                  lastProposed: 2,
+                  declined: [],
+                  createdAt: 1,
+                  updatedAt: 1,
+                },
+              ]
+            : [];
         case "workspaces.get":
           return structuredClone(managedWorkspace);
         case "workspaces.finish": {

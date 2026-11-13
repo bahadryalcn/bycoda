@@ -64,6 +64,7 @@ import {
   type ProviderAccountProvider,
 } from "../../features/providers/model/providerAccounts";
 import { useProviderAccounts } from "../../features/providers/model/useProviderAccounts";
+import { surfaceAttributes } from "../../shared/ui/Surface";
 
 export type UsageFooterSession = {
   id?: string;
@@ -324,7 +325,10 @@ export function UsageFooter({
       size="micro"
       tone="secondary"
       aria-label={ariaLabel}
-      className={`@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 px-1.5 ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
+      {...surfaceAttributes(
+        embedded ? {} : { frame: "stroke", edge: "top" },
+        `@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 px-1.5 ${embedded ? "flex-1" : "shrink-0"}`,
+      )}
     >
       <ScrollArea
         axis="both"

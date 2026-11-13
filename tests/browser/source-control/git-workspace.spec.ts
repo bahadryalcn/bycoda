@@ -579,3 +579,103 @@ test("edits a conflict result in the panel, stages it and continues the merge", 
   });
   expect(calls.some((call) => call.command === "git_operation_continue")).toBe(true);
 });
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [800, 1280]) {
+    test(`shared Git surfaces preserve current ref and inspector ${theme} ${width}`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+      const graphPane = dialog.getByRole("region", { name: "Commit Graph", exact: true });
+      const inspectorPane = dialog.getByRole("complementary", {
+        name: "Git inspector",
+        exact: true,
+      });
+      const dialogBox = (await dialog.boundingBox())!;
+      for (const pane of [graphPane, inspectorPane]) {
+        const box = (await pane.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(dialogBox.x - 1);
+        expect(box.x + box.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
+        expect(box.width).toBeGreaterThanOrEqual(pane === graphPane ? 180 : 300);
+      }
+      const ref = dialog.locator('[data-surface-ring="pane-outer"]').first();
+      await expect(ref).toBeVisible();
+      expect((await ref.boundingBox())!.height).toBe(16);
+      await expect(ref).toHaveCSS("border-top-width", "0px");
+      const workingTree = dialog.getByRole("button", { name: /^Working tree \d/ });
+      await expect(workingTree).toHaveAttribute("aria-pressed", "true");
+      await expect(workingTree).toHaveCSS("border-top-left-radius", "0px");
+      await page.screenshot({
+        path: testInfo.outputPath(`git-shared-${theme}-${width}-working.png`),
+      });
+      await dialog.getByRole("button").filter({ hasText: "Workspace change 39" }).click();
+      await expect(
+        dialog.getByRole("searchbox", { name: "Filter commit files", exact: true }),
+      ).toBeVisible();
+      const disclosure = dialog
+        .locator('[data-surface-frame="pane"][data-surface-edge="bottom"]')
+        .filter({ has: page.getByRole("searchbox", { name: "Filter commit files", exact: true }) });
+      await expect(disclosure).toHaveCSS("border-bottom-width", "1px");
+      await page.screenshot({
+        path: testInfo.outputPath(`git-shared-${theme}-${width}-commit.png`),
+      });
+      const branches = dialog.getByRole("button", { name: "Toggle branches", exact: true });
+      for (const visible of [false, true]) {
+        await branches.click();
+        await expect(branches).toHaveAttribute("aria-pressed", String(visible));
+        for (const pane of [graphPane, inspectorPane]) {
+          const box = (await pane.boundingBox())!;
+          expect(box.x + box.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
+          expect(box.width).toBeGreaterThanOrEqual(pane === graphPane ? 180 : 300);
+        }
+        const filter = dialog.getByRole("searchbox", { name: "Filter commit files", exact: true });
+        await expect(filter).toBeInViewport({ ratio: 1 });
+        await filter.focus();
+        await expect(filter).toBeFocused();
+        if (visible) {
+          const branch = dialog.getByRole("button", {
+            name: "Switch to feature/graph",
+            exact: true,
+          });
+          await expect(branch).toBeInViewport({ ratio: 1 });
+          await branch.focus();
+          await expect(branch).toBeFocused();
+        }
+        await page.screenshot({
+          path: testInfo.outputPath(`git-shared-${theme}-${width}-branches-${visible}.png`),
+        });
+      }
+    });
+  }
+}
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`git picker root keeps range selection ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto("/tests/browser/source-control/git-workspace.html?action-feedback");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const list = page.getByRole("listbox", { name: "Changes", exact: true });
+      await expect(list).toHaveAttribute("aria-multiselectable", "true");
+      expect(await list.evaluate((node) => node.tagName)).toBe("UL");
+      const files = list.locator("[data-git-file]");
+      await expect(files).toHaveCount(2);
+      await files.first().click();
+      await files.first().press("Shift+ArrowDown");
+      await expect(list.locator('[role="option"][aria-selected="true"]')).toHaveCount(2);
+      await expect(files.last()).toBeFocused();
+      await page.screenshot({ path: `temp/verification/picker-roots/git-${theme}-${width}.png` });
+      await files.last().press("Escape");
+      await expect(list.locator('[role="option"][aria-selected="true"]')).toHaveCount(1);
+      await expect(files.last()).toBeFocused();
+    });

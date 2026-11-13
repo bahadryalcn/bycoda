@@ -215,3 +215,11 @@ it("routes minimize and close through native controls so lifecycle guards run", 
     expect(native.window.close).toHaveBeenCalledOnce();
   });
 });
+
+it("keeps close neutral like the other caption controls", async () => {
+  await mounted(async (host) => {
+    expect(
+      host.querySelector('[aria-label="Close window"]')?.getAttribute("data-button-tone"),
+    ).toBe("neutral");
+  });
+});

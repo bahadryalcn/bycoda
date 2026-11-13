@@ -14,10 +14,16 @@ import { assistantDomain } from "../domains/assistant/service";
 import { type HostDomainContext } from "../domains/context";
 import { createHostDispatcher } from "../transport/dispatch";
 import type { ServerBindings } from "./bindings";
+import { createHostModelRoutingService } from "../model-routing/runtime";
+import { createModelRoutingDomainService } from "../domains/model-routing/service";
+import { readUsageLimits } from "../usage/limits-report";
+import { hostUsageLimitsDeps } from "./usage-limits-deps";
+import { resolveBinary } from "./support";
 export function createRegistryRuntime(
   dependencies: Pick<
     ServerBindings,
     | "engine"
+    | "models"
     | "environmentService"
     | "projectsService"
     | "assistant"
@@ -47,6 +53,13 @@ export function createRegistryRuntime(
     | "persistenceService"
   >,
 ) {
+  const modelRouting = createHostModelRoutingService({
+    store: dependencies.engine.store,
+    catalog: () => dependencies.models(),
+    readLimits: () => readUsageLimits(hostUsageLimitsDeps(dependencies.engine.store.environmentId)),
+    command: async (provider) => (await resolveBinary[provider]()).path,
+  });
+  const modelRoutingService = createModelRoutingDomainService(modelRouting);
   const domainDispatcher = createHostDispatcher({
     environmentId: dependencies.engine.store.environmentId,
     environment: dependencies.environmentService,
@@ -94,6 +107,10 @@ export function createRegistryRuntime(
         ]),
       ),
       "models.list": dependencies.modelsService.list,
+      "modelRouting.get": modelRoutingService.get,
+      "modelRouting.save": modelRoutingService.save,
+      "modelRouting.status": modelRoutingService.status,
+      "modelRouting.resolve": modelRoutingService.resolve,
       ...Object.fromEntries(
         NATIVE_BUFFER_UPLOAD_METHODS.map((method) => [
           method,
@@ -118,9 +135,6 @@ export function createRegistryRuntime(
       "crews.deleteRun": dependencies.crewOperation("crews.deleteRun"),
       "crews.agent.save": dependencies.crewOperation("crews.agent.save"),
       "crews.agent.delete": dependencies.crewOperation("crews.agent.delete"),
-      "crews.pools.list": dependencies.crewOperation("crews.pools.list"),
-      "crews.pools.save": dependencies.crewOperation("crews.pools.save"),
-      "crews.pools.delete": dependencies.crewOperation("crews.pools.delete"),
       "crews.start": dependencies.crewOperation("crews.start"),
       "crews.get": dependencies.crewOperation("crews.get"),
       "crews.assign": dependencies.crewOperation("crews.assign"),

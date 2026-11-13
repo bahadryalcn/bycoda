@@ -1,3 +1,5 @@
+import { hostModelRoutingService } from "../model-routing/runtime";
+import { resolveModelChoice } from "../model-routing/service";
 import { ownerDayBounds } from "../../src/shared/lib/time/ownerDay";
 import { randomUUID } from "node:crypto";
 import { QUICK_AUTOMATION_MAX_AHEAD_MS } from "../../src/shared/model/host-contracts/assistant-quick-automation";
@@ -342,7 +344,7 @@ export class HostAutomations {
         const run = await this.newRun(due, "scheduled", scheduledFor);
         if (now - scheduledFor > MISSED_RUN_GRACE_MS)
           await this.finish(run, "skipped", MISSED_RUN_SKIP, now);
-        else await this.launch(due, run, now);
+        else await this.launch(due, run, now, once);
       } catch (error) {
         console.error("Could not start an automation:", errorMessage(error));
       }
@@ -427,6 +429,7 @@ export class HostAutomations {
     automation: HostAutomation,
     run: ManagedAutomationRun,
     now: number,
+    once = false,
   ): Promise<HostAutomationRun> {
     if (this.launching.has(automation.id))
       return this.finish(run, "skipped", PREVIOUS_RUN_SKIP, now);
@@ -441,6 +444,54 @@ export class HostAutomations {
       if (skip) return await this.finish(run, "skipped", skip, now);
       if (this.closing)
         return await this.finish(run, "skipped", "Skipped: the host is stopping.", now);
+      if (!run.sessionId && !run.execution) {
+        const routing = hostModelRoutingService(this.store);
+        const resolution = await resolveModelChoice(routing, {
+          role: "automation",
+          choice: automation.modelChoice,
+          fixed: {
+            harness: automation.harness,
+            providerAccountId: automation.providerAccountId,
+            model: automation.model,
+            modelSettings: automation.modelSettings,
+          },
+        });
+        if (!resolution.ok && resolution.reason === "noEligibleEntry") {
+          if (once)
+            await this.store.transaction(async () => {
+              const current = await this.find(automation.id);
+              // Rearm only the one-time schedule this launch disabled, preserving owner edits.
+              if (!current || current.enabled || current.updatedAt !== automation.updatedAt) return;
+              await this.write({ ...current, enabled: true });
+              await this.scheduleOnce(
+                automation.id,
+                Math.max(now + TICK_MS, resolution.nextResetAt ?? 0),
+              );
+            });
+          return await this.finish(
+            run,
+            "skipped",
+            `Skipped: no eligible automation model (${resolution.skipped.map((entry) => `${entry.entryId}: ${entry.reason}`).join(", ")}).`,
+            now,
+          );
+        }
+        const execution = resolution.ok
+          ? resolution.target
+          : {
+              harness: automation.harness,
+              providerAccountId: automation.providerAccountId,
+              model: automation.model,
+              modelSettings: automation.modelSettings,
+            };
+        run = {
+          ...run,
+          execution,
+          maxRunMinutes:
+            automation.maxRunMinutes || (await routing.get()).defaultMaxRunMinutes || 0,
+        };
+        await this.writeRun(run);
+      }
+      if (run.execution) automation = { ...automation, ...run.execution };
       const mode = await writerWorkspaceMode(
         this.store,
         this.workspaces,
@@ -503,6 +554,7 @@ export class HostAutomations {
             reason: "kickoff",
           },
           harness: automation.harness,
+          providerAccountId: automation.providerAccountId,
           model: automation.model,
           modelSettings: automation.modelSettings,
           runtimeMode: automation.runtimeMode,
@@ -602,7 +654,7 @@ export class HostAutomations {
     const outcome = await sessionRunState(
       this.store,
       { ...run, startedAt: run.startedAt ?? run.createdAt },
-      automation ? automationLimits(automation).maxRunMinutes : 0,
+      run.maxRunMinutes ?? (automation ? automationLimits(automation).maxRunMinutes : 0),
       now,
     );
     if (outcome.state === "running") {

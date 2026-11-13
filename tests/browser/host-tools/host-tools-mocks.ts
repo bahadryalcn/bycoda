@@ -216,6 +216,32 @@ export async function hostFeatureRequest<T>(
   let { status: deviceStatus, device } = machineDevices.get(machineId)!;
   let result: unknown;
   switch (method) {
+    case "desktop.request":
+      result = {
+        configuration: {
+          enabled: false,
+          binaryPath: "",
+          binarySha256: "",
+          allowedApps: [],
+          allowPhysicalInput: false,
+          permissionMode: "ask",
+          allowAllApps: false,
+          version: 0,
+        },
+        status: {
+          installed: false,
+          verified: false,
+          enabled: false,
+          stopped: false,
+          active: false,
+          upstreamRef: "pinned",
+          protocol: "2.5",
+        },
+      };
+      break;
+    case "desktop.helper.request":
+      result = { phase: "missing" };
+      break;
     case "runtimeLogs.read": {
       const label = machineId === "fixture-local" ? "Demo" : "MacBook";
       const sources = [
@@ -371,6 +397,8 @@ export async function hostFeatureRequest<T>(
       result = { url: "http://127.0.0.1:5173" };
       break;
     case "devices.status":
+      if (new URLSearchParams(location.search).has("slowDeviceStatus"))
+        await new Promise((resolve) => setTimeout(resolve, 2500));
       result = deviceStatus;
       break;
     case "devices.setup":

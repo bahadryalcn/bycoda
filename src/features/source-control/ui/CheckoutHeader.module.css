@@ -6,14 +6,6 @@
   padding: 2px 6px;
 }
 
-.commitSection {
-  border-block-end: 1px solid var(--color-stroke);
-}
-
-.repository .commitSection {
-  border-block-end: 0;
-}
-
 .disclosure {
   display: flex;
   /* Only as wide as its name, so free space goes to the branch control. When the

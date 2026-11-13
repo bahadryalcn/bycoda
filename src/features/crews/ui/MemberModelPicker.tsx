@@ -1,4 +1,4 @@
-import { ModelPicker } from "../../sessions/ui/ModelPicker";
+import { ModelPicker } from "../../sessions/public/ModelPicker";
 import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
 import { isRemoteProvider, REMOTE_PROVIDERS } from "../../connections/model/protocol";
 import type { CrewCandidate } from "../model/crew";

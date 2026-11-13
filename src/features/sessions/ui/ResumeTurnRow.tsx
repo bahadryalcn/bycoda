@@ -52,7 +52,7 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
           as="p"
           size="caption"
           tone="secondary"
-          className="mt-1 ps-7 whitespace-pre-wrap break-words"
+          className="mt-1 ps-[calc(1.5rem+0.25rem)] whitespace-pre-wrap break-words"
         >
           {block.text}
         </Text>

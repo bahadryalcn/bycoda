@@ -20,8 +20,6 @@
 .library {
   flex: 0 0 clamp(20rem, 36%, 28rem);
   overflow: hidden;
-
-  border-inline-end: 1px solid var(--ui-pane-border);
 }
 
 /* Headers separate by spacing, not by a rule under every band. */
@@ -102,16 +100,7 @@
   align-items: center;
   gap: 0.375rem;
   min-inline-size: 0;
-  border-radius: var(--radius-control, 0.375rem);
   padding-inline-end: 0.25rem;
-}
-@media (hover: hover) and (pointer: fine) {
-  .row:hover {
-    background: var(--ui-surface-hover);
-  }
-}
-.row[data-selected] {
-  background: var(--ui-surface-selected);
 }
 .name {
   flex: 1;
@@ -119,8 +108,6 @@
 }
 .skillName {
   min-inline-size: 0;
-  overflow: clip;
-  white-space: nowrap;
 }
 .offLabel {
   flex: none;
@@ -153,17 +140,9 @@
 }
 .menuSlot {
   flex: none;
+  display: flex;
+  justify-content: center;
   inline-size: var(--ui-control-height-sm);
-}
-.rowMenu {
-  flex: none;
-  opacity: 0;
-}
-.row:hover .rowMenu,
-.row:focus-within .rowMenu,
-.row[data-selected] .rowMenu,
-.rowMenu[aria-expanded="true"] {
-  opacity: 1;
 }
 .detailFooter {
   display: flex;
@@ -201,10 +180,6 @@
   align-items: center;
   gap: 0.75rem;
   padding-block: 0.625rem;
-  border-block-end: 1px solid var(--ui-pane-border);
-}
-.machineRow:last-child {
-  border-block-end: 0;
 }
 .machineText {
   display: grid;
@@ -276,9 +251,6 @@
   overflow: auto;
   padding: 16px;
 }
-.split .rawPane {
-  border-inline-end: 1px solid var(--color-stroke);
-}
 .previewPane {
   overflow: hidden;
 }
@@ -297,14 +269,7 @@
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
   .split .rawPane {
-    border-inline-end: 0;
-    border-block-end: 1px solid var(--color-stroke);
-  }
-}
-
-@media (hover: none) {
-  .rowMenu {
-    opacity: 1;
+    --surface-frame-stacked: 1;
   }
 }
 
@@ -317,7 +282,7 @@
 @container (width < 44rem) {
   .library {
     flex-basis: 100%;
-    border-inline-end: 0;
+    --surface-frame-visible: 0;
   }
   .library:has(+ .workspace .detail) {
     display: none;

@@ -189,6 +189,8 @@ export type AssistantThread = {
   createdAt: number;
   updatedAt: number;
   projectId?: string;
+  /** A planning conversation has no management tools; work starts only through job admission. */
+  purpose?: "job-planning";
   summary: string;
   summaryProof?: AssistantThreadSummaryProof;
   summaryState?: AssistantThreadSummaryState;
@@ -421,7 +423,11 @@ export const AssistantRequestValidationSchema = z.union([
       limit,
     }),
     z.strictObject({ op: z.literal("memory.delete"), id, expectedVersion: version }),
-    z.strictObject({ op: z.literal("threads.open"), projectId: id.optional() }),
+    z.strictObject({
+      op: z.literal("threads.open"),
+      projectId: id.optional(),
+      purpose: z.literal("job-planning").optional(),
+    }),
     z
       .strictObject({
         op: z.literal("threads.messages"),
@@ -797,6 +803,7 @@ const jobSchema = z.union([projectJobSchema, quickJobSchema, quickAutomationJobS
 const threadSchema = z.strictObject({
   ...metadata,
   projectId: id.optional(),
+  purpose: z.literal("job-planning").optional(),
   summary: z.string().max(6000),
   summaryProof: AssistantThreadSummaryProofSchema.optional(),
   summaryState: AssistantThreadSummaryStateSchema.optional(),

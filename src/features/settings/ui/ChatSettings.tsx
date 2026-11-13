@@ -38,8 +38,7 @@ import {
   saveComposerSpelling,
   useComposerSpelling,
 } from "../model/composerSpelling";
-import { TranslationSettings } from "./TranslationSettings";
-import { TitleGenerationSettings } from "./TitleGenerationSettings";
+import { HelperModelsSettings } from "./HelperModelsSettings";
 import { TemplatesSettings } from "./TemplatesSettings";
 import { ConversationDisplaySettings } from "./ConversationDisplaySettings";
 import { AppearanceSaveFeedback, type AppearanceSettings } from "./useAppearanceSettings";
@@ -314,9 +313,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
       </Group>
 
       <Group title={t("Helper models")} layout="full" persistence={{ mode: "automatic" }}>
-        <TranslationSettings embedded />
-        <TranslationSettings embedded action="reprompt" />
-        <TitleGenerationSettings embedded />
+        <HelperModelsSettings />
       </Group>
       <TemplatesSettings />
     </div>

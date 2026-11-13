@@ -6,11 +6,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
-import {
-  NativePopupHost,
-  PopupBackdrop,
-  useNativePopupFrame,
-} from "../../../shared/ui/NativePopupHost";
+import { NativePopover } from "../../../shared/ui/Popover";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
 import {
   seedProjectBranches,
@@ -62,15 +58,6 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
     };
   }, [onShown]);
 
-  const { frameProps, contentClassName } = useNativePopupFrame({
-    ref: setHost,
-    onContentSize: ({ height }) => {
-      if (!request || height <= 2) return;
-      // Native transport currently accepts height only; width support belongs to its owner.
-      void invoke("quick_git_fit", { id: request.id, height }).catch(() => undefined);
-    },
-  });
-
   useEffect(() => {
     const focus = () =>
       requestAnimationFrame(() =>
@@ -94,17 +81,20 @@ export function QuickGitPopup({ onShown }: { onShown: () => void }) {
   }, []);
 
   return (
-    <div {...frameProps}>
-      <PopupBackdrop />
-      <div className={`${contentClassName} max-h-[520px] overflow-y-auto`}>
-        {error ? <InlineError className="px-3 py-2">{error}</InlineError> : null}
-        {host && request ? (
-          <NativePopupHost value={host}>
-            <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
-          </NativePopupHost>
-        ) : null}
-      </div>
-    </div>
+    <NativePopover
+      ref={setHost}
+      maxHeight={520}
+      onContentSize={({ height }) => {
+        if (!request || height <= 2) return;
+        // Native transport currently accepts height only; width support belongs to its owner.
+        void invoke("quick_git_fit", { id: request.id, height }).catch(() => undefined);
+      }}
+    >
+      {error ? <InlineError className="px-3 py-2">{error}</InlineError> : null}
+      {host && request ? (
+        <QuickGitPopupPicker key={request.id} request={request} onFinish={finish} />
+      ) : null}
+    </NativePopover>
   );
 }
 

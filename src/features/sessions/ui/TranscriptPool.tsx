@@ -143,6 +143,7 @@ type PooledProps = {
   blocks?: Block[];
   busy?: boolean;
   pendingQuestion?: boolean;
+  pendingOwnerApproval?: boolean;
   questionBehavior?: "blocking" | "nonBlocking";
   backgroundTasks?: string[];
   backgroundAgents?: number;
@@ -272,6 +273,7 @@ export class TranscriptPool {
       this.protectedIds.has(entry.id) ||
       p.busy ||
       p.pendingQuestion ||
+      p.pendingOwnerApproval ||
       !!p.backgroundTasks?.length ||
       !!p.backgroundAgents ||
       (!!p.blocks && blocksActive(p.blocks))

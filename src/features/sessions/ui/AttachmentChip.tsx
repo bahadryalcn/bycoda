@@ -1,3 +1,7 @@
+import {
+  actionContentAttributes,
+  actionContentScopeAttributes,
+} from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -93,8 +97,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         ref={thumbnailBox}
         data-attachment-chip={image ? "image" : "file"}
         data-attachment-kind={presentation.kind}
+        {...actionContentScopeAttributes()}
         {...surfaceAttributes(
-          { radius: "card" },
+          { radius: "card", variant: "attachment" },
           `group ${styles.card} ${image ? styles.image : styles.file}`,
         )}
       >
@@ -137,9 +142,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
             {token && onInsertToken ? (
               <Button
                 motion="none"
-                {...motionAttributes(
-                  { transition: "opacity" },
-                  `absolute bottom-1 left-1 ${styles.action}`,
+                {...motionAttributes({ transition: "opacity" })}
+                {...actionContentAttributes(
+                  { phase: "interaction", hide: "opacity", focus: "within" },
+                  "absolute bottom-1 left-1",
                 )}
                 size="sm"
                 iconOnly
@@ -196,9 +202,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
             {token && onInsertToken ? (
               <Button
                 motion="none"
-                {...motionAttributes(
-                  { transition: "opacity" },
-                  `absolute bottom-1 left-1 ${styles.action}`,
+                {...motionAttributes({ transition: "opacity" })}
+                {...actionContentAttributes(
+                  { phase: "interaction", hide: "opacity", focus: "within" },
+                  "absolute bottom-1 left-1",
                 )}
                 size="sm"
                 iconOnly
@@ -221,9 +228,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
         {onRemove ? (
           <Button
             motion="none"
-            {...motionAttributes(
-              { transition: "opacity" },
-              `absolute right-1 top-1 ${styles.action}`,
+            {...motionAttributes({ transition: "opacity" })}
+            {...actionContentAttributes(
+              { phase: "interaction", hide: "opacity", focus: "within" },
+              "absolute right-1 top-1",
             )}
             size="sm"
             iconOnly
@@ -250,8 +258,9 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
       {attachment.browserAnnotation ? (
         <Disclosure
           size="sm"
+          interactionTone="accent"
           summary={t("Inspect browser element")}
-          className="browser-annotation-chip"
+          {...surfaceAttributes({ frame: "card", radius: "card" }, "browser-annotation-chip")}
         >
           <BrowserAnnotationDetails annotation={attachment.browserAnnotation} />
         </Disclosure>

@@ -227,3 +227,57 @@ test("detached window chrome keeps layout, return and native controls reachable 
     path: testInfo.outputPath("detached-chrome-320x280.png"),
   });
 });
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`pane shared frames ${theme} ${width}`, async ({ page }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/workspace/workspace-layout.html?theme=${theme}`);
+      await page.getByRole("button", { name: "Group Gamma with Alpha" }).click();
+      const tabs = page.getByRole("tablist", { name: "Pane sessions" });
+      await expect(tabs).toHaveCSS("border-bottom-width", "1px");
+      const paint = await tabs.evaluate((node) => ({
+        background: getComputedStyle(node).backgroundColor,
+        border: getComputedStyle(node).borderBottomColor,
+      }));
+      await testInfo.attach("tab-paint", {
+        body: JSON.stringify(paint),
+        contentType: "application/json",
+      });
+      await page.screenshot({ path: testInfo.outputPath("tabs.png"), animations: "disabled" });
+      const gamma = page.getByRole("tab", { name: "Gamma", exact: true });
+      const alpha = page.getByRole("tab", { name: "Alpha", exact: true });
+      const from = (await gamma.boundingBox())!;
+      const to = (await alpha.boundingBox())!;
+      const layout = page.getByTestId("layout");
+      const original = await layout.textContent();
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x + 2, to.y + to.height / 2, { steps: 6 });
+      const marker = page.locator('[data-pane-tab-drop="before"]:visible');
+      await expect(marker).toBeVisible();
+      const colors = await marker.evaluate((node) => {
+        const probe = document.createElement("span");
+        probe.style.background = "var(--ui-drop-line)";
+        node.append(probe);
+        const result = [
+          getComputedStyle(node).backgroundColor,
+          getComputedStyle(probe).backgroundColor,
+        ];
+        probe.remove();
+        return result;
+      });
+      expect(colors[0]).toBe(colors[1]);
+      await page.screenshot({ path: testInfo.outputPath("drop.png"), animations: "disabled" });
+      await page.keyboard.press("Escape");
+      await page.mouse.up();
+      await expect(page.locator("[data-pane-tab-drop]")).toHaveCount(0);
+      await expect(layout).toHaveText(original!);
+      await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(to.x + 2, to.y + to.height / 2, { steps: 6 });
+      await page.mouse.up();
+      expect(await tabs.getByRole("tab").allTextContents()).toEqual(["Gamma", "Alpha"]);
+    });
+  }
+}

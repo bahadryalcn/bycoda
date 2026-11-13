@@ -6,6 +6,19 @@ const tool = { id: "s1", kind: "tool", text: "Read file", status: "completed" } 
 const reasoning = { id: "s2", kind: "reasoning", text: "thinking" } as AgentStep;
 
 describe("agentStepBlocks", () => {
+  it("restores the nested agent run for inspection", () => {
+    const step: AgentStep = {
+      ...tool,
+      toolKind: "subagent",
+      agentRun: {
+        name: "Reviewer",
+        model: "claude-sonnet-4-6",
+        startedAt: 1000,
+        steps: [{ id: "reply", kind: "message", text: "Verified" }],
+      },
+    };
+    expect(agentStepBlock(step)).toMatchObject({ role: "tool", agentRun: step.agentRun });
+  });
   it("builds tool and reasoning blocks", () => {
     expect(agentStepBlock(tool)).toMatchObject({ role: "tool", tool: { callId: "s1" } });
     expect(agentStepBlock(reasoning)).toMatchObject({ role: "reasoning", text: "thinking" });

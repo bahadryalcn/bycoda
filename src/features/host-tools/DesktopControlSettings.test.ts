@@ -57,6 +57,33 @@ async function render() {
     root.render(createElement(DesktopControlSettings));
   });
 }
+it("keeps status and emergency Stop while the shell owns unified permissions", async () => {
+  mock.request.mockResolvedValue({
+    ...state,
+    configuration: { ...config, enabled: true, permissionMode: "full", allowPhysicalInput: true },
+    status: { ...state.status, enabled: true },
+  });
+  const accessRef = { current: null as null | ((mode: "ask" | "full") => void) };
+  const saveRef = { current: null as null | (() => Promise<void>) };
+  await act(async () =>
+    root.render(
+      createElement(DesktopControlSettings, { showPermissionControls: false, accessRef, saveRef }),
+    ),
+  );
+  expect(container.textContent).not.toContain("Enable computer use");
+  expect(container.textContent).not.toContain("Full access asks nothing");
+  expect(container.querySelectorAll('[role="switch"]')).toHaveLength(0);
+  expect(container.textContent).toContain("Helper");
+  expect(container.textContent).toContain("Stop computer use");
+  await act(async () => accessRef.current!("ask"));
+  await act(async () => saveRef.current!());
+  expect(mock.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      op: "configure",
+      configuration: expect.objectContaining({ permissionMode: "ask" }),
+    }),
+  );
+});
 const helperPrepares = () =>
   mock.helper.mock.calls.filter(([input]) => input.op === "prepare").length;
 async function click(label: string) {
@@ -139,9 +166,11 @@ it("reports unsaved options and pending saves to its parent", async () => {
   await act(async () =>
     root.render(createElement(DesktopControlSettings, { onDraftStateChange: report })),
   );
-  expect(report).toHaveBeenLastCalledWith({ dirty: false, pending: false });
+  expect(report).toHaveBeenLastCalledWith(
+    expect.objectContaining({ dirty: false, pending: false }),
+  );
   await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
-  expect(report).toHaveBeenLastCalledWith({ dirty: true, pending: false });
+  expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: true, pending: false }));
   let resolve!: (value: unknown) => void;
   mock.request.mockImplementation((input) =>
     input.op === "configure"
@@ -151,15 +180,49 @@ it("reports unsaved options and pending saves to its parent", async () => {
       : Promise.resolve({ ...state, configuration: { ...config, enabled: true, version: 1 } }),
   );
   await click("Save computer controls");
-  expect(report).toHaveBeenLastCalledWith({ dirty: true, pending: true });
+  expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: true, pending: true }));
   await act(async () =>
     resolve({ ...state, configuration: { ...config, enabled: true, version: 1 } }),
   );
-  expect(report).toHaveBeenLastCalledWith({ dirty: false, pending: false });
+  expect(report).toHaveBeenLastCalledWith(
+    expect.objectContaining({ dirty: false, pending: false }),
+  );
   expect(
     [...container.querySelectorAll("button")].some((node) => node.textContent === "Saved"),
   ).toBe(true);
   expect(container.textContent).not.toContain("Computer controls saved.");
+});
+
+it("applies unified full access to the draft and persists physical input with the owner save", async () => {
+  const accessRef = { current: null as null | ((mode: "ask" | "full") => void) };
+  const saveRef = { current: null as null | (() => Promise<void>) };
+  const report = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(DesktopControlSettings, { accessRef, saveRef, onDraftStateChange: report }),
+    ),
+  );
+  expect(mock.request.mock.calls.map(([input]) => input.op)).toEqual(["status"]);
+  await act(async () => accessRef.current!("full"));
+  expect(mock.request.mock.calls.map(([input]) => input.op)).toEqual(["status"]);
+  expect(report).toHaveBeenLastCalledWith({
+    dirty: true,
+    pending: false,
+    access: { enabled: true, permissionMode: "full", allowPhysicalInput: true },
+  });
+  await act(async () => saveRef.current!());
+  // The Host derives allowAllApps from full mode; it is not a second owner choice.
+  expect(mock.request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      op: "configure",
+      expectedVersion: 0,
+      configuration: expect.objectContaining({
+        enabled: true,
+        permissionMode: "full",
+        allowPhysicalInput: true,
+      }),
+    }),
+  );
 });
 it("does not hold the settings dialog open while the helper prepares on the Host", async () => {
   mock.helper.mockResolvedValue({ phase: "preparing", stage: "building" });
@@ -169,7 +232,7 @@ it("does not hold the settings dialog open while the helper prepares on the Host
   );
   await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   expect(container.textContent).toContain("Preparing helper…");
-  expect(report).toHaveBeenLastCalledWith({ dirty: true, pending: false });
+  expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ dirty: true, pending: false }));
 });
 it("keeps emergency Stop available while a settings save is pending", async () => {
   mock.request.mockResolvedValueOnce({

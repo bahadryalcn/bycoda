@@ -1,6 +1,4 @@
-import { useMemo, useSyncExternalStore } from "react";
-import { createStoredSetting } from "../../../shared/lib/storedSetting";
-import { HARNESSES } from "./session";
+import { resolveHelperModel } from "../../model-routing/public/helpers";
 import type { TranslationContext } from "./translation";
 import { defaultSessionChoice, preferredModelSettings, resolveModel } from "./models";
 import {
@@ -23,82 +21,9 @@ export function defaultTextActionChoice(): TranslationChoice {
   };
 }
 
-export function parseTranslationChoice(raw: string | null): TranslationChoice | undefined {
-  try {
-    const value = JSON.parse(raw ?? "null");
-    if (
-      !value ||
-      !HARNESSES.includes(value.harness) ||
-      typeof value.model !== "string" ||
-      !value.model.trim()
-    )
-      return;
-    return {
-      harness: value.harness,
-      model: value.model,
-      modelSettings: Object.fromEntries(
-        Object.entries(value.modelSettings ?? {}).filter(([, entry]) => typeof entry === "string"),
-      ) as Record<string, string>,
-      providerAccountId:
-        typeof value.providerAccountId === "string" ? value.providerAccountId : undefined,
-    };
-  } catch {
-    return;
-  }
-}
-
-const defaults = createStoredSetting<string | null>({
-  key: "bycoda.translation.default.v1",
-  fallback: null,
-  parse: (raw) => raw,
-  serialize: (raw) => raw ?? "null",
-  event: "bycoda:translation-default",
-  storageEvents: true,
-});
-
-const repromptDefaults = createStoredSetting<string | null>({
-  key: "bycoda.reprompt.default.v1",
-  fallback: null,
-  parse: (raw) => raw,
-  serialize: (raw) => raw ?? "null",
-  event: "bycoda:reprompt-default",
-  storageEvents: true,
-});
-
-export function saveDefaultRepromptChoice(choice: TranslationChoice | undefined) {
-  repromptDefaults.save(choice ? JSON.stringify(choice) : null);
-}
-
-export function loadDefaultRepromptChoice() {
-  return parseTranslationChoice(repromptDefaults.load());
-}
-
-export function useDefaultRepromptChoice() {
-  const raw = useSyncExternalStore(repromptDefaults.subscribe, repromptDefaults.load, () => null);
-  return useMemo(() => parseTranslationChoice(raw), [raw]);
-}
-
-export function saveDefaultTranslationChoice(choice: TranslationChoice | undefined) {
-  defaults.save(choice ? JSON.stringify(choice) : null);
-}
-
-export function loadDefaultTranslationChoice() {
-  return parseTranslationChoice(defaults.load());
-}
-
-export function useDefaultTranslationChoice() {
-  const raw = useSyncExternalStore(defaults.subscribe, defaults.load, () => null);
-  return useMemo(() => parseTranslationChoice(raw), [raw]);
-}
-
 /** Keep execution on the calling session's machine and project. */
-export function translationContextWithDefault(
-  context: TranslationContext,
-  action: "translation" | "reprompt" = "translation",
-): TranslationContext {
-  const choice =
-    (action === "reprompt" ? loadDefaultRepromptChoice() : loadDefaultTranslationChoice()) ??
-    defaultTextActionChoice();
+export function translationContextWithDefault(context: TranslationContext): TranslationContext {
+  const choice = defaultTextActionChoice();
   return {
     ...context,
     ...choice,
@@ -107,4 +32,24 @@ export function translationContextWithDefault(
       ? (choice.providerAccountId ?? defaultProviderAccountId(choice.harness))
       : undefined,
   };
+}
+
+/** Resolve once before a helper request; preserve project and machine context. */
+export async function resolveTranslationContext(
+  context: TranslationContext,
+  action: "translation" | "reprompt" = "translation",
+) {
+  const target = await resolveHelperModel(`text.${action}`, {
+    cwd: context.cwd,
+  });
+  return target ? { ...context, ...target } : translationContextWithDefault(context);
+}
+
+/** Resolve routing in the query callback, outside render. */
+export function queryTranslationContext({
+  queryKey: [, context, action],
+}: {
+  queryKey: readonly [string, TranslationContext, "translation" | "reprompt"];
+}) {
+  return resolveTranslationContext(context, action);
 }

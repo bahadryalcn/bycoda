@@ -1,0 +1,63 @@
+/* Keep decoration inside the text bounds so inter-token whitespace stays visible.
+   No normal-flow spacing: the native textarea remains the layout authority. */
+.token {
+  padding-block: 2px;
+  border-radius: var(--ui-radius-control);
+  background: color-mix(in oklch, currentColor 12%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.prefix {
+  position: relative;
+}
+
+.hidden {
+  color: transparent;
+}
+
+.icon {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-end: 0;
+  display: inline-flex;
+  inline-size: max(0.6em, 100%);
+  max-inline-size: 1em;
+  block-size: 0.9em;
+  align-items: center;
+  justify-content: center;
+  text-indent: 0;
+  transform: translateY(-50%);
+}
+
+.icon > * {
+  display: inline-flex;
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: 100%;
+  max-block-size: 100%;
+}
+
+.icon[data-draft-token-action] {
+  z-index: 1;
+  border-radius: var(--ui-radius-control);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .icon[data-draft-token-action]:hover {
+    background: color-mix(in oklch, currentColor 18%, transparent);
+  }
+}
+
+.icon[data-draft-token-action]:active {
+  background: color-mix(in oklch, currentColor 24%, transparent);
+}
+
+.icon svg {
+  inline-size: 100%;
+  block-size: 100%;
+  max-inline-size: 100%;
+  max-block-size: 100%;
+}

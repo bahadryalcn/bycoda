@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useEffect, useRef } from "react";
 import { X } from "../../../shared/ui/icons";
 import { Stepper } from "../../../shared/ui/Stepper";
@@ -53,7 +54,10 @@ function TourCard({
       leading="normal"
       {...tooltipProps}
       ref={card}
-      className="bycoda-arc usage-guide-panel usage-guide-panel--compact"
+      {...surfaceAttributes(
+        { variant: "floating", frame: "card", radius: "panel" },
+        "bycoda-arc usage-guide-panel usage-guide-panel--compact",
+      )}
       data-joyride-step={index}
       aria-labelledby="usage-guide-title"
       aria-describedby="usage-guide-description"
@@ -124,7 +128,10 @@ function UsageGuidePanel({
       tone="primary"
       leading="normal"
       {...tooltipProps}
-      className="bycoda-arc usage-guide-panel"
+      {...surfaceAttributes(
+        { variant: "floating", frame: "card", radius: "panel" },
+        "bycoda-arc usage-guide-panel",
+      )}
       data-joyride-step={index}
       aria-labelledby="usage-guide-title"
       aria-describedby="usage-guide-description"
@@ -134,7 +141,7 @@ function UsageGuidePanel({
         size="caption"
         tone="secondary"
         leading="normal"
-        className="usage-guide-toolbar"
+        {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "usage-guide-toolbar")}
       >
         <span>{t("Usage guide")}</span>
         <LiveText
@@ -170,7 +177,7 @@ function UsageGuidePanel({
         </div>
         {step.content}
       </ScrollArea>
-      <footer className="usage-guide-footer">
+      <footer {...surfaceAttributes({ frame: "stroke", edge: "top" }, "usage-guide-footer")}>
         <Stepper
           label={t("Usage guide")}
           steps={Array.from({ length: size }, (_, position) => ({

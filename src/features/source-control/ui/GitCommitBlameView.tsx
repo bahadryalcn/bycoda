@@ -1,4 +1,5 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useCallback, useMemo } from "react";
 import { gitBlame } from "../../../platform/tauri/fs";
@@ -57,14 +58,23 @@ export function GitCommitBlameView({
           return (
             <div
               key={entry.line}
-              className={`flex whitespace-pre ${first ? "border-t border-(--ui-pane-border)" : ""}`}
+              {...surfaceAttributes(
+                {
+                  frame: first ? "pane" : undefined,
+                  edge: first ? "top" : undefined,
+                },
+                "flex whitespace-pre",
+              )}
             >
               <Tooltip label={`${entry.sha}\n${entry.author} · ${entry.summary}`} asChild>
                 <Text
                   size="micro"
                   tone="secondary"
                   truncate
-                  className="sticky left-0 w-44 shrink-0 bg-(--color-background-base) px-2 font-sans"
+                  {...surfaceAttributes(
+                    { variant: "base" },
+                    "sticky left-0 w-44 shrink-0 px-2 font-sans",
+                  )}
                 >
                   {first ? `${entry.shortSha} ${entry.author}` : ""}
                 </Text>

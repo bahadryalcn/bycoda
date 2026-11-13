@@ -11,15 +11,17 @@ import {
   asClient,
   bodyText,
   buttonByText,
-  clientMock,
   clickButton,
   clickMenuItem,
+  clientMock,
   deferred,
   fieldByLabel,
   flush,
   menuItem,
   mountHost,
+  optionLabels,
   person,
+  pickOption,
   setFieldValue,
   type ClientMock,
   type MountedHost,
@@ -183,10 +185,9 @@ describe("AudienceScreen bulk list and sequence", () => {
     select("Ada");
     openBulk("Add to list…");
 
-    const listField = fieldByLabel("List") as HTMLSelectElement;
-    const optionLabels = Array.from(listField.options).map((option) => option.textContent);
-    expect(optionLabels).toContain("Buyers");
-    expect(optionLabels).not.toContain("Turkish");
+    const lists = optionLabels("List");
+    expect(lists).toContain("Buyers");
+    expect(lists).not.toContain("Turkish");
 
     clickButton("Add to list");
     await loaded();
@@ -208,7 +209,7 @@ describe("AudienceScreen bulk list and sequence", () => {
 
     expect(buttonByText("Add to sequence")?.disabled).toBe(true);
     expect(bodyText()).toContain("Choose a sequence.");
-    setFieldValue(fieldByLabel("Sequence"), "seq1");
+    pickOption("Sequence", "Spring follow-up");
     expect(buttonByText("Add to sequence")?.disabled).toBe(false);
     clickButton("Add to sequence");
     await loaded();
@@ -259,7 +260,9 @@ describe("AudienceScreen opt-out", () => {
       channel: "all",
       reason: "manual",
     });
-    expect(bodyText()).toContain("2 people opted out, 0 could not be updated");
+    expect(bodyText()).toContain("2 people opted out");
+    // Nothing failed, so the notice does not report "0 could not be updated".
+    expect(bodyText()).not.toContain("could not be updated");
   });
 
   it("sends nothing when the owner declines the confirmation", async () => {

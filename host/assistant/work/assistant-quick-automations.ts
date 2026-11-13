@@ -1,3 +1,7 @@
+import { readModelRouting } from "../../model-routing/storage";
+import { readAssistantProfile } from "../profile-defaults";
+import { AssistantRepository } from "../repository";
+import type { ModelRoutingTarget } from "../../../src/shared/model/host-contracts/model-routing";
 import { createHash } from "node:crypto";
 import type { HostStore } from "../../store";
 import type { HostAutomations } from "../../automations/automations";
@@ -8,30 +12,37 @@ import {
 import type { AssistantQuickAutomationJob } from "../../../src/shared/model/host-contracts/assistant";
 import { QUICK_AUTOMATION_MAX_AHEAD_MS } from "../../../src/shared/model/host-contracts/assistant-quick-automation";
 import { normalizeAssistantQuickAutomationAction } from "../../../src/shared/model/assistantQuickAutomation";
-import {
-  assertPoolExecution,
-  type ModelPoolSource,
-} from "../../conversation/conversation-model-pool-guard";
+import type { ModelPoolSource } from "../../conversation/conversation-model-pool-guard";
+import type { QuickAutomationRoutingFields } from "../../../src/shared/model/host-contracts/assistant-quick-automation";
 
-let modelPool: ModelPoolSource | undefined;
-/** Host wiring hook (shortcut: module-level like the model pool ports; set once at server start). */
-export function setQuickAutomationModelPool(next: ModelPoolSource | undefined) {
-  modelPool = next;
-}
-/** The voice client never names a model (it sends ""), so the automation takes the pool's first worker row. */
+/** Compatibility with server composition; quick automations no longer read the assistant pool. */
+export function setQuickAutomationModelPool(_next: ModelPoolSource | undefined) {}
+
+/** Empty voice choices follow the automation role at fire time, with a concrete provider fallback. */
 export async function assistantQuickAutomationPoolJob(
   job: AssistantQuickAutomationJob,
-): Promise<AssistantQuickAutomationJob> {
-  if (!modelPool || job.quickAction.model !== "") return job;
-  const row = assertPoolExecution(undefined, await modelPool());
+  fallback?: ModelRoutingTarget,
+): Promise<
+  AssistantQuickAutomationJob & {
+    quickAction: AssistantQuickAutomationJob["quickAction"] & QuickAutomationRoutingFields;
+  }
+> {
+  if (job.quickAction.model !== "") return job;
+  const action = job.quickAction as AssistantQuickAutomationJob["quickAction"] &
+    QuickAutomationRoutingFields;
+  if (action.modelChoice?.kind === "fixed")
+    throw new Error("Choose a model for a fixed automation.");
+  if (!fallback?.model)
+    throw new Error("Choose a fallback model or configure Models before creating this automation.");
   return {
     ...job,
     quickAction: {
       ...job.quickAction,
-      harness: row.harness,
-      model: row.model,
-      modelSettings: row.modelSettings,
-      runtimeMode: row.runtimeMode,
+      harness: fallback.harness,
+      providerAccountId: fallback.providerAccountId,
+      modelSettings: fallback.modelSettings,
+      model: fallback.model,
+      modelChoice: action.modelChoice ?? { kind: "default" },
     },
   };
 }
@@ -65,8 +76,19 @@ export function assertQuickAutomationSchedule(action: { runAt?: number }, now: n
 }
 export const assistantQuickAutomationId = (jobId: string) =>
   `assistant-quick-${createHash("sha256").update(jobId).digest("hex").slice(0, 40)}`;
+function normalizedQuickAutomationAction(
+  action: AssistantQuickAutomationJob["quickAction"] & QuickAutomationRoutingFields,
+) {
+  return {
+    ...normalizeAssistantQuickAutomationAction(action),
+    ...(action.modelChoice === undefined ? {} : { modelChoice: action.modelChoice }),
+    ...(action.providerAccountId === undefined
+      ? {}
+      : { providerAccountId: action.providerAccountId }),
+  };
+}
 export function assistantQuickAutomationConfiguration(job: AssistantQuickAutomationJob) {
-  const { kind: _, runAt, ...action } = normalizeAssistantQuickAutomationAction(job.quickAction);
+  const { kind: _, runAt, ...action } = normalizedQuickAutomationAction(job.quickAction);
   // A one-time run is stored as a daily schedule at its local time and armed with `scheduleOnce` after saving.
   const at = new Date(runAt ?? 0);
   const once =
@@ -87,7 +109,7 @@ export function assistantQuickAutomationFingerprint(job: AssistantQuickAutomatio
         id: job.id,
         title: job.title,
         request: job.request,
-        action: normalizeAssistantQuickAutomationAction(job.quickAction),
+        action: normalizedQuickAutomationAction(job.quickAction),
       }),
     )
     .digest("hex");
@@ -152,11 +174,23 @@ export class HostAssistantQuickAutomations {
       fingerprint = assistantQuickAutomationFingerprint(job);
     let expected: ReturnType<typeof assistantQuickAutomationConfiguration>;
     try {
-      expected = assistantQuickAutomationConfiguration(await assistantQuickAutomationPoolJob(job));
+      let fallback: ModelRoutingTarget | undefined;
+      if (!job.quickAction.model) {
+        // A concrete fallback is not a run selection: quota-aware resolution happens at fire time.
+        fallback = (await readModelRouting(this.store)).entries[0];
+        if (!fallback) {
+          const execution = (await readAssistantProfile(new AssistantRepository(this.store)))
+            .execution;
+          if (execution) fallback = execution;
+        }
+      }
+      expected = assistantQuickAutomationConfiguration(
+        await assistantQuickAutomationPoolJob(job, fallback),
+      );
     } catch (error) {
       return {
         state: "waiting",
-        message: `The assistant's model pool has no model for this automation. No creation was issued: ${String(error).slice(0, 500)}`,
+        message: `The automation configuration is invalid. No creation was issued: ${String(error).slice(0, 500)}`,
       };
     }
     let receipt = await this.receipt(job.id);

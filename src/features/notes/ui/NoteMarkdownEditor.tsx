@@ -1,14 +1,12 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Popover } from "../../../shared/ui/Popover";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { indentWithTab, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { openSearchPanel } from "@codemirror/search";
-import { Annotation, Compartment, Prec, type Text } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Prec, type Text } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, placeholder } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { MOD } from "../../../platform/tauri/platform";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import {
@@ -23,7 +21,6 @@ import {
   ListBullet,
   ListNumbered,
   Minus,
-  MoreHorizontal,
   Search,
   Strikethrough,
   Table,
@@ -52,6 +49,7 @@ function normalizeLineBreaks(value: string) {
 }
 
 export function runMarkdownCommand(view: EditorView, command: MarkdownCommand) {
+  if (view.state.readOnly) return false;
   const { from, to } = view.state.selection.main;
   const edit = markdownEdit(command, view.state.doc.toString(), from, to);
   view.dispatch({
@@ -111,6 +109,7 @@ export function NoteMarkdownEditor({
   label,
   inputObserver,
   inputPublication,
+  readOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -125,11 +124,16 @@ export function NoteMarkdownEditor({
   label?: string;
   inputObserver?: NativeInputObserver;
   inputPublication?: NativeInputPublication;
+  /** Freeze edits while the owning save operation has an unresolved outcome. */
+  readOnly?: boolean;
 }) {
   useLocale();
   const hostRef = useRef<HTMLDivElement>(null);
   const scheme = useColorScheme();
   const schemeConfig = useRef(new Compartment());
+  const readOnlyConfig = useRef(new Compartment());
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const initial = useRef({ scheme, autoFocus, minHeight, showLineNumbers });
   const valueRef = useRef(value);
   const documentValue = useRef<string | undefined>(undefined);
@@ -153,6 +157,15 @@ export function NoteMarkdownEditor({
       parent: host,
       extensions: [
         minimalSetup,
+        readOnlyConfig.current.of([
+          EditorState.readOnly.of(readOnlyRef.current),
+          EditorView.editable.of(!readOnlyRef.current),
+        ]),
+        EditorState.transactionFilter.of((transaction) =>
+          readOnlyRef.current && transaction.docChanged && !transaction.annotation(externalChange)
+            ? []
+            : transaction,
+        ),
         ...(initial.current.showLineNumbers ? [lineNumbers()] : []),
         EditorView.lineWrapping,
         markdown(),
@@ -309,6 +322,16 @@ export function NoteMarkdownEditor({
       view.destroy();
     };
   }, [viewRef, inputObserver]);
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes save ownership with the mounted editor without losing selection or undo history.
+  useLayoutEffect(() => {
+    viewRef.current?.dispatch({
+      effects: readOnlyConfig.current.reconfigure([
+        EditorState.readOnly.of(readOnly),
+        EditorView.editable.of(!readOnly),
+      ]),
+    });
+  }, [readOnly, viewRef]);
 
   // A layout effect, so no keystroke can land between the render and the sync
   // and be overwritten by the older text.
@@ -469,21 +492,6 @@ const TOOLBAR: {
   },
 ];
 
-const QUICK_COMMANDS: readonly MarkdownCommand[] = [
-  "bold",
-  "italic",
-  "heading",
-  "bullet",
-  "checklist",
-  "link",
-];
-
-const TOOLBAR_GROUPS: { label: string; commands: readonly MarkdownCommand[] }[] = [
-  { label: "Text", commands: ["strike"] },
-  { label: "Block", commands: ["numbered", "quote"] },
-  { label: "Insert", commands: ["code", "table", "rule"] },
-];
-
 export function NoteMarkdownToolbar({
   viewRef,
   editing,
@@ -494,11 +502,9 @@ export function NoteMarkdownToolbar({
   /** Formatting acts on the visible source or active document range. */
   editing: boolean;
   imageBusy?: boolean;
-  onInsertImage: () => void;
+  onInsertImage?: () => void;
 }) {
   useLocale();
-  const [expanded, setExpanded] = useState(false);
-  const moreRef = useRef<HTMLButtonElement>(null);
   const run = (action: (view: EditorView) => void) => {
     const view = viewRef.current;
     if (view) action(view);
@@ -511,100 +517,49 @@ export function NoteMarkdownToolbar({
       // Keep the selection in the editor while a button is pressed.
       onMouseDown={(event) => event.preventDefault()}
     >
-      {(editing ? TOOLBAR.filter((item) => QUICK_COMMANDS.includes(item.command)) : []).map(
-        ({ command, label, icon: Icon }) => (
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={label}
-            motion="none"
-            key={command}
-            type="button"
-            onClick={() => run((view) => runMarkdownCommand(view, command))}
-          >
-            <Icon className="icon-sm" />
-          </Button>
-        ),
-      )}
+      {(editing ? TOOLBAR : []).map(({ command, label, icon: Icon }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={label}
+          motion="none"
+          key={command}
+          type="button"
+          onClick={() => run((view) => runMarkdownCommand(view, command))}
+        >
+          <Icon className="icon-sm" />
+        </Button>
+      ))}
       {editing ? (
-        <>
-          <Button
-            ref={moreRef}
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("Markdown formatting")}
-            aria-expanded={expanded}
-            aria-haspopup="dialog"
-            onClick={() => setExpanded((current) => !current)}
-          >
-            <MoreHorizontal className="icon-sm" />
-          </Button>
-          {expanded ? (
-            <Popover
-              anchor={moreRef}
-              align="end"
-              onDismiss={() => setExpanded(false)}
-              kind="dialog"
-              autoFocus={false}
-              aria-label={t("Markdown formatting")}
-              className="flex max-h-96 w-60 flex-col gap-2 overflow-y-auto p-2"
-            >
-              {TOOLBAR_GROUPS.map((group) => (
-                <section key={group.label} aria-label={t(group.label)}>
-                  <SectionLabel className="px-2">{t(group.label)}</SectionLabel>
-                  <div className="grid grid-cols-2 gap-0.5">
-                    {TOOLBAR.filter((item) => group.commands.includes(item.command)).map(
-                      ({ command, label, icon: Icon }) => (
-                        <Button
-                          key={command}
-                          variant="ghost"
-                          size="sm"
-                          align="start"
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => {
-                            run((view) => runMarkdownCommand(view, command));
-                            setExpanded(false);
-                          }}
-                        >
-                          <Icon className="icon-sm" />
-                          {label}
-                        </Button>
-                      ),
-                    )}
-                  </div>
-                </section>
-              ))}
-            </Popover>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("Find and replace")}
-            motion="none"
-            type="button"
-            shortcut="Mod+F / Mod+H"
-            onClick={() => run(openSearchPanel)}
-          >
-            <Search className="icon-sm" />
-          </Button>
-        </>
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Find and replace")}
+          motion="none"
+          type="button"
+          shortcut="Mod+F / Mod+H"
+          onClick={() => run(openSearchPanel)}
+        >
+          <Search className="icon-sm" />
+        </Button>
       ) : null}
-      <Button
-        variant="ghost"
-        size="sm"
-        iconOnly
-        label={t("Insert image")}
-        motion="none"
-        type="button"
-        tooltip={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
-        loading={imageBusy}
-        onClick={onInsertImage}
-      >
-        <ImagePlus className="icon-sm" />
-      </Button>
+      {onInsertImage ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Insert image")}
+          motion="none"
+          type="button"
+          tooltip={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
+          loading={imageBusy}
+          onClick={onInsertImage}
+        >
+          <ImagePlus className="icon-sm" />
+        </Button>
+      ) : null}
     </div>
   );
 }

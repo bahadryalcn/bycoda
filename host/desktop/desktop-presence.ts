@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
+import { hostWarnDeduped, type DedupedWarn } from "../diagnostics/log-dedupe";
 
 export type DesktopPresence = { locked: boolean; supported: boolean; idleMs?: number };
 export type DesktopPresenceRunner = (
@@ -48,12 +49,14 @@ public static class BycodaDesktopPresence {
 const runNative: DesktopPresenceRunner = (binary, args, options) =>
   new Promise((resolve, reject) => {
     execFile(binary, args, { ...options, shell: false, encoding: "utf8" }, (error, stdout) =>
-      error ? reject(new Error("Native desktop presence could not be read.")) : resolve(stdout),
+      error
+        ? reject(new Error(error.killed ? "timed out" : `exited with ${String(error.code)}`))
+        : resolve(stdout),
     );
   });
 /** Unsupported and failed reads never certify an active, unlocked desktop. */
 export async function readDesktopPresence(
-  options: { platform?: NodeJS.Platform; run?: DesktopPresenceRunner } = {},
+  options: { platform?: NodeJS.Platform; run?: DesktopPresenceRunner; warn?: DedupedWarn } = {},
 ): Promise<DesktopPresence> {
   if ((options.platform ?? process.platform) !== "win32") return { supported: false, locked: true };
   try {
@@ -88,7 +91,12 @@ export async function readDesktopPresence(
     )
       throw new Error("Invalid presence");
     return { locked: value.locked, supported: true, idleMs: value.idleMs };
-  } catch {
+  } catch (error) {
+    // A failed read counts as away; log it so an Away the owner did not choose is explainable.
+    (options.warn ?? hostWarnDeduped)(
+      "Desktop presence could not be read; availability counts this computer as away.",
+      error instanceof Error ? `(${error.message})` : undefined,
+    );
     return { supported: false, locked: true };
   }
 }

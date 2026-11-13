@@ -909,7 +909,9 @@ function ActivityToolRow({
               ? t("Failed tool call: {p0}", { p0: label })
               : t("Tool call: {p0}", { p0: label })
           }
-          className="-mx-1 min-h-7 min-w-0 gap-1.5 px-1 py-0.5"
+          controlMinHeight="compact"
+          padding={{ inline: "xs", block: "xxs" }}
+          className="-mx-1 min-w-0 gap-1.5"
         >
           {bare ? null : <ActivityToolIcon state={state} live={live} />}
           <div

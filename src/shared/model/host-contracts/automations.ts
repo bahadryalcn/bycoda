@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SafeCounterSchema } from "./schemas";
+import { ModelRoutingItemChoiceSchema, ModelRoutingTargetSchema } from "./model-routing";
 import {
   ModelSettingsSchema,
   SessionProviderSchema,
@@ -29,6 +30,8 @@ const editable = {
   prompt: z.string(),
   projectId: z.string(),
   harness: SessionProviderSchema,
+  providerAccountId: z.string().min(1).max(200).optional(),
+  modelChoice: ModelRoutingItemChoiceSchema.optional(),
   model: z.string(),
   modelSettings: ModelSettingsSchema.optional(),
   runtimeMode: SessionRuntimeModeSchema,
@@ -63,6 +66,8 @@ export const HostAutomationSchema = AutomationConfigurationSchema.extend({
   updatedAt: SafeCounterSchema,
 });
 export const HostAutomationRunSchema = z.strictObject({
+  execution: ModelRoutingTargetSchema.optional(),
+  maxRunMinutes: SafeCounterSchema.max(10_080).optional(),
   cleanupPending: z.boolean().optional(),
   id: z.string(),
   automationId: z.string(),

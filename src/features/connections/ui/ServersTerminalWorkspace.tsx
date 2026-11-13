@@ -26,6 +26,7 @@ import { SshConfigurationConnectReview } from "./SshConfigurationConnectReview";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
 import { SshRunbookQueue } from "./SshRunbookQueue";
 import { requestSshStartupReviews } from "../model/sshRunbookQueue";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ServerTerminalSession } from "./ServerTerminalSession";
 import { TerminalContext } from "./serversTerminalContext";
 
@@ -375,7 +376,12 @@ export function ServersTerminalWorkspace({
             className={active ? "flex min-h-0 min-w-0 flex-1 flex-col" : "hidden"}
             inert={!active ? true : undefined}
           >
-            <div className="flex h-10 min-w-0 shrink-0 items-center border-b border-stroke">
+            <div
+              {...surfaceAttributes(
+                { frame: "stroke", edge: "bottom" },
+                "flex h-10 min-w-0 shrink-0 items-center",
+              )}
+            >
               <Button
                 id="servers-inventory-return"
                 variant="ghost"
@@ -414,7 +420,10 @@ export function ServersTerminalWorkspace({
               }}
             >
               <TabList
-                className="flex shrink-0 gap-1 overflow-x-auto border-b border-stroke bg-(--ui-workspace-panel) px-2 py-1"
+                {...surfaceAttributes(
+                  { frame: "stroke", edge: "bottom", variant: "workspace-panel" },
+                  "flex shrink-0 gap-1 overflow-x-auto px-2 py-1",
+                )}
                 label={t("SSH terminals")}
               >
                 {terminals.map((terminal) => (

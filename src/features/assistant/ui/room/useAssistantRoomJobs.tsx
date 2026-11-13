@@ -8,6 +8,7 @@ import { InlineError } from "../../../../shared/ui/InlineError";
 import { assistantRequest as ownerRequest, operationId } from "../../model/assistantClient";
 import {
   AssistantJobBatch,
+  assistantJobBriefTitle,
   assistantJobProjectIds,
   assistantJobVisible,
 } from "../../model/assistantJobs";
@@ -249,8 +250,9 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
    * wins, so a failed start retries with its original idempotency keys. Resets the batch ref;
    * no review dialog state is touched.
    */
-  function prepareJobReview(source: string): PreparedJobReview {
+  function prepareJobReview(source: string, single = false): PreparedJobReview {
     jobBatch.current = null;
+    let conflictingBatch = false;
     try {
       const saved = JSON.parse(localStorage.getItem("bycoda.assistant.job-review") ?? "null");
       if (
@@ -265,22 +267,27 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
             typeof row.projectId === "string" &&
             Array.isArray(row.projectIds),
         )
-      )
-        return {
-          rows: saved.rows as JobDraft[],
-          frozen: saved.frozen === true,
-          environmentId: typeof saved.environmentId === "string" ? saved.environmentId : undefined,
-        };
+      ) {
+        if (single && saved.rows.length !== 1) {
+          conflictingBatch = saved.frozen === true;
+        } else
+          return {
+            rows: saved.rows as JobDraft[],
+            frozen: saved.frozen === true,
+            environmentId:
+              typeof saved.environmentId === "string" ? saved.environmentId : undefined,
+          };
+      }
     } catch {
       /* Review the retained source text. */
     }
+    if (conflictingBatch) throw new Error("Job status is unknown. Check the Room before retrying.");
     return {
-      rows: source
-        .split(/\r?\n/)
+      rows: (single ? [source] : source.split(/\r?\n/))
         .filter((request) => request.trim())
         .map((request) => ({
           id: operationId(),
-          title: request.trim().slice(0, 300),
+          title: assistantJobBriefTitle(request),
           request,
           projectId: defaultProjectId,
           projectIds: defaultProjectId ? [defaultProjectId] : [],

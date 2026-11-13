@@ -49,6 +49,7 @@ export function WorkingIndicator({
   className = "",
   label,
   size = "xs",
+  variant = "bars",
   children,
   text,
   truncate,
@@ -67,6 +68,8 @@ export function WorkingIndicator({
   label?: string;
   /** Matches the shared icon scale: xs 12px (default), sm 14px, md 16px. */
   size?: WorkingIndicatorSize;
+  /** A 6px dot for dense session status slots; bars retain the shared icon size. */
+  variant?: "bars" | "dot";
 }) {
   const root = useRef<HTMLSpanElement>(null);
   // Pause the shared working animation while its signal is outside the viewport.
@@ -86,14 +89,23 @@ export function WorkingIndicator({
       aria-hidden={label ? undefined : "true"}
       role={label ? "status" : undefined}
       data-size={size}
-      className={!children && className ? `${styles.indicator} ${className}` : styles.indicator}
+      data-working-variant={variant === "dot" ? "dot" : undefined}
+      className={[
+        styles.indicator,
+        variant === "dot" ? "working-dot" : "",
+        !children ? className : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       {label ? <span className="sr-only">{label}</span> : null}
-      <span className={styles.grid} aria-hidden={label ? "true" : undefined}>
-        {BARS.map((x) => (
-          <span key={x} className={styles.bar} style={{ left: `${((x - 1.3) / 24) * 100}%` }} />
-        ))}
-      </span>
+      {variant === "bars" ? (
+        <span className={styles.grid} aria-hidden={label ? "true" : undefined}>
+          {BARS.map((x) => (
+            <span key={x} className={styles.bar} style={{ left: `${((x - 1.3) / 24) * 100}%` }} />
+          ))}
+        </span>
+      ) : null}
     </span>
   );
   if (children === undefined) return signal;

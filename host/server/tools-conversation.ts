@@ -328,19 +328,25 @@ export async function dispatchConversationTools(
           (await dependencies.featureSession(boundPrincipal.sessionId)).session,
           async () => !!(await dependencies.conversationAccess.principalForToken(request.token)),
         );
-      else if (action === "tools.list")
+      else if (action === "tools.list") {
+        const child = await dependencies.conversationDelegation.isChild(boundPrincipal.sessionId);
         request.result = {
           environmentId: dependencies.engine.store.environmentId,
           projectId,
-          tools: sessionConversationToolCatalog().filter(crewAllows),
+          tools: sessionConversationToolCatalog()
+            .filter(crewAllows)
+            .filter((tool) => !child || !tool.action.startsWith("agents.")),
         };
-      else if (["tools.search", "tools.describe", "tools.status"].includes(action))
+      } else if (["tools.search", "tools.describe", "tools.status"].includes(action)) {
+        const child = await dependencies.conversationDelegation.isChild(boundPrincipal.sessionId);
         request.result = managedDiscoveryResult(
           action,
           args,
-          managedMcpCatalog().filter(crewAllows),
+          managedMcpCatalog()
+            .filter(crewAllows)
+            .filter((tool) => !child || !tool.action.startsWith("agents.")),
         );
-      else if (
+      } else if (
         action.startsWith("ui.") ||
         action.startsWith("servers.") ||
         action === "machines.list" ||

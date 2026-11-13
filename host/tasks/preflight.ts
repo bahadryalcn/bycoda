@@ -1,11 +1,8 @@
+import { parseHostTask } from "./routing-input";
 import type { TaskPreflightItem } from "../../src/features/tasks/model/taskPreflight";
 import { constants } from "node:fs";
 import { access, lstat } from "node:fs/promises";
-import {
-  parseHostTask,
-  type HostTask,
-  type HostTaskInput,
-} from "../../src/features/tasks/model/hostTasks";
+import { type HostTask, type HostTaskInput } from "../../src/features/tasks/model/hostTasks";
 import { taskWorkspace } from "./task-workspace";
 import { checkTaskPreflight } from "./task-preflight";
 import { evaluateTaskPreflight } from "../../src/features/tasks/model/taskPreflight";

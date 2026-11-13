@@ -1,3 +1,7 @@
+import type {
+  ModelRoutingItemChoice,
+  ModelRoutingTarget,
+} from "../../../shared/model/host-contracts/model-routing";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -70,6 +74,8 @@ export type Automation = {
   name: string;
   prompt: string;
   harness: HarnessId;
+  providerAccountId?: string;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings?: Record<string, string>;
   cwd: string;
@@ -86,7 +92,7 @@ export type Automation = {
   dayOfWeek: number;
   triggers?: AutomationTrigger[] | null;
   missedRunGraceMinutes: number;
-  /** Run limits; zero or missing means off. See automationLimits.ts. */
+  /** Zero/missing run time inherits the Host routing default; zero daily runs means no limit. */
   maxRunMinutes?: number;
   maxRunsPerDay?: number;
   enabled: boolean;
@@ -129,6 +135,8 @@ export type AutomationUpsert = Omit<
 export type AutomationRunTrigger = "scheduled" | "manual" | "event";
 
 export type AutomationRun = {
+  execution?: ModelRoutingTarget;
+  maxRunMinutes?: number;
   workspaceId?: string;
   activityId?: string;
   executor?: "agent" | "ssh";
@@ -186,6 +194,8 @@ export type AutomationDraft = {
   name: string;
   prompt: string;
   harness: HarnessId;
+  providerAccountId?: string;
+  modelChoice?: ModelRoutingItemChoice;
   model: string;
   modelSettings: Record<string, string>;
   cwd: string;
@@ -425,6 +435,8 @@ export function draftFromAutomation(automation: Automation): AutomationDraft {
     name: automation.name,
     prompt: automation.prompt,
     harness: automation.harness,
+    providerAccountId: automation.providerAccountId,
+    modelChoice: automation.modelChoice,
     model: automation.model,
     modelSettings: automation.modelSettings ?? {},
     cwd: automation.cwd,
@@ -545,12 +557,19 @@ export async function claimDueAutomations(now = Date.now()): Promise<DueAutomati
 export async function updateAutomationRun(
   runId: string,
   status: AutomationRunStatus,
-  options: { sessionId?: string; error?: string } = {},
+  options: {
+    sessionId?: string;
+    error?: string;
+    execution?: ModelRoutingTarget;
+    maxRunMinutes?: number;
+  } = {},
 ): Promise<AutomationRun> {
   const run = await invoke<AutomationRun>("automation_run_update", {
     runId,
     status,
     sessionId: options.sessionId ?? null,
+    execution: options.execution ?? null,
+    maxRunMinutes: options.maxRunMinutes ?? null,
     error: options.error ?? null,
     now: Date.now(),
   });

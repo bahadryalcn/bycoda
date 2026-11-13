@@ -199,6 +199,8 @@ export type ToolPreview = {
 export type AgentStepKind = "tool" | "message" | "reasoning";
 
 export type AgentStep = {
+  /** A provider-native subagent run inside this step, retained for nested inspection. */
+  agentRun?: AgentRunMeta;
   /** Provider step identity, so repeats merge instead of stacking up. */
   id: string;
   kind: AgentStepKind;
@@ -608,6 +610,8 @@ export type Session = {
    * In-memory; request ids do not survive restarts.
    */
   pendingQuestion?: UserQuestionPrompt;
+  /** Transient application-owned consent; projected locally, never a provider question. */
+  pendingOwnerApproval?: boolean;
   /** Answers collected for a provider continuation, awaiting transport acceptance. In-memory. */
   submittedQuestions?: UserQuestionPrompt[];
   /** The local host is running this session; follow-ups route to that host. In-memory. */
@@ -906,7 +910,8 @@ export function hasPendingApproval(blocks: Block[]): boolean {
 export function sessionNeedsInput(session: Session): boolean {
   return (
     !session.worktreeRemoved &&
-    (hasPendingApproval(session.blocks) ||
+    (session.pendingOwnerApproval ||
+      hasPendingApproval(session.blocks) ||
       (session.pendingQuestion != null &&
         !["sending", "queued"].includes(session.pendingQuestion.delivery ?? "")))
   );

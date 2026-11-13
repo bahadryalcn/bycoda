@@ -7,7 +7,6 @@ const queries = new Set<CrewRpcMethod>([
   "crews.inspect",
   "crews.get",
   "crews.active.list",
-  "crews.pools.list",
 ]);
 
 export function createHostCrewsService(ports: {

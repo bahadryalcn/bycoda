@@ -2,7 +2,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
@@ -333,10 +333,13 @@ export function Contribution({
             </Text>
             <div className="usage-rank-track" aria-hidden="true">
               <span
-                style={{
-                  inlineSize: `${total ? (row[metric] / total) * 100 : 0}%`,
-                  background: usageChartColor(colors, row.key),
-                }}
+                {...surfaceAttributes({ variant: "user-color" })}
+                style={
+                  {
+                    "--usage-rank-share": `${total ? (row[metric] / total) * 100 : 0}%`,
+                    "--surface-user-color": usageChartColor(colors, row.key),
+                  } as CSSProperties
+                }
               />
             </div>
           </div>
@@ -581,9 +584,11 @@ export function TimeDistribution({
           className="usage-week-grid"
           role="grid"
           aria-label={t("Day and hour activity")}
-          style={{
-            gridTemplateColumns: `3.5rem repeat(${dates.length}, minmax(0, 1fr))`,
-          }}
+          style={
+            {
+              "--usage-week-columns": dates.length,
+            } as CSSProperties
+          }
         >
           <div role="row" className="usage-week-row">
             <Text size="caption" tone="secondary" leading="inherit" role="columnheader">

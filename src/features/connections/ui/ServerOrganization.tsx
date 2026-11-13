@@ -6,6 +6,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { TextField } from "../../../shared/ui/TextField";
 import { updateServerMetadata, type ServerRecord } from "../model/serverInventory";
 
@@ -121,7 +122,12 @@ export function ServerOrganization({
     </>
   );
   return expanded ? (
-    <Text as="section" size="caption" tone="inherit" className="mbs-4 border-t border-stroke pbs-4">
+    <Text
+      as="section"
+      size="caption"
+      tone="inherit"
+      {...surfaceAttributes({ frame: "stroke", edge: "top" }, "mbs-4 pbs-4")}
+    >
       <SectionLabel as="h3">{title}</SectionLabel>
       {content}
     </Text>
@@ -129,7 +135,7 @@ export function ServerOrganization({
     <Disclosure
       size="sm"
       textSize="caption"
-      className="mbs-4 border-t border-stroke pbs-4"
+      {...surfaceAttributes({ frame: "stroke", edge: "top" }, "mbs-4 pbs-4")}
       summary={title}
     >
       <Text as="div" size="caption" tone="inherit">

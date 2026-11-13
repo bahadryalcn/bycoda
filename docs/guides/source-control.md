@@ -35,6 +35,8 @@ another repository. Right-click an empty part of the Git panel to show or
 hide Stashes and Graph in every panel, or to switch Auto Fetch. The Changes tab totals include discovered child repositories in All
 checkouts and wait for every target's reading before showing a complete total.
 
+In narrow Commit Graph windows, reopening Branches keeps the commit inspector visible; the commit column yields space while branch and file controls stay reachable.
+
 Repository discovery includes initialized submodules and independent repositories
 inside the selected checkout, including ignored source folders such as a separate
 `mobile` repository. It skips dependency/build directories and directory links.

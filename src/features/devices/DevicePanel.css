@@ -45,6 +45,7 @@
   flex: none;
 }
 .device-panel-stage {
+  --device-rail-clearance: 64px;
   position: relative;
   flex: 1;
   min-block-size: 0;
@@ -67,7 +68,7 @@
   padding: 16px;
 }
 .device-panel-stage[data-rail] .device-panel-canvas {
-  padding-inline-end: 64px;
+  padding-inline-end: var(--device-rail-clearance);
 }
 .device-panel-preview-control {
   position: relative;
@@ -121,7 +122,6 @@
   max-block-size: calc(100% - 20px);
   padding: 6px 4px;
   overflow-y: auto;
-  box-shadow: var(--ui-elevation-floating);
 }
 .device-panel-group {
   display: flex;
@@ -133,7 +133,6 @@
 .device-panel-rail > * + .device-panel-group {
   margin-block-start: 4px;
   padding-block-start: 4px;
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 .device-panel-frame-state {
   position: absolute;
@@ -142,10 +141,6 @@
   transform: translateX(-50%);
   max-inline-size: calc(100% - 96px);
   padding: 4px 10px;
-  border: 1px solid var(--ui-pane-border);
-  border-radius: var(--radius-pill);
-  background: var(--ui-surface-floating);
-  box-shadow: var(--ui-elevation-floating);
   pointer-events: none;
 }
 .device-panel-mark-tools {
@@ -159,7 +154,6 @@
   max-inline-size: calc(100% - 96px);
   overflow-x: auto;
   padding: 4px;
-  box-shadow: var(--ui-elevation-floating);
 }
 .device-panel-mark-tools > [data-media-toolbar] {
   flex-wrap: nowrap;
@@ -237,9 +231,6 @@
   gap: 8px;
   padding: 8px 10px;
 }
-.device-panel-setup-platforms > li + li {
-  border-block-start: 1px solid var(--ui-pane-border);
-}
 .device-panel-setup-platform {
   flex: none;
   min-inline-size: 4rem;
@@ -311,9 +302,6 @@
 }
 .device-panel-waiting > .device-panel-device-row {
   inline-size: 100%;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-  background: var(--ui-card-surface);
 }
 .device-panel-device-row {
   display: flex;
@@ -321,9 +309,6 @@
   gap: 12px;
   padding: 10px 12px;
   text-align: start;
-}
-.device-panel-device-list > .device-panel-device-row + .device-panel-device-row {
-  border-block-start: 1px solid var(--ui-pane-border);
 }
 .device-panel-device-tile {
   display: grid;
@@ -343,8 +328,6 @@
   flex: none;
   max-block-size: 120px;
   overflow-y: auto;
-  border-block-end: 1px solid var(--ui-tone-danger-border);
-  background: var(--ui-tone-danger-subtle);
   padding: 8px 12px;
 }
 .device-panel-error pre,
@@ -392,7 +375,6 @@
 .device-panel-nodes {
   max-block-size: 18rem;
   overflow: auto;
-  border-block: 1px solid var(--color-stroke);
 }
 .device-panel-node-label {
   min-inline-size: 0;
@@ -411,7 +393,7 @@
   pointer-events: none;
 }
 .device-panel-stage[data-rail] .device-panel-node-layer {
-  inset-inline-end: 64px;
+  inset-inline-end: var(--device-rail-clearance);
 }
 .device-panel-node-layer svg {
   inline-size: 100%;

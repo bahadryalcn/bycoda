@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
+import { Surface } from "../../../shared/ui/Surface";
 import { useT } from "../../../shared/i18n";
 import { ChevronRight, Replace, X } from "../../../shared/ui/icons";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
@@ -26,7 +27,7 @@ export function HandoffMiniCard({ card, onDismiss }: Props) {
 
   return (
     <div className="px-3 pt-2" data-handoff-card>
-      <div className="flex min-w-0 items-center gap-2 rounded-(--ui-radius-card) border border-(--ui-card-border) bg-(--ui-card-surface) px-2 py-1">
+      <Surface variant="card" padding="none" className="flex min-w-0 items-center gap-2 px-2 py-1">
         <Replace className="icon-sm shrink-0" tone="secondary" aria-hidden />
         <Text size="caption" tone="secondary" className="shrink-0">
           {t("Handoff")}
@@ -73,7 +74,7 @@ export function HandoffMiniCard({ card, onDismiss }: Props) {
             <X className="icon-sm" aria-hidden />
           </Button>
         ) : null}
-      </div>
+      </Surface>
     </div>
   );
 }

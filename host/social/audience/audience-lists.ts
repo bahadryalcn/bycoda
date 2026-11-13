@@ -74,7 +74,28 @@ export async function saveList(ctx: SocialActionContext, input: Record<string, u
   return saved;
 }
 
-/** lists.delete: removes the list and its memberships; people stay. */
+/**
+ * Work that still points at a list: capture rules that fill it and sequences that have not
+ * finished. Deleting the list would leave them pointing at nothing, so the delete is refused.
+ */
+async function listInUse(ctx: SocialActionContext, listId: string): Promise<string | undefined> {
+  let cursor: string | undefined;
+  do {
+    const page = await ctx.store.listRecords("capture-rule", { cursor, limit: 200 });
+    const rule = page.items.find((item) => item.targetListId === listId);
+    if (rule) return `The capture rule "${rule.name}" adds people to this list.`;
+    cursor = page.next;
+  } while (cursor);
+  do {
+    const page = await ctx.store.listRecords("sequence", { cursor, limit: 200 });
+    const sequence = page.items.find((item) => item.listId === listId && item.status !== "done");
+    if (sequence) return `The sequence "${sequence.name}" sends to this list.`;
+    cursor = page.next;
+  } while (cursor);
+  return undefined;
+}
+
+/** lists.delete: removes the list and its memberships; people stay. Refused while rules or sequences use it. */
 export async function deleteList(ctx: SocialActionContext, input: Record<string, unknown>) {
   exact(input, ["id"]);
   const id = str(input.id, "list", 300);
@@ -82,6 +103,8 @@ export async function deleteList(ctx: SocialActionContext, input: Record<string,
   if (!list) return { deleted: false };
   if (list.system) throw new Error("System lists cannot be deleted.");
   assertListVisible(ctx, list);
+  const inUse = await listInUse(ctx, id);
+  if (inUse) throw new Error(`${inUse} Change or delete it first.`);
   await requireAutonomy(ctx, await readableAccountIds(ctx), "audience");
   const deleted = await ctx.store.deleteList(id);
   await chargeAutonomy(ctx, await readableAccountIds(ctx), "audience", 1);
