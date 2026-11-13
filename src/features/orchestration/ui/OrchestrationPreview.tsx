@@ -257,7 +257,8 @@ function InstructionsField({
         lockOverscroll(el);
       }}
       fieldClassName="w-full"
-      className="max-h-40 resize-none overscroll-none"
+      resize="none"
+      className="max-h-40 overscroll-none"
 
       rows={1}
       aria-label={label}

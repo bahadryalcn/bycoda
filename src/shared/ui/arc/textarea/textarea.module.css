@@ -7,7 +7,6 @@
   }
   .control {
     width: 100%;
-    resize: vertical;
   }
 }
 .field {
@@ -22,6 +21,7 @@
 /* FieldControl owns the shared border and focus; the native textarea owns resizing. */
 .control {
   min-height: 110px;
+  resize: vertical;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-control);
   padding: var(--space-3);
@@ -34,6 +34,9 @@
   transition:
     border-color var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard);
+}
+.control[data-resize="none"] {
+  resize: none;
 }
 .control::placeholder {
   color: var(--text-muted);

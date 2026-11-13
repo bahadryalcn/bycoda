@@ -107,9 +107,22 @@ for (const theme of ["dark", "light"]) {
         await actions.click();
         const menu = page.getByRole("menu", { name: "Actions for arc", exact: true });
         await expect(menu).toBeVisible();
-        await expect(page.getByRole("menuitem", { name: "Disable arc" })).toBeFocused();
+        await expect(menu).toBeFocused();
+        const firstItem = menu.getByRole("menuitem", {
+          name: "New group with this skill…",
+          exact: true,
+        });
+        await expect(menu).toHaveAttribute(
+          "aria-activedescendant",
+          (await firstItem.getAttribute("id"))!,
+        );
         await page.keyboard.press("End");
-        await expect(page.getByRole("menuitem", { name: "Delete arc" })).toBeFocused();
+        await expect(menu).toHaveAttribute(
+          "aria-activedescendant",
+          (await menu
+            .getByRole("menuitem", { name: "Delete arc", exact: true })
+            .getAttribute("id"))!,
+        );
         await page.keyboard.press("Escape");
         await expect(menu).toBeHidden();
         await expect(actions).toBeFocused();

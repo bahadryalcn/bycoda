@@ -208,7 +208,7 @@ export function ServerForwards({
         })}
         <Disclosure summary={t("Add forwarding rule")}>
           <form
-            className="flex flex-col gap-3"
+            className="grid min-w-0 grid-cols-1 gap-3 @min-[28rem]/connection-tools:grid-cols-[minmax(0,1fr)_minmax(8rem,0.6fr)]"
             onSubmit={(event) => {
               event.preventDefault();
               void run("save", async () => {
@@ -232,6 +232,7 @@ export function ServerForwards({
           >
             <FieldGroup variant="bare" disabled={Boolean(busy)}>
               <RadioGroup
+                className="col-span-full"
                 variant="inline"
                 label={t("Forwarding type")}
                 value={draft.kind ?? "local"}
@@ -296,7 +297,7 @@ export function ServerForwards({
                 SOCKS5 · 127.0.0.1:{draft.localPort || "…"}
               </Text>
             )}
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="col-span-full flex flex-wrap items-center justify-between gap-2">
               <Text size="inherit" tone="muted">
                 {t("Loopback only. Start separately after saving.")}
               </Text>

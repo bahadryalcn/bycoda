@@ -1,6 +1,107 @@
 import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`server redesign sheets ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(
+        `/tests/browser/terminal/servers.html?sshFixture&sshKeys&filesFixture&terminalWorkspace&identityColorFixture&groupFixture&serversRedesign&theme=${theme}`,
+      );
+      const folder = "temp/verification/2026-11-13-servers-redesign";
+      const capture = async (name: string) => {
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await page.screenshot({
+          path: `${folder}/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      };
+      const inventory = page.getByRole("list", { name: "Servers", exact: true });
+      await expect(inventory.getByRole("button", { name: /^Existing SSH target/ })).toBeVisible();
+      await capture("catalog-list");
+      await page.getByRole("radio", { name: "Card view", exact: true }).click();
+      await capture("catalog-cards");
+      await page.getByRole("button", { name: /^Legacy display label/ }).click();
+      await expect(inventory.locator("[data-server-row]")).toHaveCount(1);
+      await capture("catalog-group");
+      await inventory.getByRole("button", { name: /^Existing SSH target/ }).click();
+      const details = page.getByRole("region", { name: "Server details", exact: true });
+      await expect(details).toBeVisible();
+      await capture("connection");
+      for (const [tab, name] of [
+        ["Port forwarding", "forwards"],
+        ["Automation", "automation"],
+        ["Organization", "organization"],
+        ["Activity", "activity"],
+      ]) {
+        await details.getByRole("tab", { name: tab, exact: true }).click();
+        if (name === "forwards")
+          await details.locator("summary").filter({ hasText: "Add forwarding rule" }).click();
+        await capture(name);
+      }
+      await details.getByRole("tab", { name: "Connection", exact: true }).click();
+      await details.getByRole("button", { name: "Files", exact: true }).click();
+      const files = page.getByRole("dialog", { name: "SFTP files", exact: true });
+      await expect(files).toBeVisible();
+      await capture("sftp-empty");
+      await files.getByRole("button", { name: "Open", exact: true }).click();
+      await expect(files.getByText("README.md", { exact: true })).toBeVisible();
+      await capture("sftp-files");
+      await page.keyboard.press("Escape");
+      await details.getByRole("button", { name: "Close server details", exact: true }).click();
+      await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+      const settings = page.getByRole("dialog", { name: "SSH settings", exact: true });
+      await expect(settings.getByText("id_ed25519_work", { exact: true })).toBeVisible();
+      await capture("ssh-keys");
+      await settings.getByRole("tab", { name: "Known hosts", exact: true }).click();
+      await expect(settings.getByText("deploy.example.invalid", { exact: true })).toBeVisible();
+      await capture("known-hosts");
+      await settings.getByRole("tab", { name: "Import SSH config", exact: true }).click();
+      await capture("ssh-config-import");
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Add SSH server", exact: true }).click();
+      const editor = page.getByRole("dialog", { name: "Add SSH server", exact: true });
+      await expect(editor.getByRole("spinbutton", { name: "SSH port", exact: true })).toHaveValue(
+        "22",
+      );
+      await capture("add-server");
+      await editor.locator("summary").filter({ hasText: "Advanced SSH settings" }).click();
+      await capture("add-server-advanced");
+      await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Quick connect", exact: true }).click();
+      const quick = page.getByRole("dialog", { name: "Quick connect", exact: true });
+      await expect(quick.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+      await capture("quick-connect");
+      await quick.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Import from Termius", exact: true }).click();
+      await expect(
+        page.getByRole("dialog", { name: "Import from Termius", exact: true }),
+      ).toBeVisible();
+      await capture("termius-import");
+      expect(errors).toEqual([]);
+      const calls = await page.evaluate(() => (window as any).serversFixtureCalls as string[]);
+      expect(
+        calls.filter((command) =>
+          [
+            "server_metadata_update",
+            "server_ssh_save",
+            "ssh_terminal_spawn",
+            "ssh_forward_start",
+            "sftp_upload",
+          ].includes(command),
+        ),
+      ).toEqual([]);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
   for (const width of [390, 768, 800, 1024, 1280, 1440]) {
     test(`Servers workspace sections and drafts ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });

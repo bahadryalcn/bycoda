@@ -92,39 +92,41 @@ export function ServersConnectionTools({
     }
   };
   return (
-    <div className="server-connection-tools mbs-4 flex min-w-0 flex-col gap-4">
+    <div className="server-connection-tools @container/connection-tools mbs-4 flex min-w-0 flex-col gap-4">
       {endpoint?.httpProxy ? (
         <Text wrap="anywhere" as="p" tone="muted" className="w-full">
           {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
           {sshEndpointPreview(endpoint.httpProxy)}
         </Text>
       ) : null}
-      <div
-        {...surfaceAttributes(
-          { variant: "reading-base" },
-          "sticky inset-bs-0 z-1 flex flex-wrap gap-2 pbe-2",
-        )}
-      >
-        {(server.kind === "ssh" || server.machine?.ssh) && openTerminal ? (
-          <Button variant="primary" onClick={() => openTerminal(currentServer)} disabled={busy}>
-            <Terminal aria-hidden className="icon-sm" />
-            {t("Connect via SSH")}
-          </Button>
-        ) : null}
-        {server.kind === "ssh" || server.machine?.ssh ? (
-          <Button variant="secondary" onClick={() => setFiles(true)}>
-            {t("Files")}
-          </Button>
-        ) : null}
-      </div>
       <Tabs id={panelId} value={panel} onValueChange={setPanel}>
-        <TabList label={t("Server tools")}>
-          {panels.map((item) => (
-            <Tab key={item.value} value={item.value}>
-              {item.label}
-            </Tab>
-          ))}
-        </TabList>
+        <div
+          {...surfaceAttributes(
+            { variant: "reading-base", frame: "stroke", edge: "bottom" },
+            "sticky inset-bs-0 z-1 flex flex-col gap-1 pbe-2",
+          )}
+        >
+          <div {...surfaceAttributes({ variant: "reading-base" }, "flex flex-wrap gap-2 pbe-3")}>
+            {(server.kind === "ssh" || server.machine?.ssh) && openTerminal ? (
+              <Button variant="primary" onClick={() => openTerminal(currentServer)} disabled={busy}>
+                <Terminal aria-hidden className="icon-sm" />
+                {t("Connect via SSH")}
+              </Button>
+            ) : null}
+            {server.kind === "ssh" || server.machine?.ssh ? (
+              <Button variant="secondary" onClick={() => setFiles(true)}>
+                {t("Files")}
+              </Button>
+            ) : null}
+          </div>
+          <TabList label={t("Server tools")}>
+            {panels.map((item) => (
+              <Tab key={item.value} value={item.value}>
+                {item.label}
+              </Tab>
+            ))}
+          </TabList>
+        </div>
         <TabPanel value="connection" keepMounted>
           {canAssignKey ? (
             <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">
@@ -223,9 +225,6 @@ export function ServersConnectionTools({
           <ServerSnippets key={server.id} serverId={server.id} serverName={server.name} embedded />
         </TabPanel>
         <TabPanel value="settings" keepMounted className="min-w-0">
-          <Heading size="section" level={3} className="mbe-3">
-            {t("Organization")}
-          </Heading>
           <div className="flex flex-wrap gap-2">
             {(server.kind === "ssh" || server.machine?.ssh) && openAgentTerminal ? (
               <Button onClick={() => setAgentReview(true)}>{t("Forward SSH agent")}</Button>

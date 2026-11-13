@@ -1,3 +1,4 @@
+import { Sheet } from "../../../shared/ui/Sheet";
 import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useSshHttpProxyApproval } from "./useSshHttpProxyApproval";
@@ -8,7 +9,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Modal } from "../../../shared/ui/Modal";
+
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
 import { Alert } from "../../../shared/ui/Alert";
@@ -149,7 +150,7 @@ export function ServerFiles({
 
   return (
     <>
-      <Modal title={t("SFTP files")} onClose={close} size="lg" fitViewport>
+      <Sheet title={t("SFTP files")} onClose={close} size="56rem">
         <div className="flex min-h-0 flex-col gap-3">
           {serverName ? (
             <Text as="p" tone="muted" truncate>
@@ -521,7 +522,7 @@ export function ServerFiles({
             )}
           </Text>
         </div>
-      </Modal>
+      </Sheet>
       {proxy.dialog}
     </>
   );

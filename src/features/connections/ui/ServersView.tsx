@@ -22,7 +22,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
-import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
+import { Sheet } from "../../../shared/ui/Sheet";
 import "./ServersView.css";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -74,6 +74,7 @@ import { MachineStatus, ReconnectAction } from "./ServerStatus";
 import { RemoteConnectionDetails } from "./RemoteConnectionDetails";
 import { ServerItem, type ServerMenuAt } from "./ServerItem";
 import { ServerColorPopover } from "./ServerColorPopover";
+import { ServerIdentity } from "./ServerIdentity";
 import { serverAccentColor } from "./serverColor";
 import { useServersLayout, type ServersLayout } from "./serversLayout";
 
@@ -129,10 +130,16 @@ export function ServersView({
   const openTerminal = useOpenServerTerminal();
   const inventoryVisible = useServerInventoryVisible();
   const [layout, setLayout] = useServersLayout();
+  const [detailReady, setDetailReady] = useState(true);
+  const detailOpenTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Release the pointer inspection timer when the catalog unmounts so it cannot update an unmounted view.
+  useLayoutEffect(() => () => clearTimeout(detailOpenTimer.current), []);
   const canConnect = (server: ServerRecord) =>
     Boolean(openTerminal && (server.kind === "ssh" || server.machine?.ssh));
   const connect = (server: ServerRecord) => {
     if (!canConnect(server)) return;
+    clearTimeout(detailOpenTimer.current);
+    setDetailReady(true);
     setSelectedId(server.id);
     openTerminal?.(server);
   };
@@ -201,11 +208,6 @@ export function ServersView({
   mobileCatalog.current = { ready: loaded && !loading && !error, servers: filtered };
   useLayoutEffect(() => registerSshWorkspaceCatalog(() => mobileCatalog.current), []);
   const selected = servers.find((server) => server.id === selectedId);
-  const detailAnchor = selected
-    ? (Array.from(
-        list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ?? [],
-      ).find((row) => row.dataset.serverRow === selected.id) ?? list)
-    : list;
   const menuServer = menu ? servers.find((server) => server.id === menu.serverId) : undefined;
   const colorServer = colorTarget
     ? servers.find((server) => server.id === colorTarget.serverId)
@@ -608,7 +610,39 @@ export function ServersView({
       {loading && !loaded ? (
         <LoadingText className="px-3 py-2">{t("Loading servers…")}</LoadingText>
       ) : null}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col @min-[44rem]/servers:flex-row">
+      {groups.length > 0 ? (
+        <div
+          aria-label={t("Group")}
+          className="flex shrink-0 flex-wrap items-center gap-1 px-3 py-2"
+        >
+          <Button
+            variant="ghost"
+            selected={!group}
+            aria-pressed={!group}
+            onClick={() => setGroup("")}
+          >
+            {t("All")}{" "}
+            <Badge size="xs" variant="count">
+              {servers.length}
+            </Badge>
+          </Button>
+          {groups.map((name) => (
+            <Button
+              key={name}
+              variant="ghost"
+              selected={group === name}
+              aria-pressed={group === name}
+              onClick={() => setGroup(group === name ? "" : name)}
+            >
+              {name}
+              <Badge size="xs" variant="count">
+                {servers.filter((server) => server.metadata.group === name).length}
+              </Badge>
+            </Button>
+          ))}
+        </div>
+      ) : null}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col @min-[44rem]/servers:flex-row">
         <div
           ref={list}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
@@ -735,7 +769,7 @@ export function ServersView({
             data-servers-layout={layout}
             className={
               layout === "cards"
-                ? "grid grid-cols-[repeat(auto-fill,minmax(min(100%,15rem),1fr))] content-start gap-2"
+                ? "grid grid-cols-[repeat(auto-fill,minmax(min(100%,18rem),1fr))] content-start gap-2"
                 : "flex flex-col gap-0.5"
             }
           >
@@ -755,74 +789,89 @@ export function ServersView({
                 }}
                 accent={serverAccentColor(server)}
                 canConnect={canConnect(server)}
-                onSelect={() => setSelectedId(server.id)}
+                onSelect={(event) => {
+                  clearTimeout(detailOpenTimer.current);
+                  setSelectedId(server.id);
+                  // Select immediately; let a pointer double-click finish before the sheet covers its row.
+                  // Keyboard and assistive activation open the details immediately.
+                  const defer = event.detail > 0 && canConnect(server);
+                  setDetailReady(!defer);
+                  if (defer) detailOpenTimer.current = setTimeout(() => setDetailReady(true), 240);
+                }}
                 onConnect={() => connect(server)}
                 onMenu={(at) => openServerMenu(server.id, at)}
               />
             ))}
           </ul>
         </div>
-        {selected ? (
+        {selected && detailReady ? (
           <Activity mode={inventoryVisible ? "visible" : "hidden"}>
-            <Popover
-              anchor={detailAnchor}
-              side="bottom"
-              align="end"
-              width={720}
-              maxHeight={640}
-              autoFocus={false}
-              solid
-              ignore="[data-server-row]"
-              onDismiss={(reason) => {
-                // A modal opened from these details (proxy approval, files, runbooks) owns
-                // the pointer; pressing inside it must not drop the details and their drafts.
-                if (reason === "outside" && hasActiveModalOverlay()) return;
-                setSelectedId(undefined);
-              }}
+            <Sheet
+              modal={false}
               role="region"
-              aria-label={t("Server details")}
-              className="flex min-h-0 min-w-0 flex-col"
+              anchor="container"
+              title={t("Server details")}
+              size="min(40rem, 100%)"
+              motion="none"
+              initialFocus={false}
+              dismissOnOutside={false}
+              padding="none"
+              onClose={() => setSelectedId(undefined)}
+              header={
+                <div
+                  {...surfaceAttributes(
+                    { frame: "stroke", edge: "bottom" },
+                    "flex min-w-0 shrink-0 items-center gap-2 px-4 py-3",
+                  )}
+                >
+                  <ServerIdentity accent={serverAccentColor(selected)} />
+                  <OverflowTooltip label={selected.name}>
+                    <Heading size="section" truncate className="min-w-0 flex-1">
+                      {selected.name}
+                    </Heading>
+                  </OverflowTooltip>
+                  {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
+                  <Button
+                    variant="ghost"
+                    iconOnly
+                    label={t("Server color")}
+                    aria-haspopup="dialog"
+                    onClick={(event) =>
+                      setColorTarget({ serverId: selected.id, at: event.currentTarget })
+                    }
+                  >
+                    <Palette aria-hidden className="icon-sm" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    iconOnly
+                    label={t("Server actions")}
+                    aria-haspopup="menu"
+                    aria-expanded={menu?.serverId === selected.id}
+                    onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
+                  >
+                    <MoreHorizontal aria-hidden className="icon-sm" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    iconOnly
+                    label={t("Close server details")}
+                    onClick={() => {
+                      setSelectedId(undefined);
+                      Array.from(
+                        list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ??
+                          [],
+                      )
+                        .find((row) => row.dataset.serverRow === selected.id)
+                        ?.focus({ preventScroll: true });
+                    }}
+                  >
+                    <X aria-hidden className="icon-sm" />
+                  </Button>
+                </div>
+              }
             >
-              <div
-                {...surfaceAttributes(
-                  { frame: "stroke", edge: "bottom" },
-                  "flex min-w-0 shrink-0 items-center gap-2 px-4 py-3",
-                )}
-              >
-                <Server aria-hidden className="icon-md shrink-0" tone="muted" />
-                <OverflowTooltip label={selected.name}>
-                  <Heading size="section" truncate className="min-w-0 flex-1">
-                    {selected.name}
-                  </Heading>
-                </OverflowTooltip>
-                {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Server actions")}
-                  aria-haspopup="menu"
-                  aria-expanded={menu?.serverId === selected.id}
-                  onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
-                >
-                  <MoreHorizontal aria-hidden className="icon-sm" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Close server details")}
-                  onClick={() => {
-                    setSelectedId(undefined);
-                    Array.from(
-                      list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ?? [],
-                    )
-                      .find((row) => row.dataset.serverRow === selected.id)
-                      ?.focus({ preventScroll: true });
-                  }}
-                >
-                  <X aria-hidden className="icon-sm" />
-                </Button>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className="min-w-0 p-4">
                 {selected.machine ? (
                   <div className="mbe-3 flex items-start justify-between gap-2">
                     <MachineStatus
@@ -870,7 +919,7 @@ export function ServersView({
                   </Disclosure>
                 ) : null}
               </div>
-            </Popover>
+            </Sheet>
           </Activity>
         ) : null}
       </div>

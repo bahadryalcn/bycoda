@@ -44,6 +44,8 @@ export type SurfaceVariant =
   | "on-solid"
   /** User-selected identity swatch; caller supplies --surface-user-color. */
   | "user-color"
+  /** User identity tint; keeps normal text contrast. Supply --surface-user-color. */
+  | "user-color-tint"
   | "neutral-boundary"
   | "drop-line"
   | "drop-blocked"

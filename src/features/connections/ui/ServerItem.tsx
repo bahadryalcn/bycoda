@@ -1,5 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { t } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
@@ -8,6 +8,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Star, Terminal } from "../../../shared/ui/icons";
+import { ServerIdentity } from "./ServerIdentity";
 import type { ServerRecord } from "../model/serverInventory";
 import type { ServersLayout } from "./serversLayout";
 import { MachineStatus } from "./ServerStatus";
@@ -27,7 +28,7 @@ type ServerItemProps = {
   /** Resolved palette or custom color; undefined means the server has no color. */
   accent?: string;
   canConnect: boolean;
-  onSelect: () => void;
+  onSelect: (event: MouseEvent<HTMLButtonElement>) => void;
   onConnect: () => void;
   onMenu: (at: ServerMenuAt) => void;
 };
@@ -64,8 +65,9 @@ export function ServerItem({
   const cards = layout === "cards";
   const group = server.metadata.group ?? "";
   const tags = server.metadata.tags;
-  const groupTags = [group, ...tags].filter(Boolean).join(" · ");
+  const groupTags = [group, ...tags].filter(Boolean).join(", ");
   const badges = [
+    { id: "kind", label: server.machine ? "Host" : "SSH" },
     ...(group ? [{ id: `group:${group}`, label: group }] : []),
     ...tags.map((tag, index) => ({ id: `tag:${index}:${tag}`, label: tag })),
   ];
@@ -78,14 +80,8 @@ export function ServerItem({
   const favorite = server.metadata.favorite ? (
     <Star aria-label={t("Favorite")} className="icon-xs shrink-0" tone="muted" />
   ) : null;
-  // The group color is a small identity dot beside the name, not an edge stripe.
-  const accentDot = accent ? (
-    <span
-      aria-hidden
-      {...surfaceAttributes({ radius: "pill", variant: "user-color" }, "size-2 shrink-0")}
-      style={{ "--surface-user-color": accent } as CSSProperties}
-    />
-  ) : null;
+  // The user-chosen color identifies the server; it never implies connection health.
+  const identityIcon = <ServerIdentity accent={accent} />;
 
   const onContextMenu = (event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
@@ -165,7 +161,7 @@ export function ServerItem({
           return;
         }
         if (selectionMode) onCheck?.(!checked);
-        else onSelect();
+        else onSelect(event);
       }}
       onContextMenu={onContextMenu}
       onDoubleClick={(event) => {
@@ -185,14 +181,14 @@ export function ServerItem({
       onKeyDown={onKeyDown}
     >
       {cards ? (
-        <span className="flex min-w-0 flex-col gap-1 p-3">
+        <span className="flex min-w-0 flex-col gap-2 p-3">
           <span className="server-card-head flex min-w-0 items-center gap-2">
+            {identityIcon}
             <OverflowTooltip label={server.name}>
-              <Text as="span" size="inherit" tone="inherit" weight="medium" truncate>
+              <Text as="span" size="body" tone="inherit" weight="medium" truncate>
                 {server.name}
               </Text>
             </OverflowTooltip>
-            {accentDot}
             {favorite}
           </span>
           <OverflowTooltip label={address}>
@@ -203,9 +199,6 @@ export function ServerItem({
               truncate={!selected}
               className={selected ? "break-all whitespace-normal" : undefined}
             >
-              <Text size="inherit" tone="muted">
-                {kind} ·{" "}
-              </Text>
               {address}
             </Text>
           </OverflowTooltip>
@@ -219,6 +212,7 @@ export function ServerItem({
         </span>
       ) : (
         <>
+          {identityIcon}
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
               <OverflowTooltip label={server.name}>
@@ -233,9 +227,8 @@ export function ServerItem({
                   {server.name}
                 </Text>
               </OverflowTooltip>
-              {accentDot}
             </span>
-            <OverflowTooltip label={groupTags ? `${address} · ${groupTags}` : address}>
+            <OverflowTooltip label={groupTags ? `${address}, ${groupTags}` : address}>
               <Text
                 as="span"
                 size="caption"
@@ -247,20 +240,19 @@ export function ServerItem({
                     : "block min-w-0 flex-1"
                 }
               >
-                <Text size="inherit" tone="muted">
-                  {kind} ·{" "}
-                </Text>
                 {address}
-                {groupTags ? (
-                  <Text size="inherit" tone="muted">
-                    {" "}
-                    · {groupTags}
-                  </Text>
-                ) : null}
               </Text>
             </OverflowTooltip>
+            {groupTags ? (
+              <Text as="span" size="caption" tone="muted" truncate className="block">
+                {groupTags}
+              </Text>
+            ) : null}
           </span>
           <span className="server-row-status flex shrink-0 items-center gap-2">
+            <Text size="caption" tone="muted">
+              {kind}
+            </Text>
             {favorite}
             {status}
           </span>

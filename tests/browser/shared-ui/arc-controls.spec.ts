@@ -7,7 +7,7 @@ test("textarea resize defaults preserve caller, autosize and fill ownership", as
     "resize",
     "vertical",
   );
-  for (const name of ["Caller disabled resizing", "Automatic height", "Fill panel"]) {
+  for (const name of ["Explicitly disabled resizing", "Automatic height", "Fill panel"]) {
     const field = region.getByRole("textbox", { name, exact: true });
     await expect(field).toHaveCSS("resize", "none");
     await field.fill("Retained Turkish instructions İstanbul 🧪\n".repeat(12));

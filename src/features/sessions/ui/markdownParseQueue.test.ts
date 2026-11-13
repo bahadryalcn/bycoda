@@ -88,7 +88,7 @@ it("retries a fresh worker after the failed reply has been unmounted", () => {
   const error = vi.fn();
   const release = queue.subscribe("failed", { result: vi.fn(), error });
   queue.request("failed", "first reply");
-  worker.onerror!({} as ErrorEvent);
+  worker.onerror!.call(worker as unknown as Worker, {} as ErrorEvent);
   expect(error).toHaveBeenCalledOnce();
   release();
 

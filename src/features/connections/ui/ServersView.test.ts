@@ -293,6 +293,41 @@ it("selects on a single click and opens the canonical SSH record once on double 
   );
 });
 
+it("selects immediately while keeping the row uncovered until pointer inspection settles", async () => {
+  terminalActions.open = vi.fn();
+  await render();
+  vi.useFakeTimers();
+  try {
+    const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
+    await act(async () => row.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+    expect(row.getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector('[aria-label="Server details"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTime(240));
+    expect(document.querySelector('[aria-label="Server details"]')).toBeTruthy();
+    expect(terminalActions.open).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("cancels pending pointer inspection when a double-click connects", async () => {
+  terminalActions.open = vi.fn();
+  await render();
+  vi.useFakeTimers();
+  try {
+    const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
+    await act(async () => row.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+    await act(async () =>
+      row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, button: 0, detail: 2 })),
+    );
+    expect(terminalActions.open).toHaveBeenCalledOnce();
+    await act(async () => vi.advanceTimersByTime(240));
+    expect(terminalActions.open).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("connects with Enter without repeating the connection and closes details back to the row", async () => {
   terminalActions.open = vi.fn();
   await render();
@@ -408,6 +443,30 @@ it("restores search, selection and scroll after navigating away and returning", 
     document.body.querySelector('[data-server-row][aria-pressed="true"]')?.textContent,
   ).toContain("Home Mac");
   expect(document.body.querySelector(".overflow-y-auto")?.scrollTop).toBe(90);
+});
+
+it("narrows with group shortcuts while preserving the search", async () => {
+  fixture.extraServers = [
+    { ...sshServer, metadata: { ...sshServer.metadata, group: "Production" } },
+    {
+      ...sshServer,
+      id: "ssh:staging",
+      name: "Staging SSH",
+      metadata: { ...sshServer.metadata, group: "Staging" },
+    },
+  ];
+  await render();
+  await search("SSH");
+  const groups = document.querySelector('[aria-label="Group"]')!;
+  const production = [...groups.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Production"),
+  )!;
+  await act(async () => production.click());
+  expect(document.querySelectorAll("[data-server-row]")).toHaveLength(1);
+  expect(document.querySelector("input")?.value).toBe("SSH");
+  await act(async () => production.click());
+  expect(document.querySelectorAll("[data-server-row]")).toHaveLength(2);
+  expect(document.querySelector("input")?.value).toBe("SSH");
 });
 
 it("does not expose credentials from a URL endpoint", async () => {

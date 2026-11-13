@@ -89,16 +89,32 @@ test("settings expose advanced controls without opening a menu", async ({ page }
   ]) {
     await page.goto(`/tests/browser/settings/settings.html?section=${section}&theme=dark&lang=en`);
     const form = page.locator(".bycoda-settings-form");
-    // Optional build provenance is intentionally disclosed.
+    // Build provenance and provider setup/discovery are intentionally disclosed.
     // Keep this inventory exact so ordinary settings cannot silently move behind disclosures.
     const optionalDisclosures: Record<string, string[]> = {
       general: ["Build details"],
+      providers: [
+        "#setting-antigravity-account",
+        ".provider-cli-more",
+        "#setting-acp-registry > details",
+      ],
     };
     await expect
       .poll(async () =>
-        (await form.locator("details > summary").allTextContents())
-          .map((label) => label.trim())
-          .sort(),
+        form.locator("details > summary").evaluateAll((summaries) =>
+          summaries
+            .map((summary) => {
+              const details = summary.parentElement!;
+              // Identify only these setup disclosures; their counts and subtitles can vary.
+              const providerSetup = [
+                "#setting-antigravity-account",
+                ".provider-cli-more",
+                "#setting-acp-registry > details",
+              ].find((selector) => details.matches(selector));
+              return providerSetup ?? summary.textContent!.trim();
+            })
+            .sort(),
+        ),
       )
       .toEqual((optionalDisclosures[section] ?? []).slice().sort());
     if (section === "connections") {
@@ -120,7 +136,10 @@ test("settings expose advanced controls without opening a menu", async ({ page }
       // The empty list repeats this action; both buttons open the same inline form.
       await form.getByRole("button", { name: "Add machine", exact: true }).first().click();
       const machineForm = form.getByRole("form", { name: "Add a new machine", exact: true });
-      await machineForm.getByRole("radio", { name: "Host URL", exact: true }).click();
+      const hostUrl = machineForm.getByRole("radio", { name: "Host URL", exact: true });
+      await hostUrl.focus();
+      await hostUrl.press("Space");
+      await expect(hostUrl).toBeChecked();
       await expect(
         machineForm.getByRole("textbox", { name: "Host URL", exact: true }),
       ).toBeVisible();

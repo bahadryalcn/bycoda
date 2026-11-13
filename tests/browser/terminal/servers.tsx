@@ -484,12 +484,21 @@ Object.assign(window, {
           command === "remote_machines"
             ? machines
             : [
-                ...machines.map((machine) => ({
+                ...machines.map((machine, index) => ({
                   id: machine.id,
                   name: machine.name,
                   kind: "host",
                   machine,
-                  metadata: { tags: [], favorite: false },
+                  metadata: {
+                    tags: [],
+                    favorite: false,
+                    ...(params.has("serversRedesign")
+                      ? {
+                          group: ["Production", "Development", "Infrastructure"][index % 3],
+                          colorIndex: [1, 3, 5][index % 3],
+                        }
+                      : {}),
+                  },
                 })),
                 ...sshRecords,
               ],
@@ -561,7 +570,21 @@ Object.assign(window, {
               },
             ]
           : [];
-      if (command === "ssh_known_hosts_list") return [];
+      if (command === "ssh_known_hosts_list")
+        return params.has("serversRedesign")
+          ? [
+              {
+                hostPatterns: "deploy.example.invalid",
+                keyType: "ssh-ed25519",
+                fingerprint: "SHA256:fixture-deploy-public-metadata",
+              },
+              {
+                hostPatterns: "[bastion.example.invalid]:2222",
+                keyType: "ecdsa-sha2-nistp256",
+                fingerprint: "SHA256:fixture-bastion-public-metadata",
+              },
+            ]
+          : [];
       if (command === "ssh_agent_identities") return { status: "empty", identities: [] };
       if (command === "ssh_certificate_inspect")
         return {

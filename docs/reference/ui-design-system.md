@@ -95,6 +95,11 @@ meaningful additional content. Preserve necessary error, approval, uncertainty
 and recovery information outside optional help. Source tests that enshrine the
 old visual hiding rule must change with a deliberate presentation migration.
 
+Menu action labels determine the popup's natural width within the shared viewport
+cap. Once the available width is exhausted, wrap the label inside its row, including
+unbroken names and paths. Keep trailing shortcuts and checks aligned; do not clip
+primary action text or widen a popup beyond the window.
+
 Keep the existing system font preference, cool neutral surfaces and desktop scale.
 Arc's marketing font, 18px control radius, large page gutters and global foundation
 reset are not workbench requirements. The scoped bridge in `src/styles/arc.css`

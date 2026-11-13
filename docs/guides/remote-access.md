@@ -230,6 +230,14 @@ to open a terminal, or select an entry to inspect its address and connection,
 forwarding, automation, organization and activity tools. Applied filters are shown
 beside the catalog; **Recently used first** changes order without filtering entries.
 
+Group shortcuts above the catalog narrow the existing search without clearing it.
+User-selected server colors appear on the identity tile, separately
+from the Host connection status. Selecting an entry opens a right-hand details sheet
+and leaves the catalog usable. Its header stays visible; connection actions and tool
+tabs stay together while scrolling. Switching tool tabs preserves unfinished drafts.
+SSH settings, server editing, Termius import and SFTP open in side sheets with their
+existing explicit save, import, connection and transfer approvals.
+
 SSH tabs support the close action, middle click and Delete on the focused tab.
 The existing terminal close policy asks before closing foreground work or a terminal
 whose process status cannot be determined. Closing the active tab selects a surviving

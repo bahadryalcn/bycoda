@@ -31,6 +31,10 @@ import {
 } from "../../../src/features/sessions/model/models";
 import { registerHarness } from "../../../src/integrations/harness/core/registry";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
+import {
+  setSessions,
+  useSessionsSelector,
+} from "../../../src/features/sessions/model/sessionsStore";
 import { languageReady } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
 import "../../../src/styles/index.css";
@@ -223,8 +227,14 @@ setComposerAttachments(sessionId, [
   },
 ]);
 const events = { sends: 0, stops: 0, approvals: 0, queueAttempts: 0 };
+// The real pane resolves approval identity from the canonical session store.
+setSessions([initial]);
 type Mode = "idle" | "working" | "approval" | "unknown" | "tools" | "long";
-type FixtureControl = { mode: (mode: Mode) => void; remount: () => void; events: typeof events };
+type FixtureControl = {
+  mode: (mode: Mode) => void;
+  remount: () => void;
+  events: typeof events;
+};
 declare global {
   interface Window {
     sessionUsability: FixtureControl;
@@ -232,7 +242,15 @@ declare global {
 }
 
 function Fixture() {
-  const [session, setSession] = useState(initial);
+  const session = useSessionsSelector((sessions) =>
+    sessions.find((entry) => entry.id === sessionId)!,
+  );
+  const setSession = (update: Session | ((previous: Session) => Session)) =>
+    setSessions((sessions) =>
+      sessions.map((entry) =>
+        entry.id === sessionId ? (typeof update === "function" ? update(entry) : update) : entry,
+      ),
+    );
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     window.sessionUsability = {

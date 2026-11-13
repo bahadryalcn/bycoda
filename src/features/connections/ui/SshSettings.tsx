@@ -1,3 +1,6 @@
+import { Sheet } from "../../../shared/ui/Sheet";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Badge } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Heading } from "../../../shared/ui/Heading";
@@ -7,7 +10,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Modal } from "../../../shared/ui/Modal";
+
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
@@ -136,7 +139,7 @@ export function SshSettings({
     }
   };
   return (
-    <Modal title={t("SSH settings")} onClose={() => onClose()} size="lg">
+    <Sheet title={t("SSH settings")} onClose={() => onClose()} size="48rem">
       <div className="flex flex-col gap-4">
         <Text as="p" tone="muted">
           {t("Local SSH keys and known hosts.")}
@@ -273,10 +276,10 @@ export function SshSettings({
                 onReset={() => setKeySearch("")}
               />
             ) : null}
-            <div className="max-h-64 overflow-y-auto">
+            <div {...surfaceAttributes({ dividers: "stroke" }, "flex min-w-0 flex-col")}>
               {matchingKeys.map((key) => (
                 <div
-                  className="mbs-2 flex min-w-0 flex-wrap items-center gap-2"
+                  className="flex min-w-0 flex-wrap items-center gap-3 py-3"
                   key={`${key.identityFile}:${key.fingerprint}`}
                 >
                   <Text as="div" tone="inherit" className="min-w-0 flex-1">
@@ -286,9 +289,12 @@ export function SshSettings({
                     <Text wrap="anywhere" as="p" size="inherit" tone="muted">
                       {key.identityFile}
                     </Text>
-                    <Text wrap="anywhere" as="p" size="inherit" tone="muted">
-                      {key.keyType} · {key.fingerprint}
-                    </Text>
+                    <div className="mbs-1 flex min-w-0 flex-wrap items-center gap-2">
+                      <Badge size="xs">{key.keyType}</Badge>
+                      <Text wrap="anywhere" size="caption" tone="muted">
+                        {key.fingerprint}
+                      </Text>
+                    </div>
                   </Text>
                   {canAssignKey && key.identityFile ? (
                     <Button
@@ -345,9 +351,20 @@ export function SshSettings({
                   .includes(hostSearch.trim().toLocaleLowerCase()),
               )
               .map((host, index) => (
-                <Text wrap="anywhere" key={index} as="p" tone="inherit" className="mbs-2">
-                  {host.hostPatterns} · {host.keyType} · {host.fingerprint}
-                </Text>
+                <div
+                  key={index}
+                  {...surfaceAttributes({ separator: "block" }, "flex min-w-0 flex-col gap-2 py-3")}
+                >
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                    <Text wrap="anywhere" weight="medium">
+                      {host.hostPatterns}
+                    </Text>
+                    <Badge size="xs">{host.keyType}</Badge>
+                  </div>
+                  <Text wrap="anywhere" size="caption" tone="muted">
+                    {host.fingerprint}
+                  </Text>
+                </div>
               ))}
           </TabPanel>
           <TabPanel value="import" keepMounted className="flex flex-col gap-3">
@@ -438,6 +455,6 @@ export function SshSettings({
           </TabPanel>
         </Tabs>
       </div>
-    </Modal>
+    </Sheet>
   );
 }

@@ -33,6 +33,8 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   minRows?: number;
   /** Tallest height in text lines; the field scrolls beyond it. */
   maxRows?: number;
+  /** Disable manual resizing in a bounded editor; fill and autosize already disable it. */
+  resize?: "vertical" | "none";
   /** Grow and shrink with the content between `minRows` and `maxRows`; the manual resize handle is removed. */
   autosize?: boolean;
   /** Code, paths, JSON and logs: the shared monospace face. */
@@ -86,6 +88,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
     fieldSize,
     minRows,
     maxRows,
+    resize,
     autosize = false,
     monospace = false,
     rows,
@@ -149,6 +152,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
           data-field-size={fieldSize}
           data-min-rows={minRows ? "" : undefined}
           data-max-rows={maxRows ? "" : undefined}
+          data-resize={resize}
           data-autosize={autosize ? "" : undefined}
           data-monospace={monospace ? "" : undefined}
           onInput={(event) => {

@@ -13,6 +13,7 @@ export type TextareaFieldProps = TextareaProps & {
 /**
  * Multi-line form field. `minRows`/`maxRows` bound the height in lines, `autosize` grows with the
  * content between them, `fieldSize="sm"` is the tighter box and `monospace` the code face.
+ * `resize="none"` keeps bounded editors fixed; ordinary fields retain vertical resizing.
  * `textSize` and `leading` set the type role of the typed text. `hideLabel` keeps `label` as the accessible name; `appearance="bare"` with `fill` is an unframed editor filling its panel. Preserve domain drafts in the consumer.
  * @group fields
  * @use Multi-line plain text in a form (notes, descriptions, instructions).

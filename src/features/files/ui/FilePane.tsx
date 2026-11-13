@@ -448,7 +448,8 @@ function PlanSurface({
                 onUpdatePlan(plan.sessionId, block.id, event.currentTarget.value)
               }
               leading="snug"
-              className="resize-none overflow-auto"
+              resize="none"
+              className="overflow-auto"
             />
           </SurfaceSelection>
         }

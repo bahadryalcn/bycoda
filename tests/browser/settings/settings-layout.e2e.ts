@@ -108,13 +108,16 @@ for (const [theme, width] of [
           node.scrollTop = 0;
         });
       }
-      if (["general", "chat", "notifications", "limits"].includes(section))
+      if (["general", "chat", "notifications"].includes(section))
         await page.screenshot({
           path: `temp/verification/2026-10-18-settings-layout/${section}-${theme}-${width}.png`,
         });
     }
     await expect(page.getByRole("heading", { name: "Usage budgets", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Add budget", exact: true })).toBeVisible();
+    await page.screenshot({
+      path: `temp/verification/2026-10-18-settings-layout/limits-${theme}-${width}.png`,
+    });
     await expect(page.getByRole("radiogroup", { name: "Usage views" })).toHaveCount(0);
     const categoryPicker = page.locator(".bycoda-settings-category-picker");
     if (await categoryPicker.isVisible()) {
@@ -126,7 +129,9 @@ for (const [theme, width] of [
         .getByRole("tab", { name: "Provider usage", exact: true })
         .click();
     }
-    await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    const limits = page.getByRole("tab", { name: "Limits", exact: true });
+    await limits.click();
+    await expect(limits).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("button", { name: "Add budget", exact: true })).toBeVisible();
     expect(errors).toEqual([]);
   });

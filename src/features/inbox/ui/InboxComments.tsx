@@ -384,7 +384,7 @@ export function InboxCommentForm({
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
             fieldClassName="w-full"
-            className="resize-none"
+            resize="none"
           />
         )}
         <div className="flex items-center justify-end gap-2">

@@ -36,8 +36,8 @@ export function CoherenceFixture() {
         <section aria-label="Textarea resize fixture" className="mx-auto grid max-w-lg gap-4">
           <TextareaField label="Default resizing" defaultValue="Resizable form text" />
           <TextareaField
-            label="Caller disabled resizing"
-            className="resize-none"
+            label="Explicitly disabled resizing"
+            resize="none"
             defaultValue="Consumer owns growth"
           />
           <TextareaField

@@ -1,3 +1,6 @@
+/* Hallmark v2.0.0 | shape: app screen | theme: locked Bycoda | scope: app
+   Signature: user-selected server identity beside a persistent details sheet.
+   Critique: retain compact canvas catalog; distinguish identity from connection health. */
 .server-list-row {
   display: flex;
   align-items: center;

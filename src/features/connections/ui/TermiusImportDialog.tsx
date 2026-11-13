@@ -1,3 +1,4 @@
+import { Sheet } from "../../../shared/ui/Sheet";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
@@ -10,7 +11,7 @@ import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { ModalActions } from "../../../shared/ui/Modal";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { TextField } from "../../../shared/ui/TextField";
 import type { ServerRecord } from "../model/serverInventory";
@@ -140,9 +141,9 @@ export function TermiusImportDialog({
   const allSelected = eligible.length > 0 && eligible.every((host) => selected.has(host.sourceId));
 
   return (
-    <Modal
+    <Sheet
       title={t("Import from Termius")}
-      size="lg"
+      size="48rem"
       onClose={() => {
         if (!pending.current) onClose();
       }}
@@ -341,6 +342,6 @@ export function TermiusImportDialog({
           </>
         ) : null}
       </div>
-    </Modal>
+    </Sheet>
   );
 }

@@ -59,13 +59,18 @@ const rule = (css: string, selector: string) => {
   return css.slice(open + 1, css.indexOf("}", open));
 };
 
-describe("popup rows are one line and the popup grows with them", () => {
+describe("popup rows preserve natural width within the viewport", () => {
   it.each([
     ["arc/combobox/combobox.module.css", ".choiceLabel"],
-    ["arc/context-menu/context-menu.module.css", ".copy"],
     ["arc/expanding-search/expanding-search.module.css", ".optionTitle"],
   ])("%s %s keeps primary copy on one line", (file, selector) => {
     expect(rule(read(file), selector)).toContain("white-space: nowrap;");
+  });
+
+  it("lets menu action labels wrap when their popup reaches the viewport cap", () => {
+    const copy = rule(read("arc/context-menu/context-menu.module.css"), ".copy");
+    expect(copy).toContain("white-space: normal;");
+    expect(copy).toContain("overflow-wrap: anywhere;");
   });
 
   it("caps the shared list popup at 800px", () => {

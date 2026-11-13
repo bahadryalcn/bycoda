@@ -1,3 +1,4 @@
+import { Sheet } from "../../../shared/ui/Sheet";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -22,7 +23,7 @@ import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpoin
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { saveSshConnection, type ServerRecord, type SshEndpoint } from "../model/serverInventory";
 import { errorText } from "./serverActionFeedback";
@@ -143,12 +144,12 @@ export function SshServerEditor({
     setSaveConnection(false);
   };
   return (
-    <Modal
+    <Sheet
       title={onConnect ? t("Quick connect") : server ? t("Edit SSH server") : t("Add SSH server")}
       onClose={() => {
         if (!saving) onClose();
       }}
-      size="md"
+      size="40rem"
       footer={
         <ModalActions>
           <Button variant="ghost" disabled={saving} onClick={onClose}>
@@ -201,7 +202,7 @@ export function SshServerEditor({
         }}
       >
         <FieldGroup legend={t("Connection")}>
-          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
+          <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_9rem] items-start gap-3">
             <TextField
               label={t("Host")}
               placeholder="server.example.com"
@@ -415,6 +416,6 @@ export function SshServerEditor({
         ) : null}
         {error ? <InlineError>{error}</InlineError> : null}
       </form>
-    </Modal>
+    </Sheet>
   );
 }

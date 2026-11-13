@@ -7,7 +7,7 @@ export function useMarkdownRenderBlocks(blocks: string[], stream: string) {
   const [progress, setProgress] = useState({ stream, count: BLOCKS_PER_FRAME });
   const count = progress.stream === stream ? progress.count : BLOCKS_PER_FRAME;
   const pending = count < blocks.length;
-  // Yield between batches so parsing/rendering thousands of blocks cannot occupy one commit.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the next render-batch timer and cancel it when the document changes or unmounts.
   useEffect(() => {
     if (!pending) return;
     const timer = setTimeout(() => {

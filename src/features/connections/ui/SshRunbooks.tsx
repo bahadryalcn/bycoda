@@ -1,6 +1,7 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Code } from "../../../shared/ui/Code";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { Text } from "../../../shared/ui/Text";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -460,7 +461,11 @@ export function SshRunbooks({
                   {target.reason ? (
                     <Text as="div" size="inherit" tone="muted" className="w-full min-w-0">
                       <p>{t(sshRunReasonMessage(target.reason))}</p>
-                      <Code className="break-all">{target.reason}</Code>
+                      <ErrorDetails
+                        title={t(sshRunReasonMessage(target.reason))}
+                        label={t("Technical details")}
+                        detail={target.reason}
+                      />
                     </Text>
                   ) : null}
                   {target.state === "queued" || target.state === "running" ? (

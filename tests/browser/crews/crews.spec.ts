@@ -661,10 +661,12 @@ test("adds a new member when the library is empty and shows role problems in pla
   await page.getByRole("button", { name: "Add to crew" }).click();
   await expect(dialog.getByText("Add a name").first()).toBeVisible();
   // The role name is the owner's own; suggestions follow the chosen responsibility.
-  await dialog
-    .getByRole("radiogroup", { name: "Responsibility in the crew" })
-    .getByRole("radio", { name: "Coordinator" })
-    .click();
+  const coordinator = dialog
+    .getByRole("group", { name: "Responsibility in the crew" })
+    .getByRole("radio", { name: "Coordinator" });
+  await coordinator.focus();
+  await coordinator.press("Space");
+  await expect(coordinator).toBeChecked();
   await expect(
     dialog.getByText("Plans the work and hands out assignments. A crew has one."),
   ).toHaveCount(0);
@@ -675,10 +677,12 @@ test("adds a new member when the library is empty and shows role problems in pla
   await expect(dialog.getByRole("textbox", { name: "Member name" })).toHaveValue("Project lead");
   await dialog.getByRole("textbox", { name: "Member name" }).fill("Mobile release lead");
   await dialog.getByLabel("Also save to member library").check();
-  await dialog
-    .getByRole("radiogroup", { name: "Library availability" })
-    .getByRole("radio", { name: "All projects" })
-    .click();
+  const allProjects = dialog
+    .getByRole("group", { name: "Library availability" })
+    .getByRole("radio", { name: "All projects" });
+  await allProjects.focus();
+  await allProjects.press("Space");
+  await expect(allProjects).toBeChecked();
   await page.getByRole("button", { name: "Add to crew" }).click();
   await expect(dialog.getByRole("region", { name: "Coordinator" })).toContainText(
     "Mobile release lead",
@@ -687,7 +691,10 @@ test("adds a new member when the library is empty and shows role problems in pla
   await expect(dialog.getByText("Add at least one specialist.").first()).toBeVisible();
   // The saved profile is now in the library for every project on this host.
   await dialog.getByRole("button", { name: "Add reviewer" }).click();
-  await expect(dialog.getByRole("radio", { name: "Library (1)" })).toBeChecked();
+  await expect(dialog.getByRole("tab", { name: "Library (1)" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(dialog.getByText("Added members join as Reviewer.")).toBeVisible();
 });
 test("opens ongoing work from the rail and keeps the delivery while editing the crew", async ({
@@ -912,8 +919,13 @@ test("editing is one page: roster first, advanced settings one disclosure away, 
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   await expect(dialog.getByRole("region", { name: "Coordinator" })).toBeVisible();
   await dialog.getByRole("button", { name: "UI", exact: true }).click();
-  // Automatic members rate their models with plain levels instead of raw numbers.
-  await expect(dialog.getByRole("list", { name: "Model ratings" })).toBeVisible();
+  // The expanded member uses the same provider/model picker as the roster.
+  const editedMember = dialog.getByRole("listitem").filter({
+    has: dialog.getByRole("textbox", { name: "Member name", exact: true }),
+  });
+  await expect(
+    editedMember.getByRole("button", { name: "Codex Fixture", exact: true }).last(),
+  ).toBeVisible();
   await expect(dialog.getByText("Owner quality estimate")).toHaveCount(0);
   await dialog.getByRole("textbox", { name: "Member name" }).fill("Frontend");
   await dialog.getByRole("textbox", { name: "Groups" }).fill("Web");
@@ -1168,8 +1180,23 @@ test("access is set once for every member, model rules open on demand, and edits
     .filter({ hasText: /^Advanced$/ })
     .last()
     .click();
-  // Advanced is the only disclosure: model rules show as soon as it opens.
-  await expect(dialog.getByText("Lowest quality allowed", { exact: true })).toBeVisible();
+  // Shared model rules live in Models; the crew keeps its execution limits here.
+  await page.evaluate(() => {
+    const tabs: string[] = [];
+    (window as Window & { crewModelsTabs?: string[] }).crewModelsTabs = tabs;
+    window.addEventListener("bycoda:open-models-settings", (event) => {
+      tabs.push((event as CustomEvent<string>).detail);
+    });
+  });
+  await dialog
+    .getByRole("region", { name: "Models", exact: true })
+    .getByRole("button", { name: "Manage in Models", exact: true })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as Window & { crewModelsTabs?: string[] }).crewModelsTabs),
+    )
+    .toEqual(["order"]);
   await expect(dialog.getByRole("button", { name: "Edit model rules" })).toHaveCount(0);
   // There is nothing to save or discard: reopening the crew shows the stored policy.
   await expect(dialog.getByRole("button", { name: "Discard", exact: true })).toHaveCount(0);

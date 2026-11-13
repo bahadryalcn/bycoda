@@ -26,20 +26,20 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/terminal/servers.html?sshFixture&identityColorFixture&httpProxyFixture&proxyAuthFixture&terminalWorkspace&theme=${theme}`,
       );
-      const dot = page.locator(
-        '[data-server-row="ssh-duplicate"] [data-surface-variant="user-color"]',
+      const identity = page.locator(
+        '[data-server-row="ssh-duplicate"] [data-surface-variant="user-color-tint"]',
       );
-      await expect(dot).toBeVisible();
-      await dot.scrollIntoViewIfNeeded();
-      await expect(dot).toBeInViewport();
+      await expect(identity).toBeVisible();
+      await identity.scrollIntoViewIfNeeded();
+      await expect(identity).toBeInViewport();
       expect(
-        await dot.evaluate((el) => ({
-          color: getComputedStyle(el).backgroundColor,
+        await identity.evaluate((el) => ({
+          color: getComputedStyle(el).getPropertyValue("--surface-user-color").trim(),
           width: getComputedStyle(el).width,
         })),
-      ).toEqual({ color: "rgb(18, 52, 86)", width: "8px" });
+      ).toEqual({ color: "#123456", width: "32px" });
       await page.screenshot({
-        path: testInfo.outputPath("identity-dot.png"),
+        path: testInfo.outputPath("server-identity.png"),
         animations: "disabled",
       });
       await page
@@ -513,7 +513,7 @@ for (const theme of ["dark", "light"]) {
         ),
       ),
     ).toBe(false);
-    await dialog.locator("summary").filter({ hasText: "Paused transfers" }).click();
+    await expect(dialog.getByRole("button", { name: "Review resume", exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Review resume", exact: true }).click();
     const review = dialog.getByRole("region", { name: "Resume transfer review" });
     await expect(review).toContainText("C:/Fixture files/large-source.bin");
@@ -595,14 +595,22 @@ for (const theme of ["dark", "light"])
       await expect(
         details.getByRole("button", { name: "Reconnect", exact: true }),
       ).toBeInViewport();
+      const connectionError = details
+        .getByRole("paragraph")
+        .filter({ hasText: "The machine did not answer" });
+      await expect(connectionError).toBeVisible();
       const disclosure = details
         .locator("details")
-        .filter({ has: page.getByText("Connection details", { exact: true }) });
+        .filter({ has: page.locator("summary").filter({ hasText: /^Diagnostics/ }) });
       await expect(disclosure).not.toHaveAttribute("open");
-      await disclosure.locator("summary").click();
-      await expect(disclosure.locator("p")).toBeVisible();
-      await expect(disclosure.locator("p")).toContainText("The machine did not answer");
-      await disclosure.locator("summary").click();
+      await disclosure.locator(":scope > summary").focus();
+      await page.keyboard.press("Enter");
+      await expect(disclosure).toHaveAttribute("open", "");
+      await expect(disclosure.getByRole("status")).toBeVisible();
+      await expect(disclosure.getByRole("term").filter({ hasText: /^Host$/ })).toBeVisible();
+      await disclosure.locator(":scope > summary").press("Enter");
+      await expect(disclosure).not.toHaveAttribute("open");
+      await expect(connectionError).toBeVisible();
       expect(await inventory.evaluate((node) => node.parentElement!.scrollTop)).toBe(0);
       await inventory.evaluate((node) => {
         node.parentElement!.scrollTop = 300;
@@ -1084,7 +1092,9 @@ for (const theme of ["light", "dark"]) {
       .getByRole("textbox", { name: "Destination host", exact: true })
       .fill("database.example.invalid");
     await page.getByRole("spinbutton", { name: "Destination port", exact: true }).fill("5432");
-    await page.getByRole("radio", { name: "SOCKS5", exact: true }).click();
+    const socks = page.getByRole("radio", { name: "SOCKS5", exact: true });
+    await page.locator("label").filter({ has: socks }).click();
+    await expect(socks).toBeChecked();
     await page.getByRole("textbox", { name: "Name", exact: true }).fill("Development proxy");
     await page.getByRole("spinbutton", { name: "Local port", exact: true }).fill("1080");
     await page.getByRole("button", { name: "Save rule", exact: true }).click();
@@ -1097,7 +1107,9 @@ for (const theme of ["light", "dark"]) {
           ).length,
       ),
     ).toBe(0);
-    await page.getByRole("radio", { name: "Local", exact: true }).click();
+    const local = page.getByRole("radio", { name: "Local", exact: true });
+    await page.locator("label").filter({ has: local }).click();
+    await expect(local).toBeChecked();
     await expect(page.getByRole("textbox", { name: "Destination host", exact: true })).toHaveValue(
       "database.example.invalid",
     );
@@ -1812,6 +1824,21 @@ for (const theme of ["light", "dark"]) {
     await expect(
       status.getByText("cancel_requested_remote_outcome_unknown", { exact: true }),
     ).not.toBeVisible();
+    const reasonDetails = status.getByRole("button", { name: /^Technical details:/ });
+    await reasonDetails.focus();
+    await page.keyboard.press("Enter");
+    const reasonDialog = page.getByRole("dialog", { name: /^Technical details:/ });
+    await expect(reasonDialog.locator("pre")).toHaveText("cancel_requested_remote_outcome_unknown");
+    await expect(
+      reasonDialog.getByRole("button", { name: "Copy details", exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: `${folder}/${theme}-390-reason-details.png` });
+    await page.keyboard.press("Escape");
+    await expect(reasonDialog).toHaveCount(0);
+    await expect(reasonDetails).toBeFocused();
+    await expect(
+      status.getByText("cancel_requested_remote_outcome_unknown", { exact: true }),
+    ).not.toBeVisible();
     await status.scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${folder}/${theme}-390-status.png` });
     expect((await starts())[0].input).toMatchObject({
@@ -1850,7 +1877,9 @@ for (const theme of ["light", "dark"]) {
       (await requests()).filter((item) => item.command === command);
     const auth = page.getByRole("dialog", { name: "HTTP proxy authentication", exact: true });
     const chooseBasic = async () => {
-      await auth.getByRole("radio", { name: "Basic", exact: true }).click();
+      const basic = auth.getByRole("radio", { name: "Basic", exact: true });
+      await auth.locator("label").filter({ has: basic }).click();
+      await expect(basic).toBeChecked();
       await expect(auth.getByRole("textbox", { name: "Proxy username", exact: true })).toHaveValue(
         "",
       );
@@ -1997,7 +2026,9 @@ for (const theme of ["light", "dark"]) {
     const auth = page.getByRole("dialog", { name: "HTTP proxy authentication", exact: true });
     await expect(auth).toContainText("fixture-book");
     expect(await calls("ssh_runbook_start")).toHaveLength(0);
-    await auth.getByRole("radio", { name: "Basic", exact: true }).click();
+    const basic = auth.getByRole("radio", { name: "Basic", exact: true });
+    await auth.locator("label").filter({ has: basic }).click();
+    await expect(basic).toBeChecked();
     await auth.getByRole("textbox", { name: "Proxy username" }).fill("synthetic-user");
     await auth.locator('input[type="password"]').fill("synthetic-password");
     await auth.getByRole("checkbox").check();
@@ -2089,7 +2120,9 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
     await editor.locator("summary").filter({ hasText: "Connection proxy" }).click();
-    await editor.getByRole("radio", { name: "HTTPS", exact: true }).click();
+    const https = editor.getByRole("radio", { name: "HTTPS", exact: true });
+    await editor.locator("label").filter({ has: https }).click();
+    await expect(https).toBeChecked();
     await editor.getByRole("textbox", { name: "Proxy port", exact: true }).fill("443");
     await expect(editor).toContainText(
       "HTTPS verifies the proxy certificate and hostname before connecting.",

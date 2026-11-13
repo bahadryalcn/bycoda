@@ -4,6 +4,46 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { Sheet } from "./Sheet";
 
+it("keeps a persistent non-modal workspace named as a region with its custom header", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const close = vi.fn();
+  try {
+    act(() =>
+      root.render(
+        createElement(Sheet, {
+          modal: false,
+          role: "region",
+          anchor: "container",
+          title: "Server details",
+          header: createElement("h2", null, "Production"),
+          dismissOnOutside: false,
+          onClose: close,
+          children: createElement("input", { defaultValue: "draft" }),
+        }),
+      ),
+    );
+    const region = document.querySelector<HTMLElement>(
+      '[role="region"][aria-label="Server details"]',
+    )!;
+    expect(region.textContent).toContain("Production");
+    expect(region.hasAttribute("aria-modal")).toBe(false);
+    region.querySelector("input")!.focus();
+    act(() =>
+      region
+        .querySelector("input")!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it.each(["container", "viewport"] as const)(
   "hides a closed %s sheet that stays mounted, and shows it again on reopen",
   (anchor) => {

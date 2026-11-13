@@ -14,7 +14,7 @@ for (const theme of ["light", "dark"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/assistant/assistant-room.html?account-grants&theme=${theme}`);
       // The permissions card is always visible (no disclosure to open).
-      await expect(page.getByRole("heading", { name: "Who can use this account" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Who can use this account" })).toBeVisible();
       await expect(
         page.getByText("Sending still requires the autonomy level below.", { exact: false }),
       ).toBeVisible();
@@ -88,7 +88,7 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/assistant/assistant-room.html?account-grants&account-pending&theme=${theme}`,
       );
-      await expect(page.getByRole("heading", { name: "Who can use this account" })).toBeVisible();
+      await expect(page.getByRole("region", { name: "Who can use this account" })).toBeVisible();
       await expect(
         page.getByText(
           "Assistant access is paused while voice retirement is pending. Reconnect the original device and save again to retry.",

@@ -81,7 +81,7 @@ function ServerSnippetsForm({
         value={search}
         onChange={(event) => setSearch(event.target.value)}
       />
-      <div className="grid min-w-0 gap-4 @min-[36rem]/snippets:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+      <div className="grid min-w-0 gap-4 @min-[48rem]/snippets:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
         <div className="min-w-0">
           {matches.length === 0 ? (
             <EmptyState

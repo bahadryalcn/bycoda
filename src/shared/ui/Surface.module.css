@@ -620,6 +620,10 @@ button.appearance[data-surface-frame="card"] {
 .appearance[data-surface-bar="success"] {
   border-inline-start: 2px solid var(--ui-tone-success-border);
 }
+.surface[data-variant="user-color-tint"],
+.appearance[data-surface-variant="user-color-tint"] {
+  background: color-mix(in srgb, var(--surface-user-color) 24%, transparent);
+}
 
 /* Static state grounds and a detaching frame use existing semantic tokens. */
 .surface[data-variant="neutral-hover"],

@@ -1,5 +1,16 @@
 # Shared UI decision provenance
 
+## Menu labels within the window
+
+Owner decision, 2026-11-13, source: owner chat:
+
+> İçerikler panel sınırında kırpılmasın. Popup’lar pencereye sığsın.
+
+Recorded decision: menu action labels retain their natural popup width up to the
+shared viewport cap, then wrap inside their row instead of painting outside it.
+Unbroken names and paths can break at the available width. Shared menu slots own
+this behavior; trailing shortcuts and checks keep their alignment.
+
 ## One shared date and time picker family
 
 Owner decision, 2026-11-12, source: owner chat:

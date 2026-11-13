@@ -48,6 +48,8 @@ export type SheetProps = {
    * `role="dialog"` without a trap.
    */
   modal?: boolean;
+  /** Non-modal only: a persistent complementary workspace may be a named region. */
+  role?: "dialog" | "region";
   /**
    * Non-modal only. `viewport` (default): fixed to the window edge, on the overlay stack
    * (Escape closes the topmost surface; menus inside are its children). `container`: fills the
@@ -189,6 +191,7 @@ export function Sheet(props: SheetProps) {
 }
 
 function NonModalSheet({
+  role = "dialog",
   side = "end",
   anchor = "viewport",
   open = true,
@@ -330,7 +333,7 @@ function NonModalSheet({
         sheet.current = node;
         assign(ref, node);
       }}
-      role="dialog"
+      role={role}
       aria-labelledby={header ? undefined : titleId}
       aria-label={header ? title : undefined}
       tabIndex={-1}
