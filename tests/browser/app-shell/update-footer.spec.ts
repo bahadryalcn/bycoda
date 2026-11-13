@@ -237,7 +237,9 @@ test("compact account rail preserves its width, standard targets and action orde
     expect((await icon.boundingBox())!.width).toBe(14);
   }
   for (const button of await footer.getByRole("button").all()) {
-    expect((await button.boundingBox())!.height).toBe(28);
+    const cornerDismiss =
+      (await button.getAttribute("aria-label")) === "Dismiss GitHub repository prompt";
+    expect((await button.boundingBox())!.height).toBe(cornerDismiss ? 20 : 28);
   }
   const order = await footer
     .getByRole("button", { includeHidden: true })
@@ -371,9 +373,11 @@ test("footer star and corner dismiss retain separate pointer targets", async ({ 
   const close = page.getByRole("button", { name: "Dismiss GitHub repository prompt", exact: true });
   const update = page.getByRole("button", { name: `Update to ${nextVersion}`, exact: true });
   await expect(update).toBeVisible();
-  await expect(close).toBeHidden();
+  await page.mouse.move(1270, 10);
+  // Corner hints keep their keyboard target while the idle paint is clipped.
+  await expect(close).toHaveCSS("clip-path", "inset(50%)");
   await github.hover();
-  await expect(close).toBeVisible();
+  await expect(close).toHaveCSS("clip-path", "none");
   const starBounds = (await github.boundingBox())!;
   const dismissBounds = (await close.boundingBox())!;
   expect(dismissBounds.x).toBeGreaterThanOrEqual(starBounds.x + starBounds.width / 2);

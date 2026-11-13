@@ -65,7 +65,15 @@ export function descriptionExcerpt(body: string): DescriptionExcerpt {
   };
 }
 
-export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: string }) {
+export function InboxDescriptionSummary({
+  body,
+  cwd,
+  remoteMediaBaseUrl,
+}: {
+  body: string;
+  cwd: string;
+  remoteMediaBaseUrl?: string;
+}) {
   useLocale();
   const excerpt = useMemo(() => descriptionExcerpt(body), [body]);
   const [expanded, setExpanded] = useState(false);
@@ -76,7 +84,12 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
   if (!excerpt.truncated) {
     return (
       <SurfaceSelection cwd={cwd} contentVersion={body}>
-        <AgentMarkdown text={body} cwd={cwd} allowRemoteMedia />
+        <AgentMarkdown
+          text={body}
+          cwd={cwd}
+          allowRemoteMedia
+          remoteMediaBaseUrl={remoteMediaBaseUrl}
+        />
       </SurfaceSelection>
     );
   }
@@ -89,7 +102,12 @@ export function InboxDescriptionSummary({ body, cwd }: { body: string; cwd: stri
     >
       {expanded ? (
         <SurfaceSelection cwd={cwd} contentVersion={body}>
-          <AgentMarkdown text={body} cwd={cwd} allowRemoteMedia />
+          <AgentMarkdown
+            text={body}
+            cwd={cwd}
+            allowRemoteMedia
+            remoteMediaBaseUrl={remoteMediaBaseUrl}
+          />
         </SurfaceSelection>
       ) : excerpt.text ? (
         <SurfaceSelection cwd={cwd} contentVersion={body}>

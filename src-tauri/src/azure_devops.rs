@@ -937,8 +937,27 @@ fn parse_wit_details(value: &Value) -> Result<AzureDevOpsWorkItemDetails, String
         .get("fields")
         .ok_or_else(|| "Azure DevOps did not return that work item".to_string())?;
     let creator = fields.get("System.CreatedBy");
+    let mut body = string_field(fields, "System.Description").unwrap_or_default();
+    if let Some(relations) = value.get("relations").and_then(Value::as_array) {
+        for relation in relations
+            .iter()
+            .filter(|item| item.get("rel").and_then(Value::as_str) == Some("AttachedFile"))
+        {
+            let Some(raw) = relation.get("url").and_then(Value::as_str) else {
+                continue;
+            };
+            let name = relation
+                .pointer("/attributes/name")
+                .and_then(Value::as_str)
+                .unwrap_or("Attachment");
+            if let Some(link) = crate::inbox_media::attachments::markdown_link(name, raw) {
+                body.push_str("\n\n");
+                body.push_str(&link);
+            }
+        }
+    }
     Ok(AzureDevOpsWorkItemDetails {
-        body: string_field(fields, "System.Description").unwrap_or_default(),
+        body,
         author: creator
             .and_then(|user| string_field(user, "displayName"))
             .unwrap_or_default(),
@@ -2045,6 +2064,26 @@ fn read_config(app: &AppHandle) -> Result<Option<AzureDevOpsConfig>, String> {
 
 fn require_config(app: &AppHandle) -> Result<AzureDevOpsConfig, String> {
     read_config(app)?.ok_or_else(|| "Connect Azure DevOps in Settings".to_string())
+}
+
+pub(crate) fn attachment_media_authorization(
+    app: &AppHandle,
+    raw: &str,
+) -> Result<Option<String>, String> {
+    let url = url::Url::parse(raw).map_err(|_| "Invalid attachment URL".to_string())?;
+    let path = url.path().to_ascii_lowercase();
+    if !path.contains("/_apis/") || !path.contains("/attachments/") {
+        return Ok(None);
+    }
+    let Some(config) = read_config(app)? else {
+        return Ok(None);
+    };
+    let site = url::Url::parse(&config.url).map_err(|_| "Invalid Azure DevOps site".to_string())?;
+    if crate::inbox_media::attachments::matches_site(&url, &site) {
+        Ok(Some(basic_auth(&config.token)))
+    } else {
+        Ok(None)
+    }
 }
 
 fn write_config(app: &AppHandle, config: &AzureDevOpsConfig) -> Result<(), String> {

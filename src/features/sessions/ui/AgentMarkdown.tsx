@@ -76,7 +76,7 @@ import {
   messageFileCandidates,
   resolveMessageFileReference,
 } from "../../files/public/messagePathContext";
-import { INBOX_MEDIA_PREFIXES, isInboxMediaUrl } from "../../inbox/model/inboxMedia";
+import { resolveInboxMediaUrl } from "../../inbox/model/inboxMedia";
 import { isNoteImagePath } from "../../notes";
 import { InboxMedia } from "../../inbox/ui/InboxMedia";
 import { isLocalMediaPath, LocalMedia } from "./LocalMedia";
@@ -168,7 +168,8 @@ const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
     harden,
     {
       defaultOrigin: "https://inbox.invalid",
-      allowedImagePrefixes: INBOX_MEDIA_PREFIXES,
+      // URL recognition and native origin authorization still gate every fetched image.
+      allowedImagePrefixes: ["https://", "/"],
       allowedLinkPrefixes: ["*"],
       allowDataImages: true,
       imageBlockPolicy: "remove" as const,
@@ -202,7 +203,7 @@ const FileOpenContext = createContext<{
   onFileContextMenu?: (event: ReactMouseEvent, path: string, navigation?: EditorNavigation) => void;
 }>({});
 
-const RemoteMediaContext = createContext(false);
+const RemoteMediaContext = createContext<{ enabled: boolean; base?: string }>({ enabled: false });
 const LocalMediaContext = createContext(false);
 
 // What DirectionalBlock needs to pick each block's rehype plugins. The plugin
@@ -235,7 +236,7 @@ function MarkdownLink({
   ...props
 }: MarkdownLinkProps) {
   useLocale();
-  const allowRemoteMedia = useContext(RemoteMediaContext);
+  const { enabled: allowRemoteMedia, base: remoteBase } = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
   const resolveFile = useWorkspaceFileResolver();
@@ -255,8 +256,9 @@ function MarkdownLink({
       </LocalSessionReferenceLink>
     );
   }
-  if (allowRemoteMedia && href && isInboxMediaUrl(href)) {
-    return <InboxMedia src={href} alt={label} />;
+  const mediaUrl = allowRemoteMedia && href ? resolveInboxMediaUrl(href, remoteBase) : null;
+  if (mediaUrl) {
+    return <InboxMedia src={mediaUrl} alt={label} />;
   }
 
   const link = (
@@ -713,11 +715,13 @@ function NoteAssetImage({
 
 function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) {
   useLocale();
-  const allowRemoteMedia = useContext(RemoteMediaContext);
+  const { enabled: allowRemoteMedia, base: remoteBase } = useContext(RemoteMediaContext);
   const localMedia = useContext(LocalMediaContext);
   const { cwd, documentPath, onOpenFile, onFileContextMenu } = useContext(FileOpenContext);
   const resolveFile = useWorkspaceFileResolver();
   const url = typeof src === "string" ? src.trim() : "";
+  const remoteUrl = allowRemoteMedia && url ? resolveInboxMediaUrl(url, remoteBase) : null;
+  if (remoteUrl) return <InboxMedia src={remoteUrl} alt={alt} />;
   if (documentPath) {
     const image = cwd ? resolveDocumentImage(url, documentPath, cwd) : undefined;
     const align = (_node as { properties?: { align?: unknown } } | undefined)?.properties?.align;
@@ -759,8 +763,7 @@ function MarkdownImage({ src, alt, node: _node, ...props }: MarkdownImageProps) 
       />
     );
   }
-  if (!allowRemoteMedia || !url || !isInboxMediaUrl(url)) return null;
-  return <InboxMedia src={url} alt={alt} />;
+  return null;
 }
 
 function MarkdownTable(props: ComponentProps<typeof defaultComponents.table>) {
@@ -866,6 +869,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   cwd,
   onOpenFile,
   allowRemoteMedia,
+  remoteMediaBaseUrl,
   localMedia,
   documentPath,
   hardBreaks,
@@ -878,6 +882,8 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   cwd?: string;
   onOpenFile?: OpenFileFn;
   allowRemoteMedia?: boolean;
+  /** Provider page used to resolve relative attachment links, never local workspace paths. */
+  remoteMediaBaseUrl?: string;
   /** Inline workspace media only when explicitly enabled by an agent response. */
   localMedia?: boolean;
   documentPath?: string;
@@ -1090,7 +1096,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   };
 
   return (
-    <RemoteMediaContext.Provider value={remoteMedia}>
+    <RemoteMediaContext.Provider value={{ enabled: remoteMedia, base: remoteMediaBaseUrl }}>
       <LocalMediaContext.Provider value={!!localMedia}>
         <FileOpenContext.Provider value={fileOpen}>
           <BlockPluginContext.Provider value={blockPlugins}>

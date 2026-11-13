@@ -13,13 +13,15 @@ for (const theme of ["light", "dark"])
         await page.goto(
           `/tests/browser/settings/settings.html?modelLimits&theme=${theme}&lang=en${flags}`,
         );
+        const workLimits = page.getByRole("region", { name: "Work limits", exact: true });
+        await expect(workLimits.getByText("Used today", { exact: true })).toBeVisible();
         await expect(
-          page.getByText(
+          workLimits.getByText(
             state === "reached"
-              ? "Used today: 2h 5m of 2h 0m"
+              ? "2h 5m of 2h 0m"
               : state === "unlimited"
-                ? "Used today: 1h 15m"
-                : "Used today: 1h 15m of 2h 0m",
+                ? "1h 15m"
+                : "1h 15m of 2h 0m",
             { exact: true },
           ),
         ).toBeVisible();
@@ -46,12 +48,12 @@ for (const theme of ["light", "dark"])
           .getByRole("spinbutton", { name: "Daily agent minutes", exact: true })
           .fill("2880");
         await expect(
-          page.getByText(
+          workLimits.getByText(
             state === "reached"
-              ? "Used today: 2h 5m of 2h 0m"
+              ? "2h 5m of 2h 0m"
               : state === "unlimited"
-                ? "Used today: 1h 15m"
-                : "Used today: 1h 15m of 2h 0m",
+                ? "1h 15m"
+                : "1h 15m of 2h 0m",
             { exact: true },
           ),
         ).toBeVisible();
@@ -126,7 +128,12 @@ for (const theme of ["light", "dark"])
       await expect(
         chat.getByRole("switch", { name: "Resume at reset", exact: true }),
       ).toBeVisible();
-      await expect(chat.locator("#setting-translation-model-default button").first()).toBeVisible();
+      const helperModels = chat.locator("#setting-helper-models");
+      await expect(helperModels).toContainText("Translation, reprompt and title models");
+      await expect(helperModels).toContainText("Chosen in Models > Assignments.");
+      await expect(
+        helperModels.getByRole("button", { name: "Manage in Models", exact: true }),
+      ).toBeVisible();
       await expect(chat.locator("#setting-git-generation-default")).toHaveCount(0);
       await expect(chat.locator("#setting-chat-width button").first()).toBeVisible();
       const overflow = await chat.evaluate((root) =>

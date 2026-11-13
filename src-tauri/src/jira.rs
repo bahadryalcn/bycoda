@@ -1,4 +1,5 @@
 use crate::integrations::http::string_field;
+mod attachments;
 pub mod board;
 pub mod comments;
 pub mod filters;
@@ -229,7 +230,9 @@ pub async fn jira_issue_details(app: AppHandle, key: String) -> Result<JiraIssue
         let key = require_issue_key(&key)?;
         let data = jira_get(
             &config,
-            &format!("/rest/api/3/issue/{key}?fields=description,reporter,creator,assignee"),
+            &format!(
+                "/rest/api/3/issue/{key}?fields=description,reporter,creator,assignee,attachment"
+            ),
         )?;
         parse_jira_issue_details(&data)
     })
@@ -574,8 +577,10 @@ fn parse_jira_issue_details(data: &Value) -> Result<JiraIssueDetails, String> {
         .map(person_fields)
         .find(|(name, _)| name.is_some())
         .unwrap_or_else(|| person_fields(fields.get("assignee")));
+    let mut body = rich_text(fields.get("description"));
+    attachments::append_attachments(&mut body, fields);
     Ok(JiraIssueDetails {
-        body: rich_text(fields.get("description")),
+        body,
         author: author.unwrap_or_default(),
         author_avatar_url,
     })
@@ -754,7 +759,12 @@ fn adf_block(node: &Value, indent: &str) -> String {
             .join("\n"),
         "rule" => "---".into(),
         "table" => adf_table(node),
-        "mediaSingle" | "mediaGroup" | "media" => String::new(),
+        "mediaSingle" | "mediaGroup" => adf_blocks(children(node), indent),
+        "media" => node
+            .pointer("/attrs/url")
+            .and_then(Value::as_str)
+            .and_then(|raw| crate::inbox_media::attachments::markdown_link("Attachment", raw))
+            .unwrap_or_default(),
         _ => {
             if children(node).is_empty() {
                 adf_inline(std::slice::from_ref(node))
@@ -996,20 +1006,26 @@ fn require_config(app: &AppHandle) -> Result<JiraConfig, String> {
     read_config(app)?.ok_or_else(|| "Connect Jira in Settings".to_string())
 }
 
-/// Credentials stay on the configured Jira origin and avatar endpoints only.
+/// Credentials stay on the configured Jira origin and avatar/attachment endpoints only.
 pub(crate) fn avatar_media_authorization(
     app: &AppHandle,
     raw: &str,
 ) -> Result<Option<String>, String> {
     let url = url::Url::parse(raw).map_err(|_| "Invalid Jira avatar URL".to_string())?;
-    if !is_avatar_path(url.path()) {
+    if !is_avatar_path(url.path()) && !attachments::is_attachment_path(url.path()) {
         return Ok(None);
     }
     let Some(config) = read_config(app)? else {
         return Ok(None);
     };
     let site = url::Url::parse(&config.site).map_err(|_| "Invalid Jira site".to_string())?;
-    if avatar_matches_site(&url, &site) {
+    if avatar_matches_site(&url, &site)
+        || (url.scheme() == "https"
+            && url.origin() == site.origin()
+            && attachments::is_attachment_path(url.path())
+            && url.username().is_empty()
+            && url.password().is_none())
+    {
         Ok(Some(jira_authorization(&config)))
     } else {
         Ok(None)

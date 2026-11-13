@@ -921,7 +921,7 @@ test("editing is one page: roster first, advanced settings one disclosure away, 
   await dialog.getByRole("button", { name: "UI", exact: true }).click();
   // The expanded member uses the same provider/model picker as the roster.
   const editedMember = dialog.getByRole("listitem").filter({
-    has: dialog.getByRole("textbox", { name: "Member name", exact: true }),
+    has: page.getByRole("textbox", { name: "Member name", exact: true }),
   });
   await expect(
     editedMember.getByRole("button", { name: "Codex Fixture", exact: true }).last(),
@@ -1358,8 +1358,13 @@ for (const theme of ["light", "dark"] as const) {
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
         ).toBe(true);
-      // Rail: faces and the working-now strip.
-      await expect(page.getByRole("group", { name: "Working now" })).toBeVisible();
+      // The rail's crew identities and the separate current-work region remain visible.
+      const crewWork = page.getByRole("region", { name: "Crew work", exact: true });
+      await expect(crewWork).toBeVisible();
+      await crewWork.screenshot({
+        path: `${evidence}/r2-current-work-${theme}-${width}-${testInfo.project.name}.png`,
+        animations: "disabled",
+      });
       await page
         .locator("aside")
         .first()

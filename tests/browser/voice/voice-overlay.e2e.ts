@@ -267,11 +267,13 @@ for (const theme of ["light", "dark"])
       await page.evaluate(() =>
         (window as any).fixtureVoice.speech("Keep my full request together."),
       );
-      await expect(panel.locator("div:has(> .sr-only)").filter({ hasText: "You:" })).toContainText(
-        "Keep my full request together.",
-      );
+      const conversation = panel.getByRole("list", { name: "Conversation", exact: true });
+      const ownerTurns = conversation
+        .getByRole("listitem")
+        .and(panel.locator('[data-role="owner"]'));
+      await expect(ownerTurns).toContainText("Keep my full request together.");
       await expect(
-        panel.locator("div:has(> .sr-only)").filter({ hasText: "Reply:" }),
+        conversation.getByRole("listitem").and(panel.locator('[data-role="assistant"]')),
       ).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
       const controls = ["Pause mic", "Silence", "Disconnect voice"];
@@ -299,9 +301,7 @@ for (const theme of ["light", "dark"])
         fixture.callbacks.transcript({ text: "Finish the original project request." }, binding);
       });
       // The transcript keeps every turn; the newest owner bubble holds the held request.
-      await expect(
-        panel.locator("div:has(> .sr-only)").filter({ hasText: "You:" }).last(),
-      ).toContainText("Finish the original project request.");
+      await expect(ownerTurns.last()).toContainText("Finish the original project request.");
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(1);
       expect(await page.evaluate(() => (window as any).fixtureVoice.closes)).toBe(0);
       await panel.getByRole("button", { name: "Reply when I pause", exact: true }).click();
@@ -398,12 +398,10 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Talk to Arif", exact: true }).click();
       const panel = page.locator("section[data-voice-state]");
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
-      await expect(
-        panel.getByText(
-          "Current computer presence could not be verified. Mark yourself here before talking.",
-          { exact: true },
-        ),
-      ).toBeVisible();
+      const presenceMessage =
+        "Current computer presence could not be verified. Mark yourself here before talking.";
+      await expect(panel.getByRole("paragraph").filter({ hasText: presenceMessage })).toBeVisible();
+      await expect(panel.getByRole("alert")).toHaveText(presenceMessage);
       expect(await page.evaluate(() => (window as any).fixtureVoice.connects)).toBe(0);
       await panel.screenshot({
         path: join(output, `${theme}-${width}-voice-presence-unverified.png`),

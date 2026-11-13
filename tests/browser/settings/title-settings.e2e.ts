@@ -1,63 +1,117 @@
-import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
-for (const theme of ["light", "dark"]) {
+for (const theme of ["light", "dark"])
   for (const width of [1280, 800]) {
-    test(`title model automatic/custom persistence: ${theme} ${width}`, async ({ page }) => {
+    test(`title helper uses Host assignments and persists its role: ${theme} ${width}`, async ({
+      page,
+    }, info) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/settings/title-settings.html?theme=${theme}`);
-      const row = page.locator('[data-setting-id="title-model-default"]');
-      await row.scrollIntoViewIfNeeded();
-      await expect(row).toContainText("Haiku, Terra or Flash");
-      await page.locator("main").evaluate((element) => {
-        element.scrollTop = 0;
-      });
-      mkdirSync("temp/verification/title-regeneration", { recursive: true });
-      await page.screenshot({
-        path: `temp/verification/title-regeneration/settings-${theme}-${width}-automatic.png`,
-      });
-      await row.getByRole("radio", { name: "Choose model", exact: true }).click();
+      await expect(
+        page.getByText("Chosen in Models > Assignments.", { exact: true }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
       await expect
         .poll(() =>
           page.evaluate(
-            () => JSON.parse(localStorage.getItem("bycoda.title.default.v1") ?? "null")?.model,
+            () =>
+              (window as unknown as { titleRoleFixture: { openedTab: string } }).titleRoleFixture
+                .openedTab,
           ),
         )
-        .toBeTruthy();
-      await expect(row.locator('button[aria-haspopup="dialog"]')).toBeVisible();
-      await expect(row).not.toContainText("Selected model does not support text actions");
-      await page.locator("main").evaluate((element) => {
-        element.scrollTop = 0;
-      });
-      await page.screenshot({
-        path: `temp/verification/title-regeneration/settings-${theme}-${width}-custom.png`,
-      });
-      await row.locator('button[aria-haspopup="dialog"]').click();
-      const modelPanel = page.getByRole("dialog", { name: "Model and settings", exact: true });
-      await expect(modelPanel).toBeVisible();
-      await expect(modelPanel.getByRole("listbox", { name: "Models", exact: true })).toBeVisible();
-      await page.screenshot({
-        path: `temp/verification/title-regeneration/settings-${theme}-${width}-picker.png`,
-      });
-      await modelPanel.getByRole("option", { name: /^Haiku 4\.5(?:\s|,)/ }).click();
+        .toBe("roles");
+      const choice = page.getByRole("button", { name: /^Model for Title:/ });
+      await expect(choice).toContainText("Automatic");
+      await choice.click();
+      await page.getByRole("option", { name: "Model order", exact: true }).click();
+      const read = () =>
+        page.evaluate(() =>
+          (
+            window as unknown as {
+              titleRoleFixture: {
+                state: () => { roles: Record<string, unknown>; version: number };
+              };
+            }
+          ).titleRoleFixture.state(),
+        );
+      expect((await read()).roles["text.title"]).toBeUndefined();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect.poll(async () => (await read()).roles["text.title"]).toEqual({ kind: "order" });
       await expect
         .poll(() =>
-          page.evaluate(
-            () => JSON.parse(localStorage.getItem("bycoda.title.default.v1") ?? "null")?.model,
+          page.evaluate(() =>
+            (
+              window as unknown as {
+                titleRoleFixture: {
+                  calls: {
+                    method: string;
+                    machineId: string;
+                    params: { expectedVersion?: number };
+                  }[];
+                };
+              }
+            ).titleRoleFixture.calls
+              .filter((call) => call.method === "modelRouting.save")
+              .map((call) => ({
+                machineId: call.machineId,
+                expectedVersion: call.params.expectedVersion,
+              })),
           ),
         )
-        .toBe("claude:haiku-4.5");
+        .toEqual([{ machineId: "fixture-host", expectedVersion: 1 }]);
       await page.reload();
-      await row.scrollIntoViewIfNeeded();
-      await expect(row.locator('button[aria-haspopup="dialog"]')).toBeVisible();
-      await row.getByRole("radio", { name: "Automatic", exact: true }).click();
-      await expect
-        .poll(() => page.evaluate(() => localStorage.getItem("bycoda.title.default.v1")))
-        .toBe("null");
+      await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
+      await expect(choice).toContainText("Model order");
+      await choice.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: info.outputPath(`title-host-role-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await choice.click();
+      await page.getByRole("option", { name: "Automatic", exact: true }).click();
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect.poll(async () => (await read()).roles["text.title"]).toBeUndefined();
+      expect(await page.evaluate(() => localStorage.getItem("bycoda.title.default.v1"))).toBeNull();
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true);
     });
   }
-}
+
+test("unsupported Host never reads or mutates routing", async ({ page }) => {
+  await page.goto("/settings/title-settings.html?unsupported");
+  await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
+  await expect(
+    page.getByText("Model routing is not available on this Host.", { exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { titleRoleFixture: { calls: unknown[] } }).titleRoleFixture.calls,
+    ),
+  ).toEqual([]);
+});
+
+test("denied Host save preserves the role draft and persisted state", async ({ page }) => {
+  await page.goto("/settings/title-settings.html?denied");
+  await page.getByRole("button", { name: "Manage in Models", exact: true }).click();
+  const choice = page.getByRole("button", { name: /^Model for Title:/ });
+  await choice.click();
+  await page.getByRole("option", { name: "Model order", exact: true }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByText("Model roles could not be saved. Try again.", { exact: true }),
+  ).toBeVisible();
+  await expect(choice).toContainText("Model order");
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            titleRoleFixture: { state: () => { roles: Record<string, unknown> } };
+          }
+        ).titleRoleFixture.state().roles["text.title"],
+    ),
+  ).toBeUndefined();
+});

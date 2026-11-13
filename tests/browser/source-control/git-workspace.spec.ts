@@ -56,7 +56,10 @@ test("stash actions fit a narrow rail and commit files remain navigable", async 
   await dialog.getByRole("button", { name: "Next file", exact: true }).click();
   await expect(dialog.getByRole("button", { name: "Previous file", exact: true })).toBeEnabled();
   await page.screenshot({ path: testInfo.outputPath("commit-inspector.png") });
-  await dialog.getByRole("button", { name: "Changed files", exact: true }).click();
+  await dialog
+    .locator("summary")
+    .filter({ hasText: /^Changed files$/ })
+    .press("Enter");
   await expect(search).toBeHidden();
   await expect(dialog.getByRole("button", { name: "Next file", exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Close commit details", exact: true }).click();

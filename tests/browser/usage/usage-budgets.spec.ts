@@ -160,7 +160,8 @@ test("creates, edits, persists and removes a project token allocation", async ({
   await page.getByLabel("Allocation (%)", { exact: true }).fill("25");
   await page.getByRole("button", { name: "Save budget", exact: true }).click();
   await expect(page.getByText("Budget saved", { exact: true })).toBeVisible();
-  await expect(page.getByRole("meter")).toHaveAttribute("aria-valuenow", "1250");
+  // Budget tokens weight cached reads at 10%: 1000 input + 200 output + 50 * 0.1.
+  await expect(page.getByRole("meter")).toHaveAttribute("aria-valuenow", "1205");
   await expect(page.getByRole("meter")).toHaveAttribute("aria-valuemax", "2500");
   await page.reload();
   await expect(
@@ -241,7 +242,10 @@ for (const [theme, width, motion] of [
     // Key numbers are plain exact text; there is no decorative reel to wait for.
     const values = page.locator(".usage-metrics strong");
     await expect(values).toHaveCount(3);
-    await page.getByRole("button", { name: "Usage details", exact: true }).click();
+    const usageDetails = page.locator(".usage-details-disclosure");
+    await usageDetails.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await expect(usageDetails).toHaveAttribute("open", "");
     await expect(values).toHaveCount(7);
     await expect(values.nth(3)).toHaveText("1K");
     await expect(values.locator('[aria-hidden="true"]')).toHaveCount(0);

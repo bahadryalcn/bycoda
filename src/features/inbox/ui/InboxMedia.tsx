@@ -1,107 +1,131 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import { Button } from "../../../shared/ui/Button";
-import { Skeleton } from "../../../shared/ui/Skeleton";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
+import { LoadingText } from "../../../shared/ui/LoadingText";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { Alert } from "../../../shared/ui/Alert";
 import { fetchInboxMedia, sniffInboxMedia, type InboxMediaType } from "../model/inboxMedia";
 
-type Props = {
-  src: string;
-  alt?: string;
-};
+const PdfViewer = lazy(() => import("../../files/public/PdfViewer"));
 
+type Props = { src: string; alt?: string };
 type LoadState =
   | { status: "loading" }
-  | { status: "ready"; url: string; type: InboxMediaType }
+  | { status: "ready"; url: string; type: InboxMediaType; bytes: Uint8Array<ArrayBuffer> }
+  | { status: "unsupported" }
   | { status: "error" };
 
-export function InboxMedia({ src, alt }: Props) {
+export function InboxMedia(props: Props) {
+  return <InboxMediaContent key={props.src} {...props} />;
+}
+
+function InboxMediaContent({ src, alt }: Props) {
   useLocale();
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [expanded, setExpanded] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const label = alt?.trim() || src;
 
+  // Load authenticated bytes through the owning native route; retire blobs and stale responses.
   useEffect(() => {
     let cancelled = false;
     let objectUrl: string | null = null;
     setState({ status: "loading" });
-
     void fetchInboxMedia(src)
       .then((bytes) => {
+        if (cancelled) return;
         const type = sniffInboxMedia(bytes);
-        if (!type) throw new Error("unsupported");
-        const url = URL.createObjectURL(new Blob([bytes], { type: type.mime }));
-        if (cancelled) {
-          URL.revokeObjectURL(url);
+        if (!type) {
+          setState({ status: "unsupported" });
           return;
         }
-        objectUrl = url;
-        setState({ status: "ready", url, type });
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type: type.mime }));
+        setState({ status: "ready", url: objectUrl, type, bytes });
       })
       .catch(() => {
         if (!cancelled) setState({ status: "error" });
       });
-
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [src]);
+  }, [src, attempt]);
 
-  if (state.status === "loading") {
-    return (
-      <span
-        className="inbox-media my-2 inline-flex h-32 w-full max-w-xl items-center justify-center rounded-(--ui-radius-card) border border-(--ui-card-border) bg-transparent"
-        aria-hidden
-      >
-        <Skeleton inline aria-hidden width="40%" />
-      </span>
-    );
-  }
-
-  if (state.status === "error") {
-    return <MediaFallback src={src} alt={alt} />;
-  }
-
-  if (state.type.kind === "video") {
-    return (
-      <span className="inbox-media my-2 inline-block w-full max-w-xl overflow-hidden rounded-(--ui-radius-card) border border-(--ui-card-border) bg-transparent">
-        <video
-          src={state.url}
-          controls
-          playsInline
-          preload="metadata"
-          className="block max-h-[28rem] w-full bg-scrim"
+  const ready = state.status === "ready" ? state : null;
+  return (
+    <>
+      {ready?.type.kind === "video" ? (
+        <span className="inbox-media my-2 inline-block w-full max-w-xl">
+          <video
+            src={ready.url}
+            controls
+            playsInline
+            preload="metadata"
+            className="block max-h-[28rem] w-full"
+            onError={() => setState({ status: "error" })}
+          />
+        </span>
+      ) : ready?.type.kind === "image" ? (
+        <Button
+          variant="ghost"
+          controlHeight="content"
+          frame="preview"
+          aria-label={label}
+          onClick={() => setExpanded(true)}
+          className="inbox-media my-2 w-full max-w-xl"
         >
-          <MediaFallback src={src} alt={alt} />
-        </video>
-      </span>
-    );
-  }
-
-  const label = alt?.trim() || t("Image");
-  return (
-    <Tooltip label={label} asChild>
-      <img
-        src={state.url}
-        alt={alt ?? ""}
-
-        draggable={false}
-        className="inbox-media my-2 inline-block max-h-[28rem] w-full max-w-xl cursor-zoom-in rounded-(--ui-radius-card) border border-(--ui-card-border) bg-transparent object-contain"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openUrlSafely(src);
-        }}
-      />
-    </Tooltip>
-  );
-}
-
-function MediaFallback({ src, alt }: { src: string; alt?: string }) {
-  const label = alt?.trim() || src;
-  return (
-    <Button variant="link" onClick={() => openUrlSafely(src)}>
-      {label}
-    </Button>
+          <img
+            src={ready.url}
+            alt={alt ?? ""}
+            draggable={false}
+            className="block max-h-[28rem] w-full object-contain"
+            onError={() => setState({ status: "error" })}
+          />
+        </Button>
+      ) : (
+        <Button
+          variant="link"
+          loading={state.status === "loading"}
+          onClick={() => setExpanded(true)}
+        >
+          {label}
+        </Button>
+      )}
+      {expanded && ready?.type.kind === "image" ? (
+        <ImageLightbox src={ready.url} alt={label} onClose={() => setExpanded(false)} />
+      ) : expanded ? (
+        <Modal
+          title={label}
+          size="lg"
+          fitViewport
+          onClose={() => setExpanded(false)}
+          footer={
+            <ModalActions>
+              {state.status === "error" ? (
+                <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry")}</Button>
+              ) : null}
+              <Button variant="secondary" onClick={() => openUrlSafely(src)}>
+                {t("Open in browser")}
+              </Button>
+            </ModalActions>
+          }
+        >
+          {state.status === "loading" ? (
+            <LoadingText />
+          ) : state.status === "error" ? (
+            <Alert tone="danger">{t("Preview unavailable")}</Alert>
+          ) : ready?.type.kind === "pdf" ? (
+            <Suspense fallback={<LoadingText />}>
+              <PdfViewer bytes={ready.bytes} />
+            </Suspense>
+          ) : (
+            <EmptyState size="inline" kind="empty" description={t("Preview unavailable")} />
+          )}
+        </Modal>
+      ) : null}
+    </>
   );
 }

@@ -96,8 +96,12 @@ export function CrewBulkModelBar({
           }}
         >
           {noun === "members"
-            ? t("Apply to {p0} members", { p0: targetCount })
-            : t("Apply to {p0} profiles", { p0: targetCount })}
+            ? targetCount === 1
+              ? t("Apply to 1 member")
+              : t("Apply to {p0} members", { p0: targetCount })
+            : targetCount === 1
+              ? t("Apply to 1 profile")
+              : t("Apply to {p0} profiles", { p0: targetCount })}
         </Button>
       </div>
       {applied ? <InlineMessage tone="success">{t("Model choice applied.")}</InlineMessage> : null}

@@ -702,10 +702,19 @@ export function InboxDetail({
                 <>
                   {error ? <Alert tone="danger">{error}</Alert> : null}
                   {panel ? (
-                    <InboxDescriptionSummary body={details?.body ?? ""} cwd={markdownCwd} />
+                    <InboxDescriptionSummary
+                      body={details?.body ?? ""}
+                      cwd={markdownCwd}
+                      remoteMediaBaseUrl={item.url}
+                    />
                   ) : details?.body.trim() ? (
                     <SurfaceSelection cwd={markdownCwd} contentVersion={details.body}>
-                      <AgentMarkdown text={details.body} cwd={markdownCwd} allowRemoteMedia />
+                      <AgentMarkdown
+                        text={details.body}
+                        cwd={markdownCwd}
+                        allowRemoteMedia
+                        remoteMediaBaseUrl={item.url}
+                      />
                     </SurfaceSelection>
                   ) : (
                     <EmptyState size="inline" kind="empty" description={t("No description")} />

@@ -20,8 +20,23 @@ export const INBOX_MEDIA_PREFIXES = [
   "https://uploads.linear.app/",
 ];
 
-export type InboxMediaKind = "image" | "video";
+export type InboxMediaKind = "image" | "video" | "pdf";
 export type InboxMediaType = { kind: InboxMediaKind; mime: string };
+
+export function resolveInboxMediaUrl(value: string, base?: string): string | null {
+  try {
+    let source = value;
+    if (base && /^\/?uploads\//.test(source)) {
+      const page = new URL(base);
+      const project = page.pathname.split("/-/")[0];
+      source = `${page.origin}${project}/${source.replace(/^\//, "")}`;
+    }
+    const resolved = new URL(source, base).href;
+    return isInboxMediaUrl(resolved) ? resolved : null;
+  } catch {
+    return null;
+  }
+}
 
 // Each file can be up to 25 MB, so keep recent bytes under a total budget
 // instead of every image and video ever shown. Requests in flight are shared.
@@ -42,6 +57,16 @@ export function isInboxMediaUrl(value: string): boolean {
   if (url.username || url.password) return false;
   const host = url.hostname.replace(/\.$/, "").toLowerCase();
   if (pathHasDotDot(url.pathname)) return false;
+  // Only recognition here. Native transport authorizes the configured provider origin.
+  if (
+    /^\/rest\/api\/(2|3)\/attachment\/(content|thumbnail)\/\d+\/?$/.test(url.pathname) ||
+    /^\/secure\/attachment\/\d+\//.test(url.pathname) ||
+    /\/uploads\/[^/]+\/[^/]+$/.test(url.pathname) ||
+    /\/_apis\/(wit\/attachments|git\/repositories\/[^/]+\/pullRequests\/\d+\/attachments)\//i.test(
+      url.pathname,
+    )
+  )
+    return true;
   if (host === "uploads.linear.app" || host.endsWith(".uploads.linear.app")) {
     return true;
   }
@@ -58,6 +83,8 @@ export function isInboxMediaUrl(value: string): boolean {
 export function sniffInboxMedia(bytes: Uint8Array): InboxMediaType | null {
   const mime = sniffImageMime(bytes);
   if (mime) return { kind: "image", mime };
+  if (startsWith(bytes, [0x25, 0x50, 0x44, 0x46, 0x2d]))
+    return { kind: "pdf", mime: "application/pdf" };
   return sniffVideoType(bytes);
 }
 

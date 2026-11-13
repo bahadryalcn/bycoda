@@ -1091,6 +1091,22 @@ fn require_config(app: &AppHandle) -> Result<GitlabConfig, String> {
     read_config(app)?.ok_or_else(|| "Connect GitLab in Settings".to_string())
 }
 
+pub(crate) fn attachment_media_token(app: &AppHandle, raw: &str) -> Result<Option<String>, String> {
+    let url = url::Url::parse(raw).map_err(|_| "Invalid attachment URL".to_string())?;
+    if !url.path().contains("/uploads/") {
+        return Ok(None);
+    }
+    let Some(config) = read_config(app)? else {
+        return Ok(None);
+    };
+    let site = url::Url::parse(&config.url).map_err(|_| "Invalid GitLab site".to_string())?;
+    if crate::inbox_media::attachments::matches_site(&url, &site) {
+        Ok(Some(config.token))
+    } else {
+        Ok(None)
+    }
+}
+
 fn write_config(app: &AppHandle, config: &GitlabConfig) -> Result<(), String> {
     let path = config_path(app)?;
     if let Some(parent) = path.parent() {

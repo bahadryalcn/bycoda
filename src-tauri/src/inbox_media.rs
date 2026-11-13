@@ -1,4 +1,5 @@
 use std::io::Read;
+pub(crate) mod attachments;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -83,7 +84,14 @@ fn fetch_inbox_media_sync(app: &tauri::AppHandle, url: &str) -> Result<Vec<u8>, 
 
     for _ in 0..MAX_REDIRECTS {
         let jira_authorization = crate::jira::avatar_media_authorization(app, &current.url)?;
-        if parse_allowed_media_url(&current.url).is_err() && jira_authorization.is_none() {
+        let gitlab_token = crate::gitlab::attachment_media_token(app, &current.url)?;
+        let azure_authorization =
+            crate::azure_devops::attachment_media_authorization(app, &current.url)?;
+        if parse_allowed_media_url(&current.url).is_err()
+            && jira_authorization.is_none()
+            && gitlab_token.is_none()
+            && azure_authorization.is_none()
+        {
             return Err("That media host is not allowed".into());
         }
         let mut request = agent
@@ -96,6 +104,12 @@ fn fetch_inbox_media_sync(app: &tauri::AppHandle, url: &str) -> Result<Vec<u8>, 
             }
         }
         if let Some(authorization) = jira_authorization {
+            request = request.set("Authorization", &authorization);
+        }
+        if let Some(token) = gitlab_token {
+            request = request.set("PRIVATE-TOKEN", &token);
+        }
+        if let Some(authorization) = azure_authorization {
             request = request.set("Authorization", &authorization);
         }
         // ureq with redirects(0) returns 3xx as Ok, not Err(Status).

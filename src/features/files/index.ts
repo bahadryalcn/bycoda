@@ -45,6 +45,7 @@ export type * as uiFileActionErrorApi from "./public/FileActionError";
 export type * as uiFilePreviewApi from "./public/FilePreview";
 export type * as uiFileTypeIconApi from "./public/FileTypeIcon";
 export type * as uiHtmlPreviewApi from "./public/HtmlPreview";
+export type * as uiPdfViewerApi from "./public/PdfViewer";
 export type * as uiUseChangedFileMenuApi from "./public/useChangedFileMenu";
 export type * as uiUseMountedEditorClosureApi from "./public/useMountedEditorClosure";
 

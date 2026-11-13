@@ -292,13 +292,17 @@ test("Inbox review separates unread, draft, review and pending checks and restor
   await expect(draft.locator("[data-inbox-unread]")).toHaveCount(0);
   await first.click();
   await page.getByRole("tab", { name: /^Checks/ }).click();
-  const failure = page.getByRole("button", {
-    name: "Browser regression checks for keyboard focus and long pull request titles details",
-    exact: true,
+  const failure = page.locator("summary").filter({
+    has: page.getByText(
+      "Browser regression checks for keyboard focus and long pull request titles",
+      { exact: true },
+    ),
   });
+  const failureDetails = failure.locator("..");
   await failure.focus();
-  if ((await failure.getAttribute("aria-expanded")) === "true") await page.keyboard.press("Enter");
+  if ((await failureDetails.getAttribute("open")) !== null) await page.keyboard.press("Enter");
   await page.keyboard.press("Enter");
+  await expect(failureDetails).toHaveJSProperty("open", true);
   await expect(
     page.getByRole("paragraph").filter({
       hasText:
@@ -371,8 +375,9 @@ test("compact rail centers group and social icons without wrapping labels", asyn
         element.style.width = `${size}px`;
       }, width);
       if (width > 200) await social.focus();
-      if (width < 140) await expect(label).toBeHidden();
-      else await expect(label).toBeVisible();
+      // This is the compact rail owner; resizing its box does not switch its mode.
+      await expect(label).toHaveCount(0);
+      await expect(social).toHaveAccessibleName("Social Media");
       if (width < 140) {
         for (const [container, icon] of [
           [social, social.locator("svg")],
@@ -389,14 +394,14 @@ test("compact rail centers group and social icons without wrapping labels", asyn
       }
       const targetHeight = await social.evaluate((element) => {
         const probe = document.createElement("span");
-        probe.style.blockSize = "var(--ui-control-height-lg)";
+        probe.style.blockSize = "var(--ui-control-height-compact)";
         probe.style.position = "absolute";
         element.append(probe);
         const height = probe.getBoundingClientRect().height;
         probe.remove();
         return height;
       });
-      expect((await social.boundingBox())!.height).toBeCloseTo(width < 140 ? targetHeight : 28, 1);
+      expect((await social.boundingBox())!.height).toBeCloseTo(targetHeight, 1);
     }
   }
   await rail.evaluate((element) => {
@@ -430,13 +435,14 @@ test("rail appearance keeps compact five-column icons and applies independent tr
     .getByRole("menuitem", { name: "Appearance", exact: true })
     .click();
   const menu = page.getByRole("dialog", { name: "Appearance", exact: true });
-  const icons = menu.getByRole("group", { name: "Project icons", exact: true });
-  await expect(icons).toHaveCSS("max-height", "176px");
-  const grid = icons.locator(":scope > div").first();
+  const icons = menu.getByRole("radiogroup", { name: "Project icons", exact: true });
+  const iconScroller = icons.locator("..");
+  await expect(iconScroller).toHaveCSS("max-height", "176px");
+  const grid = icons;
   expect(
     await grid.evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ")),
   ).toHaveLength(5);
-  const choices = grid.getByRole("button");
+  const choices = grid.getByRole("radio");
   // Read one animation frame so popover motion cannot separate the row samples.
   const [firstRow, lastInFirstRow, secondRow] = await choices.evaluateAll((nodes) =>
     [0, 4, 5].map((index) => {
@@ -452,7 +458,7 @@ test("rail appearance keeps compact five-column icons and applies independent tr
     .boundingBox();
   expect(iconHeading!.width).toBeGreaterThan(50);
   expect(automatic!.x).toBeGreaterThanOrEqual(iconHeading!.x + iconHeading!.width);
-  expect(await icons.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  expect(await iconScroller.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
   await menu.getByLabel("Color 7", { exact: true }).click();
   const swatchColor = await menu
     .getByLabel("Color 7", { exact: true })
@@ -767,7 +773,11 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function choose(panel: Locator, label: string, option: string | RegExp) {
-  await panel.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
+  const scope =
+    label === "Repository"
+      ? panel.getByRole("button", { name: "Repository", exact: true }).locator("..")
+      : panel;
+  await scope.getByRole("button", { name: new RegExp(`^${label}:`) }).click();
   await panel
     .page()
     .getByRole(

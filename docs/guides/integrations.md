@@ -1,5 +1,17 @@
 # Integrations and messages
 
+## Inbox attachments
+
+Jira, GitHub, GitLab, Azure DevOps and Linear descriptions and comments use the same
+attachment preview. Images appear inline and open in the zoomable image viewer;
+videos play inline. PDFs open in a dialog. Other files and failed previews open a
+dialog with an explicit **Open in browser** action; failed downloads also offer
+**Retry**. Provider permissions and the existing preview size limit still apply.
+
+Jira issue details include the issue's full attachment collection, including files
+mentioned only by filename in the description. Azure DevOps work item details include
+attached-file relations. GitLab upload links resolve against the current project.
+
 Jira Inbox list filters support multiple assignees, **Assigned to me**, **Unassigned**,
 and multiple actual workflow statuses under **Board status**. Assignees and statuses
 come from loaded issues in visible projects. Assignment choices are combined with OR;

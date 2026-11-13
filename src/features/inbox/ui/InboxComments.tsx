@@ -535,6 +535,7 @@ function InboxComment({
                 text={comment.body}
                 cwd={cwd}
                 allowRemoteMedia
+                remoteMediaBaseUrl={comment.url}
               />
             </ClampText>
           ) : (
@@ -543,6 +544,7 @@ function InboxComment({
               text={comment.body}
               cwd={cwd}
               allowRemoteMedia
+              remoteMediaBaseUrl={comment.url}
             />
           )}
         </SurfaceSelection>

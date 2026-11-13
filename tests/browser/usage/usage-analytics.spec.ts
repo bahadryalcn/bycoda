@@ -36,7 +36,8 @@ test("usage surfaces stay compact in both themes and show hour context on hover"
           const hour = page.locator('.usage-hour-cell:not([data-level="0"])').first();
           await hour.hover();
           const tooltip = page.getByRole("tooltip");
-          await expect(tooltip).toContainText(/gpt-5.5|claude-sonnet-4-6/);
+          await expect(tooltip).toContainText("GPT-5.5");
+          await expect(tooltip).toContainText("Claude Sonnet 4.6");
           await expect(tooltip).toContainText(/app|portal/);
           await page.screenshot({
             path: `temp/verification/usage-polish-20261110/Hour-tooltip-${theme}-${width}.png`,
@@ -112,7 +113,10 @@ test("keeps primary usage visible before optional detail at narrow widths", asyn
         animations: "disabled",
       });
     }
-    await page.getByRole("button", { name: "Usage details", exact: true }).click();
+    const usageDetails = page.locator(".usage-details-disclosure");
+    await usageDetails.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    await expect(usageDetails).toHaveAttribute("open", "");
     await expect(page.locator(".usage-metrics > div")).toHaveCount(7);
     await expect(page.locator(".usage-facts")).toBeVisible();
   }
@@ -141,10 +145,11 @@ for (const [theme, width] of [
     await page.getByRole("button", { name: "Date and time range", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Date and time range", exact: true });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("button", { name: /^Date range:/ }).click();
-    await expect(page.getByRole("dialog", { name: "Date range", exact: true })).toBeVisible();
+    await expect(dialog.getByRole("grid")).toBeVisible();
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("dialog", { name: "Date range", exact: true })).toBeHidden();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("dialog", { name: "Filters", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Date and time range", exact: true }).click();
     await expect(dialog).toBeVisible();
     const date = await page.evaluate(() => {
       const d = new Date();
@@ -152,11 +157,15 @@ for (const [theme, width] of [
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     });
     await dialog.getByLabel("Start date and time", { exact: true }).fill(`${date}T14:00`);
+    await dialog.getByLabel("Start date and time", { exact: true }).press("Enter");
     await dialog.getByLabel("End date and time", { exact: true }).fill(`${date}T13:00`);
-    const applyRange = dialog.locator('button[type="submit"]');
+    await dialog.getByLabel("End date and time", { exact: true }).press("Enter");
+    const applyRange = dialog.getByRole("button", { name: "Apply", exact: true });
     await expect(applyRange).toHaveAccessibleName("Apply");
     await expect(applyRange).toBeDisabled();
     await dialog.getByLabel("End date and time", { exact: true }).fill(`${date}T18:00`);
+    await dialog.getByLabel("End date and time", { exact: true }).press("Enter");
+    await expect(applyRange).toBeEnabled();
     await applyRange.click();
     await expect(dialog).toBeHidden();
     await select(page, "Resolution", "Hourly");

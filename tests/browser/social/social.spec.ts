@@ -658,7 +658,7 @@ test("inbox auto-refresh follows the Host setting after the owner turns it on", 
   await sections(page).getByRole("tab", { name: "Gelen kutusu" }).click();
   const inbox = page.getByRole("region", { name: "Gelen kutusu" });
   await expect(
-    inbox.getByText("Henüz konuşma yok. Yeni mesajlar ve yorumlar burada görünür."),
+    inbox.getByText("Yeni görüşmeleri kontrol etmek için bir hesap bağlayın."),
   ).toBeVisible();
   const autoRefresh = inbox.getByRole("switch", { name: "Otomatik yenileme" });
   await expect(autoRefresh).not.toBeChecked();
@@ -696,8 +696,12 @@ test("media field lists attached images and video and removes each item explicit
   page,
 }, testInfo) => {
   await page.goto("/tests/browser/social/social.html?x-media=1");
-  const files = page.getByLabel("Görseller ya da tek video", { exact: true });
-  await files.setInputFiles([
+  const files = page.getByRole("button", { name: "Görseller ya da tek video", exact: true });
+  const firstPick = page.waitForEvent("filechooser");
+  await files.click();
+  await (
+    await firstPick
+  ).setFiles([
     {
       name: "one.png",
       mimeType: "image/png",
@@ -713,7 +717,11 @@ test("media field lists attached images and video and removes each item explicit
   await expect(page.getByText("two.png", { exact: true })).toBeVisible();
   await expect(page.getByRole("status", { name: "Eklerin türleri" })).toHaveText("image,image");
   // The field appends; the one-video-or-four-images rule is enforced by the content rules, not here.
-  await files.setInputFiles({
+  const secondPick = page.waitForEvent("filechooser");
+  await files.click();
+  await (
+    await secondPick
+  ).setFiles({
     name: "demo.mp4",
     mimeType: "video/mp4",
     buffer: Buffer.from([0, 0, 0, 12, 102, 116, 121, 112, 105, 115, 111, 109]),

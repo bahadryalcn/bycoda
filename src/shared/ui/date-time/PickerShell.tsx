@@ -76,6 +76,7 @@ export function PickerShell({
             data-disabled={disabled || undefined}
             data-readonly={readOnly || undefined}
             disabled={disabled}
+            aria-label={hideLabel ? label : undefined}
             aria-readonly={readOnly || undefined}
             aria-required={required || undefined}
             aria-haspopup="dialog"

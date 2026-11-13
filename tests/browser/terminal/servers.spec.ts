@@ -1878,7 +1878,10 @@ for (const theme of ["light", "dark"]) {
     const auth = page.getByRole("dialog", { name: "HTTP proxy authentication", exact: true });
     const chooseBasic = async () => {
       const basic = auth.getByRole("radio", { name: "Basic", exact: true });
-      await auth.locator("label").filter({ has: basic }).click();
+      await auth
+        .locator("label")
+        .filter({ has: page.getByRole("radio", { name: "Basic", exact: true }) })
+        .click();
       await expect(basic).toBeChecked();
       await expect(auth.getByRole("textbox", { name: "Proxy username", exact: true })).toHaveValue(
         "",
@@ -2027,7 +2030,10 @@ for (const theme of ["light", "dark"]) {
     await expect(auth).toContainText("fixture-book");
     expect(await calls("ssh_runbook_start")).toHaveLength(0);
     const basic = auth.getByRole("radio", { name: "Basic", exact: true });
-    await auth.locator("label").filter({ has: basic }).click();
+    await auth
+      .locator("label")
+      .filter({ has: page.getByRole("radio", { name: "Basic", exact: true }) })
+      .click();
     await expect(basic).toBeChecked();
     await auth.getByRole("textbox", { name: "Proxy username" }).fill("synthetic-user");
     await auth.locator('input[type="password"]').fill("synthetic-password");
@@ -2121,7 +2127,10 @@ for (const theme of ["light", "dark"]) {
     const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
     await editor.locator("summary").filter({ hasText: "Connection proxy" }).click();
     const https = editor.getByRole("radio", { name: "HTTPS", exact: true });
-    await editor.locator("label").filter({ has: https }).click();
+    await editor
+      .locator("label")
+      .filter({ has: page.getByRole("radio", { name: "HTTPS", exact: true }) })
+      .click();
     await expect(https).toBeChecked();
     await editor.getByRole("textbox", { name: "Proxy port", exact: true }).fill("443");
     await expect(editor).toContainText(

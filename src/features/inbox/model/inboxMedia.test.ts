@@ -1,7 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { INBOX_MEDIA_PREFIXES, isInboxMediaUrl, sniffInboxMedia } from "./inboxMedia";
+import {
+  INBOX_MEDIA_PREFIXES,
+  isInboxMediaUrl,
+  resolveInboxMediaUrl,
+  sniffInboxMedia,
+} from "./inboxMedia";
+
+it("resolves project-relative GitLab uploads without treating workspace paths as attachments", () => {
+  expect(
+    resolveInboxMediaUrl("/uploads/abc/screen.png", "https://gitlab.example/team/repo/-/issues/1"),
+  ).toBe("https://gitlab.example/team/repo/uploads/abc/screen.png");
+  expect(
+    resolveInboxMediaUrl("src/test.ts", "https://gitlab.example/team/repo/-/issues/1"),
+  ).toBeNull();
+  expect(resolveInboxMediaUrl("javascript:alert(1)")).toBeNull();
+});
 
 describe("isInboxMediaUrl", () => {
+  it("recognizes Jira, GitLab and Azure attachment routes without allowing ordinary pages", () => {
+    expect(isInboxMediaUrl("https://acme.atlassian.net/rest/api/3/attachment/content/12")).toBe(
+      true,
+    );
+    expect(isInboxMediaUrl("https://gitlab.example/team/repo/uploads/abc/screen.png")).toBe(true);
+    expect(isInboxMediaUrl("https://dev.azure.com/acme/project/_apis/wit/attachments/abc")).toBe(
+      true,
+    );
+    expect(isInboxMediaUrl("https://acme.atlassian.net/browse/APP-1")).toBe(false);
+    expect(isInboxMediaUrl("https://evil.example/rest/api/3/attachment/content/12")).toBe(true);
+    // Recognition is not authorization: the native fetcher checks the configured origin.
+  });
   it("allows GitHub and Linear attachment hosts", () => {
     expect(
       isInboxMediaUrl(
@@ -49,7 +76,7 @@ describe("sniffInboxMedia", () => {
     });
   });
 
-  it("does not treat avif, pdf or html as video", () => {
+  it("recognizes avif and pdf without treating html as media", () => {
     expect(
       sniffInboxMedia(
         new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]),
@@ -57,7 +84,7 @@ describe("sniffInboxMedia", () => {
     ).toEqual({ kind: "image", mime: "image/avif" });
     expect(
       sniffInboxMedia(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37])),
-    ).toBeNull();
+    ).toEqual({ kind: "pdf", mime: "application/pdf" });
     expect(sniffInboxMedia(new TextEncoder().encode("<html><script>x()</script>"))).toBeNull();
   });
 });

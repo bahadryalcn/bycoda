@@ -258,6 +258,10 @@ and exit status. Cancel and timeout stop local SSH but can leave the remote
 outcome unknown. Results are process-local and commands are never replayed on
 restore. See [Working with bycoda tools](agent-tools.md) for the agent workflow.
 
+Runbook status keeps the plain-language outcome visible, including uncertain
+remote cancellation. **Technical details** opens the complete protocol reason
+for copying without repeating it in the status row.
+
 SSH settings load keys, known hosts and agent information independently. A failed
 section has its own **Retry** action; successfully loaded sections remain available.
 

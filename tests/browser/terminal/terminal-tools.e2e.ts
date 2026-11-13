@@ -286,6 +286,11 @@ for (const theme of ["light", "dark"]) {
       await expect(page.getByRole("button", { name: "Find in terminal" })).toBeVisible();
       await expect(page.getByRole("textbox", { name: "Find in terminal" })).toHaveCount(0);
       await expect(page.locator("[data-terminal-tools]")).toHaveCount(0);
+      // A real pointer enters the terminal before its idle overlay accepts clicks.
+      await page.locator(".bycoda-terminal").hover();
+      await expect(
+        page.getByRole("button", { name: "Find in terminal" }).locator("../.."),
+      ).toHaveCSS("pointer-events", "auto");
       await page.getByRole("button", { name: "Find in terminal" }).click();
       const search = page.getByRole("textbox", { name: "Find in terminal" });
       await expect(search).toBeFocused();
