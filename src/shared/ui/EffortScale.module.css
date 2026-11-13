@@ -1,12 +1,20 @@
+/* Hallmark · scope: app · theme: bycoda existing system · signature: ordered reasoning scale */
+/* Critique: keep context and chosen value visible; selection and unavailable state differ. */
 .scale {
   inline-size: 100%;
   min-inline-size: 0;
 }
-.value {
-  display: block;
-  text-align: end;
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
   margin-block-end: var(--space-1);
-  overflow-wrap: anywhere;
+}
+.value {
+  margin-inline-start: auto;
+  text-align: end;
 }
 .bars {
   display: flex;
@@ -41,8 +49,9 @@ button.bar {
 .bar[data-filled][data-ultra] > .fill {
   background: var(--ui-effort-ultra-fill);
 }
-.bar[aria-checked="true"] {
-  background: var(--ui-tone-accent-subtle);
+button.bar[aria-checked="true"][data-button-selected] {
+  background: var(--ui-surface-selected);
+  box-shadow: inset 0 0 0 1px var(--ui-control-border);
 }
 .bar:focus-visible {
   outline: 2px solid var(--ui-tone-accent-border);
@@ -51,8 +60,11 @@ button.bar {
 .bar:active > .fill {
   opacity: 0.8;
 }
-.bar:disabled {
-  opacity: 0.55;
+.scale[data-disabled] .bar {
+  opacity: var(--ui-disabled-opacity);
+}
+.scale[data-disabled] .bar[data-filled] > .fill {
+  background: var(--ui-control-disabled-fg);
 }
 .ends {
   display: flex;
@@ -60,7 +72,7 @@ button.bar {
   padding-block-start: var(--space-1);
 }
 @media (hover: hover) and (pointer: fine) {
-  .bar:not(:disabled):hover {
+  .bar:not(:disabled, [aria-checked="true"]):hover {
     background: var(--ui-surface-hover);
   }
 }

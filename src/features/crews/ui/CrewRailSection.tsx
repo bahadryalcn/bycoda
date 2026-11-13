@@ -23,7 +23,6 @@ import { activeCrewRuns } from "../model/crewRoster";
 import { activeMemberIds } from "../model/crewTableLayout";
 import { CrewAvatar } from "./CrewAvatar";
 import { CrewFaces } from "./CrewFaces";
-import { CrewRailActive } from "./CrewRailActive";
 import { openCrewsPageAt } from "../model/crewsPage";
 import { CrewDialogHost } from "./CrewDialogHost";
 import { crewMenuDialog, crewMenuItems, type CrewDialog } from "./crewMenuItems";
@@ -146,13 +145,6 @@ export function CrewRailSection({
           </InlineAction>
         }
       />
-      {drag.folded || collapsed ? null : (
-        <CrewRailActive
-          project={{ machineId: data.machine.id, projectId: data.project.id, cwd }}
-          onOpenSession={onOpenSession}
-          onError={setError}
-        />
-      )}
       <div
         role="list"
         aria-label={label}

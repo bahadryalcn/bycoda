@@ -13,6 +13,7 @@ export function failedTurnRetry(session: Session) {
   const retryingSwitch = handoff?.status === "failed" || handoff?.status === "cancelled";
   if (
     session.busy ||
+    session.usageLimit ||
     session.pendingQuestion ||
     (session.pendingSwitch && !retryingSwitch) ||
     session.historyLoading ||

@@ -314,7 +314,7 @@ export function SshGroupSettings({
             aria-label={t("Effective SSH configuration")}
             className="min-w-0"
           >
-            <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-all">
+            <Text wrap="anywhere" as="p" size="inherit" tone="inherit" weight="medium">
               {sshEndpointPreview(activePreview.value.configuration.endpoint)}
             </Text>
             <DescriptionList size="sm" className="mbs-2">

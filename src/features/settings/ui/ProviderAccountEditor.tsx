@@ -86,12 +86,12 @@ export function ProviderAccountEditor({
       }}
     >
       {!adding ? (
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <HarnessIcon harness={editor.provider} className="icon-md shrink-0" />
           <Text size="caption" tone="secondary">
             {HARNESS_TITLE[editor.provider]}
           </Text>
-          <ProviderAccountSubtitle identity={identity} size="caption" tone="secondary" truncate />
+          <ProviderAccountSubtitle identity={identity} size="caption" tone="secondary" wrap />
         </div>
       ) : null}
       <TextField

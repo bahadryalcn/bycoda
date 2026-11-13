@@ -134,7 +134,7 @@ export function MachineRow({
             className="connection-details"
           >
             <MachineRoutesLine machine={machine} />
-            <Text as="div" tone="muted" className="mt-1 break-all">
+            <Text as="div" tone="muted" wrap="anywhere" className="mt-1">
               {local
                 ? t("Syncs projects and groups with the {p0} on this computer", {
                     p0: PRODUCT_IDENTITY.displayName,

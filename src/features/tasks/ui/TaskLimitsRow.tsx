@@ -25,7 +25,7 @@ export function SettingFrame({
   );
 }
 
-/** One settings row: title with a one-line description on the left, the control on the right. */
+/** One settings row: readable title and description, with controls alongside or below. */
 export function SettingRow({
   title,
   description,
@@ -42,7 +42,14 @@ export function SettingRow({
   return (
     <Tag {...props} className={["task-ops-setting", props.className].filter(Boolean).join(" ")}>
       <div className="task-ops-setting-text">
-        <Text as="span" size="body" weight="medium" tone="primary" leading="inherit" truncate>
+        <Text
+          as="span"
+          size="body"
+          weight="medium"
+          tone="primary"
+          leading="inherit"
+          wrap="anywhere"
+        >
           {title}
         </Text>
         {description ? (

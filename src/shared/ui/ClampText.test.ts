@@ -1,8 +1,23 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it } from "vitest";
 import { ClampText } from "./ClampText";
+
+it("forwards wrapping roles without leaking them as HTML attributes in either form", () => {
+  for (const expandable of [false, true]) {
+    const html = renderToStaticMarkup(
+      createElement(ClampText, {
+        expandable,
+        wrap: "anywhere",
+        children: "Uzun çalışma alanı yolu / تجربة / 👩🏽‍💻",
+      }),
+    );
+    expect(html).toContain('data-wrap="anywhere"');
+    expect(html).not.toContain(' wrap="anywhere"');
+  }
+});
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

@@ -10,7 +10,7 @@ import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import { Check, ChevronDown, Home } from "../../../shared/ui/icons";
+import { Check, ChevronDown } from "../../../shared/ui/icons";
 import { accountUsageKey, useProviderAccountUsage } from "../../providers/public/accountUsage";
 import {
   providerAccountColorValue,
@@ -105,17 +105,23 @@ function AccountDot({ account }: { account: PanelAccount }) {
 
 function Percent({ value }: { value: number | null }) {
   const { formatNumber } = useFormat();
+  const t = useT();
   if (value == null) return null;
   return (
     <span className="shrink-0 tabular-nums ui-caption-text">
-      {formatNumber(value / 100, { style: "percent", maximumFractionDigits: 0 })}
+      {formatNumber(value / 100, { style: "percent", maximumFractionDigits: 0 })} {t("used")}
     </span>
   );
 }
 
-/** Marks the account new conversations start on. */
+/** Marks the account containing this project's default model. */
 function DefaultMark() {
-  return <Home className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} />;
+  const t = useT();
+  return (
+    <Text size="micro" tone="secondary">
+      {t("Default model")}
+    </Text>
+  );
 }
 
 /** The control beside the provider title: label, two-way switch or a button for the list. */
@@ -145,7 +151,7 @@ export function ModelAccountControl({
     return (
       <span data-model-account-label className="flex min-w-0 items-center gap-1.5 ui-caption-text">
         <AccountDot account={only} />
-        <Text size="inherit" tone="inherit" truncate className="min-w-0">
+        <Text size="inherit" tone="inherit" leading="snug" wrap="anywhere" className="min-w-0">
           {only.label}
         </Text>
         <Percent value={only.usedPercent} />
@@ -293,7 +299,13 @@ export function ModelAccountList({
                       leading="snug"
                       className="flex min-w-0 items-center gap-1"
                     >
-                      <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                      <Text
+                        size="inherit"
+                        tone="inherit"
+                        leading="snug"
+                        wrap="anywhere"
+                        className="min-w-0"
+                      >
                         {account.label}
                       </Text>
                       {account.id === defaultAccountId ? (
@@ -304,7 +316,6 @@ export function ModelAccountList({
                           className="flex shrink-0 items-center gap-0.5"
                         >
                           <DefaultMark />
-                          {t("Default")}
                         </Text>
                       ) : null}
                     </Text>
@@ -313,7 +324,7 @@ export function ModelAccountList({
                         as="span"
                         size="micro"
                         tone={(account.usedPercent ?? 0) >= USAGE_DANGER ? "danger" : "secondary"}
-                        truncate
+                        wrap="anywhere"
                         className="block"
                       >
                         {detail}

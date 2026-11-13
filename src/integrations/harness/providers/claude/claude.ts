@@ -237,6 +237,8 @@ type Live = {
   queryGeneration: number | null;
   /** Latest `rate_limit_event` refused requests; reported when the turn ends. */
   usageLimit: { resetsAt?: number } | null;
+  /** One failure can arrive as assistant, result and rejected promise in this turn. */
+  reportedTurnErrors: Set<string>;
   cancelled: boolean;
   muteUpdates: boolean;
   turns: Promise<void>;
@@ -768,6 +770,7 @@ export function replayClaudeSession(input: {
     if (prompt) {
       // End the reply this prompt follows, so the turns stay separate blocks.
       finishReply();
+      live.reportedTurnErrors.clear();
       input.onPrompt(prompt.text, timestampOf(rec), prompt.attachments);
       continue;
     }
@@ -826,6 +829,7 @@ function newLiveState(input: {
     commands: new ClaudeCommandLedger(),
     queryGeneration: null,
     usageLimit: null,
+    reportedTurnErrors: new Set(),
     cancelled: false,
     muteUpdates: false,
     turns: Promise.resolve(),
@@ -1052,6 +1056,7 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   live.backgroundKey = "";
   live.taskNotes = [];
   live.turnResultSeen = false;
+  live.reportedTurnErrors.clear();
   live.commands.resetTurn();
 
   const turnPromise = new Promise<void>((resolve, reject) => {
@@ -1076,15 +1081,18 @@ async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter)
   } catch (error) {
     if (live.cancelled) return;
     const failure = live.exitError ?? error;
-    live.onEvent({
-      type: "session.error",
-      message: failure instanceof Error ? failure.message : String(failure),
-    });
+    reportTurnError(live, failure instanceof Error ? failure.message : String(failure));
     throw failure;
   } finally {
     live.turnDone = null;
     live.turnFailed = null;
   }
+}
+
+function reportTurnError(live: Live, message: string): void {
+  if (live.reportedTurnErrors.has(message)) return;
+  live.reportedTurnErrors.add(message);
+  live.onEvent({ type: "session.error", message });
 }
 
 function handleLine(sessionId: string, live: Live, line: string): void {
@@ -1357,7 +1365,7 @@ function handleAssistant(live: Live, rec: Record<string, unknown>): void {
   const snapshot = assistantTextBlocks(rec).join("");
   const failure = errorFromAssistant(rec);
   if (failure && !live.cancelled) {
-    live.onEvent({ type: "session.error", message: failure });
+    reportTurnError(live, failure);
     live.turnFailed?.(new Error(failure));
     return;
   }
@@ -1545,7 +1553,7 @@ function handleResult(live: Live, rec: Record<string, unknown>): void {
 
   const result = turnStatusFromResult(rec);
   if (result.status === "failed" && result.error && !live.cancelled) {
-    live.onEvent({ type: "session.error", message: result.error });
+    reportTurnError(live, result.error);
   }
   // A refused window can still fall back to another model, so only a turn
   // that ended in error was stopped by it.

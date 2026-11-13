@@ -8,6 +8,117 @@ import {
   textDrag,
 } from "../support/external-drop";
 
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`model panel worst realistic identities ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?accounts=8&data=worst&theme=${theme}`,
+      );
+      const trigger = page.locator("[data-composer-model-controls] button[aria-haspopup]").first();
+      await trigger.click();
+      const panel = page.locator("[data-model-panel]");
+      await expect(panel).toBeVisible();
+      for (const zoom of [1, 2]) {
+        await page.evaluate((value) => {
+          document.documentElement.style.zoom = String(value);
+        }, zoom);
+        await expect
+          .poll(() =>
+            panel.evaluate((element) => {
+              const bounds = element.getBoundingClientRect();
+              return (
+                bounds.left >= -1 &&
+                bounds.right <= innerWidth + 1 &&
+                bounds.top >= -1 &&
+                bounds.bottom <= innerHeight + 1
+              );
+            }),
+          )
+          .toBe(true);
+        const firstModel = panel.getByRole("option").first();
+        await firstModel.scrollIntoViewIfNeeded();
+        await expect(firstModel).toBeInViewport();
+        await page.screenshot({
+          path: `temp/verification/2026-11-13-ui-coherence/models/${theme}-${width}-${zoom}x.png`,
+        });
+        const selectedEffort = panel
+          .locator('[data-setting-id="effort"] [role="radio"][aria-checked="true"]')
+          .first();
+        await selectedEffort.scrollIntoViewIfNeeded();
+        await expect(selectedEffort).toBeInViewport();
+        await selectedEffort.click();
+        await page.screenshot({
+          path: `temp/verification/2026-11-13-ui-coherence/models/settings-${theme}-${width}-${zoom}x.png`,
+        });
+      }
+      await page.evaluate(() => {
+        document.documentElement.style.zoom = "";
+        document.documentElement.dir = "rtl";
+      });
+      await expect(panel).toBeInViewport();
+      await page.screenshot({
+        path: `temp/verification/2026-11-13-ui-coherence/models/${theme}-${width}-rtl.png`,
+      });
+      await page.evaluate(() => {
+        document.documentElement.dir = "ltr";
+      });
+      await panel.locator("[data-model-settings] [role=tab]").nth(1).click();
+      const selectedModels = panel.locator('[data-setting-id="crossSubagents"]');
+      await selectedModels.scrollIntoViewIfNeeded();
+      const ceiling = panel.locator('[data-setting-id="crossSubagentMaxEffort"]');
+      await expect(ceiling.getByRole("switch")).toBeInViewport();
+      expect(
+        await ceiling.evaluate((element) => {
+          const heading = element.firstElementChild!.getBoundingClientRect();
+          const bounds = element.closest("[data-model-panel]")!.getBoundingClientRect();
+          return heading.top >= bounds.top && heading.bottom <= bounds.bottom;
+        }),
+      ).toBe(true);
+      await expect(selectedModels.getByRole("button", { name: /kaldır$|^Remove/ })).toHaveCount(3);
+      await page.screenshot({
+        path: `temp/verification/2026-11-13-ui-coherence/models/agents-${theme}-${width}.png`,
+      });
+      await panel.locator("[data-model-account-menu]").click();
+      const accounts = panel.locator("[data-model-account-list]");
+      await expect(accounts).toBeVisible();
+      await expect(accounts.getByRole("radio")).toHaveCount(8);
+      await page.screenshot({
+        path: `temp/verification/2026-11-13-ui-coherence/models/accounts-${theme}-${width}.png`,
+      });
+    });
+
+    test(`quota recovery retains long draft ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?accounts=8&data=worst&quota-stress&theme=${theme}`,
+      );
+      const editor = page.getByRole("textbox", { name: "Message", exact: true });
+      const draft = await editor.inputValue();
+      expect(draft.length).toBeGreaterThan(1000);
+      await expect(page.locator("[data-usage-limit]")).toHaveCount(1);
+      const recover = page.getByRole("button", { name: "Switch model", exact: true });
+      for (const zoom of [1, 2]) {
+        await page.evaluate((value) => {
+          document.documentElement.style.zoom = String(value);
+        }, zoom);
+        await recover.scrollIntoViewIfNeeded();
+        await recover.click();
+        const panel = page.locator("[data-model-panel]");
+        await expect(panel).toBeVisible();
+        await page.keyboard.press("Escape");
+        await expect(panel).toHaveCount(0);
+        await expect(editor).toHaveValue(draft);
+        await page.screenshot({
+          path: `temp/verification/2026-11-13-ui-coherence/models/quota-${theme}-${width}-${zoom}x.png`,
+        });
+      }
+    });
+  }
+}
+
 /** Hover hints are the shared Tooltip (no native title): a label line plus shortcut key caps.
  *  A `null` label means the control already shows it in full, so the hint keeps only the key caps. */
 async function expectHint(
@@ -146,19 +257,20 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
     // Pending stages are a compact summary indicator; the notice is for outcomes only.
     const pending = card.locator("[data-delivery-pending]");
     const progress = page.locator("[data-delivery-progress]");
-    await expect(pending).toHaveAttribute("title", "Synchronizing the message queue…");
+    await pending.hover();
+    await page.clock.runFor(500);
+    await expect(page.getByRole("tooltip")).toHaveText("Synchronizing the message queue…");
     await expect(pending.getByRole("status")).toHaveText("Synchronizing the message queue…");
     await expect(progress).toHaveCount(0);
     await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
     await page.clock.runFor(11_000);
-    await expect(pending).toHaveAttribute("title", "Synchronizing the message queue…");
+    await expect(page.getByRole("tooltip")).toHaveText("Synchronizing the message queue…");
     expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await page.screenshot({
       path: `temp/verification/2026-10-21-steer-investigation/${light ? "light" : "dark"}-320-waiting.png`,
     });
     await page.clock.runFor(1000);
-    await expect(pending).toHaveAttribute(
-      "title",
+    await expect(page.getByRole("tooltip")).toHaveText(
       "Sending the message. Waiting for provider confirmation…",
     );
     await page.clock.runFor(1000);
@@ -301,14 +413,12 @@ test("custom context signal exposes completed TPS and compact and respects reduc
       await expect(panel.getByRole("meter")).toHaveAttribute("aria-valuenow", "50");
       await expect(panel).toContainText("50.0 TPS");
       await expect(panel).not.toContainText("Speed scale");
-      const info = panel.getByRole("button", {
+      const info = panel.getByRole("region", {
         name: "Response speed",
         exact: true,
       });
-      await expect(info).toHaveAttribute("aria-expanded", "false");
-      await info.click();
-      await expect(info).toHaveAttribute("aria-expanded", "true");
-      await expect(panel).toContainText("Average over the full turn");
+      await expect(info).toBeVisible();
+      await expect(info).toContainText("Average over the full turn");
       await expect(panel.getByRole("button", { name: "Compact now", exact: true })).toBeEnabled();
       await expect(trigger.locator(".context-signal")).toBeVisible();
       await trigger.screenshot({
@@ -718,7 +828,7 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   await page.goto("/tests/browser/chat/composer-extras.html?chat-layout&accounts&workspace-footer");
   const input = page.getByRole("textbox", { name: "Message", exact: true });
   const hint = page.locator(".composer-tips-icon");
-  const tooltip = page.getByRole("tooltip");
+  const tipPanel = page.getByRole("dialog", { name: "Chat tips", exact: true });
   const folders = page.getByRole("button", {
     name: "Folders for this session",
     exact: true,
@@ -737,15 +847,15 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
   await expect(hint).toHaveAttribute("aria-expanded", "false");
   await hint.hover();
   await hint.focus();
-  await expect(tooltip).toHaveCount(0);
+  await expect(tipPanel).toHaveCount(0);
   await page.keyboard.press("Enter");
-  await expect(tooltip).toBeVisible();
+  await expect(tipPanel).toBeVisible();
   await expect(hint).toHaveText("Next tip");
   await page.mouse.move(0, 0);
   await input.focus();
-  await expect(tooltip).toBeVisible();
+  await expect(tipPanel).toBeVisible();
   await input.click();
-  await expect(tooltip).toHaveCount(0);
+  await expect(tipPanel).toHaveCount(0);
   await expect(hint).toHaveText("Tip");
   await expect(footer.locator(":scope > [data-composer-tips]")).toHaveCount(1);
   // In the context row the tip is the last, quietest item.
@@ -779,7 +889,7 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
       await page.setViewportSize({ width, height: 900 });
       await input.focus();
       await page.mouse.move(0, 0);
-      await expect(tooltip).toHaveCount(0);
+      await expect(tipPanel).toHaveCount(0);
       await expect(input).toBeInViewport();
       await expect(page.getByRole("button", { name: "Send", exact: true })).toBeInViewport();
       await expect(folders).toBeInViewport();
@@ -791,20 +901,20 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
         ),
       ).toBe(true);
       await hint.hover();
-      await expect(tooltip).toHaveCount(0);
+      await expect(tipPanel).toHaveCount(0);
       await hint.click();
-      await expect(tooltip).toBeInViewport();
+      await expect(tipPanel).toBeInViewport();
       await expect(hint).toHaveText("Next tip");
       await expect(hint).toHaveAccessibleName("Next tip");
       await expect(hint).toHaveAttribute("aria-expanded", "true");
-      // The control's name ("Next tip") carries the affordance; the tooltip holds only the tip.
-      expect((await tooltip.innerText()).trim().length).toBeGreaterThan(20);
-      const previous = await tooltip.innerText();
+      // The control's name ("Next tip") carries the affordance; the tipPanel holds only the tip.
+      expect((await tipPanel.innerText()).trim().length).toBeGreaterThan(20);
+      const previous = await tipPanel.innerText();
       await hint.click();
-      await expect(tooltip).not.toHaveText(previous!);
-      const next = await tooltip.innerText();
+      await expect(tipPanel).not.toHaveText(previous!);
+      const next = await tipPanel.innerText();
       await hint.click();
-      await expect(tooltip).not.toHaveText(next!);
+      await expect(tipPanel).not.toHaveText(next!);
       if (theme === "dark" && width === 1024) {
         await page.screenshot({
           path: testInfo.outputPath("chat-tip-open.png"),
@@ -812,12 +922,12 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
         });
       }
       await page.keyboard.press("Escape");
-      await expect(tooltip).toHaveCount(0);
+      await expect(tipPanel).toHaveCount(0);
       await expect(hint).toHaveText("Tip");
       await expect(hint).toHaveAttribute("aria-expanded", "false");
       await hint.hover();
       await hint.focus();
-      await expect(tooltip).toHaveCount(0);
+      await expect(tipPanel).toHaveCount(0);
       await expect(input).toHaveValue("Keep this chat draft");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -834,7 +944,7 @@ test("chat tips open on demand and preserve controls in narrow and scaled panels
       main.style.zoom = String(scale);
     }, zoom);
     await hint.click();
-    await expect(tooltip).toBeInViewport();
+    await expect(tipPanel).toBeInViewport();
     await expect(folders).toBeInViewport();
     await page.keyboard.press("Escape");
   }
@@ -1037,6 +1147,7 @@ for (const renderer of ["auto", "shader-failure", "context-loss"] as const) {
 test("welcome and working labels stay readable in narrow panels and both themes", async ({
   page,
 }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.addInitScript(() => {
     localStorage.setItem("bycoda.language", "en");
     Object.assign(window, {
@@ -1056,9 +1167,16 @@ test("welcome and working labels stay readable in narrow panels and both themes"
     });
   });
   await page.goto("/tests/browser/chat/composer-extras.html");
-  const label = page.getByRole("status", { name: "Chat composer · provider options" });
-  await expect(label.locator("[data-size]")).toHaveCSS("animation-name", "none");
+  const label = page.getByRole("status").filter({ hasText: "Chat composer · provider options" });
+  await expect(label).toBeVisible();
+  await expect(label.getByText("Chat composer · provider options", { exact: true })).toHaveCSS(
+    "animation-name",
+    "none",
+  );
+  await expect(label).toHaveCSS("animation-name", /working-signal/);
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(label).toHaveCSS("animation-name", "none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   expect(await label.evaluate((el) => getComputedStyle(el).color)).not.toBe("rgba(0, 0, 0, 0)");
   await page.goto("/tests/browser/chat/composer-extras.html?footer");
   await page.setViewportSize({ width: 320, height: 800 });
@@ -1151,7 +1269,7 @@ test("model picker names and selects accounts and session shows its active agent
   const account = panel.getByRole("radiogroup", { name: "Account", exact: true });
   await expect(account.getByRole("radio")).toHaveText(["personal", "work"]);
   await expect(account.getByRole("radio", { name: "personal", exact: true })).toBeChecked();
-  const opus = panel.getByRole("option", { name: /^Claude Opus 5\.5, / });
+  const opus = panel.getByRole("option", { name: "Claude Opus 5.5", exact: true });
   await expect(opus).toHaveCount(1);
   await page.screenshot({
     path: testInfo.outputPath("account-model-picker.png"),
@@ -1174,7 +1292,16 @@ test("model picker names and selects accounts and session shows its active agent
   );
   const tips = page.locator(".composer-tips-icon");
   await tips.click();
+  await expect(page.getByRole("dialog", { name: "Chat tips", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Chat tips", exact: true })).toHaveCount(0);
+  await expect(page.locator("[data-session-agent]")).toHaveAttribute(
+    "aria-label",
+    /^Running agent:/,
+  );
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+    "Keep this chat draft",
+  );
   await page.screenshot({
     path: testInfo.outputPath("session-running-account.png"),
     animations: "disabled",
@@ -1259,16 +1386,12 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
     const picker = settingsColumn.locator("[data-model-setting-picker]");
     if (name === "Advisor") await advisorField.click();
     else {
-      // Pointer hover swaps the help strip's height, so the clipped Add row shifts under the
-      // cursor; keyboard activation does not depend on a stable hit target.
-      const add = setting(name).getByRole("button", { name: "Add", exact: true });
-      await add.focus();
-      await add.press("Enter");
+      // Automatic has no manual list yet. Custom opens the shared model picker.
+      const custom = settingsColumn.getByRole("radio", { name: "Custom", exact: true });
+      await custom.click();
     }
     await expect(picker).toBeVisible();
-    const choice = picker
-      .getByRole("radio", { name: label })
-      .or(picker.getByRole("checkbox", { name: label }));
+    const choice = picker.getByRole("option", { name: label });
     await choice.click();
     if (name === "Subagents")
       await picker.getByRole("button", { name: "Done", exact: true }).click();
@@ -1320,8 +1443,9 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
       await page.evaluate(() =>
         // The scrollable chip list is a browser-focusable scroller, not a locked control.
         Boolean(
-          document.activeElement?.matches("button, input, select, [role=radio], [role=checkbox]") &&
-          document.activeElement.closest("[data-model-settings] [data-setting-id]"),
+          document.activeElement?.matches(
+            "button:not([aria-haspopup=dialog]), input, select, [role=radio], [role=checkbox]",
+          ) && document.activeElement.closest("[data-model-settings] [data-setting-id]"),
         ),
       ),
     ).toBe(false);
@@ -1338,7 +1462,7 @@ test("chat edits model settings from one panel at narrow and wide sizes", async 
   // The panel reads top-down: Reasoning leads, then Service Tier.
   expect(
     await settingsColumn
-      .locator('[data-setting-id] > [role="radiogroup"]')
+      .locator('[data-setting-id] [role="radiogroup"]')
       .evaluateAll((groups) => groups.map((group) => group.getAttribute("aria-label"))),
   ).toEqual(["Reasoning", "Service Tier"]);
   await expect(option("Reasoning", "Medium")).toHaveAttribute("aria-checked", "true");
@@ -1425,41 +1549,15 @@ test("model panel stays inside the viewport", async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     await expect(panel).toBeInViewport();
     const help = panel.locator("[data-model-setting-help]");
-    const { helpText, settingsButton } = await help.evaluate((element) => {
-      const text = element.querySelector("p")?.getBoundingClientRect();
-      const button = element
-        .querySelector("[data-model-provider-settings]")
-        ?.getBoundingClientRect();
-      return {
-        helpText: text ? { y: text.y, height: text.height } : null,
-        settingsButton: button ? { y: button.y, height: button.height } : null,
-      };
-    });
-    expect(helpText).not.toBeNull();
-    expect(settingsButton).not.toBeNull();
-    expect(
-      Math.abs(settingsButton!.y + settingsButton!.height / 2 - (helpText!.y + 8)),
-    ).toBeLessThanOrEqual(8);
-    const helpHeight = await help.evaluate((element) => {
-      const strip = getComputedStyle(element);
-      const textHeight = element.querySelector("p")!.getBoundingClientRect().height;
-      return (
-        textHeight +
-        parseFloat(strip.paddingTop) +
-        parseFloat(strip.paddingBottom) +
-        parseFloat(strip.borderTopWidth)
-      );
-    });
-    if (viewport.width >= 800) {
-      const lineHeight = await help
-        .locator("p")
-        .evaluate((el) => parseFloat(getComputedStyle(el).lineHeight));
-      expect(helpText!.height).toBeLessThanOrEqual(lineHeight * 2 + 1);
-    }
-    // The trailing icon button can be slightly taller than a single text line.
-    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(3);
+    const helpHeight = (await help.boundingBox())!.height;
+    await expect(help.getByRole("button", { name: "Help", exact: true })).toBeVisible();
+    await expect(help.locator("[data-model-provider-settings]")).toBeVisible();
+    const lineHeight = await help
+      .locator("p")
+      .evaluate((element) => parseFloat(getComputedStyle(element).lineHeight));
+    expect(helpHeight).toBeLessThanOrEqual(lineHeight * 2 + 16);
     await help.hover();
-    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(3);
+    expect(Math.abs((await help.boundingBox())!.height - helpHeight)).toBeLessThanOrEqual(1);
     // The panel and its rail, model list and settings column all fit the viewport.
     await expect
       .poll(() =>
@@ -1511,22 +1609,25 @@ test("independent scalar model settings preserve the draft caret and sibling val
   });
   await draft.focus();
   await draft.evaluate((node) => node.setSelectionRange(3, 8));
-  const effort = page.getByRole("combobox", {
+  const effort = page.getByRole("button", {
     name: /^(Effort|Reasoning): Medium$/,
   });
+  await expect(effort).toHaveAttribute("aria-haspopup", "dialog");
   await effort.click();
-  await effort.press("End");
-  await effort.press("Enter");
+  await expect(page.getByRole("listbox")).toBeFocused();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
   await expect(draft).toBeFocused();
   expect(await draft.evaluate((node) => [node.selectionStart, node.selectionEnd])).toEqual([3, 8]);
   await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
-  const tier = page.getByRole("combobox", {
+  const tier = page.getByRole("button", {
     name: "Service Tier: Standard",
     exact: true,
   });
   await tier.click();
-  await tier.press("End");
-  await tier.press("Enter");
+  await expect(page.getByRole("listbox")).toBeFocused();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
   await expect(page.getByTestId("scalar-settings")).toContainText('"reasoningEffort":"high"');
   await expect(page.getByTestId("scalar-settings")).toContainText('"serviceTier":"fast"');
   await expect(draft).toHaveValue("Preserve this draft");
@@ -1660,7 +1761,9 @@ test("model picker selects image models under Agents in both themes and widths",
     await expect(row).toContainText("Image models");
     await expect(row).toContainText("Automatic");
     await row.locator("[data-model-setting-add]").click();
-    await panel.getByRole("checkbox", { name: /Nano Banana/ }).click();
+    const imageModel = panel.getByRole("option", { name: /Nano Banana/ });
+    await imageModel.click();
+    await expect(imageModel).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("choice")).toContainText('"imageModels":"[\\"antigravity');
     await page.screenshot({
       path: `temp/verification/image-models/picker-${width}-${scheme}.png`,

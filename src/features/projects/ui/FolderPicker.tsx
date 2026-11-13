@@ -369,11 +369,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
                   motion="none"
                   type="button"
                   tabIndex={-1}
-                  tooltip={t("Open folder")}
-                  tooltipDetails={[entry.path]}
-                  shortcut="Enter"
                   disabled={busy}
-                  onMouseEnter={() => setActive(index)}
                   onClick={() => navigate(entry.path)}
                   className="flex min-w-0 flex-1 items-center gap-2 text-start"
                 >

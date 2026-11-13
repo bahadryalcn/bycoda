@@ -157,7 +157,7 @@ for (const [theme, width] of [
     await capture("assistant-access");
     const footer = dialog.getByRole("button", { name: "Save profile settings", exact: true });
     await expect(footer).toBeVisible();
-    const checks = dialog.getByRole("button", { name: "All checks", exact: true });
+    const checks = dialog.locator("summary").filter({ hasText: "All checks" });
     await checks.scrollIntoViewIfNeeded();
     const checkBox = (await checks.boundingBox())!;
     const footerBox = (await footer.boundingBox())!;

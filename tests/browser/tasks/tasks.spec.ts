@@ -12,6 +12,63 @@ type HostCall = {
 };
 const fixture = "/tests/browser/tasks/tasks.html";
 for (const width of [1280, 800])
+  for (const theme of ["light", "dark"])
+    for (const zoom of [1, 2]) {
+      test(`workbench critical labels stay readable ${width} ${theme} zoom ${zoom}`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.goto(`${fixture}?uiCoherence&data=worst&rtl`);
+        await page.evaluate(
+          ({ light, scale }) => {
+            document.documentElement.classList.toggle("theme-light", light);
+            document.documentElement.style.zoom = String(scale);
+          },
+          { light: theme === "light", scale: zoom },
+        );
+        const label = page.getByText(
+          "Araştırma ortamındaki ajanların günlük çalışma süresi üst sınırı",
+          { exact: true },
+        );
+        await expect(label).toBeVisible();
+        const configure = page.getByRole("button", { name: "Configure", exact: true });
+        const actionBounds = await configure.boundingBox();
+        expect(actionBounds?.x).toBeGreaterThanOrEqual(0);
+        await mkdir("temp/verification/2026-11-13-ui-coherence/workbench", { recursive: true });
+        await page.screenshot({
+          path: `temp/verification/2026-11-13-ui-coherence/workbench/${process.env.BYCODA_UI_BEFORE ? "before" : "after"}-${width}-${theme}-${zoom}.png`,
+          fullPage: true,
+        });
+        expect(
+          await label.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        ).toBe(true);
+        const status = page
+          .locator(".goal-card-meta")
+          .getByText("(offline, last known)", { exact: false });
+        await expect(status).toBeVisible();
+        expect(
+          await status.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        ).toBe(true);
+        const endpoint = page.getByText(
+          "https://research-development-workstation.northwind-industries-holdings.example.com:3774",
+          { exact: true },
+        );
+        await expect(endpoint).toBeVisible();
+        expect(await endpoint.evaluate((element) => getComputedStyle(element).wordBreak)).not.toBe(
+          "break-all",
+        );
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+          ),
+        ).toBe(true);
+        await page.getByRole("radio", { name: "Demo data", exact: true }).click();
+        await expect(page.getByText("Daily agent time", { exact: true })).toBeVisible();
+        await expect(page.locator(".goal-card-meta")).not.toContainText("offline");
+      });
+    }
+for (const width of [1280, 800])
   for (const theme of ["light", "dark"]) {
     test(`stalled worker stays running with a diagnostic ${width} ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });

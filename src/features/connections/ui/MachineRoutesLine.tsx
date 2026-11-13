@@ -62,7 +62,7 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
   // Without the desktop's route store only the saved other address is known.
   if (!routes)
     return ssh.alternate ? (
-      <Text as="div" tone="muted" className="mt-1 break-all">
+      <Text wrap="anywhere" as="div" tone="muted" className="mt-1">
         {t("Other address · ")}
         {ssh.alternate}
       </Text>

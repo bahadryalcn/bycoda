@@ -140,8 +140,12 @@ export function TaskList({
                   className="task-list-caption"
                 >
                   {task.machineName} · {task.cwd}
-                  {task.stale ? ` · ${t("Offline")}` : ""}
                 </Text>
+                {task.stale ? (
+                  <Text as="p" size="caption" tone="warning" leading="inherit" wrap="anywhere">
+                    {t("Offline")}
+                  </Text>
+                ) : null}
                 {planning ? (
                   <Text
                     as="p"
@@ -162,7 +166,7 @@ export function TaskList({
                       size="caption"
                       tone={STATUS_DETAIL_TONE[status.tone]}
                       leading="inherit"
-                      truncate
+                      wrap="anywhere"
                       data-task-status-detail
                     >
                       {status.detail}

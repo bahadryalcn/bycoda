@@ -13,6 +13,7 @@ import { DelegationOptionIcon } from "../../../src/features/sessions/ui/Delegati
 import {
   CROSS_ADVISOR_KEY,
   encodeAdvisor,
+  encodeSubagents,
 } from "../../../src/shared/model/host-contracts/delegation";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
@@ -85,6 +86,27 @@ const workspaceFooter = new URLSearchParams(location.search).has("workspace-foot
 const remoteLayout = new URLSearchParams(location.search).has("remote");
 const showProjectPicker = new URLSearchParams(location.search).has("project-picker");
 const longAccount = new URLSearchParams(location.search).has("long-account");
+// Test-only data boundary. The URL retains the stress case across reloads.
+const worstModelData = new URLSearchParams(location.search).get("data") === "worst";
+const quotaStress = new URLSearchParams(location.search).has("quota-stress");
+const stressDraft =
+  "Bu uzun konuşma taslağını koru. Aleksandra Wiśniewska-Kowalczyk ile araştırma sonuçlarını karşılaştır, ardından فريق البحث والتطوير الدولي 🧑🏽‍💻 ekibinin model ve hesap tercihlerini açıkla. ".repeat(
+    8,
+  );
+if (worstModelData) {
+  const names = [
+    "Claude Opus Enterprise Research and Engineering Workspace",
+    "Türkçe araştırma ve çok aşamalı geliştirme modeli",
+    "مختبر الأبحاث والتطوير الدولي 🧑🏽‍💻",
+  ];
+  setHarnessModels(
+    "claude",
+    modelsFor("claude").map((model, index) => ({
+      ...model,
+      name: names[index] ?? model.name,
+    })),
+  );
+}
 const translationSelection = new URLSearchParams(location.search).has("translation-selection");
 const antigravitySelection = new URLSearchParams(location.search).has("antigravity-selection");
 if (antigravitySelection)
@@ -135,15 +157,28 @@ if (accountPicker) {
   renameProviderAccount(
     "claude",
     "default",
-    longAccount ? "personal-account-with-a-very-long-name-for-layout" : "personal",
+    worstModelData
+      ? "Aleksandra Wiśniewska-Kowalczyk · Araştırma"
+      : longAccount
+        ? "personal-account-with-a-very-long-name-for-layout"
+        : "personal",
   );
   saveProviderAccount({
     id: "account-work",
     provider: "claude",
-    label: "work",
+    label: worstModelData ? "فريق البحث والتطوير الدولي 🧑🏽‍💻" : "work",
   });
   // `accounts=N` adds more Claude profiles, so each account-control size can be captured.
-  const extra = ["Agency", "Client Acme", "Client Orbit", "Side project", "Team 2", "Research"];
+  const extra = worstModelData
+    ? [
+        "Jo",
+        "Bahadır · Kişisel geliştirme ve araştırma",
+        "Northwind Industries Holdings Research",
+        "Équipe de développement international",
+        "東京研究開発チーム",
+        "Team 👩🏽‍💻",
+      ]
+    : ["Agency", "Client Acme", "Client Orbit", "Side project", "Team 2", "Research"];
   const count = Number(new URLSearchParams(location.search).get("accounts")) || 2;
   extra
     .slice(0, Math.max(0, count - 2))
@@ -201,7 +236,18 @@ function Fixture() {
   const [model, setModel] = useState(
     antigravitySelection ? "antigravity:gemini-3.8-flash-high" : "claude:sonnet-5",
   );
-  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [settings, setSettings] = useState<Record<string, string>>(
+    worstModelData
+      ? {
+          crossSubagents:
+            encodeSubagents(
+              modelsFor("claude")
+                .slice(0, 3)
+                .map((model) => ({ harness: "claude", model: model.id })),
+            ) ?? "",
+        }
+      : {},
+  );
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("supervised");
   const [busy, setBusy] = useState(
     queueVisual === "active" || queueVisual === "busy" || queueVisual === "one",
@@ -379,7 +425,8 @@ function Fixture() {
           }
           return true;
         }}
-        initialDraft="Keep this chat draft"
+        initialDraft={quotaStress ? stressDraft : "Keep this chat draft"}
+        usageLimit={quotaStress ? {} : undefined}
         editLastTurnSupported={new URLSearchParams(location.search).has("shortcuts")}
         lastTurnRecall={
           new URLSearchParams(location.search).has("shortcuts")

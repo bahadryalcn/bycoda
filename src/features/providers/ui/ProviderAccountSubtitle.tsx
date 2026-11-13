@@ -13,11 +13,19 @@ export function ProviderAccountSubtitle({
   size,
   tone,
   truncate,
+  wrap = false,
 }: {
   identity: ProviderAccountIdentity | null | undefined;
   fallback?: string;
+  /** Show the complete plan and masked/revealed email in account management rows. */
+  wrap?: boolean;
 } & Pick<TextRoles, "size" | "tone" | "truncate"> & { className?: string }) {
-  const roles = { size, tone, truncate };
+  const roles = {
+    size,
+    tone,
+    truncate: wrap ? undefined : truncate,
+    wrap: wrap ? ("anywhere" as const) : undefined,
+  };
   if (!identity?.plan && !identity?.email) {
     return fallback ? (
       <span {...optionalTextAttributes(roles, `min-w-0 ${className}`)}>{fallback}</span>
@@ -26,11 +34,25 @@ export function ProviderAccountSubtitle({
 
   return (
     <span
-      {...optionalTextAttributes(roles, `inline-flex min-w-0 items-baseline gap-1 ${className}`)}
+      {...optionalTextAttributes(
+        roles,
+        `inline-flex min-w-0 items-baseline gap-1 ${wrap ? "flex-wrap " : ""}${className}`,
+      )}
     >
-      {identity.plan ? <span className="shrink-0">{identity.plan}</span> : null}
-      {identity.plan && identity.email ? <span aria-hidden>·</span> : null}
-      {identity.email ? <PrivateEmail key={identity.email} email={identity.email} /> : null}
+      {identity.plan ? (
+        <span
+          {...optionalTextAttributes(
+            wrap ? { wrap: "anywhere" } : {},
+            wrap ? "min-w-0" : "shrink-0",
+          )}
+        >
+          {identity.plan}
+        </span>
+      ) : null}
+      {!wrap && identity.plan && identity.email ? <span aria-hidden>·</span> : null}
+      {identity.email ? (
+        <PrivateEmail key={identity.email} email={identity.email} wrap={wrap} />
+      ) : null}
     </span>
   );
 }

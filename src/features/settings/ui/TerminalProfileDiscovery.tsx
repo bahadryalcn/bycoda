@@ -1,4 +1,3 @@
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { SettingsFeedback } from "./settingsControls";
 import { invoke } from "@tauri-apps/api/core";
@@ -250,16 +249,12 @@ export function TerminalProfileDiscovery({
                 return (
                   <li key={profile.id} className="flex min-w-0 items-center gap-3 py-3">
                     <div className="min-w-0 flex-1">
-                      <OverflowTooltip label={profile.label}>
-                        <Text as="p" size="secondary" weight="medium" truncate tabIndex={0}>
-                          {profile.label}
-                        </Text>
-                      </OverflowTooltip>
-                      <OverflowTooltip label={profile.path} wide>
-                        <Text as="p" size="caption" tone="secondary" truncate tabIndex={0}>
-                          {profile.path}
-                        </Text>
-                      </OverflowTooltip>
+                      <Text as="p" size="secondary" weight="medium" wrap="anywhere">
+                        {profile.label}
+                      </Text>
+                      <Text as="p" size="caption" tone="secondary" wrap="anywhere">
+                        {profile.path}
+                      </Text>
                     </div>
                     <Button
                       disabled={(connected && !onConnected) || disabled || busy}

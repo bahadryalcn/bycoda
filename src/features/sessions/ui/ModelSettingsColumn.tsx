@@ -12,11 +12,12 @@ import {
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
-import { ChevronDown, CircleHelp, Plus, X, Zap } from "../../../shared/ui/icons";
+import { ChevronDown, Plus, X, Zap } from "../../../shared/ui/icons";
 import {
   delegationOptionSelected,
   delegationShortLabel,
@@ -63,25 +64,29 @@ function helpText(setting: ModelSetting): string | undefined {
 /** The panel-wide strip under both columns that explains the pointed-at setting. */
 export function ModelSettingHelp({
   setting,
+  settings = [],
   trailing,
 }: {
   setting: ModelSetting | null;
+  /** All descriptions remain available without hovering another control. */
+  settings?: ModelSetting[];
   /** Trailing action, e.g. a link to the provider settings. */
   trailing?: ReactNode;
 }) {
   const t = useT();
   const help = setting ? helpText(setting) : undefined;
+  const descriptions = (settings.length ? settings : setting ? [setting] : []).filter((item) =>
+    helpText(item),
+  );
   return (
     <div
       data-model-setting-help
       {...surfaceAttributes(
         { frame: "frosted", edge: "top" },
-        "flex shrink-0 items-start gap-2 px-3 py-1.5 ui-caption-text",
+        "flex shrink-0 items-center gap-2 px-3 py-1 ui-caption-text",
       )}
     >
-      <CircleHelp className="icon-xs mt-0.5 shrink-0" aria-hidden />
-      {/* Two lines are always reserved, so pointing at a setting never resizes the panel. */}
-      <ClampText as="p" lines={2} expandable={false} className="min-h-[2lh] min-w-0 flex-1">
+      <ClampText as="p" lines={1} expandable={false} className="min-w-0 flex-1">
         {setting && help ? (
           <>
             <Text size="inherit" tone="neutral" weight="medium">
@@ -90,9 +95,21 @@ export function ModelSettingHelp({
             {t(help)}
           </>
         ) : (
-          t("Point at a setting to read what it does.")
+          t("Help")
         )}
       </ClampText>
+      {descriptions.length ? (
+        <InfoPopover label={t("Help")}>
+          {descriptions.map((item) => (
+            <Text as="p" key={item.id} size="secondary" leading="relaxed">
+              <Text size="inherit" weight="medium">
+                {t(settingLabel(item))}
+              </Text>{" "}
+              {t(helpText(item)!)}
+            </Text>
+          ))}
+        </InfoPopover>
+      ) : null}
       {trailing ? <span className="ml-auto flex shrink-0">{trailing}</span> : null}
     </div>
   );
@@ -146,17 +163,21 @@ export function ModelSettingsColumn({
     onExplain(next);
   };
   const picking = shown.find((setting) => setting.id === pickingId);
-  const subagentCount = agents
-    .filter(isSubagentSetting)
-    .flatMap((setting) =>
-      setting.options.filter(
-        (option) =>
-          option.value &&
-          option.value !== "auto" &&
-          delegationOptionSelected(setting, values, option.value),
-      ),
-    ).length;
-
+  const pinned = shown.filter((setting) => settingControlKind(setting) === "effort");
+  const scrolling = shown.filter((setting) => settingControlKind(setting) !== "effort");
+  const renderSetting = (setting: ModelSetting) => (
+    <SettingRow
+      key={setting.id}
+      setting={setting}
+      values={values}
+      disabled={locked(setting)}
+      onChoose={(value) => onChoose(setting, value)}
+      onPick={() => {
+        returnSetting.current = setting.id;
+        setPickingId(setting.id);
+      }}
+    />
+  );
   // Hover or focus names the setting whose help the strip shows.
   const explain = (event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
     const id = (event.target as HTMLElement).closest<HTMLElement>("[data-setting-id]")?.dataset
@@ -180,7 +201,7 @@ export function ModelSettingsColumn({
       }}
       {...surfaceAttributes(
         { frame: "neutral", edge: "responsive-start" },
-        "flex min-h-0 w-60 shrink-0 flex-col @max-[32rem]/model-panel:h-1/2 @max-[32rem]/model-panel:w-full @max-[32rem]/model-panel:[--surface-frame-stacked:1]",
+        "flex min-h-0 min-w-0 flex-1 flex-col @max-[32rem]/model-panel:min-h-60 @max-[32rem]/model-panel:w-full @max-[32rem]/model-panel:shrink-0 @max-[32rem]/model-panel:[--surface-frame-stacked:1]",
       )}
     >
       {agents.length > 0 && model.length > 0 ? (
@@ -196,9 +217,7 @@ export function ModelSettingsColumn({
         >
           <TabList label={t("Model options")} className="shrink-0 px-2 pt-1.5">
             <Tab value="settings">{t("Settings")}</Tab>
-            <Tab value="agents" count={subagentCount || null}>
-              {t("Agents")}
-            </Tab>
+            <Tab value="agents">{t("Agents")}</Tab>
           </TabList>
         </Tabs>
       ) : null}
@@ -211,31 +230,30 @@ export function ModelSettingsColumn({
           onClose={() => setPickingId(null)}
         />
       ) : (
-        <div
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none px-1.5 pt-1 pb-2"
-          onMouseOver={explain}
-          onMouseLeave={() => setExplained(focusedSetting.current)}
-        >
-          {shown.length === 0 ? (
-            <p className="px-1.5 py-2 ui-caption-text">
-              {t("{p0} has no extra options.", { p0: HARNESS_TITLE[current.harness] })}
-            </p>
-          ) : (
-            shown.map((setting) => (
-              <SettingRow
-                key={setting.id}
-                setting={setting}
-                values={values}
-                disabled={locked(setting)}
-                onChoose={(value) => onChoose(setting, value)}
-                onPick={() => {
-                  returnSetting.current = setting.id;
-                  setPickingId(setting.id);
-                }}
-              />
-            ))
-          )}
-        </div>
+        <>
+          {pinned.length ? (
+            <div
+              className="shrink-0 px-1.5"
+              onMouseOver={explain}
+              onMouseLeave={() => setExplained(focusedSetting.current)}
+            >
+              {pinned.map(renderSetting)}
+            </div>
+          ) : null}
+          <div
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none px-1.5 pt-1 pb-2"
+            onMouseOver={explain}
+            onMouseLeave={() => setExplained(focusedSetting.current)}
+          >
+            {shown.length === 0 ? (
+              <p className="px-1.5 py-2 ui-caption-text">
+                {t("{p0} has no extra options.", { p0: HARNESS_TITLE[current.harness] })}
+              </p>
+            ) : (
+              scrolling.map(renderSetting)
+            )}
+          </div>
+        </>
       )}
     </div>
   );
@@ -280,16 +298,12 @@ function SettingRow({
     </Text>
   );
   const heading = (trailing: ReactNode) => (
-    <div className="flex items-baseline justify-between px-1.5 pt-2 pb-1.5">
-      <Text
-        as="span"
-        size="micro"
-        weight="medium"
-        tone="secondary"
-        tracking="wide"
-        className="uppercase"
-      >
-        {label}
+    <div className="flex items-center justify-between gap-2 px-1.5 pt-2 pb-1.5">
+      <Text as="span" size="caption" weight="medium" tone="secondary" className="min-w-0">
+        <span className="inline-flex items-center gap-1">
+          {label}
+          {help ? <InfoPopover label={label}>{t(help)}</InfoPopover> : null}
+        </span>
       </Text>
       {trailing}
     </div>
@@ -334,7 +348,7 @@ function SettingRow({
         {isCeiling ? (
           <div className="flex items-center justify-between px-1.5 pb-1.5">
             <Text as="span" size="caption" tone="secondary">
-              {value ? valueLabel : ""}
+              {value ? valueLabel : t("No limit")}
             </Text>
             <SubagentEffortSwitch value={value} disabled={disabled} onChange={onChoose} />
           </div>
@@ -390,7 +404,7 @@ function SettingRow({
       // Subagents pick a mode first: Automatic, a custom list or Off. Custom opens the picker.
       const subagents = isSubagentSetting(setting);
       const mode = subagentMode(value);
-      // Picked subagents read as chips; the full list opens only to add more.
+      // Picked models share rows so identities and removal actions remain comparable.
       // Last in the column, the list shrinks and scrolls on its own so the rows above stay put.
       return (
         <div data-setting-id={setting.id} className="flex min-h-0 shrink-0 flex-col pb-1">
@@ -413,7 +427,7 @@ function SettingRow({
             </div>
           ) : null}
           <div
-            className="flex min-h-0 flex-wrap content-start gap-1 overflow-y-auto overscroll-none px-1.5"
+            className="flex min-h-0 flex-col gap-1 overflow-y-auto overscroll-none px-1.5"
             role="group"
             aria-label={label}
           >
@@ -424,14 +438,14 @@ function SettingRow({
                 size="caption"
                 tone="inherit"
                 {...surfaceAttributes(
-                  { radius: "pill", frame: "neutral", edge: "all" },
-                  "inline-flex max-w-full min-w-0 items-center gap-1   border-(--ui-tone-neutral-border) py-0.5 ps-2 pe-0.5",
+                  { frame: "neutral", edge: "bottom" },
+                  "flex min-w-0 items-center gap-2 py-0.5 ps-1 pe-0.5",
                 )}
               >
                 <DelegationOptionIcon setting={setting} value={option.value} />
-                <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                <ClampText as="span" lines={2} className="min-w-0 flex-1">
                   {delegationShortLabel(setting, option.value, t(option.label))}
-                </Text>
+                </ClampText>
                 <Button
                   iconOnly
                   size="sm"

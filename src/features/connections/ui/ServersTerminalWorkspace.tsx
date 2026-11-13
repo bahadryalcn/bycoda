@@ -503,7 +503,7 @@ export function ServersTerminalWorkspace({
                 }
               >
                 {terminal.keyGenerationPath ? (
-                  <Text as="p" tone="muted" className="shrink-0 break-all px-3 py-2">
+                  <Text wrap="anywhere" as="p" tone="muted" className="shrink-0 px-3 py-2">
                     {t("Identity file")}: {terminal.keyGenerationPath}
                   </Text>
                 ) : null}

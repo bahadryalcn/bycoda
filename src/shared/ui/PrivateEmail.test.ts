@@ -56,3 +56,18 @@ it("shows a plain email when another window turns masking off", async () => {
   expect(container.querySelector("button")).toBeNull();
   expect(container.textContent).toBe("user@example.com");
 });
+
+it("keeps a long email readable in wrapping rows while preserving explicit reveal and masking", async () => {
+  const email = "bartholomew.fitzgerald@northwind-industries-holdings.example.com";
+  await act(async () => root.render(createElement(PrivateEmail, { email, wrap: true })));
+  const reveal = revealButton()!;
+  expect(reveal.querySelector('[data-wrap="anywhere"]')).not.toBeNull();
+  expect(reveal.querySelector('[aria-hidden="true"]')).not.toBeNull();
+  await act(async () => reveal.click());
+  expect(container.querySelector('[aria-hidden="false"]')?.textContent).toBe(email);
+  await act(async () => saveMaskEmails(false));
+  expect(container.querySelector("button")).toBeNull();
+  expect(container.querySelector('[data-wrap="anywhere"]')?.textContent).toBe(email);
+  await act(async () => saveMaskEmails(true));
+  expect(revealButton()?.querySelector('[aria-hidden="true"]')).not.toBeNull();
+});

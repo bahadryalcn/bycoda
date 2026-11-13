@@ -232,7 +232,7 @@ test("right dock retains a usable screen and annotation tools at 360px", async (
   await page.evaluate(() =>
     (window as any).hostToolsUiApi("ui.tools.open", { tab: "devices", placement: "right" }),
   );
-  const dock = page.locator(".tools-workspace-dock");
+  const dock = page.getByRole("complementary", { name: "Tool panels", exact: true });
   await expect(dock).toBeVisible();
   expect((await dock.boundingBox())!.width).toBeCloseTo(360, 0);
   const boot = dock.getByRole("button", { name: /^Start (emulator|simulator)$/ });

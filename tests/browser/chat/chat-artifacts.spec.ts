@@ -306,18 +306,25 @@ test("chat messages, attachment references and running work keep a readable hier
         name: "Open [image1] (screenshot-1.png) full screen",
         exact: true,
       });
-      await expect(token.locator("[data-size]")).toHaveAttribute("data-size", "42 B");
+      await expect(token.locator('[data-size]:not([data-size="inherit"])')).toHaveAttribute(
+        "data-size",
+        "42 B",
+      );
       expect((await token.boundingBox())!.height).toBeLessThan(26);
       const track = dock.locator('[data-pacing-track="reserved"]');
       const summary = dock.locator(".activity-dock-summary");
       const trackBox = (await track.boundingBox())!;
       const summaryBox = (await summary.boundingBox())!;
-      // Wide docks keep the pacing track beside the summary; a narrow dock gives the
-      // summary its own line and the track wraps below it. Never overlapping.
-      expect(
-        trackBox.x >= summaryBox.x + summaryBox.width - 0.5 ||
-          trackBox.y >= summaryBox.y + summaryBox.height - 0.5,
-      ).toBe(true);
+      const clockBox = (await summary.locator(".activity-dock-clock").boundingBox())!;
+      // The walker stays inside the summary row, after its readable label and clock.
+      expect(trackBox.x).toBeGreaterThanOrEqual(clockBox.x + clockBox.width - 0.5);
+      expect(trackBox.x + trackBox.width).toBeLessThanOrEqual(
+        summaryBox.x + summaryBox.width + 0.5,
+      );
+      expect(trackBox.y).toBeGreaterThanOrEqual(summaryBox.y - 0.5);
+      expect(trackBox.y + trackBox.height).toBeLessThanOrEqual(
+        summaryBox.y + summaryBox.height + 0.5,
+      );
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

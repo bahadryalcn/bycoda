@@ -870,7 +870,7 @@ function AutomationCard({
         <Text
           size="caption"
           tone="muted"
-          className="automation-trigger-summary flex min-w-0 items-center gap-1.5"
+          className="automation-trigger-summary flex min-w-0 flex-wrap items-center gap-1.5"
           style={
             {
               "--layout-trigger-reserve": otherTriggers.length > 0 ? "6rem" : "3.5rem",
@@ -884,8 +884,12 @@ function AutomationCard({
           <Text size="inherit" tone="inherit" truncate className="min-w-0">
             {triggerLabel(automation)}
             {automation.host ? t(" · on {p0}", { p0: automation.host.machineName }) : ""}
-            {automation.host?.stale ? t(" (offline, last known)") : ""}
           </Text>
+          {automation.host?.stale ? (
+            <Text size="inherit" tone="warning" wrap="anywhere">
+              {t(" (offline, last known)").trim()}
+            </Text>
+          ) : null}
         </Text>
         <span className="mt-1 flex min-w-0 items-center gap-1.5">
           <Text size="secondary" tone="neutral" weight="medium" truncate className="min-w-0">

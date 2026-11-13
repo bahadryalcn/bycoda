@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TasksView } from "../../../src/features/tasks/ui/TasksView";
 import { SprintFixture } from "./sprintFixture";
+import { UiCoherenceFixture } from "./uiCoherenceFixture";
 import type { BackgroundSessionTarget } from "../../../src/features/tasks/model/backgroundSession";
 import {
   canMoveTask,
@@ -1137,18 +1138,22 @@ void languageReady
       >
         <ModelSourceContext.Provider value={source}>
           <div className="flex h-dvh min-h-0 min-w-0 flex-col bg-background-base text-content">
-            <TasksView
-              besideRail
-              cwd={remotePath}
-              recents={[
-                { path: remotePath, openedAt: 2 },
-                { path: localPath, openedAt: 1 },
-              ]}
-              onClose={() => {}}
-              onOpenBackgroundSession={async (target) => {
-                openedSessions.push(structuredClone(target));
-              }}
-            />
+            {query.has("uiCoherence") ? (
+              <UiCoherenceFixture />
+            ) : (
+              <TasksView
+                besideRail
+                cwd={remotePath}
+                recents={[
+                  { path: remotePath, openedAt: 2 },
+                  { path: localPath, openedAt: 1 },
+                ]}
+                onClose={() => {}}
+                onOpenBackgroundSession={async (target) => {
+                  openedSessions.push(structuredClone(target));
+                }}
+              />
+            )}
           </div>
         </ModelSourceContext.Provider>
       </QueryClientProvider>,

@@ -281,8 +281,12 @@ function TaskCardBody({
         {project}
         {t(" · on ")}
         {task.machineName}
-        {task.stale ? t(" (offline, last known)") : ""}
       </Text>
+      {task.stale ? (
+        <Text as="p" size="micro" tone="warning" leading="inherit" wrap="anywhere">
+          {t(" (offline, last known)").trim()}
+        </Text>
+      ) : null}
       <Text
         as="p"
         size="micro"

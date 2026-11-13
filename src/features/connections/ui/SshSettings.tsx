@@ -216,13 +216,19 @@ export function SshSettings({
             </Text>
             <JumpAuthenticationHelp />
             {canAssignKey ? (
-              <Text as="p" tone="inherit" className="mbs-2 break-all">
+              <Text wrap="anywhere" as="p" tone="inherit" className="mbs-2">
                 {t("Select a key for")}: {server?.name}
               </Text>
             ) : null}
             {canAssignKey && selectedIdentity ? (
               <div className="mbs-2 flex min-w-0 flex-wrap items-center gap-2">
-                <Text role="status" as="p" tone="inherit" className="min-w-0 flex-1 break-all">
+                <Text
+                  wrap="anywhere"
+                  role="status"
+                  as="p"
+                  tone="inherit"
+                  className="min-w-0 flex-1"
+                >
                   {inheritedIdentity ? t("SSH key") : t("Assigned")}: {selectedIdentity}
                 </Text>
                 <Button
@@ -274,13 +280,13 @@ export function SshSettings({
                   key={`${key.identityFile}:${key.fingerprint}`}
                 >
                   <Text as="div" tone="inherit" className="min-w-0 flex-1">
-                    <Text as="p" size="body" tone="inherit" weight="medium" className="break-all">
+                    <Text wrap="anywhere" as="p" size="body" tone="inherit" weight="medium">
                       {key.identityFile?.split(/[\\/]/).pop() ?? key.keyType}
                     </Text>
-                    <Text as="p" size="inherit" tone="muted" className="break-all">
+                    <Text wrap="anywhere" as="p" size="inherit" tone="muted">
                       {key.identityFile}
                     </Text>
-                    <Text as="p" size="inherit" tone="muted" className="break-all">
+                    <Text wrap="anywhere" as="p" size="inherit" tone="muted">
                       {key.keyType} · {key.fingerprint}
                     </Text>
                   </Text>
@@ -339,7 +345,7 @@ export function SshSettings({
                   .includes(hostSearch.trim().toLocaleLowerCase()),
               )
               .map((host, index) => (
-                <Text key={index} as="p" tone="inherit" className="mbs-2 break-all">
+                <Text wrap="anywhere" key={index} as="p" tone="inherit" className="mbs-2">
                   {host.hostPatterns} · {host.keyType} · {host.fingerprint}
                 </Text>
               ))}

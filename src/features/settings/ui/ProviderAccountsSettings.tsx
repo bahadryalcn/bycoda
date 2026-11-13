@@ -2,13 +2,12 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Group, Row, SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
-import { MoreHorizontal, Plus, UserRound, Briefcase, Check } from "../../../shared/ui/icons";
+import { MoreHorizontal, Plus, UserRound, Briefcase } from "../../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
@@ -448,31 +447,21 @@ export function ProviderAccountsSettings({
                       <AccountColorDot account={account} className="size-2.5" />
                       <div className="provider-account-main">
                         <div className="provider-account-identity">
-                          <OverflowTooltip label={account.label}>
-                            <Text
-                              as="span"
-                              size="secondary"
-                              tone="primary"
-                              weight="medium"
-                              leading="inherit"
-                              truncate
-                              className="provider-account-name"
-                            >
-                              {displayLabel}
-                            </Text>
-                          </OverflowTooltip>
+                          <Text
+                            as="span"
+                            size="secondary"
+                            tone="primary"
+                            weight="medium"
+                            leading="inherit"
+                            wrap="anywhere"
+                            className="provider-account-name"
+                          >
+                            {displayLabel}
+                          </Text>
                           {account.isDefault && !autoDefaultLabel ? (
-                            <Tooltip label={t("Default account")}>
-                              <Text
-                                tone="accent"
-                                className="inline-flex shrink-0"
-                                role="img"
-                                aria-label={t("Default account")}
-                                tabIndex={0}
-                              >
-                                <Check className="icon-sm" aria-hidden />
-                              </Text>
-                            </Tooltip>
+                            <Badge size="xs" className="shrink-0">
+                              {t("Default account")}
+                            </Badge>
                           ) : null}
                         </div>
                         <Text
@@ -492,25 +481,23 @@ export function ProviderAccountsSettings({
                                   : t("Isolated profile")
                             }
                             tone="secondary"
-                            truncate
+                            wrap
                           />
                           {orgTag ? (
-                            <OverflowTooltip label={orgTag}>
-                              <Text
-                                size="caption"
-                                tone="secondary"
-                                truncate
-                                className="inline-flex min-w-0 items-center gap-1"
-                              >
-                                {account.kind === "work" ||
-                                (account.kind !== "personal" && orgTag !== t("Personal")) ? (
-                                  <Briefcase className="icon-xs shrink-0" aria-hidden />
-                                ) : (
-                                  <UserRound className="icon-xs shrink-0" aria-hidden />
-                                )}
-                                {orgTag}
-                              </Text>
-                            </OverflowTooltip>
+                            <Text
+                              size="caption"
+                              tone="secondary"
+                              wrap="anywhere"
+                              className="inline-flex min-w-0 items-center gap-1"
+                            >
+                              {account.kind === "work" ||
+                              (account.kind !== "personal" && orgTag !== t("Personal")) ? (
+                                <Briefcase className="icon-xs shrink-0" aria-hidden />
+                              ) : (
+                                <UserRound className="icon-xs shrink-0" aria-hidden />
+                              )}
+                              {orgTag}
+                            </Text>
                           ) : null}
                         </Text>
                         {exhausted ? (

@@ -13037,8 +13037,6 @@
   "Start new work and its members show up here while they work.": "Starten Sie neue Arbeit; ihre Mitglieder erscheinen hier, während sie arbeiten.",
   "Only the first members are listed.": "Es werden nur die ersten Mitglieder aufgelistet.",
   "Open crew work": "Crew-Arbeit öffnen",
-  "Working now": "Arbeiten gerade",
-  "Show everyone working now": "Alle aktuell Arbeitenden anzeigen",
   "Could not delegate to @{p0}: {p1}": "Aufgabe konnte nicht an @{p0} delegiert werden: {p1}",
   "Assign": "Zuweisen",
   "Note sent to the lead.": "Notiz an die Leitung gesendet.",

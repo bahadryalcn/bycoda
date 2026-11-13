@@ -601,8 +601,9 @@ select.bycoda-arc-select:focus-visible {
   outline: none !important;
   box-shadow: none !important;
 }
-:root
-  :is(
+/* Fallback only: shared row controls own their stronger keyboard-focus fill. */
+:where(:root)
+  :where(
     [role="option"],
     [role="menuitem"],
     [role="menuitemradio"],

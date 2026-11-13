@@ -799,7 +799,7 @@ for (const light of [false, true]) {
       await expect(working).not.toHaveAttribute("data-session-waiting", "");
       await expect(
         page.locator('[data-session-card="status-wait-pr"] [data-session-working-status]'),
-      ).toHaveAttribute("title", /owner\/repo#12/);
+      ).toHaveAttribute("aria-label", /owner\/repo#12/);
       await mkdir(statusEvidence, { recursive: true });
       await page.screenshot({
         path: path.join(statusEvidence, `${light ? "light" : "dark"}-${width}.png`),

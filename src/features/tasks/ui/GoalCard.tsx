@@ -139,8 +139,12 @@ export function GoalCard({
               className="goal-card-machine"
             >
               {t(" · on")} {goal.machineName}
-              {goal.stale ? t(" (offline, last known)") : ""}
             </Text>
+            {goal.stale ? (
+              <Text size="inherit" tone="warning" leading="inherit" wrap="anywhere">
+                {t(" (offline, last known)").trim()}
+              </Text>
+            ) : null}
           </Text>
         </div>
         <div className="goal-card-actions">

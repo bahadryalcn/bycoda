@@ -150,7 +150,7 @@ for (const theme of ["light", "dark"]) {
       );
       await mkdir(evidence, { recursive: true });
       await page.screenshot({ path: `${evidence}/${theme}-${width}-list.png` });
-      await page.getByRole("button", { name: "Card view", exact: true }).click();
+      await page.getByRole("radio", { name: "Card view", exact: true }).click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

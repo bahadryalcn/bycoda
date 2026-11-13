@@ -920,7 +920,7 @@ export function ServersView({
                     <Text as="span" size="inherit" tone="inherit" weight="medium">
                       {server.name}
                     </Text>
-                    <Text tone="muted" className="block break-all">
+                    <Text wrap="anywhere" tone="muted" className="block">
                       {address(server)}
                     </Text>
                   </li>

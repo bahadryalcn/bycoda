@@ -1,4 +1,3 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n/git";
 import { GitBranch } from "../../../shared/ui/icons";
@@ -8,13 +7,11 @@ import styles from "./CheckoutHeader.module.css";
 
 /** A folder identifies the checkout; its live branch follows on the same line, subordinate. */
 export function CheckoutIdentity({
-  cwd,
   name,
   checkout,
   index,
   showReference = true,
 }: {
-  cwd: string;
   name: string;
   checkout?: Worktree;
   index: Pick<GitDiffIndex, "branch" | "head"> | null;
@@ -36,15 +33,13 @@ export function CheckoutIdentity({
         {name}
       </Text>
       {showReference && reference ? (
-        <Tooltip label={cwd} asChild>
-          <Text size="caption" leading="inherit" tone="secondary" className={styles.path}>
-            <GitBranch aria-hidden className="icon-xs shrink-0" />
-            <Text as="span" size="inherit" tone="inherit" truncate className={styles.reference}>
-              {checkout ? `${t(checkout.isMain ? "Main working copy" : "Worktree")} · ` : ""}
-              {reference}
-            </Text>
+        <Text size="caption" leading="inherit" tone="secondary" className={styles.path}>
+          <GitBranch aria-hidden className="icon-xs shrink-0" />
+          <Text as="span" size="inherit" tone="inherit" truncate className={styles.reference}>
+            {checkout ? `${t(checkout.isMain ? "Main working copy" : "Worktree")} · ` : ""}
+            {reference}
           </Text>
-        </Tooltip>
+        </Text>
       ) : null}
     </span>
   );

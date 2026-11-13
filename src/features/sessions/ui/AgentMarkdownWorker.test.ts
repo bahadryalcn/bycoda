@@ -42,9 +42,27 @@ function fixture() {
     },
   };
 }
+it.each([32 * 1024 + 1, 128 * 1024])(
+  "formats %i characters without requiring a worker",
+  (length) => {
+    const f = fixture();
+    const text = "**Formatted**\n\n".padEnd(length, "x");
+    try {
+      vi.stubGlobal("Worker", undefined);
+      f.render(text);
+      expect(f.container.querySelector('[data-streamdown="strong"]')?.textContent).toBe(
+        "Formatted",
+      );
+      expect(f.container.textContent).not.toContain("Formatted preview unavailable");
+      expect(f.container.textContent).not.toContain("Rendering Markdown");
+    } finally {
+      f.close();
+    }
+  },
+);
 it("uses explicit pending first paint instead of raw large Markdown", async () => {
   const f = fixture();
-  const text = "**Formatted beginning**\n\n" + "Long paragraph.\n\n".repeat(2500);
+  const text = "**Formatted beginning**\n\n".padEnd(128 * 1024 + 1, "x");
   try {
     f.render(text);
     expect(f.container.textContent).toContain("Rendering Markdown");
@@ -68,7 +86,7 @@ it("retains formatted nodes and selection when growth crosses worker threshold",
     range.selectNodeContents(paragraph);
     document.getSelection()!.removeAllRanges();
     document.getSelection()!.addRange(range);
-    f.render(prefix + " grows.\n\nMore content.\n\n".repeat(2000));
+    f.render(prefix + " grows.".repeat(20000));
     expect(f.container.querySelector("p")).toBe(paragraph);
     expect(document.getSelection()!.toString()).toBe("Completed selectable paragraph.");
     expect(f.container.textContent).toContain("Rendering Markdown");
@@ -81,7 +99,7 @@ it("retains formatted nodes and selection when growth crosses worker threshold",
 });
 it("exposes complete inert source after failure instead of blocking synchronous parse", () => {
   const f = fixture();
-  const text = "<script>unsafe()</script>\n\n" + "**source**\n\n".repeat(4000);
+  const text = "<script>unsafe()</script>\n\n" + "source ".repeat(20000);
   try {
     f.render(text);
     act(() => ControlledWorker.current.onerror!({} as ErrorEvent));
@@ -95,7 +113,7 @@ it("exposes complete inert source after failure instead of blocking synchronous 
 });
 it("labels source fallback when workers are unavailable", () => {
   const f = fixture();
-  const text = "**Complete source**\n\n".repeat(3000);
+  const text = "**Complete source**\n\n" + "source ".repeat(20000);
   try {
     vi.stubGlobal("Worker", undefined);
     f.render(text);

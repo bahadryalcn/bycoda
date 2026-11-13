@@ -278,7 +278,7 @@ export function TermiusImportDialog({
                           <Badge size="sm">{t("SSH key available")}</Badge>
                         ) : null}
                       </div>
-                      <Text as="p" tone="muted" className="break-all">
+                      <Text wrap="anywhere" as="p" tone="muted">
                         {host.endpoint.user ? `${host.endpoint.user}@` : ""}
                         {host.endpoint.host}:{host.endpoint.port}
                       </Text>

@@ -73,12 +73,12 @@ test("attachment cards and inline references retain kind tones and the selected 
     await expect(composer.locator("[data-attachment-chip]")).toHaveCount(10);
     const tones = await page.evaluate(() => {
       document.documentElement.style.setProperty("--user-accent-color", "#7c3aed");
-      const read = (element: Element, pseudo?: string) => {
-        const style = getComputedStyle(element, pseudo);
+      const read = (element: Element) => {
+        const style = getComputedStyle(element);
         return {
           color: style.color,
           background: style.backgroundColor,
-          border: style.borderTopColor,
+          borderWidth: style.borderTopWidth,
           shadow: style.boxShadow,
         };
       };
@@ -91,30 +91,27 @@ test("attachment cards and inline references retain kind tones and the selected 
           `[aria-label="Composer"] [data-attachment-chip][data-attachment-kind="${kind}"]`,
         )!;
         const probe = document.createElement("span");
-        probe.style.cssText = `color:var(${role});background:color-mix(in srgb,var(${role}) 8%,var(--ui-surface));border:1px solid color-mix(in srgb,var(${role}) 40%,var(--color-stroke))`;
+        // Surface's attachment variant uses a 14% kind-ink wash and no kind-colored frame.
+        probe.style.cssText = `color:var(${role});background:color-mix(in srgb,var(${role}) 14%,transparent)`;
         card.parentElement!.append(probe);
         const expectedCard = read(probe);
-        probe.style.background = `color-mix(in srgb,var(${role}) 10%,transparent)`;
-        probe.style.boxShadow = `inset 0 0 0 1px color-mix(in srgb,var(${role}) 45%,transparent)`;
+        // DraftToken paints its own background; decoration stays inside the text bounds.
+        probe.style.background = `color-mix(in oklch,var(${role}) 12%,transparent)`;
         const expectedHighlight = read(probe);
         probe.remove();
         const composerToken = document.querySelector(
           `[aria-label="Composer"] [data-composer-attachment-kind="${kind}"]`,
         )!;
         const transcriptToken = document.querySelector(
-          `[aria-label="Message"] span[title][data-attachment-kind="${kind}"]`,
+          `[aria-label="Message"] span[data-attachment-kind="${kind}"]`,
         )!;
-        const name = [...card.querySelectorAll("span")].find(
-          (element) =>
-            element.childElementCount === 0 && element.textContent === card.getAttribute("title"),
-        );
+        const name = card.querySelector('[data-truncate="true"]');
         return {
           kind,
           expectedCard,
           expectedHighlight,
           card: read(card),
           composer: read(composerToken),
-          highlight: read(composerToken, "::before"),
           transcript: read(transcriptToken),
           ...(name ? { name: read(name) } : {}),
         };
@@ -123,11 +120,11 @@ test("attachment cards and inline references retain kind tones and the selected 
     for (const tone of tones) {
       expect(tone.card.color, tone.kind).toBe(tone.expectedCard.color);
       expect(tone.card.background, tone.kind).toBe(tone.expectedCard.background);
-      expect(tone.card.border, tone.kind).toBe(tone.expectedCard.border);
+      expect(tone.card.borderWidth, tone.kind).toBe("0px");
       if (tone.kind !== "image") expect(tone.name?.color, tone.kind).toBe(tone.expectedCard.color);
       expect(tone.composer.color, tone.kind).toBe(tone.expectedCard.color);
-      expect(tone.highlight.background, tone.kind).toBe(tone.expectedHighlight.background);
-      expect(tone.highlight.shadow, tone.kind).toBe(tone.expectedHighlight.shadow);
+      expect(tone.composer.background, tone.kind).toBe(tone.expectedHighlight.background);
+      expect(tone.composer.shadow, tone.kind).toBe("none");
       expect(tone.transcript.color, tone.kind).toBe(tone.expectedCard.color);
       expect(tone.transcript.background, tone.kind).toBe("rgba(0, 0, 0, 0)");
       expect(tone.transcript.shadow, tone.kind).toBe("none");

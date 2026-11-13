@@ -25,6 +25,7 @@ export class MarkdownParseQueue {
       this.latest.delete(stream);
       this.queued.delete(stream);
       if (!this.listeners.size) {
+        this.failed = false;
         this.worker?.terminate();
         this.worker = null;
         this.flight = null;

@@ -127,7 +127,7 @@ export function ModelPanel({
     >
       {/* Narrow panels stack the settings under the list instead of squeezing the list. */}
       <div className="@container/model-panel flex min-h-0 min-w-0 flex-1">
-        <div className="flex min-h-0 min-w-0 flex-1 @max-[32rem]/model-panel:flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 @max-[32rem]/model-panel:flex-col @max-[32rem]/model-panel:overflow-y-auto">
           <ModelBrowser
             {...browser}
             defaultMark={defaultMark?.mark}
@@ -135,11 +135,10 @@ export function ModelPanel({
               <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
                 <Text
                   as="span"
-                  size="micro"
+                  size="caption"
                   weight="medium"
                   tone="secondary"
-                  tracking="wide"
-                  className="shrink-0 uppercase"
+                  className="shrink-0"
                 >
                   {title}
                 </Text>
@@ -174,6 +173,7 @@ export function ModelPanel({
       {settings ? (
         <ModelSettingHelp
           setting={explained}
+          settings={settings.settings}
           trailing={
             <Button
               iconOnly

@@ -1,4 +1,5 @@
 import { QuestionForm } from "../../../src/features/sessions/ui/QuestionForm";
+import { CoherenceFixture } from "./coherence-fixture";
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "../../../src/shared/ui/Button";
@@ -501,7 +502,9 @@ if (params.get("theme")) {
 }
 const layoutParam = params.get("layout");
 createRoot(document.getElementById("root")!).render(
-  params.get("view") === "matrix" || params.has("matrix") ? (
+  params.get("view") === "coherence" ? (
+    <CoherenceFixture />
+  ) : params.get("view") === "matrix" || params.has("matrix") ? (
     <SharedMatrixFixture
       layout={layoutParam === "narrow" || layoutParam === "short" ? layoutParam : "default"}
     />

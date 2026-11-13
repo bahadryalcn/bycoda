@@ -617,13 +617,16 @@ test("creates a crew from the rail with chosen members without starting work", a
   await expect(dialog.getByText("Name the crew.").first()).toBeVisible();
   await dialog.getByRole("textbox", { name: "Crew name" }).fill("Mobile");
   await dialog.getByRole("button", { name: "Use starter roster" }).click();
-  await expect(dialog.getByRole("region", { name: "Specialists" })).toContainText("fixture");
+  await expect(dialog.getByRole("region", { name: "Specialists" })).toContainText("Fixture");
   await page.screenshot({
     path: `${shots}/create-${testInfo.project.name}.png`,
   });
   // Several library members are added in one step; groups filter the list.
   await dialog.getByRole("button", { name: "Add members", exact: true }).click();
-  await expect(dialog.getByRole("radio", { name: "Library (2)" })).toBeChecked();
+  await expect(dialog.getByRole("tab", { name: "Library (2)" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await dialog.getByRole("textbox", { name: "Search name, role, model or group" }).fill("designer");
   await dialog.getByRole("checkbox").first().check();
   await dialog.getByRole("textbox", { name: "Search name, role, model or group" }).fill("");
@@ -648,10 +651,13 @@ test("adds a new member when the library is empty and shows role problems in pla
   await page.getByRole("button", { name: "New crew", exact: true }).click();
   const dialog = editor(page);
   await dialog.getByRole("button", { name: "Add members", exact: true }).click();
-  await expect(dialog.getByRole("radio", { name: "New member" })).toBeChecked();
-  await dialog.getByRole("radio", { name: "Library (0)" }).click();
+  await expect(dialog.getByRole("tab", { name: "New member" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await dialog.getByRole("tab", { name: "Library (0)" }).click();
   await expect(dialog.getByText("Your member library is empty")).toBeVisible();
-  await dialog.getByRole("radio", { name: "New member" }).click();
+  await dialog.getByRole("tab", { name: "New member" }).click();
   await page.getByRole("button", { name: "Add to crew" }).click();
   await expect(dialog.getByText("Add a name").first()).toBeVisible();
   // The role name is the owner's own; suggestions follow the chosen responsibility.

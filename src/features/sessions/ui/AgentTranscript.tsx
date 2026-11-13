@@ -40,6 +40,7 @@ import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
+import { SessionErrorNotice } from "./SessionErrorNotice";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
   ArrowUp,
@@ -2219,6 +2220,12 @@ const TranscriptBlock = memo(function TranscriptBlock({
       return <ShellRunCard run={block.shell} embedded={embedded} />;
     }
     if (block.modelSwitch) return <ModelSwitchRow meta={block.modelSwitch} embedded={embedded} />;
+    if (isSessionErrorBlock(block))
+      return (
+        <div className={`${embedded ? "" : "px-4"} py-2`}>
+          <SessionErrorNotice text={text} />
+        </div>
+      );
     return (
       <div
         role={isSessionErrorBlock(block) ? "alert" : undefined}

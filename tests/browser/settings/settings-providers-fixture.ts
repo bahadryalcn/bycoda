@@ -9,6 +9,7 @@ import {
 import { getHarnessUpdateSnapshot } from "../../../src/features/providers/model/harnessUpdateActions";
 
 const enabled = new URLSearchParams(location.search).has("providersFixture");
+const worstIdentities = new URLSearchParams(location.search).has("providerIdentityStress");
 const versions: Record<string, string> = {
   claude: "2.1.12",
   codex: "0.94.0",
@@ -57,6 +58,10 @@ const accounts = {
 /** Explicit opt-in synthetic state. Mutates this fixture bundle's memory only. */
 export function seedProvidersFixture() {
   if (!enabled) return;
+  if (worstIdentities) {
+    accounts.codex[0].label = "Aleksandra Wiśniewska-Kowalczyk · Araştırma 🧑🏽‍💻";
+    accounts.claude[0].label = "Aleksandra Wiśniewska-Kowalczyk · Araştırma 🧑🏽‍💻";
+  }
   if (new URLSearchParams(location.search).has("emptyProvider")) accounts.codex.length = 0;
   if (new URLSearchParams(location.search).has("longNames")) {
     HARNESS_TITLE.codex = "Codex with a very long provider display name";
@@ -98,17 +103,28 @@ export function seedProvidersFixture() {
 /** Unknown commands still fail closed in the parent fixture. */
 export function providersFixtureCommand(command: string, args: Record<string, unknown>): unknown {
   if (!enabled) return undefined;
+  if (worstIdentities && command === "provider_terminal_profiles")
+    return [
+      {
+        id: "terminal-research",
+        provider: String(args.provider),
+        label: "International research and development workspace 🧑🏽‍💻",
+        path: "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
+      },
+    ];
   if (command === "provider_account_list" || command === "provider_accounts")
     return Object.values(accounts).flat();
   if (command === "provider_account_identity")
     return args.accountId === "account-old"
       ? null
       : {
-          email: `${args.accountId}@example.test`,
+          email: worstIdentities
+            ? "bartholomew.fitzgerald@northwind-industries-holdings.example.com"
+            : `${args.accountId}@example.test`,
           name: "Fixture owner",
           organization:
             args.accountId === "account-work" ? "Engineering" : "Fixture owner's Organization",
-          plan: "Pro",
+          plan: worstIdentities ? "Enterprise Research and Development Workspace" : "Pro",
         };
   if (command.startsWith("fetch_claude_usage"))
     return args.accountId === "account-old"

@@ -45,7 +45,8 @@ if (
   new URLSearchParams(location.search).has("streaming") ||
   new URLSearchParams(location.search).has("chat-layout") ||
   new URLSearchParams(location.search).has("working-followup") ||
-  new URLSearchParams(location.search).has("message-bubbles")
+  new URLSearchParams(location.search).has("message-bubbles") ||
+  new URLSearchParams(location.search).has("technical-errors")
 ) {
   root.style.width = "100%";
   root.style.height = "100dvh";
@@ -358,8 +359,41 @@ function MessageBubblesFixture() {
   );
 }
 
+const technicalError = JSON.stringify({
+  error: {
+    type: "rate_limit_error",
+    message: "Weekly usage limit reached. Choose another account.",
+  },
+  request_id: "req_weekly_42",
+  diagnostic: "Aleksandra Wiśniewska-Kowalczyk / çalışma alanı / الحساب 👩🏽‍💻\n".repeat(80),
+});
+const rawTechnicalError = `API Error: HTTP 429 ${technicalError}`;
+Object.assign(window, { fixtureTechnicalError: rawTechnicalError });
+
+function TechnicalErrorsFixture() {
+  return (
+    <div className="h-full min-w-0 overflow-auto">
+      <AgentTranscript
+        blocks={[
+          { id: "technical-prompt", role: "user", text: "Continue the project review" },
+          { id: "technical-error", role: "system", notice: "error", text: rawTechnicalError },
+          { id: "plain-prompt", role: "user", text: "Continue in the selected working copy" },
+          {
+            id: "plain-error",
+            role: "system",
+            notice: "error",
+            text: "Workspace policy changed. Select a working copy before sending.",
+          },
+        ]}
+      />
+    </div>
+  );
+}
+
 createRoot(host).render(
-  new URLSearchParams(location.search).has("working-followup") ? (
+  new URLSearchParams(location.search).has("technical-errors") ? (
+    <TechnicalErrorsFixture />
+  ) : new URLSearchParams(location.search).has("working-followup") ? (
     <WorkingFollowupFixture />
   ) : new URLSearchParams(location.search).has("message-bubbles") ? (
     <MessageBubblesFixture />

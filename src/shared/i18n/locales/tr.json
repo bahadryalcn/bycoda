@@ -13040,8 +13040,6 @@
   "Start new work and its members show up here while they work.": "Yeni bir iş başlatın; üyeleri çalışırken burada görünür.",
   "Only the first members are listed.": "Yalnızca ilk üyeler listeleniyor.",
   "Open crew work": "Ekip işini aç",
-  "Working now": "Şu an çalışanlar",
-  "Show everyone working now": "Şu an çalışan herkesi göster",
   "Could not delegate to @{p0}: {p1}": "@{p0} kişisine devredilemedi: {p1}",
   "Assign": "Ata",
   "Note sent to the lead.": "Not lidere gönderildi.",

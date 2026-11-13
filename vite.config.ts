@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { readBuildIdentity } from "./scripts/build/build-info.mjs";
 import { reactCompiler } from "./scripts/build/react-compiler";
+import { workerRuntimePlugins } from "./scripts/build/worker-runtime.mjs";
 import { fmt, lint } from "./scripts/checks/lint-config.mjs";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -43,6 +44,7 @@ export default defineConfig(async ({ mode }) => {
       },
     ],
     define: { __BYCODA_BUILD_IDENTITY__: JSON.stringify(buildIdentity) },
+    worker: { plugins: workerRuntimePlugins },
     resolve: {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },

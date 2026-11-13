@@ -122,11 +122,12 @@ export function ServerForwards({
             >
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
                 <Text
+                  wrap="anywhere"
                   as="span"
                   size="inherit"
                   tone="inherit"
                   weight="medium"
-                  className="min-w-0 break-all"
+                  className="min-w-0"
                 >
                   {rule.name}
                 </Text>
@@ -144,7 +145,7 @@ export function ServerForwards({
                   </Badge>
                 )}
               </div>
-              <Text as="p" size="inherit" tone="muted" className="break-all">
+              <Text wrap="anywhere" as="p" size="inherit" tone="muted">
                 {rule.kind === "dynamic"
                   ? `SOCKS5 · 127.0.0.1:${rule.localPort}`
                   : `127.0.0.1:${rule.localPort} → ${rule.targetHost}:${rule.targetPort}`}
@@ -291,7 +292,7 @@ export function ServerForwards({
                 />
               </>
             ) : (
-              <Text as="p" size="inherit" tone="muted" className="break-all">
+              <Text wrap="anywhere" as="p" size="inherit" tone="muted">
                 SOCKS5 · 127.0.0.1:{draft.localPort || "…"}
               </Text>
             )}

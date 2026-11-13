@@ -1,5 +1,137 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+test("textarea resize defaults preserve caller, autosize and fill ownership", async ({ page }) => {
+  await page.goto("/tests/browser/shared-ui/arc-controls.html?view=coherence&data=textarea");
+  const region = page.getByRole("region", { name: "Textarea resize fixture" });
+  await expect(region.getByRole("textbox", { name: "Default resizing", exact: true })).toHaveCSS(
+    "resize",
+    "vertical",
+  );
+  for (const name of ["Caller disabled resizing", "Automatic height", "Fill panel"]) {
+    const field = region.getByRole("textbox", { name, exact: true });
+    await expect(field).toHaveCSS("resize", "none");
+    await field.fill("Retained Turkish instructions İstanbul 🧪\n".repeat(12));
+    await expect(field).toHaveValue("Retained Turkish instructions İstanbul 🧪\n".repeat(12));
+  }
+});
+
+test("coherence effort keeps context and long content readable", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const width of [1280, 800]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ["light", "dark"]) {
+      await page.goto(
+        `/tests/browser/shared-ui/arc-controls.html?view=coherence&data=worst&theme=${theme}`,
+      );
+      const region = page.getByRole("region", { name: "UI coherence fixture" });
+      await expect(region.getByRole("radiogroup", { name: "Reasoning effort" })).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/2026-11-13-ui-coherence/shared-${process.env.UI_COHERENCE_BEFORE ? "before" : "after"}-${width}-${theme}.png`,
+      });
+      expect(await region.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+    }
+  }
+  const region = page.getByRole("region", { name: "UI coherence fixture" });
+  await expect(region.getByText("Reasoning effort", { exact: true })).toBeVisible();
+});
+
+test("coherence stress data retains keyboard choices, disabled state and contrast", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["light", "dark"]) {
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.goto(
+      `/tests/browser/shared-ui/arc-controls.html?view=coherence&data=worst&dir=rtl&theme=${theme}`,
+    );
+    // Chromium CSS zoom emulates layout zoom. This does not prove native window scaling.
+    await page.evaluate(() => {
+      document.body.style.zoom = "2";
+    });
+    const region = page.getByRole("region", { name: "UI coherence fixture" });
+    const effort = region.getByRole("radiogroup", { name: "Reasoning effort" });
+    const high = effort.getByRole("radio", {
+      name: "Yüksek düşünme seviyesi, ayrıntılı değerlendirme",
+    });
+    await high.focus();
+    await expect(high).toBeFocused();
+    await high.press("End");
+    await expect(effort.getByRole("radio", { name: "Ultra", exact: true })).toBeChecked();
+    await region.getByRole("button", { name: "Disable effort" }).click();
+    await expect(high).toBeDisabled();
+    await expect(effort.getByRole("radio", { name: "Ultra", exact: true })).toBeChecked();
+    const geometry = await region.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return {
+        left: bounds.left,
+        right: bounds.right,
+        viewport: innerWidth,
+        overflow: element.scrollWidth > element.clientWidth,
+      };
+    });
+    expect(geometry.left).toBeGreaterThanOrEqual(0);
+    expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
+    expect(geometry.overflow).toBe(false);
+    // Composite the actual foreground through transparent ancestors to measure rendered ink.
+    const contrast = await region
+      .getByText("Reasoning effort", { exact: true })
+      .evaluate((element) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const context = canvas.getContext("2d")!;
+        const rgb = (color: string) => {
+          context.clearRect(0, 0, 1, 1);
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
+          const pixel = context.getImageData(0, 0, 1, 1).data;
+          return [pixel[0], pixel[1], pixel[2], pixel[3] / 255];
+        };
+        const composite = (top: number[], bottom: number[]) => {
+          const alpha = top[3] ?? 1;
+          return top
+            .slice(0, 3)
+            .map((channel, index) => channel * alpha + bottom[index] * (1 - alpha));
+        };
+        const ancestors: Element[] = [];
+        for (let node: Element | null = element; node; node = node.parentElement)
+          ancestors.unshift(node);
+        let background = [255, 255, 255];
+        for (const node of ancestors)
+          background = composite(rgb(getComputedStyle(node).backgroundColor), background);
+        const foreground = composite(rgb(getComputedStyle(element).color), background);
+        const luminance = (channels: number[]) =>
+          channels
+            .map((channel) => {
+              const value = channel / 255;
+              return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+            })
+            .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+        const values = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
+        return (values[1] + 0.05) / (values[0] + 0.05);
+      });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
+    await page.screenshot({
+      path: `temp/verification/2026-11-13-ui-coherence/shared-after-800-${theme}-200-rtl.png`,
+    });
+    await page.evaluate(() => {
+      document.body.style.zoom = "1";
+    });
+    for (const state of ["Empty", "One", "1,000", "Demo data"]) {
+      await page.getByRole("radio", { name: state, exact: true }).click();
+      const trigger = region.getByRole("button", { name: /^Account:/ });
+      await trigger.click();
+      if (state !== "Empty") {
+        await expect(page.getByRole("option").first()).toBeVisible();
+        await page.keyboard.press("Escape");
+      } else {
+        await page.keyboard.press("Escape");
+      }
+    }
+  }
+});
+
 test("keyboard button hints stay visible without stealing focus while tabbing", async ({
   page,
 }) => {
@@ -971,7 +1103,7 @@ test("additional Arc controls preserve data, keyboard actions and inline recover
 test("date ranges and destructive confirmation apply only after confirmation", async ({ page }) => {
   await page.goto("/tests/browser/shared-ui/arc-controls.html");
   const additions = page.getByRole("region", { name: "Additional Arc controls" });
-  const date = additions.getByRole("button", { name: /^Date range:/ });
+  const date = additions.getByRole("button", { name: "Date range", exact: true });
   await date.click();
   await expect(page.getByRole("dialog", { name: "Date range", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
@@ -1055,7 +1187,7 @@ test("additional surfaces fit narrow and wide windows in both themes and reduced
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      const picker = page.getByRole("button", { name: /^Date range:/ });
+      const picker = page.getByRole("button", { name: "Date range", exact: true });
       await picker.click();
       const panel = page.getByRole("dialog", { name: "Date range", exact: true });
       const bounds = await panel.boundingBox();
@@ -1074,7 +1206,7 @@ test("additional controls localize their actions and accessibility labels", asyn
   await page.goto("/tests/browser/shared-ui/arc-controls.html");
   await page.getByRole("button", { name: "Türkçe controls", exact: true }).click();
   await expect(page.getByRole("searchbox", { name: "JSON'da ara", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /^Tarih aralığı:/ }).click();
+  await page.getByRole("button", { name: "Tarih aralığı", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Tarih aralığı", exact: true });
   await expect(dialog.getByRole("button", { name: "Son 7 gün", exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Bu çeyrek", exact: true })).toBeVisible();
@@ -1157,38 +1289,47 @@ test("selection and history keep their interactions", async ({ page }) => {
   await page.getByRole("combobox", { name: "Search options…" }).fill("First");
   await page.getByRole("option", { name: "First", exact: true }).click();
   await expect(search).toContainText("First");
-  const morph = page.getByRole("combobox", { name: "Property choice" });
-  await morph.click();
+  const property = page.getByRole("button", { name: /^Property choice:/ });
+  await property.click();
   await expect(page.getByRole("option", { name: "Second", exact: true })).toBeVisible();
   await page.getByRole("option", { name: "Second", exact: true }).click();
-  await expect(morph).toContainText("Second");
-  await morph.click();
+  await expect(property).toContainText("Second");
+  await property.click();
   await page.keyboard.press("Escape");
-  await expect(morph).toHaveAttribute("aria-expanded", "false");
-  await expect(morph).toBeFocused();
+  await expect(property).toHaveAttribute("aria-expanded", "false");
+  await expect(property).toBeFocused();
   await expect(page.getByRole("button", { name: "Open attempt", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Completed attempt/ }).click();
   await expect(page.getByText("Review summary", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  await morph.click();
+  await property.click();
   const option = page.getByRole("option", { name: "Second", exact: true });
   await expect(option).toBeVisible();
-  await expect
-    .poll(() =>
-      option.evaluate((node) => {
-        const shape = node.closest("[data-open]")?.querySelector('[role="listbox"]');
-        return shape ? Number.parseFloat(getComputedStyle(shape.parentElement!).opacity) : 0;
-      }),
-    )
-    .toBe(1);
+  const propertyDialog = page.getByRole("dialog", { name: "Property choice options", exact: true });
+  const propertyList = propertyDialog.getByRole("listbox", {
+    name: "Property choice",
+    exact: true,
+  });
+  await expect(propertyDialog).toBeVisible();
+  await expect(propertyList).toBeVisible();
+  await expect(propertyDialog).toHaveCSS("opacity", "1");
+  await expect(property).toHaveAttribute(
+    "aria-controls",
+    (await propertyDialog.getAttribute("id"))!,
+  );
   await expect
     .poll(() =>
       option.evaluate((node) => {
         const rect = node.getBoundingClientRect();
-        const surface = node.closest("[data-open]")?.querySelector("[data-morph-surface]");
-        const bounds = surface?.getBoundingClientRect();
+        const bounds = node.closest('[role="dialog"]')?.getBoundingClientRect();
         return (
-          !!bounds && rect.bottom <= bounds.bottom + 1 && rect.left >= 0 && rect.right <= innerWidth
+          !!bounds &&
+          rect.top >= bounds.top - 1 &&
+          rect.bottom <= bounds.bottom + 1 &&
+          bounds.left >= 0 &&
+          bounds.right <= innerWidth &&
+          rect.left >= 0 &&
+          rect.right <= innerWidth
         );
       }),
     )

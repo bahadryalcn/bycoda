@@ -10,6 +10,7 @@ Use for file Markdown presentation and shared scroll/overview behavior. Notes ow
 ## Source starts
 
 - `src/features/sessions/ui/MarkdownDocumentPreview.tsx`, `MarkdownModeToggle.tsx`: document presentation and mode visibility.
+- `src/features/sessions/ui/markdownWorker.ts`, `useParsedMarkdown.ts`, `useMarkdownRenderBlocks.ts`: background parsing and progressive block rendering. `scripts/build/worker-runtime.mjs` selects the DOM-free entity decoder in worker bundles.
 - `src/features/files/ui/FileEditor.tsx`, `CodeMirrorEditor.tsx` and adjacent Markdown panes: mounted editor and save lifecycle.
 - `src/features/source-control/ui/DiffOverviewRuler.tsx`, `src/styles/`: ruler and shared scroll roles.
 - `src/features/notes/ui/`, `src/features/skills/ui/`: distinct editing/preview consumers.
@@ -34,6 +35,7 @@ Use for file Markdown presentation and shared scroll/overview behavior. Notes ow
 
 Run `pnpm exec vitest run src/features/sessions/ui/MarkdownModeToggle.test.ts src/features/sessions/ui/MarkdownDocumentPreview.test.ts` and the changed file-editor/Notes/Skills consumers.
 Inspect long Markdown, code/tables, changed-source rulers, hidden-pane hit targets, native scrollbar/zoom and focus after Find.
+For worker changes run `node --test scripts/build/markdown-worker.test.mjs` against the production Vite configuration, plus the adjacent worker queue and progressive rendering tests. A DOM-based source-test environment does not prove worker startup.
 
 ## References
 

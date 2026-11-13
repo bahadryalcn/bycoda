@@ -1,5 +1,9 @@
 # Workbench navigation
 
+Folder picker rows open folders on click without hover tooltips. Scrolling under
+the pointer keeps the keyboard target unchanged; arrow keys move that target and
+keep it visible. Enter opens it, and checkboxes select folders independently.
+
 Application operation approvals mark their conversation as needing approval in
 session lists and as waiting for input beside the composer. The exact operation
 stays in its approval card with Approve and Cancel actions. Waiting ends when the

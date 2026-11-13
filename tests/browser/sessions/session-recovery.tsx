@@ -111,7 +111,7 @@ function RailFixture() {
       <output data-testid="settings-destination" className="sr-only">
         {settings}
       </output>
-      <div className="fixed [inset-block-end:0] [inset-inline-end:0]">
+      <div style={{ position: "fixed", insetBlockEnd: 0, insetInlineEnd: 0 }}>
         <WorkspaceControls
           onHiddenGroups={() => setSettings("groupLock")}
           onPullRequests={() => {}}

@@ -75,14 +75,18 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
       await agents.click();
     const picker = panel.locator("[data-model-setting-picker]");
     if (name === "Advisor") await advisorField.click();
-    else await setting(name).getByRole("button", { name: "Add", exact: true }).click();
+    else {
+      // Automatic delegates model selection; Custom opens the manual list picker.
+      const custom = setting(name).getByRole("radio", { name: "Custom", exact: true });
+      await custom.click();
+    }
     await expect(picker).toBeVisible();
-    await picker
-      .getByRole("radio", { name: option })
-      .or(picker.getByRole("checkbox", { name: option }))
-      .click();
-    if (name === "Subagents")
+    const choice = picker.getByRole("option", { name: option });
+    await choice.click();
+    if (name === "Subagents") {
+      await expect(choice).toHaveAttribute("aria-selected", "true");
       await picker.getByRole("button", { name: "Done", exact: true }).click();
+    }
     await expect(picker).toHaveCount(0);
   };
   await delegate("Advisor", /^Claude Opus 5\.5\b/);
@@ -100,6 +104,64 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     "Keep this commit draft",
   );
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const policy = setting("Subagent model policy");
+  for (const reducedMotion of ["no-preference", "reduce"] as const) {
+    await page.emulateMedia({ reducedMotion });
+    await policy.getByRole("radio", { name: "Default", exact: true }).click();
+    await policy.getByRole("radio", { name: "Apply to all", exact: true }).click();
+    // Measure the settled plate, not an intermediate shared-layout animation frame.
+    await expect
+      .poll(() =>
+        policy.evaluate((root) => {
+          const selected = root.querySelector<HTMLElement>('[aria-checked="true"]')!;
+          const button = selected.getBoundingClientRect();
+          const plate = selected.querySelector('[aria-hidden="true"]')!.getBoundingClientRect();
+          return Math.max(
+            Math.abs(button.x - plate.x),
+            Math.abs(button.y - plate.y),
+            Math.abs(button.width - plate.width),
+            Math.abs(button.height - plate.height),
+          );
+        }),
+      )
+      .toBeLessThan(1);
+    const geometry = await policy.evaluate((root) => {
+      const bounds = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      };
+      const track = root.firstElementChild as HTMLElement;
+      return {
+        root: bounds(root),
+        track: {
+          ...bounds(track),
+          clientWidth: track.clientWidth,
+          scrollWidth: track.scrollWidth,
+          scrollLeft: track.scrollLeft,
+        },
+        options: Array.from(root.querySelectorAll<HTMLElement>('[role="radio"]')).map((button) => {
+          const label = button.querySelector<HTMLElement>("span:not([aria-hidden])")!;
+          return {
+            name: button.getAttribute("aria-label"),
+            selected: button.getAttribute("aria-checked"),
+            button: bounds(button),
+            label: {
+              ...bounds(label),
+              clientWidth: label.clientWidth,
+              scrollWidth: label.scrollWidth,
+            },
+          };
+        }),
+      };
+    });
+    await testInfo.attach(`policy-geometry-${reducedMotion}`, {
+      body: JSON.stringify(geometry, null, 2),
+      contentType: "application/json",
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(`git-generation-policy-${reducedMotion}.png`),
+    });
+  }
   await page.screenshot({
     path: testInfo.outputPath("git-generation-narrow.png"),
   });

@@ -116,11 +116,11 @@ function ProxyApprovalDialog({
     >
       <div className="flex min-w-0 flex-col gap-3">
         <Text as="div" tone="inherit">
-          <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-all">
+          <Text wrap="anywhere" as="p" size="inherit" tone="inherit" weight="medium">
             {secure ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(request.endpoint.httpProxy!)}
           </Text>
-          <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
+          <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
             {t("SSH target")}: {sshEndpointPreview(request.endpoint)}
           </Text>
           <Text as="p" size="inherit" tone="muted" className="mbs-1">

@@ -98,6 +98,7 @@ import { usePrefersReducedMotion } from "../../settings/public/decorativeMotion"
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
 import { codeSourceFingerprint } from "./stableCodeDisclosureIdentity";
 import { useParsedMarkdown } from "./useParsedMarkdown";
+import { useMarkdownRenderBlocks } from "./useMarkdownRenderBlocks";
 import { parseLocalSessionLink } from "../model/localSessionReference";
 import { LocalSessionReferenceLink } from "./LocalSessionReferenceLink";
 import { remarkLocalSessionLinks } from "./remarkLocalSessionLinks";
@@ -1015,11 +1016,16 @@ export const AgentMarkdown = memo(function AgentMarkdown({
   // Each message keeps its own parse, so a growing reply only lexes its open tail.
   const markdownStream = useId();
   const {
-    blocks: markdownBlocks,
-    pending: markdownPending,
+    blocks: parsedBlocks,
+    pending: parsePending,
     sourceFallback,
   } = useParsedMarkdown(paced.text, markdownStream);
-  const lastBlock = markdownBlocks.length - 1;
+  const { blocks: markdownBlocks, pending: renderPending } = useMarkdownRenderBlocks(
+    parsedBlocks,
+    markdownStream,
+  );
+  const markdownPending = parsePending || renderPending;
+  const lastBlock = parsedBlocks.length - 1;
   const parseBlocks = useCallback(() => markdownBlocks, [markdownBlocks]);
   // Worker parses must change children: Streamdown's memo comparator ignores the parser callback.
   const [markdownSource] = useState(() => new IncrementalMarkdownSource());

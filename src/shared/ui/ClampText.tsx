@@ -61,6 +61,7 @@ export function ClampText({
   weight,
   leading,
   tracking,
+  wrap,
   ...props
 }: ClampTextProps) {
   const t = useT();
@@ -87,6 +88,7 @@ export function ClampText({
       weight,
       leading,
       tracking,
+      wrap,
     } as const;
     return (
       <Tag
@@ -103,7 +105,7 @@ export function ClampText({
   return (
     <div
       {...optionalTextAttributes(
-        { size, tone, weight, leading, tracking },
+        { size, tone, weight, leading, tracking, wrap },
         [styles.root, className].filter(Boolean).join(" "),
       )}
     >

@@ -91,7 +91,7 @@ export function RemoteOutboxNotice({
               { p0: issues.length },
             )}
       </Text>
-      <Text as="p" size="inherit" tone="primary" className="break-all">
+      <Text wrap="anywhere" as="p" size="inherit" tone="primary">
         {t("Project: {p0}", { p0: issue.project })}
       </Text>
       <Checkbox

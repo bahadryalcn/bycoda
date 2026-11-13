@@ -122,6 +122,25 @@ function type(label: string, value: string) {
 }
 
 describe("project folder browser", () => {
+  it("keeps hover from changing the keyboard target or scrolling the list", async () => {
+    await render();
+    const list = container.querySelector('[role="listbox"]')!;
+    const target = list.getAttribute("aria-activedescendant");
+    const scroll = vi.mocked(HTMLElement.prototype.scrollIntoView);
+    scroll.mockClear();
+    const notes = button("Notes");
+    await act(async () => {
+      notes.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+    expect(list.getAttribute("aria-activedescendant")).toBe(target);
+    expect(scroll).not.toHaveBeenCalled();
+    await key("ArrowDown");
+    expect(list.getAttribute("aria-activedescendant")).toBe("folder-picker-1");
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+    await key("Enter");
+    expect(fs.listDir).toHaveBeenLastCalledWith("C:/Users/me/Notes");
+  });
+
   it("filters growing folder lists without losing selected paths and opens the filtered keyboard target", async () => {
     await render(true);
     const selected = container.querySelector<HTMLInputElement>('[aria-label="Select Projects"]')!;

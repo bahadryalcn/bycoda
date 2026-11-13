@@ -323,7 +323,7 @@ export function OnboardingAgents({
                       className="onboarding-agent-status"
                     >
                       {busy ? <Spinner size="xs" /> : null}
-                      <Text as="span" size="inherit" tone="inherit" truncate>
+                      <Text as="span" size="inherit" tone="inherit" wrap="anywhere">
                         {status}
                       </Text>
                     </Text>

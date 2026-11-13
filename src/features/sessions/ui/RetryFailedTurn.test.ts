@@ -34,6 +34,16 @@ const blocks: Block[] = [
 ];
 const chat = () => ({ ...newSession("codex", "/tmp"), blocks });
 
+it.each([{}, { resetsAt: Date.now() + 60_000 }])(
+  "leaves usage-limit recovery to the account and model notice: %o",
+  (usageLimit) => {
+    const session = { ...chat(), usageLimit };
+    expect(failedTurnRetry(session)).toBeNull();
+    expect(failedTurnRetry({ ...session, usageLimit: undefined })).not.toBeNull();
+    expect(session.blocks).toBe(blocks);
+  },
+);
+
 it("offers the preserved prompt and attachments while failed outgoing cleanup must still be retried", () => {
   const source = {
     from: "claude" as const,

@@ -131,6 +131,7 @@ let modelPool = {
   updatedAt: now,
   derived: true,
 };
+if (realControls) (window as any).__readSetupModelPool = () => structuredClone(modelPool);
 if (realControls) {
   try {
     localStorage.setItem(

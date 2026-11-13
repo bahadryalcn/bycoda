@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseStreamingMarkdown } from "./streamingMarkdown";
 import { MarkdownParseQueue } from "./markdownParseQueue";
+import { createMarkdownWorker } from "./markdownWorker";
 
-export const LARGE_MARKDOWN_CHARS = 32 * 1024;
-const queue = new MarkdownParseQueue(
-  () => new Worker(new URL("./streamingMarkdown.worker.ts", import.meta.url), { type: "module" }),
-);
+export const LARGE_MARKDOWN_CHARS = 128 * 1024;
+const queue = new MarkdownParseQueue(createMarkdownWorker);
 
 /** Large replies keep their last complete parse while a bounded worker catches up. */
 export function useParsedMarkdown(text: string, stream: string) {

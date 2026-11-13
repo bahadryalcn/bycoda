@@ -1,5 +1,62 @@
 import { expect, test } from "@playwright/test";
 
+test.describe("provider identity touch access", () => {
+  test.use({ hasTouch: true });
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      test(`long provider identities and paths ${theme} ${width}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(
+          `/tests/browser/settings/settings.html?section=providers&providersFixture=1&providerIdentityStress=1&theme=${theme}&lang=en`,
+        );
+        const row = page.locator(".provider-account-row:visible").first();
+        const name = row.locator(".provider-account-name");
+        await expect(name).toContainText("Aleksandra Wiśniewska-Kowalczyk");
+        await expect(name).toHaveCSS("overflow-wrap", "anywhere");
+        await expect(row.getByText("Default account", { exact: true })).toBeVisible();
+        await row.getByRole("button", { name: "Reveal email", exact: true }).tap();
+        const email = row.getByRole("button", { name: "Hide email", exact: true });
+        await expect(email).toHaveAttribute("aria-pressed", "true");
+        await expect(email).toContainText(
+          "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+        );
+        await page.screenshot({
+          path: `temp/verification/2026-11-13-ui-coherence/providers/account-${theme}-${width}.png`,
+        });
+        await page.getByRole("button", { name: "Terminal account profiles", exact: true }).tap();
+        const profiles = page.getByRole("dialog", {
+          name: "Terminal account profiles",
+          exact: true,
+        });
+        await profiles.getByRole("button", { name: "Find terminal profiles", exact: true }).tap();
+        const path = profiles.getByText(
+          "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
+          { exact: true },
+        );
+        await expect(path).toHaveCSS("overflow-wrap", "anywhere");
+        await expect(path).toHaveCSS("white-space", "normal");
+        for (const zoom of [1, 2]) {
+          await page.evaluate((value) => {
+            document.documentElement.style.zoom = String(value);
+            window.dispatchEvent(new Event("resize"));
+          }, zoom);
+          await path.scrollIntoViewIfNeeded();
+          await expect(path).toBeInViewport();
+          await page.screenshot({
+            path: `temp/verification/2026-11-13-ui-coherence/providers/profile-${theme}-${width}-${zoom}x.png`,
+          });
+        }
+        await page.keyboard.press("Escape");
+        await expect(profiles).toHaveCount(0);
+        await row.getByRole("button", { name: "Hide email", exact: true }).tap();
+        await expect(
+          row.getByRole("button", { name: "Reveal email", exact: true }),
+        ).toHaveAttribute("aria-pressed", "false");
+      });
+    }
+  }
+});
+
 for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
     test(`MCP enable and disable preserve connection identity: ${theme} ${width}`, async ({

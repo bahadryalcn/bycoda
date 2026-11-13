@@ -215,13 +215,13 @@ test("narrow library and editor switch without losing a draft", async ({ page },
   await expect(title).toBeInViewport();
   await page
     .locator(".note-mobile-navigation")
-    .getByRole("button", { name: "Notes", exact: true })
+    .getByRole("tab", { name: "Notes", exact: true })
     .click();
   await expect(title).not.toBeVisible();
   await expect(page.getByRole("textbox", { name: "Filter notes" })).toBeInViewport();
   await page
     .locator(".note-mobile-navigation")
-    .getByRole("button", { name: "Editor", exact: true })
+    .getByRole("tab", { name: "Editor", exact: true })
     .click();
   await expect(title).toHaveValue("Narrow layout draft");
   await expect(page.getByRole("tab", { name: "Source", exact: true })).toHaveAttribute(
@@ -246,7 +246,7 @@ test("narrow library and editor switch without losing a draft", async ({ page },
   await expect(title).toHaveValue("Narrow layout draft");
 });
 
-test("shared tags, searchable filters and visible save preserve note drafts", async ({
+test("shared tags, searchable filters, autosave and keyboard save preserve note drafts", async ({
   page,
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -275,9 +275,8 @@ test("shared tags, searchable filters and visible save preserve note drafts", as
   await expect(page.getByRole("textbox", { name: "Note title", exact: true })).toHaveValue(
     "Release planning",
   );
-  const save = page.getByRole("button", { name: "Save", exact: true });
-  await expect(save).toBeVisible();
-  await save.click();
+  // Routine saves are automatic; the library deliberately has no Save button.
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
   await expect
     .poll(() =>
       page.evaluate(
@@ -285,6 +284,16 @@ test("shared tags, searchable filters and visible save preserve note drafts", as
       ),
     )
     .toEqual(expect.arrayContaining(["newtag", "日本語"]));
+  const title = page.getByRole("textbox", { name: "Note title", exact: true });
+  await title.fill("Release planning · keyboard save");
+  await title.press("ControlOrMeta+s");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as unknown as { notesFixture: { title: string }[] }).notesFixture[0].title,
+      ),
+    )
+    .toBe("Release planning · keyboard save");
   await page.setViewportSize({ width: 768, height: 800 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({
@@ -364,27 +373,31 @@ test("keeps note controls compact and confirms deletion in a focused dialog", as
   const title = await page.getByLabel("Note title", { exact: true }).boundingBox();
   const actions = await page.locator(".note-detail-actions").boundingBox();
   expect(actions!.x).toBeGreaterThan(title!.x + title!.width);
-  // Delete is not a primary header control: it lives behind the note actions menu.
+  // Delete belongs to the library row, outside the editor's Details controls.
   await expect(page.getByRole("button", { name: "Delete", exact: true })).toHaveCount(0);
-  const menu = page.getByRole("button", { name: "Note actions", exact: true });
+  const menu = page.getByRole("button", { name: "Actions for Release planning", exact: true });
   await page.screenshot({
     path: `temp/verification/2026-10-13-notes-controls/${testInfo.project.name}-wide.png`,
   });
   await menu.click();
-  const remove = page.getByRole("button", { name: "Delete", exact: true });
+  const remove = page
+    .getByRole("menu", { name: "Note actions", exact: true })
+    .getByRole("menuitem", { name: "Delete note", exact: true });
   await remove.click();
-  const confirmation = page.getByRole("group", { name: "Delete note permanently?" });
+  const confirmation = page.getByRole("dialog", { name: "Delete note permanently?" });
   await expect(confirmation).toBeVisible();
-  await expect(confirmation.getByRole("button", { name: "Confirm delete" })).toBeFocused();
+  await expect(confirmation.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
   await page.screenshot({
     path: `temp/verification/2026-10-13-notes-controls/${testInfo.project.name}-delete.png`,
   });
   await page.keyboard.press("Escape");
   await expect(confirmation).toHaveCount(0);
-  // Escape answers the question only; the menu stays open until the next Escape.
-  await expect(remove).toBeFocused();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog", { name: "Note actions" })).toHaveCount(0);
+  await expect(page.getByRole("menu", { name: "Note actions" })).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { notesFixture: unknown[] }).notesFixture.length,
+    ),
+  ).toBe(42);
   await expect(menu).toBeFocused();
   await expect(page.getByLabel("Note title", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 850, height: 700 });

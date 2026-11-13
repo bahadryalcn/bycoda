@@ -71,6 +71,8 @@ export type TextRoles = {
   weight?: "regular" | "medium";
   leading?: TextLeading;
   truncate?: boolean;
+  /** Keep words intact; `anywhere` also breaks long identifiers when needed. */
+  wrap?: "normal" | "anywhere";
   tracking?: TextTracking;
   /** Underline only when pointer hovers this text. */
   hoverUnderline?: boolean;
@@ -129,6 +131,8 @@ export type TextProps = Omit<ComponentPropsWithRef<"span">, "ref"> & {
    * inside a flex or grid row. Needs a block box: a flex or grid item, or `as="div"` / `as="p"`.
    */
   truncate?: boolean;
+  /** Wrap prose at words, with `anywhere` as an emergency break for long identifiers. */
+  wrap?: "normal" | "anywhere";
   /**
    * Letter spacing; `normal` resets inherited tracking. Unset keeps the surrounding spacing. `tight` -0.025em, `wide` 0.025em,
    * `wider` 0.08em.
@@ -166,6 +170,7 @@ export function Text({
   weight,
   leading,
   truncate = false,
+  wrap,
   tracking,
   hoverUnderline,
   className,
@@ -181,7 +186,7 @@ export function Text({
       style={lines ? ({ ...style, "--clamp-lines": lines } as CSSProperties) : style}
       ref={ref as Ref<HTMLSpanElement>}
       {...textAttributes(
-        { size, tone, weight, leading, truncate, tracking, hoverUnderline },
+        { size, tone, weight, leading, truncate, wrap, tracking, hoverUnderline },
         className,
       )}
     />
@@ -198,6 +203,7 @@ export function optionalTextAttributes(roles: TextRoles, className?: string) {
     roles.weight ||
     roles.leading ||
     roles.truncate ||
+    roles.wrap ||
     roles.tracking ||
     roles.hoverUnderline
     ? textAttributes(roles, className)
@@ -217,6 +223,7 @@ export function textAttributes(
     weight,
     leading = size === "inherit" ? "inherit" : undefined,
     truncate,
+    wrap,
     tracking,
     hoverUnderline,
   }: TextRoles,
@@ -230,6 +237,7 @@ export function textAttributes(
     "data-weight": weight,
     "data-leading": leading,
     "data-truncate": truncate || undefined,
+    "data-wrap": wrap,
     className: [styles.text, className].filter(Boolean).join(" "),
   };
 }

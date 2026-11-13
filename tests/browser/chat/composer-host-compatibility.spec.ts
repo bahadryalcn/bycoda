@@ -151,7 +151,8 @@ for (const theme of ["light", "dark"] as const) {
       .click();
     // The consequence leads; the exact ref and commit are the hover detail.
     await expect(status).toContainText("New worktree from main");
-    await expect(status.locator('[title="Based on main @ 01234567"]')).toBeVisible();
+    await status.getByText("New worktree from main", { exact: true }).hover();
+    await expect(page.getByRole("tooltip")).toHaveText("Based on main @ 01234567");
     await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
     await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
       "Keep this draft while the Host updates",

@@ -20,7 +20,15 @@ for (const theme of ["light", "dark"]) {
     const resting = await fill(lock);
     await hoverRow.hover();
     await expect.poll(() => fill(hoverRow)).not.toBe(resting);
-    await expect(hoverRow).not.toHaveCSS("box-shadow", "none");
+    const hover = await hoverRow.evaluate((element) => {
+      const probe = document.createElement("span");
+      probe.style.backgroundColor = "var(--ui-surface-hover)";
+      element.append(probe);
+      const color = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return color;
+    });
+    await expect.poll(() => fill(hoverRow)).toBe(hover);
     await page.screenshot({ path: `temp/verification/2026-11-11-group-menu/hover-${theme}.png` });
     await page.mouse.move(700, 500);
     await hoverRow.focus();
@@ -37,6 +45,7 @@ for (const theme of ["light", "dark"]) {
       return color;
     });
     await expect.poll(() => fill(reorder)).toBe(selected);
+    expect(selected).not.toBe(hover);
     await page.keyboard.press("ArrowRight");
     const submenu = page.getByRole("menu", { name: "Reorder group", exact: true });
     await expect(submenu).toBeVisible();

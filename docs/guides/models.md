@@ -22,12 +22,24 @@ Effort uses ascending bars, from Faster to Deeper. The selected level appears ab
 the scale; hover or focus a bar for its full label. Provider effort retains its
 Automatic or inherited choice.
 
+The conversation model picker keeps the reasoning heading, current level and bars
+together while other options scroll. Narrow panels scroll their model and settings
+sections instead of shrinking either list away. Open Help for complete setting
+descriptions with the keyboard or touch; hovering is optional.
+
 Subagent max effort uses the same bars and has a separate **Automatic** switch. Automatic removes the
-ceiling and leaves the child's own reasoning setting unchanged. Manual ceilings run from Low
-through Ultra; None and Minimal are not ceiling choices. Old None/Minimal ceilings
+ceiling and leaves the child's own reasoning setting unchanged. The picker shows
+**No limit** while Automatic is on. Choosing a bar sets a manual ceiling. Manual
+ceilings run from Low through Ultra; None and Minimal are not ceiling choices. Old None/Minimal ceilings
 are treated as Low. Switching Automatic off restores the last manual choice while
 the control remains open (Low initially). Reset restores the inherited setting;
 choosing Automatic explicitly overrides an inherited ceiling.
+
+The Subagents count describes selected model choices, not running agents or a
+concurrency limit. Selected models appear as aligned rows with removal actions.
+Account percentages state how much quota is used. A Default model marker identifies
+the account containing the project's default model; it does not change the provider's
+default account.
 
 Tasks, goals, stewards, automations and crew members expose **Default**, **Pool**
 and **Fixed** choices. Default follows the role binding, Pool follows the selected
@@ -49,6 +61,6 @@ CLI sign-in on this computer. CLI manages installed agent tools. Catalog manages
 model availability. Decision models configure decision routing. Shared model
 order, limits and delegation are managed in Models.
 
-Provider account rows separate identity from usage status. The check beside an account marks its provider default. Terminal account profiles show their full paths on focus or hover when clipped. CLI updates show model-refresh errors only when discovery fails; an unchanged model list needs no warning.
+Provider account rows separate identity from usage status. The check beside an account marks its provider default. Account management shows complete names and plan details, and terminal profiles wrap their full paths. Email masking stays in effect until you choose Reveal email. CLI updates show model-refresh errors only when discovery fails; an unchanged model list needs no warning.
 
 Decision models keep connection status on each model row. Open Details for full connection paths, and expand Scan settings to change discovery locations. Collapsing these settings keeps unsaved values.

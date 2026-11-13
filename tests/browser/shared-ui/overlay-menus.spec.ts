@@ -40,15 +40,6 @@ async function roleColor(page: Page, role: string) {
     return color;
   }, role);
 }
-// The inset ring uses the shared focus width token.
-const focusRing = (el: Element) => {
-  const style = getComputedStyle(el);
-  return (
-    style.outlineStyle === "solid" &&
-    parseFloat(style.outlineWidth) > 0 &&
-    style.outlineWidth === style.getPropertyValue("--ui-focus-width").trim()
-  );
-};
 const background = (row: Locator) => row.evaluate((el) => getComputedStyle(el).backgroundColor);
 // Layout height: a popover that is still scaling in has a smaller bounding box.
 const height = (row: Locator) => row.evaluate((el) => (el as HTMLElement).offsetHeight);
@@ -166,8 +157,6 @@ test("measures the hover, pressed, highlight and danger roles on the raised menu
     const raised = await roleColor(page, "--ui-surface-raised");
     const hover = await roleColor(page, "--ui-surface-hover");
     const pressed = await roleColor(page, "--ui-surface-pressed");
-    const dangerHover = await roleColor(page, "--ui-tone-danger-hover");
-    const dangerPressed = await roleColor(page, "--ui-tone-danger-pressed");
     const plain = rows.getByTestId("row-plain");
     const danger = rows.getByTestId("row-danger");
 
@@ -190,10 +179,10 @@ test("measures the hover, pressed, highlight and danger roles on the raised menu
 
     await danger.hover();
     await settle(page);
-    expect(await background(danger)).toBe(dangerHover);
+    expect(await background(danger)).toBe(hover);
     await page.mouse.down();
     await settle(page);
-    expect(await background(danger)).toBe(dangerPressed);
+    expect(await background(danger)).toBe(pressed);
     await page.mouse.move(600, 500);
     await page.mouse.up();
     expect(await danger.evaluate((el) => getComputedStyle(el).color)).toBe(
@@ -245,11 +234,11 @@ test("dropdown keyboard: roving focus, disabled rows skipped, Escape returns foc
   await expect(menu.getByRole("menuitem", { name: "Rename", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Copy path" })).toBeFocused();
-  // Keyboard focus is visible: the shared ring is inset and the row takes the selected fill.
+  // Menu keyboard focus uses the selected fill, distinct from pointer hover.
   const focused = menu.getByRole("menuitem", { name: "Copy path" });
   await settle(page);
-  expect(await focused.evaluate(focusRing)).toBe(true);
   expect(await background(focused)).toBe(await roleColor(page, "--ui-surface-selected"));
+  expect(await background(focused)).not.toBe(await roleColor(page, "--ui-surface-hover"));
   await page.keyboard.press("ArrowDown"); // Archive is disabled and skipped.
   await expect(menu.getByRole("menuitem", { name: /Rename the current checkout/ })).toBeFocused();
   await page.keyboard.press("End");
@@ -301,9 +290,10 @@ test("dropdown semantics: checkbox and radio roles, aria-disabled rows, shared s
     );
   expect(new Set(xs).size).toBe(1);
   expect(boxes).toBe(xs[0]);
-  // A long label wraps inside the row instead of widening or clipping the menu.
+  // The intrinsic menu may fit the full label on one line in a wide viewport.
   const long = menu.getByRole("menuitem", { name: /Rename the current checkout/ });
-  expect(await height(long)).toBeGreaterThan(40);
+  expect(await height(long)).toBeGreaterThanOrEqual(32);
+  expect(await long.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
   const overflow = await menu.evaluate((el) => el.scrollWidth - el.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
@@ -378,10 +368,10 @@ test("context menu: point placement, edge flip, keyboard submenu and Escape", as
   await page.keyboard.press("ArrowDown");
   const more = menu.getByRole("menuitem", { name: "Open with" });
   await expect(more).toHaveAttribute("data-highlighted", "true");
-  // The keyboard highlight is visible without hover: the selected fill plus the inset focus ring.
+  // The keyboard highlight uses selected fill without requiring pointer hover.
   await settle(page);
-  expect(await more.evaluate(focusRing)).toBe(true);
   expect(await background(more)).toBe(await roleColor(page, "--ui-surface-selected"));
+  expect(await background(more)).not.toBe(await roleColor(page, "--ui-surface-hover"));
   await page.keyboard.press("ArrowRight");
   const sub = page.getByRole("menu", { name: "Open with" });
   await expect(sub).toBeVisible();
@@ -460,6 +450,12 @@ test("narrow viewport keeps menus inside 390px and wraps described rows", async 
     await expect(menu).toBeVisible();
     await expectInside(page, menu, size);
     expect(await menu.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+    if (id === "dropdown") {
+      // The same complete label wraps when the viewport bounds the menu width.
+      expect(
+        await height(menu.getByRole("menuitem", { name: /Rename the current checkout/ })),
+      ).toBeGreaterThan(40);
+    }
     await page.keyboard.press("Escape");
   }
 });
@@ -545,7 +541,7 @@ test("real consumers share the compact row: project group menu and MenuRow", asy
   await group.getByRole("menuitem", { name: "Delete", exact: true }).hover();
   await settle(page);
   expect(await background(group.getByRole("menuitem", { name: "Delete", exact: true }))).toBe(
-    await roleColor(page, "--ui-tone-danger-hover"),
+    await roleColor(page, "--ui-surface-hover"),
   );
   await page.keyboard.press("Escape");
 });
@@ -563,9 +559,17 @@ test("standalone Arc context menu: keyboard, danger highlight roles and focus re
   await page.keyboard.press("ArrowDown");
   await expect(menu.getByRole("menuitem", { name: "Delete project" })).toBeFocused();
   await settle(page);
-  const glide = menu.locator("span[aria-hidden='true']").first();
-  expect(await glide.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(
-    await roleColor(page, "--ui-tone-danger-hover"),
+  const destructive = menu.getByRole("menuitem", { name: "Delete project" });
+  expect(await background(destructive)).toBe(await roleColor(page, "--ui-surface-selected"));
+  expect(await destructive.evaluate((el) => getComputedStyle(el).color)).toBe(
+    await destructive.evaluate((el) => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--ui-tone-danger-fg)";
+      el.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    }),
   );
   expect(await height(menu.getByRole("menuitem", { name: "Copy link" }))).toBe(32);
   await page.keyboard.press("Escape");

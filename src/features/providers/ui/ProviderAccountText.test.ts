@@ -32,7 +32,37 @@ it("ProviderAccountSubtitle takes size, tone and truncate, also on the fallback"
   }
 });
 
+it("wraps complete long plan and fallback identities when account details request it", () => {
+  const plan = "Enterprise Research and Development Workspace";
+  const html = renderToStaticMarkup(
+    createElement(ProviderAccountSubtitle, {
+      identity: { plan } as never,
+      wrap: true,
+      truncate: true,
+    }),
+  );
+  expect(html).toContain(plan);
+  expect(html).toContain('data-wrap="anywhere"');
+  expect(html).toContain("flex-wrap");
+  expect(html).not.toContain('data-truncate="true"');
+  expect(
+    renderToStaticMarkup(
+      createElement(ProviderAccountSubtitle, { identity: null, fallback: plan, wrap: true }),
+    ),
+  ).toContain('data-wrap="anywhere"');
+});
+
 const status = { tone: "ready", label: "Ready", detail: "back in 3m" } as never;
+
+it("uses spacing in wrapping account details without leaving a separator on its own line", () => {
+  const identity = { plan: "Enterprise Research", email: "review@northwind.example.com" } as never;
+  const wrapped = renderToStaticMarkup(
+    createElement(ProviderAccountSubtitle, { identity, wrap: true }),
+  );
+  const compact = renderToStaticMarkup(createElement(ProviderAccountSubtitle, { identity }));
+  expect(wrapped).not.toContain("·");
+  expect(compact).toContain("·");
+});
 
 it("translates account readiness in Turkish", async () => {
   await setLanguagePreference("tr");

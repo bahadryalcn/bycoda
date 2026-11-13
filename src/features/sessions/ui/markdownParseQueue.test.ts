@@ -82,3 +82,21 @@ it("reports malformed completion instead of leaving a reply pending forever", ()
   expect(error).toHaveBeenCalledOnce();
   release();
 });
+
+it("retries a fresh worker after the failed reply has been unmounted", () => {
+  const { queue, worker, complete } = fixture();
+  const error = vi.fn();
+  const release = queue.subscribe("failed", { result: vi.fn(), error });
+  queue.request("failed", "first reply");
+  worker.onerror!({} as ErrorEvent);
+  expect(error).toHaveBeenCalledOnce();
+  release();
+
+  const result = vi.fn();
+  const releaseNext = queue.subscribe("next", { result, error: vi.fn() });
+  queue.request("next", "next reply");
+  expect(worker.postMessage).toHaveBeenCalledTimes(2);
+  complete(["next reply"]);
+  expect(result).toHaveBeenCalledWith("next reply", ["next reply"]);
+  releaseNext();
+});

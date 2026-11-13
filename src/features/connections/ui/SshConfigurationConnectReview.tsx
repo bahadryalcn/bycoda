@@ -87,7 +87,7 @@ export function SshConfigurationConnectReview({
       <div className="flex min-w-0 flex-col gap-3">
         {configuration ? (
           <>
-            <Text as="p" size="body" tone="inherit" weight="medium" className="break-all">
+            <Text wrap="anywhere" as="p" size="body" tone="inherit" weight="medium">
               {sshEndpointPreview(configuration.endpoint)}
             </Text>
             <DescriptionList size="sm">

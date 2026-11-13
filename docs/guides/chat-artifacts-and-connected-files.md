@@ -1,5 +1,7 @@
 # Inspect chat output and connected-machine files
 
+Markdown replies and document previews up to 131,072 characters parse without a background worker. Longer content, including 1 MiB documents, parses in a background worker. Documents with many blocks fill in progressively while the rendering indicator remains visible; completed blocks stay selectable. If parsing fails, the complete source text remains visible with a warning. Closing the failed preview allows a fresh worker attempt when another preview opens.
+
 When Host delegation is unavailable for a turn, the conversation notice uses your app language. Automatic without an effort ceiling permits built-in subagents; otherwise subagents remain limited to your selected models and effort ceiling. Model-facing fallback guidance stays in English.
 
 Tool rows keep the conversation compact. Use **Changes** beside an edit or the output chevron beside a command to inspect its saved code, patch, or result. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
@@ -122,6 +124,17 @@ are not transferred.
 Previous attachment names, file references and owning computers are retained in the saved history, including messages containing only an attachment. A pasted item without a saved file reference is identified as retained in the conversation; the archive does not silently reload its bytes or grant another computer file access. Recovered conversation context is saved with the archive rather than replayed twice.
 
 If a provider switch fails or is cancelled, its divider shows that result instead of remaining on Preparing. You can select another provider and use Retry with the preserved request and attachments. A retry still waits for the original provider to close safely; an unresolved cleanup error does not send a duplicate request to the new provider.
+
+When a usage limit stops a conversation, use **Switch account**, **Switch model**
+or the reset controls in its usage-limit notice. The generic failed-turn Retry
+stays hidden while this notice is active. Repeated reports of the same Claude
+failure within one submitted attempt appear once; separate attempts keep their
+own errors in the conversation history.
+
+HTTP failures and structured provider responses show a short message in the
+conversation. Open **Technical details** to read or copy the complete original
+response, including its status, request identity and diagnostics. Plain errors
+keep their original explanation.
 
 ## Documents, tables, and media
 

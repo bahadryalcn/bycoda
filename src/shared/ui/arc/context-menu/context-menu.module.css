@@ -88,7 +88,7 @@
   flex-direction: column;
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  white-space: nowrap;
+  white-space: normal;
 }
 .copy > span {
   display: block;
@@ -144,9 +144,8 @@
 /* Existing domain rows end with their label span; it wraps instead of ellipsizing. */
 .item > span:last-child:not(.trailing, .copy, .icon) {
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 .item[data-branch-side="left"] > [data-branch-indicator] {
   transform: rotate(180deg);

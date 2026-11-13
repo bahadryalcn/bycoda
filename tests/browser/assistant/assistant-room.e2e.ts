@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openRoomSection(page: Page, section: string) {
   const group = ["Jobs", "Sessions"].includes(section)
@@ -143,12 +143,35 @@ async function finishSetup(page: Page) {
   await ready.getByRole("button", { name: "Done", exact: true }).click();
 }
 async function chooseSetupValue(page: Page, label: string, option: string) {
-  const field = page.getByRole("button", { name: new RegExp(`^${label}:`) });
+  const field = page
+    .getByRole("button", { name: new RegExp(`^${label}:`) })
+    .and(
+      page.locator(
+        '[aria-haspopup="listbox"], [aria-haspopup="dialog"]:not([aria-label$=": Help"])',
+      ),
+    );
   await expect(field).toBeVisible();
   await field.click();
   const choice = page.getByRole("option", { name: option, exact: true });
   await expect(choice).toBeVisible();
   await choice.click();
+}
+
+async function expectModelsNavigation(page: Page, group: Locator) {
+  // Room fixture has no workspace Settings owner. Observe the real navigation event;
+  // models-settings owns destination UI and central pool editing coverage.
+  await page.evaluate(() => {
+    (window as any).__modelsNavigation = null;
+    window.addEventListener(
+      "bycoda:open-models-settings",
+      (event) => {
+        (window as any).__modelsNavigation = (event as CustomEvent).detail;
+      },
+      { once: true },
+    );
+  });
+  await group.getByRole("button", { name: "Manage in Models", exact: true }).click();
+  expect(await page.evaluate(() => (window as any).__modelsNavigation)).toBe("roles");
 }
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
@@ -350,6 +373,7 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&real-controls`);
+      const originalPool = await page.evaluate(() => (window as any).__readSetupModelPool());
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const dialog = page.getByRole("dialog");
       const showGroup = (label: string) => openSettingsGroup(page, label);
@@ -376,18 +400,10 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `settings-${theme}-${width}-behavior.png`),
       });
-      const autonomy = await showGroup("Jobs");
       const models = await showGroup("Models");
-      const worker = models.getByRole("group", { name: "Model 1", exact: true });
-      await worker.getByRole("button", { name: /Fixture worker/ }).click();
-      // Reasoning is an inline radio row in the model panel's settings column.
-      await page
-        .getByRole("dialog", { name: "Model and settings", exact: true })
-        .getByRole("radio", { name: "High", exact: true })
-        .click();
-      await page.keyboard.press("Escape");
+      await expectModelsNavigation(page, models);
       expect(await page.evaluate(() => (window as any).__setupModelSelections ?? 0)).toBe(0);
-      await showGroup("Jobs");
+      const autonomy = dialog.getByRole("region", { name: "Work", exact: true });
       for (const amount of ["100k", "500k", "1m", "5m"])
         await chooseSetupValue(page, "Daily token budget", `${amount} tokens/day`);
       await chooseSetupValue(page, "Daily token budget", "Custom");
@@ -434,36 +450,31 @@ for (const theme of ["light", "dark"])
         perWakeTokenCap: 9000,
         summaryRefreshMessages: 25,
       });
-      const poolWrite = await page.evaluate(() =>
-        (window as any).__setupRequests.find(
-          (request: any) => request.input.op === "models.pool.set",
+      expect(
+        await page.evaluate(() =>
+          (window as any).__setupRequests.filter(
+            (request: any) => request.input.op === "models.pool.set",
+          ),
         ),
+      ).toEqual([]);
+      expect(await page.evaluate(() => (window as any).__readSetupModelPool())).toEqual(
+        originalPool,
       );
-      expect(poolWrite.input.expectedVersion).toBe(0);
-      expect(poolWrite.input.rows[0]).toMatchObject({
-        id: "pool-a",
-        model: "codex:fixture-worker",
-        modelSettings: { reasoningEffort: "high" },
-        roles: ["worker", "reply"],
-      });
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      const reopened = await openSettingsGroup(page, "Jobs");
+      await openSettingsGroup(page, "Models");
+      const reopened = dialog.getByRole("region", { name: "Work", exact: true });
       await expect(
         reopened.getByRole("button", { name: "Daily token budget: 500k tokens/day", exact: true }),
       ).toBeVisible();
       const reopenedModels = await openSettingsGroup(page, "Models");
-      await reopenedModels
-        .getByRole("group", { name: "Model 1", exact: true })
-        .getByRole("button", { name: /Fixture worker/ })
-        .click();
-      await expect(
-        page
-          .getByRole("dialog", { name: "Model and settings", exact: true })
-          .getByRole("radio", { name: "High", exact: true }),
-      ).toHaveAttribute("aria-checked", "true");
+      await expectModelsNavigation(page, reopenedModels);
     });
 
-const headings: Record<string, string> = { "Conversation behavior": "Language", Jobs: "Work mode" };
+const headings: Record<string, string> = {
+  Language: "Conversation",
+  "Conversation behavior": "Conversation",
+  Jobs: "Customize access",
+};
 async function openSettingsGroup(page: Page, name: string) {
   const pages: Record<string, string> = {
     Identity: "Personal",
@@ -483,18 +494,14 @@ async function openSettingsGroup(page: Page, name: string) {
   const disclosureName =
     name === "Conversation behavior"
       ? "Personality and conversation"
-      : name === "Jobs" || name === "Computer use"
-        ? "Customize access"
-        : undefined;
+      : name === "Cost and context"
+        ? "Supervisor limits"
+        : name === "Jobs" || name === "Computer use"
+          ? "Customize access"
+          : undefined;
   if (disclosureName) {
     if (disclosureName === "Customize access") {
-      const disclosure = page
-        .getByRole("dialog")
-        .locator("details")
-        .filter({ has: page.locator("summary").filter({ hasText: disclosureName }) })
-        .first();
-      if (!(await disclosure.evaluate((element) => (element as HTMLDetailsElement).open)))
-        await disclosure.locator("summary").click();
+      await page.getByRole("dialog").getByRole("radio", { name: "Custom", exact: true }).click();
     } else {
       const disclosure = page
         .getByRole("dialog")
@@ -644,9 +651,11 @@ for (const theme of ["light", "dark"])
       await page
         .getByRole("menuitem", { name: "Refresh conversation summary", exact: true })
         .click();
-      // A lost ACK shows a quiet header badge whose title carries the reason.
-      const unconfirmed = page.getByTitle("Summary refresh was not confirmed.", { exact: true });
-      await expect(unconfirmed).toContainText("Summary unavailable");
+      // A lost ACK keeps the visible header badge; shared Tooltip carries its reason.
+      const unconfirmed = page.getByText("Summary unavailable", { exact: true }).first();
+      await expect(unconfirmed).toBeVisible();
+      await unconfirmed.hover();
+      await expect(page.getByRole("tooltip")).toHaveText("Summary refresh was not confirmed.");
       await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
       await expect(
         page.getByRole("menuitem", { name: "Retry summary refresh", exact: true }),
@@ -1067,9 +1076,7 @@ for (const theme of ["light", "dark"])
         animations: "disabled",
         path: join(output, `output-context-compact-${theme}-${width}.png`),
       });
-      await cost
-        .getByRole("button", { name: "Advanced worker context limits", exact: true })
-        .click();
+      await cost.getByRole("button", { name: "Worker context limits", exact: true }).click();
       // Token and percentage limits share a label; the unit beside each field tells them apart,
       // and the token fields come first.
       const soft = cost.getByRole("spinbutton", { name: "Worker compact at", exact: true }).first();
@@ -1087,9 +1094,7 @@ for (const theme of ["light", "dark"])
       await expect(dialog).toHaveCount(0);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await openSettingsGroup(page, "Cost and context");
-      await dialog
-        .getByRole("button", { name: "Advanced worker context limits", exact: true })
-        .click();
+      await dialog.getByRole("button", { name: "Worker context limits", exact: true }).click();
       await expect(
         dialog.getByRole("spinbutton", { name: "Worker compact at", exact: true }).first(),
       ).toHaveValue("160000");
@@ -1704,70 +1709,58 @@ for (const theme of ["light", "dark"])
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
-    test(`independent assistant role models ${theme} ${width}`, async ({ page }) => {
+    test(`assistant models link preserves central roles ${theme} ${width}`, async ({ page }) => {
       const output = join(process.cwd(), "temp/verification/arif-assistant-room");
       await mkdir(output, { recursive: true });
       await page.setViewportSize({ width, height: 900 });
-      await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}`);
+      await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&real-controls`);
+      const originalPool = await page.evaluate(() => (window as any).__readSetupModelPool());
+      expect(
+        originalPool.rows.map((row: any) => ({
+          id: row.id,
+          roles: row.roles,
+          effort: row.modelSettings.reasoningEffort,
+        })),
+      ).toEqual([
+        { id: "pool-a", roles: ["worker", "reply"], effort: "low" },
+        { id: "pool-b", roles: ["worker", "planning"], effort: "high" },
+        { id: "pool-c", roles: ["chief"], effort: "low" },
+      ]);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       const dialog = page.getByRole("dialog");
       const models = await openSettingsGroup(page, "Models");
-      const worker = models.getByRole("group", { name: "Model 1", exact: true });
-      const planner = models.getByRole("group", { name: "Model 2", exact: true });
-      const chief = models.getByRole("group", { name: "Model 3", exact: true });
-      await expect(worker.getByRole("checkbox", { name: "Replies", exact: true })).toBeChecked();
-      await expect(planner.getByRole("checkbox", { name: "Planner", exact: true })).toBeChecked();
-      await expect(chief.getByRole("checkbox", { name: "Supervisor", exact: true })).toBeChecked();
+      await expect(
+        models.getByText("Models and limits follow Settings > Models.", { exact: true }),
+      ).toBeVisible();
+      await expectModelsNavigation(page, models);
       await models.screenshot({
         animations: "disabled",
-        path: join(output, `roles-compact-${theme}-${width}.png`),
+        path: join(output, `roles-central-link-${theme}-${width}.png`),
       });
-      // Assign replies to another pool model without changing the worker or Chief rows.
-      await worker.getByRole("checkbox", { name: "Replies", exact: true }).uncheck();
-      await planner.getByRole("checkbox", { name: "Replies", exact: true }).check();
-      await planner.getByRole("button", { name: "codex:fixture-worker", exact: true }).click();
-      await expect(
-        planner.getByRole("button", { name: "fixture-worker-model", exact: true }),
-      ).toBeVisible();
-      await expect(
-        worker.getByRole("button", { name: "codex:fixture-worker", exact: true }),
-      ).toBeVisible();
-      await expect(
-        chief.getByRole("button", { name: "codex:fixture-worker", exact: true }),
-      ).toBeVisible();
-      // An uncovered optional role falls back to Worker models; restoring it removes the notice.
-      await planner.getByRole("checkbox", { name: "Planner", exact: true }).uncheck();
-      const fallback = models.getByText(
-        "No model is set for Planner; the Worker models are used.",
-        { exact: true },
-      );
-      await expect(fallback).toBeVisible();
-      await planner.getByRole("checkbox", { name: "Planner", exact: true }).check();
-      await expect(fallback).toHaveCount(0);
-      await models.screenshot({
-        animations: "disabled",
-        path: join(output, `roles-advanced-${theme}-${width}.png`),
-      });
+      await openSettingsGroup(page, "Identity");
+      await dialog
+        .getByRole("textbox", { name: "Assistant name", exact: true })
+        .fill("Role retention fixture");
       await saveProfileSettings(page);
       await expect(dialog).toHaveCount(0);
+      expect(await page.evaluate(() => (window as any).__setupProfile.name)).toBe(
+        "Role retention fixture",
+      );
+      expect(await page.evaluate(() => (window as any).__readSetupModelPool())).toEqual(
+        originalPool,
+      );
+      expect(
+        await page.evaluate(() =>
+          (window as any).__setupRequests.filter(
+            (request: any) => request.input.op === "models.pool.set",
+          ),
+        ),
+      ).toEqual([]);
       await page.getByRole("button", { name: "Settings", exact: true }).click();
-      await openSettingsGroup(page, "Models");
-      await expect(
-        worker.getByRole("checkbox", { name: "Replies", exact: true }),
-      ).not.toBeChecked();
-      await expect(worker.getByRole("checkbox", { name: "Worker", exact: true })).toBeChecked();
-      await expect(
-        worker.getByRole("button", { name: "codex:fixture-worker", exact: true }),
-      ).toBeVisible();
-      for (const role of ["Worker", "Planner", "Replies"])
-        await expect(planner.getByRole("checkbox", { name: role, exact: true })).toBeChecked();
-      await expect(
-        planner.getByRole("button", { name: "fixture-worker-model", exact: true }),
-      ).toBeVisible();
-      await expect(chief.getByRole("checkbox", { name: "Supervisor", exact: true })).toBeChecked();
-      await expect(
-        chief.getByRole("button", { name: "codex:fixture-worker", exact: true }),
-      ).toBeVisible();
+      await expectModelsNavigation(page, await openSettingsGroup(page, "Models"));
+      expect(await page.evaluate(() => (window as any).__readSetupModelPool())).toEqual(
+        originalPool,
+      );
     });
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])

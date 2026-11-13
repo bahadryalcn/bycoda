@@ -19,7 +19,8 @@ for (const theme of ["light", "dark"])
           path: join(output, `${theme}-${width}-${slug}.png`),
         });
       };
-      await page.getByRole("tab", { name: /^Jobs/ }).click();
+      await page.getByRole("tab", { name: /^Work(?:\s|$)/ }).click();
+      await page.getByRole("tab", { name: "Jobs", exact: true }).click();
       await page.getByRole("button", { name: "Job actions", exact: true }).first().click();
       await capture("job-actions");
       await page.getByRole("menuitem", { name: "Priority", exact: true }).click();

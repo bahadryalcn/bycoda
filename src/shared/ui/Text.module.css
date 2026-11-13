@@ -91,6 +91,19 @@
   white-space: nowrap;
 }
 
+/* Per-field wrapping preserves words and permits paths to yield at narrow widths. */
+.text[data-wrap] {
+  min-inline-size: 0;
+  white-space: normal;
+  word-break: normal;
+}
+.text[data-wrap="normal"] {
+  overflow-wrap: normal;
+}
+.text[data-wrap="anywhere"] {
+  overflow-wrap: anywhere;
+}
+
 /* Letter spacing roles; unset keeps the surrounding spacing. */
 .text[data-tracking="tight"] {
   letter-spacing: -0.025em;

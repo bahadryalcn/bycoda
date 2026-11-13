@@ -245,7 +245,9 @@ for (const width of [390, 1440]) {
 test("automation gallery, event picker, focus mode and scoped AI", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto("/tests/browser/automations/automations.html");
-  await page.getByRole("button", { name: /^Show all/ }).click();
+  const templates = page.locator("summary").filter({ hasText: /^Show all/ });
+  await templates.focus();
+  await templates.press("Enter");
   await expect(page.getByText("Plan social content", { exact: true })).toBeVisible();
   await page
     .getByRole("textbox", { name: "Search templates", exact: true })
@@ -286,7 +288,10 @@ test("automation gallery, event picker, focus mode and scoped AI", async ({ page
     "Triage incoming messages",
   );
   await page.getByRole("button", { name: "AI assistant", exact: true }).click();
-  await page.getByRole("radio", { name: "General", exact: true }).click();
+  const generalScope = page.getByRole("radio", { name: "General", exact: true });
+  await generalScope.focus();
+  await generalScope.press("Space");
+  await expect(generalScope).toBeChecked();
   await page
     .getByRole("textbox", { name: "AI assistant", exact: true })
     .fill("Plan a general automation");

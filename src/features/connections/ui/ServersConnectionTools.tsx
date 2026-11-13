@@ -94,7 +94,7 @@ export function ServersConnectionTools({
   return (
     <div className="server-connection-tools mbs-4 flex min-w-0 flex-col gap-4">
       {endpoint?.httpProxy ? (
-        <Text as="p" tone="muted" className="w-full break-all">
+        <Text wrap="anywhere" as="p" tone="muted" className="w-full">
           {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
           {sshEndpointPreview(endpoint.httpProxy)}
         </Text>
@@ -131,10 +131,10 @@ export function ServersConnectionTools({
               <div className="flex min-w-0 items-start justify-between gap-3">
                 <Text as="div" tone="inherit" className="flex min-w-0 flex-col gap-1">
                   <Heading size="item">{t("Credentials")}</Heading>
-                  <Text as="p" size="inherit" tone="muted" className="break-all">
+                  <Text wrap="anywhere" as="p" size="inherit" tone="muted">
                     {t("SSH user")}: {sshUser || t("Default")}
                   </Text>
-                  <Text as="p" size="inherit" tone="muted" className="break-all">
+                  <Text wrap="anywhere" as="p" size="inherit" tone="muted">
                     {t("SSH key")}: {selectedIdentity || t("SSH agent and default keys")}
                   </Text>
                 </Text>
@@ -151,7 +151,7 @@ export function ServersConnectionTools({
                 </Button>
               </div>
               {jumpChain.length ? (
-                <Text as="p" tone="muted" className="break-all">
+                <Text wrap="anywhere" as="p" tone="muted">
                   {t("Jump chain")}: {jumpChain.join(" → ")}
                 </Text>
               ) : null}

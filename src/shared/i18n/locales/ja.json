@@ -13037,8 +13037,6 @@
   "Start new work and its members show up here while they work.": "新しい作業を開始すると、作業中のメンバーがここに表示されます。",
   "Only the first members are listed.": "最初のメンバーのみ表示しています。",
   "Open crew work": "クルーの作業を開く",
-  "Working now": "作業中",
-  "Show everyone working now": "作業中のメンバーをすべて表示",
   "Could not delegate to @{p0}: {p1}": "@{p0} に委任できませんでした: {p1}",
   "Assign": "割り当てる",
   "Note sent to the lead.": "メモをリードに送信しました。",

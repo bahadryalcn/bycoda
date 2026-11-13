@@ -251,7 +251,7 @@ export function SshServerEditor({
           <p className="mbs-2">{t("Leave empty to use your SSH agent and default identities.")}</p>
         </Text>
         {!onConnect && valid && endpoint.httpProxy ? (
-          <Text as="p" tone="muted" className="break-all">
+          <Text wrap="anywhere" as="p" tone="muted">
             {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
             {sshEndpointPreview(endpoint.httpProxy)}
           </Text>
@@ -375,32 +375,32 @@ export function SshServerEditor({
                 tone="inherit"
                 {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pbs-3")}
               >
-                <Text as="p" size="inherit" tone="inherit" weight="medium" className="break-all">
+                <Text wrap="anywhere" as="p" size="inherit" tone="inherit" weight="medium">
                   {sshEndpointPreview(endpoint)}
                 </Text>
                 {endpoint.jumpHosts?.length ? (
-                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
+                  <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
                     {t("Jump chain")}: {endpoint.jumpHosts.join(" → ")}
                   </Text>
                 ) : null}
                 {endpoint.jumpPolicies?.length ? (
-                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
+                  <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
                     {t("Jump chain")}: {endpoint.jumpPolicies.map(sshEndpointPreview).join(" → ")}
                   </Text>
                 ) : null}
                 {endpoint.httpProxy ? (
-                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
+                  <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
                     {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}
                     {sshEndpointPreview(endpoint.httpProxy)}
                   </Text>
                 ) : null}
                 {endpoint.identityFile ? (
-                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
+                  <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
                     {t("Identity file")}: {endpoint.identityFile}
                   </Text>
                 ) : null}
                 {endpoint.certificateFile ? (
-                  <Text as="p" size="inherit" tone="muted" className="mbs-1 break-all">
+                  <Text wrap="anywhere" as="p" size="inherit" tone="muted" className="mbs-1">
                     {t("Public SSH certificate file")}: {endpoint.certificateFile}
                   </Text>
                 ) : null}

@@ -146,7 +146,7 @@ export function ModelBrowser({
   });
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1">
+    <div className="flex min-h-0 min-w-0 flex-1 @max-[32rem]/model-panel:min-h-60 @max-[32rem]/model-panel:shrink-0">
       <Tabs
         value={tab}
         onValueChange={onSelectTab}

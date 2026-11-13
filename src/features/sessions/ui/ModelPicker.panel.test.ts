@@ -61,7 +61,7 @@ import { ModelPicker, preloadModelPicker } from "./ModelPicker";
 import { renameProviderAccount, saveProviderAccount } from "../../providers/model/providerAccounts";
 import { resetDisabledModels, resetHarnessModelOverlays, setHarnessModels } from "../model/models";
 import { KEYBINDINGS, saveKeybindingOverride } from "../../settings/model/settings";
-import { ModelSettingsColumn } from "./ModelSettingsColumn";
+import { ModelSettingHelp, ModelSettingsColumn } from "./ModelSettingsColumn";
 import type { ModelSetting } from "../model/models";
 import { delegationNextValue } from "../model/crossDelegation";
 import { encodeAdvisor } from "../../../shared/model/host-contracts/delegation";
@@ -590,6 +590,10 @@ describe("model panel", () => {
 });
 
 describe("model panel settings column", () => {
+  it("does not open empty help when no setting has a description", async () => {
+    await act(async () => root.render(createElement(ModelSettingHelp, { setting: null })));
+    expect(container.querySelector('button[aria-haspopup="dialog"]')).toBeNull();
+  });
   it("operates Subagents modes, Custom search, Done, chips and Add with keyboard focus", async () => {
     const choice = encodeAdvisor({ harness: "codex", model: "codex:one" })!;
     const setting: ModelSetting = {
@@ -742,7 +746,7 @@ describe("model panel settings column", () => {
     // Reasoning leads; a dependent setting follows its parent.
     expect(columnLabels()).toEqual(["Reasoning", "Fast", "Auto-compact", "Auto-compact window"]);
     await click(tabs[1]);
-    expect(columnLabels()).toEqual(["Advisor", "Image models", "Subagent max effort", "Subagents"]);
+    expect(columnLabels()).toEqual(["Subagent max effort", "Advisor", "Image models", "Subagents"]);
   });
 
   it("toggles Fast with its switch and shows it in the trigger", async () => {
@@ -796,6 +800,7 @@ describe("model panel settings column", () => {
     });
     block = await settingBlock("crossSubagentMaxEffort");
     expect(automatic().getAttribute("aria-checked")).toBe("true");
+    expect(block.textContent).toContain("No limit");
     expect(block.querySelector('[role="radio"][aria-checked="true"]')).toBeNull();
     await click(automatic());
     expect(change).toHaveBeenLastCalledWith({ crossSubagentMaxEffort: "high" });
@@ -804,13 +809,27 @@ describe("model panel settings column", () => {
   it("explains the hovered setting in the help strip", async () => {
     await openOrdered({});
     const help = () => container.querySelector("[data-model-setting-help]")!.textContent;
-    expect(help()).toContain("Point at a setting");
+    expect(help()).toContain("Help");
     await act(async () => {
       container
         .querySelector('[data-setting-id="fast"] [role="switch"]')!
         .dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
     expect(help()).toContain("Same model, faster output");
+  });
+
+  it("opens complete settings help without hovering and retains it when focus moves into help", async () => {
+    await openOrdered({});
+    const footer = container.querySelector("[data-model-setting-help]")!;
+    const help = footer.querySelector<HTMLButtonElement>('button[aria-label="Help"]')!;
+    expect(help).not.toBeNull();
+    await act(async () => help.focus());
+    await click(help);
+    const descriptions = footer.querySelector('[role="dialog"]')!;
+    expect(descriptions).not.toBeNull();
+    expect(descriptions.textContent).toContain("How long the model thinks");
+    expect(descriptions.textContent).toContain("Same model, faster output");
+    expect(help.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("renders the field presentation as a full-width trigger that opens below", async () => {

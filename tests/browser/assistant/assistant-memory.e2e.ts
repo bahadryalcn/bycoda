@@ -25,6 +25,7 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/assistant/assistant-room.html?theme=${theme}&real-controls`);
+      await page.getByRole("tab", { name: "Records", exact: true }).click();
       await page.getByRole("tab", { name: "Memory", exact: true }).click();
       await expect(page.getByText(original, { exact: true })).toBeVisible();
       await capture(page, `memory-${theme}-${width}`);
@@ -40,6 +41,7 @@ for (const theme of ["light", "dark"])
       await capture(page, `memory-long-draft-${theme}-${width}`);
       await dialog.getByRole("textbox", { name: "Memory", exact: true }).fill(added);
       await choose(page, "Scope", "Coding sessions only");
+      await dialog.locator("summary").filter({ hasText: "Forbidden words" }).click();
       await dialog
         .getByRole("textbox", { name: "Forbidden words", exact: true })
         .fill("secret, token");

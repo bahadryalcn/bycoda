@@ -129,8 +129,8 @@ export function RemoteLoadError({
           )}
         </div>
         {reconnectFailed ? (
-          <p className="mt-1 flex min-w-0 items-baseline gap-2">
-            <Text size="inherit" tone="inherit" truncate className="min-w-0">
+          <p className="mt-1 flex min-w-0 flex-wrap items-baseline gap-2">
+            <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
               {t("Reconnecting failed: ")}
               {reconnectError}
             </Text>

@@ -5,7 +5,6 @@ import {
   activeMemberFocus,
   activeMemberWorking,
   groupActiveByProject,
-  railActiveFaces,
 } from "./crewActiveView";
 
 const item = (over: Partial<ActiveCrewMemberView>): ActiveCrewMemberView => ({
@@ -74,12 +73,5 @@ describe("active crew view", () => {
     expect(activeMemberFocus(item({ taskTitle: "Fix", runTitle: "Run" }))).toBe("Fix");
     expect(activeMemberFocus(item({ runTitle: "Run" }))).toBe("Run");
     expect(activeMemberFocus(item({}))).toBe("Crew");
-  });
-
-  it("limits the rail strip to the project and counts the rest", () => {
-    const items = Array.from({ length: 7 }, (_, i) => item({ memberId: `m${i}`, startedAt: i }));
-    const strip = railActiveFaces([...items, item({ projectId: "other" })], "host:p");
-    expect(strip.shown).toHaveLength(5);
-    expect(strip.more).toBe(2);
   });
 });

@@ -183,6 +183,7 @@ function AccountLimits({
           </Heading>
           <ProviderAccountSubtitle
             identity={identity}
+            wrap
             fallback={
               identity === undefined
                 ? t("Loading account identity…")

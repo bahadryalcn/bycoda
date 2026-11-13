@@ -22,6 +22,10 @@
     overflow-wrap: anywhere;
   }
 
+  .root[data-wrap] .body {
+    overflow-wrap: inherit;
+  }
+
   .body[data-clamped] {
     max-block-size: calc(var(--clamp-lines, 4) * 1lh);
     overflow: hidden;

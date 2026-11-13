@@ -208,7 +208,7 @@ for (const light of [false, true]) {
     await expect(page.locator(".context-meter-summary")).toBeVisible();
     await expect(
       page.getByRole("button", {
-        name: "Claude Code Claude Sonnet research model with a deliberately long descriptive name",
+        name: "Claude Code Claude Sonnet research model with a deliberately long descriptive name Default account",
         exact: true,
       }),
     ).toBeVisible();

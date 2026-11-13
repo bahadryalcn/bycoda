@@ -423,7 +423,6 @@ export function GitChangesPanel({
               <ChevronRight className="icon-xs shrink-0" />
             )}
             <CheckoutIdentity
-              cwd={cwd}
               name={repository.name}
               checkout={repository.checkout}
               index={index}
@@ -456,12 +455,12 @@ export function GitChangesPanel({
             className="flex min-w-0 items-center gap-1"
           >
             <Spinner size="xs" className="shrink-0" />
-            <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
               {pending ?? busyLabel(busy)}
             </Text>
           </Text>
         ) : !busy && status ? (
-          <Text role="status" size="micro" tone="secondary" truncate className="min-w-0">
+          <Text role="status" size="micro" tone="secondary" wrap="anywhere" className="min-w-0">
             {status}
           </Text>
         ) : null}

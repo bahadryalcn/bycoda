@@ -376,7 +376,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               role="status"
               ref={progress}
             >
-              <Text as="div" size="secondary" tone="primary" weight="medium" className="break-all">
+              <Text wrap="anywhere" as="div" size="secondary" tone="primary" weight="medium">
                 {connectionName}
               </Text>
               <LoadingText delay={false}>{job?.message ?? t("Starting connection…")}</LoadingText>

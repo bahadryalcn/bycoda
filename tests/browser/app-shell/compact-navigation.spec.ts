@@ -488,7 +488,11 @@ test("workspace header keeps location before history and project controls", asyn
     );
     const header = page.locator("[data-workspace-header]");
     await expect(header).toBeVisible({ timeout: 90_000 });
-    const title = header.getByText(project ? "Workspace" : "Last sessions", { exact: true });
+    const title = project
+      ? header
+          .getByRole("button", { name: "Switch working copy", exact: true })
+          .getByText("bycoda", { exact: true })
+      : header.getByText("Last sessions", { exact: true });
     const toggle = page.getByRole("button", { name: "Expand projects", exact: true });
     await expect(toggle).toHaveCount(1);
     await expect(header.getByRole("button", { name: "Expand projects", exact: true })).toHaveCount(

@@ -76,13 +76,3 @@ export function groupActiveByProject(
         a.key.localeCompare(b.key),
     );
 }
-
-/** The faces for one project's rail strip: at most `max`, plus how many more are working. */
-export function railActiveFaces(
-  items: readonly ActiveCrewMemberView[],
-  projectKey: string,
-  max = 5,
-): { shown: ActiveCrewMemberView[]; more: number } {
-  const own = items.filter((item) => activeProjectKey(item) === projectKey).sort(compareRows);
-  return { shown: own.slice(0, max), more: Math.max(0, own.length - max) };
-}

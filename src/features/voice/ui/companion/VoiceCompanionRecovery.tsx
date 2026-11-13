@@ -2,7 +2,6 @@ import { Button } from "../../../../shared/ui/Button";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LiveText } from "../../../../shared/ui/LiveText";
 import { t } from "../../../../shared/i18n";
-import { MicrophoneRecoveryAction } from "../MicrophoneRecoveryAction";
 import { VoiceReturnCallNotice } from "./VoiceReturnCallNotice";
 import styles from "./VoiceCompanionParts.module.css";
 
@@ -51,7 +50,6 @@ export function VoiceCompanionRecovery({
           {t("Retry briefing")}
         </Button>
       )}
-      {shownError ? <MicrophoneRecoveryAction message={shownError} /> : null}
       <LiveText
         className={styles.caption}
         size="caption"

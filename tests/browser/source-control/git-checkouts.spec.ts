@@ -247,7 +247,7 @@ test("repository overview collapses with keyboard and preserves open panels and 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/source-control/git-workspace.html?submodules");
   const overview = page.getByRole("button", { name: "Repository", exact: true });
-  const selector = page.getByRole("button", { name: /^Repository:/ });
+  const selector = overview.locator("..").getByRole("button", { name: /^Repository:/ });
   const panel = page.locator('[data-git-repository="/fixture/core-pack"]');
   const row = panel.locator("header button[aria-expanded]").first();
   await expect(row).toHaveAttribute("aria-expanded", "false");
@@ -303,7 +303,11 @@ test("repository choice survives sidebar remount and reload before delayed submo
   await page.addInitScript(() => localStorage.setItem("bycoda.language.git", "en"));
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/source-control/git-workspace.html?submodules&slow-discovery");
-  const selector = page.getByRole("button", { name: /^Repository:/ });
+  // The overview filter and the Stashes/Graph repository selector have separate scopes.
+  const selector = page
+    .getByRole("button", { name: "Repository", exact: true })
+    .locator("..")
+    .getByRole("button", { name: /^Repository:/ });
   await expect(page.locator('[data-git-repository="/fixture/core-pack"]')).toBeVisible();
   await selector.click();
   // Option names carry the path description (label + path) in the accessible name.
@@ -612,13 +616,18 @@ test("grouped repository files allow wheel scrolling the outer list", async ({ p
   });
   expect(await outer.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
   await panels.first().getByText("workspace.tsx", { exact: true }).hover();
+  // Hover scrolls an offscreen file into view before dispatching the wheel event.
+  const baseline = await outer.evaluate((element) => element.scrollTop);
   await page.mouse.wheel(0, 100);
-  await expect.poll(() => outer.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => outer.evaluate((element) => element.scrollTop)).toBeGreaterThan(baseline);
   await page.mouse.wheel(0, -100);
-  await expect.poll(() => outer.evaluate((element) => element.scrollTop)).toBe(0);
+  await expect.poll(() => outer.evaluate((element) => element.scrollTop)).toBe(baseline);
   await panels.first().getByText("workspace.tsx", { exact: true }).hover();
+  const diagonalBaseline = await outer.evaluate((element) => element.scrollTop);
   await page.mouse.wheel(20, 100);
-  await expect.poll(() => outer.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect
+    .poll(() => outer.evaluate((element) => element.scrollTop))
+    .toBeGreaterThan(diagonalBaseline);
 });
 
 test("checkout panels preserve identity, keyboard expansion and searchable selection", async ({
@@ -639,8 +648,16 @@ test("checkout panels preserve identity, keyboard expansion and searchable selec
   // The shared tooltip retains exact repository paths without repeating them in rows.
   for (const path of ["/trees/audit/very-long-worktree-folder-name", "/fixture"]) {
     await headerFor(path).hover();
+    await expect(page.getByRole("tooltip")).toHaveCount(1);
     await expect(page.getByRole("tooltip")).toContainText(path);
     await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+    // Tooltip focus hints follow keyboard modality, not programmatic pointer focus.
+    await page.keyboard.press("Tab");
+    await headerFor(path).focus();
+    await expect(page.getByRole("tooltip")).toHaveCount(1);
+    await expect(page.getByRole("tooltip")).toContainText(path);
+    await headerFor(path).blur();
     await expect(page.getByRole("tooltip")).toHaveCount(0);
   }
   for (const width of [390, 768, 1024, 1440]) {

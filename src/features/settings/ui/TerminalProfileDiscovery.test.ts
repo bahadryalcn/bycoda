@@ -43,6 +43,25 @@ async function click(label: string) {
   await act(async () => button!.click());
 }
 
+it("keeps long profile identity and path readable without hover or a focus-only tooltip", async () => {
+  const profile = {
+    id: "terminal-research",
+    provider: "claude",
+    label: "Aleksandra Wiśniewska-Kowalczyk · Araştırma 🧑🏽‍💻",
+    path: "C:\\Users\\Aleksandra.Wisniewska-Kowalczyk\\AppData\\Local\\Northwind Industries Holdings\\research-and-development\\claude-work-profile",
+  };
+  vi.mocked(invoke).mockResolvedValueOnce([profile]);
+  await click("Find terminal profiles");
+  for (const value of [profile.label, profile.path]) {
+    const text = [...document.querySelectorAll("p")].find(
+      (element) => element.textContent === value,
+    )!;
+    expect(text).toBeDefined();
+    expect(text.getAttribute("data-wrap")).toBe("anywhere");
+    expect(text.getAttribute("data-truncate")).toBeNull();
+  }
+});
+
 it("discovers profiles without connecting or logging in, then connects the selected path", async () => {
   const profile = {
     id: "terminal-work",

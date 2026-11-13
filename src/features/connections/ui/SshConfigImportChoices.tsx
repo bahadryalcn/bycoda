@@ -47,18 +47,18 @@ export function ConfigImportChoices({
         </div>
       </div>
       {host.endpoint.identityFile ? (
-        <Text as="p" tone="muted" className="break-all">
+        <Text wrap="anywhere" as="p" tone="muted">
           {t("Identity file")}: {host.endpoint.identityFile}
         </Text>
       ) : null}
       {host.endpoint.certificateFile ? (
-        <Text as="p" tone="muted" className="break-all">
+        <Text wrap="anywhere" as="p" tone="muted">
           {t("Public SSH certificate file")}: {host.endpoint.certificateFile}
         </Text>
       ) : null}
       {sshJumpChain(host.endpoint).length ? (
         <>
-          <Text as="p" tone="muted" className="break-all">
+          <Text wrap="anywhere" as="p" tone="muted">
             {t("Jump chain")}: {sshJumpChain(host.endpoint).join(" → ")}
           </Text>
           <JumpAuthenticationHelp />

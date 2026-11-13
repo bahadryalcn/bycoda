@@ -41,11 +41,16 @@ export function EffortScale({
   const levels = options.filter((option) => !option.icon);
   const selected = levels.findIndex((option) => option.value === value);
   return (
-    <div className={styles.scale}>
+    <div className={styles.scale} data-disabled={disabled || undefined}>
       {showValue ? (
-        <Text size="caption" weight="medium" className={styles.value}>
-          {options.find((option) => option.value === value)?.label}
-        </Text>
+        <div className={styles.header}>
+          <Text size="caption" tone="secondary" wrap="anywhere">
+            {label}
+          </Text>
+          <Text size="caption" weight="medium" className={styles.value} wrap="anywhere">
+            {options.find((option) => option.value === value)?.label}
+          </Text>
+        </div>
       ) : null}
       <RadioGroup
         variant="tiles"
