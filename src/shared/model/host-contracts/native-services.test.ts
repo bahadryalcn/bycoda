@@ -57,6 +57,14 @@ it("preserves native SSH permission replies without accepting forged or malforme
   ).toThrow();
 });
 
+it("requires the private background challenge without accepting caller authority", () => {
+  const method = "native.services.assistant.background.execute";
+  const input = { environmentId: "environment", threadId: "room", operationId: "operation", operationHash: "a".repeat(64), challenge: "b".repeat(64), relayId: "relay" };
+  expect(parseHostRpcParams(method, { input })).toEqual({ input });
+  for (const altered of [{ ...input, fullAccess: true }, { ...input, challenge: `${input.challenge}\n` }, { ...input, operationHash: "wrong" }])
+    expect(() => parseHostRpcParams(method, { input: altered })).toThrow();
+});
+
 it("accepts only known legacy formatter metadata for formatter recovery", () => {
   const schema = NATIVE_SERVICES_RPC_SCHEMAS["native.services.workspace.format"].result;
   const result = { formatted: "const x = 1;\n", cursorOffset: 0 };
@@ -69,11 +77,12 @@ it("accepts only known legacy formatter metadata for formatter recovery", () => 
 });
 
 it("registers private services and uploads without exposing old HTTP helper aliases", () => {
-  expect(NATIVE_SERVICE_METHODS).toHaveLength(38);
+  expect(NATIVE_SERVICE_METHODS).toHaveLength(39);
   expect(NATIVE_SERVICE_METHODS).toEqual(
     expect.arrayContaining([
       "native.services.assistant.presence.get",
       "native.services.assistant.presence.set",
+      "native.services.assistant.background.execute",
       "native.services.assistant.browser.panel",
       "native.services.desktop.status",
       "native.services.desktop.status.wait",

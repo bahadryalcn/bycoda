@@ -374,6 +374,92 @@ it("preserves an unsaved body across close and reopen after persistent write fai
     "Irreplaceable draft",
   );
 });
+
+it("continues editing and deleting the recovered copy while the original still exists", async () => {
+  await render();
+  const own = stored.find((note) => note.sourceSessionId === sessionId)!;
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "notes_upsert" && args.note.id === own.id
+      ? Promise.reject(new Error("Original write failed"))
+      : original(command, args),
+  );
+  await input(body(), "Recovered draft");
+  await act(async () => {
+    body().focus();
+    body().blur();
+  });
+  await click("Save as new note");
+  const recovered = stored.find((note) => note.id !== own.id && note.body === "Recovered draft")!;
+  expect(recovered).toBeDefined();
+  await input(body(), "Editing the recovered copy");
+  await act(async () => {
+    body().focus();
+    body().blur();
+  });
+  expect(stored.find((note) => note.id === recovered.id)?.body).toBe("Editing the recovered copy");
+  expect(stored.find((note) => note.id === own.id)?.body).toBe(own.body);
+  vi.useFakeTimers();
+  await click("Delete note");
+  await act(async () => vi.advanceTimersByTimeAsync(300));
+  await click("Confirm delete");
+  expect(stored.some((note) => note.id === recovered.id)).toBe(false);
+  expect(stored.some((note) => note.id === own.id)).toBe(true);
+});
+
+it.each([false, true])(
+  "preserves newer edits while recovery is pending (remount: %s)",
+  async (remount) => {
+    await render();
+    const own = stored.find((note) => note.sourceSessionId === sessionId)!;
+    const original = invoke.getMockImplementation()!;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    invoke.mockImplementation(async (command, args) => {
+      if (command === "notes_upsert") {
+        if (args.note.id === own.id)
+          throw new Error(
+            args.note.body === "Newer unsaved draft"
+              ? "Newer write failed"
+              : "Original write failed",
+          );
+        if (args.note.expectedUpdatedAt === 0) await pending;
+      }
+      return original(command, args);
+    });
+    await input(body(), "Recovery snapshot");
+    await act(async () => {
+      body().focus();
+      body().blur();
+    });
+    await click("Save as new note");
+    if (remount) {
+      await act(async () => root.render(null));
+      await render();
+    }
+    await input(body(), "Newer unsaved draft");
+    if (!remount) {
+      await act(async () => {
+        body().focus();
+        body().blur();
+      });
+      expect(container.textContent).toContain("Newer write failed");
+    }
+    if (remount) await act(async () => root.render(null));
+    await act(async () => release());
+    if (remount) await render();
+    expect(stored.some((note) => note.id !== own.id && note.body === "Recovery snapshot")).toBe(
+      true,
+    );
+    expect(body().value).toBe("Newer unsaved draft");
+    if (!remount) expect(container.textContent).toContain("Newer write failed");
+    await act(async () => root.render(null));
+    await render();
+    expect(body().value).toBe("Newer unsaved draft");
+  },
+);
 it("refreshes a clean editor when the same note changes externally", async () => {
   await render();
   const own = stored.find((note) => note.sourceSessionId === sessionId)!;

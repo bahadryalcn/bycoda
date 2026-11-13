@@ -1,10 +1,11 @@
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { useThemeGeneratorModel } from "./useThemeGeneratorModel";
 import { LoadingText } from "../../../../../shared/ui/LoadingText";
-import { lazy, Suspense, useEffect, type KeyboardEvent } from "react";
+import { lazy, Suspense, useEffect, useState, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Spinner } from "../../../../../shared/ui/Spinner";
+import { ImageLightbox } from "../../../../../shared/ui/ImageLightbox";
 import { Dices } from "../../../../../shared/ui/icons";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
@@ -39,6 +40,7 @@ import {
 } from "./themeSuggestionRequest";
 import { generatorSession, readGeneratorValue, useGeneratorState } from "./themeGeneratorSession";
 import "./ThemeControls.css";
+import { isImeComposition } from "../../../../../shared/lib/keyboard";
 
 const ModelPicker = lazy(() =>
   import("../../../../sessions")
@@ -95,6 +97,9 @@ const promptIdeas = () => [
  */
 export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
+  const [preview, setPreview] = useState<{ image: BackgroundLibraryImage; name: string } | null>(
+    null,
+  );
   // Everything below survives closing Settings (see themeGeneratorSession.ts).
   const [prompt, setPrompt] = useGeneratorState("prompt", "");
   const [choice, setChoice] = useThemeGeneratorModel();
@@ -251,7 +256,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") startGenerate();
+    if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) startGenerate();
   };
 
   const dismiss = () => {
@@ -425,6 +430,15 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
                   ) : null}
                   <span>{t("Apply {p1}", { p1: suggestion.name })}</span>
                 </Button>
+                {image?.status === "done" ? (
+                  <Button
+                    size="sm"
+                    label={t("Preview {p0}", { p0: suggestion.name })}
+                    onClick={() => setPreview({ image: image.image, name: suggestion.name })}
+                  >
+                    {t("Preview")}
+                  </Button>
+                ) : null}
                 {withImage && image?.status === "error" ? (
                   <span>
                     {t("Image generation failed.")} {image.detail}
@@ -468,6 +482,13 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
         </div>
       ) : null}
       {failureFeedback}
+      {preview ? (
+        <ImageLightbox
+          src={libraryImageSrc(preview.image)}
+          alt={preview.name}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
     </div>
   );
 }

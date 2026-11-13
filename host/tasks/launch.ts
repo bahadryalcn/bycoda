@@ -216,7 +216,10 @@ export async function launch(
         });
     if (!routingWaitDue(pending, now)) return pending;
     // A run retracted by a model wait is admitted again here; admission is idempotent.
-    if (pending.crewExecutionId && (!task.crewExecutionId || routingRun(task).modelRoutingWait))
+    if (
+      pending.crewExecutionId &&
+      (!task.crewExecutionId || routingRun(task).modelRoutingWait || task.crewWorkWait?.unstarted)
+    )
       await admitRunDuration(
         context.store,
         `\u0000crew-task:${task.id}`,
@@ -247,12 +250,34 @@ export async function launch(
         error: undefined,
         needsInput: undefined,
         modelRoutingWait: undefined,
+        crewWorkWait: undefined,
       };
       return await context.write(started);
     } catch (error) {
       const latest = await context.find(task.id);
       if (!latest || latest.status !== "queued" || latest.updatedAt !== pending.updatedAt)
         return latest ?? task;
+      if (error instanceof Error && error.name === "CrewWorkWait") {
+        const unstarted = (error as Error & { unstarted?: boolean }).unstarted === true;
+        if (unstarted)
+          await retractRunDuration(
+            context.store,
+            `\u0000crew-task:${task.id}`,
+            pending.crewExecutionId!,
+          );
+        const wait = { reason: error.message, unstarted };
+        if (
+          latest.crewWorkWait?.reason === wait.reason &&
+          latest.crewWorkWait.unstarted === wait.unstarted
+        )
+          return latest;
+        return await context.write({
+          ...latest,
+          crewWorkWait: wait,
+          error: wait.reason,
+          updatedAt: context.now(),
+        });
+      }
       if (error instanceof Error && error.name === "CrewRoutingWait") {
         // No eligible model for a crew member: keep the task queued until the next reset.
         const wait = routingWait(error as Error & { nextResetAt?: number });

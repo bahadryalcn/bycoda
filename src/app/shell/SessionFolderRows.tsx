@@ -18,6 +18,7 @@ import { Button } from "../../shared/ui/Button";
 import { TextField } from "../../shared/ui/TextField";
 import { useT } from "../../shared/i18n";
 import { Check, ChevronRight, CircleAlert, Folder, FolderOpen, Plus } from "../../shared/ui/icons";
+import { isImeComposition } from "../../shared/lib/keyboard";
 
 export function FolderRow({
   folder,
@@ -254,7 +255,7 @@ export function FolderRenameRow({
         onChange={(event) => setValue(event.target.value)}
         onBlur={() => finish(true)}
         onKeyDown={(event) => {
-          if (event.key === "Enter") {
+          if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
             event.preventDefault();
             finish(true);
           } else if (event.key === "Escape") {

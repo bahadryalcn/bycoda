@@ -222,7 +222,10 @@ fn classify(grant: &Grant, request: &Value) -> Option<bool> {
         "desktop.act" => Some("computerUse"),
         "git.merge" => {
             let branch = operation["input"]["review"]["currentBranch"].as_str()?;
-            if matches!(branch, "main" | "master" | "refs/heads/main" | "refs/heads/master") {
+            if matches!(
+                branch,
+                "main" | "master" | "refs/heads/main" | "refs/heads/master"
+            ) {
                 Some("pushMain")
             } else {
                 None
@@ -306,21 +309,32 @@ pub(crate) fn with_background_effect<T>(
     execute: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
     use sha2::{Digest, Sha256};
-    if source_json.len() > 32768 || format!("{:x}", Sha256::digest(source_json.as_bytes())) != operation_hash {
+    if source_json.len() > 32768
+        || format!("{:x}", Sha256::digest(source_json.as_bytes())) != operation_hash
+    {
         return Err("Background effect digest changed".into());
     }
-    let source: Value = serde_json::from_str(source_json).map_err(|_| "Invalid background effect")?;
-    let thread = source["threadId"].as_str().filter(|id| !id.is_empty()).ok_or("Room required")?;
-    if source["environmentId"].as_str() != Some(channel.environment_id()) ||
-        !matches!(source["action"].as_str(), Some("git.merge" | "social.send")) ||
-        !source["input"].is_object() {
+    let source: Value =
+        serde_json::from_str(source_json).map_err(|_| "Invalid background effect")?;
+    let thread = source["threadId"]
+        .as_str()
+        .filter(|id| !id.is_empty())
+        .ok_or("Room required")?;
+    if source["environmentId"].as_str() != Some(channel.environment_id())
+        || !matches!(source["action"].as_str(), Some("git.merge" | "social.send"))
+        || !source["input"].is_object()
+    {
         return Err("Invalid background effect source".into());
     }
-    let (_, issuer) = crate::control::validate_assistant_source(app, thread, channel.environment_id())?;
+    let (_, issuer) =
+        crate::control::validate_assistant_source(app, thread, channel.environment_id())?;
     issuer.with_live(|| {
         let mut db = database(app)?;
-        let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| e.to_string())?;
-        let grant = read(&transaction, channel.environment_id())?.ok_or("Native consent unavailable")?;
+        let transaction = db
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
+        let grant =
+            read(&transaction, channel.environment_id())?.ok_or("Native consent unavailable")?;
         if grant.principal != channel.consent_principal() {
             return Err("Native consent belongs to another Host".into());
         }
@@ -337,7 +351,8 @@ pub(crate) fn with_background_effect<T>(
         let retain_until = std::time::Instant::now() + std::time::Duration::from_secs(75);
         let result = execute();
         if result.is_err() {
-            if let Some(remaining) = retain_until.checked_duration_since(std::time::Instant::now()) {
+            if let Some(remaining) = retain_until.checked_duration_since(std::time::Instant::now())
+            {
                 std::thread::sleep(remaining);
             }
         }
@@ -438,13 +453,35 @@ mod tests {
     #[test]
     fn merge_exclusion_uses_reviewed_destination() {
         let grant = Grant {
-            revision: 1, environment_id: "host".into(), permission_level: "everything".into(),
-            project_ids: vec![], critical_exclusions: vec!["pushMain".into()],
-            issuer: "i".into(), principal: "p".into(),
+            revision: 1,
+            environment_id: "host".into(),
+            permission_level: "everything".into(),
+            project_ids: vec![],
+            critical_exclusions: vec!["pushMain".into()],
+            issuer: "i".into(),
+            principal: "p".into(),
         };
-        assert_eq!(classify(&grant, &json!({"input":{"operation":{"action":"git.merge", "input":{"review":{"currentBranch":"main", "source":"feature"}}}}})), None);
-        assert_eq!(classify(&grant, &json!({"input":{"operation":{"action":"git.merge", "input":{"review":{"currentBranch":"feature", "source":"main"}}}}})), Some(true));
-        assert_eq!(classify(&grant, &json!({"input":{"operation":{"action":"git.merge", "input":{}}}})), None);
+        assert_eq!(
+            classify(
+                &grant,
+                &json!({"input":{"operation":{"action":"git.merge", "input":{"review":{"currentBranch":"main", "source":"feature"}}}}})
+            ),
+            None
+        );
+        assert_eq!(
+            classify(
+                &grant,
+                &json!({"input":{"operation":{"action":"git.merge", "input":{"review":{"currentBranch":"feature", "source":"main"}}}}})
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            classify(
+                &grant,
+                &json!({"input":{"operation":{"action":"git.merge", "input":{}}}})
+            ),
+            None
+        );
     }
     #[test]
     fn corrupt_native_grants_fail_closed() {

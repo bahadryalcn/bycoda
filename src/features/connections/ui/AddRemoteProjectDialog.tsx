@@ -21,6 +21,7 @@ import { RemoteDataStatus } from "./RemoteDataStatus";
 import { subscribeRemoteRecovered } from "../model/remoteHealth";
 import { connectionOutcome } from "../model/remoteConnection";
 import { remoteBackoffDelay } from "../model/remotePollingPolicy";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 type RemoteProjectMachine = ReturnType<typeof remoteProjectMachines>[number];
 
@@ -331,7 +332,7 @@ function AddRemoteProjectForm({
             autoComplete="off"
             disabled={creating || opening}
             onKeyDown={(event) => {
-              if (event.key === "Enter") {
+              if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
                 event.preventDefault();
                 void browse(path.trim());
               }

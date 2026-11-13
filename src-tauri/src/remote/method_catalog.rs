@@ -221,6 +221,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "sessions.get"
             | "automations.list"
             | "automations.preview"
+            | "automations.propose"
             | "automations.save"
             | "automations.delete"
             | "automations.runs"

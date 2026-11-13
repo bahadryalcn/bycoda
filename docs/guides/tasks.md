@@ -56,4 +56,6 @@ A failed limits refresh means usage is unknown or last known, not zero. Existing
 
 Daily agent time uses confirmed run intervals and the Host's local calendar day. If an interval cannot be measured, usage is marked incomplete and new limited work waits; this does not mean the limit was reached. Running work can still finish. Sprint reports mark history as incomplete when older task events are no longer available, and refresh the affected source from its current snapshot.
 
-Completion, review, delivery, installation and release are separate. Task results and retained branches still use the existing owner delivery approval workflow.
+Completion, review, delivery, installation and release are separate. Automatic delivery requires a current PASS review, no unresolved findings, a retained workspace plan and Native permission for its original Assistant Room/project. Denied, excluded and uncertain delivery retains the branch and owner-review fallback. A passing review alone never grants permission.
+
+A committed branch conflict shares the single repair allowance and read-only advisor. An active task owning the exact target checkout and run receives one recorded coordination message; otherwise an isolated resolution task receives both reviewed commits and shares the original budget. Stop fences that child, preserving later owner work. Successful resolution makes the original task review a fresh delivery plan. Dirty target overlap remains for owner inspection and does not start committed-conflict recovery.

@@ -65,7 +65,7 @@ it.each(["translation", "reprompt"] as const)(
       cwd: "/p",
       harness: "codex",
       model: "codex:settings-default",
-      modelSettings: { effort: "high" },
+      modelSettings: { effort: "high", autoCompactWindow: "default" },
       providerAccountId: "settings-account",
     });
     expect(result).toMatchObject(defaultTextActionChoice());

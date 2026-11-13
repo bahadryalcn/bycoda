@@ -316,6 +316,7 @@ it("removes hidden jobs, selected counts, details, history and trash after live 
   expect(document.body.textContent).not.toContain("secret-session");
   expect(container.textContent).not.toContain("1 selected");
   expect(mock.snapshot!.jobs).toHaveLength(2);
+  await click("Records");
   await click("What I did");
   expect(container.textContent).not.toContain("Secret timeline");
   await click("More options");
@@ -2054,7 +2055,7 @@ it("saves project priority through its captured Host and preserves exact uncerta
   await click("Check status");
   expect(mock.request.mock.calls.filter(([input]) => input.op === "jobs.replan")).toHaveLength(1);
   expect(mock.request).toHaveBeenCalledWith({ op: "jobs.get", id: original.id }, "room-fixture");
-  expect(document.body.textContent).toContain("Review the goal before starting another replan");
+  expect(document.body.textContent).toContain("Review the epic before starting another replan");
   mock.environmentId = "other-host";
   await render({ initialTab: "jobs" });
   expect(document.body.textContent).not.toContain(frozen.feedback);

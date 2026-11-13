@@ -36,6 +36,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import "./InboxSettings.css";
 import { isInboxScopeString, useInboxScopePreference } from "./useInboxScopePreference";
 import { Row, SettingsFeedback } from "./settingsControls";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 export const INBOX_PROVIDERS = [
   {
@@ -319,7 +320,7 @@ export function GitlabSettings() {
               value={token}
               onChange={(event) => setToken(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void onSave();
+                if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) void onSave();
               }}
               placeholder={t("glpat-…")}
               aria-label={t("GitLab access token")}
@@ -512,7 +513,7 @@ export function AzureDevOpsSettings() {
               value={token}
               onChange={(event) => setToken(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void onSave();
+                if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) void onSave();
               }}
               placeholder={t("PAT…")}
               aria-label={t("Azure DevOps personal access token")}
@@ -731,7 +732,7 @@ export function LinearSettings() {
               value={token}
               onChange={(event) => setToken(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") void onSave();
+                if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) void onSave();
               }}
               placeholder={t("lin_api_…")}
               aria-label={t("Linear API key")}

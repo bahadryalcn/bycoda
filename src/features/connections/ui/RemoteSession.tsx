@@ -46,7 +46,7 @@ import type {
   PlanBuildTarget,
 } from "../../sessions";
 import { t, useLocale } from "../../../shared/i18n";
-import { remoteQueueReadNotice } from "../model/remoteSessionNotice";
+import { remotePendingRequestNotice, remoteQueueReadNotice } from "../model/remoteSessionNotice";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
@@ -3054,22 +3054,13 @@ function ConnectedRemoteSession({
   const notice = queue.error
     ? remoteQueueReadNotice(queue.error, queue.retry)
     : pending && !sending
-      ? {
-          // Saved and not yet confirmed: it goes out again by itself once the machine answers.
-          text: retryStopped
-            ? t("Saved requests need review before continuing.")
-            : online || pendingNeedsConfirmation
-              ? t("Waiting for the host to confirm your request.")
-              : t("Reconnecting. Your message will be sent automatically."),
-          detail: error,
-          action: {
-            kind: "retry",
-            get label() {
-              return t("Retry");
-            },
-            run: () => void retryPending().catch((reason) => setError(String(reason))),
-          },
-        }
+      ? remotePendingRequestNotice(
+          retryStopped,
+          online,
+          pendingNeedsConfirmation,
+          error,
+          () => void retryPending().catch((reason) => setError(String(reason))),
+        )
       : starting?.failed
         ? {
             text: starting.draft

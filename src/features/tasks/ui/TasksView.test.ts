@@ -404,7 +404,7 @@ it("starts in the open project's backlog and creates in the explicitly selected 
       .click(),
   );
   const choice = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
-    (option) => option.textContent?.includes("other Â·"),
+    (option) => option.textContent?.includes("other ·"),
   )!;
   await act(async () => choice.click());
   expect(list()?.textContent).not.toContain("Project A work");
@@ -525,7 +525,7 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   expect(actions("running")).toEqual(["Stop"]);
   expect(actions("review")).toEqual(["Approve", "More actions"]);
   expect(actions("done")).toEqual(["Run again", "More actions"]);
-  expect(actions("blocked")).toEqual(["Failed Â· Not signed in", "Retry", "More actions"]);
+  expect(actions("blocked")).toEqual(["Failed · Not signed in", "Retry", "More actions"]);
   await act(async () => button(column("blocked"), "More actions")!.click());
   expect(Array.from(document.body.querySelectorAll('[role="menu"] button'), buttonName)).toEqual([
     "Move to To do",
@@ -883,7 +883,7 @@ it("offers to merge a reviewed branch and shows what was checked", async () => {
   await act(async () => statusLine(card).click());
   const details = document.body.querySelector('[role="dialog"]')!;
   expect(details.textContent).toContain("Check command passed");
-  expect(details.textContent).toContain("Reviewer passed Â· Covers the week.");
+  expect(details.textContent).toContain("Reviewer passed · Covers the week.");
   expect(details.querySelector("details")!.open).toBe(false);
   expect(details.querySelector("details pre")!.textContent).toBe("12 tests passed");
   expect(details.textContent).toContain("The project has uncommitted changes.");
@@ -1283,7 +1283,7 @@ it("says so when the project's machine cannot take a task", async () => {
   await act(async () => button(container, "New task")!.click());
   const form = document.querySelector('form[aria-label="New task"]')!;
   expect(form.querySelector('[role="alert"]')?.textContent).toContain(
-    "isnâ€™t connected, or its bycoda Host needs an update",
+    "isn’t connected, or its bycoda Host needs an update",
   );
   expect(isDisabled(button(form, "Add to To do")!)).toBe(true);
   expect(isDisabled(button(form, "Add and start")!)).toBe(true);
@@ -1445,7 +1445,7 @@ it("shows a plan waiting for approval and asks the goal's machine to approve it"
   const card = container.querySelector<HTMLElement>('article[aria-label="Launch the beta"]')!;
   expect(card.textContent).toContain("Plan ready");
   expect(card.querySelector('[aria-label="Plan"]')!.textContent).toContain(
-    "Call the endpointin projectÂ· after Add the endpoint",
+    "Call the endpointin project· after Add the endpoint",
   );
   // The project list keeps an inert measuring copy of its "+N" button.
   expect(
@@ -1815,7 +1815,7 @@ it("opens a task's details from its card, and closes them with Escape", async ()
   expect(details.textContent).toContain("Review");
   expect(details.textContent).toContain("mc/abcd1234");
   expect(details.textContent).toContain("12 tests passed");
-  expect(details.textContent).toContain("Reviewer passed Â· Covers the week.");
+  expect(details.textContent).toContain("Reviewer passed · Covers the week.");
   expect(details.textContent).toContain("report.md | 1 +");
   // The board stays visible beside it.
   expect(column("review")).toBeTruthy();
@@ -2476,7 +2476,19 @@ it.each([
     expect(description.value).toBe("Submitted instructions");
     expect(lock.disabled).toBe(false);
     await act(async () => type(description, "Retry instructions"));
-    expect(description.value).toBe("Retry instructions");
+    if (label === "New epic") {
+      // A lost creation reply retains the original Host/payload until its receipt is reconciled.
+      expect(description.value).toBe("Submitted instructions");
+      expect(document.body.textContent).toContain(
+        "Check the previous epic creation before changing or closing its draft.",
+      );
+      const creates = invoke.mock.calls.filter(
+        ([command, args]) =>
+          command === "remote_request" && (args as any)?.method === "goals.create",
+      );
+      expect(creates).toHaveLength(1);
+      expect((creates[0][1] as any).params.goal.expectedAbsent).toBe(true);
+    } else expect(description.value).toBe("Retry instructions");
   },
 );
 

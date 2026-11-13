@@ -26,6 +26,14 @@ vi.mock("./useThemeGeneratorModel", () => ({
 }));
 vi.mock("../../../../../integrations/harness", () => ({ canRunHarnessTextPrompt: () => true }));
 vi.mock("./SaveLookButton", () => ({ SaveLookButton: () => null }));
+vi.mock("../../../../../shared/ui/ImageLightbox", () => ({
+  ImageLightbox: ({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) =>
+    createElement(
+      "div",
+      { "data-image-preview": src, "aria-label": alt },
+      createElement("button", { onClick: onClose }, "Close preview"),
+    ),
+}));
 vi.mock("./ImageProviderButton", () => ({
   ImageProviderButton: ({ onChange }: { onChange: (value: string) => void }) =>
     createElement("button", { onClick: () => onChange("none") }, "None"),
@@ -87,6 +95,21 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.unstubAllGlobals();
+});
+it("previews the generated image without applying it or requesting another image", async () => {
+  mocks.image.mockResolvedValue("/source.png");
+  await act(async () => button("Generate image").click());
+  await act(async () => button("Preview").click());
+  const preview = host.querySelector("[data-image-preview]");
+  expect(preview?.getAttribute("data-image-preview")).toBe("/image.png");
+  expect(preview?.getAttribute("aria-label")).toBe("Ocean");
+  expect(chooseBackground).not.toHaveBeenCalled();
+  expect(mocks.image).toHaveBeenCalledOnce();
+  await act(async () => button("Close preview").click());
+  expect(host.querySelector("[data-image-preview]")).toBeNull();
+  await act(async () => button("Use image").click());
+  expect(chooseBackground).toHaveBeenCalledOnce();
+  expect(mocks.image).toHaveBeenCalledOnce();
 });
 it("only requests an image on explicit command, once while pending, and caches it", async () => {
   const pending = deferred<string>();

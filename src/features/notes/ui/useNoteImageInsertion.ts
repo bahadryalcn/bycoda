@@ -50,8 +50,8 @@ function onlyNonImages(kinds: { types?: string[]; paths?: string[] }): boolean {
 /**
  * Image insertion for one open note: toolbar picker, pastes on the preview,
  * DOM drops on the editor body and native (Tauri) file drops. One insertion runs
- * at a time under the note's input owner; the markdown lands at the caret that
- * was current when the insertion started, and the draft owner applies it.
+ * at a time under the note's input owner; the markdown lands at the captured
+ * caret, or at the end if text changed while loading so no later edits are replaced.
  *
  * While files are dragged over the editor body it carries the shared drop mark and the cursor
  * badge says "Insert image" (or why it cannot). Text drags are not touched here: the editor
@@ -143,12 +143,20 @@ export function useNoteImageInsertion({
       imageBusyRef.current = true;
       setImageBusy(true);
       hideDrop();
+      const initialBody =
+        draftState.edits.current.body ?? draftState.saved?.body ?? draftState.base.body;
       try {
         const images = await load(work);
         if (images.length === 0) return;
         const currentBody =
           draftState.edits.current.body ?? draftState.saved?.body ?? draftState.base.body;
-        const inserted = insertNoteImagesMarkdown(currentBody, range.start, range.end, images);
+        const unchanged = currentBody === initialBody;
+        const inserted = insertNoteImagesMarkdown(
+          currentBody,
+          unchanged ? range.start : currentBody.length,
+          unchanged ? range.end : currentBody.length,
+          images,
+        );
         work.apply(() => {
           owners.current.onInserted(inserted.value);
           const unresolved = noteImageApplicationErrors(images);
@@ -162,17 +170,18 @@ export function useNoteImageInsertion({
             owners.current.onError(unresolved[0].message);
           }
         });
-        window.requestAnimationFrame(() => {
-          const view = editorViewRef.current;
-          if (!view || modeRef.current === "preview") return;
-          view.focus();
-          view.dispatch({
-            selection: {
-              anchor: Math.min(inserted.cursor, view.state.doc.length),
-            },
-            scrollIntoView: true,
+        if (unchanged)
+          window.requestAnimationFrame(() => {
+            const view = editorViewRef.current;
+            if (!view || modeRef.current === "preview") return;
+            view.focus();
+            view.dispatch({
+              selection: {
+                anchor: Math.min(inserted.cursor, view.state.doc.length),
+              },
+              scrollIntoView: true,
+            });
           });
-        });
       } catch (err: unknown) {
         work.apply(() => {
           const unresolved = noteImageApplicationErrors(err);

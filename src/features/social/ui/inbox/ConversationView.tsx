@@ -20,6 +20,7 @@ import { INBOX_STATUSES, type InboxItem, type InboxStatus } from "./inboxTypes";
 import { ReplyBox } from "./ReplyBox";
 import { useInboxInvalidate, useInboxThread, useInboxTimeline } from "./useInboxData";
 import "./inbox.css";
+import { isImeComposition } from "../../../../shared/lib/keyboard";
 
 /**
  * One conversation. A known person shows every channel on one timeline; otherwise the
@@ -199,7 +200,7 @@ export function ConversationView({
             placeholder={t("Add tag")}
             onChange={(event) => setTagDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") {
+              if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
                 event.preventDefault();
                 void addTag().catch(() => undefined);
               }

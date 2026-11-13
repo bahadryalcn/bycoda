@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 
 type Snapshot<T> = {
@@ -16,7 +16,8 @@ const cache = new Map<string, unknown>();
 const cacheSizes = new Map<string, number>();
 let cachedBytes = 0;
 const completed = new Map<string, { at: number; error: string | null }>();
-const flights = new Map<string, Promise<unknown>>();
+type FlightGroup = { latest?: Promise<unknown>; pending: number; latestPending: boolean };
+const flights = new Map<string, FlightGroup>();
 let generation = 0;
 const RESUME_TTL_MS = 30_000;
 
@@ -75,14 +76,21 @@ export function useGitResource<T>(
   quiet = false,
 ) {
   const [nonce, setNonce] = useState(0);
-  const refresh = useCallback(() => setNonce((value) => value + 1), []);
+  const refreshKey = useRef<string | null>(null);
+  const refresh = useCallback(() => {
+    refreshKey.current = key;
+    setNonce((value) => value + 1);
+  }, [key]);
   const [snapshot, setSnapshot] = useState<Snapshot<T>>(() => ({
     key,
     data: readCached<T>(key) ?? null,
     loading: enabled && (!quiet || !completed.has(key)),
     error: completed.get(key)?.error ?? null,
   }));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep this resource's admitted reads synchronized with checkout notifications and resume events until unmount.
   useEffect(() => {
+    const forced = refreshKey.current === key;
+    refreshKey.current = null;
     let cancelled = false;
     let inFlight = false;
     let pending = false;
@@ -104,15 +112,20 @@ export function useGitResource<T>(
         return;
       }
       inFlight = true;
+      const readGeneration = generation;
       if (!quiet || !completed.has(key))
         setSnapshot((previous) => ({ ...previous, loading: true }));
       try {
         // An explicit refresh follows a change: a read already running may
         // predate it, so it is replaced, and its late answer is not kept.
-        let flight = force ? undefined : (flights.get(key) as Promise<T> | undefined);
+        const group: FlightGroup = flights.get(key) ?? { pending: 0, latestPending: false };
+        let flight = !force && group.latestPending ? (group.latest as Promise<T>) : undefined;
         if (!flight) {
           const startedGeneration = generation;
-          const current = () => startedGeneration === generation && flights.get(key) === flight;
+          const current = () =>
+            startedGeneration === generation &&
+            flights.get(key) === group &&
+            group.latest === flight;
           flight = read()
             .then((data) => {
               if (current()) {
@@ -130,13 +143,36 @@ export function useGitResource<T>(
               throw error;
             })
             .finally(() => {
-              if (flights.get(key) === flight) flights.delete(key);
+              if (group.latest === flight) group.latestPending = false;
+              group.pending--;
+              if (!group.pending && flights.get(key) === group) flights.delete(key);
             });
-          flights.set(key, flight);
+          // Retain the latest identity until every superseded physical read
+          // settles, including gaps between completed replacement requests.
+          group.latest = flight;
+          group.latestPending = true;
+          group.pending++;
+          flights.set(key, group);
         }
-        const data = await flight;
-        if (cancelled) return;
-        setSnapshot({ key, data, loading: false, error: null });
+        // A sibling can replace a shared read. Follow its outcome even if it
+        // completed before this obsolete read; the global cache alone is not enough.
+        let outcomeGroup = group;
+        while (true) {
+          const outcome = await flight.then(
+            (data) => ({ success: true as const, data }),
+            (error: unknown) => ({ success: false as const, error }),
+          );
+          if (cancelled || readGeneration !== generation) return;
+          outcomeGroup = flights.get(key) ?? outcomeGroup;
+          const replacement = outcomeGroup.latest as Promise<T> | undefined;
+          if (replacement && replacement !== flight) {
+            flight = replacement;
+            continue;
+          }
+          if (!outcome.success) throw outcome.error;
+          setSnapshot({ key, data: outcome.data, loading: false, error: null });
+          break;
+        }
       } catch (error) {
         if (!cancelled)
           setSnapshot((previous) => ({
@@ -152,7 +188,7 @@ export function useGitResource<T>(
         }
       }
     };
-    void load(nonce > 0);
+    void load(forced);
     // Focus alone is no reason to rerun git: a watched checkout reports its own
     // changes, and others wait out the TTL. A change seen while hidden is. A
     // resource with its own refresh interval reads beyond `.git` (a pull

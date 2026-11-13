@@ -6,6 +6,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { createSkillGroup, renameSkillGroup, deleteSkillGroup, type SkillGroup } from "../index";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 export type GroupEdit =
   | { kind: "create"; skillNames: string[] }
@@ -55,7 +56,7 @@ export function SkillGroupDialogs({ edit, onClose }: { edit: GroupEdit; onClose:
         onChange={(event) => setName(event.currentTarget.value)}
         autoFocus
         onKeyDown={(event) => {
-          if (event.key === "Enter" && name.trim()) {
+          if (event.key === "Enter" && !isImeComposition(event.nativeEvent) && name.trim()) {
             event.preventDefault();
             save();
           }

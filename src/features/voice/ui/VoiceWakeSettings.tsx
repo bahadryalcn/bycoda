@@ -5,6 +5,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { Toggle } from "../../settings/public/settingsControls";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 import { defaultWakePhrases, WAKE_PHRASE_LIMITS } from "../model/voiceWakePhrase";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 function PhraseField({
   id,
@@ -46,7 +47,7 @@ function PhraseField({
         onChange={(event) => setDraft(event.target.value)}
         onBlur={commit}
         onKeyDown={(event) => {
-          if (event.key === "Enter") commit();
+          if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) commit();
         }}
       />
     </Row>

@@ -158,7 +158,7 @@ function start(entry: Entry) {
   // while the machine is unreachable.
   entry.unsubscribeDirs = subscribeDirsChanged(() => {
     if (remotePollDue(entry.cwd)) entry.onResume?.();
-  });
+  }, entry.cwd);
 }
 
 function stop(entry: Entry) {

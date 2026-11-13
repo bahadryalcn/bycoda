@@ -24,6 +24,7 @@ it("publishes original task locals before each readiness wait", async () => {
   let releaseTasks!: () => void;
   let releaseGoals!: () => void;
   const automations = {
+    bindTasks: vi.fn(),
     ready: new Promise<void>((resolve) => {
       releaseAutomations = resolve;
     }),

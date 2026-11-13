@@ -12,6 +12,7 @@ import type { TaskDeliveryReview } from "../../src/features/tasks/model/hostTask
 import { git } from "./git";
 import { consultRepairAdvisor } from "./recovery";
 import { budgetParent } from "./goal-budget";
+import { cancel } from "./task-actions";
 
 vi.mock("./git", () => ({ git: vi.fn() }));
 vi.mock("./recovery", () => ({ consultRepairAdvisor: vi.fn() }));
@@ -144,6 +145,7 @@ describe("durable conflict child lifecycle", () => {
     const tasks = new Map<string, HostTask>([[task.id, task]]);
     const context = {
       find: async (id: string) => tasks.get(id),
+      list: async () => [...tasks.values()],
       taskValue: async (id: string) => JSON.stringify(tasks.get(id)),
       unchangedTask: async (id: string, expected: string) =>
         JSON.stringify(tasks.get(id)) === expected ? tasks.get(id) : undefined,
@@ -177,4 +179,27 @@ describe("durable conflict child lifecycle", () => {
     await recoverCommittedConflict(context, tasks.get("parent")!, cleanPlan);
     expect(tasks.get("parent")?.conflictRecovery).toBeUndefined();
   });
+});
+
+it("does not cancel a later owner invocation of the former recovery child", async () => {
+  const old = {
+    ...child,
+    createdAt: 9,
+    workInvocationId: "old-child-run",
+    status: "queued",
+  } as HostTask;
+  const later = { ...old, workInvocationId: "owner-new-run", conflictParent: undefined };
+  const block = vi.fn();
+  const context = {
+    ready: Promise.resolve(),
+    find: async () => later,
+    transaction: async (work: () => Promise<unknown>) => work(),
+    store: { db: { prepare: () => ({ get: async () => ({ generation: 3 }) }) } },
+    automaticDeliveryControllers: new Map(),
+    jobs: new Map(),
+    block,
+  } as unknown as TaskContext;
+  await cancel(context, old.id, "Parent stopped", old);
+  expect(block).not.toHaveBeenCalled();
+  expect(later.status).toBe("queued");
 });

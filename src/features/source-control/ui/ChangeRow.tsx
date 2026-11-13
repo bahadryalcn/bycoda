@@ -66,7 +66,6 @@ export const ChangeRow = memo(function ChangeRow({
   const dir = tree ? "" : dirname(file.relative);
   // A collided name with its folder beside it steps down to the caption role.
   const dimmed = Boolean(collision && dir);
-  const canOpen = file.status !== "deleted";
   const {
     menu,
     openFrom,
@@ -76,7 +75,7 @@ export const ChangeRow = memo(function ChangeRow({
     languageDomain: "git",
     path: file.path,
     relative: file.relative,
-    deleted: !canOpen,
+    deleted: file.status === "deleted",
     selection: () => {
       const chosen = selection?.targets(file) ?? [file];
       return chosen.map((value) => ({
@@ -152,10 +151,10 @@ export const ChangeRow = memo(function ChangeRow({
             event.currentTarget.focus({ preventScroll: true });
             selection?.select(file.path, event);
             if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-            if (canOpen) onOpenFile(file.path, kind);
+            onOpenFile(file.path, kind);
           }}
           onDoubleClick={(event) => {
-            if (canOpen && !event.ctrlKey && !event.metaKey && !event.shiftKey)
+            if (!event.ctrlKey && !event.metaKey && !event.shiftKey)
               onOpenFile(file.path, kind, true);
           }}
           className="flex min-w-0 flex-1 select-none items-center gap-1.5 text-left "

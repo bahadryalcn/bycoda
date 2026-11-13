@@ -134,7 +134,7 @@ it("shows live bindings on the projects toggle, history and rail actions without
       ["App: Settings", "Settings"],
     ]) {
       await act(async () => {
-        saveKeybindingOverride(command, { shortcut: "Control+Shift+KeyM" });
+        saveKeybindingOverride(command, { shortcut: "Control+Option+Shift+KeyM" });
       });
       const railRow = label === "Search" || label === "Settings";
       if (!railRow) expect(await tooltipText(button(label))).toMatch(/M$/);

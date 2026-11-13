@@ -7,6 +7,7 @@ import { declaredTypeKeys } from "../../../../scripts/checks/host-rpc-source-fix
 import { exportWireSchema } from "./manifest";
 import * as dto from "./crews";
 import { HostCrews } from "../../../../host/crews/crews";
+import { wireCrewSourceTasks } from "../../../../host/crews/crew-source-task.fixture";
 import { HostStore } from "../../../../host/store";
 import type { HostTasks } from "../../../../host/tasks/tasks";
 import type { HostEngine } from "../../../../host/engine";
@@ -645,6 +646,7 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
     async () => catalog,
     () => 1000,
   );
+  const sourceTasks = wireCrewSourceTasks(owner, tasks as unknown as HostTasks, store);
   cleanups.push(() => owner.close());
   const covered = new Set<string>();
   const call = async <M extends keyof typeof dto.CREWS_RPC_SCHEMAS>(
@@ -754,6 +756,8 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   await call("crews.finish", { runId: started.id });
   status = "idle";
   const finished = (await call("crews.list")).runs.find((run) => run.id === started.id);
+  await expect(owner.call("crews.deleteRun", { runId: started.id, expectedUpdatedAt: finished!.updatedAt }, project.id)).rejects.toThrow("still owns");
+  sourceTasks.remove();
   await call("crews.deleteRun", {
     runId: started.id,
     expectedUpdatedAt: finished!.updatedAt,

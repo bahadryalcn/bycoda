@@ -4,26 +4,31 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WorkingTreeDiff } from "./WorkingTreeDiff";
 import type { UnifiedDiffView } from "./UnifiedDiffView";
-import { notifyGitChangedWith, resetGitIndexStore } from "../model/gitIndexStore";
+import type { GitChange } from "../../../platform/tauri/fs";
+import { getDomainLanguagePreference, setDomainLanguagePreference } from "../../../shared/i18n";
+import { t } from "../../../shared/i18n/git";
+import { fetchGitIndex, notifyGitChangedWith, resetGitIndexStore } from "../model/gitIndexStore";
 
 const api = vi.hoisted(() => ({
   files: vi.fn(),
   diff: vi.fn(),
   view: vi.fn(),
-  listeners: new Set<() => void>(),
+  stage: vi.fn(),
+  listeners: new Map<(change?: GitChange) => void, string | undefined>(),
 }));
 vi.mock("../../../platform/tauri/fs", () => ({
   gitDiffFiles: api.files,
   gitDiffIndex: api.files,
   gitFileDiff: api.diff,
-  gitStageFile: vi.fn(),
+  gitStageFile: api.stage,
   gitDiscardFile: vi.fn(),
   gitStageContents: vi.fn(),
-  notifyGitChanged: () => {
-    for (const listener of [...api.listeners]) listener();
+  notifyGitChanged: (cwd?: string, scope: GitChange["scope"] = "refs") => {
+    for (const [listener, root] of api.listeners)
+      if (scope === "refs" || !cwd || !root || root === cwd) listener({ cwd, scope });
   },
-  subscribeGitChanged: (listener: () => void) => {
-    api.listeners.add(listener);
+  subscribeGitChanged: (listener: (change?: GitChange) => void, filter?: { cwd?: string }) => {
+    api.listeners.set(listener, filter?.cwd);
     return () => api.listeners.delete(listener);
   },
 }));
@@ -236,4 +241,50 @@ it("coalesces a burst of events into one refresh", async () => {
   expect(api.files).not.toHaveBeenCalled();
   await settle(400);
   expect(api.files).toHaveBeenCalledTimes(1);
+});
+
+it("does not refresh a new checkout when an old checkout's stage finishes", async () => {
+  let finish!: () => void;
+  api.stage.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const props = api.view.mock.calls.at(-1)![0];
+  let pending: unknown;
+  await act(async () => {
+    pending = props.onStageFile(models()[0].id);
+  });
+  expect(api.stage).toHaveBeenCalledWith(CWD, "f0.ts");
+  await act(async () => root.render(createElement(WorkingTreeDiff, { cwd: "/other-repo" })));
+  await settle();
+  api.files.mockClear();
+  api.diff.mockClear();
+  await act(async () => {
+    finish();
+    await pending;
+  });
+  await act(async () => {
+    await fetchGitIndex("/other-repo", { since: 0 });
+  });
+  await settle(600);
+  expect(api.files.mock.calls.filter(([cwd]) => cwd === "/other-repo")).toHaveLength(0);
+  expect(api.diff.mock.calls.filter(([cwd]) => cwd === "/other-repo")).toHaveLength(0);
+});
+
+it("updates cached diff labels after a language change without reloading Git data", async () => {
+  const previous = getDomainLanguagePreference("git");
+  const before = models().at(-1)!.emptyMessage;
+  api.files.mockClear();
+  api.diff.mockClear();
+  try {
+    await act(async () => setDomainLanguagePreference("git", "tr"));
+    expect(models().at(-1)!.emptyMessage).toBe(t("Loading…"));
+    expect(models().at(-1)!.emptyMessage).not.toBe(before);
+    expect(api.files).not.toHaveBeenCalled();
+    expect(api.diff).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => setDomainLanguagePreference("git", previous));
+  }
 });

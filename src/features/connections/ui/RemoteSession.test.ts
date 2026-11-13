@@ -25,7 +25,7 @@ import {
 import { rememberRemoteProject, remoteProjectFor } from "../model/remoteProjects";
 import { RemoteSession, type RemoteSessionOverrides } from "./RemoteSession";
 import { outboxFixture } from "./remoteSessionOutboxFixture";
-import { settle, tooltipText, typeText } from "./RemoteSession.test-support";
+import { effort, settle, tooltipText, typeText } from "./RemoteSession.test-support";
 import {
   preloadRemoteSession,
   resetRemoteSessionCachesForTests,
@@ -197,16 +197,6 @@ const machine: RemoteMachine = {
   endpoint: "ssh://me@home",
   environmentId: "env",
 };
-const effort = (id: string, value: string) => ({
-  id,
-  label: "Reasoning",
-  kind: "select" as const,
-  value,
-  options: ["low", "medium", "high"].map((option) => ({
-    value: option,
-    label: option[0].toUpperCase() + option.slice(1),
-  })),
-});
 const gpt: AgentModel = {
   id: "codex:gpt-test",
   harness: "codex",

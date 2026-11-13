@@ -1,3 +1,4 @@
+import { createCrewTaskRunner } from "./crew-task-runner";
 import { crewTaskCanStart, crewTaskAdmitted } from "./crew-task-admission";
 import { reserveCrewRun } from "./crew-run-reservation";
 import {
@@ -149,49 +150,12 @@ export class HostCrews {
     this.ready = Promise.all([store.ready, tasks.ready]).then(() =>
       initializeCrewSchedulerProjection(store),
     );
-    tasks.crewRunner = {
-      validate: async (task) => {
-        if (
-          !(await readCrewDefinitions(this.store)).definitions.some(
-            (d) =>
-              d.id === task.crewDefinitionId && (!d.projectId || d.projectId === task.projectId),
-          )
-        )
-          throw new Error("Choose a crew available to this task's project.");
-      },
-      start: async (task) => {
-        const run = await this.startRun(
-          task.projectId,
-          task.crewDefinitionId!,
-          `Task: ${task.title}\n\n${task.prompt}${task.verifyCommand ? `\n\nThe final assignment must pass this exact check command: ${task.verifyCommand}` : ""}`,
-          task.crewExecutionId!,
-          task.runtimeMode,
-          undefined,
-          false,
-          task.id,
-        );
-        if (run.routingWait) throw new CrewRoutingWait(run.routingWait.nextResetAt);
-        if (!run.coordinatorSessionId || run.error)
-          throw new Error(run.error ?? "Crew coordinator could not start.");
-        const session = (await this.store.session(run.coordinatorSessionId)).session;
-        return {
-          sessionId: run.coordinatorSessionId,
-          harness: session.harness,
-          model: session.model,
-          modelSettings: session.modelSettings,
-        };
-      },
-      state: async (task) => {
-        const run = await this.run(task.crewExecutionId!, task.projectId);
-        return { status: run.status, error: run.error };
-      },
-      stop: async (task) => {
-        if (!task.crewExecutionId) return;
-        const run = await readCrewRun(this.store, task.crewExecutionId);
-        if (run && run.projectId === task.projectId && run.status !== "finished")
-          await this.call("crews.stop", { runId: run.id }, task.projectId);
-      },
-    };
+    tasks.crewRunner = createCrewTaskRunner({
+      store: this.store,
+      startRun: (...args) => this.startRun(...args),
+      readRun: (id, projectId) => this.run(id, projectId),
+      call: (action, input, projectId) => this.call(action, input, projectId),
+    });
     tasks.crewCanStart = (task) => crewTaskCanStart(this.store, tasks, task);
   }
   start() {
@@ -673,7 +637,9 @@ export class HostCrews {
       if (
         (!principal || newConversation) &&
         existing.launch &&
-        (!existing.coordinatorSessionId || existing.error)
+        (!existing.coordinatorSessionId ||
+          existing.error ||
+          (await crewCoordinatorLaunchPending(this.store, existing)))
       )
         return await this.launchCoordinator(existing);
       return existing;

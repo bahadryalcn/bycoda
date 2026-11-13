@@ -1,4 +1,4 @@
-import { readSessionWorkReceipt } from "../work/session-adapter";
+import { getSessionWork, readSessionWorkReceipt } from "../work/session-adapter";
 import { createHash } from "node:crypto";
 import type { CrewRun } from "../../src/features/crews/model/crew";
 import { launchGeneration } from "./crew-managed-session";
@@ -67,4 +67,23 @@ export async function crewCoordinatorLaunchPending(
     occurrence: String(launchGeneration(run) ?? run.id),
   });
   return original.exists && !original.receipt;
+}
+
+/** Classify only the exact persisted coordinator occurrence, retaining unknown dispatch. */
+export async function crewCoordinatorWorkWait(store: HostStore, run: CrewRun) {
+  const records = await getSessionWork(store).list();
+  const work = records.find(
+    (item) =>
+      item.source.kind === "crew.coordinator" &&
+      item.source.id === run.id &&
+      item.source.occurrence === String(launchGeneration(run) ?? run.id),
+  );
+  if (!work || work.receipt || work.state === "completed" || work.stopRequested) return undefined;
+  return {
+    reason:
+      work.state === "unknown"
+        ? "Coordinator dispatch outcome is unknown; waiting for recovery."
+        : (work.wait?.message ?? "Waiting for shared Work admission."),
+    unstarted: !work.dispatchStarted && (work.state === "queued" || work.state === "waiting"),
+  };
 }

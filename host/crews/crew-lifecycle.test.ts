@@ -7,6 +7,10 @@ import { HostStore } from "../store";
 import { HostEngine } from "../engine";
 import { HostTasks } from "../tasks/tasks";
 import { HostCrews } from "./crews";
+import { crewCoordinatorWorkWait } from "./coordinator-work";
+import { WorkStorage } from "../work/storage";
+import { getSessionWork } from "../work/session-adapter";
+import type { CrewRun } from "../../src/features/crews/model/crew";
 import type { HostProvider } from "../providers/providers";
 import { defaultCrewPolicy } from "../../src/features/crews/model/crew";
 
@@ -177,7 +181,7 @@ async function setup(delayAssignment = false, failingReviews = 0) {
     launchGate.resolve();
   }
   await waitForReview(tasks, store, assignment.taskId);
-  return { crews, tasks, project, principal, assignment, cwd, reviewer, worker, store };
+  return { crews, tasks, project, principal, assignment, cwd, reviewer, worker, store, engine };
 }
 
 it("runs accepted Crew assignment after its originating project permit closes", async () => {
@@ -309,7 +313,25 @@ it("lets an agent launch a separate coordinator and reuses host-wide crews in an
     "other-run",
     "supervised",
   );
-  expect((await f.store.session(remoteRun.coordinatorSessionId!)).projectId).toBe(other.id);
+  expect(remoteRun.sourceTaskId).toBeTruthy();
+  let coordinatorSessionId = remoteRun.coordinatorSessionId;
+  await vi.waitFor(
+    async () => {
+      await f.tasks.tick();
+      await f.tasks.idle();
+      const current = (await f.crews.list(other.id)).runs.find(
+        (entry) => entry.id === remoteRun.id,
+      );
+      const source = await f.tasks.get(remoteRun.sourceTaskId!);
+      expect(source?.status, `Coordinator source: ${source?.error ?? "no error"}`).not.toBe(
+        "blocked",
+      );
+      coordinatorSessionId = current?.coordinatorSessionId;
+      expect(coordinatorSessionId).toBeTruthy();
+    },
+    { timeout: 15000 },
+  );
+  expect((await f.store.session(coordinatorSessionId!)).projectId).toBe(other.id);
 }, 90000);
 
 it("runs crew tasks with one worker slot and completes only after crew acceptance", async () => {
@@ -377,11 +399,18 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
     principal,
   );
   await f.crews.call("crews.finish", { runId: parent.crewExecutionId }, f.project.id, principal);
-  await f.tasks.tick();
-  expect((await f.tasks.get("parent"))?.status).toBe("done");
+  await vi.waitFor(
+    async () => {
+      await f.tasks.tick();
+      await f.tasks.idle();
+      const current = await f.tasks.get("parent");
+      expect(current?.status, `Parent completion: ${current?.error ?? "no error"}`).toBe("done");
+    },
+    { timeout: 15000 },
+  );
 }, 90000);
 
-it("starts independent crew tasks and retries a stopped task with a fresh run", async () => {
+it("admits a third crew after idle coordinators retire and retries a stopped task", async () => {
   const f = await setup();
   await f.crews.call(
     "crews.accept",
@@ -416,6 +445,49 @@ it("starts independent crew tasks and retries a stopped task with a fresh run", 
   expect(second.status).toBe("running");
   expect(first.crewExecutionId).not.toBe(second.crewExecutionId);
   expect(first.sessionId).not.toBe(second.sessionId);
+  for (const parent of [first, second]) {
+    await vi.waitFor(
+      async () => expect((await f.store.session(parent.sessionId!)).status).toBe("idle"),
+      { timeout: 15000 },
+    );
+  }
+  const work = getSessionWork(f.store);
+  await work.reconcile();
+  for (const parent of [first, second]) {
+    const coordinator = (await work.list()).find(
+      (item) =>
+        item.source.kind === "crew.coordinator" && item.source.id === parent.crewExecutionId,
+    );
+    expect(coordinator?.state).toBe("completed");
+  }
+  await f.tasks.save({
+    id: "three",
+    projectId: f.project.id,
+    title: "three",
+    prompt: "Implement",
+    harness: "codex",
+    model: "codex:test",
+    modelSettings: {},
+    runtimeMode: "supervised",
+    maxRunMinutes: 0,
+    isolate: false,
+    review: false,
+    continueUntilDone: false,
+    crewDefinitionId: "crew",
+    status: "queued",
+  });
+  await vi.waitFor(
+    async () => {
+      await f.tasks.tick();
+      await f.tasks.idle();
+      const third = await f.tasks.get("three");
+      expect(third?.status, `Third crew: ${third?.error ?? "no error"}`).toBe("running");
+      expect(third?.crewExecutionId).toBeTruthy();
+    },
+    { timeout: 15000 },
+  );
+  expect((await f.tasks.get("one"))?.status).toBe("running");
+  expect((await f.tasks.get("two"))?.status).toBe("running");
   await f.tasks.move("one", "blocked");
   expect((await f.tasks.get("one"))?.status).toBe("blocked");
   expect(
@@ -424,9 +496,46 @@ it("starts independent crew tasks and retries a stopped task with a fresh run", 
   expect(
     (await f.crews.list(f.project.id)).runs.find((r) => r.id === second.crewExecutionId)?.status,
   ).toBe("active");
+  const original = (await work.list()).find(
+    (item) => item.source.kind === "crew.coordinator" && item.source.id === first.crewExecutionId,
+  );
+  expect(original?.receipt).toBeTruthy();
+  await f.engine.waitForRun(original!.receipt!.sessionId, original!.receipt!.runId);
+  await work.reconcile();
   await f.tasks.move("one", "queued");
-  await f.tasks.tick();
-  await f.tasks.idle();
-  expect((await f.tasks.get("one"))?.crewExecutionId).not.toBe(first.crewExecutionId);
-  expect((await f.tasks.get("one"))?.status).toBe("running");
+  await vi.waitFor(
+    async () => {
+      await f.tasks.tick();
+      await f.tasks.idle();
+      const retried = await f.tasks.get("one");
+      expect(retried?.crewExecutionId).not.toBe(first.crewExecutionId);
+      expect(retried?.status, `Retry failed: ${retried?.error ?? "no error"}`).toBe("running");
+    },
+    { timeout: 15000 },
+  );
+}, 90000);
+
+it("classifies the exact capacity wait separately from unknown coordinator dispatch", async () => {
+  const f = await setup();
+  const storage = new WorkStorage(f.store, Date.now);
+  const run = { id: "held-coordinator", notifications: {} } as CrewRun;
+  const work = await storage.submit({
+    source: { kind: "crew.coordinator", id: run.id, occurrence: "0" },
+    projectId: f.project.id,
+    payload: {},
+  });
+  await storage.save({
+    ...work,
+    state: "waiting",
+    wait: { code: "capacity", message: "Shared Work capacity is full." },
+  });
+  expect(await crewCoordinatorWorkWait(f.store, run)).toEqual({
+    reason: "Shared Work capacity is full.",
+    unstarted: true,
+  });
+  await storage.save({ ...work, state: "unknown", reserved: true, dispatchStarted: true });
+  expect(await crewCoordinatorWorkWait(f.store, run)).toEqual({
+    reason: "Coordinator dispatch outcome is unknown; waiting for recovery.",
+    unstarted: false,
+  });
 }, 90000);

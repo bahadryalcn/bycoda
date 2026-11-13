@@ -8,6 +8,7 @@ import { AssistantBackgroundEffect } from "./assistant-background-effect";
 it("requires live callback authority and never replays an uncertain effect", async () => {
   const dir = mkdtempSync(join(tmpdir(), "assistant-background-effect-"));
   const store = new HostStore(join(dir, "host.db"));
+  await store.ready;
   try {
     const owner = new AssistantBackgroundEffect(store);
     const source = {
@@ -48,6 +49,7 @@ it("requires live callback authority and never replays an uncertain effect", asy
 it("rejects a callback after monotonic admission expires even if wall time moves backwards", async () => {
   const dir = mkdtempSync(join(tmpdir(), "assistant-background-deadline-"));
   const store = new HostStore(join(dir, "host.db"));
+  await store.ready;
   const monotonic = vi.spyOn(performance, "now");
   const wall = vi.spyOn(Date, "now");
   try {
@@ -91,6 +93,7 @@ it("rotates only an expired unclaimed operation and recovers its completed resul
   const dir = mkdtempSync(join(tmpdir(), "assistant-background-recovery-"));
   const file = join(dir, "host.db");
   let store = new HostStore(file);
+  await store.ready;
   const clock = vi.spyOn(Date, "now");
   try {
     clock.mockReturnValue(1_000_000);

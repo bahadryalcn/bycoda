@@ -153,6 +153,15 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
     if (!isDeepStrictEqual(parseHostTask(previous), parseHostTask(updated))) {
       await assertTaskWorkRetired(context.store, previous.id);
       updated.workInvocationId = randomUUID();
+      updated.conflictRecovery = undefined;
+      updated.conflictParent = undefined;
+      updated.crewWorkWait = undefined;
+      updated.repairAdvisor = undefined;
+      fenceConflictChildren(previous.id);
+      const fence = conflictStopGeneration(previous.id);
+      const saved = await context.write(updated);
+      context.store.afterCommit(() => releaseConflictStop(previous.id, fence));
+      return saved;
     }
     return await context.write(updated);
   });
@@ -165,7 +174,7 @@ export async function move(
   reviewed?: HostTask,
   expectedGeneration?: number,
 ): Promise<HostTask> {
-  if (to === "blocked") {
+  if (to === "blocked" && expectedGeneration === undefined) {
     fenceConflictChildren(id);
     context.automaticDeliveryControllers.get(id)?.abort();
   }
@@ -189,6 +198,10 @@ export async function move(
   if (!task) throw new Error("Task not found.");
   if (expectedGeneration !== undefined && generation !== expectedGeneration)
     throw new Error("Task changed before starting. Refresh and try again.");
+  if (to === "blocked" && expectedGeneration !== undefined) {
+    fenceConflictChildren(id);
+    context.automaticDeliveryControllers.get(id)?.abort();
+  }
   if (reviewed) {
     assertExpectedConfiguration({ expectedConfiguration: reviewed }, task, parseHostTask);
     if (reviewed.status !== task.status)
@@ -217,7 +230,7 @@ export async function move(
       child.conflictParent.targetDirectory === task.conflictRecovery.targetDirectory &&
       child.conflictParent.targetBranch === task.conflictRecovery.targetBranch
     )
-      await cancel(context, child.id, "Conflict recovery parent was stopped.");
+      await cancel(context, child.id, "Conflict recovery parent was stopped.", child);
   }
   const now = context.now();
   if ((to === "queued" || to === "todo") && context.jobs.has(id))
@@ -233,12 +246,25 @@ export async function move(
   if (to === "queued") await context.resolveAssistantRecoveryForOwner(task);
   if (to === "queued" && canTakeOverBlockedTask(task)) {
     await assertTaskWorkRetired(context.store, task.id);
-    return await context.queueTakeover(
-      { ...task, workInvocationId: randomUUID() },
+    const invocation = randomUUID();
+    fenceConflictChildren(id);
+    const fence = conflictStopGeneration(id);
+    const saved = await context.queueTakeover(
+      {
+        ...task,
+        workInvocationId: invocation,
+        conflictRecovery: undefined,
+        conflictParent: undefined,
+        crewWorkWait: undefined,
+        repairAdvisor: undefined,
+      },
       now,
       task,
       generation,
     );
+    if (saved.workInvocationId === invocation)
+      context.store.afterCommit(() => releaseConflictStop(id, fence));
+    return saved;
   }
   if (to === "queued" && taskRequiresInstructions(task)) throw new Error(TASK_INPUT_REQUIRED);
   if (to === "todo" && task.status === "queued") {
@@ -264,6 +290,8 @@ export async function move(
   if (to === "queued" || to === "todo") {
     await assertTaskWorkRetired(context.store, task.id);
     const workInvocationId = randomUUID();
+    fenceConflictChildren(id);
+    const conflictFence = conflictStopGeneration(id);
     // A task that runs again starts over in a fresh session. Unmerged work
     // stays on its branch, and the next run continues there. A task put
     // back to to-do is cleared the same way.
@@ -279,6 +307,10 @@ export async function move(
       awaitingOwnerRestart: _awaitingOwnerRestart,
       reviewer: _reviewer,
       crewExecutionId: _crewExecutionId,
+      conflictRecovery: _conflictRecovery,
+      conflictParent: _conflictParent,
+      crewWorkWait: _crewWorkWait,
+      repairAdvisor: _repairAdvisor,
       diffStat: _diffStat,
       mergeError: _mergeError,
       mergeRetry: _mergeRetry,
@@ -289,8 +321,8 @@ export async function move(
       completedWithFindings,
       ...rest
     } = task;
-    if (!task.merged)
-      return await context.write(
+    if (!task.merged) {
+      const saved = await context.write(
         {
           ...rest,
           workInvocationId,
@@ -308,6 +340,9 @@ export async function move(
         task,
         generation,
       );
+      context.store.afterCommit(() => releaseConflictStop(id, conflictFence));
+      return saved;
+    }
     const {
       branch: _branch,
       worktreeCwd: _worktreeCwd,
@@ -338,23 +373,51 @@ export async function move(
       deliveryRequested: _deliveryRequested,
       ...fresh
     } = rest;
-    return await context.write(
+    const saved = await context.write(
       { ...fresh, workInvocationId, status: to, updatedAt: now },
       undefined,
       task,
       generation,
     );
+    context.store.afterCommit(() => releaseConflictStop(id, conflictFence));
+    return saved;
   }
   if (to === "blocked") {
+    const ownedController =
+      expectedGeneration === undefined ? undefined : context.jobControllers.get(id);
+    const blockStopped = async () => {
+      if (expectedGeneration === undefined)
+        return context.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
+      return context.transaction(async () => {
+        const latest = await context.find(id);
+        const currentGeneration = Number(
+          (
+            await context.store.db
+              .prepare("SELECT generation FROM task_admission_generation WHERE id=?")
+              .get(id)
+          )?.generation ?? 0,
+        );
+        if (
+          !latest ||
+          currentGeneration !== expectedGeneration ||
+          latest.createdAt !== task.createdAt ||
+          latest.workInvocationId !== task.workInvocationId ||
+          latest.status !== task.status
+        )
+          return latest ?? task;
+        return context.block({ ...latest, deliveryRequested: undefined }, STOPPED_BY_USER, now);
+      });
+    };
     if (task.crewDefinitionId && context.crewRunner) {
       await context.store.db.checkAuthorization();
       await context.crewRunner.stop(task);
-      return await context.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
+      return await blockStopped();
     }
     if (task.status === "verifying") {
       // Keep the job registered until its shell and descendants have exited.
       await context.store.db.checkAuthorization();
-      context.jobControllers.get(id)?.abort();
+      if (expectedGeneration === undefined) context.jobControllers.get(id)?.abort();
+      else ownedController?.abort();
       if (
         task.reviewer &&
         (await sessionRunState(context.store, task.reviewer, 0, now)).state === "running"
@@ -368,7 +431,7 @@ export async function move(
           await cancelSessionRun(context.engine, task.reviewer);
         await context.limits.recordRun(task.reviewer, now);
       }
-      return await context.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
+      return await blockStopped();
     }
     const run = { ...task, startedAt: task.startedAt ?? task.createdAt };
     if ((await sessionRunState(context.store, run, 0, now)).state === "running") {
@@ -381,7 +444,7 @@ export async function move(
         await cancelSessionRun(context.engine, run);
       await context.limits.recordRun(run, now);
     }
-    return await context.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
+    return await blockStopped();
   }
   if (to === "done" && hasUnmergedBranch(task)) {
     throw new Error(
@@ -732,12 +795,38 @@ export async function resolveNote(
   });
 }
 
-export async function cancel(context: TaskContext, id: string, reason: string): Promise<void> {
-  fenceConflictChildren(id);
-  context.automaticDeliveryControllers.get(id)?.abort();
+export async function cancel(
+  context: TaskContext,
+  id: string,
+  reason: string,
+  expectedChild?: HostTask,
+): Promise<void> {
+  if (!expectedChild) {
+    fenceConflictChildren(id);
+    context.automaticDeliveryControllers.get(id)?.abort();
+  }
   await context.ready;
 
-  const task = await context.find(id);
+  const { task, generation } = expectedChild
+    ? await context.transaction(async () => ({
+        task: await context.find(id),
+        generation: Number(
+          (
+            await context.store.db
+              .prepare("SELECT generation FROM task_admission_generation WHERE id=?")
+              .get(id)
+          )?.generation ?? 0,
+        ),
+      }))
+    : { task: await context.find(id), generation: 0 };
+  if (
+    expectedChild &&
+    (!task ||
+      task.createdAt !== expectedChild.createdAt ||
+      task.workInvocationId !== expectedChild.workInvocationId ||
+      JSON.stringify(task.conflictParent) !== JSON.stringify(expectedChild.conflictParent))
+  )
+    return;
   if (task?.conflictRecovery) {
     const child = await context.find(task.conflictRecovery.childId);
     if (
@@ -749,16 +838,43 @@ export async function cancel(context: TaskContext, id: string, reason: string): 
       child.conflictParent.targetDirectory === task.conflictRecovery.targetDirectory &&
       child.conflictParent.targetBranch === task.conflictRecovery.targetBranch
     )
-      await cancel(context, child.id, reason);
+      await cancel(context, child.id, reason, child);
   }
   // Active verification must reach Stop so its controller is aborted. The job
   // stays registered during process-tree cleanup, retaining retry/delete gates.
   if (context.jobs.has(id) && task?.status !== "running" && task?.status !== "verifying")
     throw new Error("The previous verification is still stopping. Retry after it finishes.");
-  if (task?.status === "running" || task?.status === "verifying") await context.move(id, "blocked");
+  if (task?.status === "running" || task?.status === "verifying")
+    await context.move(id, "blocked", undefined, expectedChild ? generation : undefined);
   else if (
     task?.status === "queued" ||
-    (task?.status === "review" && (task.autoMerge || task.deliveryRequested))
-  )
-    await context.block({ ...task, deliveryRequested: undefined }, reason, context.now());
+    (task?.status === "review" &&
+      (task.autoMerge || task.deliveryRequested || context.automaticDeliveryControllers.has(id)))
+  ) {
+    if (!expectedChild)
+      await context.block({ ...task, deliveryRequested: undefined }, reason, context.now());
+    else
+      await context.transaction(async () => {
+        const current = await context.find(id);
+        const currentGeneration = Number(
+          (
+            await context.store.db
+              .prepare("SELECT generation FROM task_admission_generation WHERE id=?")
+              .get(id)
+          )?.generation ?? 0,
+        );
+        if (
+          !current ||
+          current.status !== task.status ||
+          currentGeneration !== generation ||
+          current.createdAt !== expectedChild.createdAt ||
+          current.workInvocationId !== expectedChild.workInvocationId ||
+          JSON.stringify(current.conflictParent) !== JSON.stringify(expectedChild.conflictParent)
+        )
+          return;
+        fenceConflictChildren(id);
+        context.automaticDeliveryControllers.get(id)?.abort();
+        await context.block({ ...current, deliveryRequested: undefined }, reason, context.now());
+      });
+  }
 }

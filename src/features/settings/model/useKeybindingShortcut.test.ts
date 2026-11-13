@@ -57,7 +57,7 @@ it("updates native and Arc tooltips immediately after rebind, disable, reset and
       expect(await tooltipText(button())).toBe(`Choose a model${MOD_CAP}${SHIFT_CAP}.`);
       expect(button().getAttribute("aria-label")).toBe("Switch model");
       await act(async () => {
-        saveKeybindingOverride(command, { shortcut: "Control+Shift+KeyM" });
+        saveKeybindingOverride(command, { shortcut: "Control+Option+Shift+KeyM" });
       });
       const rebound = await tooltipText(button());
       expect(rebound).toMatch(/^Choose a model.*M$/);

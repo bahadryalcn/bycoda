@@ -62,6 +62,7 @@ type CachedModel = {
   kind: GitFileDiffKind;
   loaded: LoadedDiff | undefined;
   model: UnifiedDiffFileModel;
+  locale: ReturnType<typeof useLocale>;
 };
 
 const DIFF_LOAD_CONCURRENCY = 4;
@@ -108,7 +109,7 @@ function buildModel(
 }
 
 export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Props) {
-  useLocale();
+  const locale = useLocale();
   const [files, setFiles] = useState<GitChangedFile[] | null>(null);
   const [diffs] = useState(() => new Map<string, LoadedDiff>());
   const [diffVersion, setDiffVersion] = useState(0);
@@ -155,10 +156,10 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
           setMutationError(null);
           try {
             if ((await withGitOperation(cwd, "Updating diff…", action)) !== false) {
-              invalidateGitIndex();
+              invalidateGitIndex(cwd);
               notifyGitChangedWith(cwd, "index", { paths: [path] });
               // Our own action: show its result without the debounce.
-              refreshNow.current?.([path]);
+              if (context.active) refreshNow.current?.([path]);
             }
           } catch (caught) {
             if (context.active)
@@ -427,6 +428,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
       const cached = previous.get(entry.id);
       if (
         cached &&
+        cached.locale === locale &&
         cached.loaded === loaded &&
         cached.kind === kind &&
         sameChangedRow(cached.file, file)
@@ -435,12 +437,12 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
         return cached.model;
       }
       const model = buildModel(entry, loaded);
-      next.set(entry.id, { file, kind, loaded, model });
+      next.set(entry.id, { file, kind, loaded, model, locale });
       return model;
     });
     modelCache.current = next;
     return built;
-  }, [diffs, diffVersion, entries, files]);
+  }, [diffs, diffVersion, entries, files, locale]);
 
   const totals = useMemo(
     () =>

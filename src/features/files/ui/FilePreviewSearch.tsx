@@ -17,6 +17,7 @@ import { ChevronDown, ChevronUp, X } from "../../../shared/ui/icons";
 import { keybindingPressed } from "../../settings/public/settings";
 import { startPreviewSearch } from "./previewSearchTask";
 import { evaluatePreviewSearch } from "./previewSearchEvaluation";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 const MATCH_HIGHLIGHT = "bycoda-file-preview-search-match";
 const CURRENT_HIGHLIGHT = "bycoda-file-preview-search-current";
@@ -345,7 +346,7 @@ export function FilePreviewSearch({
     setter((value) => !value);
   };
   const onKeyDown = (event: ReactKeyboardEvent) => {
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
       event.preventDefault();
       step(event.shiftKey ? -1 : 1);
       return;

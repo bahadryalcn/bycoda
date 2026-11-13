@@ -65,11 +65,11 @@ describe("updater", () => {
     expect(check).toHaveBeenCalledOnce();
   });
 
-  it("treats an unreadable identifier as updates disabled", async () => {
+  it("reports an unreadable identifier without checking update feeds", async () => {
     getIdentifier.mockRejectedValue(new Error("no tauri"));
     getVersion.mockResolvedValue("0.6.0");
 
-    await expect(probeForUpdate()).resolves.toBeNull();
+    await expect(probeForUpdate()).rejects.toThrow("no tauri");
     expect(check).not.toHaveBeenCalled();
   });
 

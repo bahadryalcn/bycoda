@@ -1,3 +1,7 @@
+import {
+  readAssistantNotifications,
+  type PendingNotification,
+} from "./notifications/assistant-notifications";
 import { hostModelRoutingService } from "../model-routing/runtime";
 import type { AssistantObservation } from "./observations/assistant-observation-journal";
 import { createHash, randomUUID } from "node:crypto";
@@ -118,11 +122,7 @@ import { parseChiefReadRequests, type ChiefReadRequest } from "./chief/assistant
 import { appendAssistantDailyNote } from "./work/assistant-daily-note";
 import * as jobLog from "./work/assistant-job-activity";
 import { readAssistantTrash } from "./work/assistant-trash";
-import {
-  withJobHolds,
-  assistantJobNotificationBody,
-  assistantNotificationUrgent,
-} from "./work/assistant-job-holds";
+import { withJobHolds, assistantJobNotificationBody } from "./work/assistant-job-holds";
 import * as jobAfter from "./work/assistant-job-after";
 import { createAssistantProjectJob } from "./work/assistant-project-job";
 import { assistantReminderOp, fireDueReminders } from "./work/assistant-reminders";
@@ -420,10 +420,6 @@ type WorkerReservation = {
   phase?: "compact" | "handoff" | "send" | "answer";
   answerSource?: { sessionId: string; runId: string; questionToken: string; turnBlockId: string };
   answeredBlockId?: string;
-};
-type PendingNotification = Omit<AssistantNotification, "eligible" | "deferredReason"> & {
-  acknowledgedAt?: number;
-  supersededBy?: string;
 };
 type ObservedNotificationIntent = {
   threadId: string;
@@ -1175,122 +1171,19 @@ export class HostAssistant {
     });
   }
   async notifications(profile: AssistantProfile): Promise<AssistantNotification[]> {
-    const rows = await this.store.db
-      .prepare(
-        "SELECT value FROM assistant_runtime WHERE id LIKE 'notification:%' AND deleted_at IS NULL AND json_extract(value,'$.value.acknowledgedAt') IS NULL AND json_extract(value,'$.value.supersededBy') IS NULL AND (?=1 OR json_extract(value,'$.value.kind') NOT IN ('task.done','task.needsInput')) ORDER BY updated_at,id LIMIT 100",
-      )
-      .all(this.ports.taskNotificationAllowed ? 1 : 0);
-    const presence = await this.effectivePresence(),
-      hour = new Date(this.now()).getHours();
-    const quiet =
-      profile.quietStart !== profile.quietEnd &&
-      (profile.quietStart < profile.quietEnd
-        ? hour >= profile.quietStart && hour < profile.quietEnd
-        : hour >= profile.quietStart || hour < profile.quietEnd);
-    const approvals = new Map<string, Promise<boolean>>();
-    const disclosed = await Promise.all(
-      rows.map(async (row) => {
-        const {
-          acknowledgedAt: _,
-          supersededBy: __,
-          ...value
-        } = (JSON.parse(row.value) as Runtime).value as PendingNotification;
-        if (value.kind === "task.done" || value.kind === "task.needsInput") {
-          if (
-            !value.projectId ||
-            !value.taskId ||
-            value.taskCreatedAt === undefined ||
-            !this.ports.taskNotificationAllowed ||
-            !(await this.ports.taskNotificationAllowed({
-              ...value,
-              eligible: false,
-              deferredReason: "unknown",
-            }))
-          )
-            return null;
-          const currentManual = await this.manualPolicy();
-          const currentProfile = await this.profile();
-          const currentPolicy = assistantPolicy(currentProfile);
-          if (
-            !currentManual.enabled ||
-            !currentManual.projectIds.includes(value.projectId) ||
-            !currentProfile.enabled ||
-            !currentProfile.setupComplete ||
-            (value.kind === "task.done"
-              ? !currentPolicy.observationTaskDone
-              : !currentPolicy.observationTaskNeedsInput)
-          )
-            return null;
-          const row = await this.store.db
-            .prepare("SELECT value FROM tasks WHERE id=?")
-            .get(value.taskId);
-          const task = row
-            ? (JSON.parse(String(row.value)) as {
-                id?: string;
-                projectId?: string;
-                status?: string;
-                needsInput?: boolean;
-                createdAt?: number;
-              })
-            : undefined;
-          if (
-            !task ||
-            task.id !== value.taskId ||
-            task.projectId !== value.projectId ||
-            task.createdAt !== value.taskCreatedAt ||
-            (value.kind === "task.done"
-              ? task.status !== "done"
-              : task.needsInput !== true || task.status === "done")
-          )
-            return null;
-          if (
-            !(await this.ports.taskNotificationAllowed({
-              ...value,
-              eligible: false,
-              deferredReason: "unknown",
-            }))
-          )
-            return null;
-        }
-        let urgent = assistantNotificationUrgent(value.kind);
-        if (value.kind === "job.waiting" && value.jobId) {
-          let pending = approvals.get(value.jobId);
-          if (!pending) {
-            pending = (async () => {
-              const job = await this.repository.get<AssistantJob>("jobs", value.jobId!);
-              return !!job && (await readBriefingApprovals(this.store, [job], 1)).items.length > 0;
-            })();
-            approvals.set(value.jobId, pending);
-          }
-          urgent = await pending;
-        }
-        const policy = assistantPolicy(profile),
-          choice = presence === "present" ? policy.notificationPresent : policy.notificationAway;
-        const reason: AssistantNotification["deferredReason"] =
-          !profile.enabled || !profile.setupComplete
-            ? "unknown"
-            : presence === "dnd"
-              ? "dnd"
-              : quiet
-                ? "quiet"
-                : choice === "all" || (choice === "urgent" && urgent)
-                  ? null
-                  : presence === "present"
-                    ? "settings"
-                    : presence;
-        return {
-          ...value,
-          title: (await this.safeOutput(value.title)).slice(0, 200),
-          body: (await this.safeOutput(value.body)).slice(0, 2000),
-          eligible: reason === null,
-          deferredReason: reason,
-          urgent,
-          repeatCount: profile.urgentNotificationRepeats ?? 2,
-          repeatIntervalMinutes: profile.urgentNotificationIntervalMinutes ?? 30,
-        };
-      }),
-    );
-    return disclosed.filter((item) => item !== null).slice(0, 100);
+    return readAssistantNotifications(profile, {
+      db: this.store.db,
+      presence: () => this.effectivePresence(),
+      now: () => this.now(),
+      manualPolicy: () => this.manualPolicy(),
+      profile: () => this.profile(),
+      taskNotificationAllowed: this.ports.taskNotificationAllowed,
+      jobWaitingApprovals: async (id) => {
+        const job = await this.repository.get<AssistantJob>("jobs", id);
+        return !!job && (await readBriefingApprovals(this.store, [job], 1)).items.length > 0;
+      },
+      safeOutput: (text) => this.safeOutput(text),
+    });
   }
   /** Outbound message effects stop with Assistant pause/Stop; passive notification reads remain available. */
   async notificationDeliveryActive(): Promise<boolean> {

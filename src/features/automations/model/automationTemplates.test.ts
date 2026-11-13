@@ -12,6 +12,7 @@ describe("automation templates", () => {
   it("keeps popular examples in their real category too", () => {
     const popular = templatesForCategory("popular");
     expect(popular.map((template) => template.id)).toEqual([
+      "project-scan",
       "find-critical-bugs",
       "scan-vulnerabilities",
       "generate-docs",

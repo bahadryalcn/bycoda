@@ -15,7 +15,9 @@ it("keeps an unreadable native home directory recoverable instead of crashing", 
   try {
     await act(async () => root.render(createElement(NewProjectFolderGroup)));
     expect(container.textContent).toContain("Could not read your home folder.");
-    const retry = [...container.querySelectorAll("button")].find(button => button.textContent === "Retry")!;
+    const retry = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Retry",
+    )!;
     await act(async () => retry.click());
     expect(container.textContent).toContain("C:/home/Projects");
   } finally {

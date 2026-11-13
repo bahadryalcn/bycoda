@@ -8,17 +8,22 @@ import {
 } from "../../group-lock/model/groupLock";
 import type { SyncRecord } from "./syncProtocol";
 
-function mockLocalStorage() {
-  const data = new Map<string, string>();
-  Object.defineProperty(globalThis, "localStorage", {
-    value: {
-      getItem: (key: string) => data.get(key) ?? null,
-      setItem: (key: string, value: string) => void data.set(key, value),
-      removeItem: (key: string) => void data.delete(key),
-    },
-    configurable: true,
-  });
-}
+const { mockLocalStorage } = vi.hoisted(() => {
+  const mockLocalStorage = () => {
+    const data = new Map<string, string>();
+    Object.defineProperty(globalThis, "localStorage", {
+      value: {
+        getItem: (key: string) => data.get(key) ?? null,
+        setItem: (key: string, value: string) => void data.set(key, value),
+        removeItem: (key: string) => void data.delete(key),
+      },
+      configurable: true,
+    });
+  };
+  // Privacy storage is read at module initialization, before per-test setup.
+  mockLocalStorage();
+  return { mockLocalStorage };
+});
 
 const MACHINE = "host-1";
 const VALID_SALT = "A".repeat(12);

@@ -4,6 +4,7 @@ import type { TaskContext } from "./context";
 import { MAX_REPAIR_ATTEMPTS } from "./constants";
 import { consultRepairAdvisor } from "./recovery";
 import { git } from "./git";
+import { attemptConflictPeer, settleConflictPeer } from "./conflict-peer";
 
 // Monotonic in-process fence closes the synchronous Stop-to-persistence gap.
 const conflictStopGenerations = new Map<string, number>();
@@ -118,6 +119,11 @@ export async function recoverCommittedConflict(
     current = reserved;
   }
   const binding = current.conflictRecovery!;
+  // A dispatched peer may advance the target; settle it before comparing heads.
+  if (binding.peer) {
+    await settleConflictPeer(context, current, plan);
+    return;
+  }
   if (
     binding.sourceHead !== conflict.sourceHead ||
     binding.targetHead !== conflict.targetHead ||
@@ -172,6 +178,7 @@ export async function recoverCommittedConflict(
     throw new Error("Conflict recovery parent or commits changed before consultation.");
   const advice = await consultRepairAdvisor(context, current);
   if (!advice) return;
+  if (await attemptConflictPeer(context, current, advice)) return;
   const expected = await context.taskValue(current.id);
   await context.transaction(async () => {
     const latest = await context.unchangedTask(current.id, expected);

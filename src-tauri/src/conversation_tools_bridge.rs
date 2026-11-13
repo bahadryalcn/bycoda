@@ -9,12 +9,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tauri::AppHandle;
 use tauri::Manager;
 
+#[path = "assistant/assistant_background_effect.rs"]
+mod assistant_background_effect;
 #[path = "assistant/assistant_native_note_baseline.rs"]
 mod assistant_native_note_baseline;
 #[path = "assistant/assistant_notification_owner.rs"]
 mod assistant_notification_owner;
-#[path = "assistant/assistant_background_effect.rs"]
-mod assistant_background_effect;
 #[path = "assistant/assistant_observation_publisher.rs"]
 mod assistant_observation_publisher;
 mod delegation_readiness;
@@ -1204,16 +1204,22 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     else {
         return line;
     };
-    let host_grant = grant["token"].as_str().is_some_and(|token| !token.is_empty());
+    let host_grant = grant["token"]
+        .as_str()
+        .is_some_and(|token| !token.is_empty());
     // Only the cached, Native-issued child grant can supply local read authority.
     // Frame env values are never a fallback, and app tokens never target a remote endpoint.
-    let local_read = grant["appToken"].as_str().is_some_and(|token| !token.is_empty())
+    let local_read = grant["appToken"]
+        .as_str()
+        .is_some_and(|token| !token.is_empty())
         && grant["appEndpoint"].as_str().is_some_and(|endpoint| {
-            endpoint.parse::<std::net::SocketAddr>().is_ok_and(|address| {
-                address.port() != 0
-                    && (address.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
-                        || address.ip() == std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST))
-            })
+            endpoint
+                .parse::<std::net::SocketAddr>()
+                .is_ok_and(|address| {
+                    address.port() != 0
+                        && (address.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+                            || address.ip() == std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST))
+                })
         });
     if !host_grant && !local_read {
         servers.retain(|server| server["name"].as_str() != Some("bycoda-conversation"));
@@ -1927,7 +1933,8 @@ mod tests {
                 {"name":"BYCODA_CONVERSATION_TOKEN","value":"forged-host"}
             ]},
             {"name":"other","command":"node","env":[]}
-        ]}}).to_string();
+        ]}})
+        .to_string();
         for grant in [
             json!({"appToken":"local"}),
             json!({"appEndpoint":"127.0.0.1:1"}),
@@ -1937,18 +1944,25 @@ mod tests {
             json!({"appEndpoint":"http://127.0.0.1:1","appToken":"local"}),
         ] {
             let result: Value = serde_json::from_str(&decorate_frame(raw.clone(), &grant)).unwrap();
-            assert_eq!(result["params"]["mcpServers"], json!([
-                {"name":"other","command":"node","env":[]}
-            ]));
+            assert_eq!(
+                result["params"]["mcpServers"],
+                json!([
+                    {"name":"other","command":"node","env":[]}
+                ])
+            );
         }
         let result: Value = serde_json::from_str(&decorate_frame(
             raw,
             &json!({"appEndpoint":"[::1]:1","appToken":"native-local"}),
-        )).unwrap();
-        assert_eq!(result["params"]["mcpServers"][0]["env"], json!([
-            {"name":"BYCODA_APP_ENDPOINT","value":"[::1]:1"},
-            {"name":"BYCODA_APP_TOKEN","value":"native-local"}
-        ]));
+        ))
+        .unwrap();
+        assert_eq!(
+            result["params"]["mcpServers"][0]["env"],
+            json!([
+                {"name":"BYCODA_APP_ENDPOINT","value":"[::1]:1"},
+                {"name":"BYCODA_APP_TOKEN","value":"native-local"}
+            ])
+        );
     }
     #[test]
     fn inbox_approval_shows_exact_target_content_and_rejects_scope_changes() {

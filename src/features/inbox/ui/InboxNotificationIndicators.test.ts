@@ -342,7 +342,7 @@ it.each([
     await mount();
     let card = inboxRow(container, "Notification indicator regression")!;
     expect(card).not.toBeNull();
-    expect(card.getAttribute("aria-label")).toContain(", new");
+    expect(card.getAttribute("aria-label")).toContain(", Unread");
 
     expect(card.querySelector("[data-inbox-unread]")).not.toBeNull();
     expect(isInboxEntryUnseen(entry)).toBe(true);
@@ -353,18 +353,18 @@ it.each([
         mutedUntil: Date.now() + 1000,
       }),
     );
-    expect(card.getAttribute("aria-label")).toContain(", new");
+    expect(card.getAttribute("aria-label")).toContain(", Unread");
     // Closing and reopening Inbox while muted must not hide or consume unread state.
     act(() => root.render(null));
     await mount();
     card = inboxRow(container, "Notification indicator regression")!;
-    expect(card.getAttribute("aria-label")).toContain(", new");
+    expect(card.getAttribute("aria-label")).toContain(", Unread");
     expect(isInboxEntryUnseen(entry)).toBe(true);
     act(() => card.click());
     expect(isInboxEntryUnseen(entry)).toBe(false);
-    expect(card.getAttribute("aria-label")).not.toContain(", new");
+    expect(card.getAttribute("aria-label")).not.toContain(", Unread");
     await act(async () => vi.advanceTimersByTimeAsync(1000));
-    expect(card.getAttribute("aria-label")).not.toContain(", new");
+    expect(card.getAttribute("aria-label")).not.toContain(", Unread");
     expect(isInboxEntryUnseen(entry)).toBe(false);
   },
 );

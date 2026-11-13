@@ -22,6 +22,7 @@ import { AccountFormActions, useAccountSave, type AccountFormProps } from "./Mes
 import { BrowserSignIn } from "./BrowserSignIn";
 import { MicrosoftDeviceSignIn } from "./MicrosoftDeviceSignIn";
 import type { MailSecurity } from "../../../messaging";
+import { isImeComposition } from "../../../../shared/lib/keyboard";
 
 const SECURITY_OPTIONS = [
   { value: "tls", label: "SSL/TLS" },
@@ -218,7 +219,7 @@ export function EmailAccountForm({ account, onSaved, onCancel, onSavingChange }:
                 value={draft.password}
                 onChange={(event) => set("password", event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") submit();
+                  if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) submit();
                 }}
                 placeholder={account ? t("Leave empty to keep the saved password") : undefined}
                 autoComplete="off"

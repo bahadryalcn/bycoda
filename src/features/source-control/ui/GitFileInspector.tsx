@@ -38,7 +38,7 @@ export function requestOpenCommit(commit: GitHistoryCommit): void {
 }
 
 type Props = {
-  onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) => void;
+  onOpenCommit: (commit: GitHistoryCommit, pin?: boolean, repositoryCwd?: string) => void;
 };
 
 function shortDate(timestamp: number): string {
@@ -69,7 +69,7 @@ export function GitFileInspector({ onOpenCommit }: Props) {
   const close = () => setRequest(null);
   const openCommit = (commit: GitHistoryCommit) => {
     close();
-    onOpenCommit(commit, true);
+    onOpenCommit(commit, true, request.cwd);
   };
   return request.kind === "history" ? (
     <FileHistoryDialog

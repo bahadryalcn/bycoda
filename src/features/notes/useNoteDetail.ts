@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getNote, peekNoteDetail, type Note, type NoteSummary } from "./notes";
 import { beginNoteWork, deriveNoteInputResult, noteInputWorkError } from "./notesInputOwners";
+import { t } from "../../shared/i18n";
 
 /** An editor mounts only after the selected body arrives; a summary is never an editable blank note. */
 export function useNoteDetail(summary: NoteSummary | Note | null) {
   const [retryCount, setRetryCount] = useState(0);
+  const retryKey = useRef<string | null>(null);
   const fetchingRef = useRef<string | null>(null);
   const [fetching, setFetching] = useState<string | null>(null);
   const retained = useRef<Note | null>(null);
@@ -21,33 +23,43 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
       ? summary
       : peekNoteDetail(summary.id, summary.updatedAt)
     : null;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the selected note's admitted detail read and cancel its publication when selection or version changes.
   useEffect(() => {
     if (!id || version === undefined) return;
-    if (!retryCount && peekNoteDetail(id, version)) return;
+    const key = JSON.stringify([id, version]);
+    const forced = retryKey.current === key;
+    retryKey.current = null;
+    if (!forced && peekNoteDetail(id, version)) return;
     const work = beginNoteWork("note-detail-consumer");
     if (!work) {
+      fetchingRef.current = null;
+      setFetching(null);
       setResult({ id, version, note: null, error: noteInputWorkError().message });
       return;
     }
-    const key = JSON.stringify([id, version]);
     fetchingRef.current = key;
     setFetching(key);
     let active = true;
     void getNote(id, work)
-      .then(
-        (note) => {
-          if (active) setResult({ id, version, note, error: note ? null : "Note was not found" });
-        },
-        (cause: unknown) => {
-          if (active)
-            setResult({
-              id,
-              version,
-              note: null,
-              error: cause instanceof Error ? cause.message : String(cause),
-            });
-        },
-      )
+      .then(async (note) => {
+        if (!active) return;
+        // A newer summary may share an older in-flight body read. Retry once,
+        // then expose a recoverable error instead of accepting a stale CAS base.
+        if (note && note.updatedAt < version) note = await getNote(id, work);
+        if (!active) return;
+        if (note && note.updatedAt < version)
+          throw new Error(t("This note changed on the computer. Refresh it before saving."));
+        setResult({ id, version, note, error: note ? null : "Note was not found" });
+      })
+      .catch((cause: unknown) => {
+        if (active)
+          setResult({
+            id,
+            version,
+            note: null,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
+      })
       .finally(() => {
         if (active) {
           fetchingRef.current = null;
@@ -82,6 +94,7 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
       const key = JSON.stringify([id, version]);
       if (fetchingRef.current === key) return;
       fetchingRef.current = key;
+      retryKey.current = key;
       setFetching(key);
       setRetryCount((value) => value + 1);
     },

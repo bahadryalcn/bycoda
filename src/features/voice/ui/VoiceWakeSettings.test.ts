@@ -105,3 +105,46 @@ it("keeps invalid wake and sleep drafts through navigation and disable/remount w
     vi.unstubAllGlobals();
   }
 });
+
+it.each([
+  { isComposing: true, keyCode: 13 },
+  { isComposing: false, keyCode: 229 },
+])("does not commit a phrase on IME Enter: %j", async (ime) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const change = vi.fn();
+  const settings = {
+    ...loadVoiceSettings(),
+    wakeEnabled: true,
+    wakePhrase: "Hello there",
+  };
+  try {
+    await act(async () => root.render(createElement(VoiceWakeRows, { settings, change })));
+    const input = host.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "こんにちは",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      const event = new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        isComposing: ime.isComposing,
+      });
+      Object.defineProperty(event, "keyCode", { value: ime.keyCode });
+      input.dispatchEvent(event);
+    });
+    expect(change).not.toHaveBeenCalled();
+    await act(async () =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(change).toHaveBeenLastCalledWith({ wakePhrase: "こんにちは" });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});

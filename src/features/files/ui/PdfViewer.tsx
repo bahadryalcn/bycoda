@@ -27,6 +27,7 @@ import {
   useWheelZoom,
 } from "./documentZoom";
 import "./pdfTextLayer.css";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -308,7 +309,8 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
           numeric
           onChange={(event) => setPageInput(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") goTo(Number(pageInput));
+            if (event.key === "Enter" && !isImeComposition(event.nativeEvent))
+              goTo(Number(pageInput));
           }}
           onBlur={() => setPageInput(String(current))}
         />

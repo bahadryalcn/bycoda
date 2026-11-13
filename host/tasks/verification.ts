@@ -43,6 +43,11 @@ import { isTransientRunFailure } from "./review-outcomes";
 import { runtimeRetryCount } from "./review-outcomes";
 import { waitForUsageLimit } from "./usage-limit";
 import type { TaskContext } from "./context";
+import {
+  conflictStopGeneration,
+  fenceConflictChildren,
+  releaseConflictStop,
+} from "./conflict-recovery";
 import { assertTaskWorkRetired } from "../work/session-adapter";
 export async function acceptCrewTask(context: TaskContext, id: string): Promise<HostTask> {
   await context.ready;
@@ -95,9 +100,15 @@ export async function recheckReview(context: TaskContext, id: string): Promise<H
   const next = await context.transaction(async () => {
     if (!(await context.unchangedTask(task.id, expected)))
       throw new Error("Task changed before review recheck. Read it again.");
-    return context.write({
+    fenceConflictChildren(id);
+    const conflictFence = conflictStopGeneration(id);
+    const saved = await context.write({
       ...task,
       workInvocationId: randomUUID(),
+      conflictRecovery: undefined,
+      conflictParent: undefined,
+      crewWorkWait: undefined,
+      repairAdvisor: undefined,
       status: "verifying",
       reviewOnly: true,
       awaitingOwnerRestart: undefined,
@@ -109,6 +120,8 @@ export async function recheckReview(context: TaskContext, id: string): Promise<H
       completedAt: undefined,
       updatedAt: context.now(),
     });
+    context.store.afterCommit(() => releaseConflictStop(id, conflictFence));
+    return saved;
   });
   await context.verify(next);
   return next;

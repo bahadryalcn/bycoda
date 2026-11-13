@@ -2,6 +2,8 @@ import { wireCrewSourceTasks, wireCrewWorkEngine } from "./crew-source-task.fixt
 import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { HostCrews, type CrewSessionPorts } from "./crews";
+import { readCrewRun } from "./crew-scheduler-projection";
+import { readSessionWorkReceipt } from "../work/session-adapter";
 import type { HostEngine } from "../engine";
 import type { HostTasks } from "../tasks/tasks";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
@@ -53,6 +55,11 @@ async function fixture() {
       return row;
     }),
     cancel: vi.fn(async () => undefined),
+    acceptCrewTask: vi.fn(async (id: string) => {
+      const row = rows.find((task) => task.id === id)!;
+      row.status = "done";
+      return row;
+    }),
   };
   const engine = {
     command: vi.fn(async (raw: unknown) => {
@@ -238,24 +245,50 @@ it("reports live native coordinator status and supports resume and Stop work", a
   expect((await f.store.session("native-lead")).runId).toBeTruthy();
 });
 
-it("retries uncertain native notification delivery with its persisted command identity", async () => {
+it("holds an uncertain native notification without replay across ticks and service restart", async () => {
   const f = await fixture();
   await f.start();
   await f.call("crews.request", { runId: "native-run", requestId: "help", text: "Need review" });
   f.command.mockRejectedValueOnce(new Error("Delivery outcome unknown"));
-  await expect(f.crews.tick()).rejects.toThrow("Delivery outcome unknown");
   await f.crews.tick();
-  const sends = f.command.mock.calls
-    .map(([raw]) => raw as Record<string, unknown>)
-    .filter((input) => input.type === "send");
-  expect(sends).toHaveLength(2);
-  expect(sends[1]).toEqual(sends[0]);
-  expect(sends[0]).toMatchObject({
-    sessionId: "native-lead",
+  const pending = (await readCrewRun(f.store, "native-run"))!.pendingDelivery;
+  expect(pending).toMatchObject({
+    commandId: expect.any(String),
     text: expect.stringContaining("Need review"),
   });
+  expect(
+    await readSessionWorkReceipt(f.store, {
+      kind: "crew.coordinator",
+      id: "native-run",
+      occurrence: pending!.commandId,
+    }),
+  ).toEqual({ exists: true });
   await f.crews.tick();
-  expect(f.command).toHaveBeenCalledTimes(2);
+  await f.crews.close();
+  const restarted = new HostCrews(
+    f.store,
+    f.engine as unknown as HostEngine,
+    f.tasks as unknown as HostTasks,
+    f.models,
+    () => 2000,
+    undefined,
+    { session: f.session, command: f.command },
+  );
+  try {
+    await restarted.ready;
+    await restarted.tick();
+    expect((await readCrewRun(f.store, "native-run"))?.pendingDelivery).toEqual(pending);
+    const sends = f.command.mock.calls
+      .map(([raw]) => raw as Record<string, unknown>)
+      .filter((input) => input.type === "send");
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toMatchObject({
+      sessionId: "native-lead",
+      text: expect.stringContaining("Need review"),
+    });
+  } finally {
+    await restarted.close();
+  }
 });
 
 it("rejects foreign native session scope before creating Crew work", async () => {
@@ -312,6 +345,14 @@ it.each(["pause", "coordinator change", "finish"])(
   async (change) => {
     const f = await fixture();
     await f.start();
+    if (change === "finish") {
+      const assignment = (await f.assign()) as { taskId: string };
+      const task = f.rows.find((row) => row.id === assignment.taskId)!;
+      task.status = "review";
+      task.verification = { review: { verdict: "pass", note: "PASS" } };
+      await f.call("crews.accept", { runId: "native-run", taskId: task.id });
+      expect(task.status).toBe("done");
+    }
     await f.call("crews.request", {
       runId: "native-run",
       requestId: "pending-help",
@@ -335,20 +376,22 @@ it.each(["pause", "coordinator change", "finish"])(
       return value;
     });
     const pending = f.crews.tick();
-    const rejected = expect(pending).rejects.toThrow("Crew command authority revoked");
     await waiting;
-    if (change === "pause") await f.call("crews.pause", { runId: "native-run" });
-    else if (change === "finish") {
-      await f.call("crews.resolve", { runId: "native-run", requestId: "pending-help" });
-      await f.call("crews.finish", { runId: "native-run" });
-    } else
-      await f.store.db
-        .prepare(
-          "UPDATE crew_runs_v2 SET payload=json_set(payload,'$.coordinatorSessionId',?), coordinator_session_id=? WHERE run_id='native-run'",
-        )
-        .run("replacement-coordinator", "replacement-coordinator");
-    release();
-    await rejected;
+    try {
+      if (change === "pause") await f.call("crews.pause", { runId: "native-run" });
+      else if (change === "finish") {
+        await f.call("crews.resolve", { runId: "native-run", requestId: "pending-help" });
+        await f.call("crews.finish", { runId: "native-run" });
+      } else
+        await f.store.db
+          .prepare(
+            "UPDATE crew_runs_v2 SET payload=json_set(payload,'$.coordinatorSessionId',?), coordinator_session_id=? WHERE run_id='native-run'",
+          )
+          .run("replacement-coordinator", "replacement-coordinator");
+    } finally {
+      release();
+    }
+    await pending;
     expect(effects).not.toHaveBeenCalled();
     expect(f.engine.command).not.toHaveBeenCalled();
   },

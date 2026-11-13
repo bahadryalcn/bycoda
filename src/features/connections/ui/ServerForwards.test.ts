@@ -84,6 +84,11 @@ it.each([false, true])(
       mocks.list.mockRejectedValueOnce(new Error("Status read unavailable again"));
       await act(async () => vi.advanceTimersByTimeAsync(30_000));
       expect(container.textContent).toContain("Couldn’t read forwarding status.");
+      expect(container.textContent).toContain("SSH start failed");
+      expect(container.querySelectorAll('[role="alert"]')).toHaveLength(2);
+      expect(
+        [...container.querySelectorAll("button")].find((button) => button.textContent === "Retry"),
+      ).toBeDefined();
     }
     await act(async () => vi.advanceTimersByTimeAsync(30_000));
     expect(container.textContent).not.toContain("Couldn’t read forwarding status.");

@@ -123,7 +123,7 @@ it("uses Codex advertised reasoning and service tier for PR generation", async (
     expect.objectContaining({
       harness: "codex",
       model: "test",
-      modelSettings: { effort: "high", serviceTier: "fast" },
+      modelSettings: { effort: "high", serviceTier: "fast", autoCompactWindow: "default" },
     }),
   );
 });
@@ -192,7 +192,7 @@ it("automatically prefers Codex Luna and low reasoning over the main flagship", 
     expect.objectContaining({
       harness: "codex",
       model: "gpt-luna",
-      modelSettings: { reasoningEffort: "low" },
+      modelSettings: { reasoningEffort: "low", autoCompactWindow: "default" },
     }),
   );
 });

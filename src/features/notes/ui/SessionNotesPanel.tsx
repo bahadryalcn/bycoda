@@ -517,6 +517,14 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           autoFocus={wantFocus}
           onFocused={focused}
           onSaved={onSaved}
+          onRecovered={(recovered) => {
+            setNotes((current) => [
+              summarizeNote(recovered),
+              ...current.filter((item) => item.id !== recovered.id),
+            ]);
+            setSelectedId(recovered.id);
+            setWantFocus(true);
+          }}
           onDelete={onDelete}
           sessionId={sessionId}
           onLink={onLink}
@@ -567,6 +575,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   autoFocus,
   onFocused,
   onSaved,
+  onRecovered,
   onDelete,
   sessionId,
   onLink,
@@ -575,6 +584,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
   autoFocus: boolean;
   onFocused: () => void;
   onSaved: (note: Note) => void;
+  onRecovered: (note: Note) => void;
   onDelete: (id: string, expectedUpdatedAt?: number, parent?: NoteInputWork) => Promise<boolean>;
   sessionId: string;
   onLink: (id: string, parent?: NoteInputWork) => Promise<boolean>;
@@ -993,9 +1003,13 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
               }
               const submittedTitle = titleRef.current;
               const submittedBody = bodyRef.current;
+              const submittedDraftUnchanged = () =>
+                editorDrafts.get(draftKey) === restored &&
+                restored.title === submittedTitle &&
+                restored.body === submittedBody;
               setRecovering(true);
               try {
-                await createRecoveredNote(
+                const recovered = await createRecoveredNote(
                   {
                     title: submittedTitle,
                     body: submittedBody,
@@ -1005,15 +1019,22 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
                   },
                   work,
                 );
-                if (titleRef.current === submittedTitle && bodyRef.current === submittedBody) {
+                const submittedStillCurrent = submittedDraftUnchanged();
+                if (
+                  titleRef.current === submittedTitle &&
+                  bodyRef.current === submittedBody &&
+                  submittedStillCurrent &&
+                  (live.current || !restored.mounts)
+                ) {
                   skipSave.current = true;
                   restored.skipSave = true;
                   editorDrafts.delete(draftKey);
-                } else retainDraft();
-                setSaveError(null);
+                  if (live.current) onRecovered(recovered);
+                } else if (live.current && editorDrafts.get(draftKey) === restored) retainDraft();
+                if (live.current && submittedStillCurrent) setSaveError(null);
                 window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
               } catch (error) {
-                setSaveError(errorText(error));
+                if (live.current || submittedDraftUnchanged()) setSaveError(errorText(error));
               } finally {
                 setRecovering(false);
                 work();

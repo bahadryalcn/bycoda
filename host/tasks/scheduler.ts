@@ -252,7 +252,9 @@ export async function work(context: TaskContext): Promise<void> {
       (task) =>
         !task.crewDefinitionId && (task.status === "running" || task.status === "verifying"),
     );
-    const teams = tasks.filter((task) => task.crewDefinitionId && task.status === "running");
+    // Logical crew parents can wait idle after their coordinator turn retires.
+    // Bound only preparations in this pass; shared Work enforces physical capacity.
+    const teams: HostTask[] = [];
     const { maxRunningTasks } = await context.limits.settings();
     const launches: Promise<void>[] = [];
     for (const candidate of tasks) {

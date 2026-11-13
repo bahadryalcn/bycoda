@@ -17,6 +17,7 @@ import {
   type AccountFormProps,
 } from "./MessagingAccountsCard";
 import { SetupSteps } from "./SetupSteps";
+import { isImeComposition } from "../../../../shared/lib/keyboard";
 
 /**
  * Scopes the Slack provider reads channels, DMs and users with, and replies through. Browser
@@ -88,7 +89,7 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
               value={token}
               onChange={(event) => setToken(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") submitToken();
+                if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) submitToken();
               }}
               placeholder="xoxb-…"
               autoComplete="off"

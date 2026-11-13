@@ -309,12 +309,9 @@ export function ServerForwards({
             </div>
           </form>
         </Disclosure>
-        {error || statusError ? (
-          <InlineError
-            retry={!error && statusError ? { onRetry: () => refresh(server.id) } : undefined}
-          >
-            {error || statusError}
-          </InlineError>
+        {error ? <InlineError>{error}</InlineError> : null}
+        {statusError ? (
+          <InlineError retry={{ onRetry: () => refresh(server.id) }}>{statusError}</InlineError>
         ) : null}
       </div>
     </>

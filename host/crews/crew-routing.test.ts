@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { HostCrews, CrewRoutingWait } from "./crews";
 import type { HostTasks } from "../tasks/tasks";
+import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import type { HostEngine } from "../engine";
 import type { HostModelCatalog } from "../../src/features/connections/model/protocol";
 import {
@@ -147,11 +148,6 @@ async function setup(entries: ModelRoutingEntry[]) {
     ],
   };
   await crews.save(definition);
-  vi.spyOn(store, "session").mockResolvedValue({
-    projectId: project.id,
-    status: "idle",
-    session: { harness: "codex", model: "fallback", runtimeMode: "supervised", blocks: [] },
-  } as never);
   const principal = { projectId: project.id, sessionId: "lead-session" };
   const start = () => crews.startRun(project.id, "crew", "Work", "run", "supervised", principal);
   const assign = (required: string[] = []) =>
@@ -286,6 +282,14 @@ it("does not create assignments when all routing entries are ineligible", async 
       { projectId: f.project.id, sessionId: "lead-session" },
     ),
   ).rejects.toThrow("different input");
+  // The coordinator's canonical source owns this live run; the synthetic
+  // source must reflect its admitted generation before a notification turn.
+  const source = (await (f.tasks as unknown as HostTasks).list()).find(
+    (task: HostTask) => task.crewExecutionId === "run",
+  )!;
+  expect(source).toBeTruthy();
+  source.status = "running";
+  source.sessionId = "lead-session";
   f.setLeft(100);
   f.setNow(5000);
   await f.crews.tick();

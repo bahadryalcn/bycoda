@@ -1,6 +1,40 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
+test("saved look action keeps the Turkish label inside its card", async ({ page }) => {
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=appearance&theme=${theme}&lang=tr`,
+      );
+      const card = page.locator(".theme-saved-add");
+      await expect(card).toHaveAccessibleName("Mevcut görünümü kaydet");
+      const bounds = await card.evaluate((element) => {
+        const outer = element.getBoundingClientRect();
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        const lines = [];
+        while (walker.nextNode()) {
+          if (!walker.currentNode.textContent?.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(walker.currentNode);
+          for (const rect of range.getClientRects())
+            lines.push({ left: rect.left, right: rect.right });
+        }
+        return { left: outer.left, right: outer.right, lines };
+      });
+      expect(bounds.lines.length).toBeGreaterThan(0);
+      for (const line of bounds.lines) {
+        expect(line.left).toBeGreaterThanOrEqual(bounds.left);
+        expect(line.right).toBeLessThanOrEqual(bounds.right);
+      }
+      await page.screenshot({
+        path: `temp/verification/settings-ux-20261113/final-saved-look-${theme}-${width}.png`,
+      });
+    }
+  }
+});
+
 test("settings search metadata uses the available result width", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   for (const theme of ["light", "dark"]) {

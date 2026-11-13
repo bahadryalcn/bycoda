@@ -10,6 +10,7 @@ import type { BackgroundGradientSuggestion } from "../../../model/backgroundGrad
 import { SettingsFeedback } from "../../settingsControls";
 import { requestBackgroundSuggestion } from "./backgroundSuggestionRequest";
 import styles from "./GradientStrip.module.css";
+import { isImeComposition } from "../../../../../shared/lib/keyboard";
 
 /** Describe a gradient in words; the Host writes one and the result is applied at once. */
 export function BackgroundGenerator({
@@ -49,7 +50,8 @@ export function BackgroundGenerator({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") void generate().catch(console.error);
+    if (event.key === "Enter" && !isImeComposition(event.nativeEvent))
+      void generate().catch(console.error);
   };
 
   return (

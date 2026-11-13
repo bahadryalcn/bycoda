@@ -499,6 +499,12 @@ and press Enter for a custom tag. The library shows tag shortcuts beneath search
 click a selected tag again, or All tags, to clear that filter. Filtering keeps the
 current note and its draft open.
 
+If a newer note version arrives during a body read, Notes refreshes that body
+before treating it as current. A failed refresh remains retryable. Saving a
+recovery copy from Session Notes selects the copy when no newer edits are pending;
+otherwise the current draft stays open. If text changes while an image loads, the
+image is appended at the end so the earlier selection cannot replace new text.
+
 Document is the default editable view: click a paragraph to edit, then Read document
 to return to reading. All formatting commands appear directly in the toolbar while
 editing, including strikethrough, numbered list, quote, code block, table and divider.

@@ -1881,9 +1881,10 @@ describe("settings search", () => {
       ),
     );
 
-    expect(localStorage.getItem("bycoda.keybindingOverrides"), input.closest("[data-setting-id]")?.textContent ?? "").toBe(
-      '{"App: Search":{"shortcut":"Control+Option+Shift+KeyY"}}',
-    );
+    expect(
+      localStorage.getItem("bycoda.keybindingOverrides"),
+      input.closest("[data-setting-id]")?.textContent ?? "",
+    ).toBe('{"App: Search":{"shortcut":"Control+Option+Shift+KeyY"}}');
     expect(input.querySelector("[data-shortcut-display]")?.textContent).toBe("Ctrl+Alt+Shift+Y");
   });
 

@@ -241,6 +241,7 @@ async function render() {
   await act(async () =>
     root!.render(
       createElement(AssistantSettings, {
+        environmentId: "settings-fixture",
         request: mock.request as any,
         snapshot: snapshot(),
         manual: {} as any,

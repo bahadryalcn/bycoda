@@ -100,7 +100,7 @@ it.each([false, true])(
       expect(launcher().title).toBe("");
       expect(await tooltipText(launcher())).toBe(`Find in conversation${MOD.replace(/\+$/, "")}F`);
       await act(async () => {
-        saveKeybindingOverride("Editor: Find", { shortcut: "Control+Shift+KeyM" });
+        saveKeybindingOverride("Editor: Find", { shortcut: "Control+Option+Shift+KeyM" });
       });
       expect(await tooltipText(launcher())).toMatch(/M$/);
       await act(async () => {

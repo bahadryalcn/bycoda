@@ -7,7 +7,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileEditor } from "./FileEditor";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
-import { setLanguagePreference } from "../../../shared/i18n";
+import {
+  getDomainLanguagePreference,
+  getLanguagePreference,
+  setDomainLanguagePreference,
+  setLanguagePreference,
+} from "../../../shared/i18n";
 import { invalidateWatchedFiles } from "../model/fileWatch";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -240,8 +245,13 @@ describe("HTML Go Live", () => {
     expect(opened()).toHaveLength(0);
   });
   it("localizes HTML reveal labels after changing language", async () => {
-    await render();
+    const previousLanguage = getLanguagePreference();
+    const previousTechnicalLanguage = getDomainLanguagePreference("technical");
     try {
+      await act(async () => {
+        await setDomainLanguagePreference("technical", "app");
+      });
+      await render();
       await act(async () => {
         await setLanguagePreference("tr");
       });
@@ -261,7 +271,8 @@ describe("HTML Go Live", () => {
       ).toBe(true);
     } finally {
       await act(async () => {
-        await setLanguagePreference("en");
+        await setDomainLanguagePreference("technical", previousTechnicalLanguage);
+        await setLanguagePreference(previousLanguage);
       });
     }
   });

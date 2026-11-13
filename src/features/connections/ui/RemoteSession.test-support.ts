@@ -1,5 +1,17 @@
 import { act } from "react";
 
+/** Provider model-setting fixture shared with the remote composer interaction helpers. */
+export const effort = (id: string, value: string) => ({
+  id,
+  label: "Reasoning",
+  kind: "select" as const,
+  value,
+  options: ["low", "medium", "high"].map((option) => ({
+    value: option,
+    label: option[0].toUpperCase() + option.slice(1),
+  })),
+});
+
 /** Sends textarea input through React's native value setter and input event. */
 export async function typeText(container: HTMLElement, text: string) {
   const textarea = container.querySelector("textarea")!;

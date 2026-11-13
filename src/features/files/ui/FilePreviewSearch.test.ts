@@ -171,7 +171,7 @@ describe("FilePreviewSearch", () => {
   );
 
   it("opens from a custom find shortcut instead of the default", async () => {
-    saveKeybindingOverride("Editor: Find", { shortcut: "Control+Shift+KeyM" });
+    saveKeybindingOverride("Editor: Find", { shortcut: "Control+Option+Shift+KeyM" });
     await act(async () =>
       root.render(
         createElement(
@@ -190,6 +190,7 @@ describe("FilePreviewSearch", () => {
       code: "KeyM",
       key: "M",
       ctrlKey: true,
+      altKey: true,
       shiftKey: true,
       cancelable: true,
     });

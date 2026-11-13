@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import { remoteRequest } from "../../connections/model/connections";
-import type { HostProject, RemoteMachine } from "../../connections/model/protocol";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { remoteRequest } from "../../connections/public/connections";
+import type { HostProject, RemoteMachine } from "../../connections/public/protocol";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { pathKey } from "../../../shared/lib/paths";
-import type { Session } from "../../sessions/model/session";
-import { taskMachineFor } from "../../tasks/model/taskClient";
+import type { Session } from "../../sessions/public/session";
+import { taskMachineFor } from "../../tasks/public/taskCreation";
 import { HOST_AUTOMATION_PROJECT_TASKS, HOST_AUTOMATION_ROOM } from "./hostAutomations";
 import {
   AutomationsProposeResultSchema,

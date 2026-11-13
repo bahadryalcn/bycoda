@@ -49,6 +49,160 @@ it("settles loading when a cached resource remounts inside its refresh interval"
   expect(container.textContent).toBe("false:cached result");
 });
 
+it("does not force a fresh cached resource after manually refreshing a different key", async () => {
+  const readA = vi.fn(async () => "A");
+  const readB = vi.fn(async () => "B");
+  let key = "B";
+  let resource: ReturnType<typeof useGitResource<string>>;
+  function View() {
+    resource = useGitResource("/switch", key, true, key === "A" ? readA : readB, false, 60_000);
+    return null;
+  }
+  await act(async () => root.render(createElement(View)));
+  key = "A";
+  await act(async () => root.render(createElement(View)));
+  await act(async () => resource.refresh());
+  expect(readA).toHaveBeenCalledTimes(2);
+  key = "B";
+  await act(async () => root.render(createElement(View)));
+  expect(resource!.data).toBe("B");
+  expect(readB).toHaveBeenCalledTimes(1);
+});
+
+it.each(["resolve", "reject"] as const)(
+  "follows a sibling's newer forced read when the superseded read later %ss",
+  async (olderOutcome) => {
+    let resolveOld!: (value: string) => void;
+    let rejectOld!: (reason: Error) => void;
+    let resolveNew!: (value: string) => void;
+    const read = vi
+      .fn<() => Promise<string>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            resolveOld = resolve;
+            rejectOld = reject;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveNew = resolve;
+          }),
+      );
+    const resources: ReturnType<typeof useGitResource<string>>[] = [];
+    function View({ index }: { index: number }) {
+      resources[index] = useGitResource("/shared", "shared", true, read, false);
+      return createElement("output", null, `${resources[index].data}:${resources[index].error}`);
+    }
+    await act(async () =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(View, { index: 0 }),
+          createElement(View, { index: 1 }),
+        ),
+      ),
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => resources[1].refresh());
+    expect(read).toHaveBeenCalledTimes(2);
+    await act(async () => resolveNew("latest"));
+    await act(async () =>
+      olderOutcome === "resolve"
+        ? resolveOld("obsolete")
+        : rejectOld(new Error("obsolete failure")),
+    );
+    expect(resources.map((resource) => resource.data)).toEqual(["latest", "latest"]);
+    expect(resources.map((resource) => resource.error)).toEqual([null, null]);
+  },
+);
+
+it("preserves the newer forced failure for consumers awaiting superseded success", async () => {
+  let resolveOld!: (value: string) => void;
+  const read = vi
+    .fn<() => Promise<string>>()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    )
+    .mockRejectedValueOnce(new Error("current failure"));
+  const resources: ReturnType<typeof useGitResource<string>>[] = [];
+  function View({ index }: { index: number }) {
+    resources[index] = useGitResource("/shared-error", "shared-error", true, read, false);
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      createElement(
+        "div",
+        null,
+        createElement(View, { index: 0 }),
+        createElement(View, { index: 1 }),
+      ),
+    ),
+  );
+  await act(async () => resources[1].refresh());
+  await act(async () => resolveOld("obsolete"));
+  expect(resources.map((resource) => resource.data)).toEqual([null, null]);
+  expect(resources.map((resource) => resource.error)).toEqual([
+    "current failure",
+    "current failure",
+  ]);
+});
+
+it.each(["success", "failure"] as const)(
+  "follows the latest %s across completed replacements while an older shared read remains pending",
+  async (latestOutcome) => {
+    let resolveOld!: (value: string) => void;
+    const read = vi
+      .fn<() => Promise<string>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve;
+          }),
+      )
+      .mockResolvedValueOnce("intermediate");
+    if (latestOutcome === "success") read.mockResolvedValueOnce("latest");
+    else read.mockRejectedValueOnce(new Error("latest failure"));
+    const resources: ReturnType<typeof useGitResource<string>>[] = [];
+    function View({ index }: { index: number }) {
+      resources[index] = useGitResource("/completion-gap", "completion-gap", true, read, false);
+      return null;
+    }
+    await act(async () =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(View, { index: 0 }),
+          createElement(View, { index: 1 }),
+        ),
+      ),
+    );
+    await act(async () => resources[1].refresh());
+    expect(resources[1].data).toBe("intermediate");
+    await act(async () => resources[1].refresh());
+    expect(read).toHaveBeenCalledTimes(3);
+    await act(async () => resolveOld("obsolete"));
+    if (latestOutcome === "success") {
+      expect(resources.map((resource) => resource.data)).toEqual(["latest", "latest"]);
+      expect(resources.map((resource) => resource.error)).toEqual([null, null]);
+    } else {
+      expect(resources.map((resource) => resource.error)).toEqual([
+        "latest failure",
+        "latest failure",
+      ]);
+      expect(resources[0].data).toBeNull();
+      expect(resources[1].data).toBe("intermediate");
+    }
+  },
+);
+
 it("re-reads branches when a checkout notification arrives during a read", async () => {
   let first!: (value: unknown) => void;
   let second!: (value: unknown) => void;

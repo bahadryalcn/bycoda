@@ -584,6 +584,7 @@ describe("agent app commands", () => {
         model: "codex:test",
         modelSettings: {
           effort: "high",
+          autoCompactWindow: "default",
           crossAdvisor: '{"harness":"codex","model":"codex:test","providerAccountId":"default"}',
           crossSubagents: "auto",
         },

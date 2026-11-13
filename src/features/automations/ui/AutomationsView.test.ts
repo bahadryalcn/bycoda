@@ -942,7 +942,9 @@ it("locks new automation creation until its submitted snapshot finishes saving",
       (node) => node.textContent?.trim() === text,
     )!;
   await act(async () => findButton("New automation").click());
-  const template = container.querySelectorAll<HTMLButtonElement>(".automation-template")[0];
+  const template = [...container.querySelectorAll<HTMLButtonElement>(".automation-template")].find(
+    (button) => button.textContent?.includes("Find critical bugs"),
+  )!;
   await act(async () => template.click());
   const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
   await changeInput(name, "Created review");
@@ -1124,5 +1126,7 @@ it("keeps a failed run's full error outside its disabled session button", async 
   )!;
   expect(detail).toBeDefined();
   expect(detail.closest("button")).toBeNull();
-  expect(detail.parentElement?.closest("li")?.querySelector("button[disabled]")).not.toBeNull();
+  expect(
+    detail.parentElement?.closest("li")?.querySelector('button[aria-disabled="true"]'),
+  ).not.toBeNull();
 });

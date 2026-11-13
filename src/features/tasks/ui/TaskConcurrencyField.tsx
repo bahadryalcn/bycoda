@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { NumberField } from "../../../shared/ui/NumberField";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 /** Machine concurrency keeps partial edits local and saves a valid number on blur or Enter. */
 export function TaskConcurrencyField({
@@ -54,7 +55,7 @@ export function TaskConcurrencyField({
       }}
       onBlur={save}
       onKeyDown={(event) => {
-        if (event.key === "Enter") {
+        if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
           event.preventDefault();
           event.currentTarget.blur();
         }

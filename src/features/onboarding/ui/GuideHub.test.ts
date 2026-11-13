@@ -40,7 +40,7 @@ it("reveals a topic's surface through the shared action request and closes", asy
   window.addEventListener(GUIDE_ACTION_EVENT, listener);
   try {
     const onClose = await render("/Users/me/code/app");
-    await act(async () => button("Tasks & goals").click());
+    await act(async () => button("Tasks & epics").click());
     await act(async () => button("Open Tasks").click());
     expect(actions).toEqual(["tasks"]);
     expect(onClose).toHaveBeenCalledOnce();

@@ -77,7 +77,7 @@ function setup(overrides: { closed?: boolean; operationNull?: boolean } = {}) {
     return null;
   }
   act(() => root.render(createElement(Host)));
-  return { work, inputOwner, view, refs, onInserted, onError };
+  return { work, inputOwner, view, refs, onInserted, onError, draftState: params.draftState };
 }
 
 beforeEach(() => {
@@ -150,6 +150,29 @@ it("inserts at the range captured at start and skips focus when the note switche
   expect(view.dispatch).not.toHaveBeenCalled();
   expect(work).toHaveBeenCalledTimes(1);
 });
+
+it.each(["prefix abcdefgh", "abcNEW SELECTIONfgh"])(
+  "preserves text edited during image loading: %s",
+  async (editedBody) => {
+    const picker = deferred<string[] | null>();
+    pickImageFiles.mockReturnValue(picker.promise);
+    saveNoteImagesFromPaths.mockResolvedValue([IMAGE]);
+    const { draftState, refs, onInserted } = setup();
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = api.insertImage();
+    });
+    draftState.edits.current.body = editedBody;
+    refs.bodyRef.current = editedBody;
+    await act(async () => {
+      picker.resolve(["C:/pics/shot.png"]);
+      await pending;
+    });
+    expect(onInserted).toHaveBeenCalledExactlyOnceWith(
+      `${editedBody}\n\n![shot.png](/note-assets/shot.png)`,
+    );
+  },
+);
 
 it("focuses the source editor after inserting when the mode is still the source", async () => {
   pickImageFiles.mockResolvedValue(["C:/pics/shot.png"]);

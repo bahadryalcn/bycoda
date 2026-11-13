@@ -443,7 +443,7 @@ it("offers local and saved machines only for host tools while keeping conversati
   const annotate = container.querySelector<HTMLButtonElement>(
     'button[aria-label="Select element and add to composer"]',
   )!;
-  expect(annotate.disabled).toBe(true);
+  expect(annotate.getAttribute("aria-disabled")).toBe("true");
   await toolAct(() => annotate.click());
   expect(
     vi

@@ -25,7 +25,18 @@ struct OperationOwner {
 }
 type Operations = Mutex<HashMap<String, OperationOwner>>;
 static OPERATIONS: OnceLock<Operations> = OnceLock::new();
-static PROCESS_IDS: OnceLock<Mutex<HashMap<String, u32>>> = OnceLock::new();
+#[cfg(windows)]
+type SftpJob = Arc<crate::owned_process_job::OwnedProcessJob>;
+#[cfg(not(windows))]
+type SftpJob = ();
+struct OwnedSftpProcess {
+    cancelled: Arc<AtomicBool>,
+    #[cfg(unix)]
+    pid: u32,
+    #[cfg(windows)]
+    job: Arc<crate::owned_process_job::OwnedProcessJob>,
+}
+static PROCESS_IDS: OnceLock<Mutex<HashMap<String, OwnedSftpProcess>>> = OnceLock::new();
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 const MAX_OUTPUT: u64 = 4 * 1024 * 1024;
 
@@ -149,8 +160,17 @@ impl Operation {
         if entries.contains_key(&id) {
             return Err("SFTP operation already running".into());
         }
-        if entries.len() >= 8 {
-            return Err("Too many SFTP operations; wait for a transfer to finish".into());
+        {
+            let processes = PROCESS_IDS
+                .get_or_init(Default::default)
+                .lock()
+                .map_err(|_| "SFTP process registry unavailable")?;
+            if processes.contains_key(&id) {
+                return Err("SFTP process retirement is still pending or unknown".into());
+            }
+            if entries.len() >= 8 || processes.len() >= 8 {
+                return Err("Too many SFTP operations; wait for a transfer to finish".into());
+            }
         }
         let cancelled = Arc::new(AtomicBool::new(false));
         entries.insert(
@@ -281,29 +301,50 @@ fn transfer_args(endpoint: &SshEndpoint, progress: bool) -> Result<Vec<String>, 
     Ok(args)
 }
 
+#[cfg(unix)]
 fn kill_process_tree(pid: u32) {
-    #[cfg(windows)]
-    {
-        // Kill this operation's sftp and its ssh transport together; never touch
-        // another terminal, sshd, service or shared application process.
-        let mut command = Command::new("taskkill.exe");
-        hidden(&mut command);
-        let _ = command
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    }
-    #[cfg(unix)]
     unsafe {
         libc::kill(-(pid as i32), libc::SIGTERM);
     }
 }
 
-fn terminate(child: &mut std::process::Child) {
-    kill_process_tree(child.id());
-    let _ = child.kill();
-    let _ = child.wait();
+// A timeout is not retirement proof: the reaper retains process and identity.
+fn retire_cancelled(
+    mut child: std::process::Child,
+    input: std::thread::JoinHandle<std::io::Result<()>>,
+    output: std::thread::JoinHandle<Vec<u8>>,
+    diagnostic: std::thread::JoinHandle<Vec<u8>>,
+    guard: ProcessIdGuard,
+    job: SftpJob,
+) -> bool {
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        #[cfg(windows)]
+        job.terminate();
+        #[cfg(unix)]
+        kill_process_tree(child.id());
+        #[cfg(not(windows))]
+        let _ = job;
+        let _ = child.kill();
+        let exited = child.wait().is_ok();
+        #[cfg(windows)]
+        let settled = job.settle().is_ok();
+        #[cfg(not(windows))]
+        let settled = exited;
+        let input_done = input.join().is_ok();
+        let output_done = output.join().is_ok();
+        let diagnostic_done = diagnostic.join().is_ok();
+        let verified = exited && settled && input_done && output_done && diagnostic_done;
+        if verified {
+            drop(guard);
+        } else {
+            std::mem::forget(guard);
+        }
+        let _ = send.send(verified);
+    });
+    receive
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap_or(false)
 }
 
 fn run_batch(
@@ -347,7 +388,7 @@ fn run_batch_progress(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env("SSH_ASKPASS_REQUIRE", "never");
-    let mut spawn = || -> Result<std::process::Child, String> {
+    let mut spawn = || {
         let mut processes = PROCESS_IDS
             .get_or_init(Default::default)
             .lock()
@@ -357,20 +398,37 @@ fn run_batch_progress(
         }
         operation.check()?;
         #[cfg(windows)]
-        let spawned = crate::windows::spawn_managed(&mut command);
+        let job = Arc::new(
+            crate::owned_process_job::OwnedProcessJob::new()
+                .map_err(|_| "SFTP process ownership unavailable")?,
+        );
+        #[cfg(windows)]
+        let child = job
+            .spawn(&mut command)
+            .map_err(|_| "OpenSSH SFTP is unavailable")?;
         #[cfg(not(windows))]
-        let spawned = command.spawn();
-        let child = spawned.map_err(|_| "OpenSSH SFTP is unavailable")?;
-        processes.insert(operation.id.clone(), child.id());
+        let child = command.spawn().map_err(|_| "OpenSSH SFTP is unavailable")?;
+        #[cfg(not(windows))]
+        let job = ();
+        processes.insert(
+            operation.id.clone(),
+            OwnedSftpProcess {
+                cancelled: operation.cancelled.clone(),
+                #[cfg(unix)]
+                pid: child.id(),
+                #[cfg(windows)]
+                job: job.clone(),
+            },
+        );
         drop(processes);
-        Ok(child)
+        Ok::<_, String>((child, job))
     };
-    let mut child = if let Some(lease) = &operation.window_lease {
+    let (mut child, job) = if let Some(lease) = &operation.window_lease {
         lease.with_live(spawn)?
     } else {
         spawn()?
     };
-    let _process_guard = ProcessIdGuard(operation.id.clone());
+    let process_guard = ProcessIdGuard(operation.id.clone());
     let stdout = child.stdout.take().ok_or("SFTP output unavailable")?;
     let stderr = child.stderr.take().ok_or("SFTP diagnostics unavailable")?;
     let output = std::thread::spawn(move || {
@@ -394,11 +452,11 @@ fn run_batch_progress(
         });
     let status = loop {
         if operation.check().is_err() || Instant::now() >= deadline {
-            terminate(&mut child);
-            let _ = input.join();
-            let _ = output.join();
-            let _ = diagnostic.join();
-            return Err(if operation.check().is_err() {
+            let cancelled = operation.check().is_err();
+            let verified = retire_cancelled(child, input, output, diagnostic, process_guard, job);
+            return Err(if !verified {
+                "SFTP process retirement is unknown"
+            } else if cancelled {
                 "SFTP operation cancelled"
             } else {
                 "SFTP operation timed out"
@@ -409,14 +467,18 @@ fn run_batch_progress(
             Ok(Some(status)) => break status,
             Ok(None) => std::thread::sleep(Duration::from_millis(40)),
             Err(_) => {
-                terminate(&mut child);
-                let _ = input.join();
-                let _ = output.join();
-                let _ = diagnostic.join();
-                return Err("SFTP process failed".into());
+                let verified =
+                    retire_cancelled(child, input, output, diagnostic, process_guard, job);
+                return Err(if verified {
+                    "SFTP process failed"
+                } else {
+                    "SFTP process retirement is unknown"
+                }
+                .into());
             }
         }
     };
+    let _process_guard = process_guard;
     let bytes = output.join().map_err(|_| "SFTP output failed")?;
     let diagnostic = diagnostic.join().map_err(|_| "SFTP diagnostics failed")?;
     if input.join().map_err(|_| "SFTP input failed")?.is_err() {
@@ -658,17 +720,7 @@ pub fn shutdown() {
             entry.cancelled.store(true, Ordering::Relaxed);
         }
     }
-    // Copy the pids out so the registry lock is never held across taskkill.
-    let pids: Vec<u32> = PROCESS_IDS
-        .get()
-        .and_then(|processes| {
-            processes
-                .lock()
-                .ok()
-                .map(|entries| entries.values().copied().collect())
-        })
-        .unwrap_or_default();
-    crate::harness::terminate_all(&pids);
+    stop_owned_processes(None);
 }
 
 #[tauri::command]
@@ -700,7 +752,7 @@ pub fn kill_window(owner: &str) {
                 if entry.owner == owner {
                     entry.alive.store(false, Ordering::SeqCst);
                     entry.cancelled.store(true, Ordering::Relaxed);
-                    Some(id.clone())
+                    Some((id.clone(), entry.cancelled.clone()))
                 } else {
                     None
                 }
@@ -709,17 +761,25 @@ pub fn kill_window(owner: &str) {
     } else {
         vec![]
     };
-    // Copy the pids out so the registry lock is never held across taskkill.
-    let pids: Vec<u32> = PROCESS_IDS
-        .get_or_init(Default::default)
-        .lock()
-        .map(|processes| {
-            ids.iter()
-                .filter_map(|id| processes.get(id).copied())
-                .collect()
-        })
-        .unwrap_or_default();
-    crate::harness::terminate_all(&pids);
+    stop_owned_processes(Some(&ids));
+}
+
+fn stop_owned_processes(ids: Option<&[(String, Arc<AtomicBool>)]>) {
+    if let Ok(processes) = PROCESS_IDS.get_or_init(Default::default).lock() {
+        for (id, process) in processes.iter() {
+            if ids.is_some_and(|selected| {
+                !selected.iter().any(|(candidate, token)| {
+                    candidate == id && Arc::ptr_eq(token, &process.cancelled)
+                })
+            }) {
+                continue;
+            }
+            #[cfg(windows)]
+            process.job.terminate();
+            #[cfg(unix)]
+            kill_process_tree(process.pid);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -903,6 +963,52 @@ mod tests {
             fs::remove_file(path).unwrap();
         }
         fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn cancelling_owned_job_does_not_kill_an_unrelated_process() {
+        struct OtherChild(std::process::Child);
+        impl Drop for OtherChild {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let mut unrelated = Command::new("cmd.exe");
+        hidden(&mut unrelated);
+        let mut unrelated = OtherChild(
+            unrelated
+                .args(["/D", "/C", "ping -n 30 127.0.0.1 >nul"])
+                .spawn()
+                .unwrap(),
+        );
+        let job = Arc::new(crate::owned_process_job::OwnedProcessJob::new().unwrap());
+        let mut owned = Command::new("cmd.exe");
+        owned.args(["/D", "/C", "ping -n 30 127.0.0.1 >nul"]);
+        let child = job.spawn(&mut owned).unwrap();
+        let id = format!("owned-sftp-job-{}", uuid::Uuid::new_v4());
+        PROCESS_IDS
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap()
+            .insert(
+                id.clone(),
+                OwnedSftpProcess {
+                    cancelled: Arc::new(AtomicBool::new(false)),
+                    job: job.clone(),
+                },
+            );
+        assert!(Operation::begin(id.clone()).is_err());
+        let guard = ProcessIdGuard(id.clone());
+        let input = std::thread::spawn(|| Ok(()));
+        let output = std::thread::spawn(Vec::new);
+        let diagnostic = std::thread::spawn(Vec::new);
+        assert!(retire_cancelled(
+            child, input, output, diagnostic, guard, job
+        ));
+        assert!(!PROCESS_IDS.get().unwrap().lock().unwrap().contains_key(&id));
+        assert!(unrelated.0.try_wait().unwrap().is_none());
     }
 
     #[test]

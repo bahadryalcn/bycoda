@@ -136,3 +136,64 @@ it("keeps the original failed verification owner fenced across retry and board r
     physicalIdentity: { pid: 42 },
   });
 });
+
+it("clears stale parent recovery only when owner configuration creates a new invocation", async () => {
+  const f = await fixture();
+  const initial = await f.tasks.save(f.input());
+  const stale = {
+    ...initial,
+    status: "blocked",
+    repairAttempts: 1,
+    conflictRecovery: {
+      childId: "old-child",
+      sourceHead: "source",
+      targetHead: "target",
+      targetDirectory: "target-path",
+      targetBranch: "main",
+    },
+    crewWorkWait: { reason: "capacity", unstarted: true },
+    repairAdvisor: {
+      requestId: "old-advice",
+      sessionId: "old-session",
+      findings: "conflict",
+      feedback: "conflict",
+      error: "conflict",
+      fingerprint: "old",
+    },
+  };
+  await f.store.db
+    .prepare("UPDATE tasks SET value=? WHERE id=?")
+    .run(JSON.stringify(stale), initial.id);
+  const changed = await f.tasks.save(f.input({ title: "New owner request" }));
+  expect(changed.workInvocationId).not.toBe(initial.workInvocationId);
+  expect(changed.conflictRecovery).toBeUndefined();
+  expect(changed.crewWorkWait).toBeUndefined();
+  expect(changed.repairAdvisor).toBeUndefined();
+  expect(changed.repairAttempts).toBe(1);
+});
+
+it("releases a cancelled conflict child binding only on an explicit owner retry", async () => {
+  const f = await fixture();
+  const initial = await f.tasks.save(f.input({ id: "child" }));
+  const stale = {
+    ...initial,
+    status: "blocked",
+    conflictParent: {
+      id: "old-parent",
+      createdAt: 7,
+      workInvocationId: "old-parent-run",
+      sourceHead: "source",
+      targetHead: "target",
+      targetDirectory: "target-path",
+      targetBranch: "main",
+    },
+  };
+  await f.store.db
+    .prepare("UPDATE tasks SET value=? WHERE id=?")
+    .run(JSON.stringify(stale), initial.id);
+  expect((await f.tasks.get(initial.id))?.conflictParent).toEqual(stale.conflictParent);
+  const retried = await f.tasks.move(initial.id, "queued");
+  expect(retried.workInvocationId).not.toBe(initial.workInvocationId);
+  expect(retried.conflictParent).toBeUndefined();
+  expect(retried.status).toBe("queued");
+});

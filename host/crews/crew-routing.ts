@@ -13,6 +13,17 @@ import { createModelRoutingService, resolveModelChoice } from "../model-routing/
 import { readModelRouting } from "../model-routing/storage";
 import type { ModelRoutingTarget } from "../../src/shared/model/host-contracts/model-routing";
 
+/** Shared Work retains this exact coordinator occurrence until admission or reconciliation. */
+export class CrewWorkWait extends Error {
+  constructor(
+    message: string,
+    readonly unstarted: boolean,
+  ) {
+    super(message);
+    this.name = "CrewWorkWait";
+  }
+}
+
 export class CrewRoutingWait extends Error {
   constructor(readonly nextResetAt?: number) {
     super("Crew is waiting for an eligible model. Retry when quota or model availability changes.");

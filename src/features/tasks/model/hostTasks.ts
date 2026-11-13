@@ -195,6 +195,8 @@ export type TaskDeliveryReview = BranchDeliveryPlan & { artifacts?: TaskDelivery
 export type HostTask = HostTaskInput & {
   /** Runtime admission hold; the owner configuration parser never accepts it. */
   modelRoutingWait?: { reason: string; retryAt?: number };
+  /** The exact crew coordinator Work occurrence is waiting or has unknown dispatch. */
+  crewWorkWait?: { reason: string; unstarted: boolean };
   /** Owner-only invocation identity; scheduler retries retain the same occurrence. */
   workInvocationId?: string;
   /** First execution freezes the inherited runtime across repairs and recovery. */
@@ -257,6 +259,15 @@ export type HostTask = HostTaskInput & {
     targetHead: string;
     targetDirectory: string;
     targetBranch: string;
+    /** One attempted peer message; unknown delivery is never replayed. */
+    peer?: {
+      taskId: string;
+      createdAt: number;
+      workInvocationId: string;
+      sessionId: string;
+      runId: string;
+      commandId: string;
+    };
   };
   conflictParent?: {
     id: string;

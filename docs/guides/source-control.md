@@ -56,6 +56,11 @@ results count staged and unstaged **entries**. Filtering changes the displayed l
 **All** operations still affect the entire repository, including hidden entries.
 Selected-entry actions retain their own narrower scope and existing confirmations.
 
+Select a deleted-file row to inspect its deletion diff; opening the missing file
+in an editor remains unavailable. Commits opened from file history or blame keep
+the repository that was inspected, even when another checkout is active.
+Changing the Git language updates labels in already-open diffs.
+
 Unstaged rows offer **Discard Changes** directly beside **Stage Changes**, as well
 as in the file menu. Row actions appear on hover, keyboard focus or selection and
 remain available on touch devices. Discard keeps its confirmation and selected-entry

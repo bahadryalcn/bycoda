@@ -48,7 +48,9 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   The image button in the theme generator opens a menu for None, Codex or Gemini;
   its icon reflects the selected image provider. Generate themes returns suggestions;
   applying a suggestion or using Random never requests an image. Choose Generate image
-  on a result to request one, then Use image when it is ready. Failed images can be
+  on a result to request one. Preview opens the finished image in the shared viewer
+  with zoom and pan without applying it or making another generation request;
+  close the preview and choose Use image to apply it. Failed images can be
   retried, and a failed theme refresh keeps the previous suggestions. A saved look is
   a snapshot of the current appearance, so it does not include a pending image.
   Gradient generation uses the theme generator model and applies when ready unless a

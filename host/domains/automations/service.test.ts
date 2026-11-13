@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
+import { HostTasks } from "../../tasks/service";
+import { createAutomationTask } from "../../automations/task-execution";
 import { HostAutomations, type AutomationWorkspaceServices } from "../../automations/automations";
 import * as dto from "../../../src/shared/model/host-contracts/automations";
 import { createHostAutomationsService } from "./service";
@@ -58,7 +60,11 @@ async function fixture(workspaces?: AutomationWorkspaceServices) {
   });
   const project = await store.addProject(root, "Fixture");
   const clock = { now: new Date(2026, 9, 5, 8, 0).getTime() };
+  const tasks = new HostTasks(store, engine, () => clock.now);
+  await tasks.ready;
+  cleanups.push(() => tasks.close());
   const automations = new HostAutomations(store, engine, () => clock.now, workspaces);
+  automations.bindTasks(tasks);
   cleanups.push(() => automations.close());
   await automations.ready;
   const context = { authorized: vi.fn(async () => true) };
@@ -81,7 +87,7 @@ async function fixture(workspaces?: AutomationWorkspaceServices) {
     enabled: true,
     isolate: false,
   };
-  return { root, store, engine, provider, finishes, clock, automations, context, service, input };
+  return { root, store, engine, provider, finishes, clock, tasks, automations, context, service, input };
 }
 
 it("keeps the owner clock, local timezone, defaults, CAS configuration and concrete rows", async () => {
@@ -175,136 +181,107 @@ it("rechecks the concrete save after a wait inside the already-owned SQL scope",
   expect(await f.automations.list()).toEqual([]);
 });
 
-it("denies manual send after preparation, retains confirmed create identity and preserves concurrent configuration", async () => {
+it("rejects revoked authority at canonical Task admission without an orphan Task link", async () => {
   const f = await fixture();
   await f.service.save({ automation: f.input }, f.context);
-  const entered = Promise.withResolvers<void>(),
-    release = Promise.withResolvers<void>();
-  const original = f.engine.updateSession.bind(f.engine);
-  vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
-    const result = await original(...args);
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const original = f.tasks.save.bind(f.tasks);
+  vi.spyOn(f.tasks, "save").mockImplementation(async (input) => {
     entered.resolve();
     await release.promise;
-    return result;
+    return original(input);
   });
-  const pending = f.service.runNow({ automationId: f.input.id }, f.context),
-    denied = expect(pending).rejects.toThrow("revoked");
-  await entered.promise;
-  const newer = await f.automations.save({ ...f.input, name: "Concurrent config" });
-  f.context.authorized.mockResolvedValue(false);
-  release.resolve();
-  await denied;
-  const [run] = await f.automations.runs(f.input.id);
-  dto.HostAutomationRunSchema.parse(run);
-  expect(run).toMatchObject({ status: "failed", trigger: "manual" });
-  expect(run.sessionId).toBeTruthy();
-  expect(run.runId).toBeUndefined();
-  expect(await f.automations.list()).toEqual([newer]);
-  expect(f.provider.send).not.toHaveBeenCalled();
-});
-
-it("checks live authority after policy preparation before any managed workspace effect", async () => {
-  const entered = Promise.withResolvers<void>(),
-    release = Promise.withResolvers<void>();
-  const prepare = vi.fn(),
-    activity = vi.fn();
-  const workspaces = {
-    environmentId: "fixture",
-    registry: { prepare },
-    activity: { start: activity },
-    policy: {
-      resolve: async () => {
-        entered.resolve();
-        await release.promise;
-        return { policy: { defaultMode: "worktree" } };
-      },
-    },
-  } as unknown as AutomationWorkspaceServices;
-  const f = await fixture(workspaces);
-  await f.service.save({ automation: { ...f.input, isolate: undefined } }, f.context);
-  const pending = f.service.runNow({ automationId: f.input.id }, f.context),
-    denied = expect(pending).rejects.toThrow("revoked");
+  const pending = f.service.runNow({ automationId: f.input.id }, f.context);
+  const denied = expect(pending).rejects.toThrow("revoked");
   await entered.promise;
   f.context.authorized.mockResolvedValue(false);
   release.resolve();
   await denied;
-  expect(prepare).not.toHaveBeenCalled();
-  expect(activity).not.toHaveBeenCalled();
-  expect((await f.automations.runs(f.input.id))[0]).toMatchObject({ status: "failed" });
+  expect(await f.tasks.list()).toEqual([]);
+  const history = await f.automations.runs(f.input.id);
+  expect(history.every((run) => !run.taskId)).toBe(true);
+  expect(await f.store.db.prepare("SELECT task_id FROM automation_tasks").all()).toEqual([]);
   expect(f.provider.send).not.toHaveBeenCalled();
 });
 
-it("keeps a confirmed send receipt running after creator revocation and settles through autonomous owner", async () => {
+it("acknowledges one linked queued Task without creating a session or launching a provider", async () => {
   const f = await fixture();
-  await f.service.save({ automation: f.input }, f.context);
-  const original = f.engine.command.bind(f.engine);
-  vi.spyOn(f.engine, "command").mockImplementation(async (command) => {
-    const receipt = await original(command);
-    if ((command as { type: string }).type === "send")
-      f.context.authorized.mockResolvedValue(false);
-    return receipt;
-  });
-  await expect(f.service.runNow({ automationId: f.input.id }, f.context)).rejects.toThrow(
-    "revoked",
-  );
-  const [run] = await f.automations.runs(f.input.id);
-  await vi.waitFor(() => expect(f.provider.send).toHaveBeenCalledOnce(), { timeout: 5000 });
-  expect(run.status).toBe("running");
-  expect(run.sessionId).toBeTruthy();
-  expect(run.runId).toBeTruthy();
-  f.finishes[0]();
-  await vi.waitFor(
-    async () => expect((await f.store.session(run.sessionId!)).status).toBe("idle"),
-    { timeout: 5000 },
-  );
-  await f.automations.tick();
-  expect((await f.automations.runs(f.input.id))[0].status).toBe("succeeded");
-});
-
-it("does not assume a running admission without the original send receipt", async () => {
-  const f = await fixture();
-  await f.service.save({ automation: f.input }, f.context);
-  const original = f.engine.command.bind(f.engine);
-  vi.spyOn(f.engine, "command").mockImplementation(async (command) => {
-    if ((command as { type: string }).type === "send") throw new Error("Not admitted");
-    return original(command);
-  });
-  const run = await f.service.runNow({ automationId: f.input.id }, f.context);
-  expect(run).toMatchObject({ status: "failed", error: "Not admitted" });
-  expect(run.sessionId).toBeTruthy();
+  const definition = await f.service.save({ automation: f.input }, f.context);
+  const run = dto.HostAutomationRunSchema.parse(await f.service.runNow({ automationId: definition.id }, f.context));
+  expect(run).toMatchObject({ status: "pending", trigger: "manual" });
+  expect(run.taskId).toBeTruthy();
+  expect(run.sessionId).toBeUndefined();
   expect(run.runId).toBeUndefined();
+  expect(await f.tasks.get(run.taskId!)).toMatchObject({
+    status: "queued", source: "automation", automationId: definition.id, automationRunId: run.id,
+    prompt: definition.prompt, modelSettings: definition.modelSettings,
+  });
+  expect(await f.store.db.prepare("SELECT task_id FROM automation_tasks WHERE run_id=?").get(run.id))
+    .toMatchObject({ task_id: run.taskId });
   expect(f.provider.send).not.toHaveBeenCalled();
 });
 
-it("runs accepted persisted schedules on the Host clock independently of the creator grant", async () => {
+it("retains the accepted link after a lost authorized reply and replays that occurrence without duplication", async () => {
+  const f = await fixture();
+  const definition = await f.service.save({ automation: f.input }, f.context);
+  const original = f.automations.runNow.bind(f.automations);
+  vi.spyOn(f.automations, "runNow").mockImplementation(async (...args) => {
+    const accepted = await original(...args);
+    f.context.authorized.mockResolvedValue(false);
+    return accepted;
+  });
+  await expect(f.service.runNow({ automationId: definition.id }, f.context)).rejects.toThrow("revoked");
+  const [run] = await f.automations.runs(definition.id);
+  expect(run.taskId).toBeTruthy();
+  const originalTask = await f.tasks.get(run.taskId!);
+  const replayed = await createAutomationTask(f.store, f.tasks, definition, run);
+  expect(replayed.taskId).toBe(run.taskId);
+  expect(await f.tasks.get(run.taskId!)).toEqual(originalTask);
+  expect(await f.tasks.list()).toHaveLength(1);
+  expect(await f.automations.runs(definition.id)).toHaveLength(1);
+  expect(f.provider.send).not.toHaveBeenCalled();
+});
+
+it("rolls back the Task and mapping together when Task persistence fails", async () => {
+  const f = await fixture();
+  await f.service.save({ automation: f.input }, f.context);
+  vi.spyOn(f.tasks, "save").mockRejectedValue(new Error("Task storage failed"));
+  const result = await f.service.runNow({ automationId: f.input.id }, f.context);
+  expect(result).toMatchObject({ status: "failed", error: "Task storage failed" });
+  expect(result.taskId).toBeUndefined();
+  expect(await f.tasks.list()).toEqual([]);
+  expect(await f.store.db.prepare("SELECT task_id FROM automation_tasks").all()).toEqual([]);
+  expect(f.provider.send).not.toHaveBeenCalled();
+});
+
+it("runs accepted persisted schedules using Host clock and original configuration after creator revocation", async () => {
   const f = await fixture();
   const saved = await f.service.save({ automation: f.input }, f.context);
   f.context.authorized.mockResolvedValue(false);
   f.clock.now = saved.nextRunAt;
   await f.automations.tick();
-  await vi.waitFor(() => expect(f.provider.send).toHaveBeenCalledOnce(), { timeout: 5000 });
   const [run] = await f.automations.runs(f.input.id);
-  expect(run).toMatchObject({
-    status: "running",
-    trigger: "scheduled",
-    scheduledFor: saved.nextRunAt,
+  expect(run).toMatchObject({ status: "pending", trigger: "scheduled", scheduledFor: saved.nextRunAt });
+  expect(run.taskId).toBeTruthy();
+  expect(await f.tasks.get(run.taskId!)).toMatchObject({
+    status: "queued", prompt: f.input.prompt, harness: f.input.harness,
+    model: f.input.model, modelSettings: f.input.modelSettings,
   });
-  await expect(f.automations.delete(f.input.id)).rejects.toThrow("still running");
   await f.automations.tick();
-  expect(f.provider.send).toHaveBeenCalledOnce();
+  expect(await f.automations.runs(f.input.id)).toHaveLength(1);
+  expect(await f.tasks.list()).toHaveLength(1);
+  expect(f.provider.send).not.toHaveBeenCalled();
 });
 
-it("treats waiter cancellation after admission as wait-only and never as a provider stop", async () => {
+it("does not cancel accepted Task admission when its response waiter aborts", async () => {
   const f = await fixture();
   await f.service.save({ automation: f.input }, f.context);
-  const entered = Promise.withResolvers<void>(),
-    release = Promise.withResolvers<void>();
-  const original = f.engine.updateSession.bind(f.engine);
-  vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
-    const result = await original(...args);
+  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
+  const original = f.tasks.save.bind(f.tasks);
+  vi.spyOn(f.tasks, "save").mockImplementation(async (input) => {
     entered.resolve();
     await release.promise;
-    return result;
+    return original(input);
   });
   const controller = new AbortController();
   const context = { ...f.context, signal: controller.signal };
@@ -313,78 +290,51 @@ it("treats waiter cancellation after admission as wait-only and never as a provi
   controller.abort();
   release.resolve();
   const run = await pending;
-  expect(run.status).toBe("running");
-  await vi.waitFor(() => expect(f.provider.send).toHaveBeenCalledOnce(), { timeout: 5000 });
+  expect(run).toMatchObject({ status: "pending", trigger: "manual" });
+  expect((await f.tasks.get(run.taskId!))?.status).toBe("queued");
+  expect(f.provider.send).not.toHaveBeenCalled();
   expect(f.provider.cancel).not.toHaveBeenCalled();
-  const count = (await f.automations.runs(f.input.id)).length;
-  await expect(f.service.runNow({ automationId: f.input.id }, context)).rejects.toThrow(
-    "cancelled",
-  );
-  expect(await f.automations.runs(f.input.id)).toHaveLength(count);
+  await expect(f.service.runNow({ automationId: f.input.id }, context)).rejects.toThrow("cancelled");
+  expect(await f.automations.runs(f.input.id)).toHaveLength(1);
 });
 
-it("retains failed reservation cleanup across ownership mismatch and release failure, then retries only the owned metadata stop", async () => {
-  const entered = Promise.withResolvers<void>(),
-    release = Promise.withResolvers<void>();
-  let workspace: {
-    id: string;
-    owner: { kind: string; id: string };
-    projectId: string;
-    directoryState: string;
+it("skips a second manual occurrence while its canonical Task is still queued", async () => {
+  const f = await fixture();
+  await f.service.save({ automation: f.input }, f.context);
+  const first = await f.service.runNow({ automationId: f.input.id }, f.context);
+  const second = await f.service.runNow({ automationId: f.input.id }, f.context);
+  expect(first.status).toBe("pending");
+  expect(second.status).toBe("skipped");
+  expect(second.taskId).toBeUndefined();
+  expect(await f.tasks.list()).toHaveLength(1);
+  expect(f.provider.send).not.toHaveBeenCalled();
+});
+it("retries only the exact owned activity for a retained legacy failed run", async () => {
+  const runId = "legacy-run";
+  const workspace = { id: "owned-workspace", owner: { kind: "automationRun", id: runId }, directoryState: "present" };
+  let activity: { id: string; workspaceId: string; ownerId: string; kind: string } | undefined = {
+    id: "owned-activity", workspaceId: workspace.id, ownerId: "other-run", kind: "provider",
   };
-  let activity: { id: string; workspaceId: string; ownerId: string; kind: string } | undefined;
-  const stop = vi.fn(async (_id: string) => {
-    activity = undefined;
-  });
-  const prepare = vi.fn(
-    async (request: { owner: { kind: string; id: string }; projectId: string }) => {
-      workspace = {
-        id: "owned-workspace",
-        owner: request.owner,
-        projectId: request.projectId,
-        directoryState: "present",
-      };
-      return { workspace };
-    },
-  );
+  const stop = vi.fn(async (_id: string) => { activity = undefined; });
   const finish = vi.fn();
   const services = {
     environmentId: "fixture",
-    registry: { prepare, get: async () => workspace, finish },
-    activity: {
-      start: async (request: { workspaceId: string; ownerId: string; kind: string }) => {
-        activity = { ...request, id: "owned-activity" };
-        entered.resolve();
-        await release.promise;
-        return activity;
-      },
-      list: async () => (activity ? [activity] : []),
-      stop,
-    },
+    registry: { get: async () => workspace, finish },
+    activity: { list: async () => activity ? [activity] : [], stop },
   } as unknown as AutomationWorkspaceServices;
   const f = await fixture(services);
-  await f.service.save({ automation: { ...f.input, isolate: true } }, f.context);
-  const pending = f.service.runNow({ automationId: f.input.id }, f.context);
-  const denied = expect(pending).rejects.toThrow("revoked");
-  await entered.promise;
-  f.context.authorized.mockResolvedValue(false);
-  release.resolve();
-  await denied;
-  const [run] = await f.automations.runs(f.input.id);
-  dto.HostAutomationRunSchema.parse(run);
-  expect(run).toMatchObject({
-    status: "failed",
-    cleanupPending: true,
-    workspaceId: "owned-workspace",
-    activityId: "owned-activity",
-  });
+  await f.service.save({ automation: f.input }, f.context);
+  const legacy = { id: runId, automationId: f.input.id, createdAt: 1, scheduledFor: 1,
+    startedAt: 1, status: "failed", trigger: "manual", cleanupPending: true,
+    workspaceId: workspace.id, activityId: "owned-activity" };
+  await f.store.db.prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)")
+    .run(legacy.id, legacy.automationId, legacy.createdAt, JSON.stringify(legacy));
   await expect(f.automations.delete(f.input.id)).rejects.toThrow("cleanup");
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
   try {
-    activity!.ownerId = "other-run";
     await f.automations.tick();
     expect(stop).not.toHaveBeenCalled();
-    activity!.ownerId = run.id;
+    activity!.ownerId = runId;
     stop.mockRejectedValueOnce(new Error("Temporary reservation storage failure"));
     await f.automations.tick();
     expect((await f.automations.runs(f.input.id))[0].cleanupPending).toBe(true);
@@ -395,79 +345,31 @@ it("retains failed reservation cleanup across ownership mismatch and release fai
     expect((await f.automations.runs(f.input.id))[0].status).toBe("failed");
     await f.automations.tick();
     expect(stop).toHaveBeenCalledTimes(2);
-    expect(f.provider.send).not.toHaveBeenCalled();
     expect(finish).not.toHaveBeenCalled();
-    expect(prepare).toHaveBeenCalledOnce();
+    expect(f.provider.send).not.toHaveBeenCalled();
   } finally {
     error.mockRestore();
   }
 });
 
-it("retains failed cleanup history when ordinary old completed history is pruned", async () => {
+it("retains failed legacy cleanup history when old completed history is pruned", async () => {
   const f = await fixture();
   await f.service.save({ automation: f.input }, f.context);
   await f.store.db.scope(async () => {
     for (let index = 0; index < 105; index++) {
-      const run = {
-        id: `old-${index}`,
-        automationId: f.input.id,
-        createdAt: index,
-        scheduledFor: index,
-        startedAt: index,
-        status: "failed",
-        trigger: "manual",
-        ...(index === 0
-          ? { cleanupPending: true, workspaceId: "retained", activityId: "retained" }
-          : {}),
-      };
-      await f.store.db
-        .prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)")
+      const run = { id: `old-${index}`, automationId: f.input.id, createdAt: index,
+        scheduledFor: index, startedAt: index, status: "failed", trigger: "manual",
+        ...(index === 0 ? { cleanupPending: true, workspaceId: "retained", activityId: "retained" } : {}) };
+      await f.store.db.prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)")
         .run(run.id, run.automationId, run.createdAt, JSON.stringify(run));
     }
   });
-  const original = f.engine.command.bind(f.engine);
-  vi.spyOn(f.engine, "command").mockImplementation(async (command) => {
-    if ((command as { type: string }).type === "send") throw new Error("Not admitted");
-    return original(command);
-  });
-  await f.service.runNow({ automationId: f.input.id }, f.context);
+  const first = await f.service.runNow({ automationId: f.input.id }, f.context);
+  expect(first.status).toBe("pending");
+  const second = await f.service.runNow({ automationId: f.input.id }, f.context);
+  expect(second.status).toBe("skipped");
   const history = await f.automations.runs(f.input.id);
   expect(history.some((run) => run.id === "old-0" && run.cleanupPending)).toBe(true);
   expect(history.some((run) => run.id === "old-1")).toBe(false);
   expect(f.provider.send).not.toHaveBeenCalled();
-});
-
-it("settles a pending busy manual attempt when its grant changes after history admission", async () => {
-  const f = await fixture();
-  await f.service.save({ automation: f.input }, f.context);
-  const entered = Promise.withResolvers<void>(),
-    release = Promise.withResolvers<void>();
-  const original = f.engine.updateSession.bind(f.engine);
-  vi.spyOn(f.engine, "updateSession").mockImplementation(async (...args) => {
-    const result = await original(...args);
-    entered.resolve();
-    await release.promise;
-    return result;
-  });
-  const first = f.service.runNow({ automationId: f.input.id }, f.context);
-  await entered.promise;
-  // Real authorization consults the actual admitted history. The new row is
-  // permitted; the immediate busy finish sees the subsequently revoked grant.
-  const secondContext = {
-    authorized: async () => (await f.automations.runs(f.input.id)).length < 2,
-  };
-  try {
-    await expect(f.service.runNow({ automationId: f.input.id }, secondContext)).rejects.toThrow(
-      "revoked",
-    );
-    const history = await f.automations.runs(f.input.id);
-    expect(history.filter((run) => run.status === "pending")).toHaveLength(1);
-    expect(history.filter((run) => run.status === "failed")).toHaveLength(1);
-    expect(history.find((run) => run.status === "failed")?.sessionId).toBeUndefined();
-    expect(f.provider.send).not.toHaveBeenCalled();
-  } finally {
-    release.resolve();
-  }
-  expect((await first).status).toBe("running");
-  await vi.waitFor(() => expect(f.provider.send).toHaveBeenCalledOnce(), { timeout: 5000 });
 });
