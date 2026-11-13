@@ -20,11 +20,15 @@ async function fixture() {
   const project = await store.addProject("/crew-native-fixture", "Native Crew");
   const snapshot = (id: string, status = "idle"): Snapshot =>
     ({
+      revision: 1,
+      updatedAt: 1000,
       projectId: project.id,
       status,
       runId: status === "running" ? `${id}-turn` : undefined,
       session: {
         id,
+        cwd: project.cwd,
+        title: "Fixture coordinator",
         runtimeMode: "auto-accept-edits",
         harness: "codex",
         model: "codex:fixture",
@@ -349,7 +353,9 @@ it.each(["pause", "coordinator change", "finish"])(
       const assignment = (await f.assign()) as { taskId: string };
       const task = f.rows.find((row) => row.id === assignment.taskId)!;
       task.status = "review";
-      task.verification = { review: { verdict: "pass", note: "PASS" } };
+      task.verification = {
+        review: { verdict: "pass", note: "PASS", sessionId: "fixture-reviewer" },
+      };
       await f.call("crews.accept", { runId: "native-run", taskId: task.id });
       expect(task.status).toBe("done");
     }

@@ -59,9 +59,20 @@ it("preserves native SSH permission replies without accepting forged or malforme
 
 it("requires the private background challenge without accepting caller authority", () => {
   const method = "native.services.assistant.background.execute";
-  const input = { environmentId: "environment", threadId: "room", operationId: "operation", operationHash: "a".repeat(64), challenge: "b".repeat(64), relayId: "relay" };
+  const input = {
+    environmentId: "environment",
+    threadId: "room",
+    operationId: "operation",
+    operationHash: "a".repeat(64),
+    challenge: "b".repeat(64),
+    relayId: "relay",
+  };
   expect(parseHostRpcParams(method, { input })).toEqual({ input });
-  for (const altered of [{ ...input, fullAccess: true }, { ...input, challenge: `${input.challenge}\n` }, { ...input, operationHash: "wrong" }])
+  for (const altered of [
+    { ...input, fullAccess: true },
+    { ...input, challenge: `${input.challenge}\n` },
+    { ...input, operationHash: "wrong" },
+  ])
     expect(() => parseHostRpcParams(method, { input: altered })).toThrow();
 });
 

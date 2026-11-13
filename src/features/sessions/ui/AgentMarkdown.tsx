@@ -96,6 +96,7 @@ import { loadStreamingTextMode, subscribeStreamingTextMode } from "../../setting
 import { usePresentationVisible } from "./presentationVisibility";
 import { usePrefersReducedMotion } from "../../settings/public/decorativeMotion";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
+import { CodeRunButton } from "./CodeExecutionContext";
 import { codeSourceFingerprint } from "./stableCodeDisclosureIdentity";
 import { useParsedMarkdown } from "./useParsedMarkdown";
 import { useMarkdownRenderBlocks } from "./useMarkdownRenderBlocks";
@@ -502,6 +503,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
         <span className="markdown-code-fallback-label">{fence.language}</span>
       ) : null}
       <CodeCopyButton code={code} />
+      <CodeRunButton code={code} language={fence.language} incomplete={!!incomplete} />
       <HighlightedCodeBlock
         className={className}
         code={code}

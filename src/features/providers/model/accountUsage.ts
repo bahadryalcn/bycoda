@@ -15,6 +15,7 @@ import {
 import { identityKey } from "./providerAccountIdentity";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { t } from "../../../shared/i18n";
+import type { t as Translate } from "../../../shared/i18n";
 import type { BoundFormat } from "../../../shared/i18n/boundFormat";
 
 /** At or below this much headroom an account reads as "Running low". */
@@ -62,7 +63,7 @@ export function accountStatus(limits: ProviderRateLimits | undefined, now: numbe
 export function accountStatusWith(
   limits: ProviderRateLimits | undefined,
   now: number,
-  translate: typeof t,
+  translate: typeof Translate,
   format: Pick<BoundFormat, "formatResetDuration">,
 ): AccountStatus {
   if (limits?.status === "fetching" || limits?.status === "idle") {
@@ -127,7 +128,7 @@ export function providerAccountSignedOut(limits: ProviderRateLimits): boolean {
 function backIn(
   limits: ProviderRateLimits,
   now: number,
-  translate: typeof t,
+  translate: typeof Translate,
   format: Pick<BoundFormat, "formatResetDuration">,
 ): string | null {
   const resetAt = exhaustedWindowResetAt(limits);

@@ -83,7 +83,9 @@ it("persists the exact create-only receipt before sending, then recovers a lost 
     if (args[1] === "automations.list")
       return [
         {
-          ...Object.fromEntries(Object.entries(persisted ?? {}).filter(([key]) => key !== "expectedAbsent")),
+          ...Object.fromEntries(
+            Object.entries(persisted ?? {}).filter(([key]) => key !== "expectedAbsent"),
+          ),
           maxRunMinutes: 0,
           maxRunsPerDay: 0,
           enabled: true,

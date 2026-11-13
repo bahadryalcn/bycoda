@@ -43,21 +43,29 @@ export function SessionTaskLinkDialog({
     };
   }, []);
   const linked = tasks.find((task) => task.id === linkedTaskId);
-  const run = async (work: () => Promise<void>) => {
+  const run = (work: () => Promise<void>) => {
     if (inFlight.current || !mounted.current) return;
     inFlight.current = true;
     setBusy(true);
     setError(undefined);
+    let request: Promise<void>;
     try {
-      await work();
-      if (mounted.current) onClose();
+      request = Promise.resolve(work());
     } catch (cause) {
-      if (mounted.current)
-        setError(cause instanceof Error ? cause.message : t("Could not update the task link."));
-    } finally {
-      inFlight.current = false;
-      if (mounted.current) setBusy(false);
+      request = Promise.reject(cause);
     }
+    return request
+      .then(() => {
+        if (mounted.current) onClose();
+      })
+      .catch((cause: unknown) => {
+        if (mounted.current)
+          setError(cause instanceof Error ? cause.message : t("Could not update the task link."));
+      })
+      .finally(() => {
+        inFlight.current = false;
+        if (mounted.current) setBusy(false);
+      });
   };
   return (
     <Modal

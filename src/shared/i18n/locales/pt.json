@@ -14254,5 +14254,15 @@
   "Address check unavailable.": "Verificação de endereço indisponível.",
   "Saving changes the machine name without reconnecting.": "Salvar altera o nome da máquina sem reconectar.",
   "Could not copy. Select the address and copy it manually.": "Não foi possível copiar. Selecione o endereço e copie manualmente.",
-  "Could not read your home folder. Retry or choose a folder.": "Não foi possível ler sua pasta pessoal. Tente novamente ou escolha uma pasta."
+  "Could not read your home folder. Retry or choose a folder.": "Não foi possível ler sua pasta pessoal. Tente novamente ou escolha uma pasta.",
+  "Run in terminal": "Executar no terminal",
+  "Running command": "Executando comando",
+  "Command status unknown": "Estado do comando desconhecido",
+  "Command completed": "Comando concluído",
+  "Command exited with code {p0}": "O comando terminou com o código {p0}",
+  "Add result to chat": "Adicionar resultado ao chat",
+  "Add result to chat when finished": "Adicionar resultado ao chat ao terminar",
+  "Only the latest terminal output is included.": "Apenas a saída mais recente do terminal é incluída.",
+  "Result added to chat. Review and send when ready.": "Resultado adicionado ao chat. Revise e envie quando quiser.",
+  "Could not add result to chat. Try again.": "Não foi possível adicionar o resultado ao chat. Tente novamente."
 }

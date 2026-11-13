@@ -600,6 +600,8 @@ pub async fn mobile_pty_call(
                 cols,
                 rows,
                 profile,
+                None,
+                None,
             );
             if crate::control::validate_history_source_owner(
                 &app,

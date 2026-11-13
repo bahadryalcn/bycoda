@@ -131,14 +131,33 @@ it("preserves both dispatch and unproven-receipt errors without reopening the or
   const f = await fixture();
   const operation = call("tasks.create");
   const original = new Error("Lost dispatch acknowledgement");
-  const failure = await f.children.withChild(operation, parent, async () => true, async () => {
-    await f.putTask({ id: String(operation.input.taskId), projectId: "project", createdAt: 1, status: "queued" });
-    throw original;
-  }).then(() => undefined, (error: unknown) => error);
+  const failure = await f.children
+    .withChild(
+      operation,
+      parent,
+      async () => true,
+      async () => {
+        await f.putTask({
+          id: String(operation.input.taskId),
+          projectId: "project",
+          createdAt: 1,
+          status: "queued",
+        });
+        throw original;
+      },
+    )
+    .then(
+      () => undefined,
+      (error: unknown) => error,
+    );
   expect(failure).toBeInstanceOf(AggregateError);
   expect((failure as AggregateError).errors[0]).toBe(original);
-  expect((failure as AggregateError).errors[1]).toMatchObject({ message: expect.stringContaining("unproven") });
-  expect(await f.children.taskAllowed(await f.readTask(String(operation.input.taskId)))).toBe(false);
+  expect((failure as AggregateError).errors[1]).toMatchObject({
+    message: expect.stringContaining("unproven"),
+  });
+  expect(await f.children.taskAllowed(await f.readTask(String(operation.input.taskId)))).toBe(
+    false,
+  );
 });
 
 it("Stop before native reply fences a late queued child and cancellation remains bound to its original generation", async () => {

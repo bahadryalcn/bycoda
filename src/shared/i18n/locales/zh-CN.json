@@ -14254,5 +14254,15 @@
   "Address check unavailable.": "地址检查不可用。",
   "Saving changes the machine name without reconnecting.": "保存将更改计算机名称，不会重新连接。",
   "Could not copy. Select the address and copy it manually.": "无法复制。请选择地址并手动复制。",
-  "Could not read your home folder. Retry or choose a folder.": "无法读取主文件夹。请重试或选择文件夹。"
+  "Could not read your home folder. Retry or choose a folder.": "无法读取主文件夹。请重试或选择文件夹。",
+  "Run in terminal": "在终端中运行",
+  "Running command": "正在运行命令",
+  "Command status unknown": "命令状态未知",
+  "Command completed": "命令已完成",
+  "Command exited with code {p0}": "命令已退出，退出码为 {p0}",
+  "Add result to chat": "将结果添加到聊天",
+  "Add result to chat when finished": "完成后将结果添加到聊天",
+  "Only the latest terminal output is included.": "仅包含最新的终端输出。",
+  "Result added to chat. Review and send when ready.": "结果已添加到聊天。请检查后发送。",
+  "Could not add result to chat. Try again.": "无法将结果添加到聊天。请重试。"
 }

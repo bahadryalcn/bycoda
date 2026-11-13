@@ -10,7 +10,11 @@ import {
 } from "../../../platform/tauri/pty";
 import type { SshEndpoint } from "../../connections/model/serverInventory";
 import { terminalOutputBuffer } from "../model/outputBuffer";
-import { takeTerminalCommand } from "../model/terminalLaunchCommand";
+import {
+  takeTerminalCommand,
+  takeTerminalRun,
+  type TerminalRun,
+} from "../model/terminalLaunchCommand";
 import { terminalInput } from "../model/terminalInput";
 import { loadTerminalProfile } from "../model/terminalProfiles";
 
@@ -127,6 +131,15 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
   let reportedVisible: boolean | undefined;
   let starting: Promise<void> | undefined;
   let retiring: Promise<void> | undefined;
+  let run: TerminalRun | undefined;
+  const decoder = new TextDecoder();
+  const failRun = (message: string) => {
+    // A retirement fence can fail before subscription takes the queued run.
+    const current =
+      run ?? (!privateTerminal && launch.kind === "local" ? takeTerminalRun(id) : undefined);
+    run = undefined;
+    current?.onError(message);
+  };
 
   const output = terminalOutputBuffer(
     (data, consumed) => options.writeOutput(data, consumed),
@@ -200,12 +213,15 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
         });
       }
       case "local":
-        return spawnPty(id, launch.cwd, cols, rows, launch.profile() ?? loadTerminalProfile());
+        return run
+          ? spawnPty(id, launch.cwd, cols, rows, launch.profile() ?? loadTerminalProfile(), run)
+          : spawnPty(id, launch.cwd, cols, rows, launch.profile() ?? loadTerminalProfile());
     }
   };
 
   const subscribeAndSpawn = async () => {
     if (closed) return;
+    if (!privateTerminal && launch.kind === "local") run = takeTerminalRun(id);
     unsubscribe = subscribePty(
       id,
       (data, consumed) => {
@@ -213,15 +229,25 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
           consumed?.();
           return;
         }
+        if (run) run.onOutput(decoder.decode(data, { stream: true }));
         output.append(data, consumed);
       },
-      (code) => {
+      (code, outputComplete) => {
         if (closed) return;
+        if (outputComplete === false)
+          failRun("Command exited, but complete terminal output could not be confirmed.");
         exited = true;
         spawned = false;
         input.dispose();
         options.lifecycle("exited");
         options.onExit(code);
+        const completed = run;
+        run = undefined;
+        if (completed) {
+          const tail = decoder.decode();
+          if (tail) completed.onOutput(tail);
+          completed.onExit(code ?? null);
+        }
         const status = code == null ? "" : ` (${code})`;
         output.append(`\n[process exited${status}]\r\n`);
       },
@@ -241,6 +267,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
   const retire = (): Promise<void> => {
     if (retiring) return retiring;
     closed = true;
+    failRun("Terminal closed before command completion was confirmed.");
     input.dispose();
     output.dispose();
     const pending = starting ?? Promise.resolve();
@@ -306,8 +333,9 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
         .catch((error) => {
           options.lifecycle("failed");
           spawned = false;
+          const message = error instanceof Error ? error.message : String(error);
+          failRun(message);
           if (!closed) {
-            const message = error instanceof Error ? error.message : String(error);
             exited = true;
             options.onStartFailed(message);
           }
@@ -344,6 +372,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     /** Stop view-driven input and output delivery. The process is not touched. */
     detach() {
       closed = true;
+      failRun("Terminal detached before command completion was confirmed.");
       input.dispose();
       output.dispose();
     },

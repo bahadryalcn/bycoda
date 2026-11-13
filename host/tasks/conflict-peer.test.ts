@@ -75,6 +75,17 @@ function fixture() {
     },
   } as unknown as TaskContext;
   const plan = {
+    token: "reviewed-plan",
+    expiresAt: 2000,
+    workspaceId: "workspace",
+    expectedRevision: 1,
+    sourceBranchRef: "refs/heads/task",
+    targetStatusFingerprint: "clean",
+    commits: [],
+    changedPaths: [],
+    overlappingPaths: [],
+    checks: [],
+    visualEvidence: [],
     action: "merge",
     sourceHead: "source",
     targetHead: "resolved",

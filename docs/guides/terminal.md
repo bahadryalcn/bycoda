@@ -1,5 +1,24 @@
 # Terminal appearance and reading tools
 
+## Run commands from chat
+
+Completed PowerShell (`powershell`, `pwsh`, `ps1`) and POSIX shell (`bash`, `sh`,
+`zsh`, `shell`) code blocks show **Run in terminal** (Play) beside the code-block
+actions. The command runs in a matching installed shell on the conversation's
+machine, using its working copy. The focused terminal dialog shows output, **Stop**
+and the exit code. If completion cannot be confirmed, the status remains unknown.
+
+Choose **Add result to chat** to attach the bounded terminal output to the original
+conversation's composer. **Add result to chat when finished** does this after the
+command finishes. Existing draft text stays intact; review and send the result
+when ready. Adding a result does not automatically send a message to the model.
+Long output includes only the latest retained terminal output.
+
+CMD/batch fences and other programming-language blocks do not show Play because
+their quoting is not yet supported safely.
+
+## Appearance and reading
+
 Terminals use the saved terminal font, size, weight and line spacing. These
 preferences remain independent of the code editor. Ctrl+wheel changes the hovered
 terminal's text size; ordinary wheel input continues to scroll. Open the terminal's

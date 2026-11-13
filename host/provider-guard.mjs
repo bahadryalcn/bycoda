@@ -83,6 +83,9 @@ child.on("error", (error) => {
 });
 child.on("close", (code) => {
   exitCode = code ?? 1;
+  // A command-terminal parent closes its watchdog after this proof. Windows'
+  // pending fd-3 filesystem read otherwise keeps guard exit waiting for EOF.
+  if (process.send && process.connected) process.send({ type: "child-exited" }, () => {});
   if (stopping && process.platform !== "win32") {
     try {
       process.kill(-child.pid, 0);

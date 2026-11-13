@@ -756,7 +756,13 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
   await call("crews.finish", { runId: started.id });
   status = "idle";
   const finished = (await call("crews.list")).runs.find((run) => run.id === started.id);
-  await expect(owner.call("crews.deleteRun", { runId: started.id, expectedUpdatedAt: finished!.updatedAt }, project.id)).rejects.toThrow("still owns");
+  await expect(
+    owner.call(
+      "crews.deleteRun",
+      { runId: started.id, expectedUpdatedAt: finished!.updatedAt },
+      project.id,
+    ),
+  ).rejects.toThrow("still owns");
   sourceTasks.remove();
   await call("crews.deleteRun", {
     runId: started.id,

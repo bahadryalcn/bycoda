@@ -71,6 +71,7 @@ export function createEnvironmentRuntime(
         "transport.ws.queue.v2",
         "transport.ws.files.v2",
         "transport.ws.terminals.v2",
+        "transport.ws.terminals.command.v1",
         "transport.ws.git.v2",
         "transport.ws.notes.v2",
         "transport.ws.tasks.v2",

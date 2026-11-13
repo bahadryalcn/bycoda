@@ -121,6 +121,9 @@ it("requires paired owner authentication and host identity before any terminal d
 it("advertises pipes, deduplicates creation, rejects escaping roots and protects cross-project terminals", async () => {
   const s = await setup();
   expect((await s.call("environment.describe")).body.result.capabilities).toContain("terminals.v1");
+  expect((await s.call("environment.describe")).body.result.capabilities).toContain(
+    "transport.ws.terminals.command.v1",
+  );
   const params = { projectId: s.project.id, requestId: "request-03" };
   const created = await s.call("terminals.create", params);
   expect(created.status).toBe(200);

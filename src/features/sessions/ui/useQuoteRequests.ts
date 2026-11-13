@@ -71,12 +71,13 @@ export function useQuoteRequests(
   const addSelectionToChat = useCallback(
     (text: string, mode?: QuoteRequest["mode"]) => {
       const admitted = rootParentRef.current?.admit();
-      if (!admitted) return;
+      if (!admitted) return false;
       for (const previous of quoteAdmissions.current.values()) previous.finish();
       quoteAdmissions.current.clear();
       quoteRequestId.current += 1;
       quoteAdmissions.current.set(quoteRequestId.current, admitted);
       setQuoteRequest({ id: quoteRequestId.current, text, mode });
+      return true;
     },
     [rootParentRef],
   );

@@ -24,6 +24,7 @@ const PTY_COALESCE: Duration = Duration::from_millis(8);
 const PTY_QUEUE_CHUNKS: usize = 64;
 /// Keystrokes or pastes queued for a terminal whose child is not reading.
 const WRITE_QUEUE_LEN: usize = 256;
+pub(crate) mod command;
 mod status;
 #[cfg(unix)]
 mod unix_child;
@@ -62,6 +63,8 @@ struct OutputFlow {
 struct PtyExit {
     id: String,
     code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output_complete: Option<bool>,
 }
 
 /// Output of a terminal no view shows is held here instead of emitted every
@@ -471,6 +474,8 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
     profile: Option<String>,
+    command: Option<String>,
+    shell_kind: Option<String>,
 ) -> Result<(), String> {
     let gate_host = host.clone();
     let _gate = gate_host
@@ -479,6 +484,14 @@ pub fn pty_spawn(
         .unwrap_or_else(|e| e.into_inner());
     let (cols, rows) = (cols.max(2), rows.max(2));
     ensure_identity(host.get(&id).as_deref(), None)?;
+    let command_shell = command::launch(
+        profile.as_deref(),
+        command.as_deref(),
+        shell_kind.as_deref(),
+    )?;
+    if command_shell.is_some() && host.get(&id).is_some() {
+        return Err("A command terminal cannot reattach or replay a previous launch.".into());
+    }
     // A reloaded page restores its terminals under the same ids while the old
     // shells are still running. Hand the live PTY to the new view instead of
     // hanging up the shell and every job in it.
@@ -502,7 +515,7 @@ pub fn pty_spawn(
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     crate::mobile_pty::reserve_native_spawn(&app, &id)?;
 
-    let shell = shell_for(profile.as_deref());
+    let shell = command_shell.unwrap_or_else(|| shell_for(profile.as_deref()));
 
     #[cfg(unix)]
     {
@@ -515,6 +528,7 @@ pub fn pty_spawn(
             cols,
             rows,
             shell,
+            command.is_some(),
             None,
             None,
             None,
@@ -533,6 +547,7 @@ pub fn pty_spawn(
             cols,
             rows,
             shell,
+            command.is_some(),
             None,
             None,
             None,
@@ -756,6 +771,7 @@ fn spawn_private_program(
         cols,
         rows,
         shell,
+        false,
         Some(identity),
         integration,
         jump_config,
@@ -771,6 +787,7 @@ fn spawn_private_program(
         cols,
         rows,
         shell,
+        false,
         Some(identity),
         integration,
         jump_config,
@@ -1071,6 +1088,7 @@ fn spawn_unix(
     cols: u16,
     rows: u16,
     (shell, args, env): LaunchShell,
+    one_shot: bool,
     ssh_identity: Option<String>,
     integration: Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
     jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
@@ -1182,6 +1200,7 @@ fn spawn_unix(
     let mobile_generation = crate::mobile_pty::native_generation(&app, &id);
     let data_generation = mobile_generation.clone();
     let data_child = child.clone();
+    let (drained, drain) = std::sync::mpsc::channel();
     thread::spawn(move || {
         let mut file = reader;
         let fd = file.as_raw_fd();
@@ -1273,12 +1292,14 @@ fn spawn_unix(
                 crate::mobile_pty::drained(&data_app, &data_id, generation, complete);
             }
         }
+        let _ = drained.send(complete);
     });
 
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
         let exit = child.wait();
+        let output_complete = command::await_drain(one_shot, drain);
         let code = crate::pty_runtime_logs::report_exit(log_exit.as_ref(), exit.as_ref().ok());
         if exit.is_ok() && !private {
             if let Some(generation) = mobile_generation.as_deref() {
@@ -1309,7 +1330,11 @@ fn spawn_unix(
                 &wait_app,
                 Some(owner),
                 EXIT_EVENT,
-                PtyExit { id: wait_id, code },
+                PtyExit {
+                    id: wait_id,
+                    code,
+                    output_complete,
+                },
                 private,
             );
         }
@@ -1329,6 +1354,7 @@ fn spawn_windows(
     cols: u16,
     rows: u16,
     (shell, args, env): LaunchShell,
+    one_shot: bool,
     ssh_identity: Option<String>,
     integration: Option<Arc<Mutex<crate::ssh_shell_integration::ShellIntegration>>>,
     jump_config: Option<Arc<crate::ssh_jump_config::PreparedJumpConfig>>,
@@ -1424,6 +1450,7 @@ fn spawn_windows(
     let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(PTY_QUEUE_CHUNKS);
     let drain_complete = Arc::new(AtomicBool::new(false));
     let reader_complete = drain_complete.clone();
+    let (drained, drain) = std::sync::mpsc::channel();
     thread::spawn(move || {
         let mut buf = vec![0_u8; READ_CHUNK];
         loop {
@@ -1468,12 +1495,14 @@ fn spawn_windows(
                 );
             }
         }
+        let _ = drained.send(drain_complete.load(Ordering::Acquire));
     });
 
     let wait_app = app;
     let wait_id = id;
     thread::spawn(move || {
         let exit = child.wait();
+        let output_complete = command::await_drain(one_shot, drain);
         let code = crate::pty_runtime_logs::report_exit(log_exit.as_ref(), exit.as_ref().ok());
         if exit.is_ok() && !private {
             if let Some(generation) = mobile_generation.as_deref() {
@@ -1497,7 +1526,11 @@ fn spawn_windows(
                 &wait_app,
                 Some(owner),
                 EXIT_EVENT,
-                PtyExit { id: wait_id, code },
+                PtyExit {
+                    id: wait_id,
+                    code,
+                    output_complete,
+                },
                 private,
             );
         }

@@ -588,6 +588,14 @@ subscriptions, queues, files, pipe terminals, Notes and explicit Git operations.
 Each method requires both an advertised route
 and its explicit capability family; schemas alone never enable a route.
 
+`transport.ws.terminals.command.v1` adds one-shot `terminals.create` commands.
+`command` carries at most 10,000 source characters; `shellKind` selects `powershell`,
+or `posix` from installed profiles. An explicit incompatible `profileId` is
+rejected. Creation receipts include source and shell kind, so retries never run
+changed code. The owned shell runs source as a command argument; `terminals.read`
+reports exit only after the guardian exits and captured output drains. Clients
+must require this capability before offering command execution on an older Host.
+
 Live streams send a complete baseline followed by revision-bound deltas. A
 consumer acknowledges only after its guarded application commit. Gaps, invalid
 bases or bounded replay exhaustion request a fresh baseline. Reopening a logical

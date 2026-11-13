@@ -11,11 +11,161 @@ afterEach(async () => {
   await Promise.allSettled(services.splice(0).map(async (service) => await service.close()));
 });
 const project = { id: "project", cwd: "/project" };
+
+it("launches one-shot source once and fences changed source or shell kind", async () => {
+  const s = setup();
+  const params = { requestId: "one-shot-01", command: "printf hello\nexit 7", shellKind: "posix" };
+  const terminal = await s.service.create(project, params, "owner", () => true);
+  expect(s.launch.mock.calls[0][4]).toBe(params.command);
+  expect((await s.service.create(project, params, "owner", () => true)).id).toBe(terminal.id);
+  await expect(
+    s.service.create(project, { ...params, command: "echo changed" }, "owner", () => true),
+  ).rejects.toThrow("different options");
+  await expect(
+    s.service.create(project, { ...params, shellKind: "powershell" }, "owner", () => true),
+  ).rejects.toThrow("different options");
+  s.output("hello");
+  s.exit(7);
+  expect(s.service.read(project.id, { id: terminal.id })).toMatchObject({
+    output: "hello",
+    terminal: { state: "exited", exitCode: 7 },
+  });
+  expect(s.launch).toHaveBeenCalledOnce();
+});
+
+it.each(["", " ", "x".repeat(10001), "echo\u0000hello", "echo\u001bhello"])(
+  "rejects invalid one-shot source before launch",
+  async (command) => {
+    const s = setup();
+    expect(() =>
+      s.service.create(
+        project,
+        { requestId: "invalid-command", command, shellKind: "posix" },
+        "owner",
+        () => true,
+      ),
+    ).toThrow("Invalid terminal command");
+    expect(s.launch).not.toHaveBeenCalled();
+  },
+);
+
+it("does not substitute another shell for unavailable code language", async () => {
+  const s = setup();
+  await expect(
+    s.service.create(
+      project,
+      { requestId: "wrong-shell-01", command: "Get-Process", shellKind: "powershell" },
+      "owner",
+      () => true,
+    ),
+  ).rejects.toThrow("shell");
+  await expect(
+    s.service.create(
+      project,
+      {
+        requestId: "wrong-shell-02",
+        command: "Get-Process",
+        shellKind: "powershell",
+        profileId: "shell",
+      },
+      "owner",
+      () => true,
+    ),
+  ).rejects.toThrow("shell");
+  expect(s.launch).not.toHaveBeenCalled();
+});
+
+it("validates direct and legacy creation with the shared strict schema", () => {
+  const s = setup();
+  expect(() =>
+    s.service.create(
+      project,
+      {
+        requestId: "invalid-field",
+        command: "echo hello",
+        shellKind: "posix",
+        ignoredCommand: "secret",
+      },
+      "owner",
+      () => true,
+    ),
+  ).toThrow();
+  expect(s.launch).not.toHaveBeenCalled();
+});
+
+it("selects a matching installed shell instead of the saved incompatible preference", async () => {
+  const s = setup();
+  const launch = s.launch;
+  const service = new HostTerminals(
+    launch,
+    () => ({
+      profiles: [
+        { id: "ps", name: "PowerShell", path: "/powershell", kind: "powershell" },
+        { id: "sh", name: "Shell", path: "/shell", kind: "sh" },
+      ],
+      chosenId: "sh",
+      defaultId: "sh",
+    }),
+    async (root) => root,
+  );
+  services.push(service);
+  await service.create(
+    project,
+    { requestId: "matching-shell", command: "Write-Output hello", shellKind: "powershell" },
+    "owner",
+    () => true,
+  );
+  expect(launch.mock.calls[0][0]).toMatchObject({ id: "ps" });
+  expect(service.list(project.id).profiles).toContainEqual({
+    id: "ps",
+    name: "PowerShell",
+  });
+});
+
+it("runs multiline source in a real one-shot shell and drains output before its exit", async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "bycoda-terminal-command-")));
+  const installed = listShellProfiles().profiles;
+  const profile = installed.find((entry) =>
+    ["pwsh", "powershell", "sh", "bash", "zsh"].includes(entry.kind),
+  );
+  expect(profile).toBeDefined();
+  const service = new HostTerminals();
+  services.push(service);
+  try {
+    const isPowerShell = profile!.kind === "pwsh" || profile!.kind === "powershell";
+    const command = isPowerShell
+      ? "Write-Output 'FIRST-終'\nWrite-Output 'LAST-ç'\nexit 7"
+      : "printf 'FIRST-終\\n'\nprintf 'LAST-ç\\n'\nexit 7";
+    const terminal = await service.create(
+      { id: "real-command", cwd: root },
+      {
+        requestId: "real-command-01",
+        profileId: profile!.id,
+        command,
+        shellKind: isPowerShell ? "powershell" : "posix",
+      },
+      "owner",
+      () => true,
+    );
+    await vi.waitFor(
+      () => {
+        const page = service.read("real-command", { id: terminal.id });
+        expect(page).toMatchObject({ terminal: { state: "exited", exitCode: 7 } });
+        expect(page.output).toContain("FIRST-終");
+        expect(page.output).toContain("LAST-ç");
+      },
+      { timeout: 10000 },
+    );
+  } finally {
+    await service.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 function setup(locate = async (root: string) => root, now?: () => number) {
   let output: (data: string) => void = () => {};
   let exit: (code: number | null) => void = () => {};
   const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => exit(0)) };
-  const launch = vi.fn((_profile, _cwd, onOutput, onExit) => {
+  const launch = vi.fn((_profile, _cwd, onOutput, onExit, _command?: string) => {
     output = onOutput;
     exit = onExit;
     return child;

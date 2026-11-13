@@ -14254,5 +14254,15 @@
   "Address check unavailable.": "Adressprüfung nicht verfügbar.",
   "Saving changes the machine name without reconnecting.": "Beim Speichern wird der Computername ohne erneute Verbindung geändert.",
   "Could not copy. Select the address and copy it manually.": "Kopieren fehlgeschlagen. Wähle die Adresse aus und kopiere sie manuell.",
-  "Could not read your home folder. Retry or choose a folder.": "Dein persönlicher Ordner konnte nicht gelesen werden. Versuche es erneut oder wähle einen Ordner."
+  "Could not read your home folder. Retry or choose a folder.": "Dein persönlicher Ordner konnte nicht gelesen werden. Versuche es erneut oder wähle einen Ordner.",
+  "Run in terminal": "Im Terminal ausführen",
+  "Running command": "Befehl wird ausgeführt",
+  "Command status unknown": "Befehlsstatus unbekannt",
+  "Command completed": "Befehl abgeschlossen",
+  "Command exited with code {p0}": "Befehl mit Code {p0} beendet",
+  "Add result to chat": "Ergebnis zum Chat hinzufügen",
+  "Add result to chat when finished": "Ergebnis nach Abschluss zum Chat hinzufügen",
+  "Only the latest terminal output is included.": "Nur die neueste Terminalausgabe wird einbezogen.",
+  "Result added to chat. Review and send when ready.": "Ergebnis zum Chat hinzugefügt. Prüfe es und sende es, wenn du bereit bist.",
+  "Could not add result to chat. Try again.": "Das Ergebnis konnte nicht zum Chat hinzugefügt werden. Versuche es erneut."
 }

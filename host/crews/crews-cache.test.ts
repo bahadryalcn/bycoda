@@ -53,6 +53,7 @@ async function fixture() {
     runId: undefined as string | undefined,
     session: {
       id: "session-live",
+      cwd: directory,
       harness: "codex",
       model: "fixture",
       modelSettings: {},

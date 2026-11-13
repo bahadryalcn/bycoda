@@ -14254,5 +14254,15 @@
   "Address check unavailable.": "La vérification des adresses est indisponible.",
   "Saving changes the machine name without reconnecting.": "L'enregistrement modifie le nom de la machine sans la reconnecter.",
   "Could not copy. Select the address and copy it manually.": "Copie impossible. Sélectionnez l'adresse et copiez-la manuellement.",
-  "Could not read your home folder. Retry or choose a folder.": "Impossible de lire votre dossier personnel. Réessayez ou choisissez un dossier."
+  "Could not read your home folder. Retry or choose a folder.": "Impossible de lire votre dossier personnel. Réessayez ou choisissez un dossier.",
+  "Run in terminal": "Exécuter dans le terminal",
+  "Running command": "Commande en cours",
+  "Command status unknown": "État de la commande inconnu",
+  "Command completed": "Commande terminée",
+  "Command exited with code {p0}": "Commande terminée avec le code {p0}",
+  "Add result to chat": "Ajouter le résultat au chat",
+  "Add result to chat when finished": "Ajouter le résultat au chat à la fin",
+  "Only the latest terminal output is included.": "Seule la sortie la plus récente du terminal est incluse.",
+  "Result added to chat. Review and send when ready.": "Résultat ajouté au chat. Vérifiez-le et envoyez-le quand vous le souhaitez.",
+  "Could not add result to chat. Try again.": "Impossible d’ajouter le résultat au chat. Réessayez."
 }

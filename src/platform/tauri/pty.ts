@@ -3,10 +3,10 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { listenWindowAsync } from "./listenWindow";
 
 type DataPayload = { id: string; data: string; flow?: { generation: number; sequence: number } };
-type ExitPayload = { id: string; code: number | null };
+type ExitPayload = { id: string; code: number | null; outputComplete?: boolean };
 
 type DataHandler = (data: Uint8Array, consumed?: () => void) => void;
-type ExitHandler = (code: number | null) => void;
+type ExitHandler = (code: number | null, outputComplete?: boolean) => void;
 
 const dataHandlers = new Map<string, DataHandler>();
 const exitHandlers = new Map<string, ExitHandler>();
@@ -177,7 +177,7 @@ function ensureBridge() {
     }),
     listenWindowAsync<ExitPayload>("pty-exit", (event) => {
       if (bridgeGeneration !== generation) return;
-      const { id, code } = event.payload;
+      const { id, code, outputComplete } = event.payload;
       const slot = ackSlots.get(id);
       if (slot) flushAck(id, slot);
       // The process is gone: nothing more arrives for this id, so stop tracking it
@@ -185,7 +185,9 @@ function ensureBridge() {
       // the exit callback below.
       openedPtys.delete(id);
       clearBuffered(id);
-      exitHandlers.get(id)?.(code);
+      const handler = exitHandlers.get(id);
+      if (outputComplete === undefined) handler?.(code);
+      else handler?.(code, outputComplete);
     }),
   ]).then((results) => {
     const listeners = results.flatMap((result) =>
@@ -247,9 +249,17 @@ export async function spawnPty(
   cols: number,
   rows: number,
   profile?: string,
+  run?: { command: string; shellKind: "powershell" | "posix" | "cmd" },
 ): Promise<void> {
   await readyPtyBridge();
-  await invoke("pty_spawn", { id, cwd, cols, rows, profile: profile ?? null });
+  await invoke(run ? "pty_spawn_command" : "pty_spawn", {
+    id,
+    cwd,
+    cols,
+    rows,
+    profile: profile ?? null,
+    ...(run ? { command: run.command, shellKind: run.shellKind } : {}),
+  });
 }
 
 export async function writePty(id: string, data: string): Promise<void> {

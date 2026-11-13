@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
 import { windowsUtf8ConsoleSetup, type ShellProfile } from "./execution/shellProfiles";
@@ -17,33 +17,55 @@ export function terminalStartupInput(
   return setup ? `${setup}\r\n` : "";
 }
 
+/** One child shell owns the command and its actual exit status; output cannot forge completion. */
+export function terminalCommandArgs(
+  kind: string,
+  command: string,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
+  const setup = windowsUtf8ConsoleSetup(kind, platform);
+  if (kind === "pwsh" || kind === "powershell")
+    return [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      setup ? `${setup};\n${command}` : command,
+    ];
+  if (["sh", "bash", "zsh", "git-bash"].includes(kind)) return ["-c", command];
+  throw new Error("Command execution is unsupported for this terminal shell");
+}
+
 /** Use the existing watchdog guardian: only its owned child's tree can be stopped. */
 export function startTerminalProcess(
   profile: ShellProfile,
   cwd: string,
   output: (data: string) => void,
   exit: (code: number | null) => void,
+  command?: string,
 ): OwnedTerminalProcess {
   const args =
-    profile.kind === "pwsh" || profile.kind === "powershell"
-      ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-"]
-      : profile.kind === "cmd"
-        ? ["/D", "/Q"]
-        : profile.kind === "wsl"
-          ? ["--exec", "sh"]
-          : [];
+    command !== undefined
+      ? terminalCommandArgs(profile.kind, command)
+      : profile.kind === "pwsh" || profile.kind === "powershell"
+        ? ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-"]
+        : profile.kind === "cmd"
+          ? ["/D", "/Q"]
+          : profile.kind === "wsl"
+            ? ["--exec", "sh"]
+            : [];
   const child = spawn(
     process.execPath,
     [fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)), profile.path, ...args],
     {
       cwd,
       env: { ...process.env, TERM: "dumb", NO_COLOR: "1", BYCODA_HOST: "1" },
-      stdio: ["pipe", "pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", "pipe", command === undefined ? "ignore" : "ipc"],
       detached: process.platform !== "win32",
       windowsHide: true,
       shell: false,
     },
-  );
+  ) as ChildProcessWithoutNullStreams;
   let ended = false;
   let pending = false;
   let stopPromise: Promise<void> | undefined;
@@ -52,8 +74,20 @@ export function startTerminalProcess(
   child.stdout.on("data", (chunk: Buffer) => output(stdout.write(chunk)));
   child.stderr.on("data", (chunk: Buffer) => output(stderr.write(chunk)));
   child.stdin.on("error", () => {});
+  if (command !== undefined)
+    child.on("message", (message: unknown) => {
+      if (
+        !message ||
+        typeof message !== "object" ||
+        !("type" in message) ||
+        message.type !== "child-exited"
+      )
+        return;
+      const watchdog = child.stdio[3];
+      if (watchdog && "end" in watchdog) watchdog.end();
+    });
   // Queued ahead of any user input, so the first command already runs in UTF-8.
-  const startup = terminalStartupInput(profile.kind);
+  const startup = command === undefined ? terminalStartupInput(profile.kind) : "";
   if (startup) child.stdin.write(startup, "utf8");
   const complete = (code: number | null) => {
     if (ended) return;

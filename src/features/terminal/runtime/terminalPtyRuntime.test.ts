@@ -15,6 +15,7 @@ vi.mock("@tauri-apps/api/core", () => native);
 vi.mock("../../../platform/tauri/pty", () => pty);
 
 import { createTerminalPtyRuntime } from "./terminalPtyRuntime";
+import { queueTerminalRun, takeTerminalRun } from "../model/terminalLaunchCommand";
 
 function deferred() {
   let resolve!: () => void;
@@ -28,7 +29,7 @@ const flush = async () => {
   for (let i = 0; i < 5; i += 1) await new Promise((done) => setTimeout(done, 0));
 };
 
-function runtime(id: string) {
+function runtime(id: string, privateTerminal = true) {
   const unsubscribe = vi.fn();
   pty.subscribePty.mockReturnValueOnce(unsubscribe);
   const handlers = {
@@ -40,7 +41,7 @@ function runtime(id: string) {
   };
   const instance = createTerminalPtyRuntime({
     id,
-    privateTerminal: true,
+    privateTerminal,
     launch: { kind: "local", cwd: "/work", profile: () => "profile" },
     dimensions: () => ({ cols: 80, rows: 24 }),
     writeOutput: () => {},
@@ -56,6 +57,137 @@ beforeEach(() => {
   vi.clearAllMocks();
   pty.killPty.mockReset().mockResolvedValue(undefined);
   pty.subscribePty.mockReset().mockReturnValue(() => {});
+});
+
+it("runs queued code as a one-shot process and decodes split UTF-8 before reporting its exit", async () => {
+  const run = {
+    command: "Write-Output 'ş'; exit 7",
+    shellKind: "powershell" as const,
+    onOutput: vi.fn(),
+    onExit: vi.fn(),
+    onError: vi.fn(),
+  };
+  queueTerminalRun("one-shot", run);
+  const { instance } = runtime("one-shot", false);
+  instance.start();
+  await flush();
+  expect(pty.spawnPty).toHaveBeenCalledWith("one-shot", "/work", 80, 24, "profile", run);
+  expect(pty.writePty).not.toHaveBeenCalled();
+  expect(takeTerminalRun("one-shot")).toBeUndefined();
+  const calls = pty.subscribePty.mock.calls.at(-1)!;
+  const output = calls[1] as (data: Uint8Array) => void;
+  const exit = calls[2] as (code: number | null) => void;
+  const bytes = new TextEncoder().encode("ş");
+  output(bytes.slice(0, 1));
+  output(bytes.slice(1));
+  exit(7);
+  expect(run.onOutput.mock.calls.map(([text]) => text).join("")).toBe("ş");
+  expect(run.onExit).toHaveBeenCalledExactlyOnceWith(7);
+  expect(run.onError).not.toHaveBeenCalled();
+  await instance.retire();
+  expect(run.onError).not.toHaveBeenCalled();
+});
+
+it("reports failed spawn once without retaining command replay", async () => {
+  const run = {
+    command: "echo no",
+    shellKind: "posix" as const,
+    onOutput: vi.fn(),
+    onExit: vi.fn(),
+    onError: vi.fn(),
+  };
+  queueTerminalRun("one-shot-failed", run);
+  pty.spawnPty.mockRejectedValueOnce(new Error("profile unavailable"));
+  const { instance } = runtime("one-shot-failed", false);
+  instance.start();
+  await flush();
+  expect(run.onError).toHaveBeenCalledExactlyOnceWith("profile unavailable");
+  expect(run.onExit).not.toHaveBeenCalled();
+  expect(takeTerminalRun("one-shot-failed")).toBeUndefined();
+  await instance.retire();
+  expect(run.onError).toHaveBeenCalledOnce();
+});
+
+it("never treats a detached running command as completed", async () => {
+  const run = {
+    command: "sleep 10",
+    shellKind: "posix" as const,
+    onOutput: vi.fn(),
+    onExit: vi.fn(),
+    onError: vi.fn(),
+  };
+  queueTerminalRun("one-shot-detached", run);
+  const { instance } = runtime("one-shot-detached", false);
+  instance.start();
+  await flush();
+  const exit = pty.subscribePty.mock.calls.at(-1)![2] as (code: number | null) => void;
+  instance.detach();
+  exit(0);
+  expect(run.onExit).not.toHaveBeenCalled();
+  expect(run.onError).toHaveBeenCalledExactlyOnceWith(
+    "Terminal detached before command completion was confirmed.",
+  );
+  await instance.retire();
+});
+
+it("does not consume a one-shot run in a private terminal", async () => {
+  const run = {
+    command: "echo private",
+    shellKind: "posix" as const,
+    onOutput: vi.fn(),
+    onExit: vi.fn(),
+    onError: vi.fn(),
+  };
+  queueTerminalRun("one-shot-private", run);
+  const { instance } = runtime("one-shot-private");
+  instance.start();
+  await flush();
+  expect(pty.spawnPty.mock.calls.at(-1)?.[5]).toBeUndefined();
+  expect(takeTerminalRun("one-shot-private")).toBe(run);
+  await instance.retire();
+});
+
+it("does not report a successful result without native output drain acknowledgement", async () => {
+  const run = {
+    command: "echo tail",
+    shellKind: "posix" as const,
+    onOutput: vi.fn(),
+    onExit: vi.fn(),
+    onError: vi.fn(),
+  };
+  queueTerminalRun("one-shot-undrained", run);
+  const { instance } = runtime("one-shot-undrained", false);
+  instance.start();
+  await flush();
+  const exit = pty.subscribePty.mock.calls.at(-1)![2] as (
+    code: number | null,
+    outputComplete: boolean,
+  ) => void;
+  exit(0, false);
+  expect(run.onExit).not.toHaveBeenCalled();
+  expect(run.onError).toHaveBeenCalledExactlyOnceWith(
+    "Command exited, but complete terminal output could not be confirmed.",
+  );
+  await instance.retire();
+});
+
+it("settles a queued command when its terminal closes before native start", async () => {
+  const run = {
+    command: "echo never",
+    shellKind: "posix" as const,
+    onOutput: vi.fn(),
+    onExit: vi.fn(),
+    onError: vi.fn(),
+  };
+  queueTerminalRun("one-shot-before-start", run);
+  const { instance } = runtime("one-shot-before-start", false);
+  instance.start();
+  instance.detach();
+  await flush();
+  expect(pty.spawnPty).not.toHaveBeenCalled();
+  expect(run.onError).toHaveBeenCalledOnce();
+  expect(takeTerminalRun("one-shot-before-start")).toBeUndefined();
+  await instance.retire();
 });
 
 afterEach(async () => {

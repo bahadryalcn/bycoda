@@ -119,19 +119,17 @@ it("restart cannot replace an unproven old terminal handle with a new runtime pr
   const store = new HostStore(join(directory, "host.db"));
   cleanups.push(() => store.close());
   await store.ready;
-  await store.db
-    .prepare("INSERT INTO metadata(key,value) VALUES(?,?)")
-    .run(
-      "room-terminal-child:old",
-      JSON.stringify({
-        requestId: "old",
-        workId: "work",
-        occurrence: "occurrence",
-        runtime: "old-runtime",
-        terminal: { id: "terminal", projectId: "project", createdAt: 1, cwd: "C:/project" },
-        owner: "owner",
-      }),
-    );
+  await store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?)").run(
+    "room-terminal-child:old",
+    JSON.stringify({
+      requestId: "old",
+      workId: "work",
+      occurrence: "occurrence",
+      runtime: "old-runtime",
+      terminal: { id: "terminal", projectId: "project", createdAt: 1, cwd: "C:/project" },
+      owner: "owner",
+    }),
+  );
   const remove = vi.fn();
   const children = new RoomAutomationTerminalChildren(
     store,

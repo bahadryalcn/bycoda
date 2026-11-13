@@ -14254,5 +14254,15 @@
   "Address check unavailable.": "アドレスを確認できません。",
   "Saving changes the machine name without reconnecting.": "保存すると、再接続せずにマシン名を変更します。",
   "Could not copy. Select the address and copy it manually.": "コピーできませんでした。アドレスを選択して手動でコピーしてください。",
-  "Could not read your home folder. Retry or choose a folder.": "ホームフォルダーを読み取れませんでした。再試行するか、フォルダーを選択してください。"
+  "Could not read your home folder. Retry or choose a folder.": "ホームフォルダーを読み取れませんでした。再試行するか、フォルダーを選択してください。",
+  "Run in terminal": "ターミナルで実行",
+  "Running command": "コマンドを実行中",
+  "Command status unknown": "コマンドの状態が不明",
+  "Command completed": "コマンドが完了",
+  "Command exited with code {p0}": "コマンドがコード {p0} で終了",
+  "Add result to chat": "結果をチャットに追加",
+  "Add result to chat when finished": "終了時に結果をチャットに追加",
+  "Only the latest terminal output is included.": "最新のターミナル出力のみが含まれます。",
+  "Result added to chat. Review and send when ready.": "結果をチャットに追加しました。内容を確認してから送信してください。",
+  "Could not add result to chat. Try again.": "結果をチャットに追加できませんでした。もう一度お試しください。"
 }

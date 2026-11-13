@@ -14,6 +14,10 @@ import {
   saveTranscriptLayout,
 } from "../../../src/features/settings/model/appearance";
 import "../../../src/styles/index.css";
+import { lazy, Suspense } from "react";
+const CodeTerminalFixture = lazy(async () => ({
+  default: (await import("./code-terminal-fixture")).CodeTerminalFixture,
+}));
 
 saveTranscriptAnchor(false);
 saveTranscriptLayout(new URLSearchParams(location.search).has("full-width") ? "full" : "chat");
@@ -46,7 +50,8 @@ if (
   new URLSearchParams(location.search).has("chat-layout") ||
   new URLSearchParams(location.search).has("working-followup") ||
   new URLSearchParams(location.search).has("message-bubbles") ||
-  new URLSearchParams(location.search).has("technical-errors")
+  new URLSearchParams(location.search).has("technical-errors") ||
+  new URLSearchParams(location.search).has("code-terminal")
 ) {
   root.style.width = "100%";
   root.style.height = "100dvh";
@@ -391,7 +396,11 @@ function TechnicalErrorsFixture() {
 }
 
 createRoot(host).render(
-  new URLSearchParams(location.search).has("technical-errors") ? (
+  new URLSearchParams(location.search).has("code-terminal") ? (
+    <Suspense>
+      <CodeTerminalFixture />
+    </Suspense>
+  ) : new URLSearchParams(location.search).has("technical-errors") ? (
     <TechnicalErrorsFixture />
   ) : new URLSearchParams(location.search).has("working-followup") ? (
     <WorkingFollowupFixture />

@@ -58,9 +58,6 @@
     "src/features/sessions/ui/SecondOpinionButton.tsx": {
       "uncompiled-function": 1
     },
-    "src/features/sessions/ui/SessionPane.tsx": {
-      "uncompiled-function": 1
-    },
     "src/features/sessions/ui/SessionWorkingStatus.tsx": {
       "uncompiled-function": 1
     },

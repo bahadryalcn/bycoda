@@ -14254,5 +14254,15 @@
   "Address check unavailable.": "Adres kontrolü kullanılamıyor.",
   "Saving changes the machine name without reconnecting.": "Kaydetmek, yeniden bağlanmadan bilgisayarın adını değiştirir.",
   "Could not copy. Select the address and copy it manually.": "Kopyalanamadı. Adresi seçip elle kopyalayın.",
-  "Could not read your home folder. Retry or choose a folder.": "Ana klasörünüz okunamadı. Yeniden deneyin veya bir klasör seçin."
+  "Could not read your home folder. Retry or choose a folder.": "Ana klasörünüz okunamadı. Yeniden deneyin veya bir klasör seçin.",
+  "Run in terminal": "Terminalde çalıştır",
+  "Running command": "Komut çalışıyor",
+  "Command status unknown": "Komut durumu bilinmiyor",
+  "Command completed": "Komut tamamlandı",
+  "Command exited with code {p0}": "Komut {p0} koduyla sonlandı",
+  "Add result to chat": "Sonucu sohbete ekle",
+  "Add result to chat when finished": "Tamamlanınca sonucu sohbete ekle",
+  "Only the latest terminal output is included.": "Yalnızca en son terminal çıktısı eklenir.",
+  "Result added to chat. Review and send when ready.": "Sonuç sohbete eklendi. İnceleyip hazır olduğunuzda gönderin.",
+  "Could not add result to chat. Try again.": "Sonuç sohbete eklenemedi. Tekrar deneyin."
 }

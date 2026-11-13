@@ -55398,6 +55398,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "command": { "maxLength": 10000, "minLength": 1, "type": "string" },
           "cwd": { "type": "string" },
           "name": { "type": "string" },
           "profileId": { "type": "string" },
@@ -55405,7 +55406,8 @@
             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
             "type": "string"
           },
-          "requestId": { "type": "string" }
+          "requestId": { "type": "string" },
+          "shellKind": { "enum": ["powershell", "posix"], "type": "string" }
         },
         "required": ["projectId", "requestId"],
         "type": "object"
@@ -72890,6 +72892,7 @@
             "params": {
               "additionalProperties": false,
               "properties": {
+                "command": { "maxLength": 10000, "minLength": 1, "type": "string" },
                 "cwd": { "type": "string" },
                 "name": { "type": "string" },
                 "profileId": { "type": "string" },
@@ -72897,7 +72900,8 @@
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
                 },
-                "requestId": { "type": "string" }
+                "requestId": { "type": "string" },
+                "shellKind": { "enum": ["powershell", "posix"], "type": "string" }
               },
               "required": ["projectId", "requestId"],
               "type": "object"
@@ -77005,5 +77009,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "4c80bec7d9e7a7631cfaf734e324d56baea6c98417ec22c7cd9f5e2d10bc616c"
+  "schemaHash": "0b7ab665dd6293d951c9ed89512e4f37b1c800606ca9b7d2e0fced28594ce4f9"
 }

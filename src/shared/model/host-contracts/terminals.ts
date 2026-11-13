@@ -33,6 +33,8 @@ export const TerminalsCreateParamsSchema = z.strictObject({
   name: z.string().optional(),
   cwd: z.string().optional(),
   profileId: z.string().optional(),
+  command: z.string().min(1).max(10000).optional(),
+  shellKind: z.enum(["powershell", "posix"]).optional(),
 });
 export const TerminalsReadParamsSchema = z.strictObject({
   projectId: IdentifierSchema,

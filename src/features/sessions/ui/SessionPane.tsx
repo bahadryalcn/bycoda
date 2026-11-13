@@ -1819,6 +1819,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     onMouseDown={focusPane}
                   >
                     <AgentTranscript
+                      codeExecution={
+                        !session.worktreeRemoved &&
+                        !session.inboxAsk &&
+                        !session.orchestrationLeadId &&
+                        !managed
+                          ? { sessionId: session.id, projectCwd: session.cwd, native: !remote }
+                          : undefined
+                      }
                       approvalContext={approvalContext}
                       sessionId={session.id}
                       blocks={

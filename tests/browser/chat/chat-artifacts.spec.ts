@@ -2,6 +2,63 @@ import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
+    test(`code terminal action and result ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/chat/transcript.html?code-terminal");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const play = page.getByRole("button", { name: "Run in terminal", exact: true });
+      await expect(play).toHaveCount(1);
+      await expect(play).toBeVisible();
+      const copy = page.getByRole("button", { name: "Copy code", exact: true }).first();
+      const playBox = await play.boundingBox();
+      const copyBox = await copy.boundingBox();
+      expect(playBox!.x + playBox!.width).toBeLessThan(copyBox!.x);
+      await page.screenshot({
+        path: `temp/verification/code-terminal-1114/${theme}-${width}-action.png`,
+      });
+      await play.click();
+      const dialog = page.getByRole("dialog", { name: "Run in terminal" });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText("Running command", { exact: true })).toBeVisible();
+      await page.waitForFunction(
+        () =>
+          (window as unknown as { codeTerminalLaunches: unknown[] }).codeTerminalLaunches.length ===
+          1,
+      );
+      await dialog.getByRole("checkbox", { name: "Add result to chat when finished" }).check();
+      await page.screenshot({
+        path: `temp/verification/code-terminal-1114/${theme}-${width}-running.png`,
+      });
+      await page.evaluate(() =>
+        (window as unknown as { finishCodeTerminal(): Promise<void> }).finishCodeTerminal(),
+      );
+      await expect(dialog.getByText("Command exited with code 7", { exact: true })).toBeVisible();
+      await expect(
+        dialog.getByText("Result added to chat. Review and send when ready.", { exact: true }),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/code-terminal-1114/${theme}-${width}-result.png`,
+      });
+      await dialog.getByRole("button", { name: "Close", exact: true }).last().click();
+      await expect(page.getByRole("textbox", { name: "Chat draft" })).toHaveValue(
+        /Keep my existing draft\./,
+      );
+      await expect(page.getByRole("textbox", { name: "Chat draft" })).toHaveValue(
+        /PowerShell fixture output/,
+      );
+      expect(
+        await page.evaluate(
+          () =>
+            (window as unknown as { codeTerminalLaunches: unknown[] }).codeTerminalLaunches.length,
+        ),
+      ).toBe(1);
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
     test(`tool wrap selected indicator ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto("/tests/browser/chat/transcript.html?artifacts", {

@@ -130,7 +130,7 @@ describe("durable conflict child lifecycle", () => {
       harness: "codex",
       model: "model",
       modelSettings: {},
-      runtimeMode: "fullAccess",
+      runtimeMode: "full-access",
       maxRunMinutes: 0,
     } as HostTask;
     const plan = {

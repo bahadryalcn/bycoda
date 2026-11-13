@@ -14254,5 +14254,15 @@
   "Address check unavailable.": "Address check unavailable.",
   "Saving changes the machine name without reconnecting.": "Saving changes the machine name without reconnecting.",
   "Could not copy. Select the address and copy it manually.": "Could not copy. Select the address and copy it manually.",
-  "Could not read your home folder. Retry or choose a folder.": "Could not read your home folder. Retry or choose a folder."
+  "Could not read your home folder. Retry or choose a folder.": "Could not read your home folder. Retry or choose a folder.",
+  "Run in terminal": "Run in terminal",
+  "Running command": "Running command",
+  "Command status unknown": "Command status unknown",
+  "Command completed": "Command completed",
+  "Command exited with code {p0}": "Command exited with code {p0}",
+  "Add result to chat": "Add result to chat",
+  "Add result to chat when finished": "Add result to chat when finished",
+  "Only the latest terminal output is included.": "Only the latest terminal output is included.",
+  "Result added to chat. Review and send when ready.": "Result added to chat. Review and send when ready.",
+  "Could not add result to chat. Try again.": "Could not add result to chat. Try again."
 }

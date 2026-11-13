@@ -3222,6 +3222,22 @@ html.is-grabbing {
   right: 36px;
 }
 
+.agent-markdown .markdown-code-run {
+  right: 64px;
+}
+
+.agent-markdown .markdown-code-shell:has(.markdown-code-run) [data-streamdown="code-block-header"] {
+  padding-inline-end: 96px;
+}
+
+.agent-markdown .markdown-code-shell:has(.markdown-code-run) .markdown-code-path {
+  right: 96px;
+}
+
+.agent-markdown .markdown-code-shell:has(.markdown-code-run) .markdown-code-summary {
+  inset-inline-end: 96px;
+}
+
 .agent-markdown .markdown-code-summary {
   position: absolute;
   z-index: 1;

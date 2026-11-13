@@ -185,23 +185,28 @@ export async function move(
     (to !== "blocked" || !context.automaticDeliveryControllers.has(id))
   )
     throw new Error("This task is being merged.");
-  const { task, generation } = await context.transaction(async () => ({
-    task: await context.find(id),
-    generation: Number(
+  const { task, generation, guardedController } = await context.transaction(async () => {
+    const task = await context.find(id);
+    const generation = Number(
       (
         await context.store.db
           .prepare("SELECT generation FROM task_admission_generation WHERE id=?")
           .get(id)
       )?.generation ?? 0,
-    ),
-  }));
-  if (!task) throw new Error("Task not found.");
-  if (expectedGeneration !== undefined && generation !== expectedGeneration)
-    throw new Error("Task changed before starting. Refresh and try again.");
-  if (to === "blocked" && expectedGeneration !== undefined) {
-    fenceConflictChildren(id);
-    context.automaticDeliveryControllers.get(id)?.abort();
-  }
+    );
+    if (!task) throw new Error("Task not found.");
+    if (expectedGeneration !== undefined && generation !== expectedGeneration)
+      throw new Error("Task changed before starting. Refresh and try again.");
+    const guardedController =
+      to === "blocked" && expectedGeneration !== undefined
+        ? context.jobControllers.get(id)
+        : undefined;
+    if (to === "blocked" && expectedGeneration !== undefined) {
+      fenceConflictChildren(id);
+      context.automaticDeliveryControllers.get(id)?.abort();
+    }
+    return { task, generation, guardedController };
+  });
   if (reviewed) {
     assertExpectedConfiguration({ expectedConfiguration: reviewed }, task, parseHostTask);
     if (reviewed.status !== task.status)
@@ -383,8 +388,7 @@ export async function move(
     return saved;
   }
   if (to === "blocked") {
-    const ownedController =
-      expectedGeneration === undefined ? undefined : context.jobControllers.get(id);
+    const ownedController = guardedController;
     const blockStopped = async () => {
       if (expectedGeneration === undefined)
         return context.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);

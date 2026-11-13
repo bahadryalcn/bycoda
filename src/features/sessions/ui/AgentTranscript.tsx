@@ -179,6 +179,7 @@ import { useTranscriptFollow, useTranscriptCheckpointRestore } from "./useTransc
 import { useTranscriptPaging } from "./useTranscriptPaging";
 import { useTranscriptSearch } from "./useTranscriptSearch";
 import { useClampOverflow } from "./useClampOverflow";
+import { CodeExecutionProvider, type CodeExecutionScope } from "./CodeExecutionContext";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
 import {
   ActivityPhases,
@@ -191,6 +192,7 @@ import {
 import { SubagentStack } from "./SubagentCards";
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 type Props = {
+  codeExecution?: CodeExecutionScope;
   /** Travels with the element when TranscriptPool renders it in its outlet. */
   approvalContext?: {
     session: import("../model/session").Session;
@@ -943,17 +945,23 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
       sessionId={props.sessionId}
       visible={props.visible !== false && !props.parked}
     >
-      <Activity mode={props.visible === false ? "hidden" : "visible"}>
-        <WorkItemMentionCwd value={props.cwd}>
-          {props.approvalContext ? (
-            <ApprovalDecisionProvider {...props.approvalContext}>
-              {transcript}
-            </ApprovalDecisionProvider>
-          ) : (
-            transcript
-          )}
-        </WorkItemMentionCwd>
-      </Activity>
+      <CodeExecutionProvider
+        scope={props.codeExecution}
+        cwd={props.cwd}
+        onReport={props.onAddToChat}
+      >
+        <Activity mode={props.visible === false ? "hidden" : "visible"}>
+          <WorkItemMentionCwd value={props.cwd}>
+            {props.approvalContext ? (
+              <ApprovalDecisionProvider {...props.approvalContext}>
+                {transcript}
+              </ApprovalDecisionProvider>
+            ) : (
+              transcript
+            )}
+          </WorkItemMentionCwd>
+        </Activity>
+      </CodeExecutionProvider>
     </OwnerApprovalChat>
   );
 });

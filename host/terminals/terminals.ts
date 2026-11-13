@@ -5,9 +5,14 @@ import type {
   HostTerminalList,
   HostTerminalRead,
 } from "../../src/shared/model/host-contracts/terminals";
+import { TerminalsCreateParamsSchema } from "../../src/shared/model/host-contracts/terminals";
 import { listShellProfiles, type ShellProfiles } from "../execution/shellProfiles";
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
-import { startTerminalProcess, type OwnedTerminalProcess } from "../terminal-process";
+import {
+  startTerminalProcess,
+  terminalCommandArgs,
+  type OwnedTerminalProcess,
+} from "../terminal-process";
 import { RetiredRequestFence } from "../storage/request-fence";
 import { TerminalWorkspaceIndex } from "./workspace-index";
 
@@ -116,8 +121,32 @@ export class HostTerminals {
       throw new Error("Invalid terminal name");
     if (profileId !== undefined && typeof profileId !== "string")
       throw new Error("Invalid shell profile");
+    const { command, shellKind } = params;
+    if (
+      command !== undefined &&
+      (typeof command !== "string" ||
+        !command.trim() ||
+        command.length > 10000 ||
+        Buffer.byteLength(command, "utf8") > 40000 ||
+        // eslint-disable-next-line no-control-regex -- Shell source admits tabs/newlines but rejects terminal control bytes.
+        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(command))
+    )
+      throw new Error("Invalid terminal command");
+    if (
+      shellKind !== undefined &&
+      (command === undefined || !["powershell", "posix"].includes(String(shellKind)))
+    )
+      throw new Error("Invalid terminal command shell kind");
+    // Legacy HTTP and direct owners must enforce the same fresh creation shape as RPC.
+    params = TerminalsCreateParamsSchema.parse({ ...params, projectId: project.id });
     const key = JSON.stringify([owner, project.id, requestId]);
-    const fingerprint = JSON.stringify([params.cwd ?? null, name ?? null, profileId ?? null]);
+    const fingerprint = JSON.stringify([
+      params.cwd ?? null,
+      name ?? null,
+      profileId ?? null,
+      command ?? null,
+      shellKind ?? null,
+    ]);
     this.prune();
     const existing = this.creations.get(key);
     if (existing) {
@@ -182,13 +211,21 @@ export class HostTerminals {
     )
       throw new Error("Close a terminal before creating another");
     const profiles = this.profiles();
+    const supportsKind = (kind: string) =>
+      params.shellKind === undefined ||
+      (params.shellKind === "powershell" && ["pwsh", "powershell"].includes(kind)) ||
+      (params.shellKind === "posix" && ["sh", "bash", "zsh", "git-bash"].includes(kind));
+    const matching = profiles.profiles.filter((item) => supportsKind(item.kind));
     const profile =
       params.profileId !== undefined
-        ? profiles.profiles.find((item) => item.id === params.profileId)
-        : (profiles.profiles.find((item) => item.id === profiles.chosenId) ??
-          profiles.profiles.find((item) => item.id === profiles.defaultId) ??
-          profiles.profiles[0]);
+        ? matching.find((item) => item.id === params.profileId)
+        : (matching.find((item) => item.id === profiles.chosenId) ??
+          matching.find((item) => item.id === profiles.defaultId) ??
+          matching[0]);
     if (!profile) throw new Error("That shell is not installed on this machine");
+    const command = typeof params.command === "string" ? params.command : undefined;
+    // Validate before retaining activity; unsupported shells never start an uncertain launch.
+    if (command !== undefined) terminalCommandArgs(profile.kind, command);
     const entry: TerminalEntry = {
       owner,
       value: {
@@ -255,6 +292,7 @@ export class HostTerminals {
             })
             .catch(() => {});
         },
+        command,
       );
     } catch {
       throw new Error("Could not start terminal shell");

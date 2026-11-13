@@ -59,6 +59,7 @@ async function setup(entries: ModelRoutingEntry[]) {
     runId: undefined as string | undefined,
     session: {
       id: "lead-session",
+      cwd: project.cwd,
       harness: "codex",
       model: "fallback",
       modelSettings: {},

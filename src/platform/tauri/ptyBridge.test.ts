@@ -8,6 +8,41 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
+it("uses dedicated one-shot IPC and never falls back when an older native build rejects it", async () => {
+  listen.mockResolvedValue(vi.fn());
+  invoke.mockRejectedValue(new Error("Command pty_spawn_command not found"));
+  const { spawnPty } = await import("./pty");
+  await expect(
+    spawnPty("run", "/work", 80, 24, "pwsh", {
+      command: "Write-Output 'hello'",
+      shellKind: "powershell",
+    }),
+  ).rejects.toThrow("Command pty_spawn_command not found");
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("pty_spawn_command", {
+    id: "run",
+    cwd: "/work",
+    cols: 80,
+    rows: 24,
+    profile: "pwsh",
+    command: "Write-Output 'hello'",
+    shellKind: "powershell",
+  });
+});
+
+it("keeps ordinary interactive terminals on existing spawn IPC", async () => {
+  listen.mockResolvedValue(vi.fn());
+  invoke.mockResolvedValue(undefined);
+  const { spawnPty } = await import("./pty");
+  await spawnPty("interactive", "/work", 80, 24, "bash");
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("pty_spawn", {
+    id: "interactive",
+    cwd: "/work",
+    cols: 80,
+    rows: 24,
+    profile: "bash",
+  });
+});
+
 it("propagates failed native retirement and retains its live bridge until a successful retry", async () => {
   const callbacks = new Map<string, (event: { payload: unknown }) => void>();
   listen.mockImplementation(async (name, callback) => {

@@ -4,6 +4,8 @@ import { HostTasks } from "./service";
 import { reserveShellOwnership } from "../execution/shell-ownership";
 import { TaskPayloadSchema } from "../../src/shared/model/host-contracts/tasks";
 import * as sessionRuns from "../sessions/sessionRuns";
+import { move } from "./task-actions";
+import type { TaskContext } from "./context";
 
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -196,4 +198,36 @@ it("releases a cancelled conflict child binding only on an explicit owner retry"
   expect(retried.workInvocationId).not.toBe(initial.workInvocationId);
   expect(retried.conflictParent).toBeUndefined();
   expect(retried.status).toBe("queued");
+});
+
+it("does not abort a later owner controller for a stale guarded Stop", async () => {
+  const controller = new AbortController();
+  const context = {
+    ready: Promise.resolve(),
+    delivering: new Set(),
+    automaticDeliveryControllers: new Map([["child", controller]]),
+    jobControllers: new Map(),
+    transaction: async (work: () => Promise<unknown>) => work(),
+    find: async () => ({ id: "child", status: "running", createdAt: 1, workInvocationId: "later" }),
+    store: { db: { prepare: () => ({ get: async () => ({ generation: 8 }) }) } },
+  } as unknown as TaskContext;
+  await expect(move(context, "child", "blocked", undefined, 7)).rejects.toThrow("Task changed");
+  expect(controller.signal.aborted).toBe(false);
+});
+
+it("fences an explicit owner Stop before asynchronous readiness", async () => {
+  const controller = new AbortController();
+  const ready = Promise.withResolvers<void>();
+  const context = {
+    ready: ready.promise,
+    delivering: new Set(),
+    automaticDeliveryControllers: new Map([["explicit-stop-fence-test", controller]]),
+    transaction: async () => {
+      throw new Error("fixture stop");
+    },
+  } as unknown as TaskContext;
+  const stopping = move(context, "explicit-stop-fence-test", "blocked");
+  expect(controller.signal.aborted).toBe(true);
+  ready.resolve();
+  await expect(stopping).rejects.toThrow("fixture stop");
 });

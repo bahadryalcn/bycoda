@@ -28,7 +28,8 @@ it("publishes original task locals before each readiness wait", async () => {
     ready: new Promise<void>((resolve) => {
       releaseAutomations = resolve;
     }),
-  } as ServerBindings["automations"];
+    // This fixture exercises publication/readiness, not the concrete service implementation.
+  } as unknown as ServerBindings["automations"];
   const tasks = {
     ready: new Promise<void>((resolve) => {
       releaseTasks = resolve;

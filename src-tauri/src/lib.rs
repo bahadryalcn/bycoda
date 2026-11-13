@@ -1049,6 +1049,7 @@ pub fn run() {
             session_store::usage::session_worked_ms,
             provider_usage::provider_model_prices,
             pty::pty_spawn,
+            pty::command::pty_spawn_command,
             pty::pty_write,
             pty::pty_resize,
             pty::pty_set_visible,
