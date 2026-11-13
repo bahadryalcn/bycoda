@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resetRetainedState } from "../../shared/hooks/useRetainedState";
 import { DevServersPanel } from "./DevServersPanel";
+import { toolPreferences } from "./model/toolPreferences";
 import { hostFeatureRequest } from "../connections/model/hostFeatureClient";
 import { readToolsDraftTransfer, restoreToolsDraftTransfer } from "./toolsDraftTransfer";
 import type { DevServer, DevServerDetails } from "./devServerTypes";
@@ -128,6 +129,7 @@ const setInput = (label: string, value: string) => {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 };
 beforeEach(() => {
+  localStorage.clear();
   resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
@@ -156,6 +158,32 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+});
+it("uses saved refresh defaults while keeping manual discovery available", async () => {
+  toolPreferences.serversAutoRefresh.save(false);
+  await mount();
+  expect(container.textContent).toContain("Refresh to discover servers.");
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(hostFeatureRequest).not.toHaveBeenCalled();
+  await act(async () => button("Refresh").click());
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "devServers.list"),
+  ).toBe(true);
+  const reads = vi.mocked(hostFeatureRequest).mock.calls.length;
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(reads);
+  expect(button("Resume automatic refresh")).toBeDefined();
+});
+
+it("uses the saved discovery interval for a new server view", async () => {
+  toolPreferences.serversRefreshInterval.save(30_000);
+  await mount();
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
+  toolPreferences.serversRefreshInterval.save(15_000);
+  await act(async () => vi.advanceTimersByTimeAsync(29_999));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(hostFeatureRequest).toHaveBeenCalledTimes(2);
 });
 afterEach(async () => {
   await act(async () => root.unmount());

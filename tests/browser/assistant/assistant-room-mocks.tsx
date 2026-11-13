@@ -1,3 +1,4 @@
+import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { applyRecordsDataset } from "./records-redesign-data";
 import type {
   AssistantSnapshot,
@@ -15,6 +16,40 @@ import {
 const realControls = new URLSearchParams(location.search).has("real-controls");
 const desktopParams = new URLSearchParams(location.search);
 const globalRoomFixture = desktopParams.has("global-room");
+// Optional Work capture: installation consent lives only in this page's memory.
+if (desktopParams.has("work-model")) {
+  mockWindows("main");
+  const consents = new Map<string, Record<string, unknown>>();
+  mockIPC(async (command, args) => {
+    const environmentId = String(args.environmentId);
+    if (command === "assistant_consent_get")
+      return structuredClone(consents.get(environmentId) ?? null);
+    if (command === "assistant_consent_set") {
+      const previous = consents.get(environmentId);
+      const revision = Number(previous?.revision ?? 0);
+      if (args.expectedRevision !== revision) throw new Error("Native consent revision changed");
+      if (
+        !["watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
+        !Array.isArray(args.projectIds) ||
+        !Array.isArray(args.criticalExclusions)
+      )
+        throw new Error("Invalid assistant consent");
+      const grant = {
+        revision: revision + 1,
+        environmentId,
+        permissionLevel: args.permissionLevel,
+        projectIds: args.projectIds,
+        criticalExclusions: args.criticalExclusions,
+      };
+      consents.set(environmentId, structuredClone(grant));
+      return structuredClone(grant);
+    }
+    if (command === "plugin:event|listen") return 1;
+    if (command === "plugin:event|unlisten") return null;
+    throw new Error(`Unsupported Work Assistant native fixture operation: ${command}`);
+  });
+}
+
 if (globalRoomFixture) {
   (window as any).__globalRoomRequests = [];
   (window as any).__globalRoomNativeRequests = [];
@@ -192,6 +227,10 @@ export const snapshot: AssistantSnapshot = {
     voiceSetupComplete: false,
     proactiveSpeech: "never",
     keepAwakeWhileWorking: false,
+    keepAwakeWhileAway: true,
+    urgentNotificationRepeats: 2,
+    urgentNotificationIntervalMinutes: 30,
+    notificationTelegram: null,
     quietStart: 22,
     quietEnd: 8,
     chiefSoftContext: 150000,
@@ -545,6 +584,19 @@ if (new URLSearchParams(location.search).has("chief-blocked")) {
   };
 }
 if (requestedName?.trim()) snapshot.profile.name = requestedName.trim().slice(0, 80);
+if (desktopParams.has("work-model"))
+  Object.assign(snapshot.profile, {
+    permissionLevel: "projects",
+    permissionProjectIds: ["one"],
+    criticalExclusions: [
+      "pushMain",
+      "deleteProject",
+      "deleteSession",
+      "sendMessages",
+      "computerUse",
+      "spend",
+    ],
+  });
 if (desktopParams.has("settings-layout"))
   Object.assign(snapshot.profile, {
     name: "Aleksandra Wiśniewska-Kowalczyk — International Platform Assistant",
@@ -1113,6 +1165,17 @@ export async function hostToolRequest(
     case "chief.retry":
       snapshot.chiefReview = undefined;
       return { ok: true };
+    case "notifications.targets":
+      return {
+        notificationTargets: [
+          {
+            accountId: "fixture-telegram",
+            accountLabel: "Operations Telegram",
+            conversationId: "fixture-chat",
+            conversationLabel: "Owner updates · Fixture conversation",
+          },
+        ],
+      };
     case "snapshot":
       return {
         snapshot: new URLSearchParams(location.search).has("question-lost")

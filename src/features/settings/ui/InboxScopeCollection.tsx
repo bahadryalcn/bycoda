@@ -93,7 +93,7 @@ export function InboxScopeCollection({
             )
           }
         >
-          {t("Select all")}
+          {query.trim() ? t("Select all shown") : t("Select all")}
         </Button>
         <Button
           variant="ghost"
@@ -106,7 +106,7 @@ export function InboxScopeCollection({
             )
           }
         >
-          {t("Clear")}
+          {query.trim() ? t("Clear shown selection") : t("Clear")}
         </Button>
         {actions}
       </CollectionToolbar>

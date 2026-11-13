@@ -7,10 +7,15 @@ import type { SocialClient } from "../../model/socialClient";
 import type { SocialMediaEditor } from "../../model/socialMediaEditor";
 import { ContentEditor, type ContentEditorProps } from "./ContentEditor";
 import { emptyDraft, type ContentDraft } from "./contentDraft";
+import type { ContentEditorFieldsProps } from "./ContentEditorFields";
 
 // The fields and the TikTok creator lookup have their own tests; this file covers the save and publish flows.
+const fields: { props?: ContentEditorFieldsProps } = {};
 vi.mock("./ContentEditorFields", () => ({
-  ContentEditorFields: () => createElement("div", { "data-testid": "fields" }),
+  ContentEditorFields: (props: ContentEditorFieldsProps) => {
+    fields.props = props;
+    return createElement("div", { "data-testid": "fields" });
+  },
 }));
 vi.mock("./useTikTokCreators", () => ({ useTikTokCreators: () => ({}) }));
 
@@ -404,4 +409,79 @@ describe("repeating posts", () => {
     expect(body()).toContain("Program limit reached.");
     expect(onDone).not.toHaveBeenCalled();
   });
+});
+
+it.each(["Save draft", "Publish"])(
+  "freezes submitted fields and stale change callbacks during %s",
+  async (label) => {
+    let resolve!: (value: typeof saved) => void;
+    handlers["campaigns.create"] = () =>
+      new Promise((done) => {
+        resolve = done;
+      });
+    const onBusyChange = vi.fn();
+    render({ onBusyChange });
+    const changeBeforeSubmit = fields.props!.onDraft;
+    await click(label);
+    expect(fields.props!.locked).toBe("Wait for the current action to finish.");
+    expect(onBusyChange).toHaveBeenLastCalledWith(true);
+    act(() => changeBeforeSubmit(draftOf({ text: "Late media or text callback" })));
+    expect(onDraft).not.toHaveBeenCalled();
+    const close = document.body.querySelector<HTMLButtonElement>('button[aria-label="Close"]');
+    act(() => close?.click());
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => resolve(saved));
+    await flush();
+    expect(onDone).toHaveBeenCalledOnce();
+    expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  },
+);
+
+it("unfreezes failed saves and reports retained-scope recovery feedback", async () => {
+  let reject!: (error: Error) => void;
+  handlers["campaigns.create"] = () =>
+    new Promise((_done, no) => {
+      reject = no;
+    });
+  const onBusyChange = vi.fn();
+  const onOperationError = vi.fn();
+  render({ onBusyChange, onOperationError });
+  await click("Save draft");
+  await act(async () => reject(new Error("Revision conflict")));
+  expect(fields.props!.locked).toBeUndefined();
+  expect(onDone).not.toHaveBeenCalled();
+  expect(onBusyChange).toHaveBeenLastCalledWith(false);
+  expect(onOperationError).toHaveBeenCalledWith("Revision conflict");
+  act(() => fields.props!.onDraft(draftOf({ text: "Keep editing" })));
+  expect(onDraft).toHaveBeenCalledWith(expect.objectContaining({ text: "Keep editing" }));
+});
+
+it("keeps a remounted editor frozen while its original scope has a pending operation", () => {
+  render({ operationPending: true });
+  expect(fields.props!.locked).toBe("Wait for the current action to finish.");
+  expect(button("Publish")?.disabled).toBe(true);
+  act(() => fields.props!.onDraft(draftOf({ text: "Rejected" })));
+  expect(onDraft).not.toHaveBeenCalled();
+});
+
+it("holds publishing while an attachment is in flight, then accepts its completion", async () => {
+  render();
+  act(() => fields.props!.onMediaBusyChange?.(true));
+  expect(button("Publish")?.disabled).toBe(true);
+  expect(button("Save draft")?.disabled).toBe(true);
+  act(() =>
+    fields.props!.onDraft(
+      draftOf({
+        media: [
+          { localId: "upload", name: "photo.png", media: { kind: "image", uploadId: "upload" } },
+        ],
+      }),
+    ),
+  );
+  expect(onDraft).toHaveBeenCalledWith(
+    expect.objectContaining({ media: [expect.objectContaining({ localId: "upload" })] }),
+  );
+  act(() => fields.props!.onMediaBusyChange?.(false));
+  expect(button("Publish")?.disabled).toBe(false);
+  expect(request).not.toHaveBeenCalled();
 });

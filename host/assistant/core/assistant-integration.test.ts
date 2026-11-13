@@ -364,7 +364,7 @@ it("keeps a blocked goal recoverable and follows running children while its job 
   const { job, goal, task } = await f.seed();
   task.status = "blocked";
   await f.saveTask(task);
-  await f.configure("jobs", { keepAwakeWhileWorking: true });
+  await f.configure("jobs", { keepAwakeWhileWorking: true, keepAwakeWhileAway: false });
   await f.service.tick();
   expect((await f.job(job.id)).status).toBe("waiting");
   task.status = "queued";
@@ -388,6 +388,21 @@ it("keeps a blocked goal recoverable and follows running children while its job 
   expect(awake).toHaveBeenLastCalledWith(true);
   await f.saveSession("worker", 100, "idle");
   await f.service.tick();
+  expect(awake).toHaveBeenLastCalledWith(false);
+});
+
+it("keeps an idle away computer awake by default and honors the separate opt out", async () => {
+  const awake = vi.fn(async (requested: boolean) => ({
+    supported: true,
+    requested,
+    active: requested,
+  }));
+  const f = await fixture({ keepAwake: awake });
+  await f.configure("report");
+  await f.request({ op: "presence.set", state: "away" });
+  await f.service.tick();
+  expect(awake).toHaveBeenLastCalledWith(true);
+  await f.configure("report", { keepAwakeWhileAway: false });
   expect(awake).toHaveBeenLastCalledWith(false);
 });
 

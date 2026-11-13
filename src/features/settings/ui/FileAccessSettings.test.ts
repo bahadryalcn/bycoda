@@ -57,6 +57,10 @@ it("reports unavailable status after an initial read failure without implying co
     "Access status unavailable",
   );
   expect(configureFileAccess).not.toHaveBeenCalled();
+  expect(container.textContent).toContain(
+    "Could not read file access status. Retry to check current access.",
+  );
+  expect(container.textContent).not.toContain("Could not confirm the file access operation.");
   const change = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent?.trim() === "Change file access…",
   )!;

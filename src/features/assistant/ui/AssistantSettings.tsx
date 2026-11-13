@@ -1,6 +1,19 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  AssistantStandingConsentFields,
+  DEFAULT_CRITICAL_EXCLUSIONS,
+} from "./settings/AssistantStandingConsentFields";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
-import { useCallback, useId, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import { t } from "../../../shared/i18n";
 import type {
   AssistantProfilePatch,
@@ -37,7 +50,7 @@ import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantRetentionField } from "./settings/AssistantUsageSettings";
 import { AssistantScheduleInfo } from "./settings/AssistantScheduleFields";
 import { AssistantCostInfo } from "./settings/AssistantCostFields";
-import { settingsProfilePatch } from "./settings/settingsPatch";
+import { settingsProfilePatch, validateTelegramNotificationTarget } from "./settings/settingsPatch";
 import { AlwaysOnChecklist } from "./settings/AlwaysOnChecklist";
 import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
 import { AssistantFoldersSettings } from "./settings/folders/AssistantFoldersSettings";
@@ -49,6 +62,7 @@ import {
 } from "./settings/assistantAccess";
 import type { FoldersDraftState } from "./settings/folders/useAssistantFolders";
 import { useDefaultWorkerExecution } from "./settings/defaultWorkerExecution";
+import { AssistantTelegramNotifications } from "./settings/AssistantTelegramNotifications";
 
 type OwnerRequest = typeof assistantRequest;
 type Project = { id?: string; path: string; name: string };
@@ -104,10 +118,33 @@ export function AssistantSettings({
   onSetup: () => void;
 }) {
   const [assistantRequest] = useState(() => request);
+  const [consentEnvironment] = useState(environmentId);
   const [draft, setDraft] = useState<AssistantProfilePatch>(() => ({
     ...snapshot.profile,
   }));
   const version = useRef(snapshot.profile.version);
+  const consentRevision = useRef<number | null>(null);
+  const consentChanged = useRef(false);
+  const [consentDirty, setConsentDirty] = useState(false);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Loads the native consent revision for this mounted environment and discards results after unmount.
+  useEffect(() => {
+    let current = true;
+    consentRevision.current = null;
+    if (consentEnvironment) {
+      void invoke<{ revision: number } | null>("assistant_consent_get", {
+        environmentId: consentEnvironment,
+      })
+        .then((consent) => {
+          if (current) consentRevision.current = consent?.revision ?? 0;
+        })
+        .catch(() => {
+          /* Saving remains blocked until an authoritative native revision is available. */
+        });
+    }
+    return () => {
+      current = false;
+    };
+  }, [consentEnvironment]);
   const [savedDraft, setSavedDraft] = useState(() => JSON.stringify(snapshot.profile));
   const [projectState, setProjectState] = useState({ dirty: false, pending: false });
   const [computerState, setComputerState] = useState<DesktopControlDraftState>({
@@ -145,7 +182,8 @@ export function AssistantSettings({
   /** The computer section status refresh, shown in its title row by this shell. */
   const computerRefresh = useRef<(() => void) | null>(null);
   const currentPage = pages.find(([id]) => id === page)!;
-  const profileDirty = JSON.stringify(draft) !== savedDraft || retention !== savedRetention;
+  const profileDirty =
+    consentDirty || JSON.stringify(draft) !== savedDraft || retention !== savedRetention;
   const anyDirty = profileDirty || projectState.dirty || computerState.dirty || foldersState.dirty;
   const busy = pending || projectState.pending || computerState.pending || foldersState.pending;
   const saved = savedNotice && !anyDirty;
@@ -198,20 +236,63 @@ export function AssistantSettings({
     else onSetup();
   }
   async function saveProfile() {
-    const result = await assistantRequest({
-      op: "profile.update",
-      expectedVersion: version.current,
-      patch: settingsProfilePatch(draft),
-    });
-    if (!result.profile)
-      throw new Error(t("The settings save was not confirmed. Check before retrying."));
-    version.current = result.profile.version;
-    setSavedDraft(JSON.stringify(draft));
-    if (retention !== savedRetention) {
-      const retained = await assistantRequest({
-        op: "conversations.retention",
-        days: retention as 0 | 30 | 90 | 365,
+    if (!consentEnvironment || environmentId !== consentEnvironment)
+      throw new Error(t("Selected Host is unavailable."));
+    await validateTelegramNotificationTarget(
+      draft,
+      JSON.parse(savedDraft) as AssistantProfilePatch,
+      async () =>
+        (await assistantRequest({ op: "notifications.targets" }, consentEnvironment))
+          .notificationTargets,
+    );
+    if (environmentId !== consentEnvironment) throw new Error(t("Selected Host is unavailable."));
+    let nativeSaved = false;
+    if (draft.permissionLevel && consentChanged.current) {
+      if (!consentEnvironment) throw new Error(t("Selected Host is unavailable."));
+      if (consentRevision.current === null)
+        throw new Error(
+          t("Native consent is unavailable. Reopen settings before saving permissions."),
+        );
+      const consent = await invoke<{ revision: number }>("assistant_consent_set", {
+        environmentId: consentEnvironment,
+        expectedRevision: consentRevision.current,
+        permissionLevel: draft.permissionLevel,
+        projectIds: draft.permissionProjectIds ?? [],
+        criticalExclusions: draft.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS,
       });
+      consentRevision.current = consent.revision;
+      consentChanged.current = false;
+      setConsentDirty(false);
+      nativeSaved = true;
+    }
+    try {
+      const result = await assistantRequest(
+        {
+          op: "profile.update",
+          expectedVersion: version.current,
+          patch: settingsProfilePatch(draft),
+        },
+        consentEnvironment,
+      );
+      if (!result.profile)
+        throw new Error(t("The settings save was not confirmed. Check before retrying."));
+      version.current = result.profile.version;
+      setSavedDraft(JSON.stringify(draft));
+    } catch (cause) {
+      if (nativeSaved)
+        throw new Error(
+          t("Native consent saved. Host settings were not confirmed; review before retrying."),
+        );
+      throw cause;
+    }
+    if (retention !== savedRetention) {
+      const retained = await assistantRequest(
+        {
+          op: "conversations.retention",
+          days: retention as 0 | 30 | 90 | 365,
+        },
+        consentEnvironment,
+      );
       if (retained.ok !== true)
         throw new Error(t("The retention change was not confirmed. Check before retrying."));
       setSavedRetention(retention);
@@ -453,7 +534,7 @@ export function AssistantSettings({
                       startIcon={<SlidersHorizontal className="icon-sm" />}
                       onClick={() => openModelsSettings("roles")}
                     >
-                      {t("Manage in Models")}
+                      {t("Manage models")}
                     </Button>
                   </Row>
                 </Group>
@@ -477,6 +558,15 @@ export function AssistantSettings({
                     keepMounted
                   >
                     {profile("notifications")}
+                    <AssistantTelegramNotifications
+                      request={assistantRequest}
+                      environmentId={consentEnvironment}
+                      value={draft}
+                      onChange={(patch) => {
+                        setSavedNotice(false);
+                        setDraft((current) => ({ ...current, ...patch }));
+                      }}
+                    />
                   </AdvancedSettings>
                 </Group>
               </>,
@@ -485,17 +575,47 @@ export function AssistantSettings({
               "access",
               <>
                 <Group title={t("Access")}>
+                  <AssistantStandingConsentFields
+                    value={draft}
+                    projects={projects}
+                    disabled={busy}
+                    onChange={(patch) => {
+                      consentChanged.current = true;
+                      setConsentDirty(true);
+                      setSavedNotice(false);
+                      setDraft((current) => ({ ...current, ...patch }));
+                    }}
+                  />
+                  {draft.permissionLevel && (
+                    <Row
+                      label={t("Native consent")}
+                      description={t(
+                        "Native consent stays with this installation and selected Host until changed. Host credential changes require new consent. Host profile settings alone grant no native approval.",
+                      )}
+                    >
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => {
+                          consentChanged.current = true;
+                          setConsentDirty(true);
+                          setSavedNotice(false);
+                        }}
+                      >
+                        {t("Renew on Save")}
+                      </Button>
+                    </Row>
+                  )}
                   <Row
-                    label={t("Permission")}
+                    label={t("Advanced access presets")}
                     description={t(
-                      access === "full"
-                        ? "Jobs, selected-folder changes, commands and computer input run without confirmation. Save applies this access."
-                        : "Applies to jobs, selected folders, commands and computer use.",
+                      "Configures existing job, folder and computer permissions. Assistant authority and critical exclusions still apply.",
                     )}
                     stacked
                   >
                     <SegmentedControl
-                      label={t("Permission")}
+                      label={t("Advanced access presets")}
                       value={access}
                       onValueChange={chooseAccess}
                       options={[

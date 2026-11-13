@@ -292,6 +292,20 @@ export class ConversationThreadWorkTools {
     )
       throw new Error("Work changed. Read it again.");
     const currentHash = hash(current ?? null);
+    const ownership = creating
+      ? {
+          kind:
+            action.split(".")[0] === "automations"
+              ? "automation"
+              : action.split(".")[0] === "goals"
+                ? "goal"
+                : "task",
+          id,
+          projectId: principal.projectId,
+          threadId: principal.threadId,
+          state: "pending",
+        }
+      : undefined;
     const operationHash = hash([fingerprint, currentHash]);
     const approved = await this.approve(
       {
@@ -315,7 +329,10 @@ export class ConversationThreadWorkTools {
     await check();
     const claimed = await this.store.db
       .prepare("INSERT OR IGNORE INTO metadata(key,value) VALUES(?,?)")
-      .run(key, JSON.stringify({ fingerprint, status: "uncertain" }));
+      .run(
+        key,
+        JSON.stringify({ fingerprint, status: "uncertain", ...(ownership ? { ownership } : {}) }),
+      );
     if (Number(claimed.changes) !== 1) {
       const claimedReceipt = await this.store.db
         .prepare("SELECT value FROM metadata WHERE key=?")
@@ -336,10 +353,18 @@ export class ConversationThreadWorkTools {
     });
     await check();
     await this.track(action, principal, id, current, input);
+    const created = creating
+      ? (lookup(await read()) as { id?: string; createdAt?: number } | undefined)
+      : undefined;
     await this.store.db.prepare("UPDATE metadata SET value=? WHERE key=?").run(
       JSON.stringify({
         fingerprint,
         status: "completed",
+        ...(ownership && created?.id === id && typeof created.createdAt === "number"
+          ? { ownership: { ...ownership, state: "completed", entityCreatedAt: created.createdAt } }
+          : ownership
+            ? { ownership }
+            : {}),
         result: result ?? { status: "completed", action, targetId: id },
       }),
       key,

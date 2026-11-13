@@ -9,6 +9,50 @@ import type { SocialService } from "./social/social";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
 import type { HarnessProcessReceipt } from "../src/shared/model/harnessProcess";
 
+it("passes isolated OpenCode compaction to the actual child without trusting renderer environment", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bycoda-compact-env-"));
+  const script = join(directory, "provider.cjs");
+  await writeFile(script, 'console.log(process.env.OPENCODE_CONFIG_CONTENT || "{}");');
+  const base = { mcp: { owner: { enabled: true } }, compaction: { prune: false } };
+  vi.stubEnv("OPENCODE_CONFIG_CONTENT", JSON.stringify(base));
+  const backend = new HostChildBackend();
+  const lines: Array<{ sessionId: string; line: string }> = [];
+  const unlisten = await backend.listen<{ sessionId: string; line: string }>(
+    "harness-stdout",
+    ({ payload }) => lines.push(payload),
+  );
+  try {
+    for (const autoCompact of ["off", "on", undefined]) {
+      const sessionId = `opencode-compact-${autoCompact ?? "default"}`;
+      await backend.invoke("harness_spawn", {
+        sessionId,
+        command: script,
+        cwd: directory,
+        args: ["serve"],
+        binaryProvider: "opencode",
+        autoCompact,
+        launchEnv: {
+          OPENCODE_CONFIG_CONTENT:
+            '{"mcp":{"attacker":{"enabled":true}},"compaction":{"auto":true}}',
+          BYCODA_CONVERSATION_TOKEN: "untrusted",
+        },
+      });
+      await vi.waitFor(() => expect(lines.some((line) => line.sessionId === sessionId)).toBe(true));
+      const config = JSON.parse(lines.find((line) => line.sessionId === sessionId)!.line);
+      expect(config).toEqual(
+        autoCompact
+          ? { ...base, compaction: { ...base.compaction, auto: autoCompact === "on" } }
+          : base,
+      );
+    }
+  } finally {
+    unlisten();
+    await backend.close();
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
 it("gives actual surviving children stable scoped MCP/RPC routes, renews all groups, and retires replaced credentials", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bycoda-child-relay-"));
   const script = join(directory, "provider.cjs");

@@ -49,7 +49,7 @@ beforeEach(() => {
       path,
       mtimeMs:
         path === "remote://env/repo/assets/özet.md" ||
-        path === "remote://env/C:/Users/kraba/.bycoda-build/packages/bycoda.exe"
+        path === "remote://env/C:/Users/alice/.bycoda-build/packages/bycoda.exe"
           ? 1
           : null,
       isDir: path === "remote://env/repo/assets" || path === "remote://env/repo/assets/images",
@@ -58,13 +58,13 @@ beforeEach(() => {
 });
 
 it("browses a Windows build folder outside projects and keeps its files out of the editor", async () => {
-  const directory = "remote://env/C:/Users/kraba/.bycoda-build/packages";
+  const directory = "remote://env/C:/Users/alice/.bycoda-build/packages";
   actions.browseDirectory.mockImplementation(async (path: string, containing = false) => {
     if (containing && path === `${directory}/bycoda.exe`) path = directory;
     if (path === directory)
       return {
         path,
-        parent: "remote://env/C:/Users/kraba/.bycoda-build",
+        parent: "remote://env/C:/Users/alice/.bycoda-build",
         canOpenFiles: false,
         entries: [
           { name: "bycoda.exe", path: `${path}/bycoda.exe`, isDir: false },
@@ -75,7 +75,7 @@ it("browses a Windows build folder outside projects and keeps its files out of t
       return { path, parent: directory, canOpenFiles: false, entries: [] };
     throw new Error("Not a directory");
   });
-  await render("[Installer](C:/Users/kraba/.bycoda-build/packages/bycoda.exe)");
+  await render("[Installer](C:/Users/alice/.bycoda-build/packages/bycoda.exe)");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Open containing folder"]')!.click(),
   );

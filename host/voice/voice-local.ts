@@ -93,7 +93,8 @@ export class LocalVoiceService {
 
   private async startRuntime(value: unknown, recognitionOnly: boolean): Promise<LocalVoiceInfo> {
     const config = voiceRuntimeConfig(value);
-    const key = JSON.stringify(config);
+    const { idleUnloadMinutes, ...workerConfig } = config;
+    const key = JSON.stringify(workerConfig);
     if (this.warm) {
       clearTimeout(this.warm);
       this.warm = undefined;
@@ -127,6 +128,7 @@ export class LocalVoiceService {
       } else if (!this.loading) this.runtime = config;
       this.runtimeKey = key;
     }
+    if (recognitionOnly) this.runtime.idleUnloadMinutes = idleUnloadMinutes;
     const info = await this.ensureWorker();
     if (this.runtime.natural && !recognitionOnly) {
       try {
@@ -174,10 +176,15 @@ export class LocalVoiceService {
   private keepWarm() {
     if (this.idle) clearInterval(this.idle);
     this.idle = undefined;
+    const duration = (this.runtime.idleUnloadMinutes ?? DICTATION_WARM_MS / 60_000) * 60_000;
+    if (!duration) {
+      this.close();
+      return;
+    }
     this.warm = setTimeout(() => {
       this.warm = undefined;
       if (!this.leases.size && !this.requests.size) this.close();
-    }, DICTATION_WARM_MS);
+    }, duration);
     this.warm.unref();
   }
 

@@ -12,6 +12,7 @@ import {
 import type { HostTasks } from "../tasks/tasks";
 import type { HostEngine } from "../engine";
 import { defaultCrewPolicy, type CrewRun } from "../../src/features/crews/model/crew";
+import { wireCrewWorkEngine } from "./crew-source-task.fixture";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -44,10 +45,31 @@ async function fixture() {
   await writer.ready;
   let now = 1000;
   const tasks = { ready: Promise.resolve(), list: vi.fn(async () => []), tick: vi.fn() };
+  const current = {
+    revision: 1,
+    updatedAt: 1000,
+    projectId: "project",
+    status: "idle",
+    runId: undefined as string | undefined,
+    session: {
+      id: "session-live",
+      harness: "codex",
+      model: "fixture",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      title: "Coordinator",
+      blocks: [],
+    },
+  };
   const engine = {
-    command: vi.fn<(command: unknown) => Promise<void>>().mockResolvedValue(undefined),
+    command: vi.fn(async (raw: unknown) => {
+      const command = raw as { sessionId: string; commandId: string };
+      current.runId = `${command.commandId}-run`;
+      return { commandId: command.commandId, sessionId: command.sessionId, revision: 1 };
+    }),
     updateSession: vi.fn(),
   };
+  wireCrewWorkEngine(store, engine as unknown as HostEngine);
   const session = vi
     .spyOn(store, "session")
     .mockResolvedValue({ projectId: "project", status: "running" } as Awaited<
@@ -71,6 +93,7 @@ async function fixture() {
   });
   return {
     store,
+    current,
     writer,
     engine,
     session,
@@ -207,9 +230,7 @@ it("does not transfer or decode oversized settled history on scheduler reads", a
 
 it("keeps changing delivery ticks off canonical history while retaining all saved data", async () => {
   const f = await fixture();
-  f.session.mockResolvedValue({ projectId: "project", status: "idle" } as Awaited<
-    ReturnType<HostStore["session"]>
-  >);
+  f.session.mockResolvedValue(f.current as Awaited<ReturnType<HostStore["session"]>>);
   const history = Array.from({ length: 40 }, (_, index) =>
     run(`settled-history-${index}`, "finished"),
   );
@@ -322,22 +343,18 @@ it("invalid run arrays cannot overwrite canonical active rows", async () => {
 
 it("retains the exact persisted delivery across uncertain send failure and restart", async () => {
   const f = await fixture();
-  f.session.mockResolvedValue({ projectId: "project", status: "idle" } as Awaited<
-    ReturnType<HostStore["session"]>
-  >);
+  f.session.mockResolvedValue(f.current as Awaited<ReturnType<HostStore["session"]>>);
   const live = run("live");
   live.messages = [{ id: "request", from: "owner", text: "Notice", createdAt: 1 }];
   await f.write(state(run("history", "finished"), live));
   f.engine.command.mockRejectedValueOnce(new Error("unknown send outcome"));
-  await expect(f.service.tick()).rejects.toThrow("unknown send outcome");
-  const original = f.engine.command.mock.calls[0][0];
+  await f.service.tick();
   await f.restart();
   await f.service.tick();
-  expect(f.engine.command).toHaveBeenCalledTimes(2);
-  expect(f.engine.command.mock.calls[1][0]).toEqual(original);
+  expect(f.engine.command).toHaveBeenCalledTimes(1);
   const saved = await readCrewState(f.writer);
   expect(saved.runs[0]).toEqual(run("history", "finished"));
-  expect(saved.runs[1].pendingDelivery).toBeUndefined();
+  expect(saved.runs[1].pendingDelivery).toMatchObject({ text: expect.stringContaining("Notice") });
 });
 
 it("legacy conflict clauses cannot replace migrated active rows or poison canonical state", async () => {

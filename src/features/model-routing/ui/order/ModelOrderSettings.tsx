@@ -32,7 +32,7 @@ export type ModelOrderSettingsProps = {
   supported: boolean;
 };
 
-/** Settings > Models > Model order, bound to one capable Host. */
+/** Settings > Work > Model order, bound to one capable Host. */
 export function ModelOrderSettings({ machineId, supported }: ModelOrderSettingsProps) {
   const t = useT();
   if (!supported || !machineId)
@@ -133,7 +133,7 @@ function OrderSettingsForm({
             context="panel"
             title={t("Choose the models for unattended work")}
             description={t(
-              "Tasks, goals, crews, automations and the assistant start on the first model in this list that still has quota. Until you add one, each item keeps its own model.",
+              "Tasks, epics, crews, automations and the assistant start on the first model in this list that still has quota. Until you add one, each item keeps its own model.",
             )}
             action={
               <Button variant="primary" onClick={addEntry}>
@@ -152,12 +152,26 @@ function OrderSettingsForm({
               <Button
                 size="sm"
                 disabled={entries.length >= MODEL_ROUTING_MAX_ENTRIES}
+                disabledReason={
+                  entries.length >= MODEL_ROUTING_MAX_ENTRIES
+                    ? t("The model order is full.")
+                    : undefined
+                }
                 onClick={addEntry}
               >
                 {t("Add model")}
               </Button>
             }
           >
+            {status.error ? (
+              <FailureState
+                size="inline"
+                title={t("Model limits could not be read.")}
+                description=""
+                error={status.error}
+                onRetry={() => status.refetch()}
+              />
+            ) : null}
             {entries.map((entry, index) => (
               <ModelOrderRow
                 key={entry.id}
@@ -167,6 +181,7 @@ function OrderSettingsForm({
                 percent={draft.percentages[entry.id] ?? "0"}
                 status={status.entries.find((candidate) => candidate.entryId === entry.id)}
                 statusLoading={status.loading}
+                statusError={Boolean(status.error && status.entries.length === 0)}
                 sortable={sortable}
                 onChange={(next) => change(replaceOrderEntry(draft, next))}
                 onPercent={(text) =>

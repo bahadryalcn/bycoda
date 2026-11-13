@@ -42,3 +42,8 @@ it("leaves other providers alone", async () => {
   expect(await bridgedLaunch(undefined, "session", [])).toEqual({ launchArgs: [] });
   expect(conversationToolsBridge).not.toHaveBeenCalled();
 });
+
+it("passes the isolated OpenCode compaction override alongside bridge metadata", async () => {
+  await bridgedLaunch("opencode", "session", ["serve"], "off");
+  expect(opencodeLaunchEnv).toHaveBeenLastCalledWith({ servers: [] }, "off");
+});

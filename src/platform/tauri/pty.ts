@@ -311,6 +311,7 @@ export async function getPtyStatus(
 }
 
 export async function killPty(id: string): Promise<void> {
+  await invoke("pty_kill", { id });
   dataHandlers.delete(id);
   exitHandlers.delete(id);
   openedPtys.delete(id);
@@ -319,7 +320,6 @@ export async function killPty(id: string): Promise<void> {
   const slot = ackSlots.get(id);
   if (slot) flushAck(id, slot);
   ackSlots.delete(id);
-  await invoke("pty_kill", { id }).catch(() => undefined);
 }
 
 export async function killAllPtys(): Promise<void> {

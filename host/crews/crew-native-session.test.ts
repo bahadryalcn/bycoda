@@ -1,3 +1,4 @@
+import { wireCrewSourceTasks, wireCrewWorkEngine } from "./crew-source-task.fixture";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { HostCrews, type CrewSessionPorts } from "./crews";
@@ -58,16 +59,20 @@ async function fixture() {
       const input = raw as Record<string, string>;
       const id = input.type === "create" ? "host-lead" : input.sessionId;
       if (input.type === "create") hosted.set(id, snapshot(id));
-      if (input.type === "send") hosted.get(id)!.status = "running";
+      if (input.type === "send") {
+        hosted.get(id)!.status = "running";
+        hosted.get(id)!.runId = `${input.commandId}-turn`;
+      }
       return { commandId: input.commandId, sessionId: id, revision: 1 };
     }),
     updateSession: vi.fn(async () => undefined),
   };
+  wireCrewWorkEngine(store, engine as unknown as HostEngine);
   const session = vi.fn(async (id: string) => {
     const ownsScope = (store.db as unknown as { ownsScope: boolean | (() => boolean) }).ownsScope;
     if (typeof ownsScope === "function" ? ownsScope.call(store.db) : ownsScope)
       throw new Error("Native metadata read held Host SQL ownership");
-    const value = id === native.session.id ? native : await store.session(id);
+    const value = id === native.session.id && !hosted.has(id) ? native : await store.session(id);
     const { blocks: _blocks, ...metadata } = value.session;
     return { ...structuredClone(value), session: metadata };
   });
@@ -77,6 +82,11 @@ async function fixture() {
       const input = raw as Record<string, string>;
       if (input.sessionId !== native.session.id) return engine.command(raw);
       if (input.type === "cancel") native.status = "idle";
+      if (input.type === "send") {
+        // Command service retires the native writer and adopts its session before Host send.
+        hosted.set(native.session.id, structuredClone(native));
+        return engine.command(raw);
+      }
       return { commandId: input.commandId, sessionId: native.session.id, revision: 1 };
     },
   );
@@ -94,6 +104,7 @@ async function fixture() {
     undefined,
     { session, command },
   );
+  wireCrewSourceTasks(crews, tasks as unknown as HostTasks, store);
   cleanups.push(async () => {
     await crews.close();
     await store.close();
@@ -224,6 +235,7 @@ it("reports live native coordinator status and supports resume and Stop work", a
     }),
     expect.objectContaining({ principalId: "crew:native-run", authorized: expect.any(Function) }),
   );
+  expect((await f.store.session("native-lead")).runId).toBeTruthy();
 });
 
 it("retries uncertain native notification delivery with its persisted command identity", async () => {

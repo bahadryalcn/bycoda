@@ -1,4 +1,4 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Text } from "../../../shared/ui/Text";
 import { Progress } from "../../../shared/ui/Progress";
 import { useT } from "../../../shared/i18n";
@@ -104,32 +104,38 @@ export function GroupFetchPopover({
               size="secondary"
               tone="primary"
               key={path}
-              className="flex items-center gap-2 px-2.5 py-1 "
+              className="flex min-w-0 flex-col gap-1 px-2.5 py-1"
             >
-              <Tooltip label={path} asChild>
-                <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                  {basename(path)}
-                </Text>
-              </Tooltip>
-              <Tooltip label={result?.error} asChild>
-                <Text
-                  size="micro"
-                  tone={
-                    result?.status === "failed"
-                      ? "danger"
-                      : result?.status === "fetched"
-                        ? "success"
-                        : "muted"
-                  }
-                  className="shrink-0"
-                >
-                  {result
-                    ? LABELS[result.status]
-                    : index === current && !done
-                      ? t("Fetching…")
-                      : t("Waiting")}
-                </Text>
-              </Tooltip>
+              <Text size="inherit" tone="inherit" wrap="anywhere">
+                {basename(path)}
+              </Text>
+              <Text size="micro" tone="muted" wrap="anywhere">
+                {path}
+              </Text>
+              <Text
+                size="micro"
+                tone={
+                  result?.status === "failed"
+                    ? "danger"
+                    : result?.status === "fetched"
+                      ? "success"
+                      : "muted"
+                }
+                className="shrink-0"
+              >
+                {result
+                  ? t(LABELS[result.status])
+                  : index === current && !done
+                    ? t("Fetching…")
+                    : t("Waiting")}
+              </Text>
+              {result?.error ? (
+                <Disclosure summary={t("Details")} size="sm" textSize="micro">
+                  <Text size="micro" tone="danger" wrap="anywhere">
+                    {result.error}
+                  </Text>
+                </Disclosure>
+              ) : null}
             </Text>
           );
         })}

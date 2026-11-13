@@ -446,7 +446,7 @@ export function AssistantView(props: AssistantViewProps) {
               )}
               {view === "History" && (
                 <header className={historyStyles.heading}>
-                  <Heading size="page">{t("History")}</Heading>
+                  <Heading size="page">{t("What I did")}</Heading>
                   <span>{snapshot.activity.length}</span>
                 </header>
               )}

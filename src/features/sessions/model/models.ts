@@ -1,6 +1,8 @@
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import { productProviderDefaults } from "../../../shared/model/productProviderDefaults";
 import { withClaudeAdvisor } from "./claudeAdvisor";
+import { withAutoCompactSettings } from "./autoCompact";
+export { withAutoCompactSettings, withAutoCompactToggle } from "./autoCompact";
 import * as delegation from "../../../shared/model/host-contracts/delegation";
 import { HARNESSES } from "../../../shared/model/harnessIdentity";
 import { humanizeModelId } from "../../../shared/model/modelNameFromId";
@@ -285,7 +287,7 @@ export function setHarnessModels(harness: HarnessId, models: AgentModel[], live 
   if (models.length === 0 && harness !== "acp") return;
   provisional[live ? "delete" : "add"](harness);
   models = foldFastVariants(models);
-  models = models.map((model) => withClaudeAdvisor(model, models));
+  models = models.map((model) => withAutoCompactSettings(withClaudeAdvisor(model, models)));
   const defaultId = pickDefaultId(harness, models);
   // Workspace windows re-broadcast unchanged catalogs on every request. An
   // identical live catalog is a no-op, so open pickers keep their keyboard row
@@ -406,7 +408,9 @@ function baseModelsFor(harness: HarnessId): AgentModel[] {
   if (!baseByHarness) {
     const grouped: Partial<Record<HarnessId, AgentModel[]>> = {};
     for (const model of MODELS) {
-      (grouped[model.harness] ??= []).push(withClaudeAdvisor(model, MODELS));
+      (grouped[model.harness] ??= []).push(
+        withAutoCompactSettings(withClaudeAdvisor(model, MODELS)),
+      );
     }
     baseByHarness = grouped;
   }

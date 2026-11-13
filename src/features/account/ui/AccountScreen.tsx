@@ -83,6 +83,10 @@ export function AccountScreen() {
   useLocale();
   const { state, signIn, cancelSignIn, signOut, deactivate, reactivate } = useAccount();
   const [tab, setTab] = useState<AccountTabId>("profile");
+  const [visited, setVisited] = useState<{ userId: string; tabs: AccountTabId[] }>({
+    userId: "",
+    tabs: [],
+  });
   const { ref, wide } = useWide(SIDE_NAV_MIN, state.phase);
   const stale = state.phase === "signed-in" && state.stale;
   // Refresh cached account facts without blocking offline navigation.
@@ -145,8 +149,20 @@ export function AccountScreen() {
         </InlineMessage>
       ) : null}
       <Tabs
+        key={user.id}
         value={active}
-        onValueChange={setTab}
+        onValueChange={(next) => {
+          setTab(next as AccountTabId);
+          setVisited((current) => ({
+            userId: user.id,
+            tabs: [
+              ...new Set([
+                ...(current.userId === user.id ? current.tabs : []),
+                next as AccountTabId,
+              ]),
+            ],
+          }));
+        }}
         id="account-center"
         orientation={wide ? "vertical" : "horizontal"}
       >
@@ -170,9 +186,12 @@ export function AccountScreen() {
                 <AccountDevices currentDeviceId={state.deviceId} onSignOutThisDevice={signOut} />
               </div>
             </TabPanel>
-            <TabPanel value="activity">
+            <TabPanel value="activity" keepMounted>
               <div className={styles.tabs}>
-                <TodayView />
+                {active === "activity" ||
+                (visited.userId === user.id && visited.tabs.includes("activity")) ? (
+                  <TodayView />
+                ) : null}
               </div>
             </TabPanel>
             <TabPanel value="notifications">
@@ -182,9 +201,12 @@ export function AccountScreen() {
                 <AccountNews />
               </div>
             </TabPanel>
-            <TabPanel value="privacy">
+            <TabPanel value="privacy" keepMounted>
               <div className={styles.tabs}>
-                <AccountData />
+                {active === "privacy" ||
+                (visited.userId === user.id && visited.tabs.includes("privacy")) ? (
+                  <AccountData />
+                ) : null}
               </div>
             </TabPanel>
             <TabPanel value="support" keepMounted>

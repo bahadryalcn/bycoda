@@ -66,6 +66,20 @@ async function open() {
   await act(async () => root.render(createElement(SshRunbookQueue)));
   await act(async () => button("SSH reviews · 1").click());
 }
+
+it.each([false, true])(
+  "keeps failed queue reads distinct from an empty queue (stale=%s)",
+  async (stale) => {
+    native.queue = { intents: stale ? [intent] : [], error: "Queue read unavailable" };
+    await act(async () => root.render(createElement(SshRunbookQueue)));
+    await act(async () => button(stale ? "SSH reviews · 1" : "SSH reviews").click());
+    expect(document.body.textContent).toContain("Queue read unavailable");
+    expect(document.body.textContent).not.toContain("No pending SSH reviews.");
+    expect(document.body.textContent).not.toContain("SSH reviews · 0");
+    if (stale) expect(document.body.textContent).toContain("book · r4");
+    expect(native.dismiss).not.toHaveBeenCalled();
+  },
+);
 it("shows pending reviews without lookup or execution on mount, and dismisses metadata explicitly", async () => {
   await open();
   expect(document.body.textContent).toContain("book · r4");

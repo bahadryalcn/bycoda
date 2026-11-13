@@ -40,6 +40,8 @@ import { assistantCacheMeasurement } from "../work/assistant-cache-usage";
 import { AssistantGoalMissingError } from "../work/assistant-goal-recovery";
 import { repointUnstartedGoalTasks } from "../models/assistant-task-repoint";
 import { isoTimestamp } from "../../../src/shared/lib/time/timestamps";
+import { assistantProjectMutationAllowed } from "../management/assistant-permissions";
+import { AssistantActionJournal } from "../management/assistant-action-journal";
 
 function assistantNoteDto(note: HostNote): AssistantNote {
   return {
@@ -120,8 +122,9 @@ export function assistantExecutionPorts(
   /** The engine's session write order; a stamp written beside a live turn breaks it. */
   orderSessionWrite: SessionWriteOrder = (_id, write) => write(),
 ): AssistantPorts {
-  const replyText = assistantText(dirname(store.attachmentDir), "reply", models);
-  const chiefText = assistantText(dirname(store.attachmentDir), "chief", models);
+  const actionJournal = new AssistantActionJournal(store, Date.now);
+  const replyText = assistantText(dirname(store.attachmentDir), "reply", models, store);
+  const chiefText = assistantText(dirname(store.attachmentDir), "chief", models, store);
   const chief = createAssistantChiefContext(store, chiefText);
   const chiefReads = new AssistantChiefReads(store, notes);
   const knownJobProjects = async (
@@ -195,6 +198,7 @@ export function assistantExecutionPorts(
         input.signal,
         undefined,
         assistantTextLimits(prompt, input.tokenCap),
+        { operationId: input.operationId, role: `reply:${input.thread.id}` },
       );
     },
     summarize: async (input) => {
@@ -209,6 +213,7 @@ export function assistantExecutionPorts(
           maxOutputTokens: Math.min(1500, limits.maxOutputTokens),
           maxOutputChars: Math.min(6000, limits.maxOutputChars),
         },
+        { operationId: input.operationId, role: `summary:${input.thread.id}` },
       );
     },
     chiefWake: (input) =>
@@ -293,6 +298,8 @@ export function assistantExecutionPorts(
       if (!profile.execution)
         throw new Error("Choose an execution provider and model before starting jobs.");
       const projectIds = await knownJobProjects(job);
+      if (!assistantProjectMutationAllowed(profile, projectIds))
+        throw new Error("Assistant permission does not allow work in these projects.");
       const id = `assistant-${job.id}`;
       const existing = (await goals.list()).find((goal) => goal.id === id);
       if (existing) {
@@ -313,35 +320,37 @@ export function assistantExecutionPorts(
       const planning =
         planner?.execution ??
         (profile.planningExecution ? assistantRoleExecution(profile, "planning") : null);
-      const goal = await goals.create({
-        ...execution,
-        modelSettings: assistantWorkerModelSettings(profile, execution),
-        ...(planning
-          ? {
-              plannerExecution: {
-                harness: planning.harness,
-                ...("providerAccountId" in planning && planning.providerAccountId
-                  ? { providerAccountId: planning.providerAccountId }
-                  : {}),
-                model: planning.model,
-                modelSettings: planning.modelSettings,
-              },
-            }
-          : {}),
-        id,
-        expectedAbsent: true,
-        title: job.title.slice(0, 200),
-        prompt: job.request,
-        projectIds,
-        leadProjectId: job.projectId,
-        isolate: false,
-        verifyDefaults: { review: true },
-        approvePlan: profile.planApproval !== "never",
-        planApprovalPolicy: profile.planApproval,
-        autoMerge: false,
-        continueUntilDone: true,
-        finalReview: true,
-      });
+      const goal = await actionJournal.runJob(job.id, projectIds, id, () =>
+        goals.create({
+          ...execution,
+          modelSettings: assistantWorkerModelSettings(profile, execution),
+          ...(planning
+            ? {
+                plannerExecution: {
+                  harness: planning.harness,
+                  ...("providerAccountId" in planning && planning.providerAccountId
+                    ? { providerAccountId: planning.providerAccountId }
+                    : {}),
+                  model: planning.model,
+                  modelSettings: planning.modelSettings,
+                },
+              }
+            : {}),
+          id,
+          expectedAbsent: true,
+          title: job.title.slice(0, 200),
+          prompt: job.request,
+          projectIds,
+          leadProjectId: job.projectId,
+          isolate: false,
+          verifyDefaults: { review: true },
+          approvePlan: profile.planApproval !== "never",
+          planApprovalPolicy: profile.planApproval,
+          autoMerge: false,
+          continueUntilDone: true,
+          finalReview: true,
+        }),
+      );
       return {
         goalId: goal.id,
         ...(worker

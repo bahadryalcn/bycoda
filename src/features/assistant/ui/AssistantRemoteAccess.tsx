@@ -250,7 +250,7 @@ export function AssistantRemoteAccess({
               />
             </div>
             {machinesError && <InlineError>{machinesError}</InlineError>}
-            {!loading && !targets.length && (
+            {!loading && !machinesError && !targets.length && (
               <EmptyState
                 size="inline"
                 kind="empty"

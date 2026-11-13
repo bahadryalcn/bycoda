@@ -19,6 +19,7 @@ export function useDecisionModels(client: DecisionModelsClient) {
   const [routing, setRouting] = useState<DecisionRouting>({});
   const [localOnly, setLocalOnly] = useState(false);
   const [routingError, setRoutingError] = useState<unknown>(null);
+  const [routingLoaded, setRoutingLoaded] = useState(false);
   const [found, setFound] = useState<DiscoveryCandidate[] | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<unknown>(null);
@@ -68,6 +69,19 @@ export function useDecisionModels(client: DecisionModelsClient) {
     [client],
   );
 
+  const reloadRouting = useCallback(async () => {
+    setRoutingError(null);
+    try {
+      const result = await track("routing-read", () => client.routing.get({}));
+      if (!alive.current) return;
+      setRouting(result.routing);
+      setLocalOnly(result.localOnlyPersonalData);
+      setRoutingLoaded(true);
+    } catch (error: unknown) {
+      if (alive.current) setRoutingError(error);
+    }
+  }, [client, track]);
+
   const scan = useCallback(() => {
     if (scanFlight.current) return scanFlight.current;
     scanGeneration.current++;
@@ -102,19 +116,22 @@ export function useDecisionModels(client: DecisionModelsClient) {
     }
   }, [client, track]);
 
+  const reloadCatalog = useCallback(async () => {
+    try {
+      const result = await track("catalog-read", () => client.catalog.get({}));
+      if (alive.current) {
+        setCatalog(result.entries);
+        setCatalogError(null);
+      }
+    } catch (error: unknown) {
+      if (alive.current) setCatalogError(error);
+    }
+  }, [client, track]);
+
   useEffect(() => {
     const cachedGeneration = scanGeneration.current;
     void reloadSources().catch(() => undefined);
-    void client.routing.get({}).then(
-      (result) => {
-        if (!alive.current) return;
-        setRouting(result.routing);
-        setLocalOnly(result.localOnlyPersonalData);
-      },
-      (error: unknown) => {
-        if (alive.current) setRoutingError(error);
-      },
-    );
+    void reloadRouting();
     void client.discovery.results({}).then(
       (result) => {
         if (!alive.current || scanGeneration.current !== cachedGeneration) return;
@@ -127,15 +144,8 @@ export function useDecisionModels(client: DecisionModelsClient) {
         if (alive.current && scanGeneration.current === cachedGeneration) setScanError(error);
       },
     );
-    void client.catalog.get({}).then(
-      (result) => {
-        if (alive.current) setCatalog(result.entries);
-      },
-      (error: unknown) => {
-        if (alive.current) setCatalogError(error);
-      },
-    );
-  }, [client, reloadSources, scan]);
+    void reloadCatalog();
+  }, [client, reloadSources, reloadRouting, reloadCatalog, scan]);
 
   const addSource = useCallback(
     async (source: DecisionSourceInput, apiKey?: string) => {
@@ -233,6 +243,7 @@ export function useDecisionModels(client: DecisionModelsClient) {
     routing,
     localOnly,
     routingError,
+    routingLoaded,
     found,
     scanning,
     scanError,
@@ -242,6 +253,8 @@ export function useDecisionModels(client: DecisionModelsClient) {
     isPending,
     actions: {
       reloadSources,
+      reloadRouting,
+      reloadCatalog,
       scan,
       cancelScan,
       addSource,

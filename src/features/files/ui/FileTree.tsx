@@ -328,6 +328,13 @@ function FileTreeInner({
   const headerMenuRef = useRef<HTMLButtonElement>(null);
   // The tree is keyed by cwd, so its root never changes for this instance.
   const activeRoot = useRef(cwd);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Invalidate the original tree's async actions on unmount and restore ownership on StrictMode replay.
+  useLayoutEffect(() => {
+    activeRoot.current = cwd;
+    return () => {
+      activeRoot.current = "";
+    };
+  }, [cwd]);
   const [refreshFailure, setRefreshFailure] = useState<RefreshFailure | null>(null);
   const { revealInFileManager, folderBrowser } = useRemoteFolderBrowser(onOpenFile);
   // Re-runs the root listing effect only when the root's own listing changes.
@@ -882,7 +889,9 @@ function FileTreeInner({
     setError(null);
     const root = refreshDir(cwd);
     // Expanded folders refresh with the root; their failures keep the last listing.
-    const nested = refreshCachedDirs([cwd]).catch(() => []);
+    const nested = refreshCachedDirs([...expandedRef.current].filter((path) => path !== cwd)).catch(
+      () => [],
+    );
     void Promise.all([root, nested])
       .then(([entries]) => {
         if (request !== rootRefreshRequest.current) return;

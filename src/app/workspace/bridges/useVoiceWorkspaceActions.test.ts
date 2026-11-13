@@ -81,7 +81,7 @@ describe("voice workspace owner actions", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
   it("resolves the display/folder aliases but creates only at the exact listed cwd, preserving ambiguity and access", async () => {
-    const path = "G:/Projects/my_projects/upstream",
+    const path = "G:/Projects/work/upstream",
       onCreate = vi.fn(async () => "exact-session");
     const { deps, execute } = setup({
       getProjects: () => voiceProjectNames([{ path, name: "bycoda" }]),
@@ -162,13 +162,13 @@ describe("voice workspace owner actions", () => {
     const onOpen = vi.fn();
     const { execute } = setup({
       listSessions: async () => [
-        entry("history", "/project", { title: "FİRİSBE release", archived: true, updatedAt: 10 }),
+        entry("history", "/project", { title: "DİRİM release", archived: true, updatedAt: 10 }),
         entry("history-two", "/project", {
-          title: "Firisbe old review",
+          title: "Dirim old review",
           archived: true,
           updatedAt: 9,
         }),
-        entry("foreign", "/other", { title: "Firisbe private", archived: true }),
+        entry("foreign", "/other", { title: "Dirim private", archived: true }),
       ],
       getSessions: () => [entry("first", "/project", { busy: true, title: "Current work" })],
       onOpen,
@@ -176,7 +176,7 @@ describe("voice workspace owner actions", () => {
     expect(
       await execute("workspace.sessions.list", {
         projectPath: "/project",
-        query: "firisbe",
+        query: "dirim",
         state: "archived",
         limit: 1,
       }),
@@ -198,7 +198,7 @@ describe("voice workspace owner actions", () => {
     expect(
       await execute("workspace.sessions.list", {
         projectPath: "/project",
-        query: "firisbe",
+        query: "dirim",
         state: "archived",
         limit: 1,
         offset: 1,

@@ -54,6 +54,7 @@ import type {
 } from "../../core/nativeCommands";
 import { allowedPiSkillPaths, discoverOmpCommands, ompCommandsFromRpcData } from "./piSkills";
 import { OMP_FLAVOR } from "./piFlavor";
+import { OmpCompactionError, ompSessionCompactionAvailable } from "../omp/ompCompaction";
 import { spawnChild, watchChild, writeChild } from "../../core/child";
 import { withSlowStartupNotice } from "../../core/providerStartupStatus";
 import type { PiFlavor } from "./piFlavor";
@@ -151,6 +152,8 @@ type Live = {
   contextWindow?: number;
   nativeModel: string;
   thinking: string;
+  autoCompact?: string;
+  autoCompactApplied?: boolean;
   fastModeEnabled?: boolean;
   fastModeRequested?: boolean;
   planning: boolean;
@@ -765,6 +768,7 @@ async function ensureLive(
     existing &&
     existing.cwd === input.cwd &&
     existing.planning === wantPlanning &&
+    (flavor.id !== "omp" || existing.autoCompact === input.modelSettings?.autoCompact) &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
   ) {
     observeProviderProcess(input, existing.handle);
@@ -800,7 +804,7 @@ async function ensureLive(
       } catch (error) {
         attempt.controller.signal.throwIfAborted();
         assertOptionalProviderProbeError(error);
-        if (!canResume) throw error;
+        if (!canResume || error instanceof OmpCompactionError) throw error;
         resumeByThread.delete(input.sessionId);
         attempt.handle = retirementsFor(flavor).admit(
           createChildProcessHandle(input.sessionId, input.nativeControlTurn),
@@ -838,6 +842,15 @@ async function startLive(
   try {
     attempt.handle = handle;
     const { path } = await startupWait(attempt, state.resolveBinary());
+    if (
+      flavor.id === "omp" &&
+      ["on", "off"].includes(input.modelSettings?.autoCompact ?? "") &&
+      !(await startupWait(attempt, ompSessionCompactionAvailable()))
+    ) {
+      throw new OmpCompactionError(
+        "Session auto-compaction requires omp 18.2.1 or newer. Update omp or use Default.",
+      );
+    }
     attempt.controller.signal.throwIfAborted();
     const native = nativeModelId(input.model);
     const modelRef = parsePiModelRef(native);
@@ -861,6 +874,7 @@ async function startLive(
       providerSessionId: resume ?? "",
       nativeModel: native,
       thinking: input.modelSettings?.thinking ?? "",
+      autoCompact: input.modelSettings?.autoCompact,
       fastModeEnabled: undefined,
       fastModeRequested: undefined,
       planning: input.intent === "plan",
@@ -1602,6 +1616,27 @@ async function applyModel(
   input: HarnessSessionInput,
   rpc: PiRpcWriterView,
 ): Promise<void> {
+  if (
+    flavor.id === "omp" &&
+    !live.autoCompactApplied &&
+    (live.autoCompact === "on" || live.autoCompact === "off")
+  ) {
+    await rpc
+      .request(
+        { type: "set_auto_compaction", enabled: live.autoCompact === "on" },
+        undefined,
+        (result, work) =>
+          consumePiBindingResponse(live, result, work, () => {
+            live.autoCompactApplied = true;
+          }),
+      )
+      .catch((error: unknown) => {
+        throw new OmpCompactionError(
+          "Could not apply session auto-compaction settings. Retry or use Default.",
+          { cause: error },
+        );
+      });
+  }
   const native = nativeModelId(input.model);
   const ref = parsePiModelRef(native);
   if (ref && native !== live.nativeModel) {

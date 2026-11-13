@@ -1,5 +1,5 @@
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { AssistantMemory } from "../../../shared/model/host-contracts/assistant";
 import { assistantRequest } from "../model/assistantClient";
 import { t } from "../../../shared/i18n";
@@ -23,11 +23,13 @@ export function MemoryEditor({
   onClose: () => void;
 }) {
   const [assistantRequest] = useState(() => request);
-  const original = entry === "new" ? null : entry;
+  const [original, setOriginal] = useState(entry === "new" ? null : entry);
   const [text, setText] = useState(original?.text ?? "");
   const [kind, setKind] = useState<AssistantMemory["kind"]>(original?.kind ?? "rule");
   const [scope, setScope] = useState<AssistantMemory["scope"]>(original?.scope ?? "all");
   const [terms, setTerms] = useState(original?.forbiddenTerms.join(", ") ?? "");
+  const currentDraft = useRef({ text, kind, scope, terms });
+  currentDraft.current = { text, kind, scope, terms };
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const formId = useId();
@@ -36,7 +38,7 @@ export function MemoryEditor({
     setPending(true);
     setError("");
     try {
-      await assistantRequest({
+      const result = await assistantRequest({
         op: "memory.save",
         ...(original ? { id: original.id, expectedVersion: original.version } : {}),
         kind,
@@ -50,7 +52,17 @@ export function MemoryEditor({
           .map((term) => term.trim())
           .filter(Boolean),
       });
-      onClose();
+      if (!result.memory)
+        throw new Error(t("The memory save was not confirmed. Keep this draft and retry."));
+      setOriginal(result.memory);
+      const current = currentDraft.current;
+      if (
+        current.text === text &&
+        current.kind === kind &&
+        current.scope === scope &&
+        current.terms === terms
+      )
+        onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {

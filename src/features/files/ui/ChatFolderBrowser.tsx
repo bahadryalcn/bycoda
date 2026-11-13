@@ -287,6 +287,7 @@ export function ChatFolderBrowser({
               </p>
               <TextField
                 label={t("Folder on connected machine")}
+                disabled={busy}
                 className="font-mono"
                 value={remoteRoot}
                 onChange={(event) => setRemoteRoot(event.target.value)}
@@ -294,6 +295,7 @@ export function ChatFolderBrowser({
               />
               <TextField
                 label={t("Same folder on this computer")}
+                disabled={busy}
                 className="font-mono"
                 placeholder={IS_WIN ? t("\\\\MacBook\\share\\projects") : "/Volumes/share/projects"}
                 value={localRoot}

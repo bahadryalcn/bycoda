@@ -14,6 +14,8 @@ import {
   type AssistantModelSelector,
 } from "../models/assistant-model-execution";
 import type { AssistantTextLimits } from "./assistant-text-budget";
+import type { HostStore } from "../../store";
+import { runAssistantHelper } from "../../work/helper-adapter";
 
 export type AssistantTextResult = {
   text: string;
@@ -32,6 +34,7 @@ export type AssistantTextRunner = (
   signal?: AbortSignal,
   context?: AssistantTextContext,
   limits?: AssistantTextLimits,
+  invocation?: { operationId: string; role: string },
 ) => Promise<AssistantTextResult>;
 
 /** Isolated text-only reasoning. No session, desktop or publication grant.
@@ -39,8 +42,9 @@ export type AssistantTextRunner = (
  * codex text prompts both run under a non-default account); without one the profile decides. */
 export function assistantText(
   directory: string,
-  role?: "reply" | "chief",
+  role?: "reply" | "chief" | "planning",
   models?: AssistantModelSelector,
+  store?: HostStore,
 ): AssistantTextRunner {
   return async (
     profile: AssistantProfile,
@@ -48,6 +52,7 @@ export function assistantText(
     signal?: AbortSignal,
     context?: AssistantTextContext,
     limits?: AssistantTextLimits,
+    invocation?: { operationId: string; role: string },
   ) => {
     const chosen = role
       ? await chooseAssistantExecution(models, role, profile, context?.threadId)
@@ -56,92 +61,125 @@ export function assistantText(
     if (!execution) throw new Error("Choose an execution provider and model first.");
     if (context?.compactBefore && (!context.threadId || !context.onCompacted))
       throw new Error("Chief compaction needs its original thread and durable receipt.");
-    const cwd = join(directory, "assistant-text-workspace");
-    await mkdir(cwd, { recursive: true, mode: 0o700 });
-    registerBuiltinHarnesses();
-    let tokens: number | undefined;
-    let contextWindow: number | undefined;
-    let compactTokens: number | undefined;
-    let compacted = !context?.compactBefore;
-    const text = await runHarnessTextPrompt({
-      harness: execution.harness,
-      ...(chosen?.execution.providerAccountId
-        ? { providerAccountId: chosen.execution.providerAccountId }
-        : {}),
-      model: nativeModelId(execution.model),
-      modelSettings: execution.modelSettings,
-      cwd,
-      prompt,
-      ...limits,
-      intent: "plan",
-      ephemeral: !context,
-      ...(context
-        ? {
-            threadId: context.threadId,
-            onThreadId: chosen
-              ? async (threadId: string) => {
-                  await models?.rememberThread?.(threadId, chosen);
-                  await context.onThreadId(threadId);
-                }
-              : context.onThreadId,
-            compactBefore: context.compactBefore,
-            ...(context.compactBefore
-              ? {
-                  onCompacted: async (receipt: { threadId: string }) => {
-                    if (compacted) throw new Error("Chief compaction receipt was repeated.");
-                    signal?.throwIfAborted();
-                    await context.onCompacted?.(receipt);
-                    signal?.throwIfAborted();
-                    compactTokens = tokens;
-                    tokens = undefined;
-                    compacted = true;
-                  },
-                }
-              : {}),
-          }
-        : {}),
-      timeoutMs: 90_000,
-      signal,
-      onEvent: (event) => {
-        if (event.type === "context" && Number.isSafeInteger(event.window) && event.window! > 0)
-          contextWindow = event.window;
-        if (
-          event.type === "turn.metrics" &&
-          Number.isSafeInteger(event.inputTokens) &&
-          Number.isSafeInteger(event.outputTokens) &&
-          event.inputTokens! >= 0 &&
-          event.outputTokens! >= 0
-        )
-          tokens = Math.max(
-            tokens ?? 0,
-            budgetWeightedTokens({
-              input: event.inputTokens!,
-              output: event.outputTokens!,
-              ...(event.cacheReadTokens !== undefined && event.cacheReadTokens >= 0
-                ? { cacheRead: event.cacheReadTokens }
+    if (store && !invocation)
+      throw new Error("Assistant helper requires its original operation identity.");
+    const run = async (
+      helperSignal = signal,
+      retirement?: import("../../../src/integrations/harness/core/providerRetirement").ProviderRetirementObserver,
+    ) => {
+      const cwd = join(directory, "assistant-text-workspace");
+      await mkdir(cwd, { recursive: true, mode: 0o700 });
+      registerBuiltinHarnesses();
+      let tokens: number | undefined;
+      let contextWindow: number | undefined;
+      let compactTokens: number | undefined;
+      let compacted = !context?.compactBefore;
+      const text = await runHarnessTextPrompt({
+        ...retirement,
+        harness: execution.harness,
+        ...(chosen?.execution.providerAccountId
+          ? { providerAccountId: chosen.execution.providerAccountId }
+          : {}),
+        model: nativeModelId(execution.model),
+        modelSettings: execution.modelSettings,
+        cwd,
+        prompt,
+        ...limits,
+        intent: "plan",
+        ephemeral: !context,
+        ...(context
+          ? {
+              threadId: context.threadId,
+              onThreadId: async (threadId: string) => {
+                helperSignal?.throwIfAborted();
+                if (chosen) await models?.rememberThread?.(threadId, chosen);
+                helperSignal?.throwIfAborted();
+                await context.onThreadId(threadId);
+              },
+              compactBefore: context.compactBefore,
+              ...(context.compactBefore
+                ? {
+                    onCompacted: async (receipt: { threadId: string }) => {
+                      if (compacted) throw new Error("Chief compaction receipt was repeated.");
+                      helperSignal?.throwIfAborted();
+                      await context.onCompacted?.(receipt);
+                      helperSignal?.throwIfAborted();
+                      compactTokens = tokens;
+                      tokens = undefined;
+                      compacted = true;
+                    },
+                  }
                 : {}),
-              ...(event.cacheWriteTokens !== undefined && event.cacheWriteTokens >= 0
-                ? { cacheWrite: event.cacheWriteTokens }
-                : {}),
-              inputIncludesCacheRead: execution.harness === "codex",
-            }),
-          );
-      },
-    });
-    signal?.throwIfAborted();
-    if (!compacted) throw new Error("The provider did not confirm Chief compaction.");
-    if (!text.trim() || text.length > Math.min(64000, limits?.maxOutputChars ?? 64000))
-      throw new Error("The assistant response was empty or too large.");
-    const total = context?.compactBefore
-      ? tokens === undefined || compactTokens === undefined
-        ? undefined
-        : tokens + compactTokens
-      : tokens;
-    return {
-      text,
-      ...(total === undefined ? {} : { tokens: total }),
-      ...(contextWindow ? { contextWindow } : {}),
+            }
+          : {}),
+        timeoutMs: 90_000,
+        signal: helperSignal,
+        onEvent: (event) => {
+          if (event.type === "context" && Number.isSafeInteger(event.window) && event.window! > 0)
+            contextWindow = event.window;
+          if (
+            event.type === "turn.metrics" &&
+            Number.isSafeInteger(event.inputTokens) &&
+            Number.isSafeInteger(event.outputTokens) &&
+            event.inputTokens! >= 0 &&
+            event.outputTokens! >= 0
+          )
+            tokens = Math.max(
+              tokens ?? 0,
+              budgetWeightedTokens({
+                input: event.inputTokens!,
+                output: event.outputTokens!,
+                ...(event.cacheReadTokens !== undefined && event.cacheReadTokens >= 0
+                  ? { cacheRead: event.cacheReadTokens }
+                  : {}),
+                ...(event.cacheWriteTokens !== undefined && event.cacheWriteTokens >= 0
+                  ? { cacheWrite: event.cacheWriteTokens }
+                  : {}),
+                inputIncludesCacheRead: execution.harness === "codex",
+              }),
+            );
+        },
+      });
+      helperSignal?.throwIfAborted();
+      if (!compacted) throw new Error("The provider did not confirm Chief compaction.");
+      if (!text.trim() || text.length > Math.min(64000, limits?.maxOutputChars ?? 64000))
+        throw new Error("The assistant response was empty or too large.");
+      const total = context?.compactBefore
+        ? tokens === undefined || compactTokens === undefined
+          ? undefined
+          : tokens + compactTokens
+        : tokens;
+      return {
+        text,
+        ...(total === undefined ? {} : { tokens: total }),
+        ...(contextWindow ? { contextWindow } : {}),
+      };
     };
+    return store && invocation
+      ? runAssistantHelper(
+          store,
+          {
+            role: invocation.role,
+            operationId: invocation.operationId,
+            prompt,
+            signal,
+            target: {
+              model: {
+                harness: execution.harness,
+                model: execution.model,
+                modelSettings: execution.modelSettings,
+                ...(chosen?.execution.providerAccountId
+                  ? { providerAccountId: chosen.execution.providerAccountId }
+                  : {}),
+              },
+              runtimeMode: "supervised",
+              permissionRevision: invocation.operationId,
+              execution: { kind: "helper", helperId: invocation.role },
+            },
+          },
+          run,
+        )
+      : run();
   };
 }
 

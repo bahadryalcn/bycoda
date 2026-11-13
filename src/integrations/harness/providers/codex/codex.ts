@@ -94,7 +94,12 @@ import {
   codexMcpFormResponse,
   type CodexMcpForm,
 } from "./codexElicitation";
-import { parseCodexGoalCommand, codexGoalRequest, codexGoalSummary } from "./codexGoal";
+import {
+  parseCodexGoalCommand,
+  codexGoalRequest,
+  codexGoalSummary,
+  codexGoalState,
+} from "./codexGoal";
 import { trackAgentRow } from "./codexAgentRows";
 import { codexThreadConfig } from "./codexSubagentLimits";
 import { conversationToolsBridge } from "../../core/conversationToolsBridge";
@@ -210,6 +215,7 @@ type Live = {
   skills: Map<string, string>;
   skillPolicyKey?: string;
   nativeSubagents?: string;
+  autoCompactWindow?: string;
   skillPolicy?: HarnessSessionInput["skillPolicy"];
   skillsLoading?: Promise<void>;
 };
@@ -287,6 +293,13 @@ export async function sendCodexTurn(input: SendTurnInput): Promise<void> {
               const request = codexGoalRequest(goal, live.threadId);
               const response = await rpc.request(request.method, request.params);
               if (live.cancelled || live.muteUpdates) return;
+              const goalState = goal.action === "clear" ? null : codexGoalState(response);
+              if (goalState !== undefined)
+                live.onEvent({
+                  type: "session.goalChanged",
+                  providerSessionId: live.threadId,
+                  goal: goalState,
+                });
               if (goal.action === "set") {
                 await runTurn(live, { ...input, text: goal.objective }, rpc);
               } else if (goal.action === "resume") {
@@ -878,6 +891,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     sameProviderAccountId(existing.providerAccountId, input.providerAccountId) &&
     existing.controlsAgents === controlsAgents &&
     existing.nativeSubagents === input.modelSettings?.nativeSubagents &&
+    existing.autoCompactWindow === input.modelSettings?.autoCompactWindow &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
   ) {
     observeProviderProcess(input, existing.handle);
@@ -1211,6 +1225,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       skillPolicy: input.skillPolicy,
       skillPolicyKey: JSON.stringify(input.skillPolicy),
       nativeSubagents: input.modelSettings?.nativeSubagents,
+      autoCompactWindow: input.modelSettings?.autoCompactWindow,
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);
@@ -1484,6 +1499,13 @@ function handleNotification(
     (method === "thread/started" ? stringField(asRecord(rec?.thread), "id") : undefined);
   if (threadId && threadId !== live.threadId) {
     return handleSubagentNotification(live, threadId, method, params);
+  }
+  if (method === "thread/goal/updated" || method === "thread/goal/cleared") {
+    if (threadId !== live.threadId) return;
+    const goal = method === "thread/goal/cleared" ? null : codexGoalState(params);
+    if (goal !== undefined)
+      live.onEvent({ type: "session.goalChanged", providerSessionId: live.threadId, goal });
+    return;
   }
   const notifiedTurnId = stringField(asRecord(rec?.turn), "id") ?? stringField(rec, "turnId");
   const activityItem = asRecord(rec?.item);

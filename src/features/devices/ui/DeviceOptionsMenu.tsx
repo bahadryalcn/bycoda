@@ -13,7 +13,12 @@ import {
   Terminal,
 } from "../../../shared/ui/icons";
 
-type Action = { loading?: boolean; disabled?: boolean; onClick: () => void };
+type Action = {
+  loading?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+  onClick: () => void;
+};
 
 /** The device rail's overflow: icon-led inspection, conversation and setup actions, then zoom. */
 export function DeviceOptionsMenu({
@@ -39,13 +44,19 @@ export function DeviceOptionsMenu({
         <Button
           variant="item"
           disabled={inspect.disabled}
+          disabledReason={inspect.disabledReason}
           loading={inspect.loading}
           onClick={inspect.onClick}
         >
           <Accessibility className="icon-sm" aria-hidden />
           {t("Accessibility snapshot")}
         </Button>
-        <Button variant="item" disabled={coordinates.disabled} onClick={coordinates.onClick}>
+        <Button
+          variant="item"
+          disabled={coordinates.disabled}
+          disabledReason={coordinates.disabledReason}
+          onClick={coordinates.onClick}
+        >
           <Crosshair className="icon-sm" aria-hidden />
           {t("Coordinate controls")}
         </Button>

@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { descriptionExcerpt } from "./InboxPrOverview";
 
 describe("descriptionExcerpt", () => {
+  it("keeps emoji and combining characters whole at the excerpt limit", () => {
+    const text = `${"x".repeat(358)}👩🏽‍💻e\u0301tail`;
+    const excerpt = descriptionExcerpt(text);
+    expect(excerpt.text).toBe(`${"x".repeat(358)}👩🏽‍💻…`);
+    expect(excerpt.truncated).toBe(true);
+  });
   it("keeps short plain descriptions whole", () => {
     expect(descriptionExcerpt("Fixes the retry loop.")).toEqual({
       text: "Fixes the retry loop.",

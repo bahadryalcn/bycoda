@@ -1,5 +1,42 @@
 import { describe, expect, it } from "vitest";
-import { isOpencodeAcpLaunch, opencodeLaunchEnv } from "./opencode-launch-env";
+import {
+  isOpencodeAcpLaunch,
+  opencodeLaunchEnv,
+  opencodeSessionCompaction,
+  opencodeCompactionEnv,
+} from "./opencode-launch-env";
+
+it("accepts compaction only for an isolated OpenCode serve process", () => {
+  expect(
+    opencodeSessionCompaction({ binaryProvider: "opencode", args: ["serve"], autoCompact: "off" }),
+  ).toBe("off");
+  expect(opencodeSessionCompaction({})).toBeUndefined();
+  for (const input of [
+    { binaryProvider: "opencode", args: ["service", "start"], autoCompact: "off" },
+    { binaryProvider: "opencode", args: ["acp"], autoCompact: "on" },
+    { binaryProvider: "codex", args: ["serve"], autoCompact: "on" },
+    { binaryProvider: "opencode", args: ["serve"], autoCompact: "default" },
+    { binaryProvider: "opencode", genericAcpId: "custom", args: ["serve"], autoCompact: "off" },
+  ])
+    expect(() => opencodeSessionCompaction(input)).toThrow("Invalid isolated OpenCode");
+});
+
+it("preserves Host config and keeps Default free of overrides", () => {
+  const config = {
+    mcp: { owner: { enabled: true } },
+    compaction: { prune: false, reserved: 10000 },
+  };
+  expect(
+    JSON.parse(opencodeCompactionEnv(JSON.stringify(config), "off").OPENCODE_CONFIG_CONTENT),
+  ).toEqual({
+    ...config,
+    compaction: { ...config.compaction, auto: false },
+  });
+  expect(opencodeCompactionEnv("not JSON", undefined)).toEqual({});
+  for (const content of ["null", "[]", "not JSON", '{"compaction":false}', " ".repeat(65537)]) {
+    expect(() => opencodeCompactionEnv(content, "on")).toThrow();
+  }
+});
 
 const published = {
   externalMcp: {

@@ -2,16 +2,16 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { InboxProjectPicker, type InboxProjectOption } from "./InboxPresentation";
+import { InboxAvatar, InboxProjectPicker, type InboxProjectOption } from "./InboxPresentation";
 
 vi.mock("../../group-lock/hooks/useGroupLock", () => ({
-  useGroupLock: () => ({ groups: [{ id: "firisbe", name: "Firisbe", collapsed: true }] }),
+  useGroupLock: () => ({ groups: [{ id: "acme", name: "Acme", collapsed: true }] }),
 }));
 vi.mock("../../projects/model/projectGroups", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../projects/model/projectGroups")>()),
   useProjectGroupAssignments: () => ({
-    "g:/firisbe/portal": "firisbe",
-    "g:/firisbe/tests": "firisbe",
+    "g:/acme/portal": "acme",
+    "g:/acme/tests": "acme",
   }),
 }));
 vi.mock("../../projects/ui/ProjectMascot", () => ({
@@ -21,8 +21,8 @@ vi.mock("../../projects/ui/ProjectMascot", () => ({
 
 const projects: InboxProjectOption[] = [
   { path: "G:/personal/app", name: "App", logoPath: null, mascotName: null, mascotColor: "" },
-  { path: "G:/firisbe/portal", name: "Portal", logoPath: null, mascotName: null, mascotColor: "" },
-  { path: "G:/firisbe/tests", name: "Tests", logoPath: null, mascotName: null, mascotColor: "" },
+  { path: "G:/acme/portal", name: "Portal", logoPath: null, mascotName: null, mascotColor: "" },
+  { path: "G:/acme/tests", name: "Tests", logoPath: null, mascotName: null, mascotColor: "" },
 ];
 let root: Root;
 let container: HTMLDivElement;
@@ -51,7 +51,7 @@ it("keeps the selected project mark inside the trigger", async () => {
     root.render(
       createElement(InboxProjectPicker, {
         projects,
-        value: "g:/FIRISBE/portal",
+        value: "g:/ACME/portal",
         onChange: vi.fn(),
       }),
     ),
@@ -59,6 +59,29 @@ it("keeps the selected project mark inside the trigger", async () => {
   const trigger = container.querySelector("button")!;
   expect(trigger.querySelector('[data-project="Portal"]')).not.toBeNull();
   expect(container.querySelectorAll("[data-project]")).toHaveLength(1);
+});
+it.each(["👩🏽‍💻 Ada", "e\u0301mile", "🇹🇷 Ece"])(
+  "keeps a complete first avatar grapheme: %s",
+  async (name) => {
+    await act(async () => root.render(createElement(InboxAvatar, { name })));
+    expect(container.textContent).toBe(
+      name.split(" ")[0] === "e\u0301mile" ? "E\u0301" : name.split(" ")[0],
+    );
+  },
+);
+it("shows the actual saved working folder when it is absent from recent projects", async () => {
+  const value = "G:/saved/Backend 日本語 🚀";
+  const onChange = vi.fn();
+  await act(async () =>
+    root.render(createElement(InboxProjectPicker, { projects, value, onChange })),
+  );
+  expect(container.querySelector("button")?.textContent).toContain("Backend 日本語 🚀");
+  expect(container.querySelector("button")?.textContent).not.toContain("App");
+  expect(onChange).not.toHaveBeenCalled();
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  const chosen = document.querySelector('[role="option"][aria-selected="true"]');
+  expect(chosen?.textContent).toContain(value);
+  expect(onChange).not.toHaveBeenCalled();
 });
 
 it("groups sidebar projects, searches paths and names, and preserves selection callbacks", async () => {
@@ -75,7 +98,7 @@ it("groups sidebar projects, searches paths and names, and preserves selection c
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
   const groups = () => Array.from(document.body.querySelectorAll('[role="group"]'));
   expect(groups().map((group) => group.firstElementChild?.textContent)).toEqual([
-    "Firisbe",
+    "Acme",
     "Ungrouped",
   ]);
   expect(groups()[0]!.querySelectorAll('[role="option"]')).toHaveLength(2);
@@ -89,9 +112,9 @@ it("groups sidebar projects, searches paths and names, and preserves selection c
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-  await search("firisbe/tests");
+  await search("acme/tests");
   expect(groups()).toHaveLength(1);
-  expect(groups()[0]!.firstElementChild?.textContent).toBe("Firisbe");
+  expect(groups()[0]!.firstElementChild?.textContent).toBe("Acme");
   expect(document.body.querySelectorAll('[role="option"]')).toHaveLength(1);
   await search("Portal");
   await act(async () => document.body.querySelector<HTMLButtonElement>('[role="option"]')!.click());

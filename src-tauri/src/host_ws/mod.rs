@@ -93,6 +93,7 @@ fn native_service_method(method: &str) -> bool {
             | "native.services.desktop.stop"
             | "native.services.assistant.presence.get"
             | "native.services.assistant.presence.set"
+            | "native.services.assistant.background.execute"
             | "native.services.assistant.visibility.epoch"
             | "native.services.assistant.delegation.publicKey"
             | "native.services.assistant.delegation.origin"

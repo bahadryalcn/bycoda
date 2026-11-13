@@ -1,3 +1,4 @@
+import { systemPermissionsStatus } from "../../../platform/tauri/systemPermissions";
 import { t } from "../../../shared/i18n";
 import { isTauri } from "@tauri-apps/api/core";
 import { IS_LINUX, IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
@@ -36,6 +37,12 @@ export function canOpenMicrophoneSettings(): boolean {
   return isTauri() && (IS_MAC || IS_WIN);
 }
 
+export function webviewMicrophoneBlockedMessage(): string {
+  return t(
+    "The operating system allows the microphone, but the app webview blocked it. Check again to retry microphone capture.",
+  );
+}
+
 export function isMicrophoneBlocked(message: string): boolean {
   return message === microphoneBlockedMessage();
 }
@@ -64,8 +71,13 @@ export async function openMicrophone(constraints: MediaStreamConstraints): Promi
     // DOMException can originate in another realm; do not depend on instanceof.
     const name = cause && typeof cause === "object" && "name" in cause ? String(cause.name) : "";
     let message: string;
-    if (BLOCKED_NAMES.has(name)) message = microphoneBlockedMessage();
-    else if (name === "NotFoundError" || name === "DevicesNotFoundError")
+    if (BLOCKED_NAMES.has(name)) {
+      const native = isTauri() ? await systemPermissionsStatus().catch(() => undefined) : undefined;
+      message =
+        native?.entries.find((entry) => entry.id === "microphone")?.state === "granted"
+          ? webviewMicrophoneBlockedMessage()
+          : microphoneBlockedMessage();
+    } else if (name === "NotFoundError" || name === "DevicesNotFoundError")
       message = t(
         "No microphone was found. Connect or enable an input device in system sound settings, then try again.",
       );

@@ -279,7 +279,7 @@ it("prevents double-click connection when the target cannot connect", async () =
 });
 
 it("selects on a single click and opens the canonical SSH record once on double click", async () => {
-  terminalActions.open = vi.fn();
+  terminalActions.open = vi.fn().mockResolvedValue("accepted");
   await render();
   const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
   await act(async () => row.click());
@@ -294,7 +294,7 @@ it("selects on a single click and opens the canonical SSH record once on double 
 });
 
 it("selects immediately while keeping the row uncovered until pointer inspection settles", async () => {
-  terminalActions.open = vi.fn();
+  terminalActions.open = vi.fn().mockResolvedValue("accepted");
   await render();
   vi.useFakeTimers();
   try {
@@ -311,7 +311,7 @@ it("selects immediately while keeping the row uncovered until pointer inspection
 });
 
 it("cancels pending pointer inspection when a double-click connects", async () => {
-  terminalActions.open = vi.fn();
+  terminalActions.open = vi.fn().mockResolvedValue("accepted");
   await render();
   vi.useFakeTimers();
   try {
@@ -329,7 +329,7 @@ it("cancels pending pointer inspection when a double-click connects", async () =
 });
 
 it("connects with Enter without repeating the connection and closes details back to the row", async () => {
-  terminalActions.open = vi.fn();
+  terminalActions.open = vi.fn().mockResolvedValue("accepted");
   await render();
   const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
   await act(async () => {
@@ -347,7 +347,7 @@ it("connects with Enter without repeating the connection and closes details back
 });
 
 it("does not launch SSH for a Host record with no SSH endpoint", async () => {
-  terminalActions.open = vi.fn();
+  terminalActions.open = vi.fn().mockResolvedValue("accepted");
   fixture.machines = [{ ...machine, ssh: undefined, endpoint: "http://127.0.0.1:3776" }];
   await render();
   const row = document.body.querySelector<HTMLButtonElement>("[data-server-row]")!;
@@ -650,7 +650,7 @@ it("searches and displays the effective SSH destination while preserving the edi
     metadata: { tags: [], favorite: false },
   };
   fixture.extraServers = [server];
-  terminalActions.open = vi.fn();
+  terminalActions.open = vi.fn().mockResolvedValue("accepted");
   await render();
   await search("group-user");
   expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
@@ -687,7 +687,7 @@ const clickInDocument = async (label: string, scope: ParentNode = document) => {
 };
 
 it("opens the server context menu on right click with the expected actions", async () => {
-  terminalActions.open = vi.fn();
+  terminalActions.open = vi.fn().mockResolvedValue("accepted");
   fixture.extraServers = [sshServer];
   await render();
   await openRowMenu("ssh-stable");

@@ -74,7 +74,7 @@ function LayerRow({
   const dimmed = layer.dimmed ?? !layer.enabled;
   return (
     <li
-      {...surfaceAttributes({ radius: "panel", variant: "plain", frame: "card" }, styles.layer)}
+      {...surfaceAttributes({ radius: "panel", variant: "base", frame: "card" }, styles.layer)}
       data-disabled={dimmed || undefined}
       data-open={open || undefined}
     >

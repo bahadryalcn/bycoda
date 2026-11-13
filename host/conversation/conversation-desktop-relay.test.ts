@@ -6,6 +6,51 @@ const principal = { kind: "session" as const, projectId: "p", sessionId: "s", pr
 const action = "servers.ssh.execute";
 const permission = "servers.ssh.execute.permission";
 
+it("pins Room SSH control to the original Native device across queued relay waits", async () => {
+  const owner = "a".repeat(64);
+  const replacement = "b".repeat(64);
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take(owner);
+  const pending = relay.callAssistantThread(
+    "servers.ssh.cancel",
+    { requestId: "original" },
+    { threadId: "room", environmentId: "host", targetDeviceHash: owner },
+    () => true,
+  );
+  void pending.catch(() => undefined);
+  expect(await relay.take(replacement)).toEqual([]);
+  const [request] = await relay.take(owner);
+  expect(request).toBeDefined();
+  expect(await relay.authorize(String(request.id), "servers.ssh.cancel", replacement)).toEqual({
+    authorized: false,
+  });
+  await relay.finish(String(request.id), { state: "cancelled" }, undefined, owner);
+  await expect(pending).resolves.toEqual({ state: "cancelled" });
+  relay.close();
+});
+
+it("Host critical exclusions can only narrow a Room native grant and revoke queued approval", async () => {
+  let requiresOwner = false;
+  const relay = new ConversationDesktopRelay("host", async () => requiresOwner);
+  await relay.take("native");
+  const pending = relay.call(
+    "management.write.authorize",
+    { operation: { action: "social.send" } },
+    "/project",
+    { kind: "assistant-thread", threadId: "thread", projectId: "p", provider: "assistant" },
+  );
+  void pending.catch(() => undefined);
+  await Promise.resolve();
+  const [request] = await relay.take("native");
+  expect((request.input as { requireOwnerApproval: boolean }).requireOwnerApproval).toBe(false);
+  requiresOwner = true;
+  expect(await relay.authorize(String(request.id), "management.write.authorize", "native")).toEqual(
+    { authorized: false },
+  );
+  relay.close();
+  await expect(pending).rejects.toThrow("Host stopped");
+});
+
 it.each(["supervised", "auto-accept-edits", "auto", "full-access"])(
   "uses current original-session permission for SSH: %s",
   async (initialMode) => {
@@ -195,5 +240,30 @@ it("hands the desktop session and assistant Room requests that match the take co
   expect(
     NATIVE_SERVICES_RPC_SCHEMAS["native.services.conversation.desktop.take"].result.parse(taken),
   ).toEqual(taken);
+  relay.close();
+});
+
+it("sends a Global thread's desktop approval with no project folder and refuses a project source", async () => {
+  const relay = new ConversationDesktopRelay("host");
+  await relay.take("native");
+  const pending = relay.callAssistantThread(
+    "desktop.act.authorize",
+    { operation: { kind: "app", app: "Chrome" }, operationHash: "h" },
+    { threadId: "room", environmentId: "host" },
+    () => true,
+  );
+  pending.catch(() => undefined);
+  const [request] = await relay.take("native");
+  expect(request).toMatchObject({ action: "desktop.act.authorize", threadId: "room" });
+  expect(request).not.toHaveProperty("projectId");
+  expect(request).not.toHaveProperty("cwd");
+  expect(() =>
+    relay.callAssistantThread(
+      "desktop.act.authorize",
+      {},
+      { threadId: "room", environmentId: "host", projectId: "p" },
+      () => true,
+    ),
+  ).toThrow("Invalid global desktop approval source.");
   relay.close();
 });

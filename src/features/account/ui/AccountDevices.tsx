@@ -175,14 +175,14 @@ export function AccountDevices({
       >
         {phones.length ? (
           rows(phones)
-        ) : (
+        ) : query.isSuccess ? (
           <Row
             label={t("No phone signed in")}
             description={t(
               "Sign in on the bycoda mobile app with the same account to see it here.",
             )}
           />
-        )}
+        ) : null}
       </Group>
       {dialog}
     </>

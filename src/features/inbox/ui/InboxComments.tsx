@@ -13,7 +13,8 @@ import { JiraCommentEditor } from "./JiraCommentEditor";
 import type { JiraCommentImage } from "../model/jiraCommentDocument";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { providerLabel } from "../../../shared/lib/providerLabel";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatNumber, t, useLocale } from "../../../shared/i18n";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
   useEffect,
@@ -157,8 +158,10 @@ export function InboxComments({
       thread.commits && isReviewEvent(comment) ? total : total + 1 + comment.replies.length,
     0,
   );
-  const label = count === 1 ? "1 comment" : `${count} comments`;
-  const commitLabel = commitCount === 1 ? "1 commit" : `${commitCount} commits`;
+  const label = t(count === 1 ? "{p0} comment" : "{p0} comments", { p0: formatNumber(count) });
+  const commitLabel = t(commitCount === 1 ? "{p0} commit" : "{p0} commits", {
+    p0: formatNumber(commitCount),
+  });
   const moreOn = providerLabel(provider);
 
   return (
@@ -322,6 +325,7 @@ export function InboxCommentForm({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isImeComposition(event.nativeEvent)) return;
     if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
     event.preventDefault();
     void submit();
@@ -442,9 +446,13 @@ function InboxComment({
   const time = formatRelativeTime(comment.createdAt);
   const review = githubReviewStateLabel(comment.state);
   const location = commentLocation(comment);
-  const meta = [review, location, comment.resolved ? "Resolved" : "", time].filter(
-    (part) => part.length > 0,
-  );
+  const resolvedLabel = t("Resolved");
+  const meta = [
+    review ? t(review) : "",
+    location,
+    comment.resolved ? resolvedLabel : "",
+    time,
+  ].filter((part) => part.length > 0);
   const hasBody = comment.body.trim().length > 0;
   const hasReplies = !nested && comment.replies.length > 0;
   const canReply =
@@ -496,7 +504,7 @@ function InboxComment({
             ) : (
               <InboxReviewBadge
                 state={comment.state}
-                resolved={comment.resolved && part === "Resolved"}
+                resolved={comment.resolved && part === resolvedLabel}
               >
                 {part}
               </InboxReviewBadge>
@@ -682,7 +690,7 @@ function InboxTimelineComment({
             : "reviewed";
     return (
       <TimelineStop first={first} last={last} node={<InboxReviewBadge state={state} />}>
-        <TimelineEventLine name={author} action={verb} time={time} />
+        <TimelineEventLine name={author} action={t(verb)} time={time} />
       </TimelineStop>
     );
   }
@@ -736,7 +744,11 @@ function InboxCommitRun({
       >
         <TimelineEventLine
           name={name}
-          action={`added ${commits.length === 1 ? "a commit" : `${commits.length} commits`}`}
+          action={
+            commits.length === 1
+              ? t("added a commit")
+              : t("added {p0} commits", { p0: formatNumber(commits.length) })
+          }
           time={time}
         />
       </TimelineStop>

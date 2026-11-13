@@ -16,6 +16,17 @@ import { HostDomainAuthorizationError } from "../domains/context";
 import { assertNativeDeliveryEffect } from "../native-delivery/native-delivery-epochs";
 
 export interface NativeServicesAdapters {
+  executeAssistantBackground?(
+    input: {
+      environmentId: string;
+      threadId: string;
+      operationId: string;
+      operationHash: string;
+      challenge: string;
+      relayId: string;
+    },
+    actor: { deviceHash: string; authorized: () => Promise<boolean> },
+  ): Promise<unknown>;
   browserPanel?(input: Record<string, unknown>): Promise<unknown>;
   observationsIngest?(input: Record<string, unknown>): Promise<unknown>;
   delegation?(
@@ -97,6 +108,14 @@ export function bindNativeServicesOwner(
     };
   };
   return {
+    executeAssistantBackground: async (input, current) => {
+      if (!adapters.executeAssistantBackground || !current() || !(await authorized()) || !current())
+        throw new HostDomainAuthorizationError();
+      return adapters.executeAssistantBackground(input, {
+        deviceHash,
+        authorized: async () => current() && (await authorized()) && current(),
+      });
+    },
     delegation: async (action, input) => {
       if (!adapters.delegation || !(await authorized())) throw new HostDomainAuthorizationError();
       const value = await adapters.delegation(action, input, authorized);

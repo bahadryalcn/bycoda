@@ -1,4 +1,7 @@
+import { CREWS_SETTINGS_SECTION, WORK_SETTINGS_SECTION } from "./workSettingsSections";
 import { modelsSettingsEntries } from "./modelsSettingsEntries";
+import { TOOL_SETTINGS_INDEX, TOOL_SETTINGS_SECTIONS } from "./toolSettingsSections";
+import { toolSettingsAnchorForSection, toolSettingsTabForSection } from "./toolSettingsSections";
 import {
   createStoredSetting,
   storedFlag,
@@ -53,6 +56,12 @@ export function saveStreamingTextMode(value: StreamingTextMode) {
 }
 
 export type SettingsSectionId =
+  | "tools"
+  | "browser"
+  | "devices"
+  | "logs"
+  | "devServers"
+  | "permissions"
   | "notifications"
   | "workspace"
   | "general"
@@ -65,9 +74,8 @@ export type SettingsSectionId =
   | "voice"
   | "providers"
   | "models"
+  | "work"
   | "crews"
-  | "usage"
-  | "limits"
   | "mcp"
   | "skills"
   | "integrations"
@@ -91,6 +99,7 @@ export type SettingsSection = {
 };
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
+  ...TOOL_SETTINGS_SECTIONS,
   ACCOUNT_SECTION,
   {
     id: "general",
@@ -124,6 +133,17 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Sounds, desktop alerts and notification preferences for each project.");
     },
     keywords: "sound alert notification summary reminder project",
+  },
+  {
+    id: "permissions",
+    group: "app",
+    get label() {
+      return t("Permissions");
+    },
+    get description() {
+      return t("System access for bycoda features.");
+    },
+    keywords: "privacy microphone screen recording accessibility camera access TCC izin",
   },
   {
     id: "keybindings",
@@ -220,18 +240,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     },
     keywords: "archived restore delete hidden",
   },
-  {
-    id: "crews",
-    group: "agents",
-    get label() {
-      return t("Crews");
-    },
-    get description() {
-      return t("Reusable agent teams, project crews and model allocation policies.");
-    },
-    keywords:
-      "crew team coordinator specialist reviewer advisor orchestration model cost quality capability",
-  },
+  CREWS_SETTINGS_SECTION,
   {
     id: "chat",
     group: "app",
@@ -268,6 +277,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     },
     keywords: "account sign in login model harness claude codex cli default hooks",
   },
+  WORK_SETTINGS_SECTION,
   {
     id: "models",
     group: "agents",
@@ -275,38 +285,13 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       return t("Models");
     },
     get description() {
-      return t("Model order, assignments, chat defaults and subagents.");
+      return t("The provider, model and effort new chats start with.");
     },
-    keywords:
-      "order routing pools roles limits default provider model effort permissions fast subagents advisor image models",
-  },
-  {
-    id: "usage",
-    group: "agents",
-    get label() {
-      return t("Provider usage");
-    },
-    get description() {
-      return t("Provider limits, remaining capacity and usage by project.");
-    },
-    keywords: "quota limits weekly session tokens cost",
-  },
-  {
-    id: "limits",
-    group: "agents",
-    get label() {
-      return t("Limits & budgets");
-    },
-    get description() {
-      return t(
-        "Manage account limits and add usage budgets for projects, sessions and workspaces.",
-      );
-    },
-    keywords: "quota limit budget spending cost token threshold allocation",
+    keywords: "default provider model effort permissions fast chat",
   },
   {
     id: "mcp",
-    group: "agents",
+    group: "tools",
     get label() {
       return t("MCP");
     },
@@ -317,7 +302,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "skills",
-    group: "agents",
+    group: "tools",
     get label() {
       return t("Skills");
     },
@@ -366,6 +351,7 @@ export type SettingsEntry = {
 };
 
 export const SETTINGS_INDEX: SettingsEntry[] = [
+  ...TOOL_SETTINGS_INDEX,
   ...GENERAL_SETTINGS_INDEX,
   {
     id: "privacy-policy",
@@ -513,7 +499,23 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Automatically reconnect to remote machines");
     },
-    keywords: "ssh remote retry reconnect drop tunnel offline background",
+    keywords: "ssh remote retry reconnect drop offline background",
+  },
+  {
+    id: "connections-phone",
+    section: "connections",
+    get label() {
+      return t("Phone");
+    },
+    keywords: "phone mobile pairing qr code wifi tailscale telefon mobil eşleştirme",
+  },
+  {
+    id: "connections-sharing",
+    section: "connections",
+    get label() {
+      return t("Sharing");
+    },
+    keywords: "sharing tunnel tunnels cloudflare ngrok public url port paylaşım tünel",
   },
   {
     id: "external-mcp-access",
@@ -848,6 +850,55 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "microphone permission privacy macos windows linux mikrofon izin",
   },
   {
+    id: "voice-microphone-input",
+    section: "voice",
+    get label() {
+      return t("Microphone");
+    },
+    keywords: "input device usb default mikrofon cihaz giriş",
+  },
+  {
+    id: "voice-microphone-recording",
+    section: "voice",
+    get label() {
+      return t("Test microphone");
+    },
+    keywords: "record playback listen test microphone kayıt dinle mikrofon",
+  },
+  {
+    id: "dictation-shortcut-mode",
+    section: "voice",
+    get label() {
+      return t("Dictation shortcut mode");
+    },
+    keywords: "dictation hold toggle automatic keyboard shortcut dikte basılı tut kısayol",
+  },
+  {
+    id: "dictation-dictionary",
+    section: "voice",
+    get label() {
+      return t("Dictionary");
+    },
+    keywords: "dictation dictionary spelling aliases project shared sözlük terim yazım proje",
+  },
+  {
+    id: "dictation-cleanup",
+    section: "voice",
+    get label() {
+      return t("Clean up dictated text");
+    },
+    keywords:
+      "dictation cleanup punctuation model translate correction dikte düzelt noktalama çeviri",
+  },
+  {
+    id: "dictation-local-models",
+    section: "voice",
+    get label() {
+      return t("Local transcription models");
+    },
+    keywords: "dictation whisper model download delete test local dikte model indir sil yerel",
+  },
+  {
     id: "voice-companion",
     section: "voice",
     get label() {
@@ -978,7 +1029,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "show-remaining-usage",
-    section: "usage",
+    section: "providers",
     get label() {
       return t("Show remaining usage");
     },
@@ -986,7 +1037,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "provider-usage",
-    section: "usage",
+    section: "providers",
     get label() {
       return t("Provider usage");
     },
@@ -1134,13 +1185,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     {
       id: "account-limits",
-      section: "usage",
+      section: "providers",
       label: "Provider account limit",
       keywords: "quota weekly session reset account limits kota hafta oturum hesap sınır",
     },
     {
       id: "cost-overview",
-      section: "usage",
+      section: "providers",
       label: "Cost by project and day",
       keywords:
         "range cost tokens input output cache api estimates dates project model provider maliyet gün tarih aralık tahmin token",
@@ -1261,7 +1312,7 @@ export function settingsSectionForAnchor(
 ): SettingsSectionId | undefined {
   const target =
     (anchor && SETTINGS_INDEX.find((entry) => entry.id === anchor)?.section) || section;
-  return target === "inbox" ? "integrations" : target;
+  return target === "inbox" ? "integrations" : toolSettingsTabForSection(target) ? "tools" : target;
 }
 
 /** Shared with shortcut rows so search uses the same stable anchor. */
@@ -1442,72 +1493,36 @@ export function searchSettings(query: string, limit = 8): SettingsSearchResult[]
 export const SETTINGS_SECTION_DEFAULT: SettingsSectionId = "general";
 
 export function isSettingsSectionId(value: unknown): value is SettingsSectionId {
-  return SETTINGS_SECTIONS.some((section) => section.id === value);
+  return (
+    !!toolSettingsTabForSection(value) || SETTINGS_SECTIONS.some((section) => section.id === value)
+  );
 }
 
 export function settingsSectionLabel(id: SettingsSectionId): string {
-  return SETTINGS_SECTIONS.find((section) => section.id === id)?.label ?? "General";
+  return (
+    SETTINGS_SECTIONS.find((section) => section.id === settingsSectionForAnchor(id))?.label ??
+    "General"
+  );
 }
 
 export function settingsSectionDescription(id: SettingsSectionId): string {
-  return SETTINGS_SECTIONS.find((section) => section.id === id)?.description ?? "";
+  return (
+    SETTINGS_SECTIONS.find((section) => section.id === settingsSectionForAnchor(id))?.description ??
+    ""
+  );
 }
 
-/**
- * How a page wants to be presented. `bounded`: short preferences and forms in a readable
- * track over the work context. `wide`: collections, tables and analytics that need a
- * usable width. `workspace`: list/detail libraries that own the full height and are
- * the pages worth maximizing. A hint only: the embedding surface decides the geometry
- * and a page never remounts when it changes.
- */
-export type SettingsPresentation = "bounded" | "wide" | "workspace";
-
-/** Pages that persist every change themselves; the header says so once. */
-export const AUTOMATIC_SAVE_SECTIONS: readonly string[] = [
-  "general",
-  "appearance",
-  "workspace",
-  "chat",
-  "voice",
-  "terminal",
-];
-
-const SETTINGS_PRESENTATION: Record<SettingsSectionId, SettingsPresentation> = {
-  general: "bounded",
-  appearance: "bounded",
-  workspace: "bounded",
-  terminal: "bounded",
-  chat: "bounded",
-  voice: "bounded",
-  notifications: "bounded",
-  groupLock: "bounded",
-  policies: "bounded",
-  providers: "wide",
-  models: "wide",
-  mcp: "wide",
-  connections: "wide",
-  inbox: "bounded",
-  integrations: "bounded",
-  account: "bounded",
-  secrets: "bounded",
-  crews: "wide",
-  keybindings: "wide",
-  usage: "wide",
-  limits: "wide",
-  skills: "workspace",
-  archive: "bounded",
-  worktrees: "workspace",
-};
-
-export function settingsSectionPresentation(id: SettingsSectionId): SettingsPresentation {
-  return SETTINGS_PRESENTATION[id] ?? "bounded";
-}
+export {
+  AUTOMATIC_SAVE_SECTIONS,
+  settingsSectionPresentation,
+  type SettingsPresentation,
+} from "./settingsPageMetadata";
 
 export function loadSettingsSection(): SettingsSectionId {
   try {
     const raw = localStorage.getItem(SECTION_KEY);
     if (raw === "inbox") return "integrations";
-    return isSettingsSectionId(raw) ? raw : SETTINGS_SECTION_DEFAULT;
+    return isSettingsSectionId(raw) ? settingsSectionForAnchor(raw)! : SETTINGS_SECTION_DEFAULT;
   } catch {
     return SETTINGS_SECTION_DEFAULT;
   }
@@ -1515,9 +1530,18 @@ export function loadSettingsSection(): SettingsSectionId {
 
 export function saveSettingsSection(id: SettingsSectionId) {
   try {
-    localStorage.setItem(SECTION_KEY, id);
+    localStorage.setItem(SECTION_KEY, settingsSectionForAnchor(id) ?? id);
   } catch {
     // private mode / quota
+  }
+}
+
+/** Carry a retired tool section's destination while its saved category migrates. */
+export function loadSettingsAliasAnchor(): string | null {
+  try {
+    return toolSettingsAnchorForSection(localStorage.getItem(SECTION_KEY));
+  } catch {
+    return null;
   }
 }
 
@@ -2199,6 +2223,7 @@ export type KeybindingRow = {
  * the window key handler in App and focused surface handlers such as the draft composer toggle.
  */
 export const KEYBINDINGS: KeybindingRow[] = [
+  { command: "Voice: Dictate", keys: `${MOD}${SHIFT}M`, when: "Message composer focused" },
   { command: "Voice: Push to Talk", keys: "", when: "Voice connected and microphone paused" },
   { command: "Voice: Open Companion", keys: `${MOD}${SHIFT}K`, when: "Voice companion closed" },
   DESKTOP_TALK_ROW,

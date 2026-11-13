@@ -1,4 +1,11 @@
 {
+  "A daily overview of background tasks and goals across machines.": "A daily overview of background tasks and epics across machines.",
+  "This goal changed. Close and reopen settings before saving.": "This epic changed. Close and reopen settings before saving.",
+  "Only an active goal can be edited.": "Only an active epic can be edited.",
+  "Invalid goal settings": "Invalid epic settings",
+  "A goal task is being merged. Try again later.": "An Epic task is being merged. Try again later.",
+  "Use Goals to plan a larger job as tasks; review the proposed plan before approving it.": "Use Epics to plan a larger job as tasks; review the proposed plan before approving it.",
+  "Once a day, one notification with what background tasks and goals did on every machine. Click it to open the summary.": "Once a day, one notification with what background tasks and epics did on every machine. Click it to open the summary.",
   "Archive settings": "Archive",
   "Timeline update": "update",
   "Timeline updates": "updates",
@@ -6,5 +13,10 @@
   "!overlay && (!textFocus || emptyComposer)": "Outside text fields or in an empty composer, with overlays closed",
   "!editorFocus": "Outside the editor",
   "workspaceFocus": "Workspace focused",
-  "editorFocus": "Editor focused"
+  "editorFocus": "Editor focused",
+  "Tasks & goals": "Tasks & epics",
+  "For larger work, create a goal. It is split into tasks; review the plan before approving it.": "For larger work, create an Epic. It is split into tasks; review the plan before approving it.",
+  "Create a goal": "Create an Epic",
+  "One daily notification summarizes background tasks and goals across machines. The time uses this computer�s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.": "One daily notification summarizes background tasks and epics across machines. The time uses this computer�s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
+  "Supervisor and conversation turns stay read-only. The planning model writes the goal plan; workers and independent reviews keep their existing model and permissions. Heartbeats and briefings do not call a model.": "Supervisor and conversation turns stay read-only. The planning model writes the epic plan; workers and independent reviews keep their existing model and permissions. Heartbeats and briefings do not call a model."
 }

@@ -7,7 +7,7 @@ description: "Use when changing task boards, goals, sprints, stewards and review
 
 Own background-work lifecycle and UI. Crews owns team/member/run composition; managed-workspaces owns execution/delivery contracts; Host runtime owns operation writers and transport. A task tool or PASS result grants no merge/push/publication permission.
 
-Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Models. Feature choices resolve at run start; existing running sessions keep their concrete model.
+Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Work. Feature choices resolve at run start; existing running sessions keep their concrete model.
 
 ## Source starts
 
@@ -33,7 +33,7 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 - Bound task history with a transactional sequence floor. A cursor below it reports a gap; reseed only the affected source scope and retain the report's incomplete-history boundary.
 - Owner UI approval binds reviewed identities; overlapping delivery must refuse without destroying unrelated dirty target work or source/recovery records.
 - Reviewed tool edits and execution admission recheck configuration inside the canonical writer. Create-only requests atomically reject an existing ID, including IDs outside the caller's visible project; never turn creation into upsert.
-- Autonomy contract: reviewed tasks from any source auto-correct within the repair limits. When correction is exhausted or only external checks remain, the task finishes through the PASS path with `completedWithFindings` and `ownerNotices`, keeps the FAIL verdict and always needs owner delivery approval. Transient runtime failures retry twice; unattended clarifying questions are skipped at most twice and recorded as notices. Only owner stops, budgets, dependency cycles, permission/credential gates, preparation failures and repeated runtime failures block.
+- Autonomy contract: reviewed tasks from any source auto-correct within the repair limits. When correction is exhausted or only external checks remain, the task finishes through the PASS path with `completedWithFindings` and `ownerNotices`, keeps the FAIL verdict and always needs owner delivery approval. Transient runtime failures retry once; unattended clarifying questions are skipped at most twice and recorded as notices. Only owner stops, budgets, dependency cycles, permission/credential gates, preparation failures and repeated runtime failures block.
 - The reviewer FAILs only in-scope defects, regressions, failed checks and hard-constraint violations; out-of-scope edge cases are suggestions. `taskStatusLine` is the single owner-facing status/reason source for card, list and detail; notices show only after completion.
 - Worker cleanup remains bound to original process/operation identity. Optional title/catalog work or permission revocation cannot certify physical retirement.
 

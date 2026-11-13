@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { inboxApi, sendInboxReply } from "./inboxApi";
+import { createInboxReplyOperation } from "./inboxReplyOperation";
 import type { SocialClient } from "../../model/socialClient";
 
 type Call = { action: string; input?: Record<string, unknown>; requestId?: string };
@@ -32,7 +33,10 @@ const draft = { id: "draft-1", threadId: "t-1", text: "Hi", factIds: [] };
 describe("sendInboxReply", () => {
   it("drafts, approves the exact draft, queues the send and then marks the conversation replied", async () => {
     const rec = recorder({ "replies.draft": () => draft });
-    await sendInboxReply(rec.call, { threadId: "t-1", text: "Hi", factIds: [] });
+    await sendInboxReply(
+      rec.call,
+      createInboxReplyOperation({ threadId: "t-1", text: "Hi", factIds: [] }),
+    );
 
     expect(rec.calls.map((call) => call.action)).toEqual([
       "replies.draft",
@@ -49,7 +53,10 @@ describe("sendInboxReply", () => {
 
   it("uses a fresh request id for every write", async () => {
     const rec = recorder({ "replies.draft": () => draft });
-    await sendInboxReply(rec.call, { threadId: "t-1", text: "Hi", factIds: [] });
+    await sendInboxReply(
+      rec.call,
+      createInboxReplyOperation({ threadId: "t-1", text: "Hi", factIds: [] }),
+    );
     const ids = rec.calls.map((call) => call.requestId);
     expect(ids.every((id) => typeof id === "string" && id.length > 0)).toBe(true);
     expect(new Set(ids).size).toBe(ids.length);
@@ -62,7 +69,10 @@ describe("sendInboxReply", () => {
       },
     });
     await expect(
-      sendInboxReply(rec.call, { threadId: "t-1", text: "Hi", factIds: [] }),
+      sendInboxReply(
+        rec.call,
+        createInboxReplyOperation({ threadId: "t-1", text: "Hi", factIds: [] }),
+      ),
     ).rejects.toThrow("Draft preview changed.");
     expect(rec.calls.map((call) => call.action)).toEqual(["replies.draft"]);
   });
@@ -75,14 +85,20 @@ describe("sendInboxReply", () => {
       },
     });
     await expect(
-      sendInboxReply(rec.call, { threadId: "t-1", text: "Hi", factIds: [] }),
+      sendInboxReply(
+        rec.call,
+        createInboxReplyOperation({ threadId: "t-1", text: "Hi", factIds: [] }),
+      ),
     ).resolves.toBeUndefined();
     expect(rec.calls.at(-1)?.action).toBe("inbox.setStatus");
   });
 
   it("passes the verified fact ids of an AI suggestion into the draft", async () => {
     const rec = recorder({ "replies.draft": () => draft });
-    await sendInboxReply(rec.call, { threadId: "t-1", text: "Hi", factIds: ["fact-1"] });
+    await sendInboxReply(
+      rec.call,
+      createInboxReplyOperation({ threadId: "t-1", text: "Hi", factIds: ["fact-1"] }),
+    );
     expect(rec.calls[0].input).toEqual({ threadId: "t-1", text: "Hi", factIds: ["fact-1"] });
   });
 });

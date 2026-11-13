@@ -9,6 +9,11 @@ import type { HostEngine } from "../engine";
 import { buildDeterministicHandoff } from "../../src/features/sessions/model/handoff";
 import { sessionRunState } from "../sessions/sessionRuns";
 import type { TaskContext } from "./context";
+import {
+  assistantSessionWorkTarget,
+  enrollAssistantSteerUsage,
+  runAssistantSessionWork,
+} from "../work/assistant-session-work";
 export async function managedSessionCommand(
   context: TaskContext,
   input: {
@@ -142,20 +147,44 @@ export async function managedSessionCommand(
     input.signal.throwIfAborted();
   };
   try {
-    return await context.admitCommand(
-      {
-        check,
-        onAccepted: async (receipt) => {
-          if (!receipt.runId) return;
-          input.signal.throwIfAborted();
-          await input.recheck();
-          await context.unchangedTask(task.id, expected);
-          task = await context.write({ ...task, runId: receipt.runId, updatedAt: context.now() });
-          expected = await context.taskValue(task.id);
+    const dispatch = () =>
+      context.admitCommand!(
+        {
+          check,
+          onAccepted: async (receipt) => {
+            if (!receipt.runId) return;
+            input.signal.throwIfAborted();
+            await input.recheck();
+            await context.unchangedTask(task.id, expected);
+            task = await context.write({ ...task, runId: receipt.runId, updatedAt: context.now() });
+            expected = await context.taskValue(task.id);
+          },
         },
+        () => context.engine.command(command),
+      );
+    const current = await context.store.session(input.sessionId);
+    const typed = command as { type: string; commandId: string };
+    if (["steer", "answer"].includes(typed.type)) {
+      await enrollAssistantSteerUsage(context.store, current, input.jobId);
+      return await dispatch();
+    }
+    return await runAssistantSessionWork(context.store, context.engine as HostEngine, {
+      source: { kind: "assistant", id: `job:${input.jobId}`, occurrence: typed.commandId },
+      projectId: task.projectId,
+      target: assistantSessionWorkTarget(current, typed.commandId),
+      commandId: typed.commandId,
+      promptHash: createHash("sha256").update(JSON.stringify(command)).digest("hex"),
+      signal: input.signal,
+      budgetScope: { taskId: task.id, ...(task.goalId ? { goalId: task.goalId } : {}) },
+      admitted: async () => {
+        input.signal.throwIfAborted();
+        await input.recheck();
       },
-      () => context.engine.command(command),
-    );
+      run: () =>
+        input.author
+          ? (context.engine as HostEngine).withMessageAuthor(input.author, dispatch)
+          : dispatch(),
+    });
   } finally {
     context.continuingSessions.delete(task.id);
   }
@@ -244,26 +273,41 @@ export async function continueManagedSession(
     await admitted();
     const session = (await context.store.session(input.sessionId)).session;
     const requestId = `assistant-history-${createHash("sha256").update(input.requestId).digest("hex")}`;
-    return await context.continueHistory({
-      ...input,
-      requestId,
+    const continueHistory = () =>
+      context.continueHistory!({
+        ...input,
+        requestId,
+        admitted,
+        brief: [taskContract(task), buildDeterministicHandoff(session)].join("\n\n"),
+        onAccepted: async (receipt) => {
+          // This callback shares the engine's critical send transaction. A crash
+          // cannot commit a new run while the task still follows the old one.
+          await admitted();
+          if (!receipt.runId)
+            throw new Error("Worker continuation returned no original run receipt.");
+          task = await context.write({
+            ...task,
+            runId: receipt.runId,
+            updatedAt: context.now(),
+            needsInput: undefined,
+          });
+          expected = await context.taskValue(task.id);
+          original = JSON.stringify(task);
+        },
+      });
+    const current = await context.store.session(input.sessionId);
+    return await runAssistantSessionWork(context.store, context.engine as HostEngine, {
+      source: { kind: "assistant", id: `job:${input.jobId}`, occurrence: requestId },
+      projectId: task.projectId,
+      target: assistantSessionWorkTarget(current, requestId),
+      commandId: requestId,
+      promptHash: createHash("sha256")
+        .update(JSON.stringify({ text: input.text, source: input.source }))
+        .digest("hex"),
+      signal: input.signal,
+      budgetScope: { taskId: task.id, ...(task.goalId ? { goalId: task.goalId } : {}) },
       admitted,
-      brief: [taskContract(task), buildDeterministicHandoff(session)].join("\n\n"),
-      onAccepted: async (receipt) => {
-        // This callback shares the engine's critical send transaction. A crash
-        // cannot commit a new run while the task still follows the old one.
-        await admitted();
-        if (!receipt.runId)
-          throw new Error("Worker continuation returned no original run receipt.");
-        task = await context.write({
-          ...task,
-          runId: receipt.runId,
-          updatedAt: context.now(),
-          needsInput: undefined,
-        });
-        expected = await context.taskValue(task.id);
-        original = JSON.stringify(task);
-      },
+      run: continueHistory,
     });
   } finally {
     context.continuingSessions.delete(task.id);

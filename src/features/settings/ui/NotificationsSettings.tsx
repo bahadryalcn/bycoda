@@ -1,7 +1,7 @@
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { PermissionRow } from "../../permissions";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
+import { IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
@@ -21,13 +21,11 @@ import {
   cachedNotificationPermission,
   loadNotificationsEnabled,
   subscribeNotificationsEnabled,
-  openNotificationSettings,
   probeNotificationPermission,
   requestNotificationPermission,
   saveNotificationsEnabled,
   type NotificationPermission,
 } from "../../notifications/model/notifications";
-import { RefreshCw } from "../../../shared/ui/icons";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Button } from "../../../shared/ui/Button";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
@@ -90,11 +88,11 @@ export function NotificationAlerts() {
     subscribeDailySummary,
   );
   const [permissionPending, setPermissionPending] = useState<"probe" | "request" | null>(null);
-  const [permissionError, setPermissionError] = useState(false);
+  const [, setPermissionError] = useState(false);
   const [failedSaves, setFailedSaves] = useState<Record<string, () => void>>({});
   const permissionInFlight = useRef(false);
   const active = useRef(false);
-  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+  const [, setNotificationPermission] = useState<NotificationPermission>(
     cachedNotificationPermission,
   );
   const checkPermission = useCallback(async (request = false) => {
@@ -117,6 +115,7 @@ export function NotificationAlerts() {
       if (active.current) setPermissionPending(null);
     }
   }, []);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps notification permission facts in sync with window focus while this page is mounted
   useEffect(() => {
     active.current = true;
     const refresh = () => void checkPermission();
@@ -176,53 +175,6 @@ export function NotificationAlerts() {
       },
     );
   };
-  const permissionText = permissionError
-    ? t("Status unavailable")
-    : permissionPending === "request"
-      ? t("Waiting for approval…")
-      : permissionPending
-        ? t("Loading…")
-        : notificationPermission === "granted"
-          ? t("Allowed by system")
-          : notificationPermission === "unsupported"
-            ? t("Not available on this platform")
-            : notificationPermission === "prompt"
-              ? t("System permission not granted")
-              : t("Status unavailable");
-  const permissionStatus = (
-    <div className="notification-permission-message">
-      <InlineMessage
-        tone={
-          permissionError ? "danger" : notificationPermission === "denied" ? "warning" : "neutral"
-        }
-      >
-        {!permissionError && !permissionPending && notificationPermission === "denied" ? (
-          <NotificationsBlocked />
-        ) : (
-          permissionText
-        )}
-      </InlineMessage>
-      <Button
-        variant="ghost"
-        iconOnly
-        label={t("Refresh permission status")}
-        loading={permissionPending === "probe"}
-        disabled={permissionPending !== null}
-        onClick={() => void checkPermission()}
-      >
-        <RefreshCw aria-hidden className="icon-sm" />
-      </Button>
-      {notificationsEnabled && notificationPermission === "prompt" ? (
-        <Button
-          loading={permissionPending === "request"}
-          disabled={permissionPending !== null}
-          onClick={() => void checkPermission(true)}
-        >
-          {t("Request permission")}
-        </Button>
-      ) : null}
-    </div>
-  );
   return (
     <div className="notification-alert-settings settings-topics">
       <Group title={t("Application alerts")} persistence={{ mode: "automatic" }}>
@@ -236,7 +188,6 @@ export function NotificationAlerts() {
           description={t("Show alerts from other sessions or while {p0} is in the background.", {
             p0: PRODUCT_IDENTITY.displayName,
           })}
-          scope={permissionStatus}
           feedback={saveFeedback("notifications")}
         >
           <Toggle
@@ -246,13 +197,20 @@ export function NotificationAlerts() {
             disabled={permissionPending !== null}
           />
         </Row>
+        <PermissionRow id="notifications" />
         {NOTIFICATION_EVENT_SETTINGS.map((event) => (
           <Row
             key={event.id}
             id={`notification-event-${event.id}`}
             label={event.label}
             dependsOn={notificationsEnabled}
-            disabledReason={t("Enable Desktop notifications first")}
+            disabledReason={
+              notificationsEnabled && event.id === "taskbar" && !IS_WIN
+                ? t(
+                    "Taskbar badges and flashing are available only on Windows. Your choice is preserved.",
+                  )
+                : t("Enable Desktop notifications first")
+            }
             feedback={saveFeedback(event.id)}
             disabled={event.id === "taskbar" && !IS_WIN}
             info={
@@ -287,7 +245,7 @@ export function NotificationAlerts() {
           info={
             <InfoPopover>
               {t(
-                "One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
+                "One daily notification summarizes background tasks and epics across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
               )}
             </InfoPopover>
           }
@@ -311,7 +269,11 @@ export function NotificationAlerts() {
           label={t("Delivery time")}
           description={t("Uses this computer’s local clock.")}
           dependsOn={notificationsEnabled && summaryEnabled}
-          disabledReason={t("Enable Daily summary first")}
+          disabledReason={
+            notificationsEnabled
+              ? t("Enable Daily summary first")
+              : t("Enable Desktop notifications first")
+          }
           feedback={saveFeedback("summary-time")}
         >
           <DailySummaryTime
@@ -327,45 +289,6 @@ export function NotificationAlerts() {
           />
         </Row>
       </Group>
-    </div>
-  );
-}
-function NotificationsBlocked() {
-  useLocale();
-  const [opening, setOpening] = useState(false);
-  const [error, setError] = useState(false);
-  const inFlight = useRef(false);
-  const openSettings = async () => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setOpening(true);
-    setError(false);
-    try {
-      await openNotificationSettings();
-    } catch {
-      setError(true);
-    } finally {
-      inFlight.current = false;
-      setOpening(false);
-    }
-  };
-  return (
-    <div className="notification-permission-message">
-      {t("Notifications are blocked by system permission.")}
-      {IS_MAC || IS_WIN ? (
-        <Button className="shrink-0" onClick={() => void openSettings()} loading={opening}>
-          {t("Open System Settings")}
-        </Button>
-      ) : (
-        <span>{t("Allow notifications in your system settings to receive desktop alerts.")}</span>
-      )}
-      {error ? (
-        <SettingsFeedback state="error">
-          {t(
-            "Could not open system settings. Open notification permissions from your system settings.",
-          )}
-        </SettingsFeedback>
-      ) : null}
     </div>
   );
 }

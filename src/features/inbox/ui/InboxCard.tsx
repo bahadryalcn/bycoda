@@ -135,9 +135,20 @@ export const InboxCard = memo(function InboxCard({
           tooltipWhen="overflow"
           aria-current={active ? "true" : undefined}
           selected={active}
-          aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(
-            item,
-          )}: ${item.title}, ${source}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
+          aria-label={[
+            `${t(status.label)} ${t(kindLabel).toLocaleLowerCase()} ${inboxItemRef(item)}: ${item.title}`,
+            source,
+            attentionLabel ? t(attentionLabel) : "",
+            unseen ? t("Unread") : "",
+            item.labels.map((label) => label.name).join(", "),
+            relatedSessionCount > 0
+              ? t(relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads", {
+                  p0: relatedSessionCount,
+                })
+              : "",
+          ]
+            .filter(Boolean)
+            .join(", ")}
           onClick={() => onSelect(item)}
           onMouseEnter={() => prefetchInboxItem(item)}
           onFocus={() => prefetchInboxItem(item)}

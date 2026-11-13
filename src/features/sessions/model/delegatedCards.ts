@@ -18,16 +18,21 @@ import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks
 /** Slack for a user message stamped marginally after the Host recorded its ask. */
 const ASK_SKEW_MS = 2_000;
 
-type DelegateCall = { kind: "delegate" | "wait"; sessionIds: string[] };
+type DelegateCall = { kind: "delegate" | "wait" | "reply"; sessionIds: string[] };
 
-/** `agents.delegate` / `agents.wait` however the provider names the Host tool. */
-const DELEGATE_TOOL = /(?:^|[:_.])agents[_.](delegate|wait)$/i;
+/** `agents.delegate` / `wait` / `reply` however the provider names the Host tool. */
+const DELEGATE_TOOL = /(?:^|[:_.])agents[_.](delegate|wait|reply)$/i;
 
-/** The child sessions a Host delegate or wait call names; undefined for any other block. */
+/** The child sessions a Host delegate, wait or reply call names; undefined for any other block. */
 function delegateCall(block: Block): DelegateCall | undefined {
   if (block.role !== "tool") return undefined;
-  const kind = DELEGATE_TOOL.exec((block.tool?.title || block.text).trim())?.[1]?.toLowerCase();
-  if (kind !== "delegate" && kind !== "wait") return undefined;
+  // A path-shaped argument (a model ref like `grok:grok-4.6`) can turn the title into
+  // "Read …"; the preview keeps the tool's own name.
+  const name = [block.tool?.title, block.tool?.preview?.title, block.text].find(
+    (value) => value && DELEGATE_TOOL.test(value.trim()),
+  );
+  const kind = name ? DELEGATE_TOOL.exec(name.trim())?.[1]?.toLowerCase() : undefined;
+  if (kind !== "delegate" && kind !== "wait" && kind !== "reply") return undefined;
   const sessionIds: string[] = [];
   try {
     const detail: unknown = JSON.parse(block.tool?.detail ?? "");
@@ -108,7 +113,8 @@ function askingTurn(blocks: readonly Block[], child: Session): number {
 
 /**
  * `blocks` with one card per child, oldest ask first. A card replaces the `agents.delegate`
- * call that names its child, and `agents.wait` calls whose runs all have cards are dropped.
+ * call that names its child, and `agents.wait`/`agents.reply` calls whose runs all have cards
+ * are dropped: the card and its sheet show those messages and results.
  * Other children get their card after the user message that asked for them; a child whose
  * turn cannot be found is left out, and the dock still lists it.
  */

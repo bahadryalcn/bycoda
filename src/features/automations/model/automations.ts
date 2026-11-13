@@ -61,6 +61,8 @@ export type AutomationRunStatus =
 const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 export type Automation = {
+  hostTrigger?: import("./hostAutomations").HostAutomationInput["trigger"];
+  hostTemplate?: import("./hostAutomations").HostAutomationInput["template"];
   /** Absent on legacy agent automations. SSH runbooks require native review. */
   executor?: "agent" | "ssh";
   sshRunbook?: {
@@ -135,6 +137,7 @@ export type AutomationUpsert = Omit<
 export type AutomationRunTrigger = "scheduled" | "manual" | "event";
 
 export type AutomationRun = {
+  taskId?: string;
   execution?: ModelRoutingTarget;
   maxRunMinutes?: number;
   workspaceId?: string;
@@ -190,6 +193,9 @@ export function formatAutomationRunDuration(
 }
 
 export type AutomationDraft = {
+  hostTrigger?: import("./hostAutomations").HostAutomationInput["trigger"];
+  hostTemplate?: import("./hostAutomations").HostAutomationInput["template"];
+  hostMachineId?: string;
   id?: string;
   name: string;
   prompt: string;
@@ -353,8 +359,11 @@ export function nextRunPreview(at: number): string {
 }
 
 export function automationScheduleLabel(
-  automation: Pick<Automation, "scheduleKind" | "minute" | "time" | "dayOfWeek">,
+  automation: Pick<Automation, "scheduleKind" | "minute" | "time" | "dayOfWeek" | "hostTrigger">,
 ): string {
+  if (automation.hostTrigger?.kind === "continuous")
+    return `Continuous · ${automation.hostTrigger.minimumGapMinutes} min`;
+  if (automation.hostTrigger?.kind === "event") return automation.hostTrigger.event;
   const time = formatClock(automation.time);
   if (automation.scheduleKind === "hourly") {
     return `Hourly at :${String(automation.minute).padStart(2, "0")}`;
@@ -432,6 +441,9 @@ export function draftFromTemplate(
 export function draftFromAutomation(automation: Automation): AutomationDraft {
   return {
     id: automation.id,
+    hostTrigger: automation.hostTrigger,
+    hostTemplate: automation.hostTemplate,
+    hostMachineId: automation.host?.machineId,
     name: automation.name,
     prompt: automation.prompt,
     harness: automation.harness,

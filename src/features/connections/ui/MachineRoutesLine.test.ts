@@ -19,6 +19,7 @@ const machine = {
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   invoke.mockReset();
   container = document.createElement("div");
   document.body.append(container);
@@ -27,6 +28,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.unstubAllGlobals();
 });
 
 const render = async () => {
@@ -53,6 +55,58 @@ const answer = (routes: unknown) => (command: string) =>
   Promise.resolve(command === "remote_machine_route_check" ? CHECKS : routes);
 const row = (address: string) =>
   container.querySelector(`[data-route="${address}"]`)?.textContent ?? "";
+
+it("explains failed route reads and retries without claiming an empty route store", async () => {
+  invoke.mockRejectedValue(new Error("Host unavailable"));
+  await render();
+  expect(container.textContent).toContain("Addresses could not be loaded.");
+  invoke.mockImplementation(answer(ROUTES));
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((item) => item.textContent === "Retry")!.click(),
+  );
+  expect(row("100.97.82.0")).toContain("Tailscale");
+});
+
+it("reports unavailable probes without claiming no response", async () => {
+  invoke.mockImplementation((command: string) =>
+    command === "remote_machine_route_check"
+      ? Promise.reject(new Error("Probe failed"))
+      : Promise.resolve(ROUTES),
+  );
+  await render();
+  expect(container.textContent).toContain("Address check unavailable.");
+  expect(container.textContent).not.toContain("No response");
+});
+
+it("retains last-good routes on failed refresh and disables preference while saving", async () => {
+  let finish!: (value: unknown) => void;
+  invoke.mockImplementation(answer(ROUTES));
+  await render();
+  invoke.mockRejectedValue(new Error("Host unavailable"));
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((item) => item.textContent === "Check again")!
+      .click(),
+  );
+  expect(row("100.97.82.0")).toContain("Tailscale");
+  expect(container.textContent).toContain("Addresses could not be loaded.");
+  invoke.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[data-route="10.0.0.4"] [role="switch"]')!.click(),
+  );
+  expect(container.querySelector<HTMLButtonElement>('[aria-label^="Try first"]')!.disabled).toBe(
+    true,
+  );
+  await act(async () => finish(ROUTES));
+  expect(container.querySelector<HTMLButtonElement>('[aria-label^="Try first"]')!.disabled).toBe(
+    false,
+  );
+});
 
 it("lists every address with its kind, source, whether it responds and the one in use", async () => {
   invoke.mockImplementation(answer(ROUTES));

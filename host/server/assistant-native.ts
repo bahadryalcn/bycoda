@@ -10,6 +10,12 @@ import { AssistantNativeVoiceLeases } from "../assistant/native/assistant-native
 import { AssistantVisibilityAdmission } from "../assistant/native/assistant-visibility-admission";
 import { AssistantVisibilityFence } from "../assistant/native/assistant-visibility-fence";
 import { AssistantWorkspaceOwner } from "../assistant/native/assistant-workspace-owner";
+import {
+  AssistantBackgroundEffect,
+  BackgroundEffectStateError,
+  type BackgroundEffectActor,
+  type BackgroundEffectSource,
+} from "../assistant/native/assistant-background-effect";
 import { verifyWorkspaceReceipt } from "../assistant/native/assistant-workspace-receipt";
 import { transferAssistantWorkspaceOperation } from "../assistant/native/assistant-workspace-transfer";
 import { AssistantObservationHostPages } from "../assistant/observations/assistant-observation-host-pages";
@@ -226,6 +232,71 @@ export function createAssistantNativeRuntime(
       .digest("hex");
   const observationProjectPages = new AssistantObservationProjectPages(dependencies.engine.store);
   const assistantWorkspaceOwner = new AssistantWorkspaceOwner(dependencies.engine.store);
+  const assistantBackgroundEffect = new AssistantBackgroundEffect(dependencies.engine.store);
+  const executeBackgroundEffect = async (input: {
+    operationId: string;
+    projectId?: string;
+    operation: { action: BackgroundEffectSource["action"]; input: Record<string, unknown> };
+    execute: (actor: BackgroundEffectActor) => Promise<unknown>;
+  }) => {
+    const room = await dependencies.assistant.globalRoomBinding();
+    if (!room) throw new Error("Global Assistant Room unavailable.");
+    const environmentId = dependencies.engine.store.environmentId;
+    const current = async () => (await dependencies.assistant.globalRoomBinding())?.id === room.id;
+    const source: BackgroundEffectSource = {
+      environmentId,
+      threadId: room.id,
+      operationId: input.operationId,
+      ...(input.projectId ? { projectId: input.projectId } : {}),
+      action: input.operation.action,
+      input: JSON.parse(JSON.stringify(input.operation.input)) as Record<string, unknown>,
+    };
+    const prepared = await assistantBackgroundEffect.prepare(
+      source,
+      input.execute,
+      Date.now() + 45_000,
+    );
+    if (prepared.state === "completed") return prepared.result;
+    const { state: _state, ...payload } = prepared;
+    const reply = (await dependencies.conversationDesktop.callAssistantThread(
+      "assistant.background.effect",
+      payload,
+      { threadId: room.id, environmentId },
+      current,
+    )) as { state?: unknown; result?: unknown };
+    if (reply?.state === "denied") {
+      await assistantBackgroundEffect.deny({
+        environmentId,
+        threadId: room.id,
+        operationId: input.operationId,
+        operationHash: prepared.operationHash,
+        challenge: prepared.challenge,
+      });
+      throw new BackgroundEffectStateError("denied", prepared.expiresAt);
+    }
+    if (reply?.state !== "completed")
+      throw new Error("Background effect result is unavailable; inspect its receipt.");
+    const receipt = await assistantBackgroundEffect.status(source);
+    if (receipt.state !== "completed")
+      throw new Error("Background effect completion is not recorded.");
+    return receipt.result;
+  };
+  const backgroundEffectStatus = async (input: {
+    operationId: string;
+    projectId?: string;
+    operation: { action: BackgroundEffectSource["action"]; input: Record<string, unknown> };
+  }) => {
+    const room = await dependencies.assistant.canonicalGlobalRoomBinding();
+    if (!room) throw new Error("Global Assistant Room unavailable.");
+    return assistantBackgroundEffect.status({
+      environmentId: dependencies.engine.store.environmentId,
+      threadId: room.id,
+      operationId: input.operationId,
+      ...(input.projectId ? { projectId: input.projectId } : {}),
+      action: input.operation.action,
+      input: input.operation.input,
+    });
+  };
   dependencies.assistantPorts.roomObservationDelivered = async (
     threadId,
     observations,
@@ -719,6 +790,9 @@ export function createAssistantNativeRuntime(
     nativeObservationGeneration,
     observationProjectPages,
     assistantWorkspaceOwner,
+    assistantBackgroundEffect,
+    executeBackgroundEffect,
+    backgroundEffectStatus,
     get observationCoverage() {
       return observationCoverage;
     },

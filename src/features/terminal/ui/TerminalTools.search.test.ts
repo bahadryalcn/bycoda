@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, type KeyboardEventHandler } from "react";
 import { createRoot } from "react-dom/client";
 import type { Terminal } from "@xterm/xterm";
 import { expect, it, vi } from "vitest";
@@ -17,9 +17,66 @@ vi.mock("@xterm/addon-search", () => ({
   },
 }));
 vi.mock("../../../shared/ui/SearchInput", () => ({
-  SearchInput: ({ onChange, value }: { onChange: (event: unknown) => void; value: string }) =>
-    createElement("input", { value, onInput: onChange, readOnly: true }),
+  SearchInput: ({
+    onChange,
+    value,
+    onKeyDown,
+  }: {
+    onChange: (event: unknown) => void;
+    value: string;
+    onKeyDown?: KeyboardEventHandler<HTMLInputElement>;
+  }) => createElement("input", { value, onInput: onChange, onKeyDown, readOnly: true }),
 }));
+
+it("does not navigate or dismiss Find on WebKit composition confirmation", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const changeMode = vi.fn();
+  const disposable = { dispose() {} };
+  const terminal = {
+    buffer: { active: { type: "normal" }, onBufferChange: () => disposable },
+    onWriteParsed: () => disposable,
+    onResize: () => disposable,
+    loadAddon() {},
+    clearSelection() {},
+    focus: vi.fn(),
+  } as unknown as Terminal;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalTools, {
+          terminal,
+          mode: "search",
+          ready: true,
+          onModeChange: changeMode,
+        }),
+      ),
+    );
+    const input = host.querySelector("input")!;
+    await act(async () => {
+      input.value = "needle";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    search.next.mockClear();
+    for (const key of ["Enter", "Escape"]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        keyCode: 229,
+        bubbles: true,
+        cancelable: true,
+      });
+      await act(async () => input.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(search.next).not.toHaveBeenCalled();
+    expect(changeMode).not.toHaveBeenCalled();
+    expect(terminal.focus).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
 
 it("coalesces output bursts, refreshes resizing immediately and cancels closed searches", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

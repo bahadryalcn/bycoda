@@ -33,7 +33,7 @@ export function SourceControlSettings() {
           description={t("Model set in Settings > Models > Assignments.")}
         >
           <Button variant="link" onClick={() => openModelsSettings("roles")}>
-            {t("Manage in Models")}
+            {t("Manage models")}
           </Button>
         </Row>
 

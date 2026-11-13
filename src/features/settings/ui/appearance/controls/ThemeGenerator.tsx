@@ -37,7 +37,7 @@ import {
   themeSuggestionFailureDetail,
   type BackgroundImageProvider,
 } from "./themeSuggestionRequest";
-import { generatorSession, useGeneratorState } from "./themeGeneratorSession";
+import { generatorSession, readGeneratorValue, useGeneratorState } from "./themeGeneratorSession";
 import "./ThemeControls.css";
 
 const ModelPicker = lazy(() =>
@@ -50,7 +50,7 @@ const ModelPicker = lazy(() =>
 export type ChipImage =
   | { status: "loading" }
   | { status: "done"; image: BackgroundLibraryImage }
-  | { status: "error" };
+  | { status: "error"; detail: string };
 
 /**
  * What choosing a chip does with its image: a drawing in flight is applied when it lands ("wait"),
@@ -91,8 +91,7 @@ const promptIdeas = () => [
 
 /**
  * One compact toolbar: describe a theme (or roll a prompt), or roll colors at random; choosing a
- * suggestion chip applies it at once. With the image toggle on, the chosen chip also gets a
- * matching background drawn by Codex or Gemini.
+ * suggestion chip applies it at once. Image generation is a separate explicit action.
  */
 export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
@@ -145,7 +144,6 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
       setSuggestions(next);
     } catch (error) {
       if (version === session.epoch()) {
-        setSuggestions([]);
         setFailure(themeSuggestionFailureDetail(error));
       }
     } finally {
@@ -164,21 +162,31 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
 
   /** Puts a drawn library image in place and tunes it so text stays readable. */
   const applyImage = async (image: BackgroundLibraryImage, suggestion: ThemeSuggestion) => {
+    session.invalidateImageIntent();
+    const intent = session.imageIntent();
     const live = session.appearance() as AppearanceSettings;
-    const stored = await live.onChooseChatBackground(image.path, { libraryId: image.id });
+    const stored = await live.onChooseChatBackground(image.path, {
+      libraryId: image.id,
+      isCurrent: () => intent === session.imageIntent(),
+    });
+    if (intent !== session.imageIntent()) return;
     if (!stored) throw new Error(t("Could not use the generated image."));
-    applyDrawnImageTuning(live, suggestion);
+    if (intent === session.imageIntent()) applyDrawnImageTuning(live, suggestion);
   };
 
   /**
    * Each chip draws its own image once. Every finished image stays on its chip and in the library,
-   * so switching chips later is instant; only the chip chosen last is applied.
+   * so owners can explicitly use a finished image later.
    */
   const drawImage = async (suggestion: ThemeSuggestion, index: number) => {
     const owner = session.batch();
     const mark = (image: ChipImage) => {
       if (owner === session.batch()) setChipImages((current) => ({ ...current, [index]: image }));
     };
+    if (
+      readGeneratorValue<Record<number, ChipImage>>("chipImages", {})[index]?.status === "loading"
+    )
+      return;
     mark({ status: "loading" });
     try {
       const imagePrompt =
@@ -193,10 +201,9 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
       });
       if (owner !== session.batch()) return;
       mark({ status: "done", image });
-      if (session.selected() === index) await applyImage(image, suggestion);
     } catch (error) {
       if (owner !== session.batch()) return;
-      mark({ status: "error" });
+      mark({ status: "error", detail: themeSuggestionFailureDetail(error) });
       if (session.selected() === index) {
         setRetryTarget({ suggestion, index });
         setImageFailure(themeSuggestionFailureDetail(error));
@@ -213,22 +220,15 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
     );
   };
 
-  /** `fresh` skips the chip state, which still holds the previous list right after a reset. */
-  const choose = (suggestion: ThemeSuggestion, index: number, fresh = false) => {
+  /** Apply a theme without starting an image request. */
+  const choose = (suggestion: ThemeSuggestion, index: number) => {
+    session.invalidateImageIntent();
     applyThemeSuggestion(appearance, suggestion);
     setLookName(suggestion.name);
     session.select(index);
     setSelectedIndex(index);
     setImageFailure(null);
     setRetryTarget(undefined);
-    if (!withImage) return;
-    const current = fresh ? undefined : chipImages[index];
-    const action = chipImageAction(current);
-    if (action === "apply" && current?.status === "done")
-      applyImage(current.image, suggestion).catch((error: unknown) =>
-        setImageFailure(themeSuggestionFailureDetail(error)),
-      );
-    else if (action === "draw") startImage(suggestion, index);
   };
 
   const random = () => {
@@ -237,7 +237,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
     setSuggestions(next);
     setFailure(null);
     const first = next[0];
-    if (first) choose(first, 0, true);
+    if (first) choose(first, 0);
   };
 
   // generate() reports its own failures; the handler only keeps an unexpected one from going unhandled.
@@ -279,7 +279,9 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
             : t("Background image generation failed."),
           failure ?? imageFailure,
           signedOut
-            ? t("Pick a signed-in account in the model picker, or sign in to the provider again.")
+            ? failure !== null
+              ? t("Pick a signed-in account in the model picker, or sign in to the provider again.")
+              : t("Check the selected image provider and sign in again.")
             : "",
         ]
           .filter(Boolean)
@@ -317,6 +319,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
           <ImageProviderButton
             value={withImage ? imageProvider : "none"}
             onChange={(value) => {
+              if (value === "none") session.invalidateImageIntent();
               setWithImage(value !== "none");
               if (value !== "none") setImageProvider(value);
             }}
@@ -372,7 +375,7 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
             }
             onClick={startGenerate}
           >
-            {t("Generate")}
+            {t("Generate themes")}
           </Button>
         </div>
       </div>
@@ -382,46 +385,84 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
             const [canvas, surface, line, accent] = suggestionSwatches(suggestion);
             const image = chipImages[index];
             const areas = suggestionAreas(suggestion).map(areaLabel);
-            if (withImage) areas.push(t("Background image"));
+
             return (
-              <Button
-                key={`${suggestion.name}-${index}`}
-                size="sm"
-                variant="item"
-                className="theme-suggestion"
-                pressed={selectedIndex === index}
-                tooltip={t("Changes: {p1}", { p1: areas.join(", ") })}
-                onClick={() => choose(suggestion, index)}
-              >
-                <span className="theme-swatch-strip" aria-hidden="true">
-                  <span
-                    {...surfaceAttributes({ variant: "user-color" })}
-                    style={{ "--surface-user-color": canvas } as React.CSSProperties}
-                  />
-                  <span
-                    {...surfaceAttributes({ variant: "user-color" })}
-                    style={{ "--surface-user-color": surface } as React.CSSProperties}
-                  />
-                  <span
-                    {...surfaceAttributes({ variant: "user-color" })}
-                    style={{ "--surface-user-color": line } as React.CSSProperties}
-                  />
-                  <span
-                    {...surfaceAttributes({ variant: "user-color" })}
-                    style={{ "--surface-user-color": accent } as React.CSSProperties}
-                  />
-                </span>
-                {image && image.status !== "error" ? (
-                  <span className="theme-suggestion-thumb" aria-hidden="true">
-                    {image.status === "loading" ? (
-                      <Spinner size="xs" />
-                    ) : (
-                      <img src={libraryImageSrc(image.image)} alt="" draggable={false} />
-                    )}
+              <div key={`${suggestion.name}-${index}`}>
+                <Button
+                  size="sm"
+                  variant="item"
+                  className="theme-suggestion"
+                  pressed={selectedIndex === index}
+                  tooltip={t("Changes: {p1}", { p1: areas.join(", ") })}
+                  onClick={() => choose(suggestion, index)}
+                >
+                  <span className="theme-swatch-strip" aria-hidden="true">
+                    <span
+                      {...surfaceAttributes({ variant: "user-color" })}
+                      style={{ "--surface-user-color": canvas } as React.CSSProperties}
+                    />
+                    <span
+                      {...surfaceAttributes({ variant: "user-color" })}
+                      style={{ "--surface-user-color": surface } as React.CSSProperties}
+                    />
+                    <span
+                      {...surfaceAttributes({ variant: "user-color" })}
+                      style={{ "--surface-user-color": line } as React.CSSProperties}
+                    />
+                    <span
+                      {...surfaceAttributes({ variant: "user-color" })}
+                      style={{ "--surface-user-color": accent } as React.CSSProperties}
+                    />
+                  </span>
+                  {image && image.status !== "error" ? (
+                    <span className="theme-suggestion-thumb" aria-hidden="true">
+                      {image.status === "loading" ? (
+                        <Spinner size="xs" />
+                      ) : (
+                        <img src={libraryImageSrc(image.image)} alt="" draggable={false} />
+                      )}
+                    </span>
+                  ) : null}
+                  <span>{t("Apply {p1}", { p1: suggestion.name })}</span>
+                </Button>
+                {withImage && image?.status === "error" ? (
+                  <span>
+                    {t("Image generation failed.")} {image.detail}
                   </span>
                 ) : null}
-                <span>{suggestion.name}</span>
-              </Button>
+                {withImage ? (
+                  <Button
+                    size="sm"
+                    aria-label={t("Image for {p1}: {p2}", {
+                      p1: suggestion.name,
+                      p2:
+                        image?.status === "loading"
+                          ? t("Generating image…")
+                          : image?.status === "done"
+                            ? t("Use image")
+                            : image?.status === "error"
+                              ? t("Retry image")
+                              : t("Generate image"),
+                    })}
+                    disabled={image?.status === "loading"}
+                    onClick={() => {
+                      if (image?.status === "done") {
+                        applyImage(image.image, suggestion).catch((error: unknown) =>
+                          setImageFailure(themeSuggestionFailureDetail(error)),
+                        );
+                      } else startImage(suggestion, index);
+                    }}
+                  >
+                    {image?.status === "loading"
+                      ? t("Generating image…")
+                      : image?.status === "done"
+                        ? t("Use image")
+                        : image?.status === "error"
+                          ? t("Retry image")
+                          : t("Generate image")}
+                  </Button>
+                ) : null}
+              </div>
             );
           })}
         </div>

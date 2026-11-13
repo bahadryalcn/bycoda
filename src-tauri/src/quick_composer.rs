@@ -679,32 +679,16 @@ pub(crate) const SCREEN_RECORDING_DENIED: &str = "screen-recording-permission-re
 
 #[cfg(target_os = "macos")]
 mod screen_access {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    #[link(name = "CoreGraphics", kind = "framework")]
-    unsafe extern "C" {
-        fn CGPreflightScreenCaptureAccess() -> bool;
-        fn CGRequestScreenCaptureAccess() -> bool;
-    }
-
-    static REQUESTED: AtomicBool = AtomicBool::new(false);
+    use crate::system_permissions::{macos, PermissionId, PermissionState};
 
     /// `screencapture` runs with bycoda as the responsible process, so without
     /// Screen Recording access it yields wallpaper-only images or nothing.
-    /// The system prompt is requested once per launch; later calls only
-    /// report so the user is sent to System Settings instead of re-prompted.
+    /// The system prompt is shown once per launch (shared with Settings >
+    /// Permissions); later calls only report so the owner is sent to the
+    /// permission setup instead of being re-prompted.
     pub(super) fn granted() -> bool {
-        // SAFETY: both CoreGraphics functions take no arguments and only
-        // read or request the TCC grant for this process.
-        unsafe {
-            if CGPreflightScreenCaptureAccess() {
-                return true;
-            }
-            if !REQUESTED.swap(true, Ordering::SeqCst) {
-                let _ = CGRequestScreenCaptureAccess();
-            }
-            false
-        }
+        macos::screen_granted()
+            || macos::request(PermissionId::ScreenRecording).0 == PermissionState::Granted
     }
 }
 

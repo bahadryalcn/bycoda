@@ -10,14 +10,24 @@ import { useGroupLock } from "../hooks/useGroupLock";
 import { getGroupLockView, verifyLockPassword } from "../model/groupLock";
 import { ForgotLockPasswordDialog } from "./ForgotLockPasswordDialog";
 import { PasswordPromptDialog } from "./PasswordPromptDialog";
+import { PrivacyStorageError } from "./PrivacyStorageError";
 
 /** Each window decides at launch. Its workspace never mounts behind the screen. */
 export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
   useLocale();
-  const [concealed, setConcealed] = useState(() => getGroupLockView().settings.startInPrivacyMode);
+  const [concealed, setConcealed] = useState(() => {
+    const initial = getGroupLockView();
+    return initial.storageAvailable === false || initial.settings.startInPrivacyMode;
+  });
   const lock = useGroupLock();
+  const [lastStorageAvailable, setLastStorageAvailable] = useState(lock.storageAvailable);
   const [dialog, setDialog] = useState<"password" | "recovery" | null>(null);
-  if (!concealed) return children;
+  // A later fault also latches concealment. A successful read is never a Continue action.
+  if (lastStorageAvailable !== lock.storageAvailable) {
+    setLastStorageAvailable(lock.storageAvailable);
+    if (lock.storageAvailable === false) setConcealed(true);
+  }
+  if (!concealed && lock.storageAvailable !== false) return children;
 
   return (
     <Text
@@ -44,13 +54,17 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
               {t("Your workspace is hidden. Continue when you are ready.")}
             </Text>
           </div>
-          <Button
-            className="shrink-0"
-            onClick={() => (lock.hasPassword ? setDialog("password") : setConcealed(false))}
-          >
-            {t("Show workspace")}
-          </Button>
-          {lock.hasPassword ? (
+          {lock.storageAvailable === false ? (
+            <PrivacyStorageError />
+          ) : (
+            <Button
+              className="shrink-0"
+              onClick={() => (lock.hasPassword ? setDialog("password") : setConcealed(false))}
+            >
+              {t("Show workspace")}
+            </Button>
+          )}
+          {lock.storageAvailable !== false && lock.hasPassword ? (
             <Button type="button" variant="ghost" onClick={() => setDialog("recovery")}>
               {t("Forgot the password?")}
             </Button>

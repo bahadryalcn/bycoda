@@ -3,6 +3,83 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { RoutingTable } from "./RoutingTable";
+import { SourceOrderPicker } from "./SourceOrderPicker";
+import { setInputValue } from "./decisionTestDom";
+
+it("distinguishes a source search miss and clears only the search", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const change = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(SourceOrderPicker, {
+          label: "Fallback",
+          value: ["source"],
+          sources: [
+            { id: "source", name: "Alpha", kind: "local", adapter: "systemone", status: "ready" },
+          ],
+          disabled: false,
+          onChange: change,
+        }),
+      ),
+    );
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    setInputValue(document.querySelector<HTMLInputElement>('[role="dialog"] input')!, "Unmatched");
+    expect(document.body.textContent).toContain("No results");
+    expect(document.body.textContent).not.toContain("No sources connected");
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent === "Clear search")!
+        .click(),
+    );
+    expect(document.body.textContent).toContain("Alpha");
+    expect(change).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it.each(["0.8", "unfinished"])(
+  "keeps the owner's threshold draft across incoming Host routing: %s",
+  async (value) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const save = vi.fn();
+    const render = (threshold: number) =>
+      root.render(
+        createElement(RoutingTable, {
+          routing: { generic: { sourceIds: ["source"], threshold } },
+          sources: [],
+          busy: false,
+          onSave: save,
+        }),
+      );
+    try {
+      await act(async () => render(0.9));
+      await act(async () =>
+        [...container.querySelectorAll<HTMLButtonElement>("button")]
+          .find((button) => button.textContent === "Customize")!
+          .click(),
+      );
+      const field = container.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!;
+      setInputValue(field, value);
+      await act(async () => render(0.7));
+      expect(field.value).toBe(value);
+      const button = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+        (entry) => entry.textContent === "Save routing",
+      )!;
+      expect(button.disabled).toBe(value === "unfinished");
+      expect(save).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
+  },
+);
 
 it("keeps ordered source names and their count inside the selector", async () => {
   const container = document.createElement("div");

@@ -123,7 +123,7 @@ export function JobOwnerEditDialog({
         setError(
           t(
             mode === "replan"
-              ? "Replan was not confirmed. Review the goal before starting another replan."
+              ? "Replan was not confirmed. Review the epic before starting another replan."
               : "Priority change was not confirmed. Review the job before changing it again.",
           ),
         );

@@ -150,9 +150,9 @@ export function WorkspacePicker({
 export function WorkspaceIdentity({ worktree }: { worktree: boolean }) {
   useLocale();
   const Icon = worktree ? FolderTree : Folder;
-  const label = worktree ? "Worktree" : "Current checkout";
+  const label = worktree ? t("Worktree") : t("Current checkout");
   return (
-    <Tooltip label={t(label)} when="overflow">
+    <Tooltip label={label} when="overflow">
       <Text
         as="div"
         size="caption"
@@ -162,7 +162,7 @@ export function WorkspaceIdentity({ worktree }: { worktree: boolean }) {
       >
         <Icon className="icon-sm shrink-0" />
         <Text size="inherit" tone="inherit" truncate>
-          {t(label)}
+          {label}
         </Text>
       </Text>
     </Tooltip>
@@ -286,7 +286,7 @@ function WorkspaceModePicker({
       setPickError(undefined);
     }, HOVER_CLOSE_MS);
   };
-  const label = mode === "worktree" ? "New worktree" : "Current checkout";
+  const label = mode === "worktree" ? t("New worktree") : t("Current checkout");
   const shortcut = useKeybindingShortcut("Composer: Toggle Workspace");
   const shortcutTokens = keybindingShortcutTokens(
     "Composer: Toggle Workspace",

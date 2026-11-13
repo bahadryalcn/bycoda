@@ -196,6 +196,7 @@ type Live = {
   /** Immutable original wire cleanup source, never the latest warm run. */
   birthControlClient?: OpenCodeClient;
   openCodeSessionId: string;
+  autoCompact?: string;
   cwd: string;
   runtimeMode: RuntimeMode;
   planning: boolean;
@@ -771,7 +772,11 @@ async function ensureLive(
     throw new Error("An original OpenCode Host cleanup control view is required");
 
   const existing = liveByThread.get(input.sessionId);
-  if (existing && existing.cwd === input.cwd) {
+  if (
+    existing &&
+    existing.cwd === input.cwd &&
+    existing.autoCompact === input.modelSettings?.autoCompact
+  ) {
     if (existing.handle) observeProviderProcess(input, existing.handle);
     return existing;
   }
@@ -792,6 +797,12 @@ async function ensureLive(
     const { path } = await resolveOpenCodeBinaryImpl();
     checkStartup();
     const generation = await assertOpenCodeVersion(path, input.cwd);
+    const autoCompact = input.modelSettings?.autoCompact;
+    if (generation === "v2" && (autoCompact === "on" || autoCompact === "off")) {
+      throw new Error(
+        "This OpenCode service does not support session auto-compaction settings. Use Default.",
+      );
+    }
     checkStartup();
 
     if (generation === "v1") {
@@ -809,7 +820,7 @@ async function ensureLive(
       checkStartup();
     }
     if (existing) {
-      resumeByThread.delete(input.sessionId);
+      if (existing.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
       await settleProviderRetirements([
         stopOpenCodeSession(input.sessionId, existing),
         originalCohort.retire(),
@@ -877,6 +888,11 @@ async function ensureLive(
         input.cwd,
         undefined,
         "opencode",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        autoCompact === "on" || autoCompact === "off" ? autoCompact : undefined,
       );
     }
 
@@ -937,6 +953,7 @@ async function ensureLive(
       hostScoped: hostRun !== undefined,
       birthControlClient,
       openCodeSessionId: openCodeSession.id,
+      autoCompact,
       cwd: input.cwd,
       runtimeMode: input.runtimeMode,
       planning: input.intent === "plan",

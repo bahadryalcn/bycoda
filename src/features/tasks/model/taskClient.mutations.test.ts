@@ -262,6 +262,7 @@ it("checks preparation read-only and records owner evaluation against the curren
   );
   const task: BoardTask = {
     ...draft,
+    maxRunMinutes: draft.maxRunMinutes ?? 0,
     id: "checked",
     projectId: "p",
     status: "done",
@@ -316,7 +317,7 @@ it("replaces cleared host fields immediately when a blocked task is restarted", 
     needsInput: true,
     reviewer: { sessionId: "old-review", runId: "old-run", startedAt: 1 },
     verification: {
-      review: { verdict: "fail", note: "Earlier failure", sessionId: "old-review", at: 2 },
+      review: { verdict: "fail", note: "Earlier failure", sessionId: "old-review" },
     },
     reviewRecheckSupported: true,
   };

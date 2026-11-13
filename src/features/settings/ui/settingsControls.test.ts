@@ -137,6 +137,54 @@ describe("retained advanced settings", () => {
 });
 
 describe("settings keyboard controls", () => {
+  it.each(["disabled", "dependency"])(
+    "blocks reset while a row is inactive (%s) and preserves its value",
+    async (mode) => {
+      const onReset = vi.fn();
+      const render = (inactive: boolean) =>
+        root.render(
+          createElement(Row, {
+            label: "Dependent setting",
+            modified: true,
+            onReset,
+            disabled: mode === "disabled" && inactive,
+            dependsOn: mode === "dependency" ? !inactive : undefined,
+            disabledReason: "Enable parent first",
+            children: createElement("input", { defaultValue: "custom value" }),
+          }),
+        );
+      await act(() => render(true));
+      const reset = container.querySelector<HTMLButtonElement>('[aria-label="Restore default"]')!;
+      const input = container.querySelector<HTMLInputElement>("input")!;
+      expect(reset.disabled).toBe(true);
+      await act(() => reset.click());
+      expect(onReset).not.toHaveBeenCalled();
+      await act(() => render(false));
+      expect(input.value).toBe("custom value");
+      expect(reset.disabled).toBe(false);
+      await act(() => reset.click());
+      expect(onReset).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("describes an inactive reveal target outside its inert controls", async () => {
+    await act(() =>
+      root.render(
+        createElement(Row, {
+          label: "Dependent setting",
+          disabled: true,
+          disabledReason: "Enable parent first",
+          children: createElement("input"),
+        }),
+      ),
+    );
+    const row = container.querySelector<HTMLElement>(".settings-row")!;
+    const ids = row.getAttribute("aria-describedby")?.split(/\s+/) ?? [];
+    expect(ids.map((id) => document.getElementById(id)?.textContent).join(" ")).toContain(
+      "Enable parent first",
+    );
+  });
+
   it("keeps save errors and explicit-save guidance when the page explains automatic saving", async () => {
     await act(async () =>
       root.render(

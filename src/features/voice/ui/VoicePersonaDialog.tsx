@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Combobox } from "../../../shared/ui/Combobox";
@@ -15,6 +16,7 @@ import {
   PERSONA_NAMES,
   PERSONA_TONES,
   loadVoicePersona,
+  normalizeVoicePersona,
   saveVoicePersona,
   type VoicePersona,
 } from "../model/voicePersona";
@@ -38,16 +40,23 @@ export function VoicePersonaDialog({
   styleOnly?: boolean;
 }) {
   useLocale();
+  const [saveError, setSaveError] = useState(false);
   const [draft, setDraft] = useState<VoicePersona>(loadVoicePersona);
   const change = (patch: Partial<VoicePersona>) =>
     setDraft((current) => ({ ...current, ...patch }));
   const finish = (value: VoicePersona) => {
     const previous = loadVoicePersona();
-    saveVoicePersona(
+    const next = normalizeVoicePersona(
       styleOnly
         ? { ...value, name: previous.name, userName: previous.userName, rules: previous.rules }
         : value,
     );
+    saveVoicePersona(next);
+    if (JSON.stringify(loadVoicePersona()) !== JSON.stringify(next)) {
+      setSaveError(true);
+      return;
+    }
+    setSaveError(false);
     onClose();
   };
   const toggleDuty = (duty: string, on: boolean) =>
@@ -95,6 +104,11 @@ export function VoicePersonaDialog({
       }
     >
       <div className={styles.form}>
+        {saveError ? (
+          <InlineError>
+            {t("Voice style could not be saved. Your draft is kept. Try again.")}
+          </InlineError>
+        ) : null}
         {!styleOnly ? (
           <div className={styles.pair}>
             <Combobox

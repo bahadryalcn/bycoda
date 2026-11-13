@@ -32,6 +32,13 @@ export function ModelOrderPools({
         <Button
           size="sm"
           disabled={!entries.length || pools.length >= MODEL_ROUTING_MAX_POOLS}
+          disabledReason={
+            !entries.length
+              ? t("Add a model first.")
+              : pools.length >= MODEL_ROUTING_MAX_POOLS
+                ? t("The pool limit is reached.")
+                : undefined
+          }
           onClick={() =>
             onChange({
               ...draft,

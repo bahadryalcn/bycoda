@@ -65,7 +65,7 @@ the public installation identity; it does not enroll it or grant access. Headles
 access needs a separate owner decision.
 
 Task observation has separate, default-off completion and needs-input settings
-under **Settings > Work > Presence and hours > Notifications**. They apply only to explicitly supervised projects.
+under **Settings > Background work > Presence and hours > Notifications**. They apply only to explicitly supervised projects.
 Preferences can be saved while the source is unavailable; notifications wait
 until this Host can verify the source and transfer an exact notification to its
 native owner. Native acceptance and actual notification display are separate.
@@ -145,7 +145,7 @@ assistant may work, and sets the job controls together:
 
 Nothing is selected until you choose one. Models are not asked for: the available
 default model becomes the worker, and you manage the model list later in
-**Settings > Models**. If no default model is available, choose a work mode
+**Settings > Background work**. If no default model is available, choose a work mode
 that starts no work, or add a model in Settings first. Rules you want the assistant
 to follow are added in Memory. Opening setup alone does not save a worker or start
 work.
@@ -496,6 +496,18 @@ briefing. By default, only urgent updates notify you while away. A job that stal
 (no output for the configured stall minutes) also notifies you and counts as urgent.
 Waiting notifications say why: plan approval needed, needs your input, or stopped
 with an error.
+
+Urgent updates can remind you again: the default is two reminders, thirty minutes
+apart. Choose zero to disable reminders. Acknowledging an update, replacing its
+content or changing notification eligibility stops its pending reminders. Quiet
+hours and Do not disturb still apply. An uncertain delivery is not blindly resent.
+
+Notifications can also use an allowed Telegram conversation. Choose its account
+and conversation labels in Assistant settings, then save. The list comes from the
+original Host and its existing Social account permissions; entering a raw chat ID
+is not supported. A removed destination stays unavailable until you choose another
+allowed conversation or explicitly turn Telegram off. Telegram delivery does not
+require a paired phone.
 A done notification also says what verification was actually recorded for the work
 (checks that passed or failed, independent review, final review). If none was
 recorded it says "No verification was recorded." and never implies tests ran.
@@ -547,7 +559,7 @@ limit. Chief context renews at the local briefing time and earlier when it reach
 
 ### Shared model routing
 
-Manage models in **Settings > Models**, using **Model order** for priority,
+Manage models in **Settings > Background work**, using **Model order** for priority,
 accounts, quota reserves and pools, and **Assignments** for Worker,
 Planning, Chief and Reply roles. Room settings link there; the separate assistant
 pool editor is removed. Assistant jobs follow the assistant worker role.
@@ -558,6 +570,32 @@ model. Shared automation limits are independent of the assistant token budget.
 See [Models](models.md) for inheritance, delegation and version-conflict handling.
 
 ## Running around the clock
+
+**Keep awake while away** defaults to on. It keeps the computer awake while the
+enabled, configured Assistant is unattended. Pause, Stop and disabled Assistant
+still release this demand. Locking the screen continues to protect the desktop.
+The separate **Keep awake while working** preference covers active jobs.
+
+In a conversation, `/automation <instruction>` prepares a scheduled automation.
+Review its original Host, project, schedule, time zone, next run, model and output
+before saving. Unsupported or unclear schedules ask for clarification. Cancelling
+creates nothing. A lost save acknowledgement retains the same creation identity
+and checks the original Host before retrying. The conversation draft remains intact.
+
+Room automations can read bounded public HTTPS pages and projectless automation
+metadata. They cannot read project sessions, tasks, files or credentials without
+separate project visibility. Page contents are untrusted data; fetched URLs identify
+web sources. Private networks, credential URLs and nonstandard HTTPS ports are blocked.
+
+Each completed Room occurrence retains its exact answer before delivery. Recovery
+reuses that answer rather than invoking the provider again. Room messages and pending
+notifications commit together; phone delivery follows existing Assistant notification
+settings, quiet hours and each phone's preferences.
+
+Event automations use committed task completion/blocking, session input waits and
+automation failures. Restart preserves pending transition identities. An automation
+started by an event still reports its failure, but that failure does not emit another
+automation event, preventing recursive failure loops.
 
 **Settings, Access, Ready for 24/7** lists what keeps the assistant working
 when you are away. It only reads your saved settings; each item that is not ready
@@ -628,3 +666,39 @@ Manual-session writes also require a fresh desktop privacy snapshot. Closing the
 desktop or losing that snapshot suspends those writes; assigned Goal/Task jobs
 retain their own background execution lifecycle. The Host does not survive logout
 on Windows, and locked-screen desktop input remains unavailable.
+
+Assistant settings > Access also offers an explicit authority level. Watch refuses
+new mutations. Selected projects permits only the selected project IDs and refuses
+application-wide writes; an empty selection permits no project writes. Everything
+still retains existing target visibility, revision and native permission gates.
+Critical exclusions keep exact owner approval for main-branch publication, project
+or conversation deletion, messages, computer input and spending. Unknown operations
+and arbitrary shell or command execution keep their exact-operation prompts.
+
+Desktop Save writes its native consent before the Host profile mirror. Failed native
+saves leave the mirror unchanged; a failed Host acknowledgement reports the partial
+result. Native consent belongs to this native installation, selected Host and native
+credential principal. It survives ordinary reloads and restarts; Host credential
+changes require explicit new consent. Every use still validates its current live
+Room issuer. Host profiles, mobile settings and coding conversations cannot
+mint this native authority. Existing profiles without an explicit level retain
+per-operation approval. Watch and project restrictions remain fail-closed after reload.
+
+Records > What I did includes actual Room tools, autonomous goal and quick-action
+creation, managed-session messages, answers and worker recovery: tool, target,
+result and operation time. An interrupted or unconfirmed
+effect stays unknown. Entries retain their original request identity and source
+visibility; hidden projects, changed accounts and unavailable native sources are
+not disclosed. Prompt text, file contents, credentials and returned private data
+are not copied into this journal. Clearing History hides journal entries from the
+view without deleting its append-only effect evidence.
+
+Stop in Room or the tray immediately fences current assistant text and direct voice
+mutations. It also requests canonical stops for active and queued assistant jobs,
+and for Tasks, Epics and automation runs with retained assistant creation receipts.
+Exact project and creation identities must still match. Foreign work stays under
+its existing owner. Automation definitions and future schedules remain saved;
+paused assistant-owned project work cannot begin new provider effects until Resume.
+Stop acknowledgement means cancellation was requested, not that every native
+process has physically retired. Existing away-return briefings and the opt-in
+keep-awake setting keep their current behavior.

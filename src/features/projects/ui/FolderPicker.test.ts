@@ -221,6 +221,17 @@ describe("project folder browser", () => {
     expect(button("Add").disabled).toBe(false);
   });
 
+  it("retries failed home discovery instead of refreshing an unknown directory", async () => {
+    fs.homeDir.mockRejectedValueOnce(new Error("Home unavailable"));
+    await render();
+    expect(button("Add").disabled).toBe(true);
+    expect(fs.listDir).not.toHaveBeenCalled();
+    await click("Retry");
+    expect(fs.homeDir).toHaveBeenCalledTimes(2);
+    expect(fs.listDir).toHaveBeenCalledWith("C:/Users/me");
+    expect(button("Add").disabled).toBe(false);
+  });
+
   it("reports creation errors and rejects nested folder names", async () => {
     await render();
     await click("New folder");
@@ -242,6 +253,10 @@ describe("project folder browser", () => {
     );
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Already exists");
     expect(onPick).not.toHaveBeenCalled();
+    expect(button("Retry")).toBeUndefined();
+    expect(container.querySelector<HTMLInputElement>('[aria-label="New folder name"]')?.value).toBe(
+      "Existing",
+    );
   });
 
   it("keeps the system picker available for drives and network folders", async () => {

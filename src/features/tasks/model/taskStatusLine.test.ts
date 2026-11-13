@@ -23,6 +23,17 @@ const pick = (overrides: Partial<HostTask>) => {
   return { kind, tone, label, detail, notices };
 };
 
+it("shows a queued Work admission reason without calling the task running", () => {
+  expect(pick({ modelRoutingWait: { reason: "Waiting for a free work slot." } })).toMatchObject({
+    kind: "waiting",
+    label: "Waiting",
+    detail: "Waiting for a free work slot.",
+  });
+  expect(pick({ status: "running", modelRoutingWait: { reason: "Old hold" } }).kind).toBe(
+    "running",
+  );
+});
+
 describe("firstSentence", () => {
   it("keeps the first sentence on one line and clamps long text at a word", () => {
     expect(firstSentence("Not signed in. Run login first.")).toBe("Not signed in.");
@@ -36,6 +47,23 @@ describe("firstSentence", () => {
 });
 
 describe("taskStatusLine", () => {
+  it("labels persisted advisor work as queued waiting, not a running worker", () => {
+    expect(
+      taskStatusLine(
+        task({
+          repairAdvisor: {
+            requestId: "repair",
+            sessionId: "worker",
+            findings: "Original finding",
+            feedback: "Check failed",
+            error: "Check failed",
+            fingerprint: "original",
+          },
+        }),
+      ),
+    ).toMatchObject({ kind: "queued", label: "Queued", detail: "Waiting for advisor" });
+  });
+
   it("warns only for the current observed stalled run without changing its lifecycle", () => {
     const runStall = { sessionId: "s", runId: "r", lastActivityAt: 100, detectedAt: 900_100 };
     const value = task({ status: "running", sessionId: "s", runId: "r", runStall });
@@ -57,16 +85,16 @@ describe("taskStatusLine", () => {
     expect(pick({ status: "queued" })).toMatchObject({ kind: "queued", tone: "neutral" });
     expect(pick({ status: "verifying" })).toMatchObject({ kind: "verifying", label: "Verifying" });
     expect(
-      pick({ status: "running", repairAttempts: 2, repairNote: "Test is red. More text." }),
+      pick({ status: "running", repairAttempts: 1, repairNote: "Test is red. More text." }),
     ).toEqual({
       kind: "correcting",
       tone: "accent",
-      label: "Auto-correcting 2/3",
+      label: "Auto-correcting 1/1",
       detail: "Test is red.",
       notices: 0,
     });
     expect(pick({ status: "queued", repairAttempts: 5, continueUntilDone: true }).label).toBe(
-      "Auto-correcting · attempt 5",
+      "Auto-correcting 1/1",
     );
     expect(pick({ status: "running", needsInput: true })).toMatchObject({
       kind: "needs_input",

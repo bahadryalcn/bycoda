@@ -1,9 +1,12 @@
 // @vitest-environment happy-dom
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { ProviderAccountSubtitle } from "./ProviderAccountSubtitle";
 import { AccountStatusLabel } from "./ProviderAccountUsage";
+import { createRoot } from "react-dom/client";
+import { accountStatus } from "../model/accountUsage";
+import { useLocale } from "../../../shared/i18n";
 import { setLanguagePreference } from "../../../shared/i18n";
 
 const identity = { plan: "Pro", email: undefined } as never;
@@ -83,4 +86,46 @@ it("AccountStatusLabel keeps its detail ink by default and takes the new roles",
   expect(roled).toContain('data-size="micro"');
   expect(roled).toContain('data-tone="danger"');
   expect(roled).toContain('data-truncate="true"');
+});
+
+it("updates derived account details after language changes without remounting", async () => {
+  const now = 1000;
+  const Status = ({ percent }: { percent: number }) => {
+    useLocale();
+    return createElement(AccountStatusLabel, {
+      status: accountStatus(
+        {
+          provider: "claude",
+          status: "ok",
+          error: null,
+          updatedAt: now,
+          resetCredits: null,
+          session: { usedPercent: percent, resetsAt: now + 7200000, windowMinutes: 300 },
+          weekly: null,
+          monthly: null,
+        },
+        now,
+      ),
+    });
+  };
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(Status, { percent: 84 })));
+    expect(host.textContent).toContain("16% left");
+    await act(async () => {
+      await setLanguagePreference("tr");
+    });
+    expect(host.textContent).toContain("%16 kaldı");
+    expect(host.textContent).not.toContain("left");
+    await act(async () => root.render(createElement(Status, { percent: 100 })));
+    expect(host.textContent).toContain("sonra sıfırlanır");
+    expect(host.textContent).not.toContain("back in");
+  } finally {
+    await act(async () => {
+      root.unmount();
+      await setLanguagePreference("en");
+    });
+  }
 });

@@ -40,6 +40,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { MoreHorizontal } from "../../../shared/ui/icons";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { openSearchPanel } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
@@ -413,7 +414,13 @@ export function NotesView({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       // The editor's find panel closes on Escape before Notes does.
-      if (event.key !== "Escape" || event.defaultPrevented || hasActiveOverlay()) return;
+      if (
+        event.key !== "Escape" ||
+        isImeComposition(event) ||
+        event.defaultPrevented ||
+        hasActiveOverlay()
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       if (bulkBusy.current) return;
@@ -819,12 +826,15 @@ export function NotesView({
         <LiveText
           size="caption"
           tone="secondary"
-          truncate
           className="min-w-0 flex-1 ps-1 tabular-nums"
           text={
-            filtered
-              ? t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length })
-              : t("{p0} notes", { p0: notes.length })
+            notesQuery.data === undefined
+              ? loading
+                ? t("Loading notes…")
+                : t("Unavailable")
+              : filtered
+                ? t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length })
+                : t("{p0} notes", { p0: notes.length })
           }
         />
         {notes.length > 0 || selectionMode ? (
@@ -2036,7 +2046,7 @@ function NoteEditor({
   }, [saveNow, draftState, note.id, inputOwner]);
 
   const onTitleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter") return;
+    if (event.key !== "Enter" || isImeComposition(event.nativeEvent)) return;
     event.preventDefault();
     event.currentTarget.blur();
   };
@@ -2207,11 +2217,20 @@ function NoteEditor({
                     {title.trim() || note.title || t("Untitled")}
                   </Text>
                   <DescriptionList size="sm">
-                    <DescriptionItem term={t("Project")} truncate tooltip={sourceCwd ?? undefined}>
-                      {sourceCwd ? projectDisplayName(sourceCwd) : t("No project")}
+                    <DescriptionItem term={t("Project")}>
+                      {sourceCwd ? (
+                        <>
+                          {projectDisplayName(sourceCwd)}
+                          <Text as="div" size="caption" tone="secondary" wrap="anywhere">
+                            {sourceCwd}
+                          </Text>
+                        </>
+                      ) : (
+                        t("No project")
+                      )}
                     </DescriptionItem>
                     {note.slug ? (
-                      <DescriptionItem term={t("File")} truncate monospace>
+                      <DescriptionItem term={t("File")} monospace>
                         {`${note.slug}.md`}
                       </DescriptionItem>
                     ) : null}

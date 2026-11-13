@@ -71,7 +71,7 @@ export function AssistantScheduleFields({
       </Text>
       <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
         {t(
-          "Prevents sleep only while this Host is supervising active jobs. Locking the screen still protects your desktop.",
+          "Prevents sleep while jobs run or away mode is enabled. Locking the screen still protects your desktop.",
         )}
       </Text>
       <Text as="p" size="micro" tone="secondary" leading="inherit" className={viewStyles.muted}>
@@ -110,6 +110,7 @@ export function AssistantScheduleFields({
           checked={policy.observationTaskNeedsInput}
           onCheckedChange={(observationTaskNeedsInput) => onChange({ observationTaskNeedsInput })}
         />
+        <AssistantReminderFields value={value} onChange={onChange} />
       </>
     );
   if (rows)
@@ -132,6 +133,11 @@ export function AssistantScheduleFields({
           info={availabilityInfo}
           checked={value.keepAwakeWhileWorking ?? false}
           onCheckedChange={(keepAwakeWhileWorking) => onChange({ keepAwakeWhileWorking })}
+        />
+        <ProfileSwitch
+          label={t("Keep awake while away")}
+          checked={value.keepAwakeWhileAway ?? true}
+          onCheckedChange={(keepAwakeWhileAway) => onChange({ keepAwakeWhileAway })}
         />
         <AdvancedSettings
           title={t("Inactivity and recovery")}
@@ -245,6 +251,14 @@ export function AssistantScheduleFields({
             </Badge>
           )}
         </div>
+        <AssistantReminderFields value={value} onChange={onChange} />
+        <div className={styles.switchCell}>
+          <Switch
+            label={t("Keep awake while away")}
+            checked={value.keepAwakeWhileAway ?? true}
+            onCheckedChange={(keepAwakeWhileAway) => onChange({ keepAwakeWhileAway })}
+          />
+        </div>
         <div className={styles.switchCell}>
           <Switch
             label={t("Keep awake while jobs run")}
@@ -264,5 +278,41 @@ export function AssistantScheduleFields({
         />
       </div>
     </div>
+  );
+}
+
+function AssistantReminderFields({
+  value,
+  onChange,
+}: {
+  value: AssistantProfilePatch;
+  onChange: (patch: AssistantProfilePatch) => void;
+}) {
+  return (
+    <>
+      <AssistantPresetNumber
+        label={t("Urgent reminders")}
+        value={value.urgentNotificationRepeats ?? 2}
+        min={0}
+        max={10}
+        unit={t("reminders")}
+        presets={[0, 1, 2, 3, 5, 10].map((value) => ({ value, label: String(value) }))}
+        onChange={(urgentNotificationRepeats) => onChange({ urgentNotificationRepeats })}
+      />
+      <AssistantPresetNumber
+        label={t("Reminder interval")}
+        value={value.urgentNotificationIntervalMinutes ?? 30}
+        min={1}
+        max={1440}
+        unit={t("minutes")}
+        presets={[5, 15, 30, 60, 120].map((value) => ({
+          value,
+          label: t("{p0} min", { p0: value }),
+        }))}
+        onChange={(urgentNotificationIntervalMinutes) =>
+          onChange({ urgentNotificationIntervalMinutes })
+        }
+      />
+    </>
   );
 }

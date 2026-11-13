@@ -7,7 +7,7 @@ description: Use when changing Assistant Room, jobs, Chief and presence. Not for
 
 Own Assistant Room, profile, supervision, memory and delivery across `src/features/assistant/` and `host/assistant/`, with native presence and control adapters. Mobile Room belongs to the nested mobile repository; [voice](../feature-voice/SKILL.md), [tasks](../feature-tasks-goals/SKILL.md) and [Host](../feature-host-runtime/SKILL.md) retain their execution contracts.
 
-Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Models. Feature choices resolve at run start; existing running sessions keep their concrete model.
+Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Work. Feature choices resolve at run start; existing running sessions keep their concrete model.
 
 ## Source starts
 

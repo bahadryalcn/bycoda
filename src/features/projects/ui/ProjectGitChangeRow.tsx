@@ -1,8 +1,7 @@
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { Text } from "../../../shared/ui/Text";
 import type { ComponentProps } from "react";
-import { useT } from "../../../shared/i18n";
-import { formatInteger } from "../../../shared/lib/numbers";
+import { useFormat, useT } from "../../../shared/i18n";
 import { FileDiff } from "../../../shared/ui/icons";
 import type { ProjectGitChange } from "./projectGitChange";
 
@@ -16,9 +15,12 @@ export function ProjectGitChangeRow({
   ...rest
 }: { change: ProjectGitChange } & ComponentProps<"div">) {
   const t = useT();
+  const format = useFormat();
   const files =
     change.files > 0
-      ? t(change.files === 1 ? "{p0} file" : "{p0} files", { p0: formatInteger(change.files) })
+      ? t(change.files === 1 ? "{p0} file" : "{p0} files", {
+          p0: format.formatNumber(change.files, { maximumFractionDigits: 0 }),
+        })
       : "";
   return (
     <Text

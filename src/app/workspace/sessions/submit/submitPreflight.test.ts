@@ -4,6 +4,10 @@ import { newSession, type Block } from "../../../../features/sessions/model/sess
 import { resetSessionsStore } from "../../../../features/sessions/model/sessionsStore";
 import { prepareSubmitPreflight } from "./submitPreflight";
 import type { SubmitDeps } from "./submitTypes";
+import { openAutomationProposal } from "../../../../features/automations/public/proposal";
+vi.mock("../../../../features/automations/public/proposal", () => ({
+  openAutomationProposal: vi.fn(() => true),
+}));
 
 vi.mock("../../../../features/orchestration/model/orchestration", () => ({
   orchestrator: {
@@ -41,8 +45,39 @@ const ctx = {
   },
 } as unknown as SubmitDeps;
 beforeEach(() => {
+  vi.mocked(openAutomationProposal).mockClear();
   session = { ...newSession("codex", "/repo"), blocks: [plan] };
   resetSessionsStore([session]);
+});
+it("opens an automation proposal without starting a provider turn or consuming the draft", () => {
+  const original = session.blocks;
+  expect(
+    prepareSubmitPreflight(ctx, {
+      sessionId: session.id,
+      text: "/automation every day at 09:00 review",
+      attachments: [],
+      options: undefined,
+    }),
+  ).toEqual({ settled: true, value: false });
+  expect(openAutomationProposal).toHaveBeenCalledWith(
+    expect.objectContaining({ id: session.id }),
+    "every day at 09:00 review",
+  );
+  expect(session.blocks).toBe(original);
+});
+it("never silently drops attachments or turns Plan-mode automation into a rewritten prompt", () => {
+  for (const input of [
+    { attachments: [{ id: "attachment", name: "keep.txt" }] as never[], options: undefined },
+    { attachments: [], options: { intent: "plan" as const } },
+  ])
+    expect(
+      prepareSubmitPreflight(ctx, {
+        sessionId: session.id,
+        text: "/automation review daily",
+        ...input,
+      }),
+    ).toEqual({ settled: true, value: false });
+  expect(openAutomationProposal).not.toHaveBeenCalled();
 });
 it("routes an explicit message through the same approved-plan dispatch as Build", () => {
   const result = prepareSubmitPreflight(ctx, {
@@ -68,6 +103,7 @@ it("repairs an already open Codex/Gemini mixed selection before choosing the dis
     sessionId: session.id,
     text: "Continue",
     attachments: [],
+    options: undefined,
   });
   if (result.settled) throw new Error("submission rejected");
   expect(result.pre.current.harness).toBe("antigravity");

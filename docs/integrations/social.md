@@ -476,6 +476,25 @@ closing the view hides the panel without stopping the account's browser.
 
 ## Accounts registration and browser workspace
 
+The owner workflow is described in [Social media accounts and drafts](../guides/social-media.md).
+An owner may explicitly attach a browser account to an existing Chrome 144+ session through
+`social.browser.availability` with `existingChrome: true`, `accountId` and
+`acknowledgeChromeAccess: true`. This returns matching platform tab metadata, never the
+debugging endpoint. `social.browser.begin` accepts the same explicit consent plus
+`chromeTargetId` and the existing optional LinkedIn `resourceId`. Identity is verified in
+an owned temporary tab before the binding is stored. Every subsequent account session
+uses that binding and the existing identity and dispatch gates. Reconnect requires selecting
+a live tab again after its target disappears; the Host does not silently fall back to a
+fresh profile. Chrome permission covers profile data beyond Social and must be described
+as such in the owner UI. No password or cookie database is imported.
+
+Dedicated-profile login waits for the owner to close the sign-in window, then checks identity.
+`social.browser.status` revalidates a connected saved session, rather than only reading the
+in-memory login flow. `social.browser.workflow.cancel` with `loginFlow: true` cancels that
+owner login attempt without deleting the saved profile. Ordinary workflow cancellation is
+unchanged. Removing an account's existing-Chrome binding never closes or signs out the
+owner's Chrome window; only Host-owned temporary targets and debugging connections close.
+
 Each account can have a browser workspace on its executor host: a dedicated Chrome or
 Edge profile used for login, registration navigation, inbox reads and publishing pages.
 The owner starts or cancels assisted work from Accounts. Passwords, verification codes,

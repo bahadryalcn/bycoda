@@ -78,6 +78,7 @@ async function setup(fullAuthority = false) {
       expectedVersion: 0,
       patch: {
         name: "Manual fixture",
+        keepAwakeWhileAway: false,
         enabled: true,
         setupComplete: true,
         autonomy: "chief",

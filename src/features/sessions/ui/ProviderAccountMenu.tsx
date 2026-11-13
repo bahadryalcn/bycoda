@@ -1,11 +1,11 @@
 import { Button } from "../../../shared/ui/Button";
-import { useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import {
-  accountStatus,
+  accountStatusWith,
   accountUsageKey,
   useProviderAccountUsage,
 } from "../../providers/model/accountUsage";
@@ -39,6 +39,7 @@ export function ProviderAccountMenu({
   onClose?: () => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const source = useModelSource();
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
@@ -116,7 +117,7 @@ export function ProviderAccountMenu({
           items={accounts.map((account) => {
             const local = storedAccounts.find((entry) => entry.id === account.id);
             const status = local
-              ? accountStatus(usage.usage[accountUsageKey(local)], usage.now)
+              ? accountStatusWith(usage.usage[accountUsageKey(local)], usage.now, t, format)
               : undefined;
             return {
               kind: "item" as const,

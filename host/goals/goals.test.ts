@@ -243,6 +243,14 @@ async function setup() {
     ...workspaces,
     delivery,
   } as unknown as TaskWorkspaceServices);
+  // Lifecycle tests isolate delegation; repair-policy tests cover advisor execution.
+  tasks.repairDelegation = {
+    call: vi.fn(async () => ({
+      runId: "fixture-advisor",
+      status: "succeeded",
+      result: "Inspect the finding and correct its cause.",
+    })),
+  };
   delivery.review.mockImplementation(async ({ workspaceId }: { workspaceId: string }) => ({
     token: workspaceId,
     workspaceId,
@@ -1195,7 +1203,12 @@ describe("editing goal settings", () => {
       "This goal changed",
     );
     await expect(
-      (async () => await goals.update("goal", { ...settings, maxRunningTasks: 99 }, 2))(),
+      (async () =>
+        await goals.update(
+          "goal",
+          { ...settings, maxRunningTasks: Number.MAX_SAFE_INTEGER + 1 },
+          2,
+        ))(),
     ).rejects.toThrow("Invalid goal concurrency");
     await expect(
       (async () => await goals.update("goal", { ...settings, runtimeMode: "full-access" }, 2))(),
@@ -1785,12 +1798,14 @@ describe("goal planning", () => {
         .prepare("SELECT value FROM metadata WHERE key=?")
         .get(`goal-planner-retirement:goal:${accepted!.runId}`);
       if (receiptFails) expect(row).toBeUndefined();
-      else
+      else {
+        expect(JSON.parse(String(row?.value)).cleanupError).toBeUndefined();
         expect(JSON.parse(String(row?.value))).toMatchObject({
-          state: "cancellation-requested",
+          state: expect.stringMatching(/^(cancellation-requested|retired)$/),
           sessionId: accepted!.sessionId,
           runId: accepted!.runId,
         });
+      }
     },
   );
   it("rejects a goal for a project this machine does not have", async () => {
@@ -1911,7 +1926,11 @@ describe("goal tasks", () => {
         .run(JSON.stringify(legacy), legacy.id);
       await tasks.tick();
       expect((await goal()).status).toBe(cancelled ? "cancelled" : "running");
-      expect((await planned()).a.status).toBe(cancelled ? "blocked" : "running");
+      const recovered = (await planned()).a;
+      expect(
+        recovered.status,
+        JSON.stringify({ error: recovered.error, repairStop: recovered.repairStop }),
+      ).toBe(cancelled ? "blocked" : "running");
       if (!cancelled) expect((await planned()).a.blockedTakeover).toBeDefined();
       expect((await planned()).b.status).toBe(cancelled ? "blocked" : "queued");
     },

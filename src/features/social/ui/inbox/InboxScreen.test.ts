@@ -361,3 +361,30 @@ it("reloads Host auto-refresh settings after returning from account settings", a
   await mount(fake.client, { active: true });
   expect(toggle().getAttribute("aria-checked")).toBe("false");
 });
+
+it("handles later navigation occurrences on a retained screen and preserves each reply draft", async () => {
+  const fake = fakeClient();
+  const firstTarget = { threadId: "t1" };
+  await mount(fake.client, { target: firstTarget });
+  const editor = () => element.querySelector<HTMLTextAreaElement>(".inbox-reply textarea")!;
+  const type = async (text: string) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        editor(),
+        text,
+      );
+      editor().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  await type("Draft for Ana");
+  await mount(fake.client, { target: { threadId: "t2" } });
+  expect(rows()[1].getAttribute("aria-current")).toBe("true");
+  await type("Draft for Bo");
+  await act(async () => rows()[0].click());
+  await flush();
+  expect(editor().value).toBe("Draft for Ana");
+  await mount(fake.client, { target: { threadId: "t2" } });
+  expect(rows()[1].getAttribute("aria-current")).toBe("true");
+  expect(editor().value).toBe("Draft for Bo");
+  expect(fake.calls.filter((call) => REPLY_WRITES.includes(call.action))).toEqual([]);
+});

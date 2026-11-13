@@ -33,7 +33,7 @@ const mac: RemoteMachine = {
 };
 
 describe("host settings", () => {
-  it("accepts 1 to 8 tasks and custom daily minutes, keeping what is not sent", () => {
+  it("accepts positive safe integer task counts and custom daily minutes, keeping what is not sent", () => {
     expect(parseHostSettings({ maxRunningTasks: 8, dailyAgentMinutes: 1440 })).toEqual({
       maxRunningTasks: 8,
       dailyAgentMinutes: 1440,
@@ -44,7 +44,10 @@ describe("host settings", () => {
     });
     for (const bad of [
       { maxRunningTasks: 0 },
-      { maxRunningTasks: 9 },
+      { maxRunningTasks: Number.MAX_SAFE_INTEGER + 1 },
+      { maxRunningTasks: Infinity },
+      { maxRunningTasks: NaN },
+      { maxRunningTasks: "9" },
       { maxRunningTasks: 2.5 },
       { dailyAgentMinutes: -5 },
       { dailyAgentMinutes: Number.MAX_SAFE_INTEGER + 1 },
@@ -52,6 +55,11 @@ describe("host settings", () => {
       { dailyAgentMinutes: "60" },
     ])
       expect(() => parseHostSettings(bad)).toThrow();
+    for (const maxRunningTasks of [9, 99, Number.MAX_SAFE_INTEGER]) {
+      const current = { maxRunningTasks, dailyAgentMinutes: 0 };
+      expect(parseHostSettings({ maxRunningTasks })).toEqual(current);
+      expect(parseHostSettings({}, current)).toEqual(current);
+    }
     expect(() => parseHostSettings([])).toThrow("Invalid settings");
     expect(parseHostSettings({ dailyAgentMinutes: 2880 }).dailyAgentMinutes).toBe(2880);
   });
@@ -72,7 +80,9 @@ describe("host settings", () => {
     });
     expect(parseHostSettingsState({})).toBeNull();
     expect(parseHostSettingsState(null)).toBeNull();
-    expect(parseHostSettingsState({ maxRunningTasks: 99, usedMinutes: 1 })).toBeNull();
+    expect(parseHostSettingsState({ maxRunningTasks: 99, usedMinutes: 1 })).toMatchObject({
+      maxRunningTasks: 99,
+    });
   });
 
   it("formats minutes as hours and minutes", () => {

@@ -1,3 +1,4 @@
+import { useDecisionTarget } from "./DecisionTarget";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -7,6 +8,7 @@ import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { useAddAndTest } from "../hooks/useAddAndTest";
+import { useDecisionDialogClose } from "../hooks/useDecisionDialogClose";
 import type { DecisionSource, DecisionSourceInput, SourceTestResult } from "../model/decisionTypes";
 import {
   CONTRACT_ADAPTERS,
@@ -33,6 +35,7 @@ export function CustomEndpointDialog({
   onTest: (id: string) => Promise<SourceTestResult>;
   onClose: () => void;
 }) {
+  const target = useDecisionTarget();
   const [name, setName] = useState(prefill?.name ?? "");
   const [endpoint, setEndpoint] = useState(prefill?.endpoint ?? "");
   const [model, setModel] = useState("");
@@ -42,6 +45,17 @@ export function CustomEndpointDialog({
   const [errors, setErrors] = useState<{ name?: string; endpoint?: string }>({});
   const flow = useAddAndTest({ onAdd, onTest });
   const locked = flow.busy || flow.done;
+  const close = useDecisionDialogClose(
+    !flow.done &&
+      (name !== (prefill?.name ?? "") ||
+        endpoint !== (prefill?.endpoint ?? "") ||
+        model !== "" ||
+        adapter !== "systemone" ||
+        authHeader !== "" ||
+        apiKey !== ""),
+    flow.busy,
+    onClose,
+  );
 
   const submit = () => {
     const nextErrors: { name?: string; endpoint?: string } = {};
@@ -71,10 +85,10 @@ export function CustomEndpointDialog({
       title={t("Custom endpoint")}
       description={t("Connect a service at an address you choose.")}
       size="md"
-      onClose={onClose}
+      onClose={close.requestClose}
       footer={
         <ModalActions>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={flow.busy} onClick={close.requestClose}>
             {flow.done ? t("Close") : t("Cancel")}
           </Button>
           {flow.done ? null : (
@@ -118,7 +132,11 @@ export function CustomEndpointDialog({
         />
         <PasswordField
           label={t("API key (optional)")}
-          description={t("Saved on this computer. It is never shown again.")}
+          description={
+            target
+              ? t("Saved on Host {p1}. It is never shown again.", { p1: target })
+              : t("Saved on this computer. It is never shown again.")
+          }
           value={apiKey}
           autoComplete="off"
           disabled={locked}
@@ -141,6 +159,7 @@ export function CustomEndpointDialog({
           <InlineMessage tone={flow.outcome.tone}>{flow.outcome.text}</InlineMessage>
         ) : null}
       </div>
+      {close.dialog}
     </Modal>
   );
 }

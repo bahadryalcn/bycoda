@@ -222,7 +222,7 @@ it("does not report success and keeps the text when the draft cannot be created"
 
   expect(fake.writes().map((call) => call.action)).toEqual(["replies.draft"]);
   expect(element.querySelector('[role="alert"]')?.textContent).toContain(
-    "The reply was not sent. Check the conversation and try again.",
+    "Reply preparation could not finish. Retry the same reply or edit its draft.",
   );
   expect(element.textContent).not.toContain("Reply queued.");
   expect(editor().value).toBe("Hello there");
@@ -252,7 +252,10 @@ it("ignores a second press while a send is in flight", async () => {
   });
   await mount(fake.client);
   await type("Hello there");
-  await act(async () => button("Send").click());
+  await act(async () => {
+    button("Send").click();
+    button("Send").click();
+  });
   expect(off(button("Send"))).toBe(true);
   expect(button("Send").getAttribute("aria-description")).toBe("Sending…");
   await act(async () => button("Send").click());
@@ -433,4 +436,98 @@ it("shows suggestion progress and protects the editor while AI text is pending",
   expect(editor().disabled).toBe(false);
   expect(editor().value).toBe("Prepared reply");
   expect(fake.writes()).toEqual([]);
+});
+
+it("retains uncertain operation through unmount and retries its exact draft and send", async () => {
+  let dropped = false;
+  const fake = fakeClient({
+    handlers: {
+      "replies.send": () => {
+        if (!dropped) {
+          dropped = true;
+          throw new Error("Acknowledgement lost");
+        }
+        return { id: "job-1", status: "queued" };
+      },
+      "jobs.status": () => ({ jobs: [{ id: "job-1", draftId: "draft-1", status: "queued" }] }),
+    },
+  });
+  await mount(fake.client);
+  await type("Keep this exact reply");
+  await click(button("Send"));
+  expect(editor().value).toBe("Keep this exact reply");
+  expect(editor().disabled).toBe(true);
+  await act(async () => root.render(null));
+  await mount(fake.client);
+  expect(editor().value).toBe("Keep this exact reply");
+  expect(element.textContent).toContain("unconfirmed");
+  await click(button("Retry same reply"));
+  expect(fake.writes().filter((call) => call.action === "replies.draft")).toHaveLength(1);
+  expect(fake.writes().filter((call) => call.action === "replies.send")).toHaveLength(1);
+  expect(editor().value).toBe("");
+  expect(element.textContent).toContain("Reply queued.");
+});
+
+it("keeps an in-flight operation across remount and reflects completion without another send", async () => {
+  let finish!: (value: unknown) => void;
+  const fake = fakeClient({
+    handlers: {
+      "replies.send": () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    },
+  });
+  await mount(fake.client);
+  await type("Pending through remount");
+  await act(async () => button("Send").click());
+  await flush();
+  await act(async () => root.render(null));
+  await mount(fake.client);
+  expect(off(button("Send"))).toBe(true);
+  expect(editor().value).toBe("Pending through remount");
+  await act(async () => {
+    finish({ id: "j1", status: "queued" });
+  });
+  await flush();
+  expect(editor().value).toBe("");
+  expect(element.textContent).toContain("Reply queued.");
+  expect(fake.writes().filter((call) => call.action === "replies.send")).toHaveLength(1);
+});
+
+it("allows editing a genuinely refused preparation and preserves its text", async () => {
+  const fake = fakeClient({
+    handlers: {
+      "drafts.approve": () => {
+        throw new Error("Draft preview changed.");
+      },
+    },
+  });
+  await mount(fake.client);
+  await type("Correct this draft");
+  await click(button("Send"));
+  expect(element.textContent).toContain("Draft preview changed.");
+  expect(fake.writes().some((call) => call.action === "replies.send")).toBe(false);
+  await click(button("Edit reply"));
+  expect(editor().disabled).toBe(false);
+  expect(editor().value).toBe("Correct this draft");
+});
+
+it("keeps a refused job for review without claiming it queued or enabling another draft", async () => {
+  const fake = fakeClient({
+    handlers: {
+      "replies.send": () => ({ id: "j1", draftId: "draft-1", status: "review" }),
+      "jobs.status": () => ({ id: "j1", draftId: "draft-1", status: "review" }),
+    },
+  });
+  await mount(fake.client);
+  await type("Needs owner review");
+  await click(button("Send"));
+  expect(element.textContent).toContain("Reply requires review in Activity.");
+  expect(element.textContent).not.toContain("Reply queued.");
+  expect(editor().value).toBe("Needs owner review");
+  expect(editor().disabled).toBe(true);
+  await click(button("Retry same reply"));
+  expect(fake.writes().filter((call) => call.action === "replies.send")).toHaveLength(1);
+  expect(fake.calls.find((call) => call.action === "jobs.status")?.input).toEqual({ id: "j1" });
 });

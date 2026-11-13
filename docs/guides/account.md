@@ -72,6 +72,8 @@ charts and a table by project. It is local, needs no account and is also shown s
 The time you actively used bycoda today, this week, this month and this year, summed across
 all your devices, with the last seven days as bars. Active time never includes what you did.
 
+The **Active time** and **Privacy & data** tabs retain their work when you switch account tabs. This includes summary results and the optional diagnostic note. Signing out clears this account screen state.
+
 ## Notifications
 
 Choose, per event, which channels notify you: in the app, on the desktop, on your phone or by
@@ -80,6 +82,8 @@ silence other notifications during the hours you set: a push sent during quiet h
 dropped, not deferred until they end. The server's duplicate suppression resets when it
 restarts, so a rare repeat notification after a restart is possible. Phone notifications show no project or
 session names unless you turn on **Show details in phone notifications**.
+
+Changes apply immediately. **Saving…** remains visible until all queued notification changes finish; a failed save shows recovery feedback.
 
 Below the settings, **News** lists recent announcements from bycoda. While you are signed in,
 bycoda checks for announcements at start and every few hours (not while offline) and shows

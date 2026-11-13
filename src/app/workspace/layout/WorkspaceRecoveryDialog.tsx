@@ -97,7 +97,8 @@ export function WorkspaceRecoveryDialog({
           <Modal
             padding="none"
             title={t("Recovered work")}
-            onClose={busy ? () => {} : props.onClose}
+            onClose={props.onClose}
+            closeDisabled={busy}
             size="md"
             className="session-recovery-dialog"
             fitViewport
@@ -113,9 +114,10 @@ export function WorkspaceRecoveryDialog({
                 />
               ) : null}
               <div
-                role="tabpanel"
+                role={tabs.length > 1 ? "tabpanel" : "region"}
                 id={recoveryPanelId(PREFIX, activeMode)}
-                aria-labelledby={recoveryTabId(PREFIX, activeMode)}
+                aria-labelledby={tabs.length > 1 ? recoveryTabId(PREFIX, activeMode) : undefined}
+                aria-label={tabs.length > 1 ? undefined : tabs[0]?.label}
                 className="flex min-h-0 flex-col"
               >
                 {activeMode === "files" ? (

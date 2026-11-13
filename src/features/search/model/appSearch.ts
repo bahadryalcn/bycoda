@@ -415,6 +415,7 @@ export function conversationRowsFrom(
   title: string;
   updatedAt: number;
 }> {
+  const archivedIds = new Set(history.filter((row) => row.archived).map((row) => row.id));
   const rows = new Map<
     string,
     {
@@ -426,6 +427,7 @@ export function conversationRowsFrom(
     }
   >();
   for (const row of history) {
+    if (archivedIds.has(row.id)) continue;
     rows.set(row.id, {
       id: row.id,
       cwd: row.cwd,
@@ -435,6 +437,7 @@ export function conversationRowsFrom(
     });
   }
   for (const session of sessions) {
+    if (archivedIds.has(session.id)) continue;
     const previous = rows.get(session.id);
     rows.set(session.id, {
       id: session.id,

@@ -82,6 +82,13 @@ describe("HarnessUpdateNotice", () => {
     expect(notice?.textContent).toContain("2.1.284 → 2.1.285");
     expect(notice?.textContent).toContain("OpenCode");
     expect(notice?.textContent).toContain("2.0.18 → 2.0.26");
+    const bulkUpdate = Array.from(notice!.querySelectorAll("button")).find(
+      (button) => button.textContent === "Update all",
+    )!;
+    const lastRow = notice!.querySelector("article:last-of-type")!;
+    expect(
+      lastRow.compareDocumentPosition(bulkUpdate) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     // Hidden from the picker, so left out of the toast but kept for Settings.
     expect(notice?.textContent).not.toContain("Codex");
     expect(getHarnessUpdateSnapshot().checks?.map((check) => check.harness)).toEqual([

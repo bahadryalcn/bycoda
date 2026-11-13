@@ -71,6 +71,9 @@ export function TodayTab({ snapshot, jobs }: { snapshot: AssistantSnapshot; jobs
           (entry) => !entry.jobId || !hiddenJobIds.has(entry.jobId),
         )}
         onOpenJobs={(status) => {
+          room.setQuery("");
+          room.setJobProjectFilter("");
+          room.setJobDateFilter("all");
           setFilter(status);
           setView("Jobs");
         }}

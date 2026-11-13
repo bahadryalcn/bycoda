@@ -1222,7 +1222,11 @@ export function JiraBoardView({
                         </Text>
                       ) : null}
                       {issueList(group, group.issues)}
-                      {group.loaded && !group.token && !visible(group.issues).length ? (
+                      {group.loaded &&
+                      !group.stale &&
+                      !group.error &&
+                      !group.token &&
+                      !visible(group.issues).length ? (
                         <EmptyState
                           size="inline"
                           kind={search.trim() || group.token ? "filtered" : "empty"}

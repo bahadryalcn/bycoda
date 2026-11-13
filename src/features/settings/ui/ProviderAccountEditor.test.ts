@@ -33,6 +33,9 @@ it("keeps Cancel usable while waiting for browser sign-in and blocks duplicate s
     act(() => {
       submit.click();
       submit.click();
+      container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     });
     expect(onSubmit).not.toHaveBeenCalled();
     act(() => cancel.click());
@@ -131,6 +134,38 @@ it("rejects blank and duplicate account names before submitting", () => {
       );
     }
     expect(onSubmit).not.toHaveBeenCalled();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("explains invalid names when adding an account", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    for (const [label, error] of [
+      ["   ", "Enter an account name"],
+      [" office ", "An account with this name already exists"],
+    ]) {
+      act(() =>
+        root.render(
+          createElement(ProviderAccountEditor, {
+            editor: { provider: "codex", label },
+            existingLabels: ["Office"],
+            working: false,
+            onLabel: vi.fn(),
+            onCancel: vi.fn(),
+            onSubmit: vi.fn(),
+          }),
+        ),
+      );
+      expect(container.textContent).toContain(error);
+      expect(container.querySelector("input")?.getAttribute("aria-invalid")).toBe("true");
+    }
   } finally {
     act(() => root.unmount());
     container.remove();

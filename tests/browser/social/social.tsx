@@ -947,7 +947,7 @@ Object.assign(window, {
   socialFixtureManyProjects: () => {
     projects = [
       { id: "demo", cwd: "/demo", name: "Demo project" },
-      { id: "local", cwd: "G:/Projects/my_projects/upstream", name: "upstream" },
+      { id: "local", cwd: "G:/Projects/work/upstream", name: "upstream" },
       { id: "worktree", cwd: "/worktrees/upstream", name: "upstream" },
       ...Array.from({ length: 27 }, (_, index) => ({
         id: `project-${index}`,
@@ -1315,17 +1315,63 @@ Object.assign(window, {
           return structuredClone(account);
         }
         if (args.method === "projects.list") return structuredClone(projects);
-        if (args.method === "social.browser.availability")
+        if (args.method === "social.browser.availability") {
+          const input = args.params as {
+            existingChrome?: boolean;
+            acknowledgeChromeAccess?: boolean;
+            accountId?: string;
+          };
+          if (input.existingChrome) {
+            if (!input.acknowledgeChromeAccess)
+              throw new Error("Fixture Chrome permission required.");
+            if (new URLSearchParams(location.search).has("chrome-denied"))
+              throw new Error("Fixture Chrome permission denied.");
+            return {
+              tabs: [
+                { id: "fixture-chrome-tab", title: "Signed-in fixture account", site: "x.com" },
+              ],
+            };
+          }
           return { available: true, reason: "Fixture Chrome only" };
+        }
         if (args.method === "social.browser.begin") {
-          const input = args.params as { accountId: string; acknowledgeRisk: boolean };
+          const input = args.params as {
+            accountId: string;
+            acknowledgeRisk: boolean;
+            existingChrome?: boolean;
+            acknowledgeChromeAccess?: boolean;
+            chromeTargetId?: string;
+          };
           if (
             !input.acknowledgeRisk ||
             !snapshot.accounts.some((account) => account.id === input.accountId)
           )
             throw new Error("Fixture browser acknowledgement/account required.");
+          if (input.existingChrome) {
+            if (!input.acknowledgeChromeAccess || input.chromeTargetId !== "fixture-chrome-tab")
+              throw new Error("Fixture Chrome selection required.");
+            const account = snapshot.accounts.find((item) => item.id === input.accountId)!;
+            Object.assign(account, {
+              connected: true,
+              accessApproved: true,
+              connection: "browser",
+              platformId: "42",
+              name: "Fixture Chrome account",
+              scopes: [...X_BROWSER_SCOPES],
+            });
+            snapshot.capabilities[account.id] = accountCapabilities(account);
+            browserFlows[input.accountId] = { status: "connected" };
+            return { status: "connected", expiresAt: 0, source: "existing-chrome" };
+          }
           browserFlows[input.accountId] = { status: "waiting", expiresAt: Date.now() + 600000 };
           return structuredClone(browserFlows[input.accountId]);
+        }
+        if (
+          args.method === "social.browser.workflow.cancel" &&
+          (args.params as { loginFlow?: boolean }).loginFlow
+        ) {
+          delete browserFlows[(args.params as { accountId: string }).accountId];
+          return { status: "idle" };
         }
         if (args.method === "social.browser.status") {
           const id = (args.params as { accountId: string }).accountId;

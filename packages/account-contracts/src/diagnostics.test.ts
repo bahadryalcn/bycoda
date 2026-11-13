@@ -87,13 +87,13 @@ describe("redactDiagnosticText", () => {
 
   it("replaces home directories and user names in paths", () => {
     const output = redactDiagnosticText(
-      "open C:\\Users\\Kraba\\.bycoda-host\\host.log and /home/alice/x and /Users/bob/y",
-      { homeDirs: ["C:\\Users\\kraba\\"] },
+      "open C:\\Users\\Dana\\.bycoda-host\\host.log and /home/alice/x and /Users/bob/y",
+      { homeDirs: ["C:\\Users\\dana\\"] },
     );
     expect(output).toContain("~\\.bycoda-host\\host.log");
     expect(output).toContain("/home/<user>/x");
     expect(output).toContain("/Users/<user>/y");
-    expect(output.toLowerCase()).not.toContain("kraba");
+    expect(output.toLowerCase()).not.toContain("dana");
   });
 
   it("replaces given exact values and is idempotent", () => {

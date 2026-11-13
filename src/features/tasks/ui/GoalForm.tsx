@@ -46,6 +46,7 @@ import {
   type WorkspaceChecks,
 } from "./TaskWorkspacePicker";
 import { useTaskTargetMachine } from "./useTaskTargetMachine";
+import { CrewTaskPicker } from "../../crews/public/CrewTaskPicker";
 import "./task-goals.css";
 
 /** The new goal form: the job, where it runs, how it runs, review and delivery, and limits. */
@@ -76,6 +77,7 @@ export function GoalForm({
   useLocale();
   let draft = inputDraft;
   const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [crewValid, setCrewValid] = useState(true);
   const [workspaceChecks, setWorkspaceChecks] = useState<Record<string, WorkspaceChecks>>({});
   const update = <K extends keyof GoalDraft>(key: K, value: GoalDraft[K]) =>
     onChange({ ...draft, [key]: value });
@@ -96,6 +98,7 @@ export function GoalForm({
   );
   if (choice !== draft.modelChoice) draft = { ...draft, modelChoice: choice };
   const valid =
+    (!draft.crewDefinitionId || (draft.cwds.length === 1 && crewValid)) &&
     !workspaceBusy &&
     draft.cwds.every((cwd) =>
       isWorkspaceValid(draft.workspaces?.[cwd], workspaceChecks[cwd] ?? INITIAL_WORKSPACE_CHECKS),
@@ -115,7 +118,7 @@ export function GoalForm({
         : t("Each task runs on its own branch and waits for you to merge it.");
   return (
     <form
-      aria-label={t("New goal")}
+      aria-label={t("New epic")}
       aria-busy={saving}
       onSubmit={(event) => {
         if (!valid || saving) {
@@ -134,7 +137,7 @@ export function GoalForm({
                 hideLabel
                 label=""
                 autoFocus
-                aria-label={t("Goal title")}
+                aria-label={t("Epic title")}
                 value={draft.title}
                 onChange={(event) => update("title", event.target.value)}
                 placeholder={t("Name the main job")}
@@ -334,6 +337,21 @@ export function GoalForm({
                   )}
                 </div>
               </div>
+              {draft.cwds.length === 1 || draft.crewDefinitionId ? (
+                <CrewTaskPicker
+                  cwd={draft.cwds[0] ?? ""}
+                  machineId={targetId}
+                  value={draft.crewDefinitionId}
+                  disabled={saving}
+                  onChange={(crewDefinitionId) => update("crewDefinitionId", crewDefinitionId)}
+                  onValidityChange={setCrewValid}
+                />
+              ) : null}
+              {draft.crewDefinitionId && draft.cwds.length !== 1 ? (
+                <InlineMessage tone="warning">
+                  {t("A crew epic must use one project and a valid crew.")}
+                </InlineMessage>
+              ) : null}
               <Disclosure summary={t("Working branch and worktree")}>
                 <div className="task-form-section-body">
                   {draft.cwds.map((cwd) => (
@@ -425,9 +443,9 @@ export function GoalForm({
                 onChange={(checked) => update("review", checked)}
               />
               <GoalCheckOption
-                title={t("Verify the integrated result before completing this goal")}
+                title={t("Verify the integrated result before completing this epic")}
                 description={t(
-                  "Checks the combined result of all tasks before the goal completes.",
+                  "Checks the combined result of all tasks before the epic completes.",
                 )}
                 checked={draft.finalReview === true}
                 onChange={(checked) => update("finalReview", checked)}

@@ -13,15 +13,11 @@ import {
   type HostTask,
 } from "../../src/features/tasks/model/hostTasks";
 import { hostGitRepositoryKey } from "../git/git-mutations";
-import {
-  HOST_INTERRUPTED,
-  cancelSessionRun,
-  errorMessage,
-  sessionRunState,
-} from "../sessions/sessionRuns";
+import { HOST_INTERRUPTED, errorMessage, sessionRunState } from "../sessions/sessionRuns";
 import { TICK_MS } from "./constants";
 import { TASK_HISTORY_RETAINED } from "./constants";
 import type { TaskContext } from "./context";
+import { stopTaskRuntimeRuns } from "../work/runtime-budget";
 export function start(context: TaskContext): void {
   if (context.closing || context.timer) return;
   context.store.db.outsideScope(() => {
@@ -187,13 +183,13 @@ export async function work(context: TaskContext): Promise<void> {
             now,
           )
         ).state === "running";
-      if (budgetReason && budgetRunActive) {
+      if (
+        budgetReason &&
+        (budgetRunActive ||
+          (await context.budgets.read({ taskId: parent?.id ?? task.id })).runningRuns > 0)
+      ) {
+        await stopTaskRuntimeRuns(context.store, context.engine, parent?.id ?? task.id, budgetRun);
         if (task.crewDefinitionId) await context.crewRunner?.stop(task);
-        else
-          await cancelSessionRun(
-            context.engine,
-            task.status === "verifying" && task.reviewer ? task.reviewer : task,
-          );
         context.jobControllers.get(task.id)?.abort();
         await context.budgetBlock(task, budgetReason, now);
         continue;
@@ -221,6 +217,7 @@ export async function work(context: TaskContext): Promise<void> {
       else if (
         task.status === "review" &&
         (task.autoMerge || task.deliveryRequested) &&
+        !task.deliveryApprovalRequired &&
         hasUnmergedBranch(task)
       )
         maintain(task, async (fresh) => await context.recoverMerge(fresh, now));
@@ -298,6 +295,11 @@ export async function work(context: TaskContext): Promise<void> {
         task = await context.queueTakeover(task, now);
       }
       if (task.status !== "queued") continue;
+      if (context.assistantTaskAdmission && !(await context.assistantTaskAdmission(task))) continue;
+      if (task.repairAdvisor) {
+        await context.repairOrBlock(task, task.repairAdvisor.error, now);
+        continue;
+      }
       if (task.goalId && context.pausedGoals.has(task.goalId)) continue;
       if (context.crewCanStart && !(await context.crewCanStart(task))) continue;
       if (task.goalId) {

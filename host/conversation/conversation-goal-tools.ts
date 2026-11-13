@@ -7,7 +7,6 @@ import {
   assertConversationWorkspaceIntent,
   TASK_CONFIGURATION_FIELDS,
 } from "./conversation-task-tools";
-import { MAX_RUNNING_TASKS_LIMIT } from "../../src/features/tasks/model/hostSettings";
 
 const id = { type: "string", minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" };
 const expected = { type: "integer", minimum: 0 };
@@ -23,6 +22,7 @@ export const GOAL_WRITE_TOOLS = {
     {
       execution: THREAD_WORK_EXECUTION_SCHEMA,
       goalId: id,
+      crewDefinitionId: id,
       isolate: TASK_CONFIGURATION_FIELDS.isolate,
       title: { type: "string", minLength: 1, maxLength: 200 },
       prompt: { type: "string", minLength: 1, maxLength: 12000 },
@@ -45,7 +45,7 @@ export const GOAL_WRITE_TOOLS = {
     {
       goalId: id,
       expectedUpdatedAt: expected,
-      maxRunningTasks: { type: "integer", minimum: 0, maximum: MAX_RUNNING_TASKS_LIMIT },
+      maxRunningTasks: { type: "integer", minimum: 0 },
       maxRunMinutes: { type: "integer", minimum: 0, maximum: 10080 },
     },
     ["goalId", "expectedUpdatedAt"],
@@ -98,6 +98,9 @@ export class ConversationGoalTools {
         prompt: input.prompt,
         projectIds: [principal.projectId],
         leadProjectId: principal.projectId,
+        ...(typeof input.crewDefinitionId === "string"
+          ? { crewDefinitionId: input.crewDefinitionId }
+          : {}),
         harness: caller.session.harness,
         providerAccountId: caller.session.providerAccountId,
         model: caller.session.model,
@@ -163,7 +166,6 @@ export class ConversationGoalTools {
         if (
           !Number.isSafeInteger(maxRunningTasks) ||
           Number(maxRunningTasks) < 0 ||
-          Number(maxRunningTasks) > MAX_RUNNING_TASKS_LIMIT ||
           !Number.isSafeInteger(maxRunMinutes) ||
           Number(maxRunMinutes) < 0 ||
           Number(maxRunMinutes) > 10080

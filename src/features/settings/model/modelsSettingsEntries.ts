@@ -4,7 +4,7 @@ import type { SettingsEntry } from "./settings";
 export const modelsSettingsEntries: SettingsEntry[] = [
   {
     id: "models-order",
-    section: "models",
+    section: "work",
     get label() {
       return t("Model order");
     },
@@ -12,7 +12,7 @@ export const modelsSettingsEntries: SettingsEntry[] = [
   },
   {
     id: "models-roles",
-    section: "models",
+    section: "work",
     get label() {
       return t("Assignments");
     },
@@ -36,7 +36,7 @@ export const modelsSettingsEntries: SettingsEntry[] = [
   },
   {
     id: "models-delegation",
-    section: "models",
+    section: "work",
     get label() {
       return t("Subagents");
     },

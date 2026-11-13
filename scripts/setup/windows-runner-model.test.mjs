@@ -97,7 +97,7 @@ test("VM marker cannot promote a physical virtualization-capable workstation", (
 test("a name or USERPROFILE override cannot substitute for actual SID/profile/nonadmin identity", () => {
   for (const change of [
     (f) => (f.current.sid = "S-1-5-21-111-222-333-1001"),
-    (f) => (f.current.profile = "C:\\Users\\kraba"),
+    (f) => (f.current.profile = "C:\\Users\\alice"),
     (f) => (f.current.administrator = true),
     (f) => (f.target.nonAdmin = false),
     (f) => (f.target.profile = "C:\\Users\\personal"),

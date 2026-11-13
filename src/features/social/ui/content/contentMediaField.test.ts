@@ -270,3 +270,20 @@ describe("removing media and disabled state", () => {
     expect(remove.disabled).toBe(true);
   });
 });
+
+it("reports attachment work to the owner so save and close cannot race it", async () => {
+  let resolve!: (value: { uploadId: string }) => void;
+  upload.mockReturnValueOnce(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const onBusyChange = vi.fn();
+  render({ onBusyChange });
+  choose(png());
+  expect(onBusyChange).toHaveBeenLastCalledWith(true);
+  await act(async () => resolve({ uploadId: "pending" }));
+  await flush();
+  expect(onBusyChange.mock.calls.map(([value]) => value)).toEqual([true, false]);
+  expect(onChange.mock.calls[0]?.[0]).toMatchObject([{ media: { uploadId: "pending" } }]);
+});

@@ -80,7 +80,7 @@ function RoutingChoice({
           />
           {onManage ? (
             <Button type="button" variant="link" onClick={onManage} disabled={disabled}>
-              {t("Manage in Models")}
+              {t("Manage models")}
             </Button>
           ) : null}
         </>

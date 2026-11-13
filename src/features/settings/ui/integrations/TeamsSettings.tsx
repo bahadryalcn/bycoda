@@ -26,12 +26,12 @@ export function TeamsSettings() {
 
 const configText = (value: unknown) => (typeof value === "string" ? value : "");
 
-function TeamsAccountForm({ account, onSaved, onCancel }: AccountFormProps) {
+function TeamsAccountForm({ account, onSaved, onCancel, onSavingChange }: AccountFormProps) {
   useLocale();
   const [tenant, setTenant] = useState(() => configText(account?.config.tenant) || "common");
   const [clientId, setClientId] = useState(() => configText(account?.config.clientId));
   const [authHandle, setAuthHandle] = useState<string | null>(null);
-  const { saving, error, save } = useAccountSave(onSaved);
+  const { saving, error, save } = useAccountSave(onSaved, onSavingChange);
   const submit = (handle = authHandle ?? undefined) => {
     save(teamsSaveInput({ tenant, clientId }, { id: account?.id, authHandle: handle })).catch(
       () => undefined,

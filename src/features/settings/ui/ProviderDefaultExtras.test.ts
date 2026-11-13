@@ -3,7 +3,54 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { ProviderDefaultExtras } from "./ProviderDefaultExtras";
+import { CLAUDE_COMPACT_SETTINGS } from "../../sessions/model/claudeCompact";
 import { encodeAdvisor } from "../../../shared/model/host-contracts/delegation";
+
+it("keeps the saved threshold while inherited auto-compaction is off", () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const change = vi.fn();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const render = (autoCompact: string) =>
+    act(() =>
+      root.render(
+        createElement(ProviderDefaultExtras, {
+          extras: CLAUDE_COMPACT_SETTINGS,
+          harness: "claude",
+          inheritedDefaults: { extras: { autoCompact } },
+          scopeDefaults: { extras: { autoCompactWindow: "500000" } },
+          projectScope: true,
+          resetLabel: "Use global default",
+          onSessionDefaultsChange: change,
+        }),
+      ),
+    );
+  render("off");
+  const threshold = () =>
+    container.querySelector<HTMLButtonElement>(
+      '[aria-label^="Claude Code default Auto-compact window:"]',
+    )!;
+  expect(threshold().disabled).toBe(true);
+  expect(threshold().textContent).toContain("500K");
+  expect(change).not.toHaveBeenCalled();
+  render("on");
+  expect(threshold().disabled).toBe(false);
+  expect(threshold().textContent).toContain("500K");
+  const off =
+    container.querySelector<HTMLButtonElement>('[role="radio"][aria-label="Off"]') ??
+    Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radio"]')).find(
+      (button) => button.textContent === "Off",
+    );
+  expect(off).toBeTruthy();
+  act(() => off!.click());
+  expect(change).toHaveBeenCalledWith({
+    extras: { autoCompactWindow: "500000", autoCompact: "off" },
+  });
+  act(() => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
 
 it("shows saved legacy advisor Off ahead of inherited product defaults and resets both keys", () => {
   const container = document.createElement("div");

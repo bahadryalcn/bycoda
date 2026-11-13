@@ -174,7 +174,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     if (input.compactBefore && session.threadId !== input.threadId)
       throw new Error("The original Chief thread could not be resumed for compaction.");
   } catch (error) {
-    return preserveProviderFailure(error, dropLive(session));
+    return preserveProviderFailure(error, dropLive(session), input);
   }
   const threadId = session.threadId;
   const interrupt = async () => {
@@ -301,18 +301,21 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
       session.turnFailed = null;
       await dropLive(session);
     },
+    input,
   );
 }
-async function ensureLive(input: {
-  cwd: string;
-  providerAccountId?: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  ephemeral?: boolean;
-  threadId?: string;
-  onThreadId?: (threadId: string) => void | Promise<void>;
-  operationContext?: HarnessOperationContext;
-}): Promise<LiveText> {
+async function ensureLive(
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    providerAccountId?: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    ephemeral?: boolean;
+    threadId?: string;
+    onThreadId?: (threadId: string) => void | Promise<void>;
+    operationContext?: HarnessOperationContext;
+  },
+): Promise<LiveText> {
   const model = pickTextModel(input.model);
   const effort = pickTextEffort(model, input.modelSettings);
   const serviceTier = pickTextServiceTier(input.modelSettings);
@@ -339,7 +342,7 @@ async function ensureLive(input: {
       live.ephemeral === ephemeral &&
       (!requestedThreadId || live.threadId === requestedThreadId)
     ) {
-      await confirmThread(live, input.onThreadId);
+      await confirmThread(live, input.onThreadId, input);
       return live;
     }
     if (live.providerAccountId !== input.providerAccountId) {
@@ -352,8 +355,9 @@ async function ensureLive(input: {
         requestedThreadId,
         ephemeral,
         input.operationContext,
+        input,
       );
-      await confirmThread(started, input.onThreadId);
+      await confirmThread(started, input.onThreadId, input);
       return started;
     }
     const current = live;
@@ -366,7 +370,7 @@ async function ensureLive(input: {
       await input.onThreadId?.(current.threadId);
       return current;
     } catch (error) {
-      return preserveProviderFailure(error, dropLive(current));
+      return preserveProviderFailure(error, dropLive(current), input);
     }
   }
   const started = await startLive(
@@ -378,15 +382,20 @@ async function ensureLive(input: {
     requestedThreadId,
     ephemeral,
     input.operationContext,
+    input,
   );
-  await confirmThread(started, input.onThreadId);
+  await confirmThread(started, input.onThreadId, input);
   return started;
 }
-async function confirmThread(session: LiveText, save?: TextPromptInput["onThreadId"]) {
+async function confirmThread(
+  session: LiveText,
+  save?: TextPromptInput["onThreadId"],
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
+) {
   try {
     await save?.(session.threadId);
   } catch (error) {
-    return preserveProviderFailure(error, dropLive(session));
+    return preserveProviderFailure(error, dropLive(session), retirement);
   }
 }
 
@@ -399,6 +408,7 @@ async function startLive(
   requestedThreadId?: string,
   ephemeral = true,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
@@ -520,6 +530,7 @@ async function startLive(
         stopping,
         ...(admitted ? [retirements.retire([textProcess])] : []),
       ]),
+      retirement,
     );
   } finally {
     if (starting === textProcess) starting = null;

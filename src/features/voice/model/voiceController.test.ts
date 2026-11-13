@@ -368,7 +368,7 @@ it("retains global workspace discovery when no project/session or Host catalog i
 });
 
 it.each(["desktop.launch", "desktop.clipboard", "desktop.act", "desktop.click"])(
-  "uses a verified assistant thread for %s without creating a coding session",
+  "uses the Global assistant thread for %s without a project or coding session",
   async (action) => {
     const f = setup();
     f.state.active = undefined;
@@ -386,15 +386,30 @@ it.each(["desktop.launch", "desktop.clipboard", "desktop.act", "desktop.click"])
     });
     await f.controller.execute("app_tool_call", args);
     expect(mock.call).toHaveBeenCalledExactlyOnceWith(
-      { cwd: "/a", threadId: "thread" },
+      { cwd: "", threadId: "thread" },
       expect.objectContaining({ action, requestId: "same-owner-request" }),
     );
     expect(f.source).not.toHaveBeenCalled();
   },
 );
 
-it("prefers the actual captured session for global desktop input and never follows a later tab", async () => {
+it("keeps Global desktop input on the Global thread, never on a focused tab", async () => {
   const f = setup();
+  f.ports.getThreadId = () => "thread";
+  f.controller.captureTurn();
+  f.state.active = "b";
+  await f.controller.execute("app_tool_call", {
+    family: "conversation",
+    action: "desktop.launch",
+    input: { app: "Chrome" },
+    requestId: "launch-global",
+  });
+  expect(mock.call.mock.calls[0][0]).toEqual({ cwd: "", threadId: "thread" });
+});
+
+it("prefers the actual captured session for project desktop input and never follows a later tab", async () => {
+  const f = setup();
+  f.ports.getScope = () => "project";
   f.ports.getThreadId = () => "thread";
   f.controller.captureTurn();
   f.state.active = "b";

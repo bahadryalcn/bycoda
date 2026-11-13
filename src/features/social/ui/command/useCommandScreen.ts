@@ -1,108 +1,192 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import { t } from "../../../../shared/i18n";
 import type { SocialClient } from "../../model/socialClient";
-import type { AiPlan, AiReport, AiSummary } from "../../model/socialActions";
 import type { AiAction } from "../../model/autonomy";
 import type { SocialAgent, SocialPolicies } from "../../model/social";
 import { savePolicyScope } from "../accounts/savePolicy";
-import type { StepResult } from "./commandModel";
-
-export type ReportState = { period: "day" | "week"; data: AiReport };
+import { useCommandState } from "./useCommandState";
+export type { ReportState } from "./useCommandState";
 
 const messageOf = (caught: unknown) =>
   caught instanceof Error && caught.message
     ? caught.message
     : t("Something went wrong. Try again.");
-
-/**
- * State and Host calls for the Command screen. Every write goes through the SocialClient
- * wrappers; the screen never composes an action name itself.
- */
-export function useCommandScreen(client: SocialClient, projectId?: string) {
-  const [text, setText] = useState("");
-  const [plan, setPlan] = useState<AiPlan | undefined>();
-  const [results, setResults] = useState<Record<string, StepResult>>({});
-  const [approved, setApproved] = useState<string[]>([]);
-  const [summary, setSummary] = useState<AiSummary | undefined>();
-  // undefined until a feed read succeeds, so a failed read is never shown as an empty feed.
-  const [actions, setActions] = useState<AiAction[] | undefined>();
-  const [report, setReport] = useState<ReportState | undefined>();
-  const [error, setError] = useState<string | undefined>();
-  const [busy, setBusy] = useState<string | undefined>();
-
-  const read = useCallback(
-    () => Promise.allSettled([client.ai.summary(), client.ai.actions()]),
-    [client],
+const mergeActions = (old: AiAction[], next: AiAction[]) =>
+  [...new Map([...old, ...next].map((item) => [item.id, item])).values()].sort(
+    (a, b) => b.at - a.at,
   );
-  const apply = useCallback(([sum, feed]: Awaited<ReturnType<typeof read>>) => {
-    if (sum.status === "fulfilled") setSummary(sum.value);
-    if (feed.status === "fulfilled") setActions(feed.value.items);
-    // A failed read is reported, never shown as an empty feed.
-    if (sum.status === "rejected" || feed.status === "rejected")
-      throw new Error(t("Could not load AI activity."));
-  }, []);
-  const refresh = useCallback(async () => apply(await read()), [read, apply]);
 
+/** Serialized owner actions and scoped, active-aware activity reads. No stale completion owns a newer plan. */
+export function useCommandScreen(client: SocialClient, projectId?: string, active = true) {
+  const { state, setter, runtime, scopeKey } = useCommandState(client, projectId);
+  const {
+    text,
+    plan,
+    results,
+    approved,
+    summary,
+    actions,
+    report,
+    error,
+    activityError,
+    moreError,
+    busy,
+    next,
+    loadingMore,
+  } = state;
+  const setText = setter("text");
+  const setPlan = setter("plan");
+  const setResults = setter("results");
+  const setApproved = setter("approved");
+  const setSummary = setter("summary");
+  const setActions = setter("actions");
+  const setReport = setter("report");
+  const setError = setter("error");
+  const setActivityError = setter("activityError");
+  const setMoreError = setter("moreError");
+  const setBusy = setter("busy");
+  const setNext = setter("next");
+  const setLoadingMore = setter("loadingMore");
+  const lifetime = useRef({ version: 0 });
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Async Host operations lose their UI owner when this hook unmounts.
   useEffect(() => {
-    read()
-      .then(apply)
-      .catch(() => setError(t("Could not load AI activity.")));
-  }, [read, apply]);
+    const owner = lifetime.current;
+    return () => {
+      owner.version++;
+    };
+  }, []);
 
-  const run = useCallback(async (label: string, task: () => Promise<void>) => {
+  const refresh = async () => {
+    if (runtime.read().feedRead && runtime.read().feedVersion === lifetime.current.version) return;
+    const token = Symbol();
+    const owner = lifetime.current.version;
+    runtime.update({ feedRead: token, feedVersion: owner });
+    try {
+      const [sum, feed] = await Promise.allSettled([client.ai.summary(), client.ai.actions()]);
+      if (owner !== lifetime.current.version) return;
+      if (sum.status === "fulfilled") setSummary(sum.value);
+      if (feed.status === "fulfilled") {
+        setActions((old) =>
+          runtime.read().paged ? mergeActions(old ?? [], feed.value.items) : feed.value.items,
+        );
+        // A disjoint refreshed head may hide whole pages above the retained tail.
+        // Traverse its continuation again; mergeActions deduplicates retained history.
+        const connected = feed.value.items.some((item) => runtime.read().headIds?.has(item.id));
+        if (!runtime.read().paged || !connected) setNext(feed.value.next);
+        runtime.update({ headIds: new Set(feed.value.items.map((item) => item.id)) });
+      }
+      setActivityError(
+        sum.status === "rejected" || feed.status === "rejected"
+          ? t("Could not load AI activity.")
+          : undefined,
+      );
+    } finally {
+      if (runtime.read().feedRead === token) runtime.update({ feedRead: undefined });
+    }
+  };
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronize the active screen with Host activity through a bounded polling timer.
+  useEffect(() => {
+    if (!active) return;
+    void refresh().catch(() => undefined);
+    const timer = setInterval(() => {
+      void refresh().catch(() => undefined);
+    }, 30_000);
+    return () => clearInterval(timer);
+    // Refresh reads current Host/project; state changes must not restart the polling interval.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- Refresh lifetime follows scope and visibility only.
+  }, [client, projectId, active]);
+
+  const run = async (label: string, task: (current: () => boolean) => Promise<void>) => {
+    if (runtime.read().operation) return;
+    const token = Symbol();
+    const owner = lifetime.current.version;
+    runtime.update({ operation: token });
+    const current = () => owner === lifetime.current.version && runtime.read().operation === token;
     setBusy(label);
     setError(undefined);
     try {
-      await task();
+      await task(current);
     } catch (caught) {
-      setError(messageOf(caught));
+      if (current()) setError(messageOf(caught));
     } finally {
-      setBusy(undefined);
+      if (current()) {
+        runtime.update({ operation: undefined });
+        setBusy(undefined);
+      }
     }
-  }, []);
+  };
 
-  const submit = () =>
-    run("plan", async () => {
-      const next = await client.ai.command({
-        text: text.trim(),
+  const submit = () => {
+    const submitted = text;
+    return run("plan", async (current) => {
+      const nextPlan = await client.ai.command({
+        text: submitted.trim(),
         ...(projectId ? { projectId } : {}),
       });
-      setPlan(next);
+      if (!current()) return;
+      setPlan(nextPlan);
       setResults({});
       setApproved([]);
-      setText("");
+      setText((value) => (value === submitted ? "" : value));
     });
-
-  const approve = (ids: string[]) => setApproved((current) => [...new Set([...current, ...ids])]);
-
+  };
+  const approve = (ids: string[]) => {
+    if (!runtime.read().operation) setApproved((current) => [...new Set([...current, ...ids])]);
+  };
   const runPlan = () => {
     if (!plan) return;
-    void run("run", async () => {
+    void run("run", async (current) => {
       const response = await client.ai.runPlan({ planId: plan.planId, approvedStepIds: approved });
+      if (!current()) return;
       setResults(Object.fromEntries(response.results.map((item) => [item.stepId, item])));
       await refresh();
     }).catch(() => undefined);
   };
-
   const undo = (actionId: string) =>
-    void run("undo", async () => {
+    void run("undo", async (current) => {
       await client.ai.undo(actionId);
-      await refresh();
+      if (current()) await refresh();
     }).catch(() => undefined);
-
   const loadReport = (period: "day" | "week") =>
-    void run("report", async () => {
-      setReport({ period, data: await client.ai.report(period) });
+    void run("report", async (current) => {
+      const data = await client.ai.report(period);
+      if (current()) setReport({ period, data });
     }).catch(() => undefined);
-
-  /** Saves the global agent; the first-use card calls this and nothing else. */
   const saveModel = (agent: SocialAgent) =>
-    void run("model", async () => {
-      const current = await client.request<SocialPolicies>("policy.get");
-      await savePolicyScope(client, current, "global", { ...current.global, agent });
+    void run("model", async (current) => {
+      const policies = await client.request<SocialPolicies>("policy.get");
+      if (current())
+        await savePolicyScope(client, policies, "global", { ...policies.global, agent });
     }).catch(() => undefined);
-
+  const loadMore = async () => {
+    if (
+      !next ||
+      (runtime.read().feedRead && runtime.read().feedVersion === lifetime.current.version)
+    )
+      return;
+    const token = Symbol();
+    const owner = lifetime.current.version;
+    runtime.update({ feedRead: token, feedVersion: owner });
+    setLoadingMore(true);
+    try {
+      const page = await client.ai.actions({ cursor: next });
+      if (owner !== lifetime.current.version) return;
+      runtime.update({ paged: true });
+      setActions((old) => mergeActions(old ?? [], page.items));
+      setNext(page.next);
+      setMoreError(undefined);
+    } catch (caught) {
+      if (owner === lifetime.current.version) setMoreError(messageOf(caught));
+    } finally {
+      if (runtime.read().feedRead === token) {
+        runtime.update({ feedRead: undefined });
+        setLoadingMore(false);
+      }
+    }
+  };
   return {
+    scopeKey,
     text,
     setText,
     plan,
@@ -113,6 +197,9 @@ export function useCommandScreen(client: SocialClient, projectId?: string) {
     report,
     error,
     setError,
+    activityError,
+    moreError,
+    refresh,
     busy,
     submit,
     approve,
@@ -120,5 +207,8 @@ export function useCommandScreen(client: SocialClient, projectId?: string) {
     undo,
     loadReport,
     saveModel,
+    next,
+    loadingMore,
+    loadMore,
   };
 }

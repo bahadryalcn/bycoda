@@ -1,3 +1,5 @@
+import { codexAutoCompactConfig } from "./codexCompaction";
+
 /**
  * Thread config for thread/start and thread/resume. Codex's native subagents
  * inherit the main model, so they cannot be held to the owner's subagent
@@ -10,9 +12,11 @@ export function codexThreadConfig(
   modelSettings: Readonly<Record<string, string>> | undefined,
 ): Record<string, unknown> | undefined {
   const policy = modelSettings?.nativeSubagents;
-  if (policy !== "off" && policy !== "on") return base;
+  const compact = codexAutoCompactConfig(modelSettings);
+  if (policy !== "off" && policy !== "on") return compact ? { ...base, ...compact } : base;
   return {
     ...base,
+    ...compact,
     "agents.enabled": policy === "on",
     "features.multi_agent": policy === "on",
     // Off by default in Codex: "on" restores the default tools, it never opts into v2.

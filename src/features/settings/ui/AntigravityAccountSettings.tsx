@@ -1,12 +1,12 @@
 import { Code } from "../../../shared/ui/Code";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { SettingsFeedback } from "./settingsControls";
+import { RevealedSetting, SettingsFeedback } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useContext, useRef, useState, useSyncExternalStore } from "react";
 import {
   getHarnessAvailabilitySnapshot,
   isHarnessAvailable,
@@ -22,7 +22,13 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
   useLocale();
   useSyncExternalStore(subscribeHarnessAvailability, getHarnessAvailabilitySnapshot);
   const [checking, setChecking] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const revealed = useContext(RevealedSetting);
+  const [expanded, setExpanded] = useState(revealed === "antigravity-account");
+  const [handledReveal, setHandledReveal] = useState(revealed);
+  if (handledReveal !== revealed) {
+    setHandledReveal(revealed);
+    if (revealed === "antigravity-account") setExpanded(true);
+  }
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);

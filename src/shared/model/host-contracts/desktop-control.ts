@@ -151,7 +151,30 @@ export const DesktopControlOperationSchema = z.strictObject({
   ]),
   retry: z.enum(["unknown", "safe", "unsafe"]),
   errorCode: z.string().optional(),
+  errorMessage: z.string().optional(),
 });
+export const DesktopSystemPermissionsSchema = z.strictObject({
+  accessibility: z.enum([
+    "granted",
+    "denied",
+    "not-determined",
+    "restricted",
+    "not-required",
+    "unknown",
+  ]),
+  screenRecording: z.enum([
+    "granted",
+    "denied",
+    "not-determined",
+    "restricted",
+    "not-required",
+    "unknown",
+  ]),
+  elevated: z.boolean().optional(),
+  source: z.enum(["agent-desktop", "unavailable"]),
+  checkedAt: z.string(),
+});
+export type DesktopSystemPermissionsReport = z.infer<typeof DesktopSystemPermissionsSchema>;
 export type DesktopControlOperation = z.infer<typeof DesktopControlOperationSchema>;
 /** `treeJson` is one page of line-per-node text; pass `nextCursor` to read more. */
 const DesktopSnapshotSchema = z.strictObject({
@@ -172,6 +195,7 @@ export const DesktopControlResponseSchema = z.strictObject({
       enabled: z.boolean(),
       stopped: z.boolean(),
       active: z.boolean(),
+      permissions: DesktopSystemPermissionsSchema.optional(),
       currentAction: z.strictObject({ app: z.string(), action: z.string() }).optional(),
       upstreamRef: z.string(),
       protocol: z.string(),

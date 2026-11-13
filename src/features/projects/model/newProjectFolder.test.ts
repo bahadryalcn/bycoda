@@ -13,15 +13,15 @@ describe("new project folder", () => {
       newProjectParent(
         null,
         [
-          "G:\\Projects\\my_projects\\bycoda",
-          "G:/Projects/my_projects/mobile",
+          "G:\\Projects\\work\\bycoda",
+          "G:/Projects/work/mobile",
           "G:/Other/one",
           "remote://env/home/a",
           "remote://env/home/b",
         ],
         "C:/Users/me",
       ),
-    ).toBe("G:/Projects/my_projects");
+    ).toBe("G:/Projects/work");
   });
 
   it("falls back to ~/Projects when no folder is shared", () => {

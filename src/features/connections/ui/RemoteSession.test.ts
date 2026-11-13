@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
+import { setLanguagePreference, t } from "../../../shared/i18n";
 import { SessionPane, type SessionPaneProps } from "../../sessions/ui/SessionPane";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { PaneTree } from "../../workspace/ui/PaneTree";
@@ -24,7 +25,7 @@ import {
 import { rememberRemoteProject, remoteProjectFor } from "../model/remoteProjects";
 import { RemoteSession, type RemoteSessionOverrides } from "./RemoteSession";
 import { outboxFixture } from "./remoteSessionOutboxFixture";
-import { tooltipText } from "./RemoteSession.test-support";
+import { settle, tooltipText, typeText } from "./RemoteSession.test-support";
 import {
   preloadRemoteSession,
   resetRemoteSessionCachesForTests,
@@ -928,12 +929,6 @@ async function renderRemoteProbe(visible = true, session = shell()) {
   );
   await settle();
 }
-async function settle() {
-  for (let i = 0; i < 5; i++)
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-}
 it("holds the composer while durable outbox storage is unavailable and recovers on retry", async () => {
   outboxFixture.unavailable = true;
   await renderRemoteProbe();
@@ -1173,16 +1168,7 @@ it("allows Host-owned controls on a Host without desktop receipt capability", as
 });
 const remoteDataPhase = () =>
   container.querySelector("[data-remote-data-state]")?.getAttribute("data-remote-data-state");
-async function type(text: string) {
-  const textarea = container.querySelector("textarea")!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
-      textarea,
-      text,
-    );
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
+const type = (text: string) => typeText(container, text);
 async function send(text: string) {
   await type(text);
   await act(async () => byLabel("Send")!.click());
@@ -2443,6 +2429,10 @@ it("never sends a request again past the replay horizon, and says its outcome is
   expect(statusRequests).toEqual([commandId]);
   expect(commands.filter((command) => command.type === "send")).toHaveLength(0);
   expect(container.textContent).toContain("will not be sent automatically");
+  machineDown = unreachable;
+  await act(async () => notifyRemoteRecovered("env"));
+  await settle();
+  expect(container.textContent).not.toContain("Your message will be sent automatically");
 });
 
 it("transport: ignores a late create response after its tab has switched conversations", async () => {
@@ -4132,6 +4122,26 @@ it("shows follow-up attachment preparation and refuses repeated Send while keepi
     ).toBe(true);
   });
   expect(commands.filter((command) => command.type === "steer")).toHaveLength(0);
+  try {
+    await act(async () => setLanguagePreference("tr"));
+    machineDown = unreachable;
+    await act(async () => notifyRemoteRecovered("env"));
+    await settle();
+    await act(async () => remoteOverrides.onSubmit!("shell", "New unsent text", []));
+    const dismiss = [...container.querySelectorAll("button")].find(
+      (entry) => entry.textContent === t("Dismiss"),
+    )!;
+    expect(dismiss).toBeTruthy();
+    expect(dismiss.disabled).toBe(false);
+    await act(async () => dismiss.click());
+    expect(container.textContent).not.toContain(
+      t("The previous message is still being sent. Your message is kept."),
+    );
+  } finally {
+    await act(async () => setLanguagePreference("en"));
+    machineDown = undefined;
+    await act(async () => notifyRemoteRecovered("env"));
+  }
   await act(async () => {
     attachmentReadDelay = undefined;
     release();

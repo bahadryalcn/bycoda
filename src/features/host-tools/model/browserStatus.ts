@@ -8,6 +8,33 @@ type StatusInput = {
   setupRequired: boolean;
 };
 
+/** Explain input availability without treating a missing frame as a successful action. */
+export function browserInputDisabledReason({
+  busy,
+  state,
+  frameCurrent,
+  inputBlocked,
+  selecting,
+}: {
+  busy: boolean;
+  state?: { open: boolean; controlling: boolean };
+  frameCurrent: boolean;
+  inputBlocked: boolean;
+  selecting: boolean;
+}) {
+  return busy
+    ? t("Working on the host…")
+    : !state?.open
+      ? t("Open a website")
+      : !state.controlling
+        ? t("View only · take control to interact")
+        : !frameCurrent || inputBlocked
+          ? t("Refresh the frame to view this page.")
+          : selecting
+            ? t("Cancel selection")
+            : undefined;
+}
+
 /** Labels and tone for the host browser's single status dot and its tooltip. */
 export function browserStatusPresentation({
   state,

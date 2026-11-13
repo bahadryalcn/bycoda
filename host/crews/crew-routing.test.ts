@@ -1,3 +1,4 @@
+import { wireCrewSourceTasks, wireCrewWorkEngine } from "./crew-source-task.fixture";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { HostCrews, CrewRoutingWait } from "./crews";
@@ -49,10 +50,34 @@ async function setup(entries: ModelRoutingEntry[]) {
     errors: {},
   } as HostModelCatalog;
   const tasks = { list: vi.fn(async () => []), save: vi.fn(async (task) => task), tick: vi.fn() };
+  const session = {
+    revision: 1,
+    updatedAt: 1000,
+    projectId: project.id,
+    status: "idle",
+    runId: undefined as string | undefined,
+    session: {
+      id: "lead-session",
+      harness: "codex",
+      model: "fallback",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      title: "Lead",
+      blocks: [],
+    },
+  };
+  vi.spyOn(store, "session").mockResolvedValue(
+    session as Awaited<ReturnType<HostStore["session"]>>,
+  );
   const engine = {
-    command: vi.fn(async () => ({ sessionId: "lead-session" })),
+    command: vi.fn(async (raw: unknown) => {
+      const command = raw as { type: string; commandId: string };
+      if (command.type === "send") session.runId = `${command.commandId}-run`;
+      return { commandId: command.commandId, sessionId: "lead-session", revision: 1 };
+    }),
     updateSession: vi.fn(),
   };
+  wireCrewWorkEngine(store, engine as unknown as HostEngine);
   let left = 100;
   let now = 1000;
   const routing = createModelRoutingService({
@@ -74,6 +99,7 @@ async function setup(entries: ModelRoutingEntry[]) {
     () => now,
     async (target) => target.model === "vision",
   );
+  wireCrewSourceTasks(crews, tasks as unknown as HostTasks, store);
   await crews.ready;
   const current = await readModelRouting(store);
   await saveModelRouting(
@@ -240,7 +266,7 @@ it("does not create assignments when all routing entries are ineligible", async 
   await f.start();
   f.setLeft(10);
   await expect(f.assign()).rejects.toBeInstanceOf(CrewRoutingWait);
-  expect(f.tasks.save).not.toHaveBeenCalled();
+  expect(f.tasks.save).toHaveBeenCalledTimes(1); // Canonical source task, not an assignment.
   await expect(f.assign()).rejects.toBeInstanceOf(CrewRoutingWait);
   expect(
     (await readCrewRun(f.store, "run"))!.messages.filter(

@@ -89,6 +89,7 @@ export function AddServerModal({
   const [name, setName] = useState("");
   const [config, setConfig] = useState("");
   const [busy, setBusy] = useState(false);
+  const [added, setAdded] = useState(false);
   const [error, setError] = useState("");
   const adding = useRef(false);
   const formId = useId();
@@ -97,24 +98,29 @@ export function AddServerModal({
     event.preventDefault();
     if (adding.current) return;
     adding.current = true;
+    let written = added;
     try {
-      const parsed: unknown = JSON.parse(config);
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error(t("Configuration must be a JSON object"));
-      }
       setBusy(true);
       setError("");
-      await invoke("mcp_add", {
-        cwd,
-        provider,
-        scope,
-        name: name.trim(),
-        config,
-      });
+      if (!written) {
+        const parsed: unknown = JSON.parse(config);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error(t("Configuration must be a JSON object"));
+        }
+        await invoke("mcp_add", {
+          cwd,
+          provider,
+          scope,
+          name: name.trim(),
+          config,
+        });
+        written = true;
+        setAdded(true);
+      }
       await onAdded();
       onClose();
     } catch (cause) {
-      setError(String(cause));
+      setError(written ? t("Server added. Refresh failed. Retry to check status.") : String(cause));
     } finally {
       adding.current = false;
       setBusy(false);
@@ -131,7 +137,7 @@ export function AddServerModal({
       footer={
         <ModalActions>
           <Button variant="ghost" size="sm" type="button" onClick={onClose} disabled={busy}>
-            {t("Cancel")}
+            {added ? t("Done") : t("Cancel")}
           </Button>
           <Button
             variant="primary"
@@ -141,7 +147,7 @@ export function AddServerModal({
             loading={busy}
             disabled={busy}
           >
-            {t("Add server")}
+            {added ? t("Retry") : t("Add server")}
           </Button>
         </ModalActions>
       }
@@ -155,7 +161,7 @@ export function AddServerModal({
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <McpPicker
-            disabled={busy}
+            disabled={busy || added}
             label={t("Provider")}
             value={provider}
             options={PROVIDERS.map((option) => ({
@@ -169,7 +175,7 @@ export function AddServerModal({
             }}
           />
           <McpPicker
-            disabled={busy}
+            disabled={busy || added}
             label={t("Scope")}
             value={scope}
             options={SCOPES[provider].map((option) => ({
@@ -193,7 +199,7 @@ export function AddServerModal({
           label={t("Name")}
           description={t("(optional for an mcpServers block)")}
           value={name}
-          disabled={busy}
+          disabled={busy || added}
           pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
           onChange={(event) => setName(event.target.value)}
 
@@ -204,7 +210,7 @@ export function AddServerModal({
           label={t("JSON configuration")}
           required
           value={config}
-          disabled={busy}
+          disabled={busy || added}
           onChange={(event) => setConfig(event.target.value)}
           rows={6}
           monospace

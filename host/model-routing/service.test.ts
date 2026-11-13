@@ -189,3 +189,23 @@ it("routes all four owner RPC methods to the initialized store service", async (
     expect(getHostRpcMethod(method)!.resultSchema.safeParse(request.result).success).toBe(true);
   }
 });
+
+it("persists calendar caps and rejects invalid values without changing the document", async () => {
+  const { service } = setup();
+  const input = draft();
+  input.workCaps = {
+    total: { daily: { tokens: 100, costUsd: 1.25 } },
+    providers: { codex: { monthly: { tokens: 0, costUsd: 10 } } },
+  };
+  await service.save(0, input);
+  await store.close();
+  store = new HostStore(join(root, "host.db"));
+  expect((await readModelRouting(store)).workCaps).toEqual(input.workCaps);
+  const invalid = structuredClone(input);
+  invalid.workCaps!.total!.daily!.tokens = Number.MAX_SAFE_INTEGER + 1;
+  await expect(setup().service.save(1, invalid)).rejects.toThrow();
+  invalid.workCaps!.total!.daily!.tokens = 1;
+  invalid.workCaps!.total!.daily!.costUsd = Infinity;
+  await expect(setup().service.save(1, invalid)).rejects.toThrow();
+  expect((await readModelRouting(store)).version).toBe(1);
+});

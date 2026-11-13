@@ -109,11 +109,12 @@ async function type(value: string) {
     parsed();
   });
 }
-async function key(value: string) {
+async function key(value: string, extra: KeyboardEventInit = {}) {
   const event = new KeyboardEvent("keydown", {
     key: value,
     bubbles: true,
     cancelable: true,
+    ...extra,
   });
   await act(async () => {
     element.dispatchEvent(event);
@@ -130,6 +131,16 @@ it("shows a suffix and completes with Tab without executing; ordinary Enter keep
   await type("git s");
   expect(await key("Enter")).toBe(false);
   expect(paste).toHaveBeenCalledTimes(1);
+});
+
+it("leaves WebKit composition acceptance to the IME", async () => {
+  await mount(true);
+  await type("git s");
+  expect(host.textContent).toContain("git status");
+  expect(await key("Enter", { keyCode: 229 })).toBe(false);
+  expect(paste).not.toHaveBeenCalled();
+  expect(await key("Enter")).toBe(true);
+  expect(paste).toHaveBeenCalledExactlyOnceWith("tatus");
 });
 
 it("preserves the keyboard choice when native suggestions arrive late", async () => {

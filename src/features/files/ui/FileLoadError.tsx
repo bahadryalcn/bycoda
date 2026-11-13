@@ -76,7 +76,7 @@ export function FileLoadError({
               className="shrink-0"
             >
               <Folder className="icon-xs" strokeWidth={1.75} />
-              {REVEAL_LABEL}
+              {t(REVEAL_LABEL)}
             </Button>
           ) : null}
         </div>
@@ -170,7 +170,7 @@ function LargeTextFileView({
         </Button>
         <Button size="sm" variant="ghost" motion="none" type="button" onClick={() => reveal(path)}>
           <Folder className="icon-xs" strokeWidth={1.75} />
-          {REVEAL_LABEL}
+          {t(REVEAL_LABEL)}
         </Button>
       </Text>
       <OutputBlock

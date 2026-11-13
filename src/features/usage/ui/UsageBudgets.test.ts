@@ -2,6 +2,11 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import type { UsageBudget, BudgetReading } from "../model/usageBudgets";
+const readings = vi.hoisted(() => ({
+  budgets: [] as UsageBudget[],
+  reading: null as BudgetReading | null,
+}));
 vi.mock("../../group-lock/hooks/useGroupLock", () => ({
   useLockSnapshot: () => ({ lockedGroupIds: new Set(), lockedPaths: [] }),
 }));
@@ -14,12 +19,14 @@ vi.mock("../../sessions/model/sessionsStore", () => ({
   getSessions: () => [],
 }));
 vi.mock("../model/usageBudgetStore", () => ({
-  loadUsageBudgets: () => [],
+  loadUsageBudgets: () => readings.budgets,
   subscribeUsageBudgets: () => () => {},
   saveUsageBudget: vi.fn(),
   deleteUsageBudget: vi.fn(),
 }));
-vi.mock("../model/usageBudgetReadings", () => ({ createBudgetReader: () => vi.fn() }));
+vi.mock("../model/usageBudgetReadings", () => ({
+  createBudgetReader: () => vi.fn(async () => readings.reading),
+}));
 import { UsageBudgets } from "./UsageBudgets";
 
 it("retains empty numeric drafts and native token/percentage constraints in the actual budget editor", async () => {
@@ -59,6 +66,63 @@ it("retains empty numeric drafts and native token/percentage constraints in the 
   } finally {
     await act(async () => root.unmount());
     container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("localizes threshold comparisons and shows the known reset without changing its reading", async () => {
+  const { setLanguagePreference } = await import("../../../shared/i18n");
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  const reset = Date.UTC(2027, 2, 19, 14, 35, 0);
+  readings.budgets = [
+    {
+      id: "threshold",
+      scope: "project",
+      target: "/project",
+      label: "Research budget",
+      metric: "accountPercent",
+      period: "weekly",
+      capacity: 100,
+      percent: 50,
+      provider: "codex",
+      accountId: "default",
+      action: "monitor",
+    },
+  ];
+  readings.reading = { used: 19.25, limit: 50, state: "ok", resetsAt: reset };
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await setLanguagePreference("en");
+    await act(async () => root.render(createElement(UsageBudgets)));
+    expect(host.textContent).toContain("19.3% / 50.0%");
+    await act(async () => {
+      await setLanguagePreference("tr");
+    });
+    expect(host.textContent).toContain("%19,3 / %50,0");
+    expect(host.querySelector("time[datetime]")?.getAttribute("datetime")).not.toBeNull();
+    expect(
+      [...host.querySelectorAll("time")].some(
+        (time) =>
+          time.dateTime === new Date(reset).toISOString() && time.textContent?.includes("2027"),
+      ),
+    ).toBe(true);
+    expect(readings.reading).toEqual({ used: 19.25, limit: 50, state: "ok", resetsAt: reset });
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    readings.budgets = [];
+    readings.reading = null;
+    await setLanguagePreference("en");
     vi.unstubAllGlobals();
   }
 });

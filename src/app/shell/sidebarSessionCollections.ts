@@ -18,6 +18,7 @@ export function projectSessionCollection(
         cwd,
         harness: session.harness,
         providerHistory: session.providerHistory,
+        managedBy: session.managedBy,
         model: session.model ?? "",
         runtimeMode: session.runtimeMode ?? "supervised",
         providerSessionId: session.providerSessionId ?? undefined,

@@ -165,10 +165,19 @@ describe("conversation goal writes", () => {
       { maxRunningTasks: 3, maxRunMinutes: 0, autoMerge: false, continueUntilDone: false },
       1,
     );
+    for (const maxRunningTasks of [0, 9, 99, Number.MAX_SAFE_INTEGER]) {
+      await f.call("goals.update", { goalId: "goal", expectedUpdatedAt: 1, maxRunningTasks });
+      expect(f.goals.update).toHaveBeenLastCalledWith(
+        "goal",
+        { maxRunningTasks, maxRunMinutes: 0, autoMerge: false, continueUntilDone: false },
+        1,
+      );
+    }
     f.goals.update.mockClear();
     for (const patch of [
       {},
-      { maxRunningTasks: 9 },
+      { maxRunningTasks: Number.MAX_SAFE_INTEGER + 1 },
+      { maxRunningTasks: 1.5 },
       { maxRunningTasks: -1 },
       { maxRunMinutes: 10081 },
       { maxRunMinutes: 0.5 },

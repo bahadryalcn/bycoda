@@ -1,11 +1,42 @@
 import { expect, it, vi } from "vitest";
 import { pcmWav, transcribeCloudDictation } from "./voice-cloud-dictation";
+import { cachedTranscriptionModels } from "./voice-transcription-catalog";
 
 const AUDIO = Buffer.alloc(3200, 1).toString("base64");
 const SECRET = "sk-" + "s".repeat(40);
 const reply = (status: number, body: unknown = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const credential = vi.fn(async () => SECRET);
+
+it("deduplicates phrase discovery, refreshes after a minute and never uses stale results after failure", async () => {
+  let now = 0;
+  let finish!: (value: { id: string; label: string }[]) => void;
+  const load = vi.fn().mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const transcriptionModels = cachedTranscriptionModels(load, () => now);
+  const request = vi.fn(async () => reply(200, { text: "ok" }));
+  const deps = { credential, request: request as typeof fetch, transcriptionModels };
+  const phrase = () => transcribeCloudDictation("openrouter", AUDIO, "tr", deps, "vendor/model");
+  const first = phrase();
+  const second = phrase();
+  await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  finish([{ id: "vendor/model", label: "Model" }]);
+  await Promise.all([first, second]);
+  now = 59_999;
+  await phrase();
+  expect(load).toHaveBeenCalledTimes(1);
+  now = 60_000;
+  load.mockRejectedValueOnce(new Error("catalog offline"));
+  await expect(phrase()).rejects.toThrow("catalog offline");
+  expect(request).toHaveBeenCalledTimes(3);
+  load.mockResolvedValueOnce([{ id: "vendor/model", label: "Model" }]);
+  await phrase();
+  expect(load).toHaveBeenCalledTimes(3);
+  expect(request).toHaveBeenCalledTimes(4);
+});
 
 it("wraps 16 kHz mono PCM in a WAV header", () => {
   const wav = pcmWav(Buffer.alloc(320));
@@ -43,6 +74,7 @@ it("sends a phrase to OpenRouter as base64 WAV JSON", async () => {
   await transcribeCloudDictation("openrouter", AUDIO, undefined, {
     credential,
     request: request as typeof fetch,
+    transcriptionModels: async () => [{ id: "openai/gpt-4o-mini-transcribe", label: "Mini" }],
   });
   const [target, init] = request.mock.calls[0] as unknown as [string, RequestInit];
   expect(target).toBe("https://openrouter.ai/api/v1/audio/transcriptions");
@@ -55,13 +87,37 @@ it("sends a phrase to OpenRouter as base64 WAV JSON", async () => {
 
 it("uses a chosen allowed model and rejects any other", async () => {
   const request = vi.fn(async () => reply(200, { text: "ok" }));
-  const deps = { credential, request: request as typeof fetch };
+  const deps = {
+    credential,
+    request: request as typeof fetch,
+    transcriptionModels: async () => [{ id: "deepgram/nova-3", label: "Nova" }],
+  };
   await transcribeCloudDictation("openrouter", AUDIO, "tr", deps, "deepgram/nova-3");
   const [, init] = request.mock.calls[0] as unknown as [string, RequestInit];
   expect(JSON.parse(String(init.body)).model).toBe("deepgram/nova-3");
   await expect(
     transcribeCloudDictation("openai", AUDIO, "tr", deps, "deepgram/nova-3"),
   ).rejects.toThrow("Invalid dictation model");
+  expect(request).toHaveBeenCalledOnce();
+  await expect(
+    transcribeCloudDictation("openrouter", AUDIO, "tr", deps, "removed/model"),
+  ).rejects.toThrow("no longer available");
+  expect(request).toHaveBeenCalledOnce();
+});
+
+it("uses the current catalog default only when no model was selected", async () => {
+  const request = vi.fn(async () => reply(200, { text: "ok" }));
+  const deps = {
+    credential,
+    request: request as typeof fetch,
+    transcriptionModels: async () => [{ id: "new/model", label: "New" }],
+  };
+  await transcribeCloudDictation("openrouter", AUDIO, "tr", deps);
+  const [, init] = request.mock.calls[0] as unknown as [string, RequestInit];
+  expect(JSON.parse(String(init.body)).model).toBe("new/model");
+  await expect(
+    transcribeCloudDictation("openrouter", AUDIO, "tr", deps, "removed/model"),
+  ).rejects.toThrow("no longer available");
   expect(request).toHaveBeenCalledOnce();
 });
 

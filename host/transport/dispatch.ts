@@ -201,7 +201,10 @@ export function createHostDispatcher(services: HostServices) {
           (await (
             cancellable ? context.authorized : (context.executionAuthorized ?? context.authorized)
           )()) === true,
-        signal: options.signal,
+        signal:
+          method === "native.services.assistant.background.execute"
+            ? context.signal
+            : options.signal,
         closing: () => !!options.signal?.aborted,
         exposeQueueAttachments: context.exposeQueueAttachments,
         retargetTask: context.retargetTask,

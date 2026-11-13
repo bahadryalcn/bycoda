@@ -19,7 +19,7 @@ import {
   CONTACT_TAG_REQUEST_MAX,
   CONTACT_TAGS_MAX,
 } from "../../src/features/social/model/socialSuggestions";
-import type { SocialTextGenerator } from "./social-generation";
+import { currentSocialTextInvocation, type SocialTextGenerator } from "./social-generation";
 import { parsePublishingSchedule } from "./social-schedule";
 
 /**
@@ -100,7 +100,12 @@ export async function askSuggestionModel(
 ): Promise<Record<string, unknown>> {
   let output: string;
   try {
-    output = await model.generate(model.agent, prompt, AbortSignal.timeout(90000));
+    output = await model.generate(
+      model.agent,
+      prompt,
+      AbortSignal.timeout(90000),
+      currentSocialTextInvocation(),
+    );
   } catch {
     throw new Error(SUGGESTION_GENERATION_FAILED);
   }

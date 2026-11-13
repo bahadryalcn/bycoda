@@ -1,3 +1,4 @@
+pub mod host_migration;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -260,6 +261,7 @@ pub(crate) fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
          );
          CREATE INDEX IF NOT EXISTS automations_due_idx
            ON automations (enabled, next_run_at);
+         CREATE TABLE IF NOT EXISTS automation_host_migrations (automation_id TEXT PRIMARY KEY, value TEXT NOT NULL);
          CREATE TABLE IF NOT EXISTS automation_runs (
            id TEXT PRIMARY KEY,
            automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
@@ -791,6 +793,25 @@ pub fn automations_list(store: State<'_, SessionStore>) -> Result<Vec<Automation
         Ok(list(conn)?
             .into_iter()
             .filter(|automation| !is_ssh(automation))
+            .map(|mut automation| {
+                let migration = host_migration::receipt(conn, &automation.id)?;
+                if migration
+                    .as_ref()
+                    .is_some_and(|receipt| receipt.phase == "committed")
+                {
+                    return Ok(None);
+                }
+                if migration.is_some() {
+                    automation.enabled = false;
+                    automation.last_run_error = Some(
+                        "Host migration is pending. Reconnect the target Host to resume.".into(),
+                    );
+                }
+                Ok(Some(automation))
+            })
+            .collect::<Result<Vec<_>, String>>()?
+            .into_iter()
+            .flatten()
             .collect())
     })
 }
@@ -817,6 +838,7 @@ fn automations_upsert_with(
     validate_upsert(&automation, now)?;
     let triggers = Some(normalize_triggers(&automation));
     let conn = store.lock_conn()?;
+    host_migration::require_native_owner(&conn, &automation.id)?;
     let previous = get(&conn, &automation.id)?;
     if previous.as_ref().is_some_and(is_ssh) {
         return Err("Use the SSH runbook editor; agent edits cannot convert a runbook".into());
@@ -1044,6 +1066,7 @@ fn automation_run_now_with(
     validate_id(&automation_id, "automation")?;
     let mut conn = store.lock_conn()?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
+    host_migration::require_native_owner(&tx, &automation_id)?;
     let mut automation =
         get(&tx, &automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
     require_agent(&automation)?;
@@ -1101,6 +1124,7 @@ fn automations_claim_due_with(
     let mut conn = store.lock_conn()?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let current = get(&tx, &automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
+    host_migration::require_native_owner(&tx, &automation_id)?;
     require_agent(&current)?;
     if !has_time_trigger(&current) {
         tx.rollback().map_err(|error| error.to_string())?;
@@ -1192,6 +1216,7 @@ fn automations_claim_event_with(
     };
     let mut conn = store.lock_conn()?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
+    host_migration::require_native_owner(&tx, &automation_id)?;
     let mut automation =
         get(&tx, &automation_id)?.ok_or_else(|| "Automation not found.".to_string())?;
     require_agent(&automation)?;

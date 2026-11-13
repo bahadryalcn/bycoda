@@ -19,6 +19,14 @@ import type { HostToolsWindow as HostToolsWindowProps } from "../../app/model/ho
 import { SessionHostTools } from "./SessionHostTools";
 import { Alert } from "../../shared/ui/Alert";
 import { Button } from "../../shared/ui/Button";
+import { Modal } from "../../shared/ui/Modal";
+import { LoadingText } from "../../shared/ui/LoadingText";
+import { withTimeout } from "../../shared/lib/withTimeout";
+import {
+  assertToolsReturnUnchanged,
+  hideReturnedTools,
+  RETURN_PRESENTATION_MS,
+} from "./model/toolsReturnPresentation";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { Folder, Link2, Pin, PanelRightClose, Wrench } from "../../shared/ui/icons";
 import { t, useLocale } from "../../shared/i18n/technical";
@@ -98,6 +106,8 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   retainedRef.current = retained;
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const returning = useRef(false);
+  const windowLifetime = useRef(0);
   const [availableWindows, setAvailableWindows] = useState<ReadonlySet<string> | null>(null);
   const windowLabel = useRef("");
   const transferReceipts = useRef(new ToolsTransferLedger<ToolsHubMessage>());
@@ -106,7 +116,6 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       string,
       {
         requestId: string;
-        fingerprint: string;
         editFingerprint: string;
         session: ToolsSession;
         drafts: ToolsWorkspaceTransfer;
@@ -285,6 +294,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
   }, []);
   useEffect(() => {
     if (!nativeToolsAvailable()) return;
+    windowLifetime.current += 1;
     let stopped = false;
     let release: (() => void) | undefined;
     void import("@tauri-apps/api/webviewWindow")
@@ -298,6 +308,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         const view = getCurrentWebviewWindow();
         const closeRelease = await view.onCloseRequested((event) => {
           event.preventDefault();
+          windowLifetime.current += 1;
           void view.hide().catch((cause) => setError(toolsTransferError(cause)));
         });
         if (stopped) {
@@ -322,6 +333,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       });
     return () => {
       stopped = true;
+      windowLifetime.current += 1;
       release?.();
     };
   }, []);
@@ -408,7 +420,9 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
     if (next) setSelected(latestSelection.current.session);
   };
   const reattach = async () => {
-    if (!currentPane?.composerWindow || pending) return;
+    if (!currentPane?.composerWindow || returning.current) return;
+    returning.current = true;
+    const lifetime = windowLifetime.current;
     setPending(true);
     setError("");
     try {
@@ -420,6 +434,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           views.current.get(paneKey(currentPane))?.machine ?? currentPane.initialMachine,
       };
       const drafts = readWorkspaceTransfer(session);
+      const submittedEdits = JSON.stringify(toolsTransferEdits(session, drafts));
       const editFingerprint = await toolsTransferFingerprint(toolsTransferEdits(session, drafts));
       const previous = pendingReturns.current.get(paneKey(currentPane));
       if (previous && previous.editFingerprint !== editFingerprint)
@@ -429,7 +444,6 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       const operation = previous ?? {
         requestId: crypto.randomUUID(),
         editFingerprint,
-        fingerprint: await toolsTransferFingerprint(toolsTransferContent(session, drafts)),
         session: structuredClone(session),
         drafts: structuredClone(drafts),
       };
@@ -452,23 +466,50 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           machine: operation.session.initialMachine ?? "project",
         }),
       );
-      pendingReturns.current.delete(paneKey(currentPane));
       const [{ focusSessionWindow }, { remoteSessionOwnershipKey }, { getCurrentWebviewWindow }] =
-        await Promise.all([
-          import("../../app/model/windowNavigation"),
-          import("../../app/model/sessionWindowOwnership"),
-          import("@tauri-apps/api/webviewWindow"),
-        ]);
+        await withTimeout(
+          Promise.all([
+            import("../../app/model/windowNavigation"),
+            import("../../app/model/sessionWindowOwnership"),
+            import("@tauri-apps/api/webviewWindow"),
+          ]),
+          RETURN_PRESENTATION_MS,
+          t("Return to conversation"),
+        );
       const ownershipId = currentPane.cwd.startsWith("remote://")
         ? remoteSessionOwnershipKey(currentPane.cwd, currentPane.sessionId)
         : (currentPane.composerSessionId ?? currentPane.sessionId);
-      await focusSessionWindow(currentPane.composerWindow, ownershipId);
-      await getCurrentWebviewWindow().hide();
+      await withTimeout(
+        focusSessionWindow(currentPane.composerWindow, ownershipId),
+        RETURN_PRESENTATION_MS,
+        t("Return to conversation"),
+      );
+      if (windowLifetime.current !== lifetime) return;
+      // Compare synchronously after the last focus/import await; hashing here would reopen the edit race.
+      assertToolsReturnUnchanged(
+        session,
+        views.current.get(paneKey(currentPane)),
+        submittedEdits,
+        t("Tools changed after an uncertain transfer. Both workspaces retained for review."),
+      );
+      await hideReturnedTools(
+        getCurrentWebviewWindow(),
+        () =>
+          windowLifetime.current === lifetime &&
+          pendingReturns.current.get(paneKey(currentPane)) === operation &&
+          retainedRef.current.some((pane) => paneKey(pane) === paneKey(currentPane)),
+        (cause) => {
+          if (windowLifetime.current === lifetime) setError(toolsTransferError(cause));
+        },
+        t("Return to conversation"),
+      );
+      pendingReturns.current.delete(paneKey(currentPane));
       setRetained((previous) => previous.filter((pane) => !sameToolsSession(pane, currentPane)));
       setSelected(null);
     } catch (cause) {
       setError(toolsTransferError(cause));
     } finally {
+      returning.current = false;
       setPending(false);
     }
   };
@@ -491,6 +532,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           <SearchableSelect
             hideLabel
             label={t("Tool conversations")}
+            disabled={pending}
             variant="transparent"
             value={current ? toolsSessionKey(current) : ""}
             placeholder={t("Conversation tools")}
@@ -537,6 +579,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           selected={follow}
           tone={follow ? "accent" : "neutral"}
           label={t(follow ? "Follow active conversation" : "Keep this conversation")}
+          disabled={pending}
           onClick={toggleFollow}
         >
           {follow ? (
@@ -606,6 +649,11 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
           </Text>
         ) : null}
       </div>
+      {pending ? (
+        <Modal title={t("Return to conversation")} closeDisabled onClose={() => {}}>
+          <LoadingText delay={false} />
+        </Modal>
+      ) : null}
     </Text>
   );
 }

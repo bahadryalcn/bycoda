@@ -210,9 +210,11 @@ function TunnelUrl({ tunnel, machine }: { tunnel: ExternalTunnel; machine: Remot
 export function TunnelControls({
   machine,
   initialLocalUrl = "3000",
+  active = true,
 }: {
   machine: RemoteMachine;
   initialLocalUrl?: string;
+  active?: boolean;
 }) {
   useLocale();
   const id = useId();
@@ -228,7 +230,20 @@ export function TunnelControls({
   const [target, setTarget] = useState<TunnelTarget>("dev-server");
   const [localUrl, setLocalUrl] = useState(initialLocalUrl);
   const [token, setToken] = useState("");
+  const [action, setAction] = useState<string | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const run = async (name: string, work: () => Promise<boolean>) => {
+    if (controller.getSnapshot().pending) return false;
+    setAction(name);
+    try {
+      return await work();
+    } finally {
+      setAction(null);
+    }
+  };
   const [repairNoticeDismissed, setRepairNoticeDismissed] = useState(false);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Holds this machine's tunnel controller and status poll until unmount, then closes the controller and cancels its timer.
   useEffect(() => {
     controller.activate();
     let disposed = false;
@@ -237,7 +252,7 @@ export function TunnelControls({
     let failures = 0;
     const poll = async (fresh = false) => {
       if (disposed) return;
-      if (!document.hidden || fresh) {
+      if (activeRef.current && (!document.hidden || fresh)) {
         await controller.refresh(fresh);
         failures = controller.getSnapshot().phase === "error" ? failures + 1 : 0;
       }
@@ -296,7 +311,10 @@ export function TunnelControls({
                       type="button"
                       className="shrink-0"
                       disabled={state.pending || tunnel.state === "stopping"}
-                      onClick={() => void controller.stop(tunnel.id)}
+                      loading={state.pending && action === `stop:${tunnel.id}`}
+                      onClick={() =>
+                        void run(`stop:${tunnel.id}`, () => controller.stop(tunnel.id))
+                      }
                     >
                       {t("Stop tunnel")}
                     </Button>
@@ -312,7 +330,7 @@ export function TunnelControls({
                     <InlineMessage tone="warning">{t(issueCopy[tunnel.issue])}</InlineMessage>
                   )
                 ) : null}
-                {ready && tunnel.state === "ready" ? (
+                {active && ready && tunnel.state === "ready" ? (
                   <TunnelUrl
                     key={`${tunnel.id}:${tunnel.publicUrl}`}
                     tunnel={tunnel}
@@ -341,17 +359,20 @@ export function TunnelControls({
             selected?.installed &&
             (provider === "cloudflare" || selected.credential === "saved")
           )
-            void controller.start({
-              provider,
-              target,
-              ...(target === "dev-server" ? { localUrl } : {}),
-            });
+            void run("start", () =>
+              controller.start({
+                provider,
+                target,
+                ...(target === "dev-server" ? { localUrl } : {}),
+              }),
+            );
         }}
       >
         <Field label={t("What to share")}>
           <RadioGroup
             variant="inline"
             label={t("Tunnel target")}
+            disabled={state.pending}
             value={target}
             onValueChange={(value) => {
               if (!state.pending) setTarget(value as TunnelTarget);
@@ -366,6 +387,7 @@ export function TunnelControls({
           <RadioGroup
             variant="inline"
             label={t("Tunnel provider")}
+            disabled={state.pending}
             value={provider}
             onValueChange={(value) => {
               if (!state.pending) setProvider(value as TunnelProvider);
@@ -377,11 +399,13 @@ export function TunnelControls({
           />
         </Field>
         <div className="external-tunnel-actions external-tunnel-wide">
-          <Badge variant="dot" tone={selected?.installed ? "success" : "neutral"}>
-            {t(selected?.installed ? "{p0} CLI ready" : "{p0} CLI needed", {
-              p0: provider === "cloudflare" ? "Cloudflare" : "ngrok",
-            })}
-          </Badge>
+          {selected ? (
+            <Badge variant="dot" tone={selected.installed ? "success" : "neutral"}>
+              {t(selected.installed ? "{p0} CLI ready" : "{p0} CLI needed", {
+                p0: provider === "cloudflare" ? "Cloudflare" : "ngrok",
+              })}
+            </Badge>
+          ) : null}
           <Button
             type="button"
             variant="ghost"
@@ -392,10 +416,8 @@ export function TunnelControls({
           >
             <RefreshCw className="icon-sm" aria-hidden />
           </Button>
-          {state.phase === "loading" || state.pending ? (
-            <LoadingText delay={!state.pending}>
-              {state.pending ? t("Working…") : t("Checking tunnel access…")}
-            </LoadingText>
+          {state.phase === "loading" ? (
+            <LoadingText>{t("Checking tunnel access…")}</LoadingText>
           ) : null}
           <InfoPopover label={t("Tunnel setup")}>
             <p>
@@ -434,6 +456,7 @@ export function TunnelControls({
         <Button
           stableWidth
           type="submit"
+          loading={state.pending && action === "start"}
           disabled={
             !ready ||
             !selected?.installed ||
@@ -460,22 +483,27 @@ export function TunnelControls({
           leading="inherit"
           className="external-tunnel-credentials"
         >
-          <InlineMessage tone={selected?.credential === "saved" ? "success" : "warning"}>
-            {t(
-              selected?.credential === "saved"
-                ? "ngrok authtoken is saved securely on this computer."
-                : selected?.credential === "unavailable"
-                  ? issueCopy["credential-store-unavailable"]
-                  : issueCopy["credential-missing"],
-            )}
-          </InlineMessage>
+          {selected ? (
+            <InlineMessage tone={selected.credential === "saved" ? "success" : "warning"}>
+              {t(
+                selected?.credential === "saved"
+                  ? "ngrok authtoken is saved securely on this computer."
+                  : selected?.credential === "unavailable"
+                    ? issueCopy["credential-store-unavailable"]
+                    : issueCopy["credential-missing"],
+              )}
+            </InlineMessage>
+          ) : null}
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (ready && token) {
+              if (overview && !state.pending && token) {
                 const value = token;
-                setToken("");
-                void controller.credential(value);
+                void run("credential", () => controller.credential(value))
+                  .then((saved) => {
+                    if (saved) setToken((current) => (current === value ? "" : current));
+                  })
+                  .catch(() => undefined);
               }
             }}
           >
@@ -490,7 +518,13 @@ export function TunnelControls({
               onChange={(event) => setToken(event.target.value)}
               fieldClassName="min-w-0 flex-1"
             />
-            <Button stableWidth type="submit" disabled={!ready || !token} variant="primary">
+            <Button
+              stableWidth
+              type="submit"
+              loading={state.pending && action === "credential"}
+              disabled={!overview || state.pending || !token}
+              variant="primary"
+            >
               {t("Save token securely")}
             </Button>
             {selected?.credential === "saved" ? (
@@ -499,7 +533,8 @@ export function TunnelControls({
                 type="button"
                 className="shrink-0"
                 disabled={!ready}
-                onClick={() => void controller.credential("")}
+                loading={state.pending && action === "forget"}
+                onClick={() => void run("forget", () => controller.credential(""))}
               >
                 {t("Forget saved token")}
               </Button>
@@ -527,6 +562,9 @@ export function ExternalTunnelsPanel({
     (a, b) => Number(isLocalSyncMachine(b)) - Number(isLocalSyncMachine(a)),
   );
   const machine = selected ? ordered.find((entry) => entry.id === selected) : ordered[0];
+  const [visited, setVisited] = useState<string[]>([]);
+  const machineKey = machine ? `${machine.id}:${machine.environmentId}` : "";
+  if (machineKey && !visited.includes(machineKey)) setVisited([...visited, machineKey]);
   return (
     <Surface as="section" variant="outline" padding="lg" aria-label={t("External tunnels")}>
       <Text
@@ -554,17 +592,22 @@ export function ExternalTunnelsPanel({
             }))}
           />
         ) : null}
-        {!loaded || loading ? (
-          <LoadingText>{t("Checking tunnel access…")}</LoadingText>
-        ) : machine ? (
-          <TunnelControls key={`${machine.id}:${machine.environmentId}`} machine={machine} />
-        ) : (
+        {!loaded || loading ? <LoadingText>{t("Checking tunnel access…")}</LoadingText> : null}
+        {machine ? (
+          ordered
+            .filter((entry) => visited.includes(`${entry.id}:${entry.environmentId}`))
+            .map((entry) => (
+              <div key={`${entry.id}:${entry.environmentId}`} hidden={entry !== machine}>
+                <TunnelControls machine={entry} active={entry === machine} />
+              </div>
+            ))
+        ) : loaded && !loading ? (
           <EmptyState
             size="inline"
             kind="empty"
             description={t("Choose a connected computer to manage its tunnels.")}
           />
-        )}
+        ) : null}
       </Text>
     </Surface>
   );

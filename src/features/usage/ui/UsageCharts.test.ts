@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ContinuousUsageTable } from "./UsageCharts";
+import { ContinuousUsageTable, formatMetric } from "./UsageCharts";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { HARNESS_ICONS } from "../../../shared/ui/identity/HarnessIcon";
 
@@ -98,4 +98,20 @@ it("displays canonical provider names without duplicating their marks", async ()
   );
   expect(container.querySelector("tbody")?.textContent).toContain("Codex");
   expect(container.querySelectorAll("tbody img")).toHaveLength(1);
+});
+
+it("localizes duration units without changing the chart rounding contract", async () => {
+  const { setLanguagePreference } = await import("../../../shared/i18n");
+  await setLanguagePreference("en");
+  expect(
+    [499, 59999, 60000, 119999, 3905000].map((value) => formatMetric(value, "duration")),
+  ).toEqual(["0s", "60s", "1m", "1m", "1h 5m"]);
+  await setLanguagePreference("tr");
+  try {
+    expect(
+      [499, 59999, 60000, 119999, 3905000].map((value) => formatMetric(value, "duration")),
+    ).toEqual(["0 sn", "60 sn", "1 dk", "1 dk", "1 sa 5 dk"]);
+  } finally {
+    await setLanguagePreference("en");
+  }
 });

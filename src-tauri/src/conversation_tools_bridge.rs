@@ -13,6 +13,8 @@ use tauri::Manager;
 mod assistant_native_note_baseline;
 #[path = "assistant/assistant_notification_owner.rs"]
 mod assistant_notification_owner;
+#[path = "assistant/assistant_background_effect.rs"]
+mod assistant_background_effect;
 #[path = "assistant/assistant_observation_publisher.rs"]
 mod assistant_observation_publisher;
 mod delegation_readiness;
@@ -128,6 +130,9 @@ fn execute_desktop_request_inner(
     // Assistant threads may request this exact native approval only. They are
     // never a substitute session for the other desktop/native UI routes.
     if let Some(thread) = request.get("threadId") {
+        if action == "assistant.background.effect" {
+            return assistant_background_effect::execute(app, request, issuer, taken);
+        }
         if action == "privacy.scope.capture" {
             return privacy_scope_capture::capture(app, request, issuer, taken);
         }
@@ -611,6 +616,8 @@ enum DesktopApprovalSubject {
         thread_id: String,
         project_id: String,
     },
+    /// A Global assistant thread: no project and no working folder.
+    GlobalThread(String),
 }
 
 fn desktop_approval_field(request: &Value, key: &str, max: usize) -> Result<String, String> {
@@ -638,6 +645,14 @@ impl DesktopApprovalSubject {
                 "sessionId",
                 200,
             )?)),
+            (None, Some(_)) if request.get("projectId").is_none() => {
+                if request.get("cwd").is_some() || request.get("targetProjectCwd").is_some() {
+                    return Err("A global assistant thread has no project folder".into());
+                }
+                Ok(Self::GlobalThread(desktop_approval_field(
+                    request, "threadId", 200,
+                )?))
+            }
             (None, Some(_)) => Ok(Self::AssistantThread {
                 thread_id: desktop_approval_field(request, "threadId", 200)?,
                 project_id: desktop_approval_field(request, "projectId", 200)?,
@@ -777,7 +792,10 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
     let relay_id = field("id", 200)?;
     uuid::Uuid::parse_str(&relay_id).map_err(|_| "Invalid original desktop request identity")?;
     let subject = DesktopApprovalSubject::parse(request)?;
-    let cwd = field("cwd", 4096)?;
+    let cwd = match subject {
+        DesktopApprovalSubject::GlobalThread(_) => None,
+        _ => Some(field("cwd", 4096)?),
+    };
     let environment_id = field("environmentId", 200)?;
     let deadline = request["deadline"]
         .as_u64()
@@ -952,11 +970,17 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
             literal(thread_id),
             literal(project_id)
         ),
+        DesktopApprovalSubject::GlobalThread(thread_id) => {
+            format!("Global assistant thread: {}", literal(thread_id))
+        }
     };
+    let project = cwd
+        .as_deref()
+        .map_or_else(|| "(none, Global assistant)".to_string(), literal);
     let message = match operation {
       DesktopApprovalOperation::Ref(operation) => format!(
         "Review this exact desktop action. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nWindow: {}\nSnapshot: {}\nTarget ref: {}\nAction: {}{}\nInput mode: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
-        literal(&environment_id), subject_context, literal(&cwd), literal(&operation.app), literal(&operation.window_id), literal(&operation.snapshot_id), literal(&operation.target_ref), literal(&operation.action),
+        literal(&environment_id), subject_context, project, literal(&operation.app), literal(&operation.window_id), literal(&operation.snapshot_id), literal(&operation.target_ref), literal(&operation.action),
         match (&operation.to_ref, &operation.direction) {
             (Some(to_ref), _) => format!("\nDrag to ref: {}", literal(to_ref)),
             (None, Some(direction)) => format!(
@@ -970,15 +994,15 @@ fn desktop_action_approval(request: &Value, now: u64) -> Result<DesktopActionApp
     ),
       DesktopApprovalOperation::App(operation) => format!(
         "Allow computer use for this application? Approval is remembered: the application joins your approved apps until you remove it in Computer use settings. Your permission mode still decides which actions ask.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nAccess: read its windows and content, launch or attach to it, and act in it\n\nOperation SHA-256: {}",
-        literal(&environment_id), subject_context, literal(&cwd), literal(&operation.app), input.operation_hash,
+        literal(&environment_id), subject_context, project, literal(&operation.app), input.operation_hash,
       ),
       DesktopApprovalOperation::Launch(operation) => format!(
         "Review this exact application launch. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nApplication: {}\nAction: LAUNCH OR ATTACH — headless, no activation, arguments, environment or CDP access\nRequest: {}\n\nOperation SHA-256: {}",
-        literal(&environment_id), subject_context, literal(&cwd), literal(&operation.app), literal(&operation.request_id), input.operation_hash,
+        literal(&environment_id), subject_context, project, literal(&operation.app), literal(&operation.request_id), input.operation_hash,
       ),
       DesktopApprovalOperation::Clipboard(operation) => format!(
         "Review this exact GLOBAL clipboard operation. Approval applies once to this operation only.\n\nHost: {}\n{}\nProject: {}\nTarget: GLOBAL SYSTEM CLIPBOARD — shared by all applications\nAction: {}\nConsequence: {}\nRequest: {}\nText (JSON literal): {}\n\nOperation SHA-256: {}",
-        literal(&environment_id), subject_context, literal(&cwd), literal(&operation.action),
+        literal(&environment_id), subject_context, project, literal(&operation.action),
         match operation.action.as_str() { "get" => "Read up to 10000 plain-text characters and disclose them to this agent conversation. The clipboard may contain sensitive information.", "set" => "Replace the global clipboard with exactly the reviewed plain text.", _ => "Clear the global clipboard, removing its current contents." },
         literal(&operation.request_id), operation.text.as_ref().map(|text| literal(text)).unwrap_or_else(|| "(none)".into()), input.operation_hash,
       ),
@@ -1180,7 +1204,18 @@ fn decorate_frame(line: String, grant: &Value) -> String {
     else {
         return line;
     };
-    if grant["token"].as_str().is_none() {
+    let host_grant = grant["token"].as_str().is_some_and(|token| !token.is_empty());
+    // Only the cached, Native-issued child grant can supply local read authority.
+    // Frame env values are never a fallback, and app tokens never target a remote endpoint.
+    let local_read = grant["appToken"].as_str().is_some_and(|token| !token.is_empty())
+        && grant["appEndpoint"].as_str().is_some_and(|endpoint| {
+            endpoint.parse::<std::net::SocketAddr>().is_ok_and(|address| {
+                address.port() != 0
+                    && (address.ip() == std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+                        || address.ip() == std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST))
+            })
+        });
+    if !host_grant && !local_read {
         servers.retain(|server| server["name"].as_str() != Some("bycoda-conversation"));
         return request.to_string();
     }
@@ -1210,6 +1245,11 @@ fn decorate_frame(line: String, grant: &Value) -> String {
             ("BYCODA_APP_ENDPOINT", "appEndpoint"),
             ("BYCODA_APP_TOKEN", "appToken"),
         ] {
+            if (field.starts_with("app") && !local_read)
+                || (!field.starts_with("app") && !host_grant)
+            {
+                continue;
+            }
             if let Some(value) = grant[field].as_str() {
                 env.push(json!({"name": name, "value": value}));
             }
@@ -1363,6 +1403,27 @@ mod tests {
         request["threadId"] = json!("thread-one");
         request["projectId"] = json!("project-one");
         request
+    }
+    #[test]
+    fn desktop_approval_global_thread_names_no_project_and_rejects_a_folder() {
+        let mut request = desktop_thread_approval_fixture();
+        let object = request.as_object_mut().unwrap();
+        object.remove("projectId");
+        object.remove("cwd");
+        let approval = desktop_action_approval(&request, 10).unwrap();
+        assert!(approval
+            .message
+            .contains("Global assistant thread: \"thread-one\""));
+        assert!(approval.message.contains("(none, Global assistant)"));
+        assert!(!approval.message.contains("Project ID:"));
+        for (field, value) in [
+            ("cwd", json!("C:\\project")),
+            ("targetProjectCwd", json!("C:\\project")),
+        ] {
+            let mut invalid = request.clone();
+            invalid[field] = value;
+            assert!(desktop_action_approval(&invalid, 10).is_err());
+        }
     }
     #[test]
     fn failed_grant_does_not_advertise_acp_conversation_tools() {
@@ -1855,6 +1916,39 @@ mod tests {
             ])
         );
         assert_eq!(decorated["params"]["mcpServers"][1]["env"], json!([]));
+    }
+
+    #[test]
+    fn acp_local_read_requires_complete_native_loopback_credentials() {
+        let raw = json!({"method":"session/load","params":{"mcpServers":[
+            {"name":"bycoda-conversation","command":"node","env":[
+                {"name":"BYCODA_APP_ENDPOINT","value":"127.0.0.1:1"},
+                {"name":"BYCODA_APP_TOKEN","value":"forged"},
+                {"name":"BYCODA_CONVERSATION_TOKEN","value":"forged-host"}
+            ]},
+            {"name":"other","command":"node","env":[]}
+        ]}}).to_string();
+        for grant in [
+            json!({"appToken":"local"}),
+            json!({"appEndpoint":"127.0.0.1:1"}),
+            json!({"appEndpoint":"127.0.0.1:1","appToken":""}),
+            json!({"appEndpoint":"192.0.2.1:1","appToken":"local"}),
+            json!({"appEndpoint":"127.0.0.1:0","appToken":"local"}),
+            json!({"appEndpoint":"http://127.0.0.1:1","appToken":"local"}),
+        ] {
+            let result: Value = serde_json::from_str(&decorate_frame(raw.clone(), &grant)).unwrap();
+            assert_eq!(result["params"]["mcpServers"], json!([
+                {"name":"other","command":"node","env":[]}
+            ]));
+        }
+        let result: Value = serde_json::from_str(&decorate_frame(
+            raw,
+            &json!({"appEndpoint":"[::1]:1","appToken":"native-local"}),
+        )).unwrap();
+        assert_eq!(result["params"]["mcpServers"][0]["env"], json!([
+            {"name":"BYCODA_APP_ENDPOINT","value":"[::1]:1"},
+            {"name":"BYCODA_APP_TOKEN","value":"native-local"}
+        ]));
     }
     #[test]
     fn inbox_approval_shows_exact_target_content_and_rejects_scope_changes() {

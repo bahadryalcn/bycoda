@@ -1453,7 +1453,7 @@ export function FileEditor({
           <Button
             size="sm"
             iconOnly
-            label={REVEAL_LABEL}
+            label={t(REVEAL_LABEL)}
             variant="ghost"
             motion="none"
             type="button"
@@ -1461,7 +1461,7 @@ export function FileEditor({
             onClick={() =>
               void revealPath(path).catch((error: unknown) => setChromeError(String(error)))
             }
-            aria-label={REVEAL_LABEL}
+            aria-label={t(REVEAL_LABEL)}
           >
             <Folder className="icon-sm" />
           </Button>

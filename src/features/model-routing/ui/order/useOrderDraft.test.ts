@@ -1,3 +1,4 @@
+import { clearRetainedTransactions } from "../../model/retainedTransaction";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -60,6 +61,7 @@ async function mount() {
 }
 
 beforeEach(() => {
+  clearRetainedTransactions();
   vi.resetAllMocks();
   hostState = { ...structuredClone(EMPTY_MODEL_ROUTING), version: 4, updatedAt: 1 };
   hostLimits = {
@@ -267,4 +269,36 @@ it("keeps the submitted limit draft locked until Host acknowledgement", async ()
   expect(editor.pending).toBe(false);
   expect(editor.draft.limits.dailyAgentMinutes).toBe("180");
   expect(editor.dirty).toBe(false);
+});
+
+it("retains a dirty draft and in-flight save across remount", async () => {
+  await mount();
+  await act(() => editor.change({ ...editor.draft, maxRunMinutes: "35" }));
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, null)));
+  editor = undefined!;
+  await mount();
+  expect(editor.draft.maxRunMinutes).toBe("35");
+  let finish!: (value: unknown) => void;
+  vi.mocked(remoteRequest).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  act(() => {
+    void editor.save();
+  });
+  await act(async () => root.render(createElement(QueryClientProvider, { client }, null)));
+  editor = undefined!;
+  await mount();
+  expect(editor.pending).toBe(true);
+  act(() => {
+    void editor.save();
+  });
+  expect(
+    vi.mocked(remoteRequest).mock.calls.filter((call) => call[1] === "modelRouting.save"),
+  ).toHaveLength(1);
+  await act(async () => finish({ state: { ...hostState, version: 5, defaultMaxRunMinutes: 35 } }));
+  expect(editor.pending).toBe(false);
+  expect(editor.saved).toBe(true);
 });

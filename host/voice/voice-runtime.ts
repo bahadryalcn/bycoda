@@ -6,6 +6,10 @@ import { readdir } from "node:fs/promises";
 import { detectNvidiaGpu } from "./voice-gpu";
 
 export type VoiceRuntimeConfig = {
+  /** Minutes to keep the dictation recognizer loaded after its last lease. */
+  idleUnloadMinutes?: number;
+  /** Internal marker: honor an explicitly selected model without upgrading it. */
+  whisperExact?: boolean;
   python?: string;
   whisperPath?: string;
   ttsPath?: string;
@@ -41,6 +45,19 @@ export function voiceRuntimeConfig(value: unknown): VoiceRuntimeConfig {
     throw new Error("Invalid voice settings.");
   const result: VoiceRuntimeConfig = {};
   const input = value as Record<string, unknown>;
+  if (input.whisperExact !== undefined) {
+    if (typeof input.whisperExact !== "boolean") throw new Error("Invalid voice model selection.");
+    result.whisperExact = input.whisperExact;
+  }
+  if (input.idleUnloadMinutes !== undefined) {
+    if (
+      !Number.isInteger(input.idleUnloadMinutes) ||
+      (input.idleUnloadMinutes as number) < 0 ||
+      (input.idleUnloadMinutes as number) > 120
+    )
+      throw new Error("Invalid dictation idle timeout.");
+    result.idleUnloadMinutes = input.idleUnloadMinutes as number;
+  }
   for (const key of ["python", "whisperPath", "ttsPath"] as const) {
     const path = input[key];
     if (path === undefined || path === "") continue;

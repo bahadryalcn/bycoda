@@ -61,8 +61,9 @@ import {
 } from "../../orchestration/model/orchestration";
 import { DiscussionEmpty } from "./DiscussionEmpty";
 import { LinkedWorkItemUpdateNotice } from "../../inbox/ui/LinkedWorkItemUpdateNotice";
-import { orchestrationLocksUndo, SessionReview } from "./SessionReview";
-import { RetryFailedTurn } from "./RetryFailedTurn";
+import { orchestrationLocksUndo } from "./SessionReview";
+import { LatestTurnAccessory } from "./LatestTurnAccessory";
+import { SessionProviderGoal } from "./SessionProviderGoal";
 import { PromptOutline } from "./PromptOutline";
 import {
   canCompactHarnessContext,
@@ -143,7 +144,8 @@ import {
 } from "../../notes/notesPanel";
 import { SessionNotesPanel } from "../../notes/ui/SessionNotesPanel";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
-import { getComposerDraft, setComposerDraft } from "../model/draftCache";
+import { setComposerDraft } from "../model/draftCache";
+import { useSessionComposerDraft } from "./useSessionComposerDraft";
 import { BycodaWelcome } from "./BycodaWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { userPromptHistory } from "../model/composerHistory";
@@ -198,6 +200,8 @@ export type SessionPaneProps = {
   hideProjectPicker?: boolean;
   /** Feature-owned panel: keep the real transcript/composer and hide repository chrome. */
   embedded?: boolean;
+  /** Crew screen may show the normal composer for its coordinator only. */
+  crewCoordinatorChat?: boolean;
   onFocus: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
   onCwdChange: (sessionId: string, cwd: string) => void;
@@ -418,6 +422,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   recents,
   hideProjectPicker,
   embedded = false,
+  crewCoordinatorChat = false,
   onFocus,
   onClose,
   onCwdChange: onCwdChangeProp,
@@ -970,7 +975,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     blocked: !!session.pendingQuestion || editingLastTurn || btw.open,
   });
   useComposerReadingMotion(composerDockedRef, dockComposer, composerReading);
-  const [composerDraft, setComposerDraftState] = useState(() => getComposerDraft(session.id));
+  const {
+    value: composerDraft,
+    initialDraft: composerDraftSeed,
+    change: setComposerDraftState,
+  } = useSessionComposerDraft(session.id);
   const draftRef = useRef<string | undefined>(composerDraft);
   const parentChanged = useParentInputClosure({
     kind: "session-parent",
@@ -1352,10 +1361,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
       quoteRequest={quoteRequest}
       initialDraft={
         savedDraftProjection.initialDraft ??
-        composerDraft ??
-        (session.inboxCard || session.noteCard || session.handoffCard
-          ? undefined
-          : session.composerSeed)
+        (composerDraft === undefined
+          ? session.inboxCard || session.noteCard || session.handoffCard
+            ? undefined
+            : session.composerSeed
+          : composerDraftSeed)
       }
       onDraftChange={composerDraftChange}
       inboxCard={session.inboxCard}
@@ -1458,7 +1468,12 @@ const LocalSessionPane = memo(function LocalSessionPane({
     </Composer>
   );
   // A live crew runs this conversation: it is read here and managed from Crews.
-  const composer = crewManaged ? <CrewManagedBar managed={crewManaged} /> : ownerComposer;
+  const composer =
+    crewManaged && !(crewCoordinatorChat && crewManaged.role === "coordinator") ? (
+      <CrewManagedBar managed={crewManaged} />
+    ) : (
+      ownerComposer
+    );
 
   // A lone chat is named by its title-bar tab, so its pane carries no header of
   // its own; only a real split needs per-pane identity, focus and a drag handle.
@@ -1655,6 +1670,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
         )
       ) : null}
+      <SessionProviderGoal session={session} />
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
         <AdoptedSessionNotice
@@ -1761,9 +1777,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
               truncated={session.rewindHistoryTruncated}
             />
           ) : null}
-          {remoteSessionLoading ? (
-            <SurfaceLoading title={t("Loading conversation…")} />
-          ) : isEmpty ? (
+          {remoteSessionLoading ? <SurfaceLoading title={t("Loading conversation…")} /> : null}
+          {!remoteSessionLoading && isEmpty ? (
             embedded || session.inboxAsk ? (
               <ScrollArea scrollbar="hidden" className="h-full min-h-0">
                 <DiscussionEmpty
@@ -1787,7 +1802,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 }
               />
             )
-          ) : (
+          ) : null}
+          {!remoteSessionLoading && !isEmpty ? (
             <>
               <LiveSessionBlocks
                 sessionId={session.id}
@@ -1931,14 +1947,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 </div>
               ) : null}
             </>
-          )}
+          ) : null}
         </div>
         {dockComposer ? (
           <div
             ref={composerDockedRef}
             data-session-composer
             inert={btw.open}
-            className="mx-auto w-full max-w-4xl shrink-0"
+            className="mx-auto max-h-full min-h-0 w-full max-w-4xl shrink-0 overflow-y-auto"
             {...composerEngagement.handlers}
           >
             {composer}
@@ -2002,26 +2018,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           onConfirm={(mode) => void confirmMessageRewind(mode)}
         />
       ) : null}
-    </>
-  );
-});
-
-const LatestTurnAccessory = memo(function LatestTurnAccessory({
-  session,
-  blocked,
-  onSubmit,
-  showReview,
-  ...review
-}: {
-  session: Session;
-  blocked: boolean;
-  onSubmit: React.ComponentProps<typeof RetryFailedTurn>["onSubmit"];
-  showReview: boolean;
-} & React.ComponentProps<typeof SessionReview>) {
-  return (
-    <>
-      <RetryFailedTurn session={session} blocked={blocked} onSubmit={onSubmit} />
-      {showReview ? <SessionReview {...review} /> : null}
     </>
   );
 });

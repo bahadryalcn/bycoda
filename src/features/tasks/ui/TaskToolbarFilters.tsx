@@ -130,7 +130,7 @@ export function TaskToolbarFilters({
               onMachine,
             )}
             {field(
-              t("Show goal"),
+              t("Show epic"),
               [
                 { value: ALL_GOALS, label: t("All tasks") },
                 ...goals.map((goal) => ({

@@ -36,7 +36,7 @@ export function NewGoalDialog({
   return (
     <Modal
       padding="none"
-      title={t("New goal")}
+      title={t("New epic")}
       context={currentSprintName ? `${t("Sprint")}: ${currentSprintName}` : undefined}
       size="lg"
       scroll="none"

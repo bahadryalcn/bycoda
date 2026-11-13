@@ -22,7 +22,7 @@ it("keeps a deep-linked record selected and exposes each record destination", as
       ),
     );
     const selected = [...container.querySelectorAll('[role="tab"][aria-selected="true"]')];
-    expect(selected.map((item) => item.textContent)).toEqual(["Records", "History"]);
+    expect(selected.map((item) => item.textContent)).toEqual(["Records", "What I did"]);
     const memory = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
       (item) => item.textContent === "Memory",
     );

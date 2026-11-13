@@ -60,8 +60,12 @@ export default function PdfViewer({
   trailing?: ReactNode;
 }) {
   useLocale();
-  const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<{
+    source: Uint8Array;
+    doc?: PDFDocumentProxy;
+    error?: string;
+  } | null>(null);
+  const current = loaded?.source === bytes ? loaded : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -71,10 +75,10 @@ export default function PdfViewer({
     const task = getDocument({ data: bytes.slice(), useWasm: false });
     task.promise.then(
       (loaded) => {
-        if (!cancelled) setDoc(loaded);
+        if (!cancelled) setLoaded({ source: bytes, doc: loaded });
       },
       (cause: unknown) => {
-        if (!cancelled) setError(documentErrorMessage(cause));
+        if (!cancelled) setLoaded({ source: bytes, error: documentErrorMessage(cause) });
       },
     );
     return () => {
@@ -83,16 +87,23 @@ export default function PdfViewer({
     };
   }, [bytes]);
 
-  if (error)
+  if (current?.error)
     return (
       <DocumentMessage title={t("Couldn’t read this PDF")} error>
-        {error}
+        {current.error}
       </DocumentMessage>
     );
-  if (!doc) {
-    return <SurfaceLoading label={t("Loading PDF…")} />;
-  }
-  return <PdfPages doc={doc} trailing={trailing} />;
+  return (
+    <>
+      {!current?.doc ? <SurfaceLoading label={t("Loading PDF…")} /> : null}
+      {loaded?.doc ? (
+        // A replacement snapshot hides the retired document while retaining page/zoom state.
+        <div className={current?.doc ? "contents" : "hidden"}>
+          <PdfPages doc={loaded.doc} trailing={trailing} />
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNode }) {

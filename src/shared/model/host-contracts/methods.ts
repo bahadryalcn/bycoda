@@ -494,6 +494,9 @@ export const HOST_RPC_METHODS = Object.freeze({
   "native.services.assistant.workspace.authorize": nativeServiceOperation(
     "native.services.assistant.workspace.authorize",
   ),
+  "native.services.assistant.background.execute": nativeServiceOperation(
+    "native.services.assistant.background.execute",
+  ),
   "native.services.assistant.browser.panel": nativeServiceOperation(
     "native.services.assistant.browser.panel",
   ),
@@ -736,6 +739,12 @@ export const HOST_RPC_METHODS = Object.freeze({
     automationsDto.AutomationsPreviewResultSchema,
     true,
   ),
+  "automations.propose": workflowOperation(
+    "transport.ws.automations.v2",
+    automationsDto.AutomationsProposeParamsSchema,
+    automationsDto.AutomationsProposeResultSchema,
+    true,
+  ),
   "automations.save": workflowOperation(
     "transport.ws.automations.v2",
     automationsDto.AutomationsSaveParamsSchema,
@@ -876,6 +885,10 @@ export const HOST_RPC_METHODS = Object.freeze({
   ),
   "tasks.retarget": taskOperation(tasksDto.TasksRetargetParamsSchema, tasksDto.HostTaskSchema),
   "tasks.review.recheck": taskOperation(tasksDto.TasksIdParamsSchema, tasksDto.HostTaskSchema),
+  "tasks.finishWithFindings": taskOperation(
+    tasksDto.TasksFinishWithFindingsParamsSchema,
+    tasksDto.HostTaskSchema,
+  ),
   // Read marks review notes as seen and writes a new version in the owner.
   "tasks.notes.read": taskOperation(tasksDto.TasksNotesReadParamsSchema, tasksDto.HostTaskSchema),
   "tasks.notes.resolve": taskOperation(

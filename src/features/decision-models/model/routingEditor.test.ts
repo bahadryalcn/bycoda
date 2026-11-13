@@ -5,7 +5,25 @@ import {
   resetRoute,
   testedSources,
   sourceOptions,
+  mergeRoutingDraft,
 } from "./routingEditor";
+
+it("keeps edited routes while adopting incoming changes to untouched routes", () => {
+  const route = { sourceIds: ["old"], threshold: 0.7 };
+  const local = { sourceIds: ["local"], threshold: 0.9 };
+  const remote = { sourceIds: ["remote"], threshold: 0.8 };
+  expect(
+    mergeRoutingDraft(
+      { generic: route },
+      { generic: local },
+      { generic: remote, screen_state: remote },
+    ),
+  ).toEqual({ generic: local, screen_state: remote });
+  expect(mergeRoutingDraft({ generic: route }, {}, { generic: remote })).toEqual({});
+  expect(mergeRoutingDraft({ generic: route }, { generic: route }, { generic: remote })).toEqual({
+    generic: remote,
+  });
+});
 
 it("moves selections without mutating input or losing fallback sources", () => {
   const ids = ["a", "b", "c"];
@@ -37,8 +55,12 @@ it("uses explicit test results in counts even when the list RPC has older status
     adapter: "systemone",
     status: "unknown",
   } as const;
-  expect(testedSources([source], { s: { sourceId: "s", ok: true } })?.[0].status).toBe("ready");
-  expect(testedSources([source], { s: { sourceId: "s", ok: false } })?.[0].status).toBe("error");
+  expect(
+    testedSources([source], { s: { source, result: { sourceId: "s", ok: true } } })?.[0].status,
+  ).toBe("ready");
+  expect(
+    testedSources([source], { s: { source, result: { sourceId: "s", ok: false } } })?.[0].status,
+  ).toBe("error");
   expect(testedSources([source], {})?.[0]).toBe(source);
   expect(testedSources(null, {})).toBeNull();
 });
@@ -52,4 +74,25 @@ it("searches source names without changing selected fallback order", () => {
   expect(sourceOptions(["b", "a"], sources, "")).toEqual(["b", "a"]);
   expect(sourceOptions(["b"], sources, " ALP ")).toEqual(["a"]);
   expect(sourceOptions(["b"], sources, "missing")).toEqual([]);
+});
+
+it("keeps a test only for its source configuration and lifecycle snapshot", () => {
+  const source = {
+    id: "s",
+    name: "Local",
+    kind: "local",
+    adapter: "systemone",
+    endpoint: "http://localhost:1",
+    status: "ready",
+  } as const;
+  const results = { s: { result: { sourceId: "s", ok: true }, source } };
+  expect(testedSources([{ ...source }], results)?.[0].status).toBe("ready");
+  expect(testedSources([{ ...source, status: "unknown" }], results)?.[0].status).toBe("unknown");
+  expect(
+    testedSources([{ ...source, endpoint: "http://localhost:2", status: "unknown" }], results)?.[0]
+      .status,
+  ).toBe("unknown");
+  expect(
+    testedSources([source], { s: { source, result: { sourceId: "s", ok: false } } })?.[0].status,
+  ).toBe("error");
 });

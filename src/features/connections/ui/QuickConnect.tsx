@@ -9,11 +9,7 @@ export function QuickConnect({ onClose }: { onClose: () => void }) {
   return (
     <SshServerEditor
       onClose={onClose}
-      onConnect={(endpoint, name, saved) => {
-        onClose();
-        if (saved) openSaved(saved);
-        else openQuick(endpoint, name);
-      }}
+      onConnect={(endpoint, name, saved) => (saved ? openSaved(saved) : openQuick(endpoint, name))}
     />
   );
 }

@@ -237,9 +237,11 @@ export function useFileTreeOperations({
       const created = await createPath(session.parent, fileName, asFolder);
       const touched = dirsTouchedByCreate(session.parent, fileName);
       setCreating((cur) => (cur?.id === id ? null : cur));
-      expandDirs(touched);
-      onSelect(created);
-      if (!asFolder) onOpenFile(created, undefined, { exact: true });
+      if (activeRoot.current === cwd) {
+        expandDirs(touched);
+        onSelect(created);
+        if (!asFolder) onOpenFile(created, undefined, { exact: true });
+      }
       await refreshAfterMutation(touched);
     });
 

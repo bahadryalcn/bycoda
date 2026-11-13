@@ -83,6 +83,7 @@ export const calls: {
 let browser = {
   documentId: "fixture-document",
   navigationId: "fixture-navigation",
+  viewport: { width: 1280, height: 720 },
   open: false,
   url: null as string | null,
   controlling: false,
@@ -197,9 +198,9 @@ function frame(): DeviceFrame {
   };
 }
 function browserFrame(state = browser) {
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="1280" height="720" fill="#f4f7fb"/><rect width="1280" height="72" fill="#20314a"/><text x="44" y="46" fill="white" font-size="26" font-family="sans-serif">Example website</text><text x="44" y="155" fill="#20314a" font-size="38" font-family="sans-serif">Shared browser preview</text><rect x="44" y="200" width="560" height="190" rx="12" fill="#dce4ef"/><rect x="628" y="200" width="560" height="190" rx="12" fill="#dce4ef"/></svg>';
-  return { ...state, mimeType: "image/svg+xml", data: btoa(svg), width: 1280, height: 720 };
+  const { width, height } = state.viewport;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#f4f7fb"/><rect width="100%" height="72" fill="#20314a"/><text x="44" y="46" fill="white" font-size="26" font-family="sans-serif">Example website</text><text x="44" y="155" fill="#20314a" font-size="38" font-family="sans-serif">Shared browser preview</text><rect x="44" y="200" width="560" height="190" rx="12" fill="#dce4ef"/><rect x="628" y="200" width="560" height="190" rx="12" fill="#dce4ef"/></svg>`;
+  return { ...state, mimeType: "image/svg+xml", data: btoa(svg), width, height };
 }
 export async function hostFeatureRequest<T>(
   cwd: string,
@@ -522,6 +523,17 @@ export async function hostFeatureRequest<T>(
       break;
     case "browser.open":
       browser = { ...browser, open: true, url: String(params.url) };
+      result = browser;
+      break;
+    case "browser.resize":
+      if (!browser.controlling || params.leaseId !== browser.leaseId)
+        throw new Error("Claim browser control before changing it");
+      browser = {
+        ...browser,
+        viewport: { width: Number(params.width), height: Number(params.height) },
+        documentId: `fixture-resize-${calls.length}`,
+        navigationId: `fixture-resize-${calls.length}`,
+      };
       result = browser;
       break;
     case "browser.close":

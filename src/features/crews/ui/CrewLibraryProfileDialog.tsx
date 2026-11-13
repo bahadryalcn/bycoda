@@ -5,6 +5,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Modal } from "../../../shared/ui/Modal";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import type { CrewAgent, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import { CrewMemberForm } from "./CrewMemberForm";
@@ -34,6 +35,19 @@ export function CrewLibraryProfileDialog({
     return rest;
   });
   const [pending, setPending] = useState(false);
+  const [initial] = useState(() => JSON.stringify(agent));
+  const { confirm, dialog } = useConfirm();
+  const requestClose = () => {
+    if (pending) return;
+    if (JSON.stringify(agent) === initial) return onClose();
+    void confirm({
+      title: t("Discard changes?"),
+      message: t("Your edits to this member have not been saved."),
+      confirmLabel: t("Discard changes"),
+    }).then((discard) => {
+      if (discard) onClose();
+    });
+  };
   const [error, setError] = useState("");
   const [showIssues, setShowIssues] = useState(false);
   const valid = !!agent.name.trim() && agent.candidates.length > 0;
@@ -56,9 +70,7 @@ export function CrewLibraryProfileDialog({
       title={t("Edit library profile")}
       context={profile.name}
       size="md"
-      onClose={() => {
-        if (!pending) onClose();
-      }}
+      onClose={requestClose}
       footer={
         <>
           <span className="min-w-0 flex-1">
@@ -68,7 +80,7 @@ export function CrewLibraryProfileDialog({
               )}
             </InfoPopover>
           </span>
-          <Button variant="ghost" disabled={pending} onClick={onClose}>
+          <Button variant="ghost" disabled={pending} onClick={requestClose}>
             {t("Cancel")}
           </Button>
           <Button variant="primary" loading={pending} onClick={save}>
@@ -98,6 +110,7 @@ export function CrewLibraryProfileDialog({
           />
         </div>
       </FieldGroup>
+      {dialog}
     </Modal>
   );
 }

@@ -11,6 +11,8 @@ mod assistant_presence;
 mod assistant_server_observation;
 #[path = "assistant/assistant_session_observation.rs"]
 pub(crate) mod assistant_session_observation;
+#[path = "assistant/standing_consent.rs"]
+mod assistant_standing_consent;
 mod automations;
 mod azure_devops;
 pub mod build_info;
@@ -139,6 +141,7 @@ mod ssh_shell_integration;
 mod ssh_terminal;
 mod ssh_window_lifecycle;
 mod sync_owner;
+mod system_permissions;
 mod terminal_completion;
 mod terminal_profiles;
 mod termius_import;
@@ -438,6 +441,7 @@ pub fn run() {
     #[cfg(windows)]
     windows::initialize().expect("Failed to initialize Windows process safety");
     let builder = tauri::Builder::default();
+    let builder = builder.on_permission_request(system_permissions::webview_permissions::handle);
     // Reject duplicate GUI launches before stores, relays, hosts or trays start.
     #[cfg(windows)]
     let builder = builder.plugin(windows_instance::init());
@@ -718,6 +722,11 @@ pub fn run() {
             keep_awake::set_keep_awake,
             app_update::app_update_check,
             presence::get_user_presence,
+            system_permissions::system_permissions_status,
+            system_permissions::system_permission_request,
+            system_permissions::helper_window::system_permission_helper_show,
+            system_permissions::helper_window::system_permission_helper_close,
+            system_permissions::helper_window::system_permission_helper_reveal_app,
             notifications::notification_permission,
             notifications::assistant_notification_capability,
             notifications::request_notification_permission,
@@ -734,6 +743,9 @@ pub fn run() {
             reminders::reminder_register_window,
             reminders::reminder_open,
             automations::automations_list,
+            automations::host_migration::automations_host_prepare,
+            automations::host_migration::automations_host_commit,
+            automations::host_migration::automations_host_migrations_list,
             automations::automations_upsert,
             automations::automations_delete,
             automations::automation_runs_list,
@@ -1151,6 +1163,8 @@ pub fn run() {
             desktop_talk_shortcut::desktop_talk_shortcut_configure,
             desktop_control_window::desktop_control_indicator_state,
             assistant_presence::assistant_presence_state,
+            assistant_standing_consent::assistant_consent_get,
+            assistant_standing_consent::assistant_consent_set,
             assistant_presence::assistant_presence_refresh,
             assistant_presence::assistant_presence_set,
             desktop_control_window::desktop_control_indicator_stop,

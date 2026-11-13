@@ -227,7 +227,7 @@ describe("SessionImportDialog", () => {
       await act(async () => undefined);
       expect(text()).toContain("Import finished");
     });
-    expect(text()).toContain("2 conversations imported");
+    expect(text()).toContain("Imported conversations: 2");
     const imported = invoke.mock.calls
       .filter(([command]) => command === "session_import")
       .map(

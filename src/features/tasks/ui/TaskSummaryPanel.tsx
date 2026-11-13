@@ -202,8 +202,8 @@ export function SummaryPanel({
           {taskSection(t("Blocked"), summary.blocked)}
           {taskSection(t("Waiting for you"), summary.waiting)}
           {taskSection(t("New suggestions"), summary.suggestions)}
-          {goalSection(t("Goals in progress"), summary.goals)}
-          {goalSection(t("Goals finished"), summary.goalsFinished)}
+          {goalSection(t("Epics in progress"), summary.goals)}
+          {goalSection(t("Epics finished"), summary.goalsFinished)}
           {summary.usage.length ? (
             <section aria-label={t("Agent time")} className="task-ops-section">
               <SectionLabel>{t("Agent time today")}</SectionLabel>

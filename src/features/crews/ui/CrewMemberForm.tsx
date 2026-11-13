@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 import { useState, type ReactNode } from "react";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
@@ -206,7 +207,9 @@ export function CrewMemberForm({
             placeholder={t("UI, Mobile, Backend…")}
             value={agent.groups ?? []}
             normalize={(values) => [
-              ...new Set(values.map((value) => value.trim().slice(0, 40)).filter(Boolean)),
+              ...new Set(
+                values.map((value) => truncateCodeUnits(value.trim(), 40)).filter(Boolean),
+              ),
             ]}
             maxTags={12}
             onValueChange={(next) => onChange({ groups: next.length ? next : undefined })}

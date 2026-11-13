@@ -9,6 +9,7 @@ import type {
   TurnMetrics,
 } from "../../../features/sessions/model/session";
 import type { TurnUsage } from "../../../features/sessions/model/sessionUsage";
+import type { SessionGoal } from "../../../shared/model/providerGoal";
 import type {
   UserQuestion,
   UserQuestionBehavior,
@@ -30,6 +31,7 @@ export type HarnessEvent =
   | { type: "session.ended"; code?: number | null }
   | { type: "session.error"; message: string }
   | { type: "session.providerBound"; providerSessionId: string }
+  | { type: "session.goalChanged"; providerSessionId: string; goal: SessionGoal | null }
   /** The provider accepted the turn; `providerTurnId` only where it names turns. */
   | { type: "turn.started"; providerTurnId?: string }
   | {

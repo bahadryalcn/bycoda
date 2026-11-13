@@ -1,4 +1,4 @@
-import { formatInteger } from "../../../shared/lib/numbers";
+type FormatCount = (value: number, options?: Intl.NumberFormatOptions) => string;
 
 /** The part of `GitDiffStats` a project row reads. Anything else (null, a failed read) is "unknown". */
 export type ProjectGitStats = { files: number; additions: number; deletions: number };
@@ -29,6 +29,7 @@ function wholeCount(value: unknown): number {
  */
 export function projectGitChange(
   stats: ProjectGitStats | null | undefined,
+  formatCount: FormatCount,
 ): ProjectGitChange | null {
   if (!stats) return null;
   const files = wholeCount(stats.files);
@@ -37,8 +38,8 @@ export function projectGitChange(
   if (files === 0 && additions === 0 && deletions === 0) return null;
   const hasLines = additions > 0 || deletions > 0;
   const detail = [
-    additions > 0 ? `+${formatInteger(additions)}` : "",
-    deletions > 0 ? `-${formatInteger(deletions)}` : "",
+    additions > 0 ? `+${formatCount(additions, { maximumFractionDigits: 0 })}` : "",
+    deletions > 0 ? `-${formatCount(deletions, { maximumFractionDigits: 0 })}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -51,10 +52,16 @@ type Translate = (text: string, params?: Record<string, string | number>) => str
  * "3 files · +1,234 -56": the short tooltip text. Files and lines keep their own words so a line count is
  * never read as a file count. Uses the same wording as the Changes tab.
  */
-export function projectGitChangeSummary(change: ProjectGitChange, t: Translate): string {
+export function projectGitChangeSummary(
+  change: ProjectGitChange,
+  t: Translate,
+  formatCount: FormatCount,
+): string {
   return [
     change.files > 0
-      ? t(change.files === 1 ? "{p0} file" : "{p0} files", { p0: formatInteger(change.files) })
+      ? t(change.files === 1 ? "{p0} file" : "{p0} files", {
+          p0: formatCount(change.files, { maximumFractionDigits: 0 }),
+        })
       : "",
     change.detail,
   ]
@@ -63,15 +70,23 @@ export function projectGitChangeSummary(change: ProjectGitChange, t: Translate):
 }
 
 /** The spoken form: "3 changed files, 1,234 lines added, 56 lines removed". */
-export function projectGitChangeSpoken(change: ProjectGitChange, t: Translate): string {
+export function projectGitChangeSpoken(
+  change: ProjectGitChange,
+  t: Translate,
+  formatCount: FormatCount,
+): string {
   return [
     change.files > 0
       ? t(change.files === 1 ? "{p0} changed file" : "{p0} changed files", {
-          p0: formatInteger(change.files),
+          p0: formatCount(change.files, { maximumFractionDigits: 0 }),
         })
       : "",
-    change.additions > 0 ? t("{p0} lines added", { p0: formatInteger(change.additions) }) : "",
-    change.deletions > 0 ? t("{p0} lines removed", { p0: formatInteger(change.deletions) }) : "",
+    change.additions > 0
+      ? t("{p0} lines added", { p0: formatCount(change.additions, { maximumFractionDigits: 0 }) })
+      : "",
+    change.deletions > 0
+      ? t("{p0} lines removed", { p0: formatCount(change.deletions, { maximumFractionDigits: 0 }) })
+      : "",
   ]
     .filter(Boolean)
     .join(", ");

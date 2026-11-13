@@ -2,9 +2,12 @@
 
 ## Start in privacy mode
 
-Enable **Settings → General → Workspace → Start in privacy mode**
+Enable **Settings > Privacy > Start in privacy mode**
 to open new app windows with a privacy screen. The option is off by default and
 applies on the next launch; changing it does not conceal an existing workspace.
+If a choice applies only in this window because saving failed, its warning and
+**Retry** remain visible when you return to Settings. Email masking follows the
+same rule. A successful save is required for the next launch to use the new choice.
 The workspace and draft recovery notices stay unmounted until **Show workspace**
 is selected. Quick composer and Git popup windows use the same screen.
 
@@ -42,3 +45,22 @@ windows follow visibility changes; temporary visibility is not saved to disk.
 Hiding does not change group membership, delete data or stop agents. Password
 recovery keeps hidden preferences; groups can then be restored from Settings.
 This controls app visibility and does not encrypt files or transcripts on disk.
+
+## Unavailable privacy settings
+
+Unreadable or corrupt saved protection is not treated as a new installation.
+The workspace and group names stay concealed; **Retry** only reads saved state.
+It does not reset a password, overwrite damaged data, grant access or unlock groups.
+After a successful read, leaving the privacy screen still requires **Show workspace**
+and any existing password. Only an absent settings record enables first-use setup.
+
+## System permissions
+
+**Settings > Permissions** reads OS status without requesting access. **Allow**
+explicitly requests OS access. **Review access…** opens the setup guide; its
+**Open Settings** button opens the OS pane. **Check again** only rereads status.
+Unknown or unavailable status never means access is allowed. Policy restrictions
+may need an administrator. App and helper permissions remain separate facts.
+
+On macOS, **Reveal bycoda in Finder** reveals the app. Drag the app from Finder
+into the system permission list; the helper button itself is not a draggable app.

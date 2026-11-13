@@ -36,7 +36,49 @@ function Fixture() {
   const [project, setProject] = useState("/project/x");
   const [selected, setSelected] = useState("");
   const currentOnly = parameters.has("currentOnly");
-  const source = currentOnly ? agents.filter((agent) => agent.cwd === "/project/x") : agents;
+  const source: LiveAgent[] = parameters.has("issues")
+    ? [
+        agents[0],
+        {
+          ...agents[0],
+          id: "failed",
+          title: "Weekly provider limit",
+          issue: "failed",
+          done: true,
+          durationMs: 2000,
+        },
+        {
+          ...agents[0],
+          id: "approval",
+          title: "Review workspace changes",
+          needsApproval: true,
+          inputKind: "approval",
+        },
+        {
+          ...agents[0],
+          id: "question",
+          title: "Choose deployment target",
+          needsApproval: true,
+          inputKind: "question",
+        },
+        {
+          ...agents[0],
+          id: "retry",
+          cwd: "remote://host-a/workspace",
+          title: "Reconnect remote workspace",
+          issue: "retrying",
+        },
+        {
+          ...agents[0],
+          id: "waiting",
+          title: "Wait for build",
+          waiting: { kind: "commands", count: 1 },
+        },
+        { ...agents[0], id: "done", title: "Update documentation", done: true, durationMs: 32000 },
+      ]
+    : currentOnly
+      ? agents.filter((agent) => agent.cwd === "/project/x")
+      : agents;
   return (
     <main className="min-h-screen bg-(--color-background-base) p-6 text-(--ui-text-primary)">
       <div className="mb-6 flex gap-2">

@@ -59,6 +59,7 @@ export function createManagedWorkspaceRuntime(
   let started = false;
   const startupRecovery = new AsyncLocalStorage<boolean>();
   const authorities = new Set<WorkspaceOwnerAuthorization>();
+  const physicalFences = new WeakMap<WorkspaceOwnerAuthorization, () => boolean>();
   const authorized = (owner: WorkspaceOwnerAuthorization) => authorities.has(owner);
   const get = async (workspaceId: string) => {
     const workspace = await store.managedWorkspace(workspaceId);
@@ -250,6 +251,10 @@ export function createManagedWorkspaceRuntime(
   });
   const rewind = nativeRewind.service;
   const delivery = new HostBranchDeliveryService({
+    physicalFence: (owner) => {
+      if (!authorized(owner) || physicalFences.get(owner)?.() === false)
+        throw new Error("Automatic delivery authorization expired before Git mutation.");
+    },
     registry,
     reservations: activity,
     gh: new GhRuntime(dirname(store.attachmentDir)),
@@ -258,6 +263,7 @@ export function createManagedWorkspaceRuntime(
       return target ?? (await store.project(value.projectId)).cwd;
     },
     authorize: async (owner) => {
+      await store.db.checkAuthorization();
       if (!authorized(owner)) throw new Error("Authenticated owner approval required");
     },
   });
@@ -457,16 +463,19 @@ export function createManagedWorkspaceRuntime(
     async withOwner<T>(
       ownerId: string,
       action: (owner: WorkspaceOwnerAuthorization) => Promise<T>,
+      physicalFence?: () => boolean,
     ) {
       const owner = {
         ownerId: createHash("sha256").update(ownerId).digest("hex"),
         authorizationId: randomUUID(),
       };
       authorities.add(owner);
+      if (physicalFence) physicalFences.set(owner, physicalFence);
       try {
         return await action(owner);
       } finally {
         authorities.delete(owner);
+        physicalFences.delete(owner);
       }
     },
     services: {

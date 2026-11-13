@@ -50,6 +50,41 @@ const click = (text: string) =>
       .click();
   });
 
+it("keeps workspace unmounted during corrupt storage and requires explicit continuation after read recovery", () => {
+  localStorage.setItem("bycoda.groupLock", "{broken");
+  act(() =>
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: "bycoda.groupLock", newValue: "{broken" }),
+    ),
+  );
+  render();
+  expect(mounted).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Privacy settings are unavailable.");
+  expect(container.textContent).not.toContain("Show workspace");
+  localStorage.removeItem("bycoda.groupLock");
+  click("Retry");
+  expect(mounted).not.toHaveBeenCalled();
+  click("Show workspace");
+  expect(container.textContent).toContain("Private project and draft");
+});
+
+it("keeps a workspace concealed after a later storage fault is repaired until explicit continuation", () => {
+  render();
+  expect(container.textContent).toContain("Private project and draft");
+  localStorage.setItem("bycoda.groupLock", "{broken");
+  act(() =>
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: "bycoda.groupLock", newValue: "{broken" }),
+    ),
+  );
+  expect(container.textContent).not.toContain("Private project and draft");
+  localStorage.removeItem("bycoda.groupLock");
+  click("Retry");
+  expect(container.textContent).not.toContain("Private project and draft");
+  click("Show workspace");
+  expect(container.textContent).toContain("Private project and draft");
+});
+
 it("opens normally by default and applies a preference change only on the next launch", () => {
   render();
   expect(container.textContent).toContain("Private project and draft");

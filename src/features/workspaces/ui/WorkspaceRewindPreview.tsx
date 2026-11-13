@@ -194,7 +194,7 @@ export function WorkspaceRewindPreview({
         ))}
         {plan.expiresAt <= now ? (
           <Alert tone="warning">
-            {t("This rewind preview is blocked or expired. Refresh the preview.")}
+            {t("This rewind preview is blocked or expired. Cancel and open a new preview.")}
           </Alert>
         ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}

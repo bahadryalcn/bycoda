@@ -12,6 +12,10 @@ export type DataColumn<T> = {
   numeric?: boolean;
   /** Fixed width such as 120 or "20%". Other columns are measured once and held, so sorting never reflows them. */
   width?: number | string;
+  /** Opt in to intrinsic sizing: `content` reserves readable unbroken categories;
+   * `flex` yields remaining width to a bounded identity cell. Keeps resizing responsive
+   * instead of freezing percentages measured from the first row. */
+  sizing?: "flex" | "content";
   /** Hides the column when the table's own width drops below "md" (44rem) or "sm" (34rem); it never depends on the viewport. */
   hideBelow?: "md" | "sm";
 };

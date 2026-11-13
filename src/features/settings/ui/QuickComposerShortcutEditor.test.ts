@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { QuickComposerShortcutEditor, KeybindingsPage } from "./ShortcutSettings";
+import { QuickComposerShortcutEditor, KeybindingsPage, ShortcutEditor } from "./ShortcutSettings";
 import { saveKeybindingOverride, loadKeybindingOverrides } from "../model/settings";
 
 vi.mock("../../../platform/tauri/platform", () => ({
@@ -59,6 +59,100 @@ afterEach(async () => {
 async function render() {
   await act(async () => root.render(createElement(QuickComposerShortcutEditor)));
 }
+
+it.each([false, true])(
+  "leaves capture with Tab (shift=%s) without saving or swallowing navigation",
+  async (shiftKey) => {
+    const onApply = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ShortcutEditor, {
+          name: "Test",
+          display: "Ctrl+K",
+          resetVisible: false,
+          onApply,
+          onDisable: vi.fn(),
+          onReset: vi.fn(),
+        }),
+      ),
+    );
+    const recorder = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Change Test shortcut"]',
+    )!;
+    await act(async () => recorder.click());
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      code: "Tab",
+      shiftKey,
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => recorder.dispatchEvent(tab));
+    expect(tab.defaultPrevented).toBe(false);
+    expect(recorder.getAttribute("aria-pressed")).toBe("false");
+    expect(onApply).not.toHaveBeenCalled();
+  },
+);
+
+it("cancels capture when the window loses focus and leaves later keys untouched", async () => {
+  const onApply = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ShortcutEditor, {
+        name: "Test",
+        display: "Ctrl+K",
+        resetVisible: false,
+        onApply,
+        onDisable: vi.fn(),
+        onReset: vi.fn(),
+      }),
+    ),
+  );
+  const recorder = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Change Test shortcut"]',
+  )!;
+  await act(async () => recorder.click());
+  await act(async () => window.dispatchEvent(new Event("blur")));
+  expect(recorder.getAttribute("aria-pressed")).toBe("false");
+  const key = new KeyboardEvent("keydown", {
+    key: "q",
+    code: "KeyQ",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => document.body.dispatchEvent(key));
+  expect(key.defaultPrevented).toBe(false);
+  expect(onApply).not.toHaveBeenCalled();
+});
+
+it("retires an active capture when another save disables the editor", async () => {
+  const onApply = vi.fn();
+  const props = {
+    name: "Test",
+    display: "Ctrl+K",
+    resetVisible: false,
+    onApply,
+    onDisable: vi.fn(),
+    onReset: vi.fn(),
+  };
+  await act(async () => root.render(createElement(ShortcutEditor, props)));
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Change Test shortcut"]')!.click(),
+  );
+  await act(async () => root.render(createElement(ShortcutEditor, { ...props, disabled: true })));
+  const key = new KeyboardEvent("keydown", {
+    key: "q",
+    code: "KeyQ",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => document.body.dispatchEvent(key));
+  expect(key.defaultPrevented).toBe(false);
+  expect(onApply).not.toHaveBeenCalled();
+  expect(container.querySelector("[data-capturing]")).toBeNull();
+});
 
 it("keeps the previous emergency global shortcut when the OS rejects its replacement", async () => {
   await act(async () => root.render(createElement(KeybindingsPage)));
@@ -161,8 +255,10 @@ it("preserves an app binding when the native menu rejects a recorded shortcut", 
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Native shortcut rejected",
   );
-  expect(container.querySelector('.settings-row-control [role="alert"]')).not.toBeNull();
-  expect(container.querySelector('.settings-row-feedback [role="alert"]')).toBeNull();
+  expect(container.querySelector('.settings-row-control [role="alert"]')).toBeNull();
+  expect(container.querySelector('.settings-row-feedback [role="alert"]')?.textContent).toContain(
+    "Native shortcut rejected",
+  );
 });
 
 it("records a global shortcut, persists it, and restores the default", async () => {

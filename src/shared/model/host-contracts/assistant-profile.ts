@@ -19,6 +19,21 @@ export const AssistantExecutionSchema = z.strictObject({
 export type AssistantExecution = z.infer<typeof AssistantExecutionSchema>;
 
 export const AssistantProfilePatchSchema = z.strictObject({
+  permissionLevel: z.enum(["watch", "projects", "everything"]).optional(),
+  permissionProjectIds: z.array(z.string().min(1).max(200)).max(100).optional(),
+  criticalExclusions: z
+    .array(
+      z.enum([
+        "pushMain",
+        "deleteProject",
+        "deleteSession",
+        "sendMessages",
+        "computerUse",
+        "spend",
+      ]),
+    )
+    .max(6)
+    .optional(),
   name: z.string().max(80).optional(),
   showTitle: z.boolean().optional(),
   avatar: z.string().max(200).optional(),
@@ -41,6 +56,16 @@ export const AssistantProfilePatchSchema = z.strictObject({
   perWakeTokenCap: z.number().int().min(1000).max(1_000_000).optional(),
   enabled: z.boolean().optional(),
   keepAwakeWhileWorking: z.boolean().optional(),
+  keepAwakeWhileAway: z.boolean().optional(),
+  urgentNotificationRepeats: z.number().int().min(0).max(10).optional(),
+  urgentNotificationIntervalMinutes: z.number().int().min(1).max(1440).optional(),
+  notificationTelegram: z
+    .strictObject({
+      accountId: z.string().min(1).max(200),
+      conversationId: z.string().min(1).max(200),
+    })
+    .nullable()
+    .optional(),
   setupComplete: z.boolean().optional(),
   voiceSetupComplete: z.boolean().optional(),
   voiceNarration: z.boolean().optional(),

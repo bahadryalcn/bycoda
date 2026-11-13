@@ -13,11 +13,14 @@ export function HelperRoleResolution({
   role,
   choice,
   version,
+  problemsOnly = false,
 }: {
   machineId: string;
   role: HelperModelRole;
   choice: ModelRoutingChoice;
   version: number;
+  /** Hide the routine "Now uses" line and the pending state; show only the fallback. */
+  problemsOnly?: boolean;
 }) {
   const query = useQuery({
     queryKey: ["helper-role-preview", machineId, role, choice, version],
@@ -36,6 +39,7 @@ export function HelperRoleResolution({
     refetchInterval: 60_000,
   });
   const result = query.data;
+  if (problemsOnly && (query.isPending || result?.ok)) return null;
   return (
     <Text as="p" tone="secondary">
       {result?.ok ? (

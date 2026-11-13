@@ -16,15 +16,21 @@ export function SaveLookButton({
   appearance,
   iconOnly = false,
   card = false,
+  pendingImage,
 }: {
   appearance: AppearanceSettings;
   iconOnly?: boolean;
   /** Renders as a dashed grid card (the saved-themes grid) instead of a button. */
   card?: boolean;
+  /** The generator is still drawing an image; saving captures the current applied look only. */
+  pendingImage?: boolean;
 }) {
   useLocale();
   const [asking, setAsking] = useState(false);
   const [selectedLookName, setSelectedLookName] = useGeneratorState("selectedLookName", "");
+  const [chipImages] = useGeneratorState<Record<number, { status: string }>>("chipImages", {});
+  const imagePending =
+    pendingImage ?? Object.values(chipImages).some((image) => image.status === "loading");
   const full = useSavedThemes().length >= SAVED_THEMES_MAX;
   const label = t("Save current look");
   const blocked = full ? t("Delete a saved theme to save another.") : undefined;
@@ -70,6 +76,13 @@ export function SaveLookButton({
           title={label}
           confirmLabel={t("Save")}
           initialName={selectedLookName}
+          description={
+            imagePending
+              ? t(
+                  "The image is still generating. This saves your current look without the pending image.",
+                )
+              : undefined
+          }
           onClose={() => setAsking(false)}
           onSubmit={async (name) => {
             if (!(await saveCurrentLook(appearance, name)))

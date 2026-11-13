@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import {
   checkDuration,
+  checkStateLabel,
   countChecks,
   describeCheckCounts,
   fetchGithubPrChecks,
@@ -73,6 +74,30 @@ describe("sortChecks", () => {
 });
 
 describe("describeCheckCounts", () => {
+  it("uses bound translated templates and formatted counts without changing the outcome", () => {
+    const translate = (message: string, values?: Record<string, unknown>) => {
+      const messages: Record<string, string> = {
+        Failed: "Başarısız",
+        "{p0} failed": "{p0} başarısız",
+        "Checks failed to load, showing saved results that may be out of date: {p0}":
+          "Kontroller alınamadı; eski sonuçlar: {p0}",
+      };
+      return (messages[message] ?? message).replace(/\{p0\}/g, String(values?.p0 ?? ""));
+    };
+    expect(checkStateLabel("fail", translate)).toBe("Başarısız");
+    const counts = { ...countChecks([]), fail: 1000 };
+    expect(
+      describeCheckCounts(counts, translate, (value) => new Intl.NumberFormat("tr").format(value)),
+    ).toBe("1.000 başarısız");
+    const result = summarizePrChecks(
+      { loading: false, error: "offline", checks: [check({ state: "fail" })] },
+      translate,
+    );
+    expect(result).toEqual({
+      kind: "error",
+      description: "Kontroller alınamadı; eski sonuçlar: 1 başarısız",
+    });
+  });
   it("names every non-zero state so color is not the only signal", () => {
     expect(
       describeCheckCounts(

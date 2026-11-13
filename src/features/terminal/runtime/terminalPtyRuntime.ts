@@ -104,7 +104,7 @@ export type TerminalPtyRuntimeOptions = {
  * or the late kill lands on the replacement shell and drops its data handler.
  * This fence is also how a new view re-attaches to the same terminal identity.
  */
-const stoppingPtys = new Map<string, Promise<void>>();
+const stoppingPtys = new Map<string, { pending: Promise<void>; retry: () => Promise<void> }>();
 
 /**
  * The single owner of one PTY's lifecycle for one mounted view.
@@ -238,6 +238,44 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     return spawnNative();
   };
 
+  const retire = (): Promise<void> => {
+    if (retiring) return retiring;
+    closed = true;
+    input.dispose();
+    output.dispose();
+    const pending = starting ?? Promise.resolve();
+    const stopping: Promise<void> = pending
+      .catch(() => undefined)
+      .then(() => {
+        unsubscribe();
+        unsubscribe = () => {};
+        return didStart ? killPty(id) : undefined;
+      })
+      .then(
+        () => {
+          options.lifecycle("closed");
+        },
+        (error) => {
+          retiring = undefined;
+          options.lifecycle("failed");
+          throw error;
+        },
+      )
+      .finally(() => {
+        if (retiring === stopping && stoppingPtys.get(id)?.pending === stopping)
+          stoppingPtys.delete(id);
+      });
+    retiring = stopping;
+    const previous = stoppingPtys.get(id);
+    // A view that never spawned cannot replace another owner's failed fence.
+    if (!previous || didStart || previous.retry === retire)
+      stoppingPtys.set(id, { pending: stopping, retry: retire });
+    spawned = false;
+    // Unmount callers have no view left to show a failure; retain it for retry.
+    void stopping.catch(() => undefined);
+    return stopping;
+  };
+
   return {
     id,
     get spawned() {
@@ -254,7 +292,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
     /** Begin the single start of this runtime. Later calls are ignored. */
     start() {
       if (starting) return;
-      const pending = (stoppingPtys.get(id) ?? Promise.resolve())
+      const pending = (stoppingPtys.get(id)?.retry() ?? Promise.resolve())
         .then(subscribeAndSpawn)
         .then(() => {
           if (!closed && !exited) {
@@ -313,35 +351,7 @@ export function createTerminalPtyRuntime(options: TerminalPtyRuntimeOptions) {
      * The only decision to end the process. Waits for a pending start, then
      * unsubscribes and kills the PTY this runtime actually spawned, once.
      */
-    retire(): Promise<void> {
-      if (retiring) return retiring;
-      closed = true;
-      input.dispose();
-      output.dispose();
-      const pending = starting ?? Promise.resolve();
-      const stopping: Promise<void> = pending
-        .catch(() => undefined)
-        .then(() => {
-          unsubscribe();
-          return didStart ? killPty(id) : undefined;
-        })
-        .then(
-          () => {
-            options.lifecycle("closed");
-          },
-          (error) => {
-            options.lifecycle("failed");
-            throw error;
-          },
-        )
-        .finally(() => {
-          if (stoppingPtys.get(id) === stopping) stoppingPtys.delete(id);
-        });
-      retiring = stopping;
-      stoppingPtys.set(id, stopping);
-      spawned = false;
-      return stopping;
-    },
+    retire,
   };
 }
 

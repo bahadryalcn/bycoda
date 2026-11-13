@@ -8,6 +8,7 @@ import { writeTextFile } from "../../platform/tauri/fs";
 import { hostFeatureRequest, hostToolRequest } from "../connections/model/hostFeatureClient";
 import { registerLogsComposer } from "./logsComposer";
 import { RuntimeLogsPanel } from "./RuntimeLogsPanel";
+import { toolPreferences } from "./model/toolPreferences";
 import { readToolsDraftTransfer } from "./toolsDraftTransfer";
 import type { RuntimeLogEntry, RuntimeLogSnapshot } from "./runtimeLogTypes";
 import type { HostToolTarget } from "../connections/model/hostToolTarget";
@@ -164,6 +165,7 @@ const expand = async (index = 0) => {
 };
 
 beforeEach(() => {
+  localStorage.clear();
   resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(document, "hidden", "get").mockReturnValue(false);
@@ -246,6 +248,18 @@ it("keeps automatic refresh out of the user-action busy indicator", async () => 
   expect(button("Refresh").disabled).toBe(false);
   expect(rows()).toHaveLength(3);
   await act(async () => finish(result([], 4)));
+});
+
+it("uses the saved refresh default without changing an already open log view", async () => {
+  toolPreferences.logsRefreshInterval.save(5_000);
+  toolPreferences.logsFollow.save(false);
+  await mount();
+  expect(button("Follow latest").getAttribute("aria-pressed")).toBe("false");
+  toolPreferences.logsRefreshInterval.save(1_500);
+  await act(async () => vi.advanceTimersByTimeAsync(4_999));
+  expect(dataReads()).toHaveLength(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(dataReads()).toHaveLength(2);
 });
 
 it("keeps selected log text in place while new output arrives and resumes following after selection clears", async () => {

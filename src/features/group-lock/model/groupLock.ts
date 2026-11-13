@@ -1,4 +1,5 @@
 import { createStore } from "../../../shared/lib/store";
+import { clearPrivacyOptionFailures } from "./privacySettingsOperations";
 import {
   queueRoomPrivacyProjection,
   settleHeldRoomPrivacyProjection,
@@ -30,7 +31,12 @@ import {
   type LockSnapshot,
   type UnlockedGroups,
 } from "./lockState";
-import { parseGroupLockSettings, parseUnlockedIds, type GroupLockSettings } from "./lockSettings";
+import {
+  groupLockSettingsReadable,
+  parseGroupLockSettings,
+  parseUnlockedIds,
+  type GroupLockSettings,
+} from "./lockSettings";
 import { createPasswordRecord, verifyPassword, type PasswordRecord } from "./passwordRecord";
 
 /**
@@ -53,6 +59,8 @@ const ACTIVITY_BROADCAST_MS = 5_000;
 const AUTO_LOCK_CHECK_MS = 10_000;
 
 export type GroupLockView = {
+  storageAvailable: boolean;
+  unsavedOptions: readonly string[];
   lock: LockSnapshot;
   hasPassword: boolean;
   settings: Omit<GroupLockSettings, "record">;
@@ -96,13 +104,31 @@ function writeItem(key: string, value: string | null) {
   }
 }
 
-let settings: GroupLockSettings = parseGroupLockSettings(readItem(SETTINGS_KEY));
+let storageAvailable = true;
+let unsavedOptions: string[] = [];
+let readHiddenIds: string[] = [];
+function readSettings(): GroupLockSettings | null {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!groupLockSettingsReadable(raw)) return null;
+    const hiddenRaw = localStorage.getItem(HIDDEN_KEY);
+    const hidden: unknown = hiddenRaw === null ? [] : JSON.parse(hiddenRaw);
+    if (!Array.isArray(hidden) || hidden.some((id) => typeof id !== "string")) return null;
+    readHiddenIds = hidden;
+    return parseGroupLockSettings(raw);
+  } catch {
+    return null;
+  }
+}
+const initialSettings = readSettings();
+storageAvailable = initialSettings !== null;
+let settings: GroupLockSettings = initialSettings ?? parseGroupLockSettings(null);
 let unlocked: UnlockedGroups = initialUnlocked(
   settings.relockOnLaunch,
   parseUnlockedIds(readItem(UNLOCKED_KEY)),
 );
 let view: GroupLockView | null = null;
-let hiddenGroups = new Set(parseUnlockedIds(readItem(HIDDEN_KEY)));
+let hiddenGroups = new Set(readHiddenIds);
 let temporarilyVisible = new Set<string>();
 // UI-only concealment while a lock waits for native drain. Never persisted.
 const optimisticLocks = new Set<string>();
@@ -130,10 +156,12 @@ function currentView(): GroupLockView {
   const hiddenGroupIds = new Set(
     [...savedHiddenGroupIds].filter((id) => !temporarilyVisible.has(id) || optimisticLocks.has(id)),
   );
+  // Unknown persisted protection conceals all groups until an authoritative read.
+  if (!storageAvailable) for (const group of groups) hiddenGroupIds.add(group.id);
   let lock = computeLockSnapshot({
     groups,
     assignments: loadProjectGroupAssignments(groups),
-    hasPassword,
+    hasPassword: hasPassword || !storageAvailable,
     unlocked: new Set([...unlocked].filter((id) => !optimisticLocks.has(id))),
     hiddenGroupIds,
   });
@@ -149,6 +177,8 @@ function currentView(): GroupLockView {
   previousLock = lock;
   const { record: _record, ...options } = settings;
   view = {
+    storageAvailable,
+    unsavedOptions,
     lock,
     hasPassword,
     settings: options,
@@ -185,6 +215,7 @@ export function isProjectLocked(path: string): boolean {
 
 /** Execution policy uses password locks only; hiding is a visibility preference. */
 export function isProjectPasswordLocked(path: string): boolean {
+  if (!storageAvailable) return true;
   const groups = loadProjectGroups();
   return isProjectLockedIn(
     computeLockSnapshot({
@@ -224,6 +255,13 @@ function dispatch(action: LockAction) {
 
 /** Returns whether the settings reached storage; memory and subscribers follow either way unless persistence is required. */
 function saveSettings(next: GroupLockSettings, requirePersistence = false): boolean {
+  if (!storageAvailable) {
+    if (requirePersistence)
+      throw new Error(
+        "Privacy settings are unavailable. Retry reading them before making changes.",
+      );
+    return false;
+  }
   const recordChanged = JSON.stringify(settings.record) !== JSON.stringify(next.record);
   let persisted = true;
   if (requirePersistence) {
@@ -237,7 +275,18 @@ function saveSettings(next: GroupLockSettings, requirePersistence = false): bool
       persisted = false;
     }
   }
+  unsavedOptions = persisted
+    ? []
+    : [
+        ...new Set([
+          ...unsavedOptions,
+          ...(
+            ["startInPrivacyMode", "relockOnLaunch", "autoLockMinutes", "unlockAll"] as const
+          ).filter((key) => settings[key] !== next[key]),
+        ]),
+      ];
   settings = next;
+  if (persisted) clearPrivacyOptionFailures();
   if (recordChanged) hiddenGroupsAuthorized = false;
   persistUnlocked();
   invalidate();
@@ -302,6 +351,8 @@ export function lockCooldownMs(): number {
  * be sidestepped by switching dialogs.
  */
 export async function verifyLockPassword(password: string): Promise<VerifyResult> {
+  if (!storageAvailable)
+    throw new Error("Privacy settings are unavailable. Retry reading them before making changes.");
   const record = settings.record ? { ...settings.record } : null;
   const recordSnapshot = JSON.stringify(record);
   const revision = privacyRevision;
@@ -341,6 +392,8 @@ function groupFingerprint(groupId: string): string | null {
 // ---- password --------------------------------------------------------------
 
 export async function setLockPassword(password: string): Promise<void> {
+  if (!storageAvailable)
+    throw new Error("Privacy settings are unavailable. Retry reading them before making changes.");
   const revision = privacyRevision;
   const previous = JSON.stringify(settings.record);
   const record = await createPasswordRecord(password);
@@ -461,10 +514,12 @@ export function closeHiddenGroups() {
 
 /** Restore only this group, even when the unlock-all preference is enabled. */
 export function restoreHiddenGroup(groupId: string, temporary = false): Promise<boolean> {
+  if (!storageAvailable) return Promise.resolve(false);
   return withRoomPrivacyMutation(() => restoreHiddenGroupNow(groupId, temporary));
 }
 
 function restoreHiddenGroupNow(groupId: string, temporary: boolean): boolean {
+  if (!storageAvailable) return false;
   if (settings.record && !hiddenGroupsAuthorized) return false;
   if (!hiddenGroups.has(groupId)) return false;
   if (temporary) temporarilyVisible.add(groupId);
@@ -587,11 +642,28 @@ export function setUnlockAll(value: boolean): boolean {
 
 // ---- sync and inactivity ---------------------------------------------------
 
+/** Read-only recovery; retains corrupt bytes and never grants or unlocks a group. */
+export function retryGroupLockStorage(): boolean {
+  const next = readSettings();
+  storageAvailable = next !== null;
+  if (next) {
+    settings = next;
+    hiddenGroups = new Set(readHiddenIds);
+    unsavedOptions = [];
+    clearPrivacyOptionFailures();
+  }
+  unlocked = new Set();
+  temporarilyVisible.clear();
+  hiddenGroupsAuthorized = false;
+  invalidate();
+  return storageAvailable;
+}
+
 function onStorage(event: StorageEvent) {
   const key = event.key;
   if (key === null) {
     // localStorage was cleared.
-    settings = parseGroupLockSettings(readItem(SETTINGS_KEY));
+    retryGroupLockStorage();
     hiddenGroups = new Set(parseUnlockedIds(readItem(HIDDEN_KEY)));
     temporarilyVisible.clear();
     hiddenGroupsAuthorized = false;
@@ -600,14 +672,26 @@ function onStorage(event: StorageEvent) {
   }
   if (key === SETTINGS_KEY) {
     hiddenGroupsAuthorized = false;
-    settings = parseGroupLockSettings(event.newValue);
+    storageAvailable = groupLockSettingsReadable(event.newValue);
+    if (storageAvailable) {
+      settings = parseGroupLockSettings(event.newValue);
+      unsavedOptions = [];
+      clearPrivacyOptionFailures();
+    }
     if (!settings.record) {
       unlocked = new Set();
       temporarilyVisible.clear();
     }
     invalidate();
   } else if (key === HIDDEN_KEY) {
-    hiddenGroups = new Set(parseUnlockedIds(event.newValue));
+    try {
+      const ids: unknown = event.newValue === null ? [] : JSON.parse(event.newValue);
+      if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string"))
+        throw new Error("Invalid hidden groups");
+      hiddenGroups = new Set(ids);
+    } catch {
+      storageAvailable = false;
+    }
     temporarilyVisible = new Set([...temporarilyVisible].filter((id) => hiddenGroups.has(id)));
     hiddenGroupsAuthorized = false;
     invalidate();

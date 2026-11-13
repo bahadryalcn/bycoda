@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
+import { usePhraseDraft } from "../model/voiceSettingsDrafts";
 import { getLocale, t } from "../../../shared/i18n";
 import { TextField } from "../../../shared/ui/TextField";
-import { Row, Toggle } from "../../settings/public/settingsControls";
+import { Toggle } from "../../settings/public/settingsControls";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 import { defaultWakePhrases, WAKE_PHRASE_LIMITS } from "../model/voiceWakePhrase";
 
@@ -19,12 +20,7 @@ function PhraseField({
   value: string;
   save: (text: string | undefined) => void;
 }) {
-  const [draft, setDraft] = useState(value);
-  const [previousValue, setPreviousValue] = useState(value);
-  if (value !== previousValue) {
-    setPreviousValue(value);
-    if (draft === previousValue || draft.trim() === value) setDraft(value);
-  }
+  const [draft, setDraft] = usePhraseDraft(id, value);
   const text = draft.trim();
   const invalid =
     text !== "" && (text.length < WAKE_PHRASE_LIMITS.min || text.length > WAKE_PHRASE_LIMITS.max);

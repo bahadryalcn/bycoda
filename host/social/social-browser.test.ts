@@ -779,11 +779,15 @@ describe("X browser session", () => {
     cookies = loggedIn("42");
     fake.closeWindow();
     await settle(
-      async () => (await s.browser.status(s.social, owner, s.account.id)).status !== "waiting",
+      async () =>
+        !["waiting", "checking"].includes(
+          (await s.browser.status(s.social, owner, s.account.id)).status,
+        ),
     );
     expect(await s.browser.status(s.social, owner, s.account.id)).toEqual({
       status: "connected",
       error: undefined,
+      source: "dedicated",
     });
     expect(fake.calls.slice(0, 4)).toEqual([
       "plain https://x.com/login",
@@ -847,6 +851,30 @@ describe("X browser session", () => {
       accountId: s.account.id,
     });
     expect(forget).toHaveBeenCalledWith(s.account.id);
+  });
+  it("releases credential ownership before awaiting browser cleanup", async () => {
+    const s = await fixture(fakeBrowser({}).launcher);
+    const identity = {
+      platformId: "42",
+      name: "@owner",
+      scopes: [],
+      accessApproved: true,
+      connection: "browser" as const,
+    };
+    s.social.forgetBrowserSession = async () => {
+      await expect(
+        s.social.connectAccount(
+          s.account.id,
+          identity,
+          { accessToken: "browser-session" },
+          async () => {
+            throw new Error("The account connection was cancelled.");
+          },
+        ),
+      ).rejects.toThrow("cancelled");
+    };
+    await s.social.call(owner, "accounts.disconnect", { accountId: s.account.id });
+    expect((await s.social.account(s.account.id)).connected).toBe(false);
   });
   it("cancels an open login on disconnect and requires the executor host", async () => {
     const fake = fakeBrowser({ cookies: () => [] });
@@ -1386,4 +1414,25 @@ describe("X web responses", () => {
       findBrowser({ BYCODA_SOCIAL_BROWSER: "/missing" }, "linux", () => false),
     ).toBeUndefined();
   });
+});
+
+it("checks the saved X browser identity instead of treating an old flow as proof", async () => {
+  let id = "42";
+  const fake = fakeBrowser({ cookies: () => loggedIn(id) });
+  const s = await fixture(fake.launcher);
+  await s.social.connectAccount(
+    s.account.id,
+    {
+      platformId: "42",
+      name: "owner",
+      scopes: X_BROWSER_SCOPES,
+      accessApproved: true,
+      connection: "browser",
+    },
+    { accessToken: "browser-session" },
+  );
+  expect((await s.browser.status(s.social, owner, s.account.id)).status).toBe("connected");
+  id = "99";
+  expect((await s.browser.status(s.social, owner, s.account.id)).status).toBe("failed");
+  expect(fake.calls.filter((call) => call === "launch background")).toHaveLength(2);
 });

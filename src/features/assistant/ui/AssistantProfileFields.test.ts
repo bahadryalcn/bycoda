@@ -9,6 +9,7 @@ const observed = vi.hoisted(() => ({
   resolvedOverride: "",
   sourceSettings: [] as { id: string; value: string }[],
   defaultAvailable: true,
+  automaticLabel: "Auto",
 }));
 vi.mock("../../settings/public/settingsControls", async () => {
   const { createElement } = await import("react");
@@ -30,7 +31,9 @@ vi.mock("../../settings/public/settingsControls", async () => {
 });
 vi.mock("../../../shared/i18n", () => ({
   t: (key: string, values: Record<string, unknown> = {}) =>
-    key.replace(/\{(p\d+)\}/g, (_, name) => String(values[name] ?? `{${name}}`)),
+    key === "Auto"
+      ? observed.automaticLabel
+      : key.replace(/\{(p\d+)\}/g, (_, name) => String(values[name] ?? `{${name}}`)),
   useT: () => (key: string) => key,
 }));
 vi.mock("../../sessions/ui/modelSource", () => ({
@@ -53,6 +56,7 @@ vi.mock("../../sessions/model/models", () => ({
       : { effort: "default" },
 }));
 import { AssistantProfileFields } from "./AssistantProfileFields";
+import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantCostInfo } from "./settings/AssistantCostFields";
 let root: Root | undefined, container: HTMLDivElement;
 const execution = {
@@ -104,10 +108,32 @@ async function click(text: string, scope: ParentNode = container) {
   await act(async () => target!.click());
 }
 afterEach(async () => {
+  observed.automaticLabel = "Auto";
   await act(async () => root?.unmount());
   container?.remove();
   root = undefined;
   vi.unstubAllGlobals();
+});
+it("localizes automatic language in settings rows while keeping native language names", async () => {
+  observed.automaticLabel = "Otomatik";
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root!.render(
+      createElement(
+        ProfileRowsProvider,
+        { value: true },
+        createElement(AssistantProfileFields, {
+          section: "language",
+          value: { language: "auto" },
+          onChange: vi.fn(),
+        }),
+      ),
+    ),
+  );
+  expect(container.textContent).toContain("Otomatik");
 });
 it("keeps a saved zero follow-up limit visible and does not silently enable it", async () => {
   await setup({ nudgeLimit: 0, chiefWakeLimit: 11 }, "cost");

@@ -4,6 +4,7 @@ import { sessionActivityAt } from "../../sessions/public/sessionActivity";
 import { persistableAttachment } from "../../sessions/public/attachments";
 import { buildConversationReplay } from "../../sessions/public/conversationRewind";
 import type { HostSession } from "./protocol";
+import { isSessionGoal } from "../../../shared/model/providerGoal";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { keepFullTranscript, restoreLocalFiles, sameRemoteBlock } from "./remotePreview";
 import {
@@ -34,6 +35,25 @@ export const ADOPTED_CAPABILITY = "sessions.desktop";
 /** Fired with the project folder when a session started on this machine's
  * host from another computer is first saved here. */
 export const ADOPTED_SESSION_ADDED = "bycoda:adopted-session-added";
+
+/** Host Session extensions are open JSON; accept only a goal for the displayed native thread. */
+function adoptedProviderGoal(
+  session: Pick<Session, "harness" | "providerSessionId">,
+  value: unknown,
+): Session["providerGoal"] {
+  if (
+    !isSessionGoal(value) ||
+    value.provider !== session.harness ||
+    value.providerSessionId !== session.providerSessionId
+  )
+    return undefined;
+  return {
+    provider: value.provider,
+    providerSessionId: value.providerSessionId,
+    objective: value.objective,
+    status: value.status,
+  };
+}
 
 function appliedAuthorityGeneration(host: HostSession, previous?: Session): number | undefined {
   const generation = host.authorityGeneration;
@@ -80,6 +100,7 @@ export function desktopCopyOf(
   } = remote;
   return {
     ...rest,
+    providerGoal: adoptedProviderGoal(remote, remote.providerGoal),
     cwd: projectCwd,
     worktreeCwd: workCwd && !same(workCwd, projectCwd) ? workCwd : undefined,
     title: remote.title || "Session",
@@ -444,6 +465,7 @@ export function mergeAdoptedSession(
     model: configuration.model,
     modelSettings: configuration.modelSettings,
     providerSessionId: configuration.providerSessionId,
+    providerGoal: adoptedProviderGoal(configuration, remote.providerGoal),
     providerAccountId:
       configuration.harness === local.harness ? local.providerAccountId : undefined,
     runtimeMode: fromHost("runtimeMode") ?? local.runtimeMode,

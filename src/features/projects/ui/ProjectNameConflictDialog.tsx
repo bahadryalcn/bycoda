@@ -1,9 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState } from "react";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
-import { prettyCwd } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Alert } from "../../../shared/ui/Alert";
@@ -73,11 +71,9 @@ export function ProjectNameConflictDialog({
         }}
         className="flex flex-col gap-3 px-4 pt-2 pb-4"
       >
-        <Tooltip label={path} when={prettyCwd(path) === path ? "overflow" : "always"}>
-          <Text truncate as="p" size="micro" tone="muted" leading="tight">
-            {prettyCwd(path)}
-          </Text>
-        </Tooltip>
+        <Text wrap="anywhere" as="p" size="micro" tone="muted" leading="tight">
+          {path}
+        </Text>
         <TextField
           label={t("Project name")}
           hideLabel

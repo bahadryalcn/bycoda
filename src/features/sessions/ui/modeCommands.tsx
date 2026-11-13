@@ -14,6 +14,7 @@ import {
 } from "../../../shared/ui/icons";
 import { BTW_COMMAND } from "../model/btw";
 import { SUBAGENTS_COMMAND, TASK_COMMAND } from "../model/delegationCommands";
+import { EPIC_COMMAND, CREW_COMMAND, AUTOMATION_COMMAND } from "../model/workCommands";
 import { DRAFT_COMMAND } from "../model/draftCommand";
 import { OPERATOR_COMMAND } from "../model/operatorCommand";
 import { ORCHESTRATOR_COMMAND } from "../model/orchestratorCommand";
@@ -70,6 +71,9 @@ export const MODE_COMMAND_STYLES: Record<string, ModeCommandStyle> = {
     Icon: CheckList,
     tone: "info",
   },
+  [EPIC_COMMAND.name]: { Icon: CheckList, tone: "info" },
+  [CREW_COMMAND.name]: { Icon: Bot, className: "text-orchestration" },
+  [AUTOMATION_COMMAND.name]: { Icon: AiIdea, tone: "info" },
 };
 
 type Translate = (message: string, values?: Record<string, unknown>) => string;

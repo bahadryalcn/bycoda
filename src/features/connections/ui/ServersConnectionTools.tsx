@@ -108,7 +108,15 @@ export function ServersConnectionTools({
         >
           <div {...surfaceAttributes({ variant: "reading-base" }, "flex flex-wrap gap-2 pbe-3")}>
             {(server.kind === "ssh" || server.machine?.ssh) && openTerminal ? (
-              <Button variant="primary" onClick={() => openTerminal(currentServer)} disabled={busy}>
+              <Button
+                variant="primary"
+                onClick={() =>
+                  void act(async () => {
+                    await openTerminal(currentServer);
+                  })
+                }
+                disabled={busy}
+              >
                 <Terminal aria-hidden className="icon-sm" />
                 {t("Connect via SSH")}
               </Button>

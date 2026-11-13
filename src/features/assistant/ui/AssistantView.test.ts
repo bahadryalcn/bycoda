@@ -316,7 +316,7 @@ it("removes hidden jobs, selected counts, details, history and trash after live 
   expect(document.body.textContent).not.toContain("secret-session");
   expect(container.textContent).not.toContain("1 selected");
   expect(mock.snapshot!.jobs).toHaveLength(2);
-  await click("History");
+  await click("What I did");
   expect(container.textContent).not.toContain("Secret timeline");
   await click("More options");
   const trashItem = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>

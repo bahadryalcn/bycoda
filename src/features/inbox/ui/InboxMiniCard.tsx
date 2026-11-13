@@ -20,7 +20,9 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
   useLocale();
   const KindIcon = card.kind === "pr" ? GitPullRequest : CircleDot;
   const kindLabel =
-    card.kind === "pr" ? (card.provider === "gitlab" ? "Merge request" : "Pull request") : "Issue";
+    card.kind === "pr"
+      ? t(card.provider === "gitlab" ? "Merge request" : "Pull request")
+      : t("Issue");
   const serviceLabel = providerLabel(card.provider);
   const hasLabels = card.labels.length > 0;
 

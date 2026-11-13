@@ -1,3 +1,4 @@
+import { wireCrewSourceTasks, wireCrewWorkEngine } from "./crew-source-task.fixture";
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -81,6 +82,7 @@ async function fixture() {
     }),
     updateSession: vi.fn(async () => undefined),
   };
+  wireCrewWorkEngine(store, engine as unknown as HostEngine);
   const models = vi.fn(async () => ({
     models: { codex: [{ id: "codex:fixture", harness: "codex" as const, name: "Fixture" }] },
     errors: {},
@@ -98,6 +100,7 @@ async function fixture() {
     () => now++,
     probe,
   );
+  const sourceTasks = wireCrewSourceTasks(crews, tasks as unknown as HostTasks, store);
   cleanups.push(async () => {
     await crews.close();
     await store.close();
@@ -152,6 +155,7 @@ async function fixture() {
     sessions,
     rows,
     tasks,
+    sourceTasks,
     engine,
     models,
     probe,
@@ -471,9 +475,10 @@ it("retains a confirmed created session but denies update/send after revocation"
   const release = deferred();
   const command = f.engine.command.getMockImplementation()!;
   f.engine.command.mockImplementationOnce(async (input) => {
+    const receipt = await command(input);
     entered.resolve();
     await release.promise;
-    return command(input);
+    return receipt;
   });
   const pending = f.authorizedCall("crews.start", {
     definitionId: f.saved.id,
@@ -521,11 +526,12 @@ it("retains the accepted send independently of a revoked waiter and concurrent d
   const edited = await f.crews.save({ ...f.saved, name: "New configuration" }, f.saved.updatedAt);
   f.revoke();
   release.resolve();
-  await expect(pending).resolves.toMatchObject({
+  const result = await pending;
+  expect(result).toMatchObject({
     status: "active",
     coordinatorSessionId: "created-session",
-    error: undefined,
   });
+  expect((result as { error?: string }).error).toBeUndefined();
   const view = await f.crews.list(f.project.id);
   expect(view.definitions).toEqual([edited]);
   expect(view.runs[0].definition.name).toBe("Crew");
@@ -687,6 +693,7 @@ it("keeps a paused run's definition snapshot and conversations after saved-defin
   const f = await fixture();
   await f.start();
   await f.crews.call("crews.pause", { runId: "run" }, f.project.id);
+  f.sourceTasks.finish();
   await f.authorizedCall("crews.delete", {
     definitionId: f.saved.id,
     expectedUpdatedAt: f.saved.updatedAt,
@@ -733,6 +740,7 @@ it.each(["definition-global", "definition-project", "agent-global", "agent-proje
     } else {
       await f.start();
       await f.crews.call("crews.pause", { runId: "run" }, f.project.id);
+      f.sourceTasks.remove();
       const run = (await f.crews.list(f.project.id)).runs[0];
       action = "crews.deleteRun";
       input = { runId: run.id, expectedUpdatedAt: run.updatedAt };
@@ -761,6 +769,7 @@ it("rechecks a run's required revision after awaited conversation checks without
   const f = await fixture();
   await f.start();
   await f.crews.call("crews.pause", { runId: "run" }, f.project.id);
+  f.sourceTasks.remove();
   const run = (await f.crews.list(f.project.id)).runs[0];
   const entered = deferred();
   const release = deferred();
@@ -813,9 +822,10 @@ it("retains a confirmed create through the paired service after caller revocatio
   const release = deferred();
   const command = f.engine.command.getMockImplementation()!;
   f.engine.command.mockImplementationOnce(async (input) => {
+    const receipt = await command(input);
     entered.resolve();
     await release.promise;
-    return command(input);
+    return receipt;
   });
   const pending = service.call(
     "crews.start",
@@ -904,9 +914,15 @@ it("preserves accepted turn identity and a concurrent pause through the paired s
     "create",
     "send",
   ]);
-  expect(
-    f.engine.command.mock.calls.map(([input]) => (input as { commandId: string }).commandId),
-  ).toEqual(["crew-paired-send:create", "crew-paired-send:send"]);
+  const ids = f.engine.command.mock.calls.map(
+    ([input]) => (input as { commandId: string }).commandId,
+  );
+  expect(ids).toHaveLength(2);
+  expect(new Set(ids).size).toBe(2);
+  for (const id of ids) {
+    expect(id).toMatch(/^work-[a-f0-9]{64}$/);
+    expect(await f.store.receiptStatus(id)).toBeTruthy();
+  }
 });
 
 it("rejects crew candidates outside the assistant model pool before review", async () => {

@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { PasswordField } from "../../../shared/ui/PasswordField";
 import { TextField } from "../../../shared/ui/TextField";
 import type { DecisionSource, DecisionSourceInput } from "../model/decisionTypes";
 import { clampName, endpointError, nameError } from "../model/decisionView";
 import { ErrorNotice } from "./ErrorNotice";
+import { useDecisionDialogClose } from "../hooks/useDecisionDialogClose";
 
 /** Edit name, address and model. A key is replaced only when typed; the saved key is never shown. */
 export function EditSourceDialog({
@@ -28,6 +28,14 @@ export function EditSourceDialog({
   const [errors, setErrors] = useState<{ name?: string; endpoint?: string }>({});
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
+  const close = useDecisionDialogClose(
+    name !== source.name ||
+      endpoint !== (source.endpoint ?? "") ||
+      model !== (source.model ?? "") ||
+      apiKey !== "",
+    saving,
+    onClose,
+  );
 
   const save = () => {
     const next: { name?: string; endpoint?: string } = {};
@@ -63,10 +71,10 @@ export function EditSourceDialog({
     <Modal
       title={t("Edit source")}
       size="md"
-      onClose={onClose}
+      onClose={close.requestClose}
       footer={
         <ModalActions>
-          <Button variant="ghost" disabled={saving} onClick={onClose}>
+          <Button variant="ghost" disabled={saving} onClick={close.requestClose}>
             {t("Cancel")}
           </Button>
           <Button variant="primary" loading={saving} disabled={saving} onClick={save}>
@@ -95,6 +103,7 @@ export function EditSourceDialog({
         ) : null}
         <TextField
           label={t("Model (optional)")}
+          description={t("Leave empty to keep the saved model.")}
           value={model}
           monospace
           disabled={saving}
@@ -110,11 +119,9 @@ export function EditSourceDialog({
             onChange={(event) => setApiKey(event.target.value)}
           />
         ) : null}
-        {!hasEndpoint && !hasKey ? (
-          <InlineMessage tone="neutral">{t("Only the name can be changed here.")}</InlineMessage>
-        ) : null}
         {failure !== null ? <ErrorNotice error={failure} /> : null}
       </div>
+      {close.dialog}
     </Modal>
   );
 }

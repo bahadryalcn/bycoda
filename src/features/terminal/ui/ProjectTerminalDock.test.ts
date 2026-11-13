@@ -125,6 +125,7 @@ it("resizes the terminal list by drag and keyboard, resets it, and follows dock 
     vi.unstubAllGlobals();
   }
 });
+const menuPicks = vi.hoisted(() => vi.fn());
 vi.mock("../../files/ui/ExplorerMenu", () => ({
   ExplorerMenu: ({
     items,
@@ -132,8 +133,9 @@ vi.mock("../../files/ui/ExplorerMenu", () => ({
   }: {
     items: { kind: string; id?: string; label?: string }[];
     onPick: (id: string) => void;
-  }) =>
-    createElement(
+  }) => {
+    menuPicks(onPick);
+    return createElement(
       "div",
       { role: "menu" },
       items
@@ -141,8 +143,97 @@ vi.mock("../../files/ui/ExplorerMenu", () => ({
         .map((item) =>
           createElement("button", { key: item.id, onClick: () => onPick(item.id!) }, item.label),
         ),
-    ),
+    );
+  },
 }));
+
+it.each(["terminal", "dock", "profile"])(
+  "dismisses the old project's %s menu when its retained dock becomes hidden",
+  async (menu) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const action = vi.fn();
+    const props = {
+      dock: {
+        projectPath: "/a",
+        side: "bottom",
+        size: 220,
+        open: true,
+        pane: {
+          id: "pane",
+          activeFileId: "one",
+          files: [{ id: "one", path: "Terminal 1", cwd: "/a", terminal: true }],
+        },
+      } as Dock,
+      focused: true,
+      onFocus: vi.fn(),
+      onHide: action,
+      onSideChange: action,
+      onSizePaint: vi.fn(),
+      onSizeCommit: vi.fn(),
+      onAddTerminal: action,
+      onAddTerminalWithProfile: action,
+      onSplitTerminal: action,
+      onSelectDefaultProfile: action,
+      onSelectTerminal: vi.fn(),
+      onCloseTerminal: action,
+      onCloseTerminals: action,
+      onReorderTerminals: action,
+    };
+    try {
+      await act(async () => root.render(createElement(ProjectTerminalDock, props)));
+      await act(async () => {
+        if (menu === "terminal") {
+          host.querySelector('[role="tab"]')!.dispatchEvent(
+            new MouseEvent("contextmenu", {
+              bubbles: true,
+              cancelable: true,
+              clientX: 8,
+              clientY: 8,
+            }),
+          );
+        } else {
+          host
+            .querySelector<HTMLButtonElement>(
+              menu === "dock"
+                ? '[aria-label="Terminal dock actions"]'
+                : '[aria-label="Launch Profile…"]',
+            )!
+            .click();
+        }
+      });
+      expect(host.querySelector('[role="menu"]')).not.toBeNull();
+      const stalePick = menuPicks.mock.calls.at(-1)![0] as (id: string) => void;
+      await act(async () =>
+        root.render(
+          createElement(ProjectTerminalDock, { ...props, focused: false, visible: false }),
+        ),
+      );
+      expect(host.querySelector('[role="menu"]')).toBeNull();
+      expect(host.querySelector('[role="tabpanel"]')).not.toBeNull();
+      const staleActions =
+        menu === "profile"
+          ? ["profile:shell", "split", "default"]
+          : menu === "dock"
+            ? ["top", "close", "close-others", "close-all", "hide"]
+            : ["split", "move-up", "close", "close-others", "close-all"];
+      await act(async () => {
+        for (const id of staleActions) stalePick(id);
+      });
+      expect(action).not.toHaveBeenCalled();
+      await act(async () =>
+        root.render(createElement(ProjectTerminalDock, { ...props, visible: true })),
+      );
+      expect(host.querySelector('[role="menu"]')).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("selects terminals with vertical keyboard navigation and closes the active terminal", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

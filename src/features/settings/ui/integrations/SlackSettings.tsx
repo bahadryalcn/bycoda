@@ -51,14 +51,14 @@ export function SlackSettings() {
   );
 }
 
-function SlackAccountForm({ account, onSaved, onCancel }: AccountFormProps) {
+function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: AccountFormProps) {
   useLocale();
   const [useBotToken, setUseBotToken] = useState(false);
   const [token, setToken] = useState("");
   const [clientId, setClientId] = useState("");
   const [authHandle, setAuthHandle] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const { saving, error, save } = useAccountSave(onSaved);
+  const { saving, error, save } = useAccountSave(onSaved, onSavingChange);
   const submitToken = () => {
     save(slackSaveInput(token, account?.id)).catch(() => undefined);
   };

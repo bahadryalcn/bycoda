@@ -7,7 +7,7 @@ description: Use when changing automation schedules, missed runs and recovery. N
 
 Use for desktop automation scheduling and launches. Host task/goal scheduling belongs to `feature-tasks-goals`; SSH execution retains native runbook ownership.
 
-Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Models. Feature choices resolve at run start; existing running sessions keep their concrete model.
+Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Work. Feature choices resolve at run start; existing running sessions keep their concrete model.
 
 ## Source starts
 

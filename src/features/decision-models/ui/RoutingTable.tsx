@@ -1,4 +1,9 @@
 import "./decisionModels.css";
+import {
+  useRetainedTransaction,
+  retainedTransactionValue,
+} from "../../model-routing/public/settings";
+import { useId } from "react";
 import { routingChanges } from "../model/presentation";
 import { Badge } from "../../../shared/ui/Badge";
 import { TextField } from "../../../shared/ui/TextField";
@@ -23,7 +28,7 @@ import { DECISION_TASK_TYPES } from "../../../shared/model/host-contracts/decisi
 import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { SourceOrderPicker } from "./SourceOrderPicker";
-import { parseThreshold, resetRoute } from "../model/routingEditor";
+import { mergeRoutingDraft, parseThreshold, resetRoute } from "../model/routingEditor";
 import type { DecisionRouting, DecisionSource, DecisionTaskType } from "../model/decisionTypes";
 import {
   DEFAULT_ROUTE_THRESHOLD,
@@ -37,32 +42,67 @@ import { ErrorNotice } from "./ErrorNotice";
  * until Save; an invalid threshold blocks saving and is named on its field.
  */
 export function RoutingTable({
+  hostId,
   routing,
   sources,
   busy,
   onSave,
 }: {
+  hostId?: string;
   routing: DecisionRouting;
   sources: DecisionSource[] | null;
   busy: boolean;
   onSave: (routing: DecisionRouting) => Promise<unknown>;
 }) {
+  const instanceId = useId();
+  const identity = hostId ?? instanceId;
+  const [retainedPending, setRetainedPending] = useRetainedTransaction(
+    `decision:${identity}:routing:pending`,
+    false,
+  );
   const [editingTask, setEditingTask] = useState<DecisionTaskType | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState<DecisionRouting>(routing);
-  const [thresholdText, setThresholdText] = useState<Partial<Record<DecisionTaskType, string>>>({});
-  const [saveError, setSaveError] = useState<unknown>(null);
-  const [saved, setSaved] = useState(false);
-  const [draftSource, setDraftSource] = useState(routing);
-  if (draftSource !== routing && routingChanges(draftSource, routing) > 0) {
+  const [draft, setDraft] = useRetainedTransaction<DecisionRouting>(
+    `decision:${identity}:routing:draft`,
+    routing,
+  );
+  const [thresholdText, setThresholdText] = useRetainedTransaction<
+    Partial<Record<DecisionTaskType, string>>
+  >(`decision:${identity}:routing:text`, {});
+  const [saveError, setSaveError] = useRetainedTransaction<unknown>(
+    `decision:${identity}:routing:error`,
+    null,
+  );
+  const [saved, setSaved] = useRetainedTransaction(`decision:${identity}:routing:saved`, false);
+  const [draftSource, setDraftSource] = useRetainedTransaction(
+    `decision:${identity}:routing:baseline`,
+    routing,
+  );
+  const [observed, setObserved] = useRetainedTransaction(
+    `decision:${identity}:routing:observed`,
+    routing,
+  );
+  if (routingChanges(observed, routing) > 0 && !retainedPending) {
+    setObserved(routing);
     setDraftSource(routing);
-    setDraft(routing);
-    setThresholdText({});
+    setDraft(mergeRoutingDraft(draftSource, draft, routing));
+    setThresholdText((current) => {
+      const next = { ...current };
+      for (const task of DECISION_TASK_TYPES) {
+        if (
+          current[task] !== undefined &&
+          parseThreshold(current[task]) ===
+            (draftSource[task]?.threshold ?? DEFAULT_ROUTE_THRESHOLD)
+        )
+          delete next[task];
+      }
+      return next;
+    });
   }
   const invalid = DECISION_TASK_TYPES.some(
     (task) => thresholdText[task] !== undefined && parseThreshold(thresholdText[task]) === null,
   );
-  const changes = routingChanges(draft, routing);
+  const changes = routingChanges(draft, draftSource);
   const dirty = changes > 0 || invalid;
   const taskIcons = {
     screen_state: MonitorSmartphone,
@@ -87,14 +127,31 @@ export function RoutingTable({
     }
   };
   const save = () => {
-    if (invalid || !dirty || busy) return;
+    if (
+      invalid ||
+      !dirty ||
+      busy ||
+      retainedTransactionValue<boolean>(`decision:${identity}:routing:pending`)
+    )
+      return;
+    setRetainedPending(true);
     setSaveError(null);
     void onSave(draft).then(
-      () => {
+      (result) => {
+        const acknowledged =
+          typeof result === "object" && result !== null && "routing" in result
+            ? (result as { routing: DecisionRouting }).routing
+            : draft;
+        setDraftSource(acknowledged);
+        setDraft(acknowledged);
         setSaved(true);
         setThresholdText({});
+        setRetainedPending(false);
       },
-      (error: unknown) => setSaveError(error),
+      (error: unknown) => {
+        setSaveError(error);
+        setRetainedPending(false);
+      },
     );
   };
   return (
@@ -179,7 +236,7 @@ export function RoutingTable({
                         label={taskTypeLabel(task)}
                         value={route?.sourceIds ?? []}
                         sources={sources ?? []}
-                        disabled={busy || sources === null}
+                        disabled={busy || retainedPending || sources === null}
                         onChange={(next) => changeSources(task, next)}
                       />
                     </div>
@@ -189,7 +246,7 @@ export function RoutingTable({
                         inputMode="decimal"
                         hideLabel
                         value={text}
-                        disabled={busy || !route?.sourceIds.length}
+                        disabled={busy || retainedPending || !route?.sourceIds.length}
                         error={thresholdInvalid ? t("Enter a number from 0 to 1.") : undefined}
                         onChange={(event) => changeThreshold(task, event.target.value)}
                         onBlur={() => {
@@ -255,7 +312,7 @@ export function RoutingTable({
                         size="sm"
                         iconOnly
                         label={t("Reset to automatic")}
-                        disabled={busy}
+                        disabled={busy || retainedPending}
                         onClick={() => {
                           setDraft((current) => resetRoute(current, task));
                           setThresholdText((current) => {
@@ -279,7 +336,7 @@ export function RoutingTable({
                     <Button
                       variant="ghost"
                       size="sm"
-                      disabled={busy}
+                      disabled={busy || retainedPending}
                       onClick={() => setEditingTask(task)}
                     >
                       {t("Customize")}
@@ -331,9 +388,9 @@ export function RoutingTable({
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={busy}
+                disabled={busy || retainedPending}
                 onClick={() => {
-                  setDraft(routing);
+                  setDraft(draftSource);
                   setThresholdText({});
                   setSaveError(null);
                   setSaved(false);
@@ -346,10 +403,10 @@ export function RoutingTable({
           <Button
             variant="primary"
             size="sm"
-            loading={busy}
+            loading={busy || retainedPending}
             success={saved && !dirty && saveError === null}
             successLabel={saved && !dirty && saveError === null ? t("Saved") : undefined}
-            disabled={!dirty || invalid || busy}
+            disabled={!dirty || invalid || busy || retainedPending}
             onClick={save}
           >
             {t("Save routing")}

@@ -32,7 +32,7 @@ it("contains a render failure and remounts only the failed view on retry", async
   }
   const onBack = vi.fn();
   await act(async () =>
-    root.render(createElement(RecoveryBoundary, { onBack }, createElement(View))),
+    root.render(createElement(RecoveryBoundary, { onBack, children: createElement(View) })),
   );
   expect(container.querySelector('[role="alert"]')).not.toBeNull();
   expect(container.textContent).not.toContain("View exploded");
@@ -52,12 +52,24 @@ it("contains a render failure and remounts only the failed view on retry", async
 });
 
 it("contains a rejected optional import and offers reload instead of a cached lazy retry", async () => {
-  const View = lazySurface(() =>
+  const View = lazySurface<object>(() =>
     Promise.reject(new Error("Failed to fetch dynamically imported module: /view.js")),
   );
   await act(async () => root.render(createElement(View)));
   expect(container.textContent).toContain("Reload app");
   expect(container.textContent).not.toContain("Try again");
+});
+
+it("offers real reload recovery for a rejected loader with an unrecognized message", async () => {
+  const original = new Error("Dependency initialization was interrupted");
+  const load = vi.fn(() => Promise.reject(original));
+  const View = lazySurface(load);
+  await act(async () => root.render(createElement(View)));
+  expect(container.textContent).toContain("Reload app");
+  expect(container.textContent).not.toContain("Try again");
+  await act(async () => button("Show details").click());
+  expect(container.querySelector("pre")?.textContent).toContain(original.message);
+  expect(load).toHaveBeenCalledOnce();
 });
 
 it("keeps error details selectable and reports a denied clipboard write", async () => {
@@ -79,6 +91,44 @@ it("keeps error details selectable and reports a denied clipboard write", async 
   vi.mocked(navigator.clipboard.writeText).mockResolvedValue();
   await act(async () => button("Copy details").click());
   expect(button("Copied")).toBeDefined();
+});
+
+it("never marks replacement diagnostics copied when an earlier write finishes", async () => {
+  let resolveCopy!: () => void;
+  const write = vi
+    .spyOn(navigator.clipboard, "writeText")
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveCopy = resolve;
+        }),
+    )
+    .mockResolvedValue(undefined);
+  const render = async (error: string) =>
+    act(async () => root.render(createElement(FailureState, { title: "Failed", error })));
+  await render("First diagnostic");
+  await act(async () => button("Show details").click());
+  await act(async () => button("Copy details").click());
+  await render("New diagnostic");
+  await act(async () => resolveCopy());
+  expect(button("Copied")).toBeUndefined();
+  expect(button("Copy details").getAttribute("aria-busy")).not.toBe("true");
+  await act(async () => button("Copy details").click());
+  expect(write).toHaveBeenLastCalledWith("Failed\n\nNew diagnostic");
+  expect(button("Copied")).toBeDefined();
+  await render("Third diagnostic");
+  expect(button("Copied")).toBeUndefined();
+});
+
+it("settles synchronous retry failures without an unhandled rejected click", async () => {
+  const onRetry = vi.fn(() => {
+    throw new Error("Request already reported its failure");
+  });
+  await act(async () => root.render(createElement(FailureState, { title: "Failed", onRetry })));
+  await act(async () => button("Retry").click());
+  await act(async () => button("Retry").click());
+  expect(onRetry).toHaveBeenCalledTimes(2);
+  expect(button("Retry").getAttribute("aria-busy")).not.toBe("true");
 });
 
 it.each([
@@ -103,11 +153,12 @@ it("remounts a failed view when a reset key changes and reports the error and re
   const render = (key: number) =>
     act(async () =>
       root.render(
-        createElement(
-          RecoveryBoundary,
-          { resetKeys: [key], onError, onReset },
-          createElement(View),
-        ),
+        createElement(RecoveryBoundary, {
+          resetKeys: [key],
+          onError,
+          onReset,
+          children: createElement(View),
+        }),
       ),
     );
   await render(1);
@@ -129,7 +180,9 @@ it("does not loop when a view still fails after retry or after a reset key chang
   }
   const render = (key: number) =>
     act(async () =>
-      root.render(createElement(RecoveryBoundary, { resetKeys: [key] }, createElement(View))),
+      root.render(
+        createElement(RecoveryBoundary, { resetKeys: [key], children: createElement(View) }),
+      ),
     );
   await render(1);
   await act(async () => button("Try again").click());

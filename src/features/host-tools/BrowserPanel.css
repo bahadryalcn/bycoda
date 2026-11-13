@@ -1,3 +1,27 @@
+/* Hallmark · scope: app · theme: bycoda (locked) · genre: modern-minimal · built: the project */
+/* Hallmark · pre-emit critique: P4 H4 E4 S3 R5 V3 · weakest: S, exposed page dimensions instead of a generic settings-only trigger */
+/* Hallmark · waive 24b · existing Bycoda controls use 6px and 10px spacing steps · preserving the browser toolbar and recent-page density retains the owner's compact layout */
+.host-browser-viewport-popover {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.host-browser-control-section,
+.host-browser-viewport-content {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.host-browser-viewport-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: var(--space-1);
+}
+
 .host-tool-panel.host-browser-panel {
   display: flex;
   flex-direction: column;
@@ -254,6 +278,8 @@
 }
 
 .host-browser-selection-popover {
+  display: grid;
+  gap: var(--space-3);
   padding: 12px;
   overflow-y: auto;
 }

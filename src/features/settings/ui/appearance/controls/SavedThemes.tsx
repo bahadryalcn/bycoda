@@ -65,6 +65,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
   const visible = collapsible && !expanded ? themes.slice(0, limit) : themes;
 
   const apply = async (theme: SavedTheme) => {
+    if (busy || appearance.chatBackgroundBusy) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -132,7 +133,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
               <Button
                 variant="item"
                 className="theme-saved-apply"
-                disabled={busy}
+                disabled={busy || appearance.chatBackgroundBusy}
                 tooltip={t("Apply this look")}
                 onClick={() => {
                   apply(theme).catch((error: unknown) => console.error(error));

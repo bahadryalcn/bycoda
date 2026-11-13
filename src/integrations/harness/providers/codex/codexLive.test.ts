@@ -36,6 +36,30 @@ import {
 } from "./codexLive.testSupport";
 
 describe("codex live turn sequence", () => {
+  it("applies compaction thresholds on start and resume, and restores provider defaults", async () => {
+    const sessionId = "codex-compact-window";
+    for (const [index, autoCompactWindow] of ["150000", "200000", "default"].entries()) {
+      sent.length = 0;
+      const { turn } = await startTurn(sessionId, {
+        expectResume: index > 0,
+        modelSettings: { autoCompactWindow },
+      });
+      const request = parse().find(
+        (entry) => entry.method === (index ? "thread/resume" : "thread/start"),
+      );
+      const config = (request?.params as { config?: Record<string, unknown> })?.config;
+      expect(config?.model_auto_compact_token_limit).toBe(
+        autoCompactWindow === "default" ? undefined : Number(autoCompactWindow),
+      );
+      expect(
+        processConstructions.created.filter((process) => process.sessionId === sessionId),
+      ).toHaveLength(index + 1);
+      notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+      await turn;
+    }
+    await stopCodexSession(sessionId);
+  });
+
   it.each([false, true])("disables only loaded MCP tables (project loaded: %s)", async (loaded) => {
     mcpBridge.mockResolvedValueOnce({
       externalMcp: { servers: [], disable: { codex: ["shadcn", "openaiDeveloperDocs"] } },

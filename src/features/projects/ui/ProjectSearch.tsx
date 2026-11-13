@@ -1,7 +1,7 @@
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
@@ -466,17 +466,17 @@ function ProjectSearchContent({
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {groups.map((group) => (
           <section key={group.path} {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "")}>
-            {/* One line per file: name, then its folder (full path on hover when it is cut). */}
-            <div className="flex min-w-0 items-center gap-1.5 px-2 py-1">
+            {/* Keep exact file identity readable without hover, including duplicate basenames. */}
+            <div className="flex min-w-0 items-start gap-1.5 px-2 py-1">
               <FileTypeIcon name={group.name} isDir={false} size="md" />
-              <Text truncate size="caption" tone="primary" className="min-w-0 max-w-[60%] shrink-0">
-                {group.name}
-              </Text>
-              <OverflowTooltip label={group.relative}>
-                <Text truncate size="micro" tone="muted" className="min-w-0 flex-1">
-                  {group.directory}
+              <div className="min-w-0 flex-1">
+                <Text as="div" wrap="anywhere" size="caption" tone="primary">
+                  {group.name}
                 </Text>
-              </OverflowTooltip>
+                <Text as="div" wrap="anywhere" size="micro" tone="muted">
+                  {group.relative}
+                </Text>
+              </div>
               <Badge variant="count" size="xs" tone="accent" max={Infinity}>
                 {group.matches.length}
               </Badge>

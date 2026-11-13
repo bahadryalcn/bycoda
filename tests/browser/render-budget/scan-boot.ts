@@ -25,12 +25,15 @@ const fresh = (): Meter => ({
   mountsByName: {},
 });
 let meter = fresh();
+// Visual acceptance uses the same product tree without the measurement overlay.
+const visualOnly = new URLSearchParams(location.search).get("visual") === "1";
 // Composite fibers only: function (0), class (1), forwardRef (11), simple memo (15).
 // Host elements, providers, fragments and the memo wrapper (14) are not component renders.
 const COMPOSITE = new Set([0, 1, 11, 15]);
 meter.version = ReactScanInternals.version;
 scan({
-  enabled: true,
+  enabled: !visualOnly,
+  showToolbar: !visualOnly,
   onCommitStart() {
     meter.commits++;
   },

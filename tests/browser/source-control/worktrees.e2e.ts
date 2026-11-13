@@ -899,14 +899,12 @@ for (const theme of ["light", "dark"])
       await page.screenshot({
         path: `${worktreeEvidence}/list-${theme}-${width}.png`,
       });
-      const detailsToggle = workspace.getByRole("button", {
-        name: "Details",
-        exact: true,
-      });
+      const disclosure = workspace.locator("details");
+      const detailsToggle = disclosure.locator("summary");
       await detailsToggle.focus();
-      await expect(detailsToggle).toHaveAttribute("aria-expanded", "false");
+      await expect(disclosure).not.toHaveAttribute("open");
       await page.keyboard.press("Enter");
-      await expect(detailsToggle).toHaveAttribute("aria-expanded", "true");
+      await expect(disclosure).toHaveAttribute("open");
       const details = workspace.locator("dl");
       await expect(details).toBeVisible();
       for (const label of ["Folder", "Branch", "Workspace ID", "Owner"])

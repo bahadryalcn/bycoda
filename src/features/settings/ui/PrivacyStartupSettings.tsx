@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -8,10 +8,13 @@ import {
   subscribeAnonymousStats,
 } from "../../account";
 import { DiagnosticsSharingSetting } from "../../diagnostics";
-import { useGroupLock } from "../../group-lock/hooks/useGroupLock";
-import { setStartInPrivacyMode } from "../../group-lock/model/groupLock";
+import {
+  useGroupLock,
+  setStartInPrivacyMode,
+  PrivacyStorageError,
+} from "../../group-lock/public/privacySettings";
 import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
-import { saveMaskEmails, useMaskEmails } from "../model/displayPrefs";
+import { saveMaskEmails, useMaskEmails, useMaskEmailsSaved } from "../model/displayPrefs";
 import { FileAccessSettings } from "./FileAccessSettings";
 import "../../group-lock/ui/GroupPrivacy.css";
 
@@ -20,10 +23,13 @@ export function PrivacyStartupSettings() {
   useLocale();
   const privacy = useGroupLock();
   const maskEmails = useMaskEmails();
+  const maskSaved = useMaskEmailsSaved();
   const statsOn = useSyncExternalStore(subscribeAnonymousStats, isAnonymousStatsEnabled);
   // The choice applies now; the next-launch promise holds only once it is stored.
-  const [startSaved, setStartSaved] = useState(true);
-  const saveStart = (on: boolean) => setStartSaved(setStartInPrivacyMode(on));
+  const startSaved = !privacy.unsavedOptions?.includes("startInPrivacyMode");
+  const saveStart = (on: boolean) => {
+    setStartInPrivacyMode(on);
+  };
   return (
     <>
       <Group
@@ -40,7 +46,9 @@ export function PrivacyStartupSettings() {
           label={t("Start in privacy mode")}
           description={t("Hide your workspace on the next launch.")}
           feedback={
-            startSaved ? undefined : (
+            privacy.storageAvailable === false ? (
+              <PrivacyStorageError />
+            ) : startSaved ? undefined : (
               <SettingsFeedback
                 state="error"
                 action={
@@ -59,6 +67,7 @@ export function PrivacyStartupSettings() {
           <Toggle
             label={t("Start in privacy mode")}
             on={privacy.settings.startInPrivacyMode}
+            disabled={privacy.storageAvailable === false}
             onChange={saveStart}
           />
         </Row>
@@ -68,6 +77,18 @@ export function PrivacyStartupSettings() {
           description={t(
             "Blur account emails in Settings and the usage popover until you click one, so they stay out of screenshots.",
           )}
+          feedback={
+            maskSaved ? undefined : (
+              <SettingsFeedback
+                state="error"
+                action={<Button onClick={() => saveMaskEmails(maskEmails)}>{t("Retry")}</Button>}
+              >
+                {t(
+                  "Applied in this window, but not saved. The next launch may use the previous choice.",
+                )}
+              </SettingsFeedback>
+            )
+          }
         >
           <Toggle label={t("Mask account emails")} on={maskEmails} onChange={saveMaskEmails} />
         </Row>

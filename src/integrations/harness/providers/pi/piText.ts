@@ -6,6 +6,7 @@ import {
   observeProviderProbeCleanup,
   createProviderRetirementLedger,
   preserveProviderFailure,
+  withProviderRetirement,
 } from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
@@ -92,7 +93,7 @@ export function warmupText(flavor: PiFlavor, cwd: string): Promise<void> {
 
 export async function runTextPrompt(
   flavor: PiFlavor,
-  input: {
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
     cwd: string;
     model?: string;
     modelSettings?: Record<string, string>;
@@ -114,7 +115,7 @@ export async function runTextPrompt(
 
 async function promptOnLive(
   flavor: PiFlavor,
-  input: {
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
     cwd: string;
     model?: string;
     modelSettings?: Record<string, string>;
@@ -132,6 +133,7 @@ async function promptOnLive(
     input.model,
     input.modelSettings,
     input.operationContext,
+    input,
   );
   let writer: Awaited<ReturnType<typeof piTurnWriter>>;
   try {
@@ -144,7 +146,7 @@ async function promptOnLive(
     );
     input.signal?.throwIfAborted();
   } catch (error) {
-    return preserveProviderFailure(error, dropLive(flavor, session));
+    return preserveProviderFailure(error, dropLive(flavor, session), input);
   }
   const abortOriginal = async () => {
     const original = await piTurnWriter(
@@ -157,78 +159,83 @@ async function promptOnLive(
     return original.request({ type: "abort" });
   };
   const timeoutMs = input.timeoutMs ?? REQUEST_TIMEOUT_MS;
-  try {
-    // Never continue with the previous utility conversation if reset failed.
-    await writer.request({ type: "new_session" });
-    const thinking = input.modelSettings?.thinking;
-    await writer
-      .request({
-        type: "set_thinking_level",
-        level: isPiThinkingLevel(thinking) ? thinking : "off",
-      })
-      .catch(() => undefined);
-    const fast = input.modelSettings?.fast;
-    if (flavor.id === "omp" && (fast === "true" || fast === "false")) {
-      await writer
-        .request({ type: "set_fast_mode", enabled: fast === "true" })
-        .catch(() => undefined);
-    }
-    session.output = "";
-    session.collecting = true;
-    session.onEvent = input.onEvent;
-    session.turnEndPending = false;
+  return withProviderRetirement(
+    async () => {
+      try {
+        // Never continue with the previous utility conversation if reset failed.
+        await writer.request({ type: "new_session" });
+        const thinking = input.modelSettings?.thinking;
+        await writer
+          .request({
+            type: "set_thinking_level",
+            level: isPiThinkingLevel(thinking) ? thinking : "off",
+          })
+          .catch(() => undefined);
+        const fast = input.modelSettings?.fast;
+        if (flavor.id === "omp" && (fast === "true" || fast === "false")) {
+          await writer
+            .request({ type: "set_fast_mode", enabled: fast === "true" })
+            .catch(() => undefined);
+        }
+        session.output = "";
+        session.collecting = true;
+        session.onEvent = input.onEvent;
+        session.turnEndPending = false;
 
-    const turnPromise = new Promise<void>((resolve, reject) => {
-      session.turnDone = resolve;
-      session.turnFailed = reject;
-    });
+        const turnPromise = new Promise<void>((resolve, reject) => {
+          session.turnDone = resolve;
+          session.turnFailed = reject;
+        });
 
-    const failOriginal = session.turnFailed;
-    const abort = abortTextPromptRace(input.signal, () => {
-      failOriginal?.(new Error("By-the-way request cancelled"));
-      void abortOriginal().catch(() => undefined);
-    });
+        const failOriginal = session.turnFailed;
+        const abort = abortTextPromptRace(input.signal, () => {
+          failOriginal?.(new Error("By-the-way request cancelled"));
+          void abortOriginal().catch(() => undefined);
+        });
 
-    await writer.request(buildPiPrompt({ text: input.prompt }), timeoutMs);
-    if (session.turnEndPending) finishTurn(session);
+        await writer.request(buildPiPrompt({ text: input.prompt }), timeoutMs);
+        if (session.turnEndPending) finishTurn(session);
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await Promise.race([
-        turnPromise,
-        new Promise<void>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error(`${flavor.label} text generation timed out`)),
-            timeoutMs,
-          );
-        }),
-        ...(abort.promise ? [abort.promise] : []),
-      ]);
-    } finally {
-      abort.detach();
-      if (timer) clearTimeout(timer);
-    }
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            turnPromise,
+            new Promise<void>((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error(`${flavor.label} text generation timed out`)),
+                timeoutMs,
+              );
+            }),
+            ...(abort.promise ? [abort.promise] : []),
+          ]);
+        } finally {
+          abort.detach();
+          if (timer) clearTimeout(timer);
+        }
 
-    let output = session.output.trim();
-    if (!output) {
-      const rec = await writer.request({ type: "get_last_assistant_text" }).catch(() => null);
-      const text = asRecord(rec?.data)?.text;
-      if (typeof text === "string") output = text.trim();
-    }
-    if (!output) throw new Error(`${flavor.label} returned empty output.`);
-    await dropLive(flavor, session);
-    return output;
-  } catch (error) {
-    session.turnDone = null;
-    session.turnFailed = null;
-    await abortOriginal().catch(() => undefined);
-    return preserveProviderFailure(error, dropLive(flavor, session));
-  } finally {
-    session.collecting = false;
-    session.onEvent = undefined;
-    session.turnDone = null;
-    session.turnFailed = null;
-  }
+        let output = session.output.trim();
+        if (!output) {
+          const rec = await writer.request({ type: "get_last_assistant_text" }).catch(() => null);
+          const text = asRecord(rec?.data)?.text;
+          if (typeof text === "string") output = text.trim();
+        }
+        if (!output) throw new Error(`${flavor.label} returned empty output.`);
+        return output;
+      } catch (error) {
+        session.turnDone = null;
+        session.turnFailed = null;
+        await abortOriginal().catch(() => undefined);
+        throw error;
+      } finally {
+        session.collecting = false;
+        session.onEvent = undefined;
+        session.turnDone = null;
+        session.turnFailed = null;
+      }
+    },
+    () => dropLive(flavor, session),
+    input,
+  );
 }
 
 async function ensureLive(
@@ -237,6 +244,7 @@ async function ensureLive(
   requestedModel?: string,
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   const state = stateFor(flavor);
   const model = pickTextModel(flavor, requestedModel);
@@ -262,7 +270,7 @@ async function ensureLive(
   ) {
     return current;
   }
-  return startLive(flavor, cwd, model, modelSettings, operationContext);
+  return startLive(flavor, cwd, model, modelSettings, operationContext, retirement);
 }
 
 async function startLive(
@@ -271,6 +279,7 @@ async function startLive(
   model?: string,
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   const state = stateFor(flavor);
   const previous = captureDrop(flavor);
@@ -364,6 +373,7 @@ async function startLive(
         stopping,
         ...(admitted ? [retirements.retire([textProcess])] : []),
       ]),
+      retirement,
     );
   } finally {
     if (state.starting === textProcess) state.starting = null;
@@ -433,26 +443,30 @@ function modelSettingsKey(settings?: Record<string, string>): string {
 
 export const stopPiTextPrompt = () => stopTextPrompt(PI_FLAVOR);
 export const warmupPiText = (cwd: string) => warmupText(PI_FLAVOR, cwd);
-export const runPiTextPrompt = (input: {
-  cwd: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-  operationContext?: HarnessOperationContext;
-}) => runTextPrompt(PI_FLAVOR, input);
+export const runPiTextPrompt = (
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
+  },
+) => runTextPrompt(PI_FLAVOR, input);
 
 export const stopOmpTextPrompt = () => stopTextPrompt(OMP_FLAVOR);
 export const warmupOmpText = (cwd: string) => warmupText(OMP_FLAVOR, cwd);
-export const runOmpTextPrompt = (input: {
-  cwd: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-  operationContext?: HarnessOperationContext;
-}) => runTextPrompt(OMP_FLAVOR, input);
+export const runOmpTextPrompt = (
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
+  },
+) => runTextPrompt(OMP_FLAVOR, input);

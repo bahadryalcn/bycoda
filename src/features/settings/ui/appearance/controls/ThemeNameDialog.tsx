@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { t } from "../../../../../shared/i18n";
+import { isImeComposition } from "../../../../../shared/lib/keyboard";
 import { Button } from "../../../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../../../shared/ui/Modal";
 import { TextField } from "../../../../../shared/ui/TextField";
@@ -10,12 +11,14 @@ export function ThemeNameDialog({
   title,
   confirmLabel,
   initialName = "",
+  description,
   onSubmit,
   onClose,
 }: {
   title: string;
   confirmLabel: string;
   initialName?: string;
+  description?: string;
   /** Receives the cleaned name; a rejection keeps the dialog open with the error. */
   onSubmit: (name: string) => void | Promise<void>;
   onClose: () => void;
@@ -44,6 +47,7 @@ export function ThemeNameDialog({
     <Modal
       size="sm"
       title={title}
+      description={description}
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -69,10 +73,14 @@ export function ThemeNameDialog({
         value={name}
         maxLength={SAVED_THEME_NAME_MAX}
         autoFocus
+        disabled={busy}
         error={error ?? undefined}
         onChange={(event) => setName(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter") run();
+          if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
+            event.preventDefault();
+            run();
+          }
         }}
       />
     </Modal>

@@ -83,24 +83,30 @@ function Brand({ title, text, centered }: { title: string; text: string; centere
   );
 }
 
-function FeedbackForm({ signedIn }: { signedIn: boolean }) {
+function FeedbackForm({ signedIn, open }: { signedIn: boolean; open: boolean }) {
   const [draft, setDraft] = useState<FeedbackDraft>(() => ({
     ...EMPTY_FEEDBACK_DRAFT,
     attachLogs: getDiagnosticsMode() === "auto",
   }));
   const [result, setResult] = useState<FeedbackSubmitResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const close = () => {
+    if (result?.status === "sent" && !draft.message.trim()) setResult(null);
+    closeFeedbackDialog();
+  };
 
-  if (result?.status === "sent") {
+  if (!open) return null;
+
+  if (result?.status === "sent" && !draft.message.trim()) {
     return (
       <Modal
         title={t("Send feedback")}
         size="sm"
         minimalHeader
-        onClose={closeFeedbackDialog}
+        onClose={close}
         footer={
           <ModalActions>
-            <Button variant="primary" onClick={closeFeedbackDialog}>
+            <Button variant="primary" onClick={close}>
               {t("Close")}
             </Button>
           </ModalActions>
@@ -127,15 +133,21 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
   const length = draft.message.trim().length;
   const send = async () => {
     setBusy(true);
+    setResult(null);
     try {
-      setResult(
-        await submitFeedback(accountApi(), draft, signedIn, {
-          deviceInfo: accountDeviceInfo,
-          onFailure: reportAccountFailure,
-          sendLogs: ({ feedbackId, note }) =>
-            sendDiagnosticLogs({ trigger: "feedback", feedbackId, note }),
-        }),
-      );
+      const next = await submitFeedback(accountApi(), draft, signedIn, {
+        deviceInfo: accountDeviceInfo,
+        onFailure: reportAccountFailure,
+        sendLogs: ({ feedbackId, note }) =>
+          sendDiagnosticLogs({ trigger: "feedback", feedbackId, note }),
+      });
+      if (next.status === "sent")
+        setDraft((current) =>
+          current === draft
+            ? { ...EMPTY_FEEDBACK_DRAFT, attachLogs: getDiagnosticsMode() === "auto" }
+            : current,
+        );
+      setResult(next);
     } catch {
       setResult({ status: "failed" }); // -- the account API is not ready yet; the draft stays.
     } finally {
@@ -149,10 +161,10 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
       title={t("Send feedback")}
       size="sm"
       minimalHeader
-      onClose={closeFeedbackDialog}
+      onClose={close}
       footer={
         <ModalActions>
-          <Button variant="ghost" onClick={closeFeedbackDialog}>
+          <Button variant="ghost" onClick={close}>
             {t("Cancel")}
           </Button>
           <Button
@@ -272,6 +284,20 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
           <Lock className="icon-xs" />
           {t("Only what you write is sent. Do not paste secrets.")}
         </Text>
+        {result?.status === "sent" ? (
+          <>
+            <InlineMessage tone="success">
+              {t("Thank you for your feedback. Reference: {p0}", { p0: result.reference })}
+            </InlineMessage>
+            {result.logs && result.logs !== "sent" ? (
+              <InlineMessage tone="warning">
+                {t("Your feedback was sent, but the logs were not. {p0}", {
+                  p0: diagnosticResultText(result.logs),
+                })}
+              </InlineMessage>
+            ) : null}
+          </>
+        ) : null}
         {result?.status === "rate-limited" ? (
           <InlineError>
             {t("Too many requests. Wait a little and try again; your message is kept.")}
@@ -322,10 +348,11 @@ export function FeedbackDialog() {
   useLocale();
   const open = useFeedbackDialogOpen();
   const state = useAccountState();
-  if (!open) return null;
   return state.phase === "unavailable" ? (
-    <FeedbackElsewhere />
+    open ? (
+      <FeedbackElsewhere />
+    ) : null
   ) : (
-    <FeedbackForm signedIn={state.phase === "signed-in"} />
+    <FeedbackForm signedIn={state.phase === "signed-in"} open={open} />
   );
 }

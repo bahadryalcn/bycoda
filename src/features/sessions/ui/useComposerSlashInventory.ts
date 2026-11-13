@@ -16,6 +16,7 @@ import { BTW_COMMAND, supportsBtwHarness } from "../model/btw";
 import { COMPACT_COMMAND } from "../model/compact";
 import { DRAFT_COMMAND } from "../model/draftCommand";
 import { SUBAGENTS_COMMAND, TASK_COMMAND } from "../model/delegationCommands";
+import { WORK_COMMANDS } from "../model/workCommands";
 import { MCP_COMMAND } from "../model/mcpCommand";
 import { CLEAR_SESSION_COMMAND, NEW_SESSION_COMMAND } from "../model/newSessionCommand";
 import { OPERATOR_COMMAND } from "../model/operatorCommand";
@@ -99,6 +100,7 @@ export function useComposerSlashInventory(input: {
       RESUME_COMMAND,
       SUBAGENTS_COMMAND,
       TASK_COMMAND,
+      ...WORK_COMMANDS,
     ].map((command) => command.name),
     "mono",
     "bycoda",
@@ -134,6 +136,7 @@ export function useComposerSlashInventory(input: {
             PLAN_COMMAND,
             SUBAGENTS_COMMAND,
             TASK_COMMAND,
+            ...WORK_COMMANDS,
             ...(canSaveDraft ? [DRAFT_COMMAND] : []),
             COMPACT_COMMAND,
             ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
@@ -162,7 +165,8 @@ export function useComposerSlashInventory(input: {
                     skill.name !== RESUME_COMMAND.name &&
                     skill.name !== BTW_COMMAND.name &&
                     skill.name !== SUBAGENTS_COMMAND.name &&
-                    skill.name !== TASK_COMMAND.name)),
+                    skill.name !== TASK_COMMAND.name &&
+                    !WORK_COMMANDS.some((command) => command.name === skill.name))),
             ),
             ...cliCommands.slashCommands,
           ]),

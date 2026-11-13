@@ -1,5 +1,5 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
-import { useState } from "react";
+import { useRef, useState, type SetStateAction } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Button } from "../../../../shared/ui/Button";
@@ -42,9 +42,15 @@ export type ContentEditorProps = {
   projectId?: string;
   shell: SocialShellState;
   draft: ContentDraft;
-  onDraft: (next: ContentDraft) => void;
+  onDraft: (next: SetStateAction<ContentDraft>) => void;
   /** Why this post cannot be changed (for example it is already scheduled). */
   locked?: string;
+  /** Retained operation state when this project's editor was temporarily unmounted. */
+  operationPending?: boolean;
+  mediaPending?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+  onMediaBusyChange?: (busy: boolean) => void;
+  onOperationError?: (message: string) => void;
   /** The Host now holds this post under this identity; the screen keeps it on the draft. */
   onSaved: (identity: { campaignId: string; revision: number }) => void;
   onDone: (outcome: EditorOutcome) => void;
@@ -76,8 +82,16 @@ export function ContentEditor(props: ContentEditorProps) {
     onDone,
     onClose,
     onNavigate,
+    operationPending,
+    mediaPending,
+    onBusyChange,
+    onMediaBusyChange,
+    onOperationError,
   } = props;
   const pending = useSocialPending();
+  const submitting = useRef(false);
+  const uploading = useRef(false);
+  const [mediaBusy, setMediaBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [blocked, setBlocked] = useState<string[]>([]);
   const accounts = snapshot?.accounts ?? [];
@@ -85,9 +99,33 @@ export function ContentEditor(props: ContentEditorProps) {
   const creators = useTikTokCreators(client, selected, !locked);
   const now = wallClockNow();
   const problems = draftProblems({ draft, projectId, accounts, snapshot, creator: creators, now });
-  const busy =
-    pending.is("content.publish") || pending.is("content.draft") || pending.is("content.ai");
-  const common = { snapshot, projectId, shell, locked, busy };
+  const submissionBusy =
+    !!operationPending ||
+    pending.is("content.publish") ||
+    pending.is("content.draft") ||
+    pending.is("content.ai");
+  const busy = submissionBusy || mediaBusy || !!mediaPending;
+  const mediaBusyChanged = (value: boolean) => {
+    uploading.current = value;
+    setMediaBusy(value);
+    onMediaBusyChange?.(value);
+  };
+  const changeDraft = (next: SetStateAction<ContentDraft>) => {
+    if (!submitting.current && !locked && !submissionBusy) onDraft(next);
+  };
+  const common = {
+    snapshot,
+    projectId,
+    shell,
+    locked,
+    busy,
+    busyReason:
+      mediaBusy || mediaPending
+        ? t("Uploading…")
+        : pending.is("content.draft")
+          ? t("Saving…")
+          : undefined,
+  };
   const publish = publishGate({ ...common, problems });
   const save = draftGate({
     ...common,
@@ -111,23 +149,36 @@ export function ContentEditor(props: ContentEditorProps) {
     variants: variantsNow(),
   });
 
-  const saveDraft = () =>
+  const saveDraft = () => {
+    if (uploading.current || mediaPending || operationPending) return;
     void pending
       .run("content.draft", async () => {
+        submitting.current = true;
+        onBusyChange?.(true);
         setError(undefined);
         setBlocked([]);
         try {
           await saveCampaign(client, campaignInput());
           onDone("draft");
         } catch (caught) {
-          setError(caught instanceof Error ? caught.message : t("The post could not be saved."));
+          const message =
+            caught instanceof Error ? caught.message : t("The post could not be saved.");
+          setError(message);
+          onOperationError?.(message);
+        } finally {
+          submitting.current = false;
+          onBusyChange?.(false);
         }
       })
       .catch(() => setError(t("The post could not be saved.")));
+  };
 
-  const publishNow = () =>
+  const publishNow = () => {
+    if (uploading.current || mediaPending || operationPending) return;
     void pending
       .run("content.publish", async () => {
+        submitting.current = true;
+        onBusyChange?.(true);
         setError(undefined);
         setBlocked([]);
         try {
@@ -151,17 +202,24 @@ export function ContentEditor(props: ContentEditorProps) {
             onSaved({ campaignId: campaign.id, revision: campaign.revision }),
           );
           if (result.blocked.length) {
-            setBlocked(result.blocked.map((target) => describeBlocked(target, accounts)));
+            const reasons = result.blocked.map((target) => describeBlocked(target, accounts));
+            setBlocked(reasons);
+            onOperationError?.(reasons.join("\n"));
             return;
           }
           onDone(draft.when === "now" ? "published" : "scheduled");
         } catch (caught) {
-          setError(
-            caught instanceof Error ? caught.message : t("The post could not be published."),
-          );
+          const message =
+            caught instanceof Error ? caught.message : t("The post could not be published.");
+          setError(message);
+          onOperationError?.(message);
+        } finally {
+          submitting.current = false;
+          onBusyChange?.(false);
         }
       })
       .catch(() => setError(t("The post could not be published.")));
+  };
 
   const footer = (
     <div className="content-footer">
@@ -192,7 +250,9 @@ export function ContentEditor(props: ContentEditorProps) {
   return (
     <Sheet
       title={draft.campaignId ? t("Edit post") : t("New post")}
-      onClose={onClose}
+      onClose={() => {
+        if (!submitting.current && !uploading.current && !busy) onClose();
+      }}
       footer={footer}
     >
       {locked ? <InlineMessage tone="info">{locked}</InlineMessage> : null}
@@ -212,8 +272,11 @@ export function ContentEditor(props: ContentEditorProps) {
         snapshot={snapshot}
         projectId={projectId}
         draft={draft}
-        onDraft={onDraft}
-        locked={locked}
+        onDraft={changeDraft}
+        locked={
+          locked ?? (submissionBusy ? t("Wait for the current action to finish.") : undefined)
+        }
+        onMediaBusyChange={mediaBusyChanged}
         aiStopped={shell.aiStopped}
         creators={creators}
         onNavigate={onNavigate}
@@ -226,10 +289,10 @@ export function ContentEditor(props: ContentEditorProps) {
       />
       <EditorAdvanced
         draft={draft}
-        onDraft={onDraft}
+        onDraft={changeDraft}
         snapshot={snapshot}
         projectId={projectId}
-        disabled={!!locked}
+        disabled={!!locked || busy}
       />
     </Sheet>
   );

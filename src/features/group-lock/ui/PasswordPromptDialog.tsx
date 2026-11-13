@@ -33,6 +33,7 @@ export function useCooldown(initialMs: number): {
 } {
   const [until, setUntil] = useState(() => (initialMs > 0 ? Date.now() + initialMs : 0));
   const [, tick] = useState(0);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns the cooldown clock timer and clears it when the prompt unmounts or its deadline changes
   useEffect(() => {
     if (until <= Date.now()) return;
     const timer = window.setInterval(() => {
@@ -82,6 +83,7 @@ export function PasswordPromptDialog({
   const [error, setError] = useState<string | null>(null);
   const cooldown = useCooldown(lockCooldownMs());
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- tracks prompt lifetime to discard verification completions after unmount
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -89,10 +91,20 @@ export function PasswordPromptDialog({
     };
   }, []);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes retry focus with the password input becoming editable after a failed verification.
+  useEffect(() => {
+    if (!busy && error) input.current?.focus();
+  }, [busy, error]);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const password = input.current?.value ?? "";
-    if (busy || cooldown.remainingMs > 0 || !password) return;
+    if (busy || cooldown.remainingMs > 0) return;
+    if (!password) {
+      setError(t("Enter your lock password."));
+      input.current?.focus();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -111,12 +123,10 @@ export function PasswordPromptDialog({
       if (!alive.current) return;
       if (result.retryAfterMs > 0) cooldown.start(result.retryAfterMs);
       setError(verifyFailureMessage(result, result.retryAfterMs));
-      input.current?.focus();
     } catch (reason) {
       if (!alive.current) return;
       if (input.current) input.current.value = "";
-      setError(reason instanceof Error ? reason.message : String(reason));
-      input.current?.focus();
+      setError(t(reason instanceof Error ? reason.message : String(reason)));
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -158,6 +168,7 @@ export function PasswordPromptDialog({
         <PasswordField
           label={t("Lock password")}
           ref={input}
+          disabled={busy}
           autoFocus
           autoComplete="off"
           autoCorrect="off"

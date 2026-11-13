@@ -12,6 +12,7 @@ const profile = {
   execution: null,
   dailyTokenBudget: 0,
   keepAwakeWhileWorking: false,
+  keepAwakeWhileAway: false,
   observationTaskDone: false,
   observationTaskNeedsInput: false,
   notificationAway: "urgent",

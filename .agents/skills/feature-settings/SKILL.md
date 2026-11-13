@@ -7,7 +7,7 @@ description: "Use when changing Settings navigation, search, rows, Policies and 
 
 Use for Settings shell, section/search metadata, shared Settings composition, Policies and Connections. For a single named page, read its specialist directly; use this entry additionally only if shell or shared contracts change.
 
-Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Models. Feature choices resolve at run start; existing running sessions keep their concrete model.
+Model order, pools, role bindings and delegation defaults belong to [model routing](../feature-model-routing/SKILL.md) in Settings > Work. Feature choices resolve at run start; existing running sessions keep their concrete model.
 
 ## Source starts
 

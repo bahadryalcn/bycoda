@@ -1,3 +1,4 @@
+import { useDecisionTarget } from "./DecisionTarget";
 import { connectedCandidate } from "../model/presentation";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { Badge } from "../../../shared/ui/Badge";
@@ -35,6 +36,7 @@ export function FoundList({
   onScan: () => void;
   onAdd: (candidate: DiscoveryCandidate) => void;
 }) {
+  const target = useDecisionTarget();
   const items = [...(found ?? [])].sort(
     (a, b) =>
       Number(Boolean(connectedCandidate(a, sources))) -
@@ -62,7 +64,12 @@ export function FoundList({
         </div>
       ) : null}
       {items.length > 0 ? (
-        <ul className="flex min-w-0 flex-col" aria-label={t("Found on this computer")}>
+        <ul
+          className="flex min-w-0 flex-col"
+          aria-label={
+            target ? t("Found on Host {p1}", { p1: target }) : t("Found on this computer")
+          }
+        >
           {items.map((candidate) => (
             <li
               key={candidate.id}
@@ -110,9 +117,13 @@ export function FoundList({
           <EmptyState
             context="list"
             size="inline"
-            description={t(
-              "Nothing found on this computer. Running services and model files appear here.",
-            )}
+            description={
+              target
+                ? t("Nothing found on Host {p1}. Running services and model files appear here.", {
+                    p1: target,
+                  })
+                : t("Nothing found on this computer. Running services and model files appear here.")
+            }
           />
         </div>
       ) : null}

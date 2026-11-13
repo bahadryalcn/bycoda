@@ -123,7 +123,10 @@ for (const width of [1280, 800])
       await mkdir("temp/verification/s5", { recursive: true });
       for (const kind of ["task", "goal"] as const) {
         await openCreate(page, kind);
-        const form = page.getByRole("form", { name: `New ${kind}`, exact: true });
+        const form = page.getByRole("form", {
+          name: `New ${kind === "goal" ? "epic" : "task"}`,
+          exact: true,
+        });
         if (kind === "task")
           await form.locator("details.task-form-agent-disclosure > summary").click();
         const preference = form.getByRole("checkbox", { name: /^Merge automatically/ });
@@ -137,8 +140,8 @@ for (const width of [1280, 800])
         await form.getByRole("button", { name: "Cancel", exact: true }).click();
       }
       await openGoals(page);
-      await page.getByRole("button", { name: "Edit goal settings", exact: true }).click();
-      const settings = page.getByRole("form", { name: "Edit goal settings", exact: true });
+      await page.getByRole("button", { name: "Edit epic settings", exact: true }).click();
+      const settings = page.getByRole("form", { name: "Edit epic settings", exact: true });
       await expect(settings).toContainText("Delivery requires approval");
       const existing = settings.getByRole("checkbox", { name: /^Merge automatically/ });
       await expect(existing).toBeChecked();
@@ -631,12 +634,19 @@ for (const { width, theme } of [
         ? [1280, 800].flatMap((width) =>
             ["light", "dark"].flatMap((theme) => [1, 2].map((zoom) => ({ width, theme, zoom }))),
           )
-        : [{ width, theme, zoom: 1 }];
+        : [];
+    const device = await page.context().newCDPSession(page);
     for (const layout of [{ width, theme, zoom: 1 }, ...layouts]) {
-      await page.setViewportSize({ width: layout.width, height: 950 });
-      await page.evaluate(({ theme, zoom }) => {
+      const viewport = { width: layout.width / layout.zoom, height: 950 / layout.zoom };
+      await page.setViewportSize(viewport);
+      // Reflow plus pixel density emulates zoom geometry without CSS zoom changing vw behavior.
+      await device.send("Emulation.setDeviceMetricsOverride", {
+        ...viewport,
+        deviceScaleFactor: layout.zoom,
+        mobile: false,
+      });
+      await page.evaluate(({ theme }) => {
         document.documentElement.classList.toggle("theme-light", theme === "light");
-        document.documentElement.style.zoom = String(zoom);
       }, layout);
       const values = comparison.locator("dd");
       await expect(values).toHaveCount(6);
@@ -653,13 +663,20 @@ for (const { width, theme } of [
       expect(
         await comparison.evaluate((node) => node.scrollWidth - node.clientWidth),
       ).toBeLessThanOrEqual(0);
+      const bounds = await comparison.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.y).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height);
       await page.screenshot({
         path: testInfo.outputPath(
-          `quality-readable-${layout.width}-${layout.theme}-${layout.zoom}.png`,
+          `quality-reflow-${layout.width}-${layout.theme}-${layout.zoom}.png`,
         ),
         animations: "disabled",
       });
     }
+    await device.detach();
   });
 }
 
@@ -725,7 +742,7 @@ for (const state of ["finalPending", "finalFailure"] as const) {
         theme,
       );
       await expect(
-        page.getByText(`Final goal acceptance: ${state === "finalFailure" ? "Failed" : "Queued"}`, {
+        page.getByText(`Final epic acceptance: ${state === "finalFailure" ? "Failed" : "Queued"}`, {
           exact: true,
         }),
       ).toBeVisible();
@@ -742,7 +759,7 @@ for (const state of ["finalPending", "finalFailure"] as const) {
         await recheck.focus();
         await page.keyboard.press("Enter");
         await expect(
-          page.getByText("Final goal acceptance: Queued", { exact: true }),
+          page.getByText("Final epic acceptance: Queued", { exact: true }),
         ).toBeVisible();
         expect(
           await page.evaluate(
@@ -895,7 +912,7 @@ test("compact goal filters retain scope, reset and keyboard menu focus", async (
   await filters.focus();
   await page.keyboard.press("Enter");
   const popover = page.getByRole("dialog", { name: "Filters", exact: true });
-  await choose(page, popover.getByRole("button", { name: /^Show goal:/ }), "Settings goal");
+  await choose(page, popover.getByRole("button", { name: /^Show epic:/ }), "Settings goal");
   await expect(filters).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("article", { name: "Independent task", exact: true })).toHaveCount(0);
   await popover.getByRole("button", { name: "Reset", exact: true }).click();
@@ -925,9 +942,9 @@ for (const width of [390, 768, 1440]) {
         (theme) => document.documentElement.classList.toggle("theme-light", theme === "light"),
         theme,
       );
-      const edit = page.getByRole("button", { name: "Edit goal settings", exact: true });
+      const edit = page.getByRole("button", { name: "Edit epic settings", exact: true });
       await edit.click();
-      const form = page.getByRole("form", { name: "Edit goal settings", exact: true });
+      const form = page.getByRole("form", { name: "Edit epic settings", exact: true });
       await expect(form).toBeVisible();
       await expect(form).toContainText("Applies to existing unfinished tasks.");
       const merge = form.getByRole("checkbox", { name: /^Merge automatically/ });
@@ -936,7 +953,7 @@ for (const width of [390, 768, 1440]) {
       await expect(merge).not.toBeChecked();
       await choose(
         page,
-        form.getByRole("button", { name: /^Concurrent tasks in this goal:/ }),
+        form.getByRole("button", { name: /^Concurrent tasks in this epic:/ }),
         "3",
       );
       await form.getByRole("spinbutton", { name: "Run limit (minutes)", exact: true }).fill("25");
@@ -1025,7 +1042,7 @@ test("goal dialog keeps workspace, manual start and concurrency choices together
   page,
 }, testInfo) => {
   const form = await start(page, "goal");
-  const dialog = page.getByRole("dialog", { name: "New goal", exact: true });
+  const dialog = page.getByRole("dialog", { name: "New epic", exact: true });
   await expect(dialog).toBeVisible();
   await fillGoal(form);
   await choose(
@@ -1033,7 +1050,7 @@ test("goal dialog keeps workspace, manual start and concurrency choices together
     form.getByRole("button", { name: /^Start planned tasks:/ }),
     "Manually from To do",
   );
-  await choose(page, form.getByRole("button", { name: /^Concurrent tasks in this goal:/ }), "3");
+  await choose(page, form.getByRole("button", { name: /^Concurrent tasks in this epic:/ }), "3");
   await form.locator("summary").filter({ hasText: "Working branch and worktree" }).click();
   await form
     .getByRole("textbox", { name: "New integration branch", exact: true })
@@ -1169,14 +1186,14 @@ async function mutations(page: Page) {
 async function openCreate(page: Page, kind: "task" | "goal") {
   if (kind === "goal") {
     await page.getByRole("button", { name: "More actions", exact: true }).first().click();
-    await page.getByRole("menuitem", { name: "New goal", exact: true }).click();
+    await page.getByRole("menuitem", { name: "New epic", exact: true }).click();
   } else await page.getByRole("button", { name: "New task", exact: true }).click();
 }
 async function start(page: Page, kind: "task" | "goal", query = "") {
   await openTasks(page, fixture + query);
   await expect(page.getByRole("region", { name: "Tasks", exact: true })).toBeVisible();
   await openCreate(page, kind);
-  return page.getByRole("form", { name: `New ${kind}`, exact: true });
+  return page.getByRole("form", { name: `New ${kind === "goal" ? "epic" : "task"}`, exact: true });
 }
 async function fillTask(form: Locator) {
   await form
@@ -1188,7 +1205,7 @@ async function fillTask(form: Locator) {
 }
 async function fillGoal(form: Locator) {
   await form
-    .getByRole("textbox", { name: "Goal title", exact: true })
+    .getByRole("textbox", { name: "Epic title", exact: true })
     .fill("Finish the selected projects");
   await form
     .getByRole("textbox", { name: "Main job", exact: true })
@@ -1354,10 +1371,13 @@ test("task and goal controls stay inside a narrow viewport", async ({ page }, te
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
       }
       await openCreate(page, kind);
-      const form = page.getByRole("form", { name: `New ${kind}`, exact: true });
+      const form = page.getByRole("form", {
+        name: `New ${kind === "goal" ? "epic" : "task"}`,
+        exact: true,
+      });
       await expect(machine(form)).toBeVisible();
       const title = form.getByRole("textbox", {
-        name: kind === "task" ? "Task title" : "Goal title",
+        name: kind === "task" ? "Task title" : "Epic title",
         exact: true,
       });
       await expect(title).toBeVisible();

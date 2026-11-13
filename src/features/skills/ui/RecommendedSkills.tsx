@@ -109,6 +109,7 @@ export function RecommendedSkills({
     });
   }
   const [busy, setBusy] = useState<string | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
   const pending = useRef(false);
   const [linkError, setLinkError] = useState("");
   const selectedMachine = machines.find((machine) => machine.environmentId === machineId);
@@ -145,6 +146,7 @@ export function RecommendedSkills({
     if (pending.current || missingMachine || (scope === "project" && !targetCwd)) return;
     pending.current = true;
     setBusy(skillId);
+    setCheckingStatus(inspect);
     const attemptKey = `${targetKey}:${skillId}`;
     const request: SkillInstallRequest = attempts[attemptKey]?.request ?? {
       requestId: crypto.randomUUID(),
@@ -400,6 +402,7 @@ export function RecommendedSkills({
                 <Button
                   variant={unresolved ? "secondary" : "primary"}
                   loading={busy === skill.id}
+                  loadingLabel={checkingStatus ? t("Checking…") : t("Installing…")}
                   disabled={
                     !!busy ||
                     missingMachine ||
@@ -421,7 +424,9 @@ export function RecommendedSkills({
                   }}
                 >
                   {busy === skill.id
-                    ? t("Installing…")
+                    ? checkingStatus
+                      ? t("Checking…")
+                      : t("Installing…")
                     : present
                       ? t("Installed")
                       : unresolved

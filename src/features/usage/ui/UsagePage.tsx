@@ -113,7 +113,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                   size="inline"
                   kind="empty"
                   description={t(
-                    "No accounts on this machine. Add an account in Providers settings.",
+                    "No Claude or Codex accounts on this machine. Add an account in Providers settings.",
                   )}
                 />
               ) : null}
@@ -238,7 +238,12 @@ function AccountLimits({
                   ),
                 })),
               },
-              { kind: "item", id: "default", label: t("Default"), checked: !account.color },
+              {
+                kind: "item",
+                id: "default",
+                label: t("Use automatic color"),
+                checked: !account.color,
+              },
             ]}
             onPick={(id) => {
               setProviderAccountColor(
@@ -256,7 +261,16 @@ function AccountLimits({
         {windows.map(({ kind, window }) => {
           const used = clampUsedPercent(window.usedPercent);
           const shown = showRemaining ? 100 - used : used;
-          const direction = showRemaining ? "remaining" : "used";
+          const direction = showRemaining ? t("left") : t("used");
+          const windowLabel = t(
+            kind === "session" && window.windowMinutes === 300
+              ? "5 hours"
+              : kind === "session"
+                ? "Session"
+                : kind === "weekly"
+                  ? "Weekly"
+                  : "Monthly",
+          );
           return (
             <div key={kind} className="usage-quota">
               <Text
@@ -267,19 +281,21 @@ function AccountLimits({
                 className="usage-quota-heading"
               >
                 <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
-                  {t(
-                    kind === "session" && window.windowMinutes === 300
-                      ? "5 hours"
-                      : kind === "session"
-                        ? "Session"
-                        : kind === "weekly"
-                          ? "Weekly"
-                          : "Monthly",
-                  )}
+                  {windowLabel}
                   <Text size="inherit" tone="muted" weight="regular" className="usage-quota-reset">
-                    {window.resetsAt == null
-                      ? t("Reset time unavailable")
-                      : formatResetCountdown(window.resetsAt - now)}
+                    {window.resetsAt == null ? (
+                      t("Reset time unavailable")
+                    ) : (
+                      <>
+                        {formatResetCountdown(window.resetsAt - now)}
+                        <br />
+                        <Timestamp
+                          value={window.resetsAt}
+                          format="datetime-seconds"
+                          tooltip={false}
+                        />
+                      </>
+                    )}
                   </Text>
                 </SectionLabel>
                 <Text as="p" size="inherit" tone="secondary">
@@ -290,7 +306,7 @@ function AccountLimits({
                 </Text>
               </Text>
               <UsageMeter
-                label={`${label} ${kind} ${direction}`}
+                label={`${label} · ${windowLabel} · ${direction}`}
                 segments={[{ id: "used", label: t("used"), value: used }]}
                 limit={100}
                 unit="%"

@@ -1,4 +1,3 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { EditorBlameResize } from "./EditorBlameResize";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -26,7 +25,7 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
-import { formatInteger } from "../../../shared/lib/numbers";
+import { useFormat } from "../../../shared/i18n";
 import { minimalSetup } from "codemirror";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
@@ -347,6 +346,9 @@ function StandardCodeMirrorEditor({
   const blameOnRef = useRef(blameOn);
   blameOnRef.current = blameOn;
   const [blameError, setBlameError] = useState<string | null>(null);
+  const [languageFailure, setLanguageFailure] = useState<{ path: string; message: string } | null>(
+    null,
+  );
   const [formatError, setFormatError] = useState<{
     message: string;
     generation: number;
@@ -933,15 +935,24 @@ function StandardCodeMirrorEditor({
     )
       view.focus();
 
-    void languageForPath(path).then((extension) => {
-      if (!disposed && extension) {
-        const reconfigure = { effects: language.reconfigure(extension) };
-        applyExternalEditorUpdate(captureObserverRef.current, () => {
-          view.dispatch(reconfigure);
-          leftView?.dispatch(reconfigure);
-        });
-      }
-    });
+    setLanguageFailure(null);
+    void languageForPath(path)
+      .then((extension) => {
+        if (!disposed && extension) {
+          const reconfigure = { effects: language.reconfigure(extension) };
+          applyExternalEditorUpdate(captureObserverRef.current, () => {
+            view.dispatch(reconfigure);
+            leftView?.dispatch(reconfigure);
+          });
+        }
+      })
+      .catch((cause: unknown) => {
+        if (!disposed)
+          setLanguageFailure({
+            path,
+            message: cause instanceof Error ? cause.message : String(cause),
+          });
+      });
 
     const unsubscribeAutosave = subscribeAutosave(scheduleAutosave);
     return () => {
@@ -1258,16 +1269,17 @@ function StandardCodeMirrorEditor({
         {contextError ? (
           <InlineError className="shrink-0 px-3 py-1">{contextError}</InlineError>
         ) : null}
+        {languageFailure?.path === path ? (
+          <InlineError text={{ wrap: "anywhere" }} className="shrink-0 px-3 py-1">
+            {t("Syntax highlighting unavailable. Editing is still available.")}{" "}
+            {languageFailure.message}
+          </InlineError>
+        ) : null}
         {blameOn && blameError ? (
-          <Tooltip label={blameError} asChild>
-            <p
-              role="status"
-              className="shrink-0 truncate px-3 py-1 text-ui-caption text-(--ui-text-muted)"
-            >
-              {t("Blame unavailable: ")}
-              {blameError}
-            </p>
-          </Tooltip>
+          <InlineError text={{ wrap: "anywhere" }} live="polite" className="shrink-0 px-3 py-1">
+            {t("Blame unavailable: ")}
+            {blameError}
+          </InlineError>
         ) : null}
         <ConflictLayoutFrame path={path} sources={conflictSources}>
           <div
@@ -1409,16 +1421,21 @@ function DiffChunkNav({
 
 function DiffChunkStat({ additions, deletions }: { additions: number; deletions: number }) {
   useLocale();
+  const format = useFormat();
   if (additions <= 0 && deletions <= 0) {
     return <span className="min-w-0 flex-1" />;
   }
   return (
     <span className="flex min-w-0 shrink-0 items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums">
       {additions > 0 ? (
-        <span className="text-(--ui-tone-success-fg)">+{formatInteger(additions)}</span>
+        <span className="text-(--ui-tone-success-fg)">
+          +{format.formatNumber(additions, { maximumFractionDigits: 0 })}
+        </span>
       ) : null}
       {deletions > 0 ? (
-        <span className="text-(--ui-tone-danger-fg)">-{formatInteger(deletions)}</span>
+        <span className="text-(--ui-tone-danger-fg)">
+          -{format.formatNumber(deletions, { maximumFractionDigits: 0 })}
+        </span>
       ) : null}
     </span>
   );

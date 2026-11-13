@@ -109,7 +109,7 @@ it("links helper model settings to Models roles", async () => {
   routing.resolve.mockResolvedValue(choice);
   await act(async () => render(createElement(HelperModelsSettings)));
   const manage = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent === "Manage in Models",
+    (button) => button.textContent === "Manage models",
   )!;
   await act(async () => manage.click());
   expect(routing.open).toHaveBeenCalledWith("roles");

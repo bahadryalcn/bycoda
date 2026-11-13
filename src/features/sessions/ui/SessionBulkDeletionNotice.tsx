@@ -4,7 +4,6 @@ import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Check, Trash2, X } from "../../../shared/ui/icons";
 
 export type SessionBulkDeletionFeedback = {
@@ -49,11 +48,9 @@ export function SessionBulkDeletionNotice({
       {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-2")}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <OverflowTooltip label={text}>
-          <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-            {text}
-          </Text>
-        </OverflowTooltip>
+        <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0 flex-1">
+          {text}
+        </Text>
         {progress ? (
           <span className="shrink-0 tabular-nums">
             {progress.completed}/{progress.total}

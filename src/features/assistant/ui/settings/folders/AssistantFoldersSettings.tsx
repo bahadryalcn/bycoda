@@ -96,7 +96,7 @@ export function AssistantFoldersSettings({
                 size="secondary"
                 tone="inherit"
                 leading="inherit"
-                truncate
+                wrap="anywhere"
                 className={styles.path}
               >
                 {path}

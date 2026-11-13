@@ -53,6 +53,7 @@ export function TerminalProfileDiscovery({
   const lastHandledTerminalReveal = useRef(false);
   const providerRevision = useRef(0);
   const operationBusy = useRef(false);
+  const discoveryRevision = useRef(0);
 
   // Callers key this control by provider; unmounting retires in-flight operations.
   useEffect(() => {
@@ -65,12 +66,16 @@ export function TerminalProfileDiscovery({
   useEffect(() => {
     if (!autoDiscover || disabled) return;
     let cancelled = false;
+    const revision = ++discoveryRevision.current;
     void invoke<TerminalProfile[]>("provider_terminal_profiles", { provider }).then(
       (found) => {
-        if (!cancelled) setProfiles(found);
+        if (!cancelled && revision === discoveryRevision.current) setProfiles(found);
       },
-      () => {
-        if (!cancelled) setProfiles(null);
+      (caught: unknown) => {
+        if (!cancelled && revision === discoveryRevision.current) {
+          setProfiles(null);
+          setError(caught instanceof Error ? caught.message : String(caught));
+        }
       },
     );
     return () => {
@@ -104,6 +109,7 @@ export function TerminalProfileDiscovery({
   const run = async (key: string, action: (current: () => boolean) => Promise<void>) => {
     if (operationBusy.current) return;
     operationBusy.current = true;
+    if (key === "find") discoveryRevision.current += 1;
     const revision = providerRevision.current;
     const current = () => providerRevision.current === revision;
     setActiveOperation(key);
@@ -215,7 +221,7 @@ export function TerminalProfileDiscovery({
                   })
                 }
               >
-                {busy ? t("Working…") : t("Find terminal profiles")}
+                {activeOperation === "find" ? t("Working…") : t("Find terminal profiles")}
               </Button>
               <Button
                 loading={activeOperation === "choose"}

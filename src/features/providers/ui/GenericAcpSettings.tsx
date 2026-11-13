@@ -133,6 +133,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
     "idle",
   );
   const [cancelingInstallId, setCancelingInstallId] = useState("");
+  const [installingId, setInstallingId] = useState("");
   const formDisclosureRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
   const activeRef = useRef(true);
@@ -221,7 +222,10 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
       if (confirm && !completed) throw reason;
     } finally {
       busyRef.current = false;
-      if (activeRef.current) setBusy("");
+      if (activeRef.current) {
+        setBusy("");
+        setInstallingId("");
+      }
       if (cancelingInstallRef.current) {
         cancelingInstallRef.current = "";
         if (activeRef.current) setCancelingInstallId("");
@@ -315,7 +319,9 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             {loading
               ? t("Loading ACP agents…")
               : busy
-                ? t(busy)
+                ? installingId
+                  ? t("Installing {p0}…", { p0: installingId })
+                  : t(busy)
                 : status
                   ? t(status)
                   : t("No ACP agents configured. Use Add agent or browse the registry.")}
@@ -619,20 +625,22 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                           <Button
                             className="shrink-0"
                             disabled={loading || !!busy}
-                            onClick={() =>
+                            onClick={() => {
+                              if (!activeRef.current || busyRef.current || loading) return;
+                              setInstallingId(entry.id);
                               void run(t("Installing {p0}…", { p0: entry.id }), () =>
                                 request("generic_acp_install", {
                                   id: entry.id,
                                   version: entry.version,
                                 }),
-                              )
-                            }
+                              );
+                            }}
                           >
                             {t("Install ")}
                             {entry.package}
                           </Button>
                         ) : null}
-                        {busy === t("Installing {p0}…", { p0: entry.id }) ? (
+                        {installingId === entry.id ? (
                           <Button
                             className="shrink-0"
                             variant="danger"

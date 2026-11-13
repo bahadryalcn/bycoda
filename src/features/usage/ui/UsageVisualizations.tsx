@@ -3,7 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useMemo, useState, type CSSProperties } from "react";
-import { formatNumber, getLocale, t, useLocale } from "../../../shared/i18n";
+import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { ActivityHeatmap, BarChart, DonutChart, LineChart } from "../../../shared/ui/Charts";
@@ -71,7 +71,7 @@ export function UsageTrend({
   /** What the series are; models get the model icon in the legend. */
   dimension?: UsageDimension;
 }) {
-  useLocale();
+  const locale = useLocale();
   const [active, setActive] = useState<string | null>(null);
   const [singleSeries, setSingleSeries] = useState<ReadonlySet<string> | null>(null);
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
@@ -88,7 +88,7 @@ export function UsageTrend({
         axisLabel:
           index % Math.max(1, Math.ceil(buckets.length / 6)) === 0
             ? new Date(bucket.start).toLocaleString(
-                getLocale(),
+                locale,
                 resolution === "hour" || resolution === "15m"
                   ? { hour: "2-digit", minute: "2-digit", hour12: false }
                   : { month: "short", day: "numeric" },
@@ -105,7 +105,7 @@ export function UsageTrend({
           ]),
         ),
       })),
-    [buckets, series, resolution, percent, metric],
+    [buckets, series, resolution, percent, metric, locale],
   );
   return (
     <section

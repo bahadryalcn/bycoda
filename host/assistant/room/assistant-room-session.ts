@@ -7,6 +7,10 @@ import {
   SessionProviderSchema,
   SessionRuntimeModeSchema,
 } from "../../../src/shared/model/host-contracts/session-commands";
+import {
+  assistantSessionWorkTarget,
+  runAssistantSessionWork,
+} from "../../work/assistant-session-work";
 
 const id = z.string().min(1).max(200);
 const revision = z.number().int().nonnegative().safe();
@@ -107,7 +111,10 @@ export async function executeRoomSessionAction(
   source: Source,
   authorized: () => Promise<boolean>,
   store: HostStore,
-  engine: Pick<HostEngine, "command" | "withCommandAdmission" | "withMessageAuthor">,
+  engine: Pick<
+    HostEngine,
+    "command" | "updateSession" | "waitForRun" | "withCommandAdmission" | "withMessageAuthor"
+  >,
 ) {
   const input = schemas[action].parse(raw);
   const check = async () => {
@@ -210,25 +217,42 @@ export async function executeRoomSessionAction(
       runId: value.runId,
     });
   };
-  const receipt = await engine.withCommandAdmission(
-    {
-      check: admit,
-      onAccepted: async (receipt) => {
-        accepted = receipt;
-      },
-    },
-    () =>
-      engine.withMessageAuthor(
-        {
-          kind: "assistant-room",
-          name: source.name,
-          threadId: source.threadId,
-          reason: "kickoff",
-          operationId: input.requestId,
+  const dispatch = () =>
+    engine.withCommandAdmission(
+      {
+        check: admit,
+        onAccepted: async (receipt) => {
+          accepted = receipt;
         },
-        work,
-      ),
-  );
+      },
+      () =>
+        engine.withMessageAuthor(
+          {
+            kind: "assistant-room",
+            name: source.name,
+            threadId: source.threadId,
+            reason: "kickoff",
+            operationId: input.requestId,
+          },
+          work,
+        ),
+    );
+  const receipt =
+    action === "sessions.submit"
+      ? await (async () => {
+          const value = schemas["sessions.submit"].parse(raw);
+          const current = await target(value.sessionId);
+          return runAssistantSessionWork(store, engine, {
+            source: { kind: "assistant", id: `room:${source.threadId}`, occurrence: commandId },
+            projectId: source.projectId,
+            target: assistantSessionWorkTarget(current, input.requestId),
+            commandId,
+            promptHash: createHash("sha256").update(JSON.stringify(raw)).digest("hex"),
+            admitted: check,
+            run: dispatch,
+          });
+        })()
+      : await dispatch();
   await check();
   return { state: "accepted", requestId: input.requestId, ...receipt };
 }

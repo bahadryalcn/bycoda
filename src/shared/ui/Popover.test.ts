@@ -52,6 +52,29 @@ async function frame() {
   await act(async () => pending.forEach((callback) => callback(performance.now())));
 }
 
+it.each([false, true])(
+  "honors a dialog's initial field focus unless it is disabled: %s",
+  async (disabled) => {
+    await act(async () =>
+      root.render(
+        createElement(
+          Popover,
+          {
+            anchor,
+            kind: "dialog",
+            initialFocus: "textarea",
+          },
+          createElement("button", null, "Close"),
+          createElement("textarea", { disabled, "aria-label": "Draft" }),
+        ),
+      ),
+    );
+    expect(document.activeElement).toBe(
+      document.querySelector(disabled ? '[role="dialog"] button' : '[role="dialog"] textarea'),
+    );
+  },
+);
+
 it("autofocuses after the measuring frame becomes visible", async () => {
   const hiddenFrames: boolean[] = [];
   const nativeFocus = HTMLElement.prototype.focus;

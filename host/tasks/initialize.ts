@@ -3,6 +3,7 @@ import type { HostEngine } from "../engine";
 import { type SessionRunEngine } from "../sessions/sessionRuns";
 import type { HostStore } from "../store";
 import type { TaskContext } from "./context";
+import { bindSessionWork } from "../work/session-adapter";
 export function initialize(context: TaskContext, store: HostStore): Promise<void> {
   return (async () => {
     await store.ready;
@@ -105,10 +106,6 @@ export function initialize(context: TaskContext, store: HostStore): Promise<void
       await store.db
         .prepare("INSERT OR IGNORE INTO task_history_meta VALUES (1, ?)")
         .run(context.now());
-      await store.db
-        .exec(`UPDATE tasks SET value=json_set(json_remove(value, '$.autoMerge', '$.deliveryRequested'),
-          '$.deliveryApprovalRequired', json('true'), '$.deliveryState', CASE WHEN json_extract(value, '$.merged')=1 THEN 'merged' ELSE 'awaitingOwner' END)
-          WHERE json_extract(value, '$.autoMerge')=1 OR json_extract(value, '$.deliveryRequested')=1;`);
       const legacyRuns = await store.db
         .prepare(`SELECT value FROM tasks WHERE
       (json_extract(value, '$.startedAt') IS NOT NULL OR json_extract(value, '$.sessionId') IS NOT NULL)
@@ -151,6 +148,7 @@ export function createTaskEngine(
   store: HostStore,
   engine: SessionRunEngine,
 ): SessionRunEngine {
+  if (engine.withCommandAdmission) bindSessionWork(store, engine, context.limits, context.now);
   context.continueHistory = (
     engine as SessionRunEngine & Partial<Pick<HostEngine, "continueSessionHistory">>
   ).continueSessionHistory?.bind(engine);

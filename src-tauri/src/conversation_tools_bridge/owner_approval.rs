@@ -138,18 +138,29 @@ pub(super) fn call(
             taken.check()
         };
         check()?;
-        let approved = crate::control::owner_approval::ask_conversation(
-            app,
-            request,
-            crate::control::owner_approval::Prompt {
-                title: "bycoda — Application operation approval",
-                message: &(message),
-                confirm: "Approve this exact operation",
-                cancel: "Cancel",
-            },
-            || taken.check(),
-        )?;
+        let standing = crate::assistant_standing_consent::decision(app, request, issuer)?;
         check()?;
+        let approved = match standing {
+            Some(approved) => approved,
+            None => crate::control::owner_approval::ask_conversation(
+                app,
+                request,
+                crate::control::owner_approval::Prompt {
+                    title: "bycoda — Application operation approval",
+                    message: &(message),
+                    confirm: "Approve this exact operation",
+                    cancel: "Cancel",
+                },
+                || taken.check(),
+            )?,
+        };
+        check()?;
+        let current_standing = crate::assistant_standing_consent::decision(app, request, issuer)?;
+        if (approved && current_standing == Some(false))
+            || (standing.is_some() && current_standing != standing)
+        {
+            return Err("Native assistant consent changed".into());
+        }
         return Ok(json!({ "approved": approved, "operationHash": operation_hash }));
     }
     if action == "secrets.input.authorize" {
@@ -298,6 +309,22 @@ pub(super) fn call(
 #[cfg(test)]
 mod secret_tests {
     use super::*;
+
+    #[test]
+    fn room_task_and_crew_controls_can_reach_exact_native_review() {
+        for action in [
+            "crews.member.ask",
+            "crews.answer",
+            "tasks.delete",
+            "tasks.transfer",
+            "tasks.queue.pause",
+            "tasks.review.recheck",
+            "tasks.reorder",
+        ] {
+            let request = json!({"threadId":"room", "environmentId":"host", "input":{"operation":{"action":action,"input":{},"operationHash":"a".repeat(64)}}});
+            assert!(management_approval_message(&request).is_ok(), "{action}");
+        }
+    }
 
     #[test]
     fn secret_request_fields_are_bounded_and_control_free() {

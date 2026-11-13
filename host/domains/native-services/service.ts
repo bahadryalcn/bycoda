@@ -81,6 +81,23 @@ export function createNativeServicesService() {
       )
         throw new Error("Invalid Assistant notification authorization identity.");
       result = await owner.authorizeAssistantNotification(input);
+    } else if (method === "native.services.assistant.background.execute") {
+      if (!owner.executeAssistantBackground)
+        throw new Error("Assistant background effect is unavailable.");
+      if (!context.signal)
+        throw new Error("Background effect requires a request-scoped native transport.");
+      result =
+        (await owner.executeAssistantBackground(
+          params.input as {
+            environmentId: string;
+            threadId: string;
+            operationId: string;
+            operationHash: string;
+            challenge: string;
+            relayId: string;
+          },
+          () => !context.signal!.aborted,
+        )) ?? null;
     } else if (method === "native.services.assistant.browser.panel") {
       if (!owner.browserPanel) throw new Error("Room browser panel transport is unavailable.");
       result = await owner.browserPanel(NativeAssistantBrowserPanelParamsSchema.parse(params));

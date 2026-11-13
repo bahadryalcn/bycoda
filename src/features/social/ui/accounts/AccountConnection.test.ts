@@ -332,3 +332,30 @@ it("keeps capability details in compact status groups without hiding the connect
   expect(element.textContent).toContain("Analytics");
   expect(button("Connect in browser")?.disabled).toBe(false);
 });
+
+it("requires a LinkedIn Page target for browser organizations", async () => {
+  const client = fakeClient();
+  render(client, {
+    account: account({ platform: "linkedin", accountType: "organization", connection: "browser" }),
+  });
+  const start = button("Sign in in the browser")!;
+  expect(start.disabled).toBe(true);
+  typeInto(
+    element.querySelector<HTMLInputElement>('input:not([type="checkbox"])'),
+    "https://www.linkedin.com/company/example/",
+  );
+  expect(start.disabled).toBe(false);
+  await act(async () => start.click());
+  expect(client.browserBegin).toHaveBeenCalledWith(
+    "a1",
+    "https://www.linkedin.com/company/example/",
+  );
+  expect(element.textContent).toContain("Close the dedicated sign-in window");
+});
+
+it("does not display idle as an active check", async () => {
+  const client = fakeClient({ browserStatus: vi.fn(async () => ({ status: "idle" })) });
+  render(client, { account: account({ connection: "browser" }) });
+  await act(async () => button("Check connection")?.click());
+  expect(element.textContent).toContain("Not checked");
+});

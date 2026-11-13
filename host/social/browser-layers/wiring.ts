@@ -7,6 +7,11 @@ import type { BrowserVisibility, LayeredBrowserDriver, LayerStep } from "./types
  * directly, exactly as before the layers existed (tests and standalone use).
  */
 export type BrowserWiring = {
+  /** Account-owned session override; fallback retains the dedicated profile path. */
+  openSession?: (
+    accountId: string,
+    fallback: () => Promise<BrowserSession>,
+  ) => Promise<BrowserSession>;
   layers?: LayeredBrowserDriver;
   tracker?: BrowserTracker;
   /** Visibility of one account's browser. Hidden when not provided. */

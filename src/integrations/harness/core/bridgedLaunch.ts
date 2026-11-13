@@ -21,6 +21,7 @@ export async function bridgedLaunch(
   binaryProvider: BinaryProvider,
   sessionId: string,
   args: string[],
+  autoCompact?: "on" | "off",
 ): Promise<BridgedLaunch> {
   if (binaryProvider === "claude" || binaryProvider === "codex") {
     const [social, logs, conversation] = await Promise.all([
@@ -38,7 +39,9 @@ export async function bridgedLaunch(
   if (binaryProvider === "opencode")
     return {
       launchArgs: args,
-      launchEnv: opencodeLaunchEnv((await conversationToolsBridge(sessionId))?.externalMcp),
+      launchEnv: autoCompact
+        ? opencodeLaunchEnv((await conversationToolsBridge(sessionId))?.externalMcp, autoCompact)
+        : opencodeLaunchEnv((await conversationToolsBridge(sessionId))?.externalMcp),
     };
   return { launchArgs: args };
 }

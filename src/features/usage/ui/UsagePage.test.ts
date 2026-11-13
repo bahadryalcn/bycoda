@@ -1,21 +1,21 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
-const { limits, filters } = vi.hoisted(() => ({
+const { limits, filters, profiles } = vi.hoisted(() => ({
+  profiles: { empty: false },
   filters: { provider: [] as string[], account: [] as string[], project: [], model: [], group: [] },
   limits: {
     status: "ready",
     error: null as string | null,
-    session: { usedPercent: 42, windowMinutes: 300, resetsAt: null },
+    session: { usedPercent: 42, windowMinutes: 300, resetsAt: null as number | null },
     weekly: null,
     monthly: null,
   },
 }));
 vi.mock("../../providers/model/providerAccounts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../providers/model/providerAccounts")>()),
-  providerAccounts: (provider: string) => [
-    { id: "default", provider, label: "Default account", color: "pink" },
-  ],
+  providerAccounts: (provider: string) =>
+    profiles.empty ? [] : [{ id: "default", provider, label: "Default account", color: "pink" }],
   subscribeProviderAccounts: () => () => {},
 }));
 vi.mock("../../providers/model/rateLimitsCache", () => ({
@@ -37,6 +37,18 @@ vi.mock("./UsageActiveTime", () => ({
 }));
 import { UsagePage } from "./UsagePage";
 import { RevealedSetting } from "../../settings/ui/settingsControls";
+
+it("names missing Claude/Codex profiles while retaining Grok quota", () => {
+  profiles.empty = true;
+  try {
+    const markup = renderToStaticMarkup(createElement(UsagePage));
+    expect(markup).toContain("Grok quota");
+    expect(markup).toContain("No Claude or Codex accounts on this machine.");
+    expect(markup).not.toContain("No accounts on this machine.");
+  } finally {
+    profiles.empty = false;
+  }
+});
 
 it("shows remaining quota and does not invent reset times", () => {
   const markup = renderToStaticMarkup(createElement(UsagePage));
@@ -100,5 +112,19 @@ it("shows Grok limits only within its provider and account filters", () => {
   } finally {
     filters.provider = [];
     filters.account = [];
+  }
+});
+
+it("shows a known reset day and time as visible semantic text", () => {
+  const resetsAt = Date.UTC(2027, 2, 19, 14, 35, 0);
+  limits.session.resetsAt = resetsAt;
+  try {
+    const markup = renderToStaticMarkup(createElement(UsagePage));
+    expect(markup).toContain(`dateTime="${new Date(resetsAt).toISOString()}"`);
+    expect(markup).toMatch(/<time[^>]*>[^<]*2027[^<]*<\/time>/);
+    expect(markup).not.toContain("Reset time unavailable");
+    expect(markup).toContain('aria-label="Default account · 5 hours · left"');
+  } finally {
+    limits.session.resetsAt = null;
   }
 });

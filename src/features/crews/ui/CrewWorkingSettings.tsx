@@ -165,7 +165,7 @@ export function CrewWorkingSettings({
       <div className="grid min-w-0 gap-x-10 gap-y-5 @min-[48rem]/crew-editor:grid-cols-2">
         <Section title={t("Models")}>
           <Button variant="link" onClick={() => openModelsSettings("order")}>
-            {t("Manage in Models")}
+            {t("Manage models")}
           </Button>
         </Section>
 

@@ -8,6 +8,8 @@ import { EmailAccountsSettings } from "./EmailAccountsSettings";
 import { INTEGRATIONS } from "./IntegrationsSettings";
 import { SlackSettings } from "./SlackSettings";
 import { TeamsSettings } from "./TeamsSettings";
+import { MessagingAccountsCard, type AccountFormProps } from "./MessagingAccountsCard";
+import type { MessagingAccount } from "../../../messaging";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => undefined) }));
@@ -53,9 +55,9 @@ async function click(label: string) {
   await act(async () => button(label)!.click());
 }
 
-const account = (overrides: Record<string, unknown> = {}) => ({
+const account = (overrides: Partial<MessagingAccount> = {}): MessagingAccount => ({
   id: "acct-1",
-  provider: "email",
+  provider: "email" as const,
   label: "owner@example.com",
   identity: "owner@example.com",
   config: { preset: "gmail", address: "owner@example.com", auth: "password" },
@@ -63,6 +65,103 @@ const account = (overrides: Record<string, unknown> = {}) => ({
   createdAt: 1,
   updatedAt: 1,
   ...overrides,
+});
+
+it("retains account and new-account drafts while switching and locks pending saves", async () => {
+  let finish!: (value: unknown) => void;
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "messaging_list_accounts")
+      return [account(), account({ id: "acct-2", label: "Second" })];
+    if (command === "messaging_save_account")
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    throw new Error(`Unexpected command: ${command}`);
+  });
+  await act(async () => root.render(createElement(EmailAccountsSettings)));
+  expect(container.textContent).toContain("Configured");
+  const edit = async (index: number) => {
+    const row = container.querySelectorAll('[role="listitem"]')[index]!;
+    await act(async () =>
+      [...row.querySelectorAll("button")].find((item) => item.textContent === "Edit")!.click(),
+    );
+  };
+  const visibleInput = () =>
+    [...container.querySelectorAll<HTMLInputElement>('input[aria-label="Display name"]')].find(
+      (item) => !item.closest("[hidden]"),
+    )!;
+  const name = async (value: string) =>
+    act(async () => {
+      const field = visibleInput();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  await edit(0);
+  await name("Draft A");
+  await edit(1);
+  await name("Draft B");
+  await edit(0);
+  expect(visibleInput().value).toBe("Draft A");
+  await click("Add account");
+  await name("New draft");
+  await edit(1);
+  expect(visibleInput().value).toBe("Draft B");
+  await click("Add account");
+  expect(visibleInput().value).toBe("New draft");
+  await edit(0);
+  await click("Save and test connection");
+  expect(
+    [...container.querySelectorAll<HTMLButtonElement>('[role="listitem"] button')].every(
+      (item) => item.disabled,
+    ),
+  ).toBe(true);
+  expect(button("Add account")?.disabled).toBe(true);
+  await act(async () => finish(account()));
+  await edit(1);
+  expect(visibleInput().value).toBe("Draft B");
+});
+
+it("applies a late form completion only to its original account", async () => {
+  vi.mocked(invoke).mockResolvedValue([account(), account({ id: "acct-2", label: "Second" })]);
+  const callbacks = new Map<string, AccountFormProps>();
+  function Form(props: AccountFormProps) {
+    callbacks.set(props.account!.id, props);
+    return createElement("div", null, `Editing ${props.account!.id}`);
+  }
+  await act(async () =>
+    root.render(
+      createElement(MessagingAccountsCard, {
+        provider: "email",
+        emptyLabel: "No accounts",
+        addLabel: "Add",
+        describe: (value) => value.identity,
+        Form,
+      }),
+    ),
+  );
+  const edit = async (index: number) =>
+    act(async () => {
+      const row = container.querySelectorAll('[role="listitem"]')[index]!;
+      [...row.querySelectorAll("button")].find((item) => item.textContent === "Edit")!.click();
+    });
+  await edit(0);
+  await edit(1);
+  // Browser sign-ins can finish in hidden forms; each pending owner must stay locked.
+  await act(async () => callbacks.get("acct-1")!.onSavingChange!(true));
+  await act(async () => callbacks.get("acct-2")!.onSavingChange!(true));
+  await act(async () => callbacks.get("acct-2")!.onSavingChange!(false));
+  expect(
+    [...container.querySelectorAll<HTMLButtonElement>('[role="listitem"] button')].every(
+      (item) => item.disabled,
+    ),
+  ).toBe(true);
+  await act(async () => callbacks.get("acct-1")!.onSavingChange!(false));
+  await act(async () => callbacks.get("acct-1")!.onSaved(account()));
+  expect(
+    [...container.querySelectorAll("div")].some(
+      (item) => item.textContent === "Editing acct-2" && !item.closest("[hidden]"),
+    ),
+  ).toBe(true);
 });
 
 it("lists only the messaging providers that are switched on", () => {

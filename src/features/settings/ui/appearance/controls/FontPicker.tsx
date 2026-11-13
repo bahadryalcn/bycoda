@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { SelectTrigger } from "../../../../../shared/ui/Select";
 import { ChevronDown } from "../../../../../shared/ui/icons";
@@ -70,10 +70,11 @@ export function FontPicker({
   onChange: (id: string) => void;
 }) {
   useLocale();
+  // Load preview faces when the available catalog changes.
   useEffect(() => {
     for (const font of catalog) preloadBundledFont(fontFamilyValue(catalog, font.id));
   }, [catalog]);
-  const options = useMemo(() => {
+  const options = (() => {
     const rows: SearchableSelectOption[] = [];
     if (leading)
       rows.push({
@@ -97,7 +98,7 @@ export function FontPicker({
     if (value && value !== leading?.value && !catalog.some((font) => font.id === value))
       rows.push({ value, label: value, labelStyle: fontStack(value, monospace) });
     return rows;
-  }, [catalog, leading, monospace, value]);
+  })();
   return (
     <SearchableSelect
       label={label}

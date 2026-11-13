@@ -63,3 +63,25 @@ it("keeps long raw diagnostics complete while the summary stays short", async ()
   await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
   expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe(raw);
 });
+
+it("shows a weekly limit as a quiet warning and retains its exact diagnostics", async () => {
+  const raw = "You've hit your weekly limit · resets 8am (Europe/Istanbul) (HTTP 429)";
+  await act(async () => root.render(createElement(SessionErrorNotice, { text: raw })));
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  const notice = host.querySelector('[role="status"]')!;
+  expect(notice.textContent).toContain("Usage limit reached");
+  expect(notice.textContent).toContain("resets 8am (Europe/Istanbul)");
+  expect(notice.textContent).not.toContain("HTTP 429");
+  expect(notice.textContent).not.toContain("You've hit your weekly limit");
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe(raw);
+});
+
+it("keeps a long plain failure out of the transcript while preserving its full text", async () => {
+  const raw = "The provider could not complete this turn.\n" + "Diagnostic data ".repeat(60);
+  await act(async () => root.render(createElement(SessionErrorNotice, { text: raw })));
+  expect(host.textContent).not.toContain(raw);
+  expect(host.textContent).toContain("The provider could not complete this turn.");
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe(raw);
+});

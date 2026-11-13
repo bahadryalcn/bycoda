@@ -5,7 +5,7 @@ description: Use when changing the Host-wide model order, limits, pools, role bi
 
 # Model routing
 
-Own the Host-wide routing document and run-start resolution in `host/model-routing/`, shared wire contracts in `src/shared/model/host-contracts/`, routing controls in `src/features/model-routing/` and Settings Models composition. Tasks, crews, automations, assistant and voice own execution admission and run snapshots; providers own accounts and catalog availability. Native and mobile consumers retain their existing authority boundaries.
+Own the Host-wide routing document and run-start resolution in `host/model-routing/`, shared wire contracts in `src/shared/model/host-contracts/`, routing controls in `src/features/model-routing/` and Settings Work composition. Tasks, crews, automations, assistant and voice own execution admission and run snapshots; providers own accounts and catalog availability. Native and mobile consumers retain their existing authority boundaries.
 
 ## Source starts
 
@@ -15,7 +15,7 @@ Own the Host-wide routing document and run-start resolution in `host/model-routi
 - Renderer polling starts in `src/features/model-routing/public/rendererBootstrap.ts`, imported by the main and Quick Composer entry points; keep startup side effects out of the Host-reachable defaults model.
 - The renderer bootstrap also binds live catalog/account reads to `src/integrations/harness/core/automaticSubagents.ts`; the harness layer must not import feature stores. Preview reads remain live and `agents.options` remains authoritative.
 - UI/public entries: `src/features/model-routing/public/`; query ownership in `src/features/model-routing/model/`.
-- Settings composition: `src/features/settings/ui/models/ModelsPage.tsx`.
+- Work settings composition: `src/features/settings/ui/work/WorkPage.tsx`; chat defaults remain in `src/features/settings/ui/models/ModelsPage.tsx`.
 
 ## Workflow
 

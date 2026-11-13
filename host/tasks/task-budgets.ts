@@ -15,6 +15,11 @@ import type {
 } from "../../src/features/tasks/model/taskBudget";
 
 export type BudgetRunRegistration = {
+  /** Work identity extends the existing ledger; it never creates another total. */
+  workId?: string;
+  rootWorkId?: string;
+  provider?: string;
+  accountId?: string;
   taskId?: string;
   parentTaskId?: string;
   goalId?: string;
@@ -24,6 +29,15 @@ export type BudgetRunRegistration = {
   startedAt: number;
 };
 type LedgerRun = BudgetRunRegistration & {
+  receiptKind?: "helper";
+  usageIntervals?: Array<{
+    from: number;
+    to: number;
+    tokens: number | null;
+    costUsd: number | null;
+  }>;
+  tokensObservedAt?: number;
+  costObservedAt?: number;
   blockId?: string;
   elapsedMs: number;
   confirmedElapsedMs?: number;
@@ -36,6 +50,7 @@ type LedgerRun = BudgetRunRegistration & {
   costUsd: number | null;
 };
 const roles: BudgetRunRole[] = [
+  "advisor",
   "planner",
   "worker",
   "reviewer",
@@ -89,7 +104,10 @@ export class HostTaskBudgets {
         !identity(input.runId) ||
         !roles.includes(input.role) ||
         !finite(input.startedAt) ||
-        (!identity(input.taskId) && !identity(input.goalId)) ||
+        (!identity(input.taskId) && !identity(input.goalId) && !identity(input.workId)) ||
+        [input.workId, input.rootWorkId, input.provider, input.accountId].some(
+          (value) => value !== undefined && !identity(value),
+        ) ||
         (input.taskId !== undefined && !identity(input.taskId)) ||
         (input.parentTaskId !== undefined &&
           (!identity(input.parentTaskId) || input.parentTaskId === input.taskId)) ||
@@ -101,6 +119,14 @@ export class HostTaskBudgets {
         .get(input.sessionId, input.runId);
       if (existing) {
         const previous = JSON.parse(String(existing.value)) as LedgerRun;
+        for (const key of ["workId", "rootWorkId", "provider", "accountId"] as const) {
+          if (
+            input[key] !== undefined &&
+            previous[key] !== undefined &&
+            input[key] !== previous[key]
+          )
+            throw new Error("This budget run belongs to a different Work execution identity.");
+        }
         if (
           previous.taskId !== input.taskId ||
           (previous.goalId !== undefined &&
@@ -112,7 +138,19 @@ export class HostTaskBudgets {
           previous.role !== input.role
         )
           throw new Error("This budget run belongs to a different task, goal or role.");
-        if ((!previous.parentTaskId && input.parentTaskId) || (!previous.goalId && input.goalId)) {
+        if (
+          (!previous.parentTaskId && input.parentTaskId) ||
+          (!previous.goalId && input.goalId) ||
+          ["workId", "rootWorkId", "provider", "accountId"].some(
+            (key) =>
+              previous[key as keyof BudgetRunRegistration] === undefined &&
+              input[key as keyof BudgetRunRegistration] !== undefined,
+          )
+        ) {
+          previous.workId ??= input.workId;
+          previous.rootWorkId ??= input.rootWorkId;
+          previous.provider ??= input.provider;
+          previous.accountId ??= input.accountId;
           previous.parentTaskId ??= input.parentTaskId;
           previous.goalId ??= input.goalId;
           await this.store.db
@@ -137,8 +175,14 @@ export class HostTaskBudgets {
       );
       let blockId: string | undefined;
       let costBaseline: number | null = null;
+      let provider = input.provider;
+      let accountId = input.accountId;
       try {
         const session = await this.store.session(input.sessionId);
+        if (session.runId === input.runId) {
+          provider ??= session.session.harness;
+          accountId ??= session.session.providerAccountId;
+        }
         const turns = session.session.blocks.filter(
           (block) => block.role === "user" && !block.draft && !block.continuationOf,
         );
@@ -161,6 +205,8 @@ export class HostTaskBudgets {
       }
       const run: LedgerRun = {
         ...input,
+        provider,
+        accountId,
         blockId,
         elapsedMs: 0,
         confirmedElapsedMs: 0,
@@ -208,7 +254,11 @@ export class HostTaskBudgets {
     const now = this.now();
     for (const row of rows) {
       const run = JSON.parse(String(row.value)) as LedgerRun;
+      // Isolated helpers own durable settlement; no project session exists to observe.
+      if (run.receiptKind === "helper") continue;
       const previous = JSON.stringify(run);
+      const previousTokens = run.tokens;
+      const previousCost = run.costUsd;
       if (run.confirmedElapsedMs === undefined) {
         run.legacyElapsedMs = run.elapsedMs;
         run.elapsedMs = 0;
@@ -217,6 +267,10 @@ export class HostTaskBudgets {
       }
       try {
         const session = await this.store.session(run.sessionId);
+        if (session.runId === run.runId) {
+          run.provider ??= session.session.harness;
+          run.accountId ??= session.session.providerAccountId;
+        }
         const block = session.session.blocks.find((entry) => entry.id === run.blockId);
         const running = session.status === "running" && session.runId === run.runId;
         if (run.settledAt === undefined && !running) {
@@ -267,6 +321,26 @@ export class HostTaskBudgets {
           run.settledAt = now;
           await this.markRunUnknownHistory(run);
         }
+      }
+      // A cumulative observation proves a delta over an interval, never its distribution.
+      // Calendar readers keep boundary-spanning intervals unknown instead of prorating.
+      if (run.tokens !== null && run.tokens !== previousTokens) {
+        (run.usageIntervals ??= []).push({
+          from: run.tokensObservedAt ?? run.startedAt,
+          to: now,
+          tokens: run.tokens - (previousTokens ?? 0),
+          costUsd: null,
+        });
+        run.tokensObservedAt = now;
+      }
+      if (run.costUsd !== null && run.costUsd !== previousCost) {
+        (run.usageIntervals ??= []).push({
+          from: run.costObservedAt ?? run.startedAt,
+          to: now,
+          tokens: null,
+          costUsd: run.costUsd - (previousCost ?? 0),
+        });
+        run.costObservedAt = now;
       }
       if (JSON.stringify(run) !== previous)
         await this.store.db

@@ -92,3 +92,37 @@ it("keeps group apply details available when the draft is clean", async () => {
     container.remove();
   }
 });
+
+it("shows the provider scope only while changes are pending", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const render = (pending: number, providerScope?: "all") =>
+    act(async () =>
+      root.render(
+        createElement(ProviderDefaultsSaveBar, {
+          target: { kind: "global" },
+          options: [],
+          onTargetChange: vi.fn(),
+          pending,
+          saveState: { state: "idle" },
+          onSave: vi.fn(),
+          onDiscard: vi.fn(),
+          activeProvider: "codex",
+          draft: { providers: {}, accounts: {}, ...(providerScope ? { providerScope } : {}) },
+          onDraftChange: vi.fn(),
+        }),
+      ),
+    );
+  try {
+    await render(0);
+    expect(container.textContent).not.toContain("Apply to");
+    await render(1);
+    expect(container.textContent).toContain("Apply to");
+    await render(0, "all");
+    expect(container.textContent).toContain("Apply to");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});

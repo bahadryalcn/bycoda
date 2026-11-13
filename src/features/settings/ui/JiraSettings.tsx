@@ -1,3 +1,4 @@
+import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SettingsFeedback, Toggle } from "./settingsControls";
@@ -342,21 +343,24 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                     },
                   },
                 ] as const
-              ).map((field) => (
-                <TextField
-                  key={field.label}
-                  label={field.label}
-                  aria-label={field.label}
-                  type={field.type}
-                  value={field.value}
-                  onChange={(event) => field.set(event.target.value)}
-                  placeholder={field.placeholder}
-                  disabled={busy}
-                  required
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              ))}
+              ).map((field) => {
+                const Input = field.type === "password" ? PasswordField : TextField;
+                return (
+                  <Input
+                    key={field.label}
+                    label={field.label}
+                    aria-label={field.label}
+                    {...(field.type === "password" ? {} : { type: field.type })}
+                    value={field.value}
+                    onChange={(event) => field.set(event.target.value)}
+                    placeholder={field.placeholder}
+                    disabled={busy}
+                    required
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                );
+              })}
               <div className="flex items-center gap-3">
                 {status?.connected ? (
                   <Button

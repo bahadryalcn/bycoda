@@ -7,7 +7,13 @@ import {
   type ProfileUpdate,
   type User,
 } from "@bycoda/account-contracts";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useIsMutating,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { localDateFor } from "@bycoda/account-contracts";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { accountController } from "../model/accountService";
@@ -94,6 +100,7 @@ export function useNotificationSettings() {
     queryFn: () => guarded(() => accountController().api().getNotificationSettings()),
   });
   const mutationKey = ["account", userId, "notifications", "save"] as const;
+  const pending = useIsMutating({ mutationKey }) > 0;
   // Saves run one after another; only the newest one may write its outcome to the cache.
   const newerPending = () => queryClient.isMutating({ mutationKey }) > 1;
   const mutation = useMutation({
@@ -121,7 +128,7 @@ export function useNotificationSettings() {
     queryClient.setQueryData(key, next);
     mutation.mutate({ next, previous });
   };
-  return { query, save: { isError: mutation.isError, mutate } };
+  return { query, save: { isError: mutation.isError, isPending: pending, mutate } };
 }
 
 export function useProfileUpdate() {

@@ -31,7 +31,7 @@ export type AccountHealth = { status: HealthStatus; text: string };
 export function accountHealth(input: {
   account: SocialAccount;
   capabilities: readonly Pick<Capability, "status">[];
-  needsHuman: boolean;
+  needsHuman: boolean | undefined;
   now: number;
 }): AccountHealth {
   const { account, capabilities, needsHuman, now } = input;
@@ -39,6 +39,7 @@ export function accountHealth(input: {
   if (expired || capabilities.some((row) => row.status === "expired"))
     return { status: "error", text: t("Connection needed") };
   if (!account.connected) return { status: "warn", text: t("Connection needed") };
+  if (needsHuman === undefined) return { status: "warn", text: t("Connection status unknown") };
   if (needsHuman) return { status: "warn", text: t("Waiting for you") };
   if (capabilities.some((row) => row.status === "pending"))
     return { status: "warn", text: t("Checking…") };

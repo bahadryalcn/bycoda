@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { captureRoomTerminalChild } from "../../automations/room-terminal-children";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
 import {
@@ -152,8 +153,8 @@ export function createRoomTerminalTools(ports: RoomTerminalPorts) {
           };
         }
         await check();
-        if (action === "terminals.create")
-          return ports.terminals.create(
+        if (action === "terminals.create") {
+          const terminal = await ports.terminals.create(
             project,
             {
               requestId: createHash("sha256")
@@ -165,6 +166,9 @@ export function createRoomTerminalTools(ports: RoomTerminalPorts) {
             owner,
             authorized,
           );
+          await captureRoomTerminalChild(terminal, owner);
+          return terminal;
+        }
         if (action === "terminals.write") {
           const accepted = await ports.terminals.write(
             project.id,

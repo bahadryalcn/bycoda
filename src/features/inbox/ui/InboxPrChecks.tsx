@@ -1,4 +1,3 @@
-import { InlineError } from "../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
@@ -18,7 +17,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { Tab } from "../../../shared/ui/Tabs";
 import { useTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { fetchCheckDetails, hasCheckDetails } from "../model/prChecks";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT, useFormat } from "../../../shared/i18n";
 import { CheckRepairForm, type CheckRepair } from "./CheckRepairForm";
 import {
   CheckRepairProgress,
@@ -109,9 +108,9 @@ function MarkGlyph({ mark, size }: { mark: Mark; size: "sm" | "md" }) {
 
 /** PR detail Checks tab; its accessible name includes the overall counts. */
 export function PrChecksTab({ overall }: { overall: GithubPrChecksOverall }) {
-  useLocale();
+  const t = useT();
   const mark = overallMark(overall);
-  const label = `Checks: ${overall.description}`;
+  const label = t("Checks: {p0}", { p0: overall.description });
   return (
     <Tab value="checks" aria-label={label} tooltip={label}>
       <Text size="inherit" tone="inherit" leading="none">
@@ -154,7 +153,8 @@ function PrCheckRow({
   wideStatus: boolean;
   revealToken?: number;
 }) {
-  useLocale();
+  const t = useT();
+  const { formatNumber } = useFormat();
   const rowRef = useRef<HTMLLIElement>(null);
   const fixRef = useRef<HTMLButtonElement>(null);
   const fixOpen = Boolean(fixAnchor && fixAnchor === fixRef.current);
@@ -234,7 +234,7 @@ function PrCheckRow({
     };
   }, [expanded, cwd, repo, jobId, detailsKey, refreshToken, retry]);
   const mark = checkMark(check.state);
-  const status = checkStateLabel(check.state);
+  const status = checkStateLabel(check.state, t);
   const duration = checkDuration(check.startedAt, check.completedAt);
   const workflow = check.workflow.trim();
   const meta = [workflow, status, check.allowFailure ? t("Failure allowed") : null, duration]
@@ -383,7 +383,9 @@ function PrCheckRow({
       ) : null}
       {error ? (
         <Alert tone="danger">
-          <InlineError>{t("Could not load job details.")}</InlineError>
+          <Text as="p" size="caption" tone="inherit">
+            {t("Could not load job details.")}
+          </Text>
           <Text as="p" size="micro" tone="inherit" className="break-words">
             {error}
           </Text>
@@ -414,7 +416,7 @@ function PrCheckRow({
                 <>
                   {t("View run steps")}{" "}
                   <Text size="caption" tone="secondary" className="@max-[420px]/checks:hidden">
-                    {describeCheckCounts(countChecks(details.steps))}
+                    {describeCheckCounts(countChecks(details.steps), t, formatNumber)}
                   </Text>
                 </>
               }
@@ -436,7 +438,7 @@ function PrCheckRow({
                       <MarkGlyph mark={stepMark} size="md" />
                       <Text size="inherit" tone="secondary" className="min-w-0 flex-1 break-words">
                         {step.name}
-                        <span className="sr-only">: {checkStateLabel(step.state)}</span>
+                        <span className="sr-only">: {checkStateLabel(step.state, t)}</span>
                       </Text>
                       <Text size="inherit" tone="secondary" className="shrink-0 tabular-nums">
                         {checkDuration(step.startedAt, step.completedAt)}
@@ -572,7 +574,8 @@ export function InboxPrChecks({
   repo?: string;
   repair?: CheckRepair;
 }) {
-  useLocale();
+  const t = useT();
+  const { formatNumber } = useFormat();
   const { checks, loading, refreshing, error, stale } = view;
   const repairGroups = useCheckRepairs(cwd, repo, repair?.number, view);
   const revealScope = JSON.stringify([cwd, repo, repair?.number, checks?.headOid]);
@@ -631,7 +634,7 @@ export function InboxPrChecks({
     group.rows.length ? (
       <div key={group.state}>
         <SectionLabel as="h3" count={group.rows.length} className="mb-1.5 mt-3 px-2">
-          {checkStateLabel(group.state)}
+          {checkStateLabel(group.state, t)}
         </SectionLabel>
         <ul className="flex flex-col gap-0.5">
           {group.rows.map((check, index) => (
@@ -689,17 +692,23 @@ export function InboxPrChecks({
     ) : null;
   const requiredFailures = rows.filter((row) => row.state === "fail" && !row.allowFailure).length;
   const headline = requiredFailures
-    ? `${requiredFailures} ${requiredFailures === 1 ? "check needs" : "checks need"} a fix`
+    ? t(requiredFailures === 1 ? "{p0} check needs a fix" : "{p0} checks need a fix", {
+        p0: formatNumber(requiredFailures),
+      })
     : counts.fail
       ? t("Optional checks failed")
       : counts.pending
-        ? `${counts.pending} ${counts.pending === 1 ? "check is" : "checks are"} running`
+        ? t(counts.pending === 1 ? "{p0} check is running" : "{p0} checks are running", {
+            p0: formatNumber(counts.pending),
+          })
         : attention
-          ? `${attention} ${attention === 1 ? "check needs" : "checks need"} attention`
+          ? t(attention === 1 ? "{p0} check needs attention" : "{p0} checks need attention", {
+              p0: formatNumber(attention),
+            })
           : counts.pass
-            ? "Checks passed"
-            : "No checks ran";
-  const summary = describeCheckCounts({ ...counts, fail: 0 });
+            ? t("Checks passed")
+            : t("No checks ran");
+  const summary = describeCheckCounts({ ...counts, fail: 0 }, t, formatNumber);
   return (
     <section
       data-inbox-pr-checks
@@ -715,7 +724,7 @@ export function InboxPrChecks({
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 px-2">
         <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-            <Heading size="section">{t(headline)}</Heading>
+            <Heading size="section">{headline}</Heading>
             {stale ? (
               <Badge tone="warning" size="xs">
                 {t("Saved results")}
@@ -735,7 +744,7 @@ export function InboxPrChecks({
               {summary.charAt(0).toUpperCase() + summary.slice(1)}.
             </Text>
           ) : null}
-          <span className="sr-only">{describeCheckCounts(counts)}</span>
+          <span className="sr-only">{describeCheckCounts(counts, t, formatNumber)}</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {repair && rows.some((row) => row.state === "fail") ? (
@@ -868,11 +877,15 @@ export function InboxPrChecks({
               className={activeFilter === "attention" ? "mt-3" : "[&>summary]:hidden"}
               open={activeFilter !== "attention" || showOthers}
               onOpenChange={setShowOthers}
-              summary={describeCheckCounts({
-                ...countChecks([]),
-                pass: counts.pass,
-                skipping: counts.skipping,
-              })}
+              summary={describeCheckCounts(
+                {
+                  ...countChecks([]),
+                  pass: counts.pass,
+                  skipping: counts.skipping,
+                },
+                t,
+                formatNumber,
+              )}
             >
               {groups.filter((group) => group.other).map(renderGroup)}
             </Disclosure>

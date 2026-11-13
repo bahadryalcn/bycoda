@@ -67,7 +67,8 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
           )}
         >
           <Button variant="ghost" onClick={() => setOpen(true)}>
-            {t("SSH reviews")} · {queue.intents.length}
+            {t("SSH reviews")}
+            {!queue.error || queue.intents.length ? ` · ${queue.intents.length}` : ""}
           </Button>
         </Text>
       ) : null}
@@ -139,7 +140,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
                 </div>
               </Text>
             ))}
-            {!queue.intents.length ? (
+            {!queue.error && !queue.intents.length ? (
               <EmptyState size="inline" description={t("No pending SSH reviews.")} />
             ) : null}
           </div>

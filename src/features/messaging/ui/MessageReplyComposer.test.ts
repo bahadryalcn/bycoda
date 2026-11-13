@@ -73,6 +73,57 @@ async function pressSend() {
 }
 
 describe("MessageReplyComposer", () => {
+  it("preserves a newer remounted draft when the earlier send succeeds", async () => {
+    const key = replyDraftKey("acc", "t1");
+    writeReplyDraftBody(key, "Submitted reply");
+    let finish!: (message: ThreadMessage) => void;
+    vi.mocked(invoke).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const onSent = vi.fn();
+    render(onSent);
+    await pressSend();
+    act(() => root.render(null));
+    render(onSent);
+    const field = container.querySelector("textarea")!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        field,
+        "New unsent reply 👩🏽‍💻",
+      );
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => finish(sent));
+    expect(readReplyDraft(key).body).toBe("New unsent reply 👩🏽‍💻");
+    expect(field.value).toBe("New unsent reply 👩🏽‍💻");
+    act(() => root.render(null));
+    render(onSent);
+    expect(container.querySelector("textarea")?.value).toBe("New unsent reply 👩🏽‍💻");
+    expect(onSent).toHaveBeenCalledOnce();
+    expect(invoke).toHaveBeenCalledOnce();
+  });
+  it.each([
+    { isComposing: true, keyCode: 13 },
+    { isComposing: false, keyCode: 229 },
+  ])("does not send while IME owns Enter: %j", async (ime) => {
+    writeReplyDraftBody(replyDraftKey("acc", "t1"), "Unsent 日本語");
+    render(vi.fn());
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+      isComposing: ime.isComposing,
+    });
+    Object.defineProperty(event, "keyCode", { value: ime.keyCode });
+    await act(async () => {
+      container.querySelector("textarea")!.dispatchEvent(event);
+    });
+    expect(invoke).not.toHaveBeenCalled();
+    expect(container.querySelector("textarea")?.value).toBe("Unsent 日本語");
+  });
   it("keeps the draft on failure and retries with the same request id", async () => {
     const key = replyDraftKey("acc", "t1");
     writeReplyDraftBody(key, "Hello");

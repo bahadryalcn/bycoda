@@ -4,18 +4,62 @@ import type {
   DecisionSource,
   SourceTestResult,
 } from "./decisionTypes";
+import { DECISION_TASK_TYPES } from "../../../shared/model/host-contracts/decision-models";
+import { routingChanges } from "./presentation";
 
-/** Latest explicit connection test also drives summary counts until the next test. */
+/** A new Host snapshot updates clean routes without replacing the owner's unsaved routes. */
+export function mergeRoutingDraft(
+  previous: DecisionRouting,
+  draft: DecisionRouting,
+  incoming: DecisionRouting,
+): DecisionRouting {
+  const next = { ...incoming };
+  for (const task of DECISION_TASK_TYPES) {
+    if (!routingChanges({ [task]: previous[task] }, { [task]: draft[task] })) continue;
+    if (draft[task]) next[task] = draft[task];
+    else delete next[task];
+  }
+  return next;
+}
+
+/** A test describes one source configuration and lifecycle state. */
+export type SourceTestSnapshot = { source: DecisionSource; result: SourceTestResult };
+
+export function matchingTest(
+  source: DecisionSource,
+  snapshot?: SourceTestSnapshot,
+): SourceTestResult | undefined {
+  if (!snapshot) return undefined;
+  const key = (value: DecisionSource) =>
+    JSON.stringify([
+      value.id,
+      value.name,
+      value.kind,
+      value.adapter,
+      value.endpoint,
+      value.model,
+      value.catalogId,
+      value.harness,
+      value.authHeader,
+      value.local?.modelPath,
+      value.local?.runtimePath,
+      value.local?.projectorPath,
+      value.local?.port,
+      value.secretRef,
+      value.status,
+    ]);
+  return key(source) === key(snapshot.source) ? snapshot.result : undefined;
+}
+
 export function testedSources(
   sources: DecisionSource[] | null,
-  results: Record<string, SourceTestResult>,
+  results: Record<string, SourceTestSnapshot>,
 ): DecisionSource[] | null {
   return (
-    sources?.map((source) =>
-      results[source.id]
-        ? { ...source, status: results[source.id].ok ? "ready" : "error" }
-        : source,
-    ) ?? null
+    sources?.map((source) => {
+      const result = matchingTest(source, results[source.id]);
+      return result ? { ...source, status: result.ok ? "ready" : "error" } : source;
+    }) ?? null
   );
 }
 

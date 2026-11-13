@@ -36,6 +36,21 @@ vi.mock("./SaveLookButton", () => ({ SaveLookButton: () => null }));
 const container = document.createElement("div");
 document.body.append(container);
 const root = createRoot(container);
+
+it("blocks saved look application while an image change is pending", () => {
+  act(() =>
+    root.render(
+      createElement(SavedThemes, {
+        appearance: {
+          themeHue: 220,
+          themeSaturation: 12,
+          chatBackgroundBusy: true,
+        } as AppearanceSettings,
+      }),
+    ),
+  );
+  expect(container.querySelector<HTMLButtonElement>(".theme-saved-apply")!.disabled).toBe(true);
+});
 afterEach(() => {
   act(() => root.render(null));
   resetGeneratorSession();

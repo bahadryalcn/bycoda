@@ -151,6 +151,28 @@ describe("provider session defaults", () => {
     });
   });
 
+  it("inherits Codex compaction defaults and preserves explicit provider reset", () => {
+    setHarnessModels("codex", [
+      { id: "codex:test-compact", name: "Test", harness: "codex", contextWindow: 200_000 },
+    ]);
+    saveGlobalSessionDefaults("codex", { extras: { autoCompactWindow: "150000" } });
+    expect(newSession("codex", "/elsewhere", "codex:test-compact").modelSettings).toMatchObject({
+      autoCompactWindow: "150000",
+    });
+    setProjectSessionDefaults("/repo", "codex", { extras: { autoCompactWindow: "default" } });
+    expect(newSession("codex", "/repo", "codex:test-compact").modelSettings).toMatchObject({
+      autoCompactWindow: "default",
+    });
+    setProjectSessionDefaults("/repo", "codex", {});
+    expect(newSession("codex", "/repo", "codex:test-compact").modelSettings).toMatchObject({
+      autoCompactWindow: "150000",
+    });
+    setProjectSessionDefaults("/repo", "codex", { extras: { autoCompactWindow: "500000" } });
+    expect(
+      newSession("codex", "/repo", "codex:test-compact").modelSettings?.autoCompactWindow,
+    ).toBe("default");
+  });
+
   it("keeps explicit modes and ignores effort the model does not support", () => {
     saveGlobalSessionDefaults("codex", {
       effort: "unsupported",

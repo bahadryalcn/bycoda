@@ -121,7 +121,7 @@ vi.mock("../../../integrations/harness/core/availability", () => ({
 let container: HTMLDivElement;
 let root: Root;
 let queryClient: QueryClient;
-let onSelectSection: ReturnType<typeof vi.fn>;
+let onSelectSection: ReturnType<typeof vi.fn<(section: SettingsSectionId) => void>>;
 
 function mockLocalStorage() {
   const data = new Map<string, string>();
@@ -148,6 +148,7 @@ async function render(
         { client: queryClient },
         createElement(SettingsView, {
           section,
+          anchor: section === "providers" ? "provider-accounts" : undefined,
           cwd: "/repo",
           sessions: [],
           onClose: vi.fn(),
@@ -196,7 +197,7 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  onSelectSection = vi.fn();
+  onSelectSection = vi.fn<(section: SettingsSectionId) => void>();
   vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
 });
 
@@ -212,6 +213,20 @@ afterEach(async () => {
 });
 
 describe("settings pages", () => {
+  it("mounts only the selected section and replaces its scroller on navigation", async () => {
+    await render("general");
+    const firstScroller = container.querySelector("[data-settings-scroller]")!;
+    expect(container.querySelectorAll("[data-settings-section]")).toHaveLength(1);
+    await render("groupLock");
+    expect(firstScroller.isConnected).toBe(false);
+    expect(container.querySelector('[data-settings-section="general"]')).toBeNull();
+    expect(container.querySelectorAll("[data-settings-section]")).toHaveLength(1);
+    expect(container.querySelector('[data-settings-section="groupLock"]')).not.toBeNull();
+    await render("general");
+    expect(container.querySelector('[data-settings-section="groupLock"]')).toBeNull();
+    expect(container.querySelector("[data-settings-scroller]")).not.toBe(firstScroller);
+  });
+
   it("offers searchable categories with the current selection and navigates without a settings write", async () => {
     await render("general");
     const picker = container.querySelector(
@@ -450,7 +465,7 @@ describe("settings pages", () => {
       "groupLock",
       "appearance",
       "workspace",
-      "usage",
+      "providers",
     ] as const) {
       await render(section);
       for (const [owner, ids] of Object.entries(ownership)) {
@@ -891,7 +906,7 @@ describe("settings pages", () => {
     expect(revealButtons()).toHaveLength(1);
   });
 
-  it("moves usage controls and quotas out of provider settings", async () => {
+  it("keeps usage controls and quotas on the provider usage tab", async () => {
     setCachedRateLimits("claude", "default", {
       provider: "claude",
       session: { usedPercent: 23, windowMinutes: 300, resetsAt: null },
@@ -906,7 +921,7 @@ describe("settings pages", () => {
     expect(container.querySelector('[role="meter"]')).toBeNull();
     expect(container.querySelector('[aria-label="Show remaining usage"]')).toBeNull();
     expect(container.querySelector('[data-setting-id="provider-usage"]')).toBeNull();
-    await render("usage");
+    await render("providers", { anchor: "show-remaining-usage" });
     // The usage page is a lazy module; its first transform can exceed the 1 s
     // default when the whole suite is loading modules in parallel.
     await vi.waitFor(() => expect(container.querySelector('[role="meter"]')).not.toBeNull(), {
@@ -914,7 +929,7 @@ describe("settings pages", () => {
     });
     expect(
       container
-        .querySelector('[role="meter"][aria-label="Default account session remaining"]')
+        .querySelector('[role="meter"][aria-label="Default account · 5 hours · left"]')
         ?.getAttribute("aria-valuenow"),
     ).toBe("77");
     await act(async () =>
@@ -922,7 +937,7 @@ describe("settings pages", () => {
     );
     expect(
       container
-        .querySelector('[role="meter"][aria-label="Default account session used"]')
+        .querySelector('[role="meter"][aria-label="Default account · 5 hours · used"]')
         ?.getAttribute("aria-valuenow"),
     ).toBe("23");
     await act(async () =>
@@ -938,7 +953,7 @@ describe("settings pages", () => {
     await render("providers");
     expect(container.querySelector('[aria-label="Reveal email"]')).toBeNull();
     for (const id of ["show-remaining-usage", "provider-usage"]) {
-      expect(SETTINGS_INDEX.find((entry) => entry.id === id)?.section).toBe("usage");
+      expect(SETTINGS_INDEX.find((entry) => entry.id === id)?.section).toBe("providers");
     }
     expect(SETTINGS_INDEX.find((entry) => entry.id === "mask-emails")?.section).toBe("groupLock");
   });
@@ -964,7 +979,7 @@ describe("settings pages", () => {
     expect(providerAccounts("claude").find((account) => account.id === "account-work")?.color).toBe(
       "pink",
     );
-    await render("usage");
+    await render("providers", { anchor: "show-remaining-usage" });
     // The usage page is a lazy module: wait for its account sections.
     await vi.waitFor(
       () => expect(container.querySelectorAll("section.usage-account").length).toBeGreaterThan(0),
@@ -1456,8 +1471,40 @@ describe("settings pages", () => {
   it("gives every section a rail group", () => {
     const groups = new Set(SETTINGS_SECTIONS.map((section) => section.group));
     expect([...groups].sort()).toEqual(
-      ["app", "agents", "code", "connections", "about", "account"].sort(),
+      ["app", "agents", "tools", "code", "connections", "about", "account"].sort(),
     );
+  });
+
+  it.each([
+    ["browser", "Browser"],
+    ["devices", "Devices"],
+    ["logs", "Logs"],
+    ["devServers", "Development Servers"],
+  ] as const)("opens retired %s links in the matching tool tab", async (alias, label) => {
+    await render(alias);
+    const list = container.querySelector('[role="tablist"][aria-label="Tool preferences"]')!;
+    expect(
+      [...list.querySelectorAll('[role="tab"]')]
+        .find((tab) => tab.textContent === label)
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(container.querySelector('[data-settings-section="tools"]')).not.toBeNull();
+  });
+
+  it("replays an external tool link after switching its inner tab", async () => {
+    await render("tools", { anchor: "browser-viewport", notificationSettingsRequest: 1 });
+    const list = () => container.querySelector('[role="tablist"][aria-label="Tool preferences"]')!;
+    const tab = (label: string) =>
+      [...list().querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+        (node) => node.textContent === label,
+      )!;
+    await act(async () => tab("Devices").click());
+    expect(tab("Devices").getAttribute("aria-selected")).toBe("true");
+    await render("tools", { anchor: "browser-viewport", notificationSettingsRequest: 2 });
+    await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(tab("Browser").getAttribute("aria-selected")).toBe("true");
+    const row = container.querySelector('[data-setting-id="browser-viewport"]')!;
+    expect(row.contains(document.activeElement) || row === document.activeElement).toBe(true);
   });
 
   it("indexes each setting once", () => {
@@ -1823,9 +1870,10 @@ describe("settings search", () => {
     await act(async () =>
       document.body.dispatchEvent(
         new KeyboardEvent("keydown", {
-          code: "KeyM",
-          key: "m",
+          code: "KeyY",
+          key: "y",
           ctrlKey: true,
+          altKey: true,
           shiftKey: true,
           bubbles: true,
           cancelable: true,
@@ -1833,10 +1881,10 @@ describe("settings search", () => {
       ),
     );
 
-    expect(localStorage.getItem("bycoda.keybindingOverrides")).toBe(
-      '{"App: Search":{"shortcut":"Control+Shift+KeyM"}}',
+    expect(localStorage.getItem("bycoda.keybindingOverrides"), input.closest("[data-setting-id]")?.textContent ?? "").toBe(
+      '{"App: Search":{"shortcut":"Control+Option+Shift+KeyY"}}',
     );
-    expect(input.querySelector("[data-shortcut-display]")?.textContent).toBe("Ctrl+Shift+M");
+    expect(input.querySelector("[data-shortcut-display]")?.textContent).toBe("Ctrl+Alt+Shift+Y");
   });
 
   it("lets Tab leave the recorder and keeps Cmd+Delete recordable", async () => {

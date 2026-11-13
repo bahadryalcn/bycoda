@@ -7,6 +7,7 @@ import { useT } from "../../../shared/i18n";
 import type { SshShellController, SshShellPreview } from "../model/sshShellIntegration";
 import styles from "./TerminalTools.module.css";
 import { TerminalGhostText } from "./TerminalGhostText";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 async function acceptSuggestion(
   shell: SshShellController,
@@ -88,7 +89,7 @@ export function RemoteShellSuggestions({
   };
   const previewKeys = useRef<(event: KeyboardEvent) => void>(() => {});
   const handlePreviewKey = (event: KeyboardEvent) => {
-    if (event.isComposing || event.ctrlKey || event.metaKey) return;
+    if (isImeComposition(event) || event.ctrlKey || event.metaKey) return;
     if (
       event.altKey &&
       (event.key === "ArrowDown" || event.key === "ArrowUp") &&
@@ -152,7 +153,7 @@ export function RemoteShellSuggestions({
         tabIndex={selectionMode ? 0 : undefined}
         aria-label={t(selectionMode ? "Remote suggestion selection" : "Remote suggestion preview")}
         onKeyDown={(event) => {
-          if (!selectionMode || event.nativeEvent.isComposing) return;
+          if (!selectionMode || isImeComposition(event.nativeEvent)) return;
           event.stopPropagation();
           if (event.key === "Escape") {
             event.preventDefault();

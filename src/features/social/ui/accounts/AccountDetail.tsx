@@ -32,7 +32,8 @@ export type AccountDetailProps = {
   account: SocialAccount;
   snapshot: SocialSnapshot;
   projects: HostProject[];
-  needsHuman: boolean;
+  needsHuman: boolean | undefined;
+  now?: number;
   hostOnline: boolean;
   onChanged(): void;
 };
@@ -47,6 +48,7 @@ export function AccountDetail({
   snapshot,
   projects,
   needsHuman,
+  now,
   hostOnline,
   onChanged,
 }: AccountDetailProps) {
@@ -54,7 +56,7 @@ export function AccountDetail({
   const { error, is, write } = useAccountWrite(t("The account could not be changed. Try again."));
   const confirmation = useConfirm();
   const capabilities = snapshot.capabilities[account.id] ?? [];
-  const health = accountHealth({ account, capabilities, needsHuman, now: openedAt });
+  const health = accountHealth({ account, capabilities, needsHuman, now: now ?? openedAt });
   const onThisComputer = account.executorId === snapshot.executorId;
   const disabled = !hostOnline;
 
@@ -180,13 +182,13 @@ export function AccountDetail({
             </span>
           }
           variant="row"
-          defaultOpen={needsHuman}
+          defaultOpen={needsHuman === true}
         >
           <BrowserSettings
             client={client}
             accountId={account.id}
             accountName={account.name}
-            needsHuman={needsHuman}
+            needsHuman={needsHuman === true}
             disabled={disabled}
           />
         </Disclosure>

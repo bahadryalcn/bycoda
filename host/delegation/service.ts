@@ -49,6 +49,9 @@ import { advisorBrief, subagentBrief, replyBrief } from "./prompts";
 import { modelEffortSetting } from "../../src/features/sessions/model/models";
 import { logWaitMaxTimeoutSeconds } from "../execution/runtime-log-wait";
 import { childModelSettings } from "./child-settings";
+import { delegationBudgetScope, delegationWorkRoot } from "./work-root";
+import { cancelSessionWorkOccurrence } from "../work/session-adapter";
+import { refuseSingleSlotChild } from "./capacity";
 
 export type DelegationDependencies = {
   engine: SessionRunEngine & { store: HostStore };
@@ -66,7 +69,7 @@ export type DelegationDependencies = {
 
 export type AgentsCaller = { sessionId: string; projectId: string };
 type Locate = (sessionId: string) => Promise<LocalSessionLocator | undefined>;
-type RunStatus = "running" | "needsInput" | "succeeded" | "failed" | "cancelled";
+type RunStatus = "queued" | "running" | "needsInput" | "succeeded" | "failed" | "cancelled";
 
 const KIND_LABEL: Record<DelegationKind, string> = { subagent: "Subagent", advisor: "Advisor" };
 
@@ -98,6 +101,28 @@ export class ConversationDelegation {
     throw new Error("Unsupported agents tool.");
   }
 
+  /** Internal task recovery entry. A model-facing agents call cannot invoke this path. */
+  async consultTaskRepair(
+    taskId: string,
+    args: Record<string, unknown>,
+    caller: AgentsCaller,
+    locate: Locate,
+  ): Promise<unknown> {
+    const row = await this.deps.engine.store.db
+      .prepare("SELECT value FROM tasks WHERE id=?")
+      .get(taskId);
+    const task = row ? JSON.parse(String(row.value)) : undefined;
+    if (
+      !task ||
+      task.projectId !== caller.projectId ||
+      task.repairAdvisor?.sessionId !== caller.sessionId ||
+      task.repairAdvisor?.requestId !== args.requestId ||
+      !(task.status === "queued" || (task.status === "review" && task.conflictRecovery))
+    )
+      throw new Error("Task repair advisor identity is no longer current.");
+    return this.start("advisor", args, caller, locate, true);
+  }
+
   /** Stops every running child of a parent that was cancelled or deleted. */
   async cancelChildren(parentSessionId: string): Promise<void> {
     const records = (await this.refresh(await this.store.list())).filter(
@@ -105,6 +130,10 @@ export class ConversationDelegation {
     );
     await Promise.all(
       records.map(async (record) => {
+        if (!record.childSessionId) {
+          await this.cancelPending(record);
+          return;
+        }
         await cancelSessionRun(this.deps.engine, {
           sessionId: record.childSessionId,
           runId: record.childRunId,
@@ -125,12 +154,12 @@ export class ConversationDelegation {
     );
   }
 
-  private async caller(caller: AgentsCaller) {
+  private async caller(caller: AgentsCaller, taskRepair = false) {
     const own = await this.deps.featureSession(caller.sessionId);
     if (own.projectId !== caller.projectId)
       throw new Error("Conversation belongs to another project.");
     // Children never start children: the store knows them, and the parent key is checked too.
-    if (await this.isChild(caller.sessionId, own.session))
+    if (!taskRepair && (await this.isChild(caller.sessionId, own.session)))
       throw new Error("A subagent cannot start agents runs.");
     return own;
   }
@@ -226,8 +255,9 @@ export class ConversationDelegation {
     args: Record<string, unknown>,
     caller: AgentsCaller,
     locate: Locate,
+    taskRepair = false,
   ) {
-    const own = await this.caller(caller);
+    const own = await this.caller(caller, taskRepair);
     if (
       args.effort !== undefined &&
       (typeof args.effort !== "string" || !EFFORT_LEVELS.includes(args.effort))
@@ -252,14 +282,36 @@ export class ConversationDelegation {
       if (existing) {
         if (existing.requestKey !== requestKey || existing.payloadHash !== payloadHash)
           throw new Error("requestId was already used with a different payload.");
-        return await this.describe(existing, locate);
+        if (existing.childSessionId || existing.finishedAt !== undefined)
+          return await this.describe(existing, locate);
+      }
+      const callerFingerprint = JSON.stringify([
+        (await this.deps.engine.store.session(caller.sessionId)).runId,
+        own.session.cwd,
+        own.session.harness,
+        own.session.model,
+        own.session.providerAccountId,
+        own.session.runtimeMode,
+        own.session.worktreeCwd,
+        own.session.modelSettings,
+      ]);
+      if (existing?.pending && existing.pending.callerFingerprint !== callerFingerprint) {
+        await this.cancelPending(existing);
+        throw new Error("Queued delegation caller configuration changed. Submit a new request.");
       }
       const catalog = await this.deps.models(caller.projectId);
       const { subagents, advisor } = await this.selected(own.session, catalog);
       const candidates = kind === "advisor" ? (advisor ? [advisor] : []) : subagents;
       if (!candidates.length)
         throw new Error(`No ${kind} model is selected for this conversation.`);
-      let ref = candidates[0]!;
+      let ref = existing?.pending ? existing.model : candidates[0]!;
+      if (
+        existing?.pending &&
+        !candidates.some((candidate) => delegateRefKey(candidate) === delegateRefKey(ref))
+      ) {
+        await this.cancelPending(existing);
+        throw new Error("Queued delegation model selection changed. Submit a new request.");
+      }
       if (kind === "subagent" && (candidates.length > 1 || args.model !== undefined)) {
         const choices = `Use one of: ${candidates.map(delegateRefKey).join(", ")}.`;
         if (typeof args.model !== "string")
@@ -274,13 +326,20 @@ export class ConversationDelegation {
       const model = this.resolve(ref, catalog);
       if (!model) throw new Error("The selected model is unavailable. Choose another model.");
       await this.verifySignIn(ref);
-      const running = await this.runningCounts(caller.sessionId);
-      if (kind === "subagent" && running.subagent >= DELEGATION_LIMITS.runningSubagents)
-        throw new Error("Running subagent limit reached. Wait for a run to finish or cancel one.");
-      if (kind === "advisor" && running.advisor >= DELEGATION_LIMITS.runningAdvisors)
-        throw new Error("An advisor is already running. Wait for it to finish or cancel it.");
-
-      const runId = randomUUID();
+      const runId = existing?.runId ?? randomUUID();
+      const rootWorkId =
+        existing?.rootWorkId ??
+        (await delegationWorkRoot(this.deps.engine.store, caller.sessionId));
+      if (
+        existing?.pending &&
+        existing.rootWorkId !== (await delegationWorkRoot(this.deps.engine.store, caller.sessionId))
+      ) {
+        await this.cancelPending(existing);
+        throw new Error("Queued delegation caller work root changed. Submit a new request.");
+      }
+      const budgetScope =
+        existing?.budgetScope ??
+        (await delegationBudgetScope(this.deps.engine.store, caller.sessionId));
       const label = `${KIND_LABEL[kind]} · ${model.name}`;
       const title = String(args.title ?? args.question ?? "").slice(
         0,
@@ -291,15 +350,58 @@ export class ConversationDelegation {
         runId,
         kind,
         model: model.id,
-        startedAt: Date.now(),
+        startedAt: existing?.startedAt ?? Date.now(),
       };
-      const modelSettings = childModelSettings(
-        model,
-        kind === "advisor" ? own.session.modelSettings : {},
-        args.effort as string | undefined,
-        kind === "subagent" ? own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY] : undefined,
-      );
+      const modelSettings =
+        existing?.modelSettings ??
+        childModelSettings(
+          model,
+          kind === "advisor" ? own.session.modelSettings : {},
+          args.effort as string | undefined,
+          kind === "subagent"
+            ? own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
+            : undefined,
+        );
+      if (!existing)
+        await this.store.add({
+          runId,
+          kind,
+          parentSessionId: caller.sessionId,
+          childSessionId: "",
+          model: ref,
+          title,
+          requestKey,
+          payloadHash,
+          modelSettings,
+          pending: { args: structuredClone(args), callerFingerprint },
+          startedAt: parent.startedAt,
+          ...(rootWorkId ? { rootWorkId } : {}),
+          ...(budgetScope ? { budgetScope } : {}),
+        });
+      const pending = (await this.store.find(runId))!;
+      if (await refuseSingleSlotChild(this.deps.engine.store, pending)) {
+        await this.store.patch(runId, {
+          finishedAt: Date.now(),
+          status: "failed",
+          error:
+            "Delegation cannot run while this turn holds the only Work slot. Complete the work in this turn without delegation, or increase Work concurrency.",
+        });
+        return await this.describe((await this.store.find(runId))!, locate);
+      }
+      const running = await this.runningCounts(caller.sessionId, runId);
+      if (
+        (kind === "subagent" && running.subagent >= DELEGATION_LIMITS.runningSubagents) ||
+        (kind === "advisor" && running.advisor >= DELEGATION_LIMITS.runningAdvisors)
+      )
+        return await this.describe(pending, locate);
       const started = await launchSessionRun(this.deps.engine.store, this.deps.engine, {
+        ...(rootWorkId
+          ? {
+              work: { kind: `delegation.${kind}` as const, id: runId, occurrence: requestKey },
+              workRootWorkId: rootWorkId,
+              workBudgetScope: { ...budgetScope, role: kind === "advisor" ? "advisor" : "worker" },
+            }
+          : {}),
         requestId: `agents_${createHash("sha256").update(requestKey).digest("hex").slice(0, 40)}`,
         projectId: caller.projectId,
         harness: ref.harness,
@@ -320,13 +422,16 @@ export class ConversationDelegation {
         workspaceMode: "current",
         ...(own.session.worktreeCwd ? { worktreeCwd: own.session.worktreeCwd } : {}),
       });
-      if (started.deferred || !started.sessionId)
+      if (started.deferred) return await this.describe(pending, locate);
+      if (!started.sessionId)
         throw new Error(started.error ?? `The ${kind} could not start. Try again later.`);
       const record: DelegationRecord = {
         runId,
         kind,
         parentSessionId: caller.sessionId,
         childSessionId: started.sessionId,
+        ...(rootWorkId ? { rootWorkId } : {}),
+        ...(budgetScope ? { budgetScope } : {}),
         ...(started.runId ? { childRunId: started.runId } : {}),
         model: ref,
         title,
@@ -338,7 +443,7 @@ export class ConversationDelegation {
           ? { error: started.error, finishedAt: Date.now(), status: "failed" as const }
           : {}),
       };
-      await this.store.add(record);
+      await this.store.patch(runId, record);
       return await this.describe(record, locate);
     });
   }
@@ -430,13 +535,50 @@ export class ConversationDelegation {
           },
           runtimeMode: child.session.runtimeMode,
         });
-        await this.deps.engine.command({
-          type: "send",
-          commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:send`,
-          sessionId: record.childSessionId,
-          text: replyBrief(args.message as string),
-          ...(record.kind === "advisor" ? { intent: "plan" as const } : {}),
-        });
+        const rootWorkId =
+          record.rootWorkId ?? (await delegationWorkRoot(this.deps.engine.store, caller.sessionId));
+        if (rootWorkId) {
+          const started = await launchSessionRun(this.deps.engine.store, this.deps.engine, {
+            work: {
+              kind: `delegation.${record.kind}` as const,
+              id: record.runId,
+              occurrence: requestKey,
+            },
+            workRootWorkId: rootWorkId,
+            workBudgetScope: {
+              ...record.budgetScope,
+              role: record.kind === "advisor" ? "advisor" : "worker",
+            },
+            resumeSessionId: record.childSessionId,
+            projectId: caller.projectId,
+            harness: record.model.harness,
+            model: record.model.model,
+            ...(record.model.providerAccountId
+              ? { providerAccountId: record.model.providerAccountId }
+              : {}),
+            modelSettings: {
+              ...restoredSettings,
+              [DELEGATION_PARENT_KEY]: child.session.modelSettings[DELEGATION_PARENT_KEY]!,
+            },
+            runtimeMode: child.session.runtimeMode,
+            title: record.title,
+            prompt: replyBrief(args.message as string),
+            ...(record.kind === "advisor" ? { intent: "plan" as const } : {}),
+          });
+          if (started.deferred || !started.runId)
+            throw new Error(
+              started.error ??
+                "Delegation reply is waiting for Work admission. Retry with the same requestId.",
+            );
+        } else {
+          await this.deps.engine.command({
+            type: "send",
+            commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:send`,
+            sessionId: record.childSessionId,
+            text: replyBrief(args.message as string),
+            ...(record.kind === "advisor" ? { intent: "plan" as const } : {}),
+          });
+        }
         const latest = await this.deps.engine.store.session(record.childSessionId);
         await this.store.patch(record.runId, {
           childRunId: latest.runId,
@@ -478,6 +620,13 @@ export class ConversationDelegation {
     // the published schema allows the longest deadline for every provider.
     const seconds = Math.min(requested, maximum);
     let records = await Promise.all(ids.map((id) => this.owned(id, caller)));
+    for (const record of records) {
+      if (!record.childSessionId && record.finishedAt === undefined && record.pending) {
+        // Reenter through current caller validation; never retain an old async callback.
+        await this.start(record.kind, record.pending.args, caller, locate);
+      }
+    }
+    records = await Promise.all(ids.map((id) => this.owned(id, caller)));
     const started = monotonicNow();
     for (;;) {
       records = await Promise.all(records.map((record) => this.follow(record)));
@@ -492,6 +641,10 @@ export class ConversationDelegation {
 
   private async cancel(args: Record<string, unknown>, caller: AgentsCaller, locate: Locate) {
     const record = await this.follow(await this.owned(args.runId, caller));
+    if (!record.childSessionId) {
+      await this.cancelPending(record);
+      return await this.describe((await this.store.find(record.runId))!, locate);
+    }
     const status = await this.statusOf(record);
     if (status.status === "running" || status.status === "needsInput") {
       await cancelSessionRun(this.deps.engine, {
@@ -500,6 +653,16 @@ export class ConversationDelegation {
       });
     }
     return await this.describe(await this.owned(args.runId, caller), locate);
+  }
+
+  private async cancelPending(record: DelegationRecord) {
+    if (record.rootWorkId)
+      await cancelSessionWorkOccurrence(this.deps.engine.store, {
+        kind: `delegation.${record.kind}` as const,
+        id: record.runId,
+        occurrence: record.requestKey,
+      });
+    await this.store.patch(record.runId, { finishedAt: Date.now(), status: "cancelled" });
   }
 
   private async owned(runId: unknown, caller: AgentsCaller): Promise<DelegationRecord> {
@@ -567,9 +730,13 @@ export class ConversationDelegation {
     return records;
   }
 
-  private async runningCounts(parentSessionId: string) {
+  private async runningCounts(parentSessionId: string, exceptRunId?: string) {
     const records = (await this.refresh(await this.store.list())).filter(
-      (record) => record.parentSessionId === parentSessionId && record.finishedAt === undefined,
+      (record) =>
+        record.parentSessionId === parentSessionId &&
+        !!record.childSessionId &&
+        record.runId !== exceptRunId &&
+        record.finishedAt === undefined,
     );
     return {
       subagent: records.filter((record) => record.kind === "subagent").length,
@@ -582,6 +749,7 @@ export class ConversationDelegation {
       const status = record.status ?? (record.error ? "failed" : "succeeded");
       return { status, ...(record.error ? { error: record.error } : {}) };
     }
+    if (!record.childSessionId) return { status: "queued" };
     const state = await this.stateOf(record);
     if (state.state === "finished")
       return { status: state.status, ...(state.error ? { error: state.error } : {}) };

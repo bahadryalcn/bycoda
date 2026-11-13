@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { TextField } from "../TextField";
 import { useCalendarFormat } from "../../i18n/calendar";
 import { formatEntry, isLocalDateTimeValue, parseEntry, type DateTimeMode } from "./values";
@@ -20,6 +20,7 @@ export function ValueEntry({
   onValidityChange?: (valid: boolean) => void;
 }) {
   const t = useT();
+  const locale = useLocale();
   // A fixed sample date: only the locale's field order and separators are read from it.
   const parts = useCalendarFormat().parts(new Date(2026, 11, 31, 12), {
     year: "numeric",
@@ -27,12 +28,13 @@ export function ValueEntry({
     day: "2-digit",
   });
   const shown = formatEntry(value, mode, parts);
-  const [draft, setDraft] = useState({ source: value, text: shown, invalid: false });
-  if (draft.source !== value) setDraft({ source: value, text: shown, invalid: false });
+  const cleanDraft = { source: value, text: shown, invalid: false, dirty: false, locale, parts };
+  const [draft, setDraft] = useState(cleanDraft);
+  if (draft.source !== value || (!draft.dirty && draft.locale !== locale)) setDraft(cleanDraft);
   const commit = () => {
-    const next = parseEntry(draft.text, mode, parts);
+    const next = parseEntry(draft.text, mode, draft.parts);
     if (next !== null && isLocalDateTimeValue(next, mode)) {
-      setDraft({ source: value, text: formatEntry(next, mode, parts), invalid: false });
+      setDraft({ ...cleanDraft, text: formatEntry(next, mode, parts) });
       onChange(next);
       onValidityChange?.(true);
     } else {
@@ -56,7 +58,13 @@ export function ValueEntry({
       }
       error={draft.invalid ? t("Enter a valid date or time.") : undefined}
       onChange={(event) => {
-        setDraft({ source: value, text: event.target.value, invalid: false });
+        setDraft({
+          ...draft,
+          source: value,
+          text: event.target.value,
+          invalid: false,
+          dirty: true,
+        });
         onValidityChange?.(false);
       }}
       onBlur={commit}

@@ -192,6 +192,7 @@ export function createProjectsRuntime(
     defaultAccounts: async () =>
       providerDefaultAccounts(await readProviderAccountStyles(dependencies.engine.store)),
   });
+  dependencies.tasks.repairDelegation = conversationDelegation;
   dependencies.engine.onParentStopped = async (sessionId) =>
     await conversationDelegation.cancelChildren(sessionId);
   const conversationStewards = new ConversationStewardTools(

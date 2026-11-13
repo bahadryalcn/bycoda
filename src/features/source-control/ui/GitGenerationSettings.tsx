@@ -1,9 +1,4 @@
-import { Text } from "../../../shared/ui/Text";
-import { lazy, Suspense, useRef, useState, useSyncExternalStore } from "react";
-import { t, useLocale } from "../../../shared/i18n/git";
-import { ChevronDown } from "../../../shared/ui/icons";
-import { Popover } from "../../../shared/ui/Popover";
-import { Button } from "../../../shared/ui/Button";
+import { lazy, Suspense, useState } from "react";
 import { parseGitGenerationChoice } from "../model/gitGenerationPreferences";
 const ModelPicker = lazy(() =>
   import("../../sessions")
@@ -14,13 +9,6 @@ const ModelPicker = lazy(() =>
 );
 import { defaultModelId, mergeModelSettings, resolveModel } from "../../sessions/public/models";
 import { HARNESSES, type HarnessId } from "../../sessions";
-import {
-  defaultProviderAccountId,
-  providerAccountLabel,
-  providerAccounts,
-  subscribeProviderAccounts,
-  supportsProviderAccounts,
-} from "../../providers/model/providerAccounts";
 import {
   pickTextHarness,
   automaticGitChoice,
@@ -99,103 +87,5 @@ export function GitGenerationModelControl({
         }}
       />
     </Suspense>
-  );
-}
-
-export function GitGenerationSettings({
-  cwd,
-  preferred,
-  choice,
-  onChange,
-  disabled,
-  hasOverride = !!choice,
-}: {
-  cwd: string;
-  preferred?: HarnessId;
-  choice?: GitGenerationChoice;
-  onChange: (choice: GitGenerationChoice | undefined) => void;
-  disabled: boolean;
-  hasOverride?: boolean;
-}) {
-  useLocale();
-  const [open, setOpen] = useState(false);
-  const anchor = useRef<HTMLButtonElement>(null);
-  const harness = choice?.harness ?? pickTextHarness(preferred);
-  const automatic = automaticGitChoice(preferred);
-  const model = resolveModel(harness, choice?.model ?? automatic?.model ?? defaultModelId(harness));
-  const account = useSyncExternalStore(
-    subscribeProviderAccounts,
-    () =>
-      supportsProviderAccounts(harness) && providerAccounts(harness).length > 1
-        ? providerAccountLabel(harness, defaultProviderAccountId(harness))
-        : "",
-    () => "",
-  );
-  return (
-    <>
-      <Button
-        size="sm"
-        iconOnly
-        label={t("AI generation settings")}
-        variant="ghost"
-        motion="none"
-        type="button"
-        ref={anchor}
-        aria-label={t("AI generation settings")}
-        aria-haspopup="dialog"
-        tooltip={`${t("Commit and pull request generation")} · ${choice ? model.name : `${t("Automatic")} · ${model.name}`}`}
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className="shrink-0"
-      >
-        <ChevronDown className={`icon-xs shrink-0 ${open ? "rotate-180" : ""}`} />
-      </Button>
-      {open && (
-        <Popover
-          anchor={anchor}
-          side="bottom"
-          align="end"
-          width={320}
-          role="dialog"
-          aria-label={t("Commit and pull request generation")}
-          autoFocus
-          onDismiss={() => {
-            setOpen(false);
-            anchor.current?.focus();
-          }}
-          className="flex flex-col gap-2 p-3"
-        >
-          <Text as="p" size="body" tone="inherit" weight="medium">
-            {t("Commit and pull request generation")}
-          </Text>
-          <GitGenerationModelControl
-            cwd={cwd}
-            preferred={preferred}
-            choice={choice}
-            onChange={onChange}
-            disabled={disabled}
-          />
-          {account ? (
-            <Text as="p" size="caption" tone="secondary">
-              {t("Account")} · {account}
-            </Text>
-          ) : null}
-          {hasOverride && (
-            <Text as="div" size="caption" tone="secondary" className="flex items-center gap-1">
-              <span>{t("Project setting")} ·</span>
-              <Button
-                size="sm"
-                variant="link"
-                disabled={disabled}
-                onClick={() => onChange(undefined)}
-              >
-                {t("Use global")}
-              </Button>
-            </Text>
-          )}
-        </Popover>
-      )}
-    </>
   );
 }

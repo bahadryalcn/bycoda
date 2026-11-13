@@ -1,6 +1,7 @@
+import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { t } from "../../../shared/i18n";
+import { t, useFormat } from "../../../shared/i18n";
 import {
   saveProfessionalConversationPreset,
   VOICE_PRESET_FAILED,
@@ -8,7 +9,6 @@ import {
 import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voiceTurnPolicy";
 import {
   Group,
-  Row,
   Select,
   SettingsFeedback,
   Toggle,
@@ -29,6 +29,8 @@ export function VoiceConversationStyle({
 }) {
   const [presetError, setPresetError] = useState(false);
   const [turnChoiceError, setTurnChoiceError] = useState(false);
+  const { formatNumber } = useFormat();
+  const pause = settings.turnEndSilence ?? 1.2;
   const idleChoices = [0, 5, 10, 15, 30, 60];
   return (
     <Group
@@ -78,6 +80,9 @@ export function VoiceConversationStyle({
             { value: "1.2", label: t("Natural pause") },
             { value: "2.5", label: t("Longer pause") },
             { value: "4", label: t("Extra time") },
+            ...(![1.2, 2.5, 4].includes(pause)
+              ? [{ value: String(pause), label: t("{p0} seconds", { p0: formatNumber(pause) }) }]
+              : []),
           ]}
           onChange={(value) => change({ turnEndSilence: Number(value) })}
         />

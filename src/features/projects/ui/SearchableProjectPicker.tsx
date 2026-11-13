@@ -94,7 +94,7 @@ export function SearchableProjectPicker({
   const key = projectKey(cwd);
   const label = inProject
     ? resolveTabGroupLabel(key, groupLabels, basename(cwd) || seed)
-    : "Choose project";
+    : t("Choose project");
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const railLayout = useProjectRailLayout();
   const railProjects = projectRailItemsFrom(recents, railCwd ?? cwd, railLayout);
@@ -188,7 +188,7 @@ export function SearchableProjectPicker({
     onChange: pickProject,
   });
 
-  const action = mode === "move" ? "Move note to project" : "Switch project";
+  const action = mode === "move" ? t("Move note to project") : t("Switch project");
 
   return (
     <div

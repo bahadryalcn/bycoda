@@ -91,7 +91,15 @@ export class SocialTransport {
       return this.oauth.select(p, String(params.accountId ?? ""), String(params.candidateId ?? ""));
     if (method.startsWith("social.browser.")) {
       if (!this.browser) throw new Error("Browser-session connection is unavailable on this host.");
-      if (method === "social.browser.availability") return this.browser.availability();
+      if (method === "social.browser.availability")
+        return params.existingChrome === true
+          ? this.browser.chromeTabs(
+              this.service,
+              p,
+              String(params.accountId ?? ""),
+              params.acknowledgeChromeAccess,
+            )
+          : this.browser.availability();
       if (method === "social.browser.view.frame")
         return liveViewFrame(String(params.accountId ?? ""));
       if (method === "social.browser.view.input")
@@ -123,7 +131,9 @@ export class SocialTransport {
       if (method === "social.browser.workflow.status")
         return this.browser.workflows.status(this.service, p, String(params.accountId ?? ""));
       if (method === "social.browser.workflow.cancel")
-        return this.browser.workflows.cancel(this.service, p, String(params.accountId ?? ""));
+        return params.loginFlow === true
+          ? this.browser.cancelLogin(this.service, p, String(params.accountId ?? ""))
+          : this.browser.workflows.cancel(this.service, p, String(params.accountId ?? ""));
       if (method === "social.browser.registration.review")
         return this.browser.workflows.reviewRegistration(this.service, p, {
           accountId: String(params.accountId ?? ""),
@@ -159,6 +169,12 @@ export class SocialTransport {
           String(params.accountId ?? ""),
           params.acknowledgeRisk,
           typeof params.resourceId === "string" ? params.resourceId : undefined,
+          params.existingChrome === true
+            ? {
+                targetId: String(params.chromeTargetId ?? ""),
+                acknowledgeAccess: params.acknowledgeChromeAccess,
+              }
+            : undefined,
         );
       if (method === "social.browser.status")
         return this.browser.status(this.service, p, String(params.accountId ?? ""));

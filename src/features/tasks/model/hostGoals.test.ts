@@ -176,6 +176,22 @@ describe("parseGoalPlan", () => {
 });
 
 describe("parseHostGoal", () => {
+  it("preserves a crew for a single-project epic and rejects ambiguous scope", () => {
+    const input = {
+      id: "epic",
+      title: "Epic",
+      prompt: "Work",
+      projectIds: ["one"],
+      leadProjectId: "one",
+      harness: "codex",
+      model: "model",
+      runtimeMode: "supervised",
+      crewDefinitionId: "crew",
+    };
+    expect(parseHostGoal(input).crewDefinitionId).toBe("crew");
+    expect(() => parseHostGoal({ ...input, projectIds: ["one", "two"] })).toThrow("one project");
+    expect(() => parseHostGoal({ ...input, crewDefinitionId: "bad id" })).toThrow("valid crew");
+  });
   it("persists optional planner identity separately and rejects permission/lifecycle overrides", () => {
     const input = {
       id: "role-goal",

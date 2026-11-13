@@ -51,8 +51,20 @@ export function opencodeConfigContent(external: ExternalMcp): string | undefined
  * inline config document in the child environment rather than through launch args. */
 export function opencodeLaunchEnv(
   external: ExternalMcp | undefined,
+  autoCompact?: "on" | "off",
 ): Record<string, string> | undefined {
   const content = external ? opencodeConfigContent(external) : undefined;
+  if (autoCompact === "on" || autoCompact === "off") {
+    const merged = JSON.stringify({
+      ...(content ? JSON.parse(content) : {}),
+      compaction: { auto: autoCompact === "on" },
+    });
+    if (new TextEncoder().encode(merged).byteLength > 64 * 1024)
+      throw new Error(
+        "OpenCode inline configuration is too large to apply auto-compaction settings.",
+      );
+    return { OPENCODE_CONFIG_CONTENT: merged };
+  }
   return content ? { OPENCODE_CONFIG_CONTENT: content } : undefined;
 }
 const MAX_SERVERS = 100;

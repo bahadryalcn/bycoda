@@ -5,6 +5,7 @@ import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import type { BoardTask } from "../model/taskClient";
+import { canFinishTaskWithFindings } from "../../../shared/model/host-contracts/task-findings";
 import {
   canEditTask,
   canMoveTask,
@@ -63,6 +64,7 @@ export type TaskActionHandlers = {
   onResolveNote: (noteId: string, resolved: boolean) => void;
   onOpenReview: (sessionId: string) => void;
   onRecheckReview: () => void;
+  onFinishWithFindings?: () => void;
 };
 
 /** What the owner can do with a task, as the card and the detail panel both
@@ -85,6 +87,7 @@ export function TaskActions({
   onOpenReviewSession,
   openingReviewSession,
   onRecheckReview,
+  onFinishWithFindings,
   compact = false,
 }: { task: BoardTask; compact?: boolean } & TaskActionHandlers) {
   useLocale();
@@ -204,6 +207,14 @@ export function TaskActions({
       label: t("Recheck review"),
       icon: <RefreshCw className="icon-xs" />,
       run: onRecheckReview,
+      disabled: busy,
+    });
+  if (task.finishWithFindingsSupported && onFinishWithFindings && canFinishTaskWithFindings(task))
+    secondary.push({
+      id: "finish-with-findings",
+      label: t("Finish with findings"),
+      icon: <Check className="icon-xs" />,
+      run: onFinishWithFindings,
       disabled: busy,
     });
   if (can("todo"))

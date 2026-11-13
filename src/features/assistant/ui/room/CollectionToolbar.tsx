@@ -55,7 +55,12 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
           ).map((job) => job.status as string),
     ),
   ];
-  if (filter && !statusValues.includes(filter)) statusValues.push(filter);
+  if (
+    filter &&
+    !statusValues.includes(filter) &&
+    !(view === "Jobs" && (filter === "working" || filter === "doneToday"))
+  )
+    statusValues.push(filter);
   const activeFilters =
     (filter ? 1 : 0) +
     (view === "Jobs" ? (jobProjectFilter ? 1 : 0) + (jobDateFilter !== "all" ? 1 : 0) : 0);
@@ -175,6 +180,12 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
                 value={filter}
                 options={[
                   { value: "", label: t("All") },
+                  ...(view === "Jobs"
+                    ? [
+                        { value: "working", label: t("Working") },
+                        { value: "doneToday", label: t("Done today") },
+                      ]
+                    : []),
                   ...statusValues.map((value) => ({
                     value,
                     label:

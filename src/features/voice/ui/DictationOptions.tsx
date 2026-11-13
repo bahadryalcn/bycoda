@@ -19,6 +19,7 @@ import {
   type VoiceSettings,
 } from "../model/voiceSettings";
 import styles from "./DictationButton.module.css";
+import { useTranscriptionModels } from "../hooks/useTranscriptionModels";
 
 /**
  * Composer shortcut next to the microphone: recognizer, model and language for the next
@@ -35,6 +36,9 @@ export function DictationOptions({
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const engine = settings.dictationEngine;
+  const catalog = useTranscriptionModels(open && engine === "openrouter");
+  const catalogError = catalog.isError;
+  const routerModels = catalog.isFetching || catalogError ? undefined : catalog.data;
   const engineName = (value: DictationEngine) =>
     value === "local" ? t("This computer") : DICTATION_PROVIDER_NAMES[value];
   // OpenAI and Grok reuse the marks of their harnesses; OpenRouter has no mark in the app.
@@ -68,7 +72,11 @@ export function DictationOptions({
     </Text>
   );
   const model =
-    engine === "local" ? undefined : dictationModel(engine, settings.dictationModels[engine]);
+    engine === "local"
+      ? undefined
+      : engine === "openrouter" && !settings.dictationModels.openrouter
+        ? routerModels?.[0]?.id
+        : dictationModel(engine, settings.dictationModels[engine]);
   const languageName =
     DICTATION_LANGUAGES.find(([code]) => code === settings.dictationLanguage)?.[1] ??
     t("Automatic");
@@ -137,9 +145,14 @@ export function DictationOptions({
                     label: t("Dictation model"),
                     icon: <Brain />,
                     submenuWidth: 280,
-                    submenu: DICTATION_MODELS[engine].map((entry) =>
-                      radio(`model:${entry.id}`, entry.label, entry.id === model),
-                    ),
+                    trailing:
+                      engine === "openrouter" && !routerModels
+                        ? chosen(catalogError ? t("Unavailable") : t("Loading…"))
+                        : undefined,
+                    submenu: (engine === "openrouter"
+                      ? (routerModels ?? [])
+                      : DICTATION_MODELS[engine]
+                    ).map((entry) => radio(`model:${entry.id}`, entry.label, entry.id === model)),
                   },
                 ]),
             {

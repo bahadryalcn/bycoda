@@ -64,3 +64,23 @@ it("lets the global thread reach owner-chosen folders and run commands, nothing 
   for (const action of ["folders.set", "folders.get", "assistant.folders.set"])
     expect(voiceGlobalToolAllowed("conversation", action), action).toBe(false);
 });
+
+it("lets the global thread use computer use, still without owner configuration", () => {
+  for (const action of [
+    "desktop.status",
+    "desktop.snapshot",
+    "desktop.windows.list",
+    "desktop.find",
+    "desktop.screenshot",
+    "desktop.wait",
+    "desktop.launch",
+    "desktop.clipboard",
+    "desktop.act",
+    "desktop.click",
+    "desktop.setValue",
+    "desktop.press",
+  ])
+    expect(voiceGlobalToolAllowed("conversation", action), action).toBe(true);
+  for (const action of ["desktop.configure", "desktop.stop", "desktop.resume", "desktop.arbitrary"])
+    expect(voiceGlobalToolAllowed("conversation", action), action).toBe(false);
+});

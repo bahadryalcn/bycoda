@@ -10,7 +10,9 @@ export const COMMAND_MAX_TIMEOUT_SECONDS = 1800;
 /** Host credentials must not reach a model-chosen process, nor its output. */
 const SECRET_ENV = /(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL)/i;
 export function commandEnvironment(source: NodeJS.ProcessEnv = process.env) {
-  return Object.fromEntries(Object.entries(source).filter(([name]) => !SECRET_ENV.test(name)));
+  const env = { ...source };
+  for (const name of Object.keys(env)) if (SECRET_ENV.test(name)) delete env[name];
+  return env;
 }
 
 export type CommandStatus = "running" | "completed" | "timed-out" | "cancelled" | "failed";

@@ -131,7 +131,10 @@ export interface CommandServicePorts<View> {
   crews: {
     ownerDirective(command: SessionCommand): Promise<unknown>;
     /** Refusal message when an unfinished crew run owns this conversation, otherwise undefined. */
-    managedSessionRefusal(sessionId: string): Promise<string | undefined>;
+    managedSessionRefusal(
+      sessionId: string,
+      commandType?: SessionCommand["type"],
+    ): Promise<string | undefined>;
   };
 }
 
@@ -184,7 +187,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
       // Crew-owned conversations are steered only from Crews, whose service dispatches as `crew:<run>`.
       const crewRefusal =
         CREW_OWNED_COMMANDS.has(command.type) && !context.principalId?.startsWith("crew:")
-          ? await ports.crews.managedSessionRefusal(sessionId)
+          ? await ports.crews.managedSessionRefusal(sessionId, command.type)
           : undefined;
       if (crewRefusal)
         throw new HostDomainRefusalError("COMMAND_INVALID", "validation", false, crewRefusal);

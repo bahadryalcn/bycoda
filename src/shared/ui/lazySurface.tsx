@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ComponentType, type ReactNode } from "react";
 import { RecoveryBoundary } from "./RecoveryBoundary";
+import { markModuleLoadError } from "./FailureState";
 
 /**
  * Keep optional surfaces out of the composer's startup dependency graph.
@@ -21,7 +22,7 @@ export function lazySurface<Props extends object>(
   const preload = () => {
     pending ??= load().catch((error: unknown) => {
       pending = undefined;
-      throw error;
+      throw markModuleLoadError(error);
     });
     return pending;
   };

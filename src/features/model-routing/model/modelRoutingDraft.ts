@@ -4,19 +4,55 @@ import {
   type ModelRoutingDraft,
   type ModelRoutingEntry,
   type ModelRoutingState,
+  type WorkCalendarCaps,
 } from "../../../shared/model/host-contracts/model-routing";
-import {
-  MAX_RUNNING_TASKS_LIMIT,
-  parseHostSettings,
-  type HostSettings,
-} from "../../tasks/public/hostSettings";
+import { parseHostSettings, type HostSettings } from "../../tasks/public/hostSettings";
+
+export type CapDraft = {
+  daily: { tokens: string; costUsd: string };
+  monthly: { tokens: string; costUsd: string };
+};
 
 export type OrderDraft = {
+  workCaps: { total: CapDraft; providers: Record<string, CapDraft> };
   routing: ModelRoutingDraft;
   percentages: Record<string, string>;
   maxRunMinutes: string;
   limits: { maxRunningTasks: string; dailyAgentMinutes: string };
 };
+
+function capDraft(caps?: WorkCalendarCaps): CapDraft {
+  return {
+    daily: {
+      tokens: String(caps?.daily?.tokens ?? ""),
+      costUsd: String(caps?.daily?.costUsd ?? ""),
+    },
+    monthly: {
+      tokens: String(caps?.monthly?.tokens ?? ""),
+      costUsd: String(caps?.monthly?.costUsd ?? ""),
+    },
+  };
+}
+
+function parseCaps(caps: CapDraft): WorkCalendarCaps | undefined {
+  const period = (value: CapDraft["daily"]) => {
+    const tokens = value.tokens.trim()
+      ? integer(
+          value.tokens,
+          0,
+          Number.MAX_SAFE_INTEGER,
+          "Token limits must be nonnegative whole numbers.",
+        )
+      : undefined;
+    const costUsd = value.costUsd.trim() ? Number(value.costUsd) : undefined;
+    if (costUsd !== undefined && (!Number.isFinite(costUsd) || costUsd < 0))
+      throw new Error("Cost limits must be nonnegative finite numbers.");
+    return tokens === undefined && costUsd === undefined ? undefined : { tokens, costUsd };
+  };
+  const daily = period(caps.daily);
+  const monthly = period(caps.monthly);
+  return daily || monthly ? { daily, monthly } : undefined;
+}
 
 /** Delegation belongs to its own layers, including when picker defaults contain it. */
 export function entrySettings(settings: Record<string, string>): Record<string, string> {
@@ -31,6 +67,15 @@ export function orderDraft(state: ModelRoutingState, limits: HostSettings): Orde
   const { version: _version, updatedAt: _updatedAt, ...routing } = state;
   return {
     routing: structuredClone(routing),
+    workCaps: {
+      total: capDraft(state.workCaps?.total),
+      providers: Object.fromEntries(
+        Object.entries(state.workCaps?.providers ?? {}).map(([provider, caps]) => [
+          provider,
+          capDraft(caps),
+        ]),
+      ),
+    },
     percentages: Object.fromEntries(
       state.entries.map((entry) => [entry.id, String(entry.minRemainingPercent ?? 0)]),
     ),
@@ -54,8 +99,17 @@ export function prepareOrderSave(draft: OrderDraft): {
   routing: ModelRoutingDraft;
   limits: HostSettings;
 } {
+  const total = parseCaps(draft.workCaps.total);
+  const providers = Object.fromEntries(
+    Object.entries(draft.workCaps.providers)
+      .map(([provider, caps]) => [provider, parseCaps(caps)])
+      .filter(([, caps]) => caps !== undefined),
+  );
+  const workCaps = total || Object.keys(providers).length ? { total, providers } : undefined;
+  const { workCaps: _previousCaps, ...otherRouting } = draft.routing;
   const routing: ModelRoutingDraft = {
-    ...draft.routing,
+    ...otherRouting,
+    ...(workCaps ? { workCaps } : {}),
     entries: draft.routing.entries.map((entry) => ({
       ...entry,
       modelSettings: entrySettings(entry.modelSettings),
@@ -100,8 +154,8 @@ export function prepareOrderSave(draft: OrderDraft): {
       maxRunningTasks: integer(
         draft.limits.maxRunningTasks,
         1,
-        MAX_RUNNING_TASKS_LIMIT,
-        "Concurrent tasks must be a whole number from 1 to 8.",
+        Number.MAX_SAFE_INTEGER,
+        "Concurrent tasks must be a positive safe integer.",
       ),
       dailyAgentMinutes: integer(
         draft.limits.dailyAgentMinutes,

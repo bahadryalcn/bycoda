@@ -53,6 +53,8 @@ const TerminalView = lazySurface(async () => {
 
 type Props = {
   dock: ProjectTerminalDock;
+  /** Hidden project docks retain shells but cannot own menus or menu actions. */
+  visible?: boolean;
   focused: boolean;
   onFocus: () => void;
   onHide: () => void;
@@ -117,6 +119,7 @@ function hideIcon(side: DockSide) {
 
 function ProjectTerminalDockComponent({
   dock,
+  visible = true,
   focused,
   onFocus,
   onHide,
@@ -151,6 +154,12 @@ function ProjectTerminalDockComponent({
     y: number;
     id: string;
   } | null>(null);
+  const isVisible = useStableCallback(() => visible);
+  if (!visible && (menu || profileMenu || terminalMenu)) {
+    setMenu(null);
+    setProfileMenu(null);
+    setTerminalMenu(null);
+  }
   // One reorder engine for every tab-like list: pointer drag, Alt+Up/Down, Escape/cancel cleanup
   // and screen-reader announcements. The context menu offers Move Up / Move Down.
   const sortable = useAnimatedReorder(
@@ -456,7 +465,7 @@ function ProjectTerminalDockComponent({
           ))}
         </div>
       </div>
-      {terminalMenu ? (
+      {visible && terminalMenu ? (
         <ExplorerMenu
           x={terminalMenu.x}
           y={terminalMenu.y}
@@ -489,6 +498,7 @@ function ProjectTerminalDockComponent({
             { kind: "item", id: "close-all", label: t("Close All Terminals") },
           ]}
           onPick={(id) => {
+            if (!isVisible()) return;
             if (id === "split") splitTerminal(terminalMenu.id);
             if (id === "move-up" || id === "move-down") {
               const moved = terminalMenu.id;
@@ -506,7 +516,7 @@ function ProjectTerminalDockComponent({
           onClose={() => setTerminalMenu(null)}
         />
       ) : null}
-      {profileMenu ? (
+      {visible && profileMenu ? (
         <ExplorerMenu
           anchor={profileMenu}
           side={dock.side === "top" ? "bottom" : "top"}
@@ -559,6 +569,7 @@ function ProjectTerminalDockComponent({
               : []),
           ]}
           onPick={(id) => {
+            if (!isVisible()) return;
             setProfileMenu(null);
             if (id === "retry-profiles") profiles?.retry();
             else if (id === "default") onSelectDefaultProfile?.();
@@ -570,7 +581,7 @@ function ProjectTerminalDockComponent({
           onClose={() => setProfileMenu(null)}
         />
       ) : null}
-      {menu ? (
+      {visible && menu ? (
         <ExplorerMenu
           anchor={menu}
           side={dock.side === "top" ? "bottom" : "top"}
@@ -613,6 +624,7 @@ function ProjectTerminalDockComponent({
             },
           ]}
           onPick={(id) => {
+            if (!isVisible()) return;
             if (id === "top" || id === "bottom" || id === "left" || id === "right") {
               onSideChange(id);
             }

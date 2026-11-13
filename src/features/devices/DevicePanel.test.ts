@@ -126,6 +126,26 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("hides input dialogs with the device panel and preserves their text draft", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await clickButton("Allow device control");
+  await clickButton("Device text input");
+  expect(document.activeElement).toBe(document.querySelector("textarea"));
+  await act(async () => {
+    const textarea = document.querySelector("textarea")!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "Keep this draft",
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api, active: false })));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => root.render(createElement(DevicePanel, { api, active: true })));
+  expect(document.querySelector("textarea")?.value).toBe("Keep this draft");
+});
+
 it("requires a booted device for capture and prevents booting a physical device", async () => {
   const api = makeApi();
   vi.mocked(api.list).mockResolvedValue({
@@ -133,7 +153,7 @@ it("requires a booted device for capture and prevents booting a physical device"
     errors: [],
   });
   await act(async () => root.render(createElement(DevicePanel, { api })));
-  expect(button("Capture").disabled).toBe(true);
+  expect(button("Capture").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   // A physical phone is never booted from here: no Boot/Start action, only connection help.
   expect(button("Boot")).toBeUndefined();
   expect(button("Start emulator")).toBeUndefined();
@@ -153,10 +173,10 @@ it("shows a stopped emulator's facts and boots it only from its named Start acti
   });
   await act(async () => root.render(createElement(DevicePanel, { api })));
   const facts = container.querySelector(".device-panel-device-facts")!;
-  expect(facts.textContent).toBe("Android 16 · Emulator · Stopped");
+  expect(facts.textContent).toBe("Android 16, Emulator, Stopped");
   // The picker marks platform and state; no facts are repeated as text beside it.
   expect(devicePicker().querySelector("svg[aria-label]")?.getAttribute("aria-label")).toBe(
-    "Android · Stopped",
+    "Android, Stopped",
   );
   expect(container.querySelector(".device-panel-bar")?.textContent).not.toContain("Emulator");
   expect(api.boot).not.toHaveBeenCalled();
@@ -262,7 +282,7 @@ it("never claims control by viewing and keeps input disabled after a rejected cl
   expect(api.claimControl).not.toHaveBeenCalled();
   await clickButton("Allow device control");
   const request = vi.mocked(api.claimControl!).mock.calls[0][1];
-  expect(button("Home").disabled).toBe(true);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   expect(container.querySelector(".device-panel-error summary")?.textContent).toBe(
     "Device control held by another controller",
   );
@@ -270,6 +290,17 @@ it("never claims control by viewing and keeps input disabled after a rejected cl
   await clickButton("Allow device control");
   expect(vi.mocked(api.claimControl!).mock.calls[1][1]).toBe(request);
   expect(api.action).not.toHaveBeenCalled();
+});
+
+it("shows control ownership in the device header", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  const control = button("Allow device control");
+  expect(control.closest(".device-panel-bar")).not.toBeNull();
+  expect(control.textContent).toContain("View only");
+  await clickButton("Allow device control");
+  expect(control.textContent).toContain("Control active");
+  expect(control.getAttribute("aria-checked")).toBe("true");
 });
 
 it("explains an invalid control lease and disables input until an explicit new claim", async () => {
@@ -281,11 +312,11 @@ it("explains an invalid control lease and disables input until an explicit new c
   expect(container.querySelector(".device-panel-error summary")?.textContent).toBe(
     "Device control expired. Claim control again to send input.",
   );
-  expect(button("Home").disabled).toBe(true);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   expect(api.claimControl).toHaveBeenCalledTimes(1);
   await clickButton("Allow device control");
   expect(api.claimControl).toHaveBeenCalledTimes(2);
-  expect(button("Home").disabled).toBe(false);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(false);
 });
 
 it("rejects unsupported Windows Android text locally and keeps the draft", async () => {
@@ -362,7 +393,7 @@ it("renews its own lease before expiry without releasing the renewed token", asy
   await act(async () => vi.advanceTimersByTimeAsync(2500));
   expect(api.renewControl).toHaveBeenCalled();
   expect(api.releaseControl).not.toHaveBeenCalled();
-  expect(button("Home").disabled).toBe(false);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(false);
   await clickButton("Home");
   expect(api.action).toHaveBeenCalledWith(device.id, { type: "home" }, "renewed");
 });
@@ -950,9 +981,9 @@ it("freezes the source frame while marking and never turns annotation gestures i
     finishCapture({ mime: "image/png", base64: "later-live-frame", capturedAt: "later" }),
   );
   expect(container.textContent).toContain("Marking · Frozen frame");
-  expect(button("Home").disabled).toBe(true);
-  expect(button("Capture").disabled).toBe(true);
-  expect(button("Device text input").disabled).toBe(true);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
+  expect(button("Capture").matches(':disabled, [aria-disabled="true"]')).toBe(true);
+  expect(button("Device text input").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   await clickButton("Add numbered pin");
   const canvas = container.querySelector<SVGSVGElement>(".image-annotation-canvas-layer")!;
   await act(async () =>
@@ -1091,16 +1122,16 @@ it("returns from annotation to pointer control without revoking the already enab
   await clickButton("Allow device control");
   await clickButton("Mark device screen");
   expect(button("Allow device control").getAttribute("aria-checked")).toBe("true");
-  expect(button("Home").disabled).toBe(true);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   await clickButton("Allow device control");
   expect(container.querySelector(".image-annotation-canvas-layer")).toBeNull();
   expect(button("Allow device control").getAttribute("aria-checked")).toBe("true");
-  expect(button("Home").disabled).toBe(false);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(false);
   await clickButton("Home");
   expect(api.action).toHaveBeenCalledWith(device.id, { type: "home" }, "test-lease");
   await clickButton("Allow device control");
   expect(button("Allow device control").getAttribute("aria-checked")).toBe("false");
-  expect(button("Home").disabled).toBe(true);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
 });
 
 it("restores a scoped annotation after remount without sharing its image, note or control permission with another scope", async () => {
@@ -1157,25 +1188,46 @@ it("restores a scoped annotation after remount without sharing its image, note o
   expect(restored.action).not.toHaveBeenCalled();
 });
 
+it("blocks screen gestures on a stale frame after another local action", async () => {
+  const api = makeApi();
+  const onAddDevice = vi.fn().mockResolvedValue(undefined);
+  await act(async () => root.render(createElement(DevicePanel, { api, onAddDevice })));
+  await clickButton("Allow device control");
+  const image = container.querySelector("img")!;
+  Object.defineProperties(image, {
+    naturalWidth: { configurable: true, value: 400 },
+    naturalHeight: { configurable: true, value: 800 },
+  });
+  await act(async () => image.dispatchEvent(new Event("load", { bubbles: true })));
+  vi.mocked(api.capture).mockRejectedValueOnce(new Error("Capture failed"));
+  await clickButton("Capture");
+  await openOptions();
+  await clickButton("Add device to conversation");
+  await act(async () =>
+    image.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true })),
+  );
+  expect(api.action).not.toHaveBeenCalled();
+});
+
 it("holds the unavailable-host control gate through a local draft action until a fresh capture succeeds", async () => {
   const api = makeApi();
   const onAddDevice = vi.fn().mockResolvedValue(undefined);
   await act(async () => root.render(createElement(DevicePanel, { api, onAddDevice })));
   await clickButton("Allow device control");
-  expect(button("Home").disabled).toBe(false);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(false);
   vi.mocked(api.capture).mockRejectedValueOnce(
     new Error("RPC_HOST_UNAVAILABLE: host connection closed"),
   );
   await clickButton("Capture");
-  expect(button("Home").disabled).toBe(true);
-  expect(button("Device text input").disabled).toBe(true);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
+  expect(button("Device text input").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   await openOptions();
   await clickButton("Add device to conversation");
   expect(onAddDevice).toHaveBeenCalledOnce();
   expect(api.capture).toHaveBeenCalledTimes(2);
   expect(container.textContent).toContain("Device added to draft.");
-  expect(button("Home").disabled).toBe(true);
-  expect(button("Device text input").disabled).toBe(true);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
+  expect(button("Device text input").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   let finishCapture!: (frame: DeviceFrame) => void;
   vi.mocked(api.capture).mockReturnValueOnce(
     new Promise((resolve) => {
@@ -1183,7 +1235,7 @@ it("holds the unavailable-host control gate through a local draft action until a
     }),
   );
   await clickButton("Capture");
-  expect(button("Home").disabled).toBe(true);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(true);
   await act(async () =>
     finishCapture({
       mime: "image/png",
@@ -1194,7 +1246,81 @@ it("holds the unavailable-host control gate through a local draft action until a
   expect(container.querySelector("img")!.getAttribute("src")).toContain(
     "verified-reconnected-frame",
   );
-  expect(button("Home").disabled).toBe(false);
-  expect(button("Device text input").disabled).toBe(false);
+  expect(button("Home").matches(':disabled, [aria-disabled="true"]')).toBe(false);
+  expect(button("Device text input").matches(':disabled, [aria-disabled="true"]')).toBe(false);
   expect(api.action).not.toHaveBeenCalled();
+});
+
+it("uses device defaults without starting or claiming the device", async () => {
+  localStorage.setItem("bycoda.toolPreferences.deviceAutoLive.v1", "false");
+  localStorage.setItem("bycoda.toolPreferences.devicePreviewScale.v1", "2");
+  const api = makeApi();
+  try {
+    await act(async () => root.render(createElement(DevicePanel, { api })));
+    const live = container.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Live view"]',
+    );
+    expect(live?.getAttribute("aria-checked")).toBe("false");
+    expect(api.capture).not.toHaveBeenCalled();
+    expect(api.start).not.toHaveBeenCalled();
+    expect(api.claimControl).not.toHaveBeenCalled();
+    await openOptions();
+    expect(document.body.textContent).toContain("200%");
+  } finally {
+    localStorage.removeItem("bycoda.toolPreferences.deviceAutoLive.v1");
+    localStorage.removeItem("bycoda.toolPreferences.devicePreviewScale.v1");
+  }
+});
+
+it("keeps mounted live and zoom choices when settings change and another device is selected", async () => {
+  const liveKey = "bycoda.toolPreferences.deviceAutoLive.v1";
+  const scaleKey = "bycoda.toolPreferences.devicePreviewScale.v1";
+  localStorage.setItem(liveKey, "false");
+  localStorage.setItem(scaleKey, "2");
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({
+    devices: [device, { ...device, id: "second" }],
+    errors: [],
+  });
+  try {
+    await act(async () => root.render(createElement(DevicePanel, { api })));
+    localStorage.setItem(liveKey, "true");
+    localStorage.setItem(scaleKey, "3");
+    await openOptions();
+    await act(async () => button("Zoom in").click());
+    await act(async () => devicePicker().click());
+    const options = document.body.querySelectorAll<HTMLButtonElement>('[role="option"]');
+    await act(async () => options[1].click());
+    expect(
+      container
+        .querySelector('[role="switch"][aria-label="Live view"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
+    await openOptions();
+    expect(document.body.textContent).toContain("225%");
+    expect(api.claimControl).not.toHaveBeenCalled();
+  } finally {
+    localStorage.removeItem(liveKey);
+    localStorage.removeItem(scaleKey);
+  }
+});
+
+it("keeps the mounted live default when a stopped device boots", async () => {
+  const key = "bycoda.toolPreferences.deviceAutoLive.v1";
+  localStorage.setItem(key, "false");
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({ devices: [{ ...device, booted: false }], errors: [] });
+  try {
+    await act(async () => root.render(createElement(DevicePanel, { api })));
+    localStorage.setItem(key, "true");
+    await act(async () => button("Start emulator").click());
+    expect(
+      container
+        .querySelector('[role="switch"][aria-label="Live view"]')
+        ?.getAttribute("aria-checked"),
+    ).toBe("false");
+    expect(api.capture).not.toHaveBeenCalled();
+  } finally {
+    localStorage.removeItem(key);
+  }
 });

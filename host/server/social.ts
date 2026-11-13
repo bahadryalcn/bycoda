@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { assistantCriticalApprovalRequired } from "../assistant/management/assistant-permissions";
 import { join } from "node:path";
 import type { SocialAccount } from "../../src/features/social/model/social";
 import { sessionWorkCwd } from "../../src/features/sessions/model/session";
 import { SocialPlatformError } from "../../src/integrations/social/adapter";
 import { createSocialAdapters } from "../../src/integrations/social/platformAdapters";
-import { ConversationDesktopControlTools } from "../conversation/conversation-desktop-control-tools";
+import {
+  ConversationDesktopControlTools,
+  isGlobalDesktopSubject,
+} from "../conversation/conversation-desktop-control-tools";
 import { ConversationDesktopRelay } from "../conversation/conversation-tools";
 import { readDesktopPresenceWithVoice } from "../desktop/desktop-voice-activity";
 import { desktopReviewSecret } from "../desktop/reviewed-desktop-scope";
@@ -122,7 +126,10 @@ export async function createSocialRuntime(
       join(dependencies.featureDirectory, "social"),
       dependencies.featureSession,
       Date.now,
-      socialAgentGenerator(join(dependencies.featureDirectory, "social")),
+      socialAgentGenerator(
+        join(dependencies.featureDirectory, "social"),
+        dependencies.engine.store,
+      ),
       xBrowser.adapter(),
       undefined,
       dependencies.decisionModels,
@@ -181,7 +188,11 @@ export async function createSocialRuntime(
   const conversationAccess = new RuntimeLogAccess(social, Date.now, (id) =>
     dependencies.assistant.threadBinding(id),
   );
-  const conversationDesktop = new ConversationDesktopRelay(dependencies.engine.store.environmentId);
+  const conversationDesktop = new ConversationDesktopRelay(
+    dependencies.engine.store.environmentId,
+    async (operation) =>
+      assistantCriticalApprovalRequired(await dependencies.assistant.profile(), operation),
+  );
   const conversationDesktopControl = new ConversationDesktopControlTools({
     environmentId: dependencies.engine.store.environmentId,
     desktop: dependencies.desktopControl,
@@ -201,14 +212,24 @@ export async function createSocialRuntime(
               : true,
       };
     },
-    approveOperation: ({ operation, operationHash, cwd, principal }, authorized) =>
-      conversationDesktop.call(
+    approveOperation: async ({ operation, operationHash, cwd, principal }, authorized) => {
+      // A Global assistant thread has no project folder; its approval names the thread only.
+      if (isGlobalDesktopSubject(principal))
+        return await conversationDesktop.callAssistantThread(
+          "desktop.act.authorize",
+          { operation, operationHash },
+          { threadId: principal.threadId, environmentId: principal.environmentId },
+          authorized,
+        );
+      if (!cwd) throw new Error("Desktop approval requires the original project folder.");
+      return await conversationDesktop.call(
         "desktop.act.authorize",
         { operation, operationHash },
         cwd,
         principal,
         authorized,
-      ),
+      );
+    },
   });
   let desktopSigningKey: string | undefined;
   const desktopSigningSecret = async () =>

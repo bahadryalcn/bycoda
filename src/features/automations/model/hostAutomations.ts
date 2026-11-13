@@ -11,8 +11,13 @@ import {
 /** Automations a machine's host runs on its own schedule, whether or not a
  * desktop is open. The host advertises this capability when it has them. */
 export const HOST_AUTOMATIONS = "automations";
+export const HOST_AUTOMATION_ROOM = "automations.room.v1";
+export const HOST_AUTOMATION_MIGRATION = "automations.host-migration";
+export const HOST_AUTOMATION_PROJECT_TASKS = "automations.project-tasks";
+export const HOST_AUTOMATION_PROJECT_SCAN = "automations.project-scan";
 
 export type HostAutomationInput = AutomationSchedule & {
+  template?: { kind: "project-scan"; sourceStewardId: string };
   id: string;
   name: string;
   prompt: string;
@@ -27,12 +32,26 @@ export type HostAutomationInput = AutomationSchedule & {
   /** Zero run time inherits the routing default; zero daily runs means no limit. */
   maxRunMinutes: number;
   maxRunsPerDay: number;
+  missedRunGraceMinutes?: number;
   enabled: boolean;
   /** Omitted inherits the execution Host project policy. */
   isolate?: boolean;
+  /** Omitted preserves the legacy scheduled trigger. */
+  trigger?:
+    | { kind: "continuous"; minimumGapMinutes: number }
+    | {
+        kind: "event";
+        event: "task.finished" | "task.blocked" | "session.waiting" | "automation.failed";
+      };
 };
 
 export type HostAutomation = HostAutomationInput & {
+  nativeMigrationState?: {
+    receipt: string;
+    fingerprint: string;
+    phase: "prepared" | "committed";
+    sourceAutomationId: string;
+  };
   nextRunAt: number;
   lastRunAt?: number;
   lastRunStatus?: AutomationRunStatus;
@@ -51,12 +70,17 @@ export type HostAutomationRun = {
   cleanupPending?: boolean;
   id: string;
   automationId: string;
-  trigger: "scheduled" | "manual";
+  trigger: "scheduled" | "manual" | "event";
   scheduledFor: number;
   createdAt: number;
   startedAt?: number;
   completedAt?: number;
   status: AutomationRunStatus;
+  /** Canonical Task created for this project automation occurrence. */
+  nativeRunId?: string;
+  nativeSessionId?: string;
+  taskId?: string;
+  cancellationRequested?: boolean;
   sessionId?: string;
   /** The session turn this run started. */
   runId?: string;
@@ -88,7 +112,11 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
     v.prompt.includes("\0")
   )
     throw new Error("Automation prompt is required.");
-  if (typeof v.projectId !== "string" || !ID.test(v.projectId))
+  if (
+    v.projectId !== undefined &&
+    v.projectId !== "" &&
+    (typeof v.projectId !== "string" || !ID.test(v.projectId))
+  )
     throw new Error("Choose a project for this automation.");
   if (!isRemoteProvider(v.harness)) throw new Error("Invalid automation agent");
   if (
@@ -115,12 +143,54 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
     throw new Error("Invalid model settings");
   if (v.isolate !== undefined && typeof v.isolate !== "boolean")
     throw new Error("Invalid automation options");
+  let trigger: HostAutomationInput["trigger"];
+  if (v.trigger !== undefined) {
+    if (!v.trigger || typeof v.trigger !== "object" || Array.isArray(v.trigger))
+      throw new Error("Invalid automation trigger");
+    const value = v.trigger as Record<string, unknown>;
+    if (
+      value.kind === "continuous" &&
+      Object.keys(value).every((key) => ["kind", "minimumGapMinutes"].includes(key))
+    )
+      trigger = {
+        kind: "continuous",
+        minimumGapMinutes: whole(value.minimumGapMinutes, 1, 10_080, "minimum gap"),
+      };
+    else if (
+      value.kind === "event" &&
+      Object.keys(value).every((key) => ["kind", "event"].includes(key)) &&
+      ["task.finished", "task.blocked", "session.waiting", "automation.failed"].includes(
+        String(value.event),
+      )
+    )
+      trigger = {
+        kind: "event",
+        event: value.event as
+          | "task.finished"
+          | "task.blocked"
+          | "session.waiting"
+          | "automation.failed",
+      };
+    else throw new Error("Invalid automation trigger");
+  }
+  if (
+    v.template !== undefined &&
+    (!v.template ||
+      typeof v.template !== "object" ||
+      Array.isArray(v.template) ||
+      (v.template as Record<string, unknown>).kind !== "project-scan" ||
+      typeof (v.template as Record<string, unknown>).sourceStewardId !== "string" ||
+      !ID.test((v.template as Record<string, unknown>).sourceStewardId as string))
+  )
+    throw new Error("Invalid automation template");
   return {
+    ...(v.template ? { template: v.template as HostAutomationInput["template"] } : {}),
+    ...(trigger ? { trigger } : {}),
     ...(typeof v.isolate === "boolean" ? { isolate: v.isolate } : {}),
     id: v.id,
     name: v.name.trim(),
     prompt: v.prompt,
-    projectId: v.projectId,
+    projectId: typeof v.projectId === "string" ? v.projectId : "",
     harness: v.harness,
     ...(v.providerAccountId === undefined
       ? {}
@@ -137,6 +207,9 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
     dayOfWeek: whole(v.dayOfWeek, 0, 6, "time"),
     maxRunMinutes: whole(v.maxRunMinutes ?? 0, 0, 10_080, "run limit"),
     maxRunsPerDay: whole(v.maxRunsPerDay ?? 0, 0, 1_000, "run limit"),
+    ...(v.missedRunGraceMinutes === undefined
+      ? {}
+      : { missedRunGraceMinutes: whole(v.missedRunGraceMinutes, 0, 43_200, "missed run grace") }),
     enabled: v.enabled !== false,
   };
 }

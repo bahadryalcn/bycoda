@@ -1,5 +1,21 @@
 # Integrations and messages
 
+Inbox keeps the issue list steady while read/unread history is checked in the
+background or synchronized from another window. The initial history load uses a
+delayed, quiet loading indicator; storage failures remain visible with **Retry**.
+
+## Connection setup
+
+Settings search finds **Phone**, **Sharing** and **Connection recovery** and opens the matching Connections tab. Renaming a machine saves its name without reconnecting; changing its address saves and reconnects. Address read or check failures offer **Retry**, keeping the last loaded addresses visible. Unsupported older desktops retain their saved alternate address.
+
+Sharing keeps a separate in-memory draft for each computer. A failed ngrok token save keeps the typed token for retry; an acknowledged save clears only that submitted token. Switching computers closes an open pairing view. Tokens are never saved in browser storage.
+
+## Integration setup
+
+Email and Slack accounts marked **Configured** have stored credentials. This label does not verify current provider access. **Save and test connection** reports its own successful connection result. Account drafts survive switching between Edit and Add within the open Settings page; Cancel discards that form. Account actions lock while a save is pending. Drafts and secrets remain in memory only.
+
+Jira token entry offers the shared show/hide control. When searching Jira projects, boards or Linear teams, **Select all shown** and **Clear shown selection** affect only matching rows; hidden selections stay selected.
+
 ## Inbox attachments
 
 Jira, GitHub, GitLab, Azure DevOps and Linear descriptions and comments use the same

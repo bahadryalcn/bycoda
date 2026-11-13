@@ -33,6 +33,45 @@ afterEach(async () => {
 
 const flush = () => act(async () => {});
 
+it("holds every dismissal path during a bounded operation and restores them afterwards", async () => {
+  const onClose = vi.fn();
+  const onEscape = vi.fn();
+  const render = async (closeDisabled: boolean) =>
+    act(async () =>
+      root.render(
+        createElement(Modal, {
+          title: "Returning",
+          onClose,
+          onEscape,
+          closeDisabled,
+          children: "Returning to conversation…",
+        }),
+      ),
+    );
+  const close = () => document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
+  const backdrop = () => document.querySelector<HTMLElement>("[data-modal-layer]")!;
+  const escape = () =>
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+  await render(true);
+  expect(close().disabled).toBe(true);
+  await act(async () => {
+    close().click();
+    backdrop().dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    escape();
+  });
+  expect(onClose).not.toHaveBeenCalled();
+  expect(onEscape).not.toHaveBeenCalled();
+  await render(false);
+  expect(close().disabled).toBe(false);
+  await act(async () => escape());
+  expect(onEscape).toHaveBeenCalledOnce();
+  await act(async () => backdrop().dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+  await act(async () => close().click());
+  expect(onClose).toHaveBeenCalledTimes(2);
+});
+
 describe("modal scrim layers", () => {
   it("renders one scrim per dialog layer, in opening order, for the nested-stack CSS", async () => {
     const Stack = ({ inner }: { inner: boolean }) =>

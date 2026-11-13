@@ -211,6 +211,22 @@ it("keeps failed writes visible after reloading the server state", async () => {
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Permission denied");
   expect(container.querySelector('section[aria-label="Ready"]')?.textContent).toContain("ENG-1");
 });
+it("does not claim an empty sprint after its refresh failed", async () => {
+  await click("Backlog & sprints");
+  const sprint = () =>
+    container.querySelector<HTMLElement>('.jira-board-sprint[aria-label="Sprint 21"]')!;
+  expect(sprint().textContent).toContain("Drop issues here");
+  const previous = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "jira_board_issues"
+      ? Promise.reject(new Error("Sprint unavailable"))
+      : previous(command, args),
+  );
+  await click("Refresh");
+  expect(sprint().textContent).toContain("Sprint unavailable");
+  expect(sprint().textContent).not.toContain("Drop issues here");
+  expect(sprint().querySelector('[role="alert"]')).not.toBeNull();
+});
 it("loads subsequent issue pages and does not duplicate cards", async () => {
   const previous = invoke.getMockImplementation()!;
   invoke.mockImplementation((command, args) =>

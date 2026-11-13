@@ -137,14 +137,24 @@ export function ShortcutEditor({
     setRecording(true);
   };
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps window keyboard and blur listeners in sync with the enabled editor's capture ownership
   useEffect(() => {
     if (!recording) return;
+    if (disabled) {
+      setRecording(false);
+      return;
+    }
+    const cancelRecording = () => {
+      setRecording(false);
+      setError(null);
+      onFeedbackChange?.(null);
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.isComposing || event.repeat) return;
       const bare = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
-      // An unmodified Tab leaves the recorder instead of trapping focus.
-      if (bare && event.code === "Tab") {
-        setRecording(false);
+      // Tab and Shift+Tab retain forward/backward keyboard navigation.
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && event.code === "Tab") {
+        cancelRecording();
         return;
       }
       event.preventDefault();
@@ -192,11 +202,13 @@ export function ShortcutEditor({
     };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", cancelRecording);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", cancelRecording);
     };
-  }, [onApply, onDisable, onFeedbackChange, recording]);
+  }, [disabled, onApply, onDisable, onFeedbackChange, recording]);
 
   return (
     <div
@@ -431,37 +443,18 @@ function KeybindingSettingsRow({
             })
           : undefined
       }
+      feedback={
+        feedback ? (
+          <SettingsFeedback state={feedback.state} immediate>
+            {feedback.state === "error"
+              ? feedback.message
+              : feedback.state === "loading"
+                ? t("Saving…")
+                : t("Saved")}
+          </SettingsFeedback>
+        ) : undefined
+      }
     >
-      <span className={styles.feedbackSlot} role={feedback?.state === "error" ? "alert" : "status"}>
-        <span className="sr-only">
-          {feedback?.state === "error"
-            ? feedback.message
-            : feedback?.state === "loading"
-              ? t("Saving…")
-              : feedback
-                ? t("Saved")
-                : ""}
-        </span>
-        {feedback ? (
-          <InfoPopover
-            label={
-              feedback.state === "error"
-                ? feedback.message
-                : feedback.state === "loading"
-                  ? t("Saving…")
-                  : t("Saved")
-            }
-          >
-            <p>
-              {feedback.state === "error"
-                ? feedback.message
-                : feedback.state === "loading"
-                  ? t("Saving…")
-                  : t("Saved")}
-            </p>
-          </InfoPopover>
-        ) : null}
-      </span>
       {row.command === "App: Quick Composer" ? (
         <QuickComposerShortcutEditor onSaved={onSaved} onFeedbackChange={setFeedback} />
       ) : (

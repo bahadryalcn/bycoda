@@ -197,7 +197,22 @@ fn complete_utf8_prefix(mut bytes: &[u8]) -> bool {
     }
     true
 }
-type Jobs = HashMap<Key, Arc<Mutex<Job>>>;
+#[derive(Default)]
+struct Jobs {
+    entries: HashMap<Key, Arc<Mutex<Job>>>,
+    cancellation_capacity_exhausted: bool,
+}
+impl Jobs {
+    #[cfg(test)]
+    fn new() -> Self { Self::default() }
+}
+impl std::ops::Deref for Jobs {
+    type Target = HashMap<Key, Arc<Mutex<Job>>>;
+    fn deref(&self) -> &Self::Target { &self.entries }
+}
+impl std::ops::DerefMut for Jobs {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.entries }
+}
 type ConversationKey = (String, SshSource);
 /// Native dialogs cannot be dismissed programmatically, so a slot is held until the
 /// dialog reports back, even after its request has already hit deadline or cancel.
@@ -238,6 +253,29 @@ fn evict_expired(jobs: &mut Jobs, now: Instant) {
 fn jobs() -> &'static Mutex<Jobs> {
     static JOBS: OnceLock<Mutex<Jobs>> = OnceLock::new();
     JOBS.get_or_init(Mutex::default)
+}
+fn cancel_or_reserve(jobs: &mut Jobs, key: &Key, issuer: &Arc<NativeServiceChannel>) -> Result<Arc<Mutex<Job>>, String> {
+    if let Some(job) = jobs.get(key) {
+        let mut value = job.lock().map_err(|_| "SSH execution unavailable")?;
+        value.authorize_issuer(issuer)?;
+        if value.active() { value.cancel = true; }
+        return Ok(job.clone());
+    }
+    evict_expired(jobs, Instant::now());
+    if jobs.len() >= MAX_JOBS {
+        // Never let a later receipt expiry admit an execute whose earlier Stop could not be recorded.
+        jobs.cancellation_capacity_exhausted = true;
+        return Err("SSH cancellation receipts are full; new execution remains fenced".into());
+    }
+    // A delayed original execute must not escape Stop after cancellation arrived first.
+    // Keep this tombstone for the exact issuer lifetime; no process was entered.
+    let job = Arc::new(Mutex::new(Job {
+        issuer: issuer.clone(), server: String::new(), signature: String::new(), endpoint_digest: String::new(),
+        state: "cancelled", exit_code: None, reason: Some("cancelled_before_start"), remote_unknown: false, cancel: true,
+        output: vec![], stderr: vec![], pending_stdout: vec![], pending_stderr: vec![], output_full: false, total: 0, settled_at: None,
+    }));
+    jobs.insert(key.clone(), job.clone());
+    Ok(job)
 }
 fn text(value: &Value, field: &str, limit: usize) -> Result<String, String> {
     value[field]
@@ -724,6 +762,14 @@ pub(super) fn call(
                 &["requestId"]
             },
         )?;
+        if action == "servers.ssh.cancel" {
+            authorize_current()?;
+            let mut jobs = jobs().lock().map_err(|_| "SSH executions unavailable")?;
+            let job = cancel_or_reserve(&mut jobs, &key, issuer)?;
+            drop(jobs);
+            let result = job.lock().map_err(|_| "SSH execution unavailable")?.result(&key.request, 0, 16384);
+            return Ok(result);
+        }
         let job = jobs()
             .lock()
             .map_err(|_| "SSH executions unavailable")?
@@ -733,14 +779,6 @@ pub(super) fn call(
         job.lock()
             .map_err(|_| "SSH execution unavailable")?
             .authorize_issuer(issuer)?;
-        if action == "servers.ssh.cancel" {
-            authorize_current()?;
-            let mut job = job.lock().map_err(|_| "SSH execution unavailable")?;
-            if job.active() {
-                job.cancel = true;
-            }
-            return Ok(job.result(&key.request, 0, 16384));
-        }
         let offset = number(input, "offset", 0, 0, u64::MAX)?;
         let max = number(input, "maxBytes", 16384, 1, 65536)? as usize;
         return Ok(job.lock().map_err(|_| "SSH execution unavailable")?.result(
@@ -771,7 +809,7 @@ pub(super) fn call(
             job.replay(issuer, &signature, &reviewed_digest)?;
             return Ok(job.result(&key.request, 0, 16384));
         }
-        if jobs.len() >= MAX_JOBS
+        if jobs.cancellation_capacity_exhausted || jobs.len() >= MAX_JOBS
             || jobs
                 .values()
                 .filter(|j| j.lock().map(|j| j.active()).unwrap_or(true))
@@ -1017,6 +1055,41 @@ mod tests {
         assert!(job
             .replay(&NativeServiceChannel::for_test(), "command", "digest")
             .is_err());
+    }
+    #[test]
+    fn cancel_before_execute_retains_exact_issuer_tombstone_without_start_or_replay() {
+        let key = Key { environment: "host".into(), source: SshSource::AssistantThread { thread: "room".into() }, request: "original".into() };
+        let issuer = NativeServiceChannel::for_test();
+        let mut jobs = Jobs::new();
+        let reserved = cancel_or_reserve(&mut jobs, &key, &issuer).unwrap();
+        {
+            let job = reserved.lock().unwrap();
+            assert_eq!(job.state, "cancelled");
+            assert_eq!(job.reason, Some("cancelled_before_start"));
+            assert!(!job.active());
+            assert!(!job.remote_unknown);
+            assert!(job.replay(&issuer, "delayed-command", "digest").is_err());
+        }
+        evict_expired(&mut jobs, Instant::now() + SETTLED_TTL + Duration::from_secs(1));
+        assert!(jobs.contains_key(&key));
+        assert!(Arc::ptr_eq(&reserved, &cancel_or_reserve(&mut jobs, &key, &issuer).unwrap()));
+        assert!(cancel_or_reserve(&mut jobs, &key, &NativeServiceChannel::for_test()).is_err());
+    }
+    #[test]
+    fn cancellation_capacity_cannot_allow_delayed_execution_after_receipts_expire() {
+        let issuer = NativeServiceChannel::for_test();
+        let make_key = |request: String| Key { environment: "host".into(), source: SshSource::AssistantThread { thread: "room".into() }, request };
+        let mut jobs = Jobs::new();
+        for index in 0..MAX_JOBS {
+            let mut job = fixture_job();
+            job.state = "failed";
+            job.settled_at = Some(Instant::now());
+            jobs.insert(make_key(index.to_string()), Arc::new(Mutex::new(job)));
+        }
+        assert!(cancel_or_reserve(&mut jobs, &make_key("delayed".into()), &issuer).is_err());
+        evict_expired(&mut jobs, Instant::now() + SETTLED_TTL + Duration::from_secs(1));
+        assert!(jobs.is_empty());
+        assert!(jobs.cancellation_capacity_exhausted);
     }
     #[test]
     fn settled_receipts_expire_without_evicting_active_jobs() {

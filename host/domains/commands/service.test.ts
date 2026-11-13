@@ -163,6 +163,13 @@ function queuedSetup() {
 type Row = CommandQueueSnapshot["messages"][number];
 
 describe("command domain admission", () => {
+  it("passes exact command type to the crew owner boundary before ordinary admission", async () => {
+    const { service, ports, auth } = setup();
+    await service.dispatch(send, auth);
+    expect(ports.crews.managedSessionRefusal).toHaveBeenCalledWith("s", "send");
+    expect(ports.execution.command).toHaveBeenCalledTimes(1);
+    expect(ports.nativeProjection.withRetiredWriters).toHaveBeenCalled();
+  });
   it("refuses conversation commands on a crew-managed session except from the crew service", async () => {
     const { service, ports, auth } = setup();
     vi.mocked(ports.crews.managedSessionRefusal).mockResolvedValue("managed by a crew");

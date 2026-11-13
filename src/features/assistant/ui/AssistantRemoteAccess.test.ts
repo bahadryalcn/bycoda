@@ -2,13 +2,20 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+const remoteState = vi.hoisted(() => ({ failed: false }));
 vi.mock("../../connections/model/connections", () => ({
   useRemoteMachines: () => ({
-    machines: [{ id: "remote", name: "Office", environmentId: "remote-host" }],
+    machines: remoteState.failed
+      ? []
+      : [{ id: "remote", name: "Office", environmentId: "remote-host" }],
     loading: false,
+    error: remoteState.failed ? "Could not load paired Hosts" : undefined,
   }),
 }));
-vi.mock("../../../shared/i18n", () => ({ t: (value: string) => value }));
+vi.mock("../../../shared/i18n", () => ({
+  t: (value: string) => value,
+  useT: () => (value: string) => value,
+}));
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 vi.mock("../../../shared/ui/Modal", () => ({
@@ -61,6 +68,31 @@ vi.mock("../../../shared/ui/InlineError", () => ({
   InlineError: ({ children }: { children: React.ReactNode }) => createElement("p", null, children),
 }));
 import { AssistantRemoteAccess } from "./AssistantRemoteAccess";
+it("does not turn a failed paired Host read into an empty list", async () => {
+  remoteState.failed = true;
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div"),
+    root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(AssistantRemoteAccess, {
+          threadId: "failed-read",
+          environmentId: "origin",
+          sourceStatus: "registered",
+          open: true,
+          onClose: vi.fn(),
+        }),
+      ),
+    );
+    expect(container.textContent).toContain("Could not load paired Hosts");
+    expect(container.textContent).not.toContain("No other paired Host is available.");
+  } finally {
+    await act(async () => root.unmount());
+    remoteState.failed = false;
+    vi.unstubAllGlobals();
+  }
+});
 it("shows selected Room readiness, paired Host and policy denial without enabling a grant", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div"),

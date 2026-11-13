@@ -38,6 +38,55 @@ const button = (name: string) =>
   Array.from(document.body.querySelectorAll("button")).find(
     (el) => el.textContent === name || el.getAttribute("aria-label") === name,
   )!;
+it("keeps a newer retained capture comment and its annotation scope after older delivery", async () => {
+  const receive = vi.fn((_file: unknown) => true);
+  const stop = registerBrowserComposer("/project", "shell", receive);
+  try {
+    await render();
+    await start();
+    await select();
+    await act(async () => button("Keep selection and select another").click());
+    await act(async () => button("Selected browser element").click());
+    const field =
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Selection 1"]') ??
+      document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea')!;
+    const type = (value: string) =>
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          field,
+          value,
+        );
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    type("Submitted comment");
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = vi.mocked(hostFeatureRequest).getMockImplementation()!;
+    vi.mocked(hostFeatureRequest).mockImplementation(async (...args) => {
+      if (args[2] === "browser.annotation.read") await waiting;
+      return original(...args);
+    });
+    await act(async () => button("Add selection to composer").click());
+    type("New unsent comment");
+    await act(async () => {
+      release();
+    });
+    expect(receive).toHaveBeenCalledOnce();
+    expect(receive.mock.calls[0][0]).toMatchObject({
+      browserAnnotation: { comment: "Submitted comment" },
+    });
+    expect(field.value).toBe("New unsent comment");
+    expect(
+      vi
+        .mocked(hostFeatureRequest)
+        .mock.calls.some((call) => call[2] === "browser.annotation.cancel"),
+    ).toBe(false);
+  } finally {
+    stop();
+  }
+});
 async function render(sessionId = "host", composerSessionId = "shell") {
   await act(async () =>
     root.render(createElement(BrowserPanel, { cwd: "/project", sessionId, composerSessionId })),
@@ -95,6 +144,28 @@ afterEach(() => {
   container.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it("hides the selection dialog while its conversation is hidden", async () => {
+  await render();
+  await start();
+  await select();
+  expect(
+    document.querySelector('[role="dialog"][aria-label="Selected browser element"]'),
+  ).not.toBeNull();
+  await act(async () =>
+    root.render(
+      createElement(BrowserPanel, {
+        cwd: "/project",
+        sessionId: "host",
+        composerSessionId: "shell",
+        active: false,
+      }),
+    ),
+  );
+  expect(
+    document.querySelector('[role="dialog"][aria-label="Selected browser element"]'),
+  ).toBeNull();
 });
 
 it("routes selection clicks to inspection, then only adds a draft attachment after review", async () => {
@@ -246,7 +317,9 @@ it("clears on remove, Escape, navigation and lease loss", async () => {
     vi.advanceTimersByTime(30_000);
   });
   expect(button("Cancel selection")).toBeUndefined();
-  expect(button("Select element and add to composer").disabled).toBe(true);
+  expect(
+    button("Select element and add to composer").matches(":disabled, [aria-disabled=true]"),
+  ).toBe(true);
 });
 it("preserves the element and comment when its compact editor closes", async () => {
   await render();

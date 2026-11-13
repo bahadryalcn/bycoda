@@ -49,12 +49,13 @@ it.each(["mac", "win", "linux", "browser"] as const)(
     const dialog = element;
     expect(dialog.textContent).toContain(error);
     const recovery = [...dialog.querySelectorAll("button")].find(
-      (button) => button.textContent === "Open Privacy Settings",
+      (button) => button.textContent === "Review access",
     );
     if (target === "mac" || target === "win") {
+      // Recovery opens the shared permission setup guide; the guide owns the
+      // settings launch, so opening it must not dismiss the voice error.
       expect(recovery).toBeDefined();
       await act(async () => recovery!.click());
-      expect(openPrivacySettings).toHaveBeenCalledExactlyOnceWith("microphone");
       expect(onDismiss).not.toHaveBeenCalled();
     } else expect(recovery).toBeUndefined();
     const dismiss = [...dialog.querySelectorAll("button")].find(

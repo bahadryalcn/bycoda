@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 import { t, useLocale } from "../../../shared/i18n";
 import { Heading } from "../../../shared/ui/Heading";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
@@ -80,7 +81,9 @@ export function MemberToolsPicker({
   const lists = { ...(value ?? { preset: "custom" as const }) };
   const names = (values: string[]) => [
     ...new Set(
-      values.map((entry) => entry.trim().slice(0, CREW_TOOL_LIMITS.nameChars)).filter(Boolean),
+      values
+        .map((entry) => truncateCodeUnits(entry.trim(), CREW_TOOL_LIMITS.nameChars))
+        .filter(Boolean),
     ),
   ];
   return (

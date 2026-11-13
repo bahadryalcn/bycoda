@@ -384,6 +384,14 @@ describe("GitChangesPanel branch switching", () => {
 });
 
 describe("GitChangesPanel commit message generation", () => {
+  it("keeps global model settings out of the commit field", async () => {
+    vi.mocked(gitDiffIndex).mockResolvedValue(index());
+    await renderPanel();
+    expect(container.querySelector('[aria-label="AI generation settings"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Generate commit message"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Commit and pull request generation");
+  });
+
   it("blocks deferred generation commits from the header while staging stays usable and preserves the draft after index changes", async () => {
     vi.mocked(gitCommit).mockClear();
     vi.mocked(gitDiffIndex).mockResolvedValue(
@@ -479,13 +487,8 @@ describe("GitChangesPanel commit message generation", () => {
     );
     vi.mocked(generateCommitMessage).mockResolvedValue("Fix generation");
     await renderPanel();
-    const extras = container.querySelector<HTMLButtonElement>(
-      '[aria-label="AI generation settings"]',
-    )!;
-    expect(extras.textContent).toBe("");
-    expect(
-      extras.parentElement?.querySelector('[aria-label="Generate commit message"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[aria-label="AI generation settings"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Generate commit message"]')).not.toBeNull();
     expect(container.textContent).not.toContain("Commit and pull request generation");
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')!.click(),

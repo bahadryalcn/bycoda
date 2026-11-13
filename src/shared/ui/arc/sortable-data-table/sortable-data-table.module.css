@@ -36,6 +36,20 @@
   letter-spacing: var(--tracking-body);
   text-align: left;
 }
+/* Intrinsic categories reserve their full label; the identity column yields.
+   Bounded cells can use shared truncation and recover full values in a tooltip. */
+.table[data-intrinsic] [data-sizing="flex"] {
+  width: 100%;
+  max-width: 0;
+}
+.table [data-sizing="content"] {
+  width: 1%;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.table [data-sizing="content"] > * {
+  flex-shrink: 0;
+}
 .table[data-fixed] {
   table-layout: fixed;
 }
@@ -359,7 +373,7 @@
   }
 }
 
-@media (max-width: 620px) {
+@container (max-width: 38.75rem) {
   .scroller {
     overflow: visible;
   }
@@ -499,6 +513,14 @@
   .table[data-selectable] td[data-primary]:not([data-sortable]) {
     padding-left: 0;
   }
+  .table[data-intrinsic] [data-sizing="flex"] {
+    width: auto;
+    max-width: none;
+  }
+  .table [data-sizing="content"] {
+    width: auto;
+    flex: none;
+  }
   .table td[data-primary] {
     order: 0;
     flex: 1 1 0;
@@ -547,15 +569,17 @@
     padding-left: var(--space-4);
   }
 }
-@media (max-width: 620px) and (hover: hover) and (pointer: fine) {
-  .table tbody tr:hover {
-    --row-fill: var(--ui-surface-hover);
-  }
-  .table[data-selectable] tbody tr[data-selected]:hover {
-    --row-fill: var(--ui-surface-selected);
-  }
-  .table tbody tr:hover td {
-    background: transparent;
+@media (hover: hover) and (pointer: fine) {
+  @container (max-width: 38.75rem) {
+    .table tbody tr:hover {
+      --row-fill: var(--ui-surface-hover);
+    }
+    .table[data-selectable] tbody tr[data-selected]:hover {
+      --row-fill: var(--ui-surface-selected);
+    }
+    .table tbody tr:hover td {
+      background: transparent;
+    }
   }
 }
 

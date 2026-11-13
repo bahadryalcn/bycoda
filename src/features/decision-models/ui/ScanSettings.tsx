@@ -1,5 +1,9 @@
+import {
+  useRetainedTransaction,
+  retainedTransactionValue,
+} from "../../model-routing/public/settings";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
@@ -18,23 +22,33 @@ import { ErrorNotice } from "./ErrorNotice";
 type FieldErrors = { ports?: string; folders?: string };
 /** Extra ports and folders for the scan, saved through the discovery settings RPC. */
 export function ScanSettings({
+  hostId,
   client,
   onScan,
   scanning = false,
 }: {
+  hostId?: string;
   client: DecisionModelsClient;
   onScan: () => Promise<void>;
   scanning?: boolean;
 }) {
+  const instanceId = useId();
+  const identity = hostId ?? instanceId;
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
-  const [ports, setPorts] = useState("");
-  const [folders, setFolders] = useState("");
-  const [saved, setSaved] = useState({ ports: "", folders: "" });
+  const [ports, setPorts] = useRetainedTransaction(`decision:${identity}:scan:ports`, "");
+  const [folders, setFolders] = useRetainedTransaction(`decision:${identity}:scan:folders`, "");
+  const [saved, setSaved] = useRetainedTransaction(`decision:${identity}:scan:saved`, {
+    ports: "",
+    folders: "",
+  });
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<unknown>(null);
+  const [saving, setSaving] = useRetainedTransaction(`decision:${identity}:scan:saving`, false);
+  const [saveError, setSaveError] = useRetainedTransaction<unknown>(
+    `decision:${identity}:scan:error`,
+    null,
+  );
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -50,9 +64,18 @@ export function ScanSettings({
           ports: formatPorts(result.extraPorts),
           folders: formatFolders(result.extraFolders),
         };
-        setPorts(next.ports);
-        setFolders(next.folders);
-        setSaved(next);
+        const previous = retainedTransactionValue<{ ports: string; folders: string }>(
+          `decision:${identity}:scan:saved`,
+        );
+        const currentPorts = retainedTransactionValue<string>(`decision:${identity}:scan:ports`);
+        const currentFolders = retainedTransactionValue<string>(
+          `decision:${identity}:scan:folders`,
+        );
+        if (!previous || (currentPorts === previous.ports && currentFolders === previous.folders)) {
+          setPorts(next.ports);
+          setFolders(next.folders);
+          setSaved(next);
+        }
         setLoaded(true);
       },
       (error: unknown) => {
@@ -60,9 +83,10 @@ export function ScanSettings({
       },
     );
     return () => setLoadError(null);
-  }, [client, attempt]);
+  }, [client, attempt, identity, setPorts, setFolders, setSaved]);
   const dirty = ports !== saved.ports || folders !== saved.folders;
   const save = () => {
+    if (retainedTransactionValue<boolean>(`decision:${identity}:scan:saving`)) return;
     if (!dirty) {
       setSaveError(null);
       void onScan().catch((error: unknown) => setSaveError(error));
@@ -91,7 +115,6 @@ export function ScanSettings({
       .set({ extraPorts: portResult.value, extraFolders: folderResult.value })
       .then(
         (result) => {
-          if (!alive.current) return;
           const next = {
             ports: formatPorts(result.extraPorts),
             folders: formatFolders(result.extraFolders),
@@ -103,7 +126,6 @@ export function ScanSettings({
           void onScan().catch((error: unknown) => setSaveError(error));
         },
         (error: unknown) => {
-          if (!alive.current) return;
           setSaveError(error);
           setSaving(false);
         },

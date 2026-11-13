@@ -25,6 +25,7 @@ export function EffortScale({
   disabled,
   describedBy,
   showValue = true,
+  showLabel = true,
   keepFocus,
   onValueChange,
 }: {
@@ -34,6 +35,8 @@ export function EffortScale({
   disabled?: boolean;
   describedBy?: string;
   showValue?: boolean;
+  /** Hide the visible label when a surrounding row already names the scale; it stays the accessible name. */
+  showLabel?: boolean;
   keepFocus?: boolean;
   onValueChange: (value: string) => void;
 }) {
@@ -44,9 +47,11 @@ export function EffortScale({
     <div className={styles.scale} data-disabled={disabled || undefined}>
       {showValue ? (
         <div className={styles.header}>
-          <Text size="caption" tone="secondary" wrap="anywhere">
-            {label}
-          </Text>
+          {showLabel ? (
+            <Text size="caption" tone="secondary" wrap="anywhere">
+              {label}
+            </Text>
+          ) : null}
           <Text size="caption" weight="medium" className={styles.value} wrap="anywhere">
             {options.find((option) => option.value === value)?.label}
           </Text>

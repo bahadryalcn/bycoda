@@ -27,10 +27,15 @@ const listeners = new Set<() => void>();
 
 function loadPack() {
   if (pack || loading) return;
-  loading = import("react-material-icon-theme").then((mod) => {
-    pack = mod;
-    for (const listener of listeners) listener();
-  });
+  loading = import("react-material-icon-theme")
+    .then((mod) => {
+      pack = mod;
+      for (const listener of listeners) listener();
+    })
+    .catch((error: unknown) => {
+      // Optional decoration keeps its sized fallback; do not retry on every row mount.
+      console.warn("Could not load file icons", error);
+    });
 }
 
 function subscribe(onStoreChange: () => void) {

@@ -16,6 +16,7 @@ import {
   validateDesktopAct,
 } from "./desktop-act-command";
 import { DesktopStatusChanges } from "./desktop-status-changes";
+import { DesktopSystemPermissions, normalizeDesktopError } from "./desktop-system-permissions";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
@@ -62,6 +63,8 @@ const envelopeSchema = z.object({
   error: z
     .object({
       code: z.string(),
+      message: z.string().optional(),
+      platform_detail: z.string().optional(),
       disposition: z.object({ delivery: z.string(), retry: z.string() }).optional(),
     })
     .optional(),
@@ -112,10 +115,12 @@ export class HostDesktopControl {
   private readonly namespace = `bycoda-${randomUUID()}`;
   private readonly snapshots = new Map<string, Snapshot>();
   private helperState?: { path: string; parent: string; dev: number; ino: number };
+  private readonly permissions: DesktopSystemPermissions;
   constructor(
     private readonly store: HostStore,
     private readonly ports: DesktopControlPorts = {},
   ) {
+    this.permissions = new DesktopSystemPermissions(ports.run ?? nativeRun, () => this.now());
     this.ready = (async () => {
       await store.ready;
       await store.db.scope(() =>
@@ -475,6 +480,7 @@ export class HostDesktopControl {
         throw new Error("Desktop helper command identity did not match the request.");
       if (result.exitCode !== 0 && output.ok)
         throw new Error("Desktop helper exit status contradicted its result.");
+      if (!output.ok && output.error) output.error = normalizeDesktopError(output.error);
       return output;
     } finally {
       if (this.active === controller) {
@@ -485,7 +491,11 @@ export class HostDesktopControl {
   }
   private requireData(envelope: Envelope) {
     if (!envelope.ok || !envelope.data)
-      throw new Error(`Desktop helper refused observation (${envelope.error?.code ?? "unknown"}).`);
+      throw new Error(
+        envelope.error?.code === "target-elevated"
+          ? envelope.error.message
+          : `Desktop helper refused observation (${envelope.error?.code ?? "unknown"}).`,
+      );
     return z.record(z.string(), z.unknown()).parse(envelope.data);
   }
   private async windows(
@@ -652,7 +662,14 @@ export class HostDesktopControl {
         ok: envelope.ok,
         delivery: disposition.success ? disposition.data.delivery : "unknown",
         retry: disposition.success ? disposition.data.retry : "unknown",
-        ...(envelope.error ? { errorCode: envelope.error.code } : {}),
+        ...(envelope.error
+          ? {
+              errorCode: envelope.error.code,
+              ...(envelope.error.code === "target-elevated"
+                ? { errorMessage: envelope.error.message }
+                : {}),
+            }
+          : {}),
       };
       await this.store.db.runRecoveryBookkeeping(() =>
         this.store.transaction(async () => {
@@ -791,6 +808,10 @@ export class HostDesktopControl {
         } catch (error) {
           message = error instanceof Error ? error.message : "Desktop helper is unavailable.";
         }
+        const permissions = await this.permissions.read(
+          verified ? configuration.binaryPath : undefined,
+          verified ? configuration.binarySha256 : undefined,
+        );
         return {
           configuration,
           status: {
@@ -799,6 +820,7 @@ export class HostDesktopControl {
             enabled: configuration.enabled,
             stopped: this.halted,
             active: !!this.active,
+            permissions,
             ...(this.currentAction ? { currentAction: { ...this.currentAction } } : {}),
             upstreamRef: AGENT_DESKTOP_UPSTREAM_REF,
             protocol: AGENT_DESKTOP_PROTOCOL,
@@ -1102,7 +1124,14 @@ export class HostDesktopControl {
             ok: envelope.ok,
             delivery: disposition.success ? disposition.data.delivery : "unknown",
             retry: disposition.success ? disposition.data.retry : "unknown",
-            ...(envelope.error ? { errorCode: envelope.error.code } : {}),
+            ...(envelope.error
+              ? {
+                  errorCode: envelope.error.code,
+                  ...(envelope.error.code === "target-elevated"
+                    ? { errorMessage: envelope.error.message }
+                    : {}),
+                }
+              : {}),
           };
           // The already-attempted effect's receipt must survive caller revocation.
           await this.store.db.runRecoveryBookkeeping(() =>

@@ -27,7 +27,7 @@ export function LinkSessionWorkItemDialog({
     event.preventDefault();
     const item = parseGithubWorkItemUrl(url.trim());
     if (!item) {
-      setError("Enter a valid GitHub issue or pull request URL.");
+      setError(t("Enter a valid GitHub issue or pull request URL."));
       return;
     }
     onSave(item);

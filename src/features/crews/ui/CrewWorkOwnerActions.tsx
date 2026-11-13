@@ -1,6 +1,6 @@
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Text } from "../../../shared/ui/Text";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -77,6 +77,9 @@ function Composer({
   const assignKey = JSON.stringify(["assign", run.id, memberId, title, text.trim()]);
   const noteKey = JSON.stringify(["note", run.id, memberId, text.trim()]);
   const key = mode === "assign" ? assignKey : noteKey;
+  const draftIdentity = JSON.stringify([key, text]);
+  const currentDraft = useRef(draftIdentity);
+  currentDraft.current = draftIdentity;
   const plan =
     mode === "assign"
       ? planAssignment(run, { memberId, title, prompt: text, requestId: "" })
@@ -102,8 +105,8 @@ function Composer({
           : Promise.reject(new Error("Invalid input"));
       })
       .then((ok) => {
-        if (!ok) return;
-        setText("");
+        if (!ok || currentDraft.current !== draftIdentity) return;
+        setText((current) => (current === text ? "" : current));
         setSent(mode === "note");
       });
   return (

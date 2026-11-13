@@ -7,6 +7,7 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { useAddAndTest } from "../hooks/useAddAndTest";
+import { useDecisionDialogClose } from "../hooks/useDecisionDialogClose";
 import type { DecisionModelsClient, DecisionResponse } from "../model/decisionModelsClient";
 import type { DecisionSource, DecisionSourceInput, SourceTestResult } from "../model/decisionTypes";
 import {
@@ -57,6 +58,11 @@ export function FolderModelDialog({
   );
   const flow = useAddAndTest({ onAdd: (input) => onAdd(input), onTest });
   const locked = flow.busy || flow.done;
+  const close = useDecisionDialogClose(
+    !flow.done && (path !== "" || name !== "" || runtimePath !== "" || adapter !== "systemone"),
+    flow.busy,
+    onClose,
+  );
   const models: FolderModel[] =
     result?.models ??
     (result
@@ -197,10 +203,10 @@ export function FolderModelDialog({
         "Choose the folder containing your model. The app finds the model and runtime for you.",
       )}
       size="md"
-      onClose={onClose}
+      onClose={close.requestClose}
       footer={
         <ModalActions>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={flow.busy} onClick={close.requestClose}>
             {flow.done ? t("Close") : t("Cancel")}
           </Button>
           {!flow.done && selected ? (
@@ -210,7 +216,7 @@ export function FolderModelDialog({
               disabled={scanning || locked || (!runtimePath.trim() && !selected.endpoint)}
               onClick={submit}
             >
-              {t("Test and add")}
+              {t("Add and test")}
             </Button>
           ) : null}
         </ModalActions>
@@ -340,6 +346,7 @@ export function FolderModelDialog({
           <InlineMessage tone={flow.outcome.tone}>{flow.outcome.text}</InlineMessage>
         ) : null}
       </div>
+      {close.dialog}
     </Modal>
   );
 }

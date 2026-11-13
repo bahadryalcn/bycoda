@@ -26,6 +26,7 @@ import * as goalBudget from "./goal-budget";
 import * as repoint from "./repoint";
 import * as assistantRecovery from "./assistant-recovery";
 import * as taskActions from "./task-actions";
+import * as ownerCompletion from "./owner-completion";
 import * as managedSession from "./managed-session";
 import * as assistantHolds from "./assistant-holds";
 import * as fingerprint from "./fingerprint";
@@ -39,6 +40,7 @@ import * as launch from "./launch";
 import * as review from "./review";
 import { initialize, createTaskEngine } from "./initialize";
 import type { TaskContext } from "./context";
+import type { ConversationDelegation } from "../delegation/service";
 import type {
   TaskAssistantMetadataCache,
   TaskEtagCache,
@@ -66,6 +68,7 @@ export class HostTasks {
   ) => Promise<void>;
 
   assistantGoalAdmission?: (goalId: string) => Promise<boolean>;
+  assistantTaskAdmission?: (task: HostTask) => Promise<boolean>;
 
   goalExecutionAllowed(goalId?: string): Promise<boolean> {
     return goalBudget.goalExecutionAllowed(this.context, goalId);
@@ -220,6 +223,7 @@ export class HostTasks {
 
   /** Tasks being merged. */
   protected readonly delivering = new Set<string>();
+  protected readonly automaticDeliveryControllers = new Map<string, AbortController>();
 
   /** Runs on every tick once running tasks are settled, before queued ones
    * start, so work it queues can start in the same tick. */
@@ -227,6 +231,10 @@ export class HostTasks {
 
   /** Crew policy shares this scheduler; it cannot bypass ordinary task gates. */
   crewCanStart?: (task: HostTask) => boolean | Promise<boolean>;
+
+  /** Bound by the Host composition to its existing, authorized agents.* service. */
+  repairDelegation?: Pick<ConversationDelegation, "call"> &
+    Partial<Pick<ConversationDelegation, "consultTaskRepair">>;
 
   crewRunner?: {
     validate: (task: HostTaskInput) => void | Promise<void>;
@@ -312,9 +320,9 @@ export class HostTasks {
     protected readonly verifyTimeoutMs = VERIFY_TIMEOUT_MS,
     protected readonly managed?: TaskWorkspaceServices,
   ) {
-    this.engine = createTaskEngine(this.context, store, engine);
     this.limits = new HostLimits(store, now);
     this.budgets = new HostTaskBudgets(store, now);
+    this.engine = createTaskEngine(this.context, store, engine);
     this.ready = initialize(this.context, store);
   }
 
@@ -432,6 +440,18 @@ export class HostTasks {
     return taskActions.save(this.context, raw);
   }
 
+  /** Bind a newly created legacy Crew request before scheduler admission. */
+  async reserveCrewExecution(id: string, runId: string): Promise<void> {
+    await this.context.transaction(async () => {
+      const task = await this.context.find(id);
+      if (!task?.crewDefinitionId || task.status !== "queued")
+        throw new Error("Crew work must be reserved before starting.");
+      if (task.crewExecutionId && task.crewExecutionId !== runId)
+        throw new Error("Crew task already owns another run.");
+      await this.context.write({ ...task, crewExecutionId: runId });
+    });
+  }
+
   /** Called by the goal's transaction; preserves task identity, checks and recovery gates. */
   updateGoalSettings(
     goalId: string,
@@ -455,6 +475,10 @@ export class HostTasks {
   /** Owner start requests retain scheduler limits and dependency gates. */
   startTask(id: string, reviewed?: HostTask): Promise<HostTask> {
     return taskActions.startTask(this.context, id, reviewed);
+  }
+
+  finishWithFindings(id: string, expectedUpdatedAt: number): Promise<HostTask> {
+    return ownerCompletion.finishWithFindings(this.context, id, expectedUpdatedAt);
   }
 
   reorder(ids: unknown): Promise<HostTask[]> {
@@ -683,6 +707,7 @@ export class HostTasks {
     runId?: string;
     error?: string;
     deferred?: boolean;
+    wait?: import("../../src/shared/model/host-contracts/work").WorkWait;
   }> {
     return recovery.resumeInterrupted(this.context, task);
   }

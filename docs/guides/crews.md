@@ -1,6 +1,25 @@
 # Crews
 
+In Settings > Crews, Show crews controls this device's sidebar. If browser storage
+refuses the change, the previous value stays visible and Retry applies the intended
+value again. Open Crews opens the team and member editors.
+
+Bulk model Apply shows progress while applying a choice and blocks duplicate
+submissions. Controls in the bulk model bar stay disabled until it finishes;
+the existing crew and library save rules still apply.
+
 Crews connect a coordinator conversation to independently addressable specialist and reviewer conversations. The host task scheduler runs assignments and retains their state when a desktop window closes.
+
+## Giving work to a Crew
+
+Choose **Worker** in a task or Epic form to use an Agent or a saved Crew. Crew entry
+points open the same task form with the exact machine, project and Crew selected;
+dismissed drafts retain their text and creation identity. Every new run belongs to
+board work and uses the Host task scheduler's admission and limits.
+
+Select a run in **Crews > Work** to chat with its lead inline. This is the existing
+coordinator conversation, with the normal transcript, composer and permission gates.
+Editing a saved team does not change the snapshot of a running Crew.
 
 ## Ready-made bycoda team
 
@@ -213,7 +232,7 @@ live preview; **Shuffle** picks a random complete look and **Reset** returns to 
 look drawn from the profile.
 
 Members choose **Default**, **Pool** or **Fixed**. Default follows the Crew member
-role in **Settings > Models**; Pool follows a named subset of the shared order;
+role in **Settings > Background work**; Pool follows a named subset of the shared order;
 Fixed uses the selected model. **Manage in Models** opens the shared model order,
 limits and pools. The former Crew Models tab and cost/quality ranking are removed.
 Running work keeps its concrete model

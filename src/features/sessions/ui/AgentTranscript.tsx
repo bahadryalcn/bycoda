@@ -40,6 +40,7 @@ import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
+import { collapseTranscriptErrors } from "../model/transcriptErrors";
 import { SessionErrorNotice } from "./SessionErrorNotice";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
@@ -390,7 +391,7 @@ function AgentTranscriptComponent({
     ) {
       return sourceBlocks;
     }
-    return filterAuthErrors(harness, sourceBlocks);
+    return collapseTranscriptErrors(filterAuthErrors(harness, sourceBlocks));
   }, [harness, sourceBlocks, authFilterPrev]);
   // Remember what each committed frame filtered, never from inside the memo:
   // a render that React discards must not move the baseline.

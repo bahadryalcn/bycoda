@@ -16,6 +16,7 @@ import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import type { GithubPrDiff } from "../model/githubTasks";
+import { graphemeLength, truncateGraphemes } from "../../../shared/lib/text/truncate";
 
 const EXCERPT_LINES = 4;
 const EXCERPT_CHARS = 360;
@@ -56,8 +57,8 @@ export function descriptionExcerpt(body: string): DescriptionExcerpt {
     )
     .filter(Boolean);
   let text = lines.slice(0, EXCERPT_LINES).join("\n");
-  const clipped = text.length > EXCERPT_CHARS;
-  if (clipped) text = `${text.slice(0, EXCERPT_CHARS).trimEnd()}…`;
+  const clipped = graphemeLength(text) > EXCERPT_CHARS;
+  if (clipped) text = truncateGraphemes(text, EXCERPT_CHARS);
   return {
     text,
     images,

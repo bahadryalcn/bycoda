@@ -47,13 +47,17 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
     >
       <File className="icon-sm mt-0.5 shrink-0" tone="secondary" strokeWidth={1.75} />
       <div className="flex min-w-0 flex-1 flex-col text-left">
-        <Text size="secondary" tone="primary" weight="medium" leading="snug" truncate>
+        <Text size="secondary" tone="primary" weight="medium" leading="snug" wrap="anywhere">
           {card.title || t("Untitled")}
         </Text>
-        <Text size="micro" tone="secondary" className="mt-0.5 flex min-w-0 items-center gap-1.5">
+        <Text
+          size="micro"
+          tone="secondary"
+          className="mt-0.5 flex min-w-0 flex-wrap items-center gap-1.5"
+        >
           <span className="shrink-0">{t("Note")}</span>
           {!embedded && card.slug ? (
-            <Text size="inherit" tone="inherit" truncate className="min-w-0">
+            <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
               · {card.slug}
             </Text>
           ) : null}
@@ -73,7 +77,7 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
                   className="size-3 shrink-0"
                 />
               )}
-              <Text size="inherit" tone="inherit" truncate className="min-w-0">
+              <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
                 {project}
               </Text>
             </span>
@@ -86,10 +90,10 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
           size="sm"
           type="button"
           tooltip={t("Remove")}
-          aria-label={t("Remove note {p0}", { p0: card.title || "Untitled" })}
+          aria-label={t("Remove note {p0}", { p0: card.title || t("Untitled") })}
           onClick={onDismiss}
           iconOnly
-          label={t("Remove note {p0}", { p0: card.title || "Untitled" })}
+          label={t("Remove note {p0}", { p0: card.title || t("Untitled") })}
           className="-my-0.5 -me-1 shrink-0"
         >
           <X className="icon-sm" strokeWidth={2} />

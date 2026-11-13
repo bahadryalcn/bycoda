@@ -33,14 +33,28 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
   const alive = useRef(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorField, setErrorField] = useState<"current" | "next" | "confirm">(
+    mode === "change" ? "current" : "next",
+  );
+  const fail = (field: "current" | "next" | "confirm", message: string) => {
+    setErrorField(field);
+    setError(message);
+    ({ current, next, confirm })[field].current?.focus();
+  };
   const cooldown = useCooldown(mode === "change" ? lockCooldownMs() : 0);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- tracks mounted dialog lifetime so pending password writes cannot close a replacement dialog
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
     };
   }, []);
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes retry focus with the current or new password field becoming editable after a failed verification.
+  useEffect(() => {
+    if (!busy && error) ({ current, next, confirm })[errorField].current?.focus();
+  }, [busy, error, errorField]);
 
   const clear = () => {
     for (const field of [current, next, confirm]) {
@@ -55,22 +69,23 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
     const password = next.current?.value ?? "";
     const problem = passwordProblem(password);
     if (mode === "change" && !currentPassword) {
-      setError(t("Enter the current password."));
+      fail("current", t("Enter the current password."));
       return;
     }
     if (problem === "short") {
-      setError(t("Use at least {p0} characters.", { p0: PASSWORD_MIN_LENGTH }));
+      fail("next", t("Use at least {p0} characters.", { p0: PASSWORD_MIN_LENGTH }));
       return;
     }
     if (problem === "long") {
-      setError(t("That password is too long."));
+      fail("next", t("That password is too long."));
       return;
     }
     if (password !== (confirm.current?.value ?? "")) {
-      setError(t("The two passwords do not match."));
+      fail("confirm", t("The two passwords do not match."));
       return;
     }
     setBusy(true);
+    setErrorField(mode === "change" ? "current" : "next");
     setError(null);
     try {
       if (mode === "change") {
@@ -81,7 +96,6 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           if (!alive.current) return;
           if (result.retryAfterMs > 0) cooldown.start(result.retryAfterMs);
           setError(verifyFailureMessage(result, result.retryAfterMs));
-          current.current?.focus();
           return;
         }
       } else {
@@ -94,8 +108,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
     } catch (reason) {
       if (!alive.current) return;
       clear();
-      setError(reason instanceof Error ? reason.message : String(reason));
-      (mode === "change" ? current : next).current?.focus();
+      setError(t(reason instanceof Error ? reason.message : String(reason)));
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -138,32 +151,45 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           <PasswordField
             label={t("Current password")}
             ref={current}
+            disabled={busy}
             autoFocus
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
-            aria-invalid={message != null || undefined}
+            aria-invalid={(message != null && errorField === "current") || undefined}
+            aria-describedby={
+              message && errorField === "current" ? "set-lock-password-error" : undefined
+            }
           />
         ) : null}
         <PasswordField
           label={t("New password")}
           ref={next}
+          disabled={busy}
           autoFocus={mode === "set"}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
+          description={t("Use at least {p0} characters.", { p0: PASSWORD_MIN_LENGTH })}
+          aria-invalid={(message != null && errorField === "next") || undefined}
+          aria-describedby={
+            message && errorField === "next" ? "set-lock-password-error" : undefined
+          }
         />
         <PasswordField
           label={t("Confirm new password")}
           ref={confirm}
+          disabled={busy}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
-          aria-describedby={message ? "set-lock-password-error" : undefined}
-          aria-invalid={(message != null && mode === "set") || undefined}
+          aria-describedby={
+            message && errorField === "confirm" ? "set-lock-password-error" : undefined
+          }
+          aria-invalid={(message != null && errorField === "confirm") || undefined}
         />
         {message ? (
           <Alert id="set-lock-password-error" tone="danger">

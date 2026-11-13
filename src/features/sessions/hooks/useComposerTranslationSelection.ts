@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { TranscriptSelection } from "../model/transcriptSelection";
 import { textareaSelectionRect } from "../model/textareaSelectionRect";
 
@@ -99,23 +99,26 @@ export function useComposerTranslationSelection(
       element.removeEventListener("scroll", scheduleReport);
     };
   }, [ref, enabled]);
-  return {
-    selection: enabled ? selection : null,
-    dismissSelection: () => {
-      const element = ref.current;
-      if (selection)
-        dismissedSelection.current = {
-          value: selection.value,
-          start: selection.start,
-          end: selection.end,
-        };
-      else if (element)
-        dismissedSelection.current = {
-          value: element.value,
-          start: element.selectionStart,
-          end: element.selectionEnd,
-        };
-      setSelection(null);
-    },
-  };
+  // This hooks folder is outside full compiler inference. Keep the unopened menu
+  // stable while its textarea publishes edits; selection changes still update it.
+  const dismissSelection = useCallback(() => {
+    const element = ref.current;
+    if (selection)
+      dismissedSelection.current = {
+        value: selection.value,
+        start: selection.start,
+        end: selection.end,
+      };
+    else if (element)
+      dismissedSelection.current = {
+        value: element.value,
+        start: element.selectionStart,
+        end: element.selectionEnd,
+      };
+    setSelection(null);
+  }, [ref, selection]);
+  return useMemo(
+    () => ({ selection: enabled ? selection : null, dismissSelection }),
+    [enabled, selection, dismissSelection],
+  );
 }

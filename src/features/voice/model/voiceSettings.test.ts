@@ -10,6 +10,35 @@ import {
 
 afterEach(() => localStorage.clear());
 
+it("bounds dictation preferences without splitting UTF-16 and preserves dynamic cloud models", () => {
+  localStorage.setItem(
+    "bycoda.voice",
+    JSON.stringify({
+      dictationModels: { openrouter: "vendor/new-transcription-model" },
+      dictationDictionary: [
+        { term: `${"x".repeat(199)}🦊`, aliases: ["by coda"], projectId: "project-a" },
+        null,
+      ],
+      dictationCleanup: {
+        enabled: true,
+        model: "model",
+        instructions: "x".repeat(5000),
+        translateToEnglish: true,
+      },
+      dictationShortcutMode: "invalid",
+      dictationIdleUnloadMinutes: -1,
+    }),
+  );
+  const settings = loadVoiceSettings();
+  expect(settings.dictationModels.openrouter).toBe("vendor/new-transcription-model");
+  expect(settings.dictationDictionary).toEqual([
+    { term: "x".repeat(199), aliases: ["by coda"], projectId: "project-a" },
+  ]);
+  expect(settings.dictationCleanup.instructions).toHaveLength(4000);
+  expect(settings.dictationShortcutMode).toBe("auto");
+  expect(settings.dictationIdleUnloadMinutes).toBe(5);
+});
+
 it("keeps both voice and dictation off for a fresh preference", () => {
   expect(loadVoiceSettings()).toMatchObject({ enabled: false, dictationEnabled: false });
 });

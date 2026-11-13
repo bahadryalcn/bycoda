@@ -246,6 +246,26 @@ describe("unchanged launches", () => {
 });
 
 describe("opencodeLaunchEnv", () => {
+  it("rejects an oversized override instead of letting Native silently discard it", () => {
+    const oversized = {
+      ...external,
+      servers: external.servers.map((server) => ({
+        ...server,
+        url: `http://127.0.0.1/${"x".repeat(65536)}`,
+      })),
+    };
+    expect(() => opencodeLaunchEnv(oversized, "off")).toThrow("too large to apply");
+  });
+  it("adds compaction without replacing the MCP configuration and omits Default overrides", () => {
+    const base = JSON.parse(opencodeLaunchEnv(external)!.OPENCODE_CONFIG_CONTENT);
+    expect(JSON.parse(opencodeLaunchEnv(external, "off")!.OPENCODE_CONFIG_CONTENT)).toEqual({
+      ...base,
+      compaction: { auto: false },
+    });
+    expect(JSON.parse(opencodeLaunchEnv(undefined, "on")!.OPENCODE_CONFIG_CONTENT)).toEqual({
+      compaction: { auto: true },
+    });
+  });
   it("wraps the inline config in the env OpenCode reads and stays absent without hub data", () => {
     const env = opencodeLaunchEnv(external);
     expect(Object.keys(env ?? {})).toEqual(["OPENCODE_CONFIG_CONTENT"]);

@@ -93,7 +93,7 @@ $ErrorActionPreference='Stop'
 $expected='a5d869cf-d1a0-490a-a8ed-7c80f8afc333'
 $base=@{manufacturer='Microsoft Corporation';model='Virtual Machine';biosManufacturer='Microsoft Corporation';hyperVIntegration=$true;vmUuid=$expected;computerName='BYCODA-CI';identity='BYCODA-CI\BycodaAdmin';sid='S-1-5-21-1-2-3-1001';profile='C:\Users\BycodaAdmin';elevated=$true;os64=$true;process64=$true}
 if (@(Get-GuestDenials ([pscustomobject]$base) $expected).Count) { throw 'Valid offline fixture unexpectedly rejected.' }
-$mutations=@(@{manufacturer='ASUSTeK COMPUTER INC.'},@{model='Physical PC'},@{biosManufacturer='Other'},@{hyperVIntegration=$false},@{vmUuid='00000000-0000-0000-0000-000000000000'},@{vmUuid='b5d869cf-d1a0-490a-a8ed-7c80f8afc333'},@{identity='BYCODA-CI\kraba'},@{identity='DOMAIN\BycodaAdmin'},@{profile='C:\Users\kraba'},@{profile='C:\Users\BycodaAdmin.other'},@{sid='S-1-5-18'},@{elevated=$false},@{os64=$false},@{process64=$false})
+$mutations=@(@{manufacturer='ASUSTeK COMPUTER INC.'},@{model='Physical PC'},@{biosManufacturer='Other'},@{hyperVIntegration=$false},@{vmUuid='00000000-0000-0000-0000-000000000000'},@{vmUuid='b5d869cf-d1a0-490a-a8ed-7c80f8afc333'},@{identity='BYCODA-CI\alice'},@{identity='DOMAIN\BycodaAdmin'},@{profile='C:\Users\alice'},@{profile='C:\Users\BycodaAdmin.other'},@{sid='S-1-5-18'},@{elevated=$false},@{os64=$false},@{process64=$false})
 foreach ($mutation in $mutations) {
   $facts=$base.Clone(); foreach ($key in $mutation.Keys) {$facts[$key]=$mutation[$key]}
   if (@(Get-GuestDenials ([pscustomobject]$facts) $expected).Count -eq 0) { throw 'Invalid fixture gained admission.' }
@@ -193,7 +193,7 @@ foreach ($invalid in @(
   @('/i',$package,'/qn','/forcerestart','/L*v',$log),
   @('/i',$package,'/qn','/norestart'),
   @('/i',$package,'/qn','/norestart','/L*v',$log,'CUSTOM=arbitrary'),
-  @('/i',$package,'/qn','/norestart','/L*v',$log,'INSTALLDIR=C:\Users\kraba'),
+  @('/i',$package,'/qn','/norestart','/L*v',$log,'INSTALLDIR=C:\Users\alice'),
   @('/i',$package,'/qn','/norestart','/L*v',$log,'/qn'),
   @('/i','C:\bad"name.msi','/qn','/norestart','/L*v',$log)
 )) {

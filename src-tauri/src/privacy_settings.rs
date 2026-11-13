@@ -10,12 +10,31 @@ fn pane_url(pane: &str, platform: &str) -> Option<&'static str> {
         ("macos", "microphone") => {
             Some("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
         }
+        ("macos", "camera") => {
+            Some("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")
+        }
+        ("macos", "accessibility") => {
+            Some("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        }
+        ("macos", "full-disk-access") => {
+            Some("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+        }
+        ("macos", "notifications") => {
+            Some("x-apple.systempreferences:com.apple.Notifications-Settings.extension")
+        }
         ("macos", "files-and-folders") => {
             Some("x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")
         }
         ("windows", "microphone") => Some("ms-settings:privacy-microphone"),
+        ("windows", "camera") => Some("ms-settings:privacy-webcam"),
+        ("windows", "notifications") => Some("ms-settings:notifications"),
         _ => None,
     }
+}
+
+/// Whether `open_privacy_settings` can open `pane` on `platform`.
+pub(crate) fn pane_supported(pane: &str, platform: &str) -> bool {
+    pane_url(pane, platform).is_some()
 }
 
 #[tauri::command(async)]
@@ -87,6 +106,11 @@ fn open(url: &str) -> Result<(), String> {
     }
 }
 
+#[cfg(windows)]
+pub(crate) fn open_notifications() -> Result<(), String> {
+    open(pane_url("notifications", "windows").expect("known settings pane"))
+}
+
 #[cfg(not(any(target_os = "macos", windows)))]
 fn open(_url: &str) -> Result<(), String> {
     Err("Open your system sound settings and app microphone permissions manually.".into())
@@ -108,6 +132,20 @@ mod tests {
             pane_url("microphone", "windows"),
             Some("ms-settings:privacy-microphone")
         );
+        assert_eq!(
+            pane_url("camera", "windows"),
+            Some("ms-settings:privacy-webcam")
+        );
+        assert_eq!(
+            pane_url("notifications", "windows"),
+            Some("ms-settings:notifications")
+        );
+        assert!(pane_url("accessibility", "macos")
+            .unwrap()
+            .ends_with("Privacy_Accessibility"));
+        assert!(pane_url("full-disk-access", "macos")
+            .unwrap()
+            .ends_with("Privacy_AllFiles"));
         for platform in ["macos", "windows", "linux"] {
             assert!(pane_url("https://example.com", platform).is_none());
             assert!(pane_url("ms-settings:privacy-microphone", platform).is_none());

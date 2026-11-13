@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import type { BackgroundSessionTarget } from "../../../tasks";
 import type { useProjectCrews } from "../../model/crewClient";
 import type { OpenCrewSession } from "../CrewDialogHost";
 import { CrewWorkManager } from "../CrewWorkManager";
@@ -9,12 +11,14 @@ export function CrewsWork({
   definitionId,
   initialRunId,
   onOpenSession,
+  renderCoordinator,
 }: {
   cwd: string;
   state: ReturnType<typeof useProjectCrews>;
   definitionId?: string;
   initialRunId?: string;
   onOpenSession?: OpenCrewSession;
+  renderCoordinator?: (target: BackgroundSessionTarget) => ReactNode;
 }) {
   return (
     <CrewWorkManager
@@ -24,6 +28,7 @@ export function CrewsWork({
       definitionId={definitionId}
       initialRunId={initialRunId}
       onOpen={onOpenSession}
+      renderCoordinator={renderCoordinator}
     />
   );
 }

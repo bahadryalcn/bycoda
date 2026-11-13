@@ -10,6 +10,7 @@ import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useHeldValue } from "../helpers/stableProps";
 import { SessionRecoveryPanel } from "../../shell/SessionRecoveryPanel";
 import { WorkspaceRecoveryDialog } from "./WorkspaceRecoveryDialog";
+import { AutomationProposalDialog } from "../../../features/automations/public/proposal";
 import type { EditorDraftRecoverySectionProps } from "./EditorDraftRecoverySection";
 import { WhatsNewDialog } from "../../shell/WhatsNewDialog";
 import {
@@ -186,6 +187,7 @@ function WorkspacePickerDialogsComponent({
 }: WorkspacePickerDialogsProps) {
   return (
     <>
+      <AutomationProposalDialog />
       {resumePickerFor ? (
         <ClaudeSessionPicker
           cwd={resumePickerFor.cwd}

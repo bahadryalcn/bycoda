@@ -4,7 +4,6 @@ import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { RefreshCw } from "../../../shared/ui/icons";
 import { Group, SettingsFeedback } from "../../settings/public/settingsControls";
 import type { WorkspaceStorageStatus } from "../model/contracts";
@@ -41,11 +40,9 @@ export function WorkspaceStorageSummary({
         title={t("Workspace storage")}
         layout="full"
         dependency={
-          <OverflowTooltip label={storage.root} wide>
-            <Text as="span" size="inherit" tone="inherit" truncate className={styles.rootPath}>
-              {storage.root}
-            </Text>
-          </OverflowTooltip>
+          <Text as="span" size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
+            {storage.root}
+          </Text>
         }
         scope={
           busy
@@ -106,20 +103,22 @@ export function WorkspaceStorageSummary({
               {t("Free on disk {p0}", { p0: measure(storage.freeBytes) })}
             </Text>
           </div>
-          <UsageMeter
-            label={t("Directory budget")}
-            segments={[
-              {
-                id: "storage",
-                label: t("Directory budget"),
-                value: storage.materializedBytes ?? 0,
-              },
-            ]}
-            limit={storage.budgetBytes}
-            showLegend={false}
-            compact
-            tone={warning ? "warning" : "neutral"}
-          />
+          {storage.materializedBytes !== null ? (
+            <UsageMeter
+              label={t("Directory budget")}
+              segments={[
+                {
+                  id: "storage",
+                  label: t("Directory budget"),
+                  value: storage.materializedBytes,
+                },
+              ]}
+              limit={storage.budgetBytes}
+              showLegend={false}
+              compact
+              tone={warning ? "warning" : "neutral"}
+            />
+          ) : null}
           <DescriptionList columns="auto" size="sm">
             <DescriptionItem term={t("Worktree folders")}>
               {measure(storage.materializedBytes)}

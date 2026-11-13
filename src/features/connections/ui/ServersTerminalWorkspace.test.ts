@@ -602,10 +602,15 @@ it("does not create or restore a proxy terminal before approval and keeps its ti
     },
   };
   const before = JSON.stringify(serverTerminalRestoreState.getSnapshot());
+  const outcomes: string[] = [];
   proxy.request.mockResolvedValueOnce(null).mockResolvedValueOnce("one-use-proxy-ticket");
   function ProxyAction() {
     const open = useOpenServerTerminal();
-    return createElement("button", { onClick: () => open?.(target) }, "Open proxy");
+    return createElement(
+      "button",
+      { onClick: () => void open?.(target).then((result) => outcomes.push(result)) },
+      "Open proxy",
+    );
   }
   await act(async () =>
     root.render(createElement(ServersTerminalWorkspace, { children: createElement(ProxyAction) })),
@@ -613,8 +618,10 @@ it("does not create or restore a proxy terminal before approval and keeps its ti
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
   expect(events.mounted).toEqual([]);
   expect(JSON.stringify(serverTerminalRestoreState.getSnapshot())).toBe(before);
+  expect(outcomes).toEqual(["cancelled"]);
   await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
   expect(events.mounted).toEqual([server.id]);
+  expect(outcomes).toEqual(["cancelled", "accepted"]);
   const terminal = container.querySelector("[data-terminal-id]")!;
   expect(terminal.getAttribute("data-proxy-ticket")).toBe("one-use-proxy-ticket");
   expect(proxy.request).toHaveBeenLastCalledWith({

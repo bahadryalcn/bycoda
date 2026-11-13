@@ -7,6 +7,8 @@ import {
   ArrowLeft,
   AudioLines,
   Bot,
+  Brain,
+  Briefcase,
   CircleDot,
   Folder,
   GitBranch,
@@ -17,26 +19,37 @@ import {
   KeyRound,
   Link2,
   UserRound,
+  UsersRound,
   Lock,
   MessageSquare,
   Palette,
   SlidersHorizontal,
   Sparkles,
   Terminal,
-  UsageIcon,
+  MonitorSmartphone,
+  Smartphone,
+  ListBullet,
+  Server,
   type IconComponent,
 } from "../../shared/ui/icons";
 import { AccountRailRow } from "../../features/account";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import {
   settingsSectionsByGroup,
+  settingsSectionForAnchor,
   type SettingsSectionId,
 } from "../../features/settings/model/settings";
 
 export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = {
+  tools: SlidersHorizontal,
+  browser: MonitorSmartphone,
+  devices: Smartphone,
+  logs: ListBullet,
+  devServers: Server,
   general: SlidersHorizontal,
   policies: Lock,
   notifications: CircleDot,
+  permissions: Lock,
   workspace: Folder,
   connections: Internet,
   appearance: Palette,
@@ -45,10 +58,9 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = 
   chat: MessageSquare,
   voice: AudioLines,
   providers: Bot,
-  models: Bot,
-  crews: Bot,
-  usage: UsageIcon,
-  limits: SlidersHorizontal,
+  models: Brain,
+  work: Briefcase,
+  crews: UsersRound,
   mcp: Globe,
   skills: Sparkles,
   inbox: Inbox,
@@ -67,8 +79,9 @@ type Props = {
 };
 
 /** Body of the project rail while settings are open. */
-export function SettingsNav({ section, onSelect, onClose }: Props) {
+export function SettingsNav({ section: requestedSection, onSelect, onClose }: Props) {
   const t = useT();
+  const section = settingsSectionForAnchor(requestedSection) ?? requestedSection;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const rows = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
   // Account is not a list group: it is the avatar row under the list.

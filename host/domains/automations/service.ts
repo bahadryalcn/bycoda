@@ -3,6 +3,10 @@ import * as dto from "../../../src/shared/model/host-contracts/automations";
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 
 export interface HostAutomationsServicePorts {
+  propose?: (
+    input: dto.AutomationProposalInput,
+    context: HostDomainContext,
+  ) => Promise<dto.AutomationProposal>;
   automations: {
     withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T>;
     list(): Promise<dto.HostAutomation[]>;
@@ -50,6 +54,11 @@ export function createHostAutomationsService(ports: HostAutomationsServicePorts)
     return result;
   }
   return {
+    propose: (p: unknown, c: HostDomainContext) =>
+      execute(dto.AutomationsProposeParamsSchema, p, c, {}, false, async (v) => {
+        if (!ports.propose) throw new Error("Automation proposal helper unavailable.");
+        return dto.AutomationsProposeResultSchema.parse(await ports.propose(v, c));
+      }),
     list: (p: unknown, c: HostDomainContext, o: Options = {}) =>
       execute(dto.AutomationsEmptyParamsSchema, p, c, o, false, () => ports.automations.list()),
     preview: (p: unknown, c: HostDomainContext, o: Options = {}) =>

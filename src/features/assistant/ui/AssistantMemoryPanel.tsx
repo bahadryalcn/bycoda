@@ -67,7 +67,7 @@ export function AssistantMemoryPanel(props: Props) {
       </header>
       <LiveText className="sr-only" text={props.searching ? t("Loading...") : ""} />
       {props.searchError}
-      {!props.searching && !props.entries.length && (
+      {!props.searching && !props.searchError && !props.entries.length && (
         <EmptyState
           size="inline"
           kind={props.query.trim() ? "filtered" : "empty"}

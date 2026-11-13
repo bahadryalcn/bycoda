@@ -13,9 +13,15 @@ import {
   CircleDot,
   CornerDownRight,
   Eye,
+  Globe,
   Keyboard,
+  Pause,
+  Play,
 } from "../../../shared/ui/icons";
 import { Disclosure } from "../../../shared/ui/Disclosure";
+import { PanelHeader } from "../../../shared/ui/PanelHeader";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 
 type Request = (method: string, params?: Record<string, unknown>) => Promise<unknown>;
 type Action = (work: () => Promise<unknown>) => Promise<unknown>;
@@ -24,8 +30,100 @@ type ControlState = {
   open: boolean;
   url: string | null;
   controlling: boolean;
+  viewport?: { width: number; height: number };
   runtime?: { installed?: boolean; installing?: boolean };
 };
+
+/** Live viewing is separate from control ownership and page input. */
+export function BrowserLiveToggle({
+  live,
+  open,
+  busy,
+  selecting,
+  onToggle,
+}: {
+  live: boolean;
+  open: boolean;
+  busy: boolean;
+  selecting: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      iconOnly
+      label={t("Live view")}
+      tooltip={live ? t("Pause live view") : t("Resume live view")}
+      tooltipDetails={[t("Viewing never takes control of the browser.")]}
+      role="switch"
+      aria-checked={live}
+      selected={live}
+      disabled={busy || !open || selecting}
+      disabledReason={
+        busy ? t("Working on the host…") : selecting ? t("Cancel selection") : t("Open a website")
+      }
+      onClick={onToggle}
+    >
+      {live ? <Pause className="icon-sm" aria-hidden /> : <Play className="icon-sm" aria-hidden />}
+    </Button>
+  );
+}
+
+/** Controlled address draft and navigation availability inside the browser form. */
+export function BrowserAddressInput({
+  url,
+  busy,
+  selecting,
+  setupRequired,
+  validUrl,
+  searchEnabled,
+  onChange,
+}: {
+  url: string;
+  busy: boolean;
+  selecting: boolean;
+  setupRequired: boolean;
+  validUrl: boolean;
+  searchEnabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <>
+      <TextField
+        fieldClassName="host-browser-url"
+        label={t("Website address")}
+        hideLabel
+        value={url}
+        maxLength={4096}
+        disabled={busy || selecting}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="http://localhost:3000"
+        required
+      />
+      <Button
+        motion="none"
+        type="submit"
+        variant="ghost"
+        iconOnly
+        label={t("Open website")}
+        disabled={busy || selecting || setupRequired || !validUrl}
+        disabledReason={
+          busy
+            ? t("Working on the host…")
+            : selecting
+              ? t("Cancel selection")
+              : setupRequired
+                ? t("Browser setup required")
+                : searchEnabled
+                  ? t("Enter a website address or search term.")
+                  : t("Use an HTTP or HTTPS address.")
+        }
+      >
+        <Globe className="icon-sm" aria-hidden />
+      </Button>
+    </>
+  );
+}
 
 /** One labelled toggle: view-only claims control, an active lease releases it. */
 export function BrowserControlToggle({
@@ -61,6 +159,7 @@ export function BrowserControlToggle({
           : t("View only · take control to interact"),
       ]}
       disabled={busy}
+      disabledReason={t("Working on the host…")}
       onClick={() =>
         void action(() =>
           request(
@@ -84,6 +183,7 @@ export function BrowserControlsPopover({
   selecting,
   canInput,
   canPageInput,
+  inputDisabledReason,
   setupRequired,
   annotationsAllowed,
   text,
@@ -104,6 +204,7 @@ export function BrowserControlsPopover({
   selecting: boolean;
   canInput: boolean;
   canPageInput: boolean;
+  inputDisabledReason?: string;
   setupRequired: boolean;
   annotationsAllowed: boolean;
   text: string;
@@ -124,21 +225,30 @@ export function BrowserControlsPopover({
       side="bottom"
       align={align}
       width={320}
-      role="dialog"
+      kind="dialog"
       aria-label={t("Browser controls and setup")}
       data-dialog-popover
-      className="host-browser-controls font-sans"
+      className="host-browser-controls"
       solid
       onDismiss={onDismiss}
     >
-      <div className="host-browser-state" role="status">
-        <Text size="caption" tone="inherit" leading="inherit" className="host-tool-status">
-          {[
-            browserStatus,
-            state?.open ? (state.controlling ? t("Control active") : t("View only")) : "",
-          ]
-            .filter(Boolean)
-            .join(" · ")}
+      <PanelHeader
+        title={t("Browser controls and setup")}
+        closeLabel={t("Close")}
+        onClose={() => onDismiss("escape")}
+      />
+      <section className="host-browser-control-section" aria-label={t("Session")}>
+        <SectionLabel
+          actions={
+            <Text size="caption" tone="secondary">
+              {browserStatus}
+            </Text>
+          }
+        >
+          {t("Session")}
+        </SectionLabel>
+        <Text size="caption" weight="medium">
+          {state?.controlling ? t("Control active") : t("View only")}
         </Text>
         {state?.url ? (
           <OverflowTooltip label={state.url}>
@@ -154,9 +264,31 @@ export function BrowserControlsPopover({
             </Text>
           </OverflowTooltip>
         ) : null}
-        {notice ? <span className="host-tool-muted">{notice}</span> : null}
-      </div>
-      <section className="host-browser-side-section" aria-label={t("Keyboard and scroll controls")}>
+        {notice ? (
+          <Text size="caption" tone="secondary">
+            {notice}
+          </Text>
+        ) : null}
+        <div className="host-tool-actions">
+          <Button
+            motion="none"
+            type="button"
+            variant={state?.controlling ? "ghost" : "secondary"}
+            size="sm"
+            disabled={busy}
+            disabledReason={t("Working on the host…")}
+            tooltip={t("Control active · 30 seconds after each action")}
+            onClick={() => run(() => request("browser.claim", { takeover: true }))}
+          >
+            {state?.controlling ? t("Renew control") : t("Claim control")}
+          </Button>
+        </div>
+      </section>
+      <section
+        className="host-browser-control-section"
+        aria-label={t("Keyboard and scroll controls")}
+      >
+        <SectionLabel>{t("Keyboard and scroll controls")}</SectionLabel>
         <form
           className="host-browser-type"
           onSubmit={(event) => {
@@ -181,108 +313,115 @@ export function BrowserControlsPopover({
             iconOnly
             label={t("Type text")}
             disabled={!canPageInput || !text}
+            disabledReason={inputDisabledReason ?? t("Type text")}
+            tooltipDetails={[t("Type into the focused field on the page.")]}
           >
             <Keyboard className="icon-sm" aria-hidden />
           </Button>
+        </form>
+        <ButtonGroup aria-label={t("Keyboard and scroll controls")} surface="transparent">
           <Button
             motion="none"
             type="button"
             variant="ghost"
-            iconOnly
+            size="sm"
             label={t("Enter")}
             disabled={!canPageInput}
+            disabledReason={inputDisabledReason}
+            tooltipDetails={[t("Send Enter to the page.")]}
             onClick={() => run(() => input({ kind: "key", key: "Enter" }))}
           >
             <CornerDownRight className="icon-sm" aria-hidden />
+            {t("Enter")}
           </Button>
           <Button
             motion="none"
             type="button"
             variant="ghost"
-            iconOnly
+            size="sm"
             label={t("Scroll up")}
             disabled={!canPageInput}
+            disabledReason={inputDisabledReason}
+            tooltipDetails={[t("Scroll the page up by 500 pixels.")]}
             onClick={() => run(() => input({ kind: "scroll", y: -500 }))}
           >
             <ChevronUp className="icon-sm" aria-hidden />
+            {t("Scroll up")}
           </Button>
           <Button
             motion="none"
             type="button"
             variant="ghost"
-            iconOnly
+            size="sm"
             label={t("Scroll down")}
             disabled={!canPageInput}
+            disabledReason={inputDisabledReason}
+            tooltipDetails={[t("Scroll the page down by 500 pixels.")]}
             onClick={() => run(() => input({ kind: "scroll", y: 500 }))}
           >
             <ChevronDown className="icon-sm" aria-hidden />
+            {t("Scroll down")}
           </Button>
-        </form>
+        </ButtonGroup>
         {state?.open && !state.controlling ? (
           <p className="host-tool-muted">{t("View only · take control to interact")}</p>
         ) : null}
       </section>
       {error ? <DetailedInlineError summary={errorSummary} error={error} /> : null}
       {busy ? <Alert tone="info">{t("Working on the host…")}</Alert> : null}
-      <div className="host-tool-actions">
-        <Button
-          motion="none"
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          onClick={() => run(() => request("browser.status"))}
-        >
-          {!state && error ? t("Retry") : t("Status")}
-        </Button>
-        {!(state?.open && !state.controlling) ? (
+      <section className="host-browser-control-section" aria-label={t("Browser")}>
+        <SectionLabel>{t("Browser")}</SectionLabel>
+        <div className="host-tool-actions">
           <Button
             motion="none"
-            type="button"
             variant="ghost"
             size="sm"
             disabled={busy}
-            onClick={() => run(() => request("browser.claim", { takeover: true }))}
+            onClick={() => run(() => request("browser.status"))}
           >
-            {state?.controlling ? t("Renew control") : t("Claim control")}
+            {!state && error ? t("Retry") : t("Status")}
           </Button>
-        ) : null}
-        {state?.controlling && !state.open ? (
-          <Button
-            motion="none"
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => run(() => request("browser.release"))}
-          >
-            {t("Release")}
-          </Button>
-        ) : null}
-        {state?.open ? (
-          <Button
-            motion="none"
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={!canInput}
-            onClick={() => run(() => request("browser.close"))}
-          >
-            {t("Close browser")}
-          </Button>
-        ) : null}
-        {!setupRequired && !state?.runtime?.installed ? (
-          <Button
-            motion="none"
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={busy || selecting || state?.runtime?.installing}
-            onClick={() => run(() => request("browser.setup"))}
-          >
-            {t("Set up host browser")}
-          </Button>
-        ) : null}
-      </div>
+          {state?.controlling && !state.open ? (
+            <Button
+              motion="none"
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => run(() => request("browser.release"))}
+            >
+              {t("Release")}
+            </Button>
+          ) : null}
+          {state?.open ? (
+            <Button
+              motion="none"
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!canInput}
+              tone="danger"
+              disabledReason={inputDisabledReason}
+              tooltip={t("Close the shared browser on this computer.")}
+              onClick={() => run(() => request("browser.close"))}
+            >
+              {t("Close browser")}
+            </Button>
+          ) : null}
+          {!setupRequired && !state?.runtime?.installed ? (
+            <Button
+              motion="none"
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy || selecting || state?.runtime?.installing}
+              onClick={() => run(() => request("browser.setup"))}
+            >
+              {t("Set up host browser")}
+            </Button>
+          ) : null}
+        </div>
+      </section>
       <Disclosure summary={t("Help")} size="sm">
         <p>
           {t(

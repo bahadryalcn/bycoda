@@ -32,6 +32,46 @@ afterEach(async () => {
   localStorage.clear();
   vi.clearAllMocks();
 });
+
+it("binds the default dictation shortcut only to its focused composer without taking Split Down", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    dictationEnabled: true,
+    dictationShortcutMode: "toggle",
+  });
+  const editor = document.createElement("textarea");
+  document.body.append(editor);
+  try {
+    await render({ editorRef: { current: editor }, projectId: "project-a" });
+    const press = (key: string) =>
+      editor.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key,
+          code: `Key${key.toUpperCase()}`,
+          ctrlKey: true,
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    await act(async () => {
+      press("m");
+    });
+    expect(mock.start).not.toHaveBeenCalled();
+    editor.focus();
+    await act(async () => {
+      press("d");
+    });
+    expect(mock.start).not.toHaveBeenCalled();
+    await act(async () => {
+      press("m");
+    });
+    expect(mock.start).toHaveBeenCalledOnce();
+    expect(mock.args[5]).toMatchObject({ projectId: "project-a" });
+  } finally {
+    editor.remove();
+  }
+});
 async function render(props: Partial<Parameters<typeof DictationButton>[0]> = {}) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   element = document.createElement("div");
@@ -100,6 +140,19 @@ it("toggles local dictation and hands recognized phrases to the composer", async
   expect(onError).toHaveBeenCalledWith("Speech recognition failed. Please try again.");
   await act(async () => button()!.click());
   expect(mock.stop).toHaveBeenCalledOnce();
+});
+
+it("uses an explicitly selected local model only for dictation", async () => {
+  saveVoiceSettings({
+    ...loadVoiceSettings(),
+    dictationEnabled: true,
+    whisperPath: "legacy/automatic",
+    dictationLocalModelPath: "owned/small",
+  });
+  expect(loadVoiceSettings().dictationLocalModelPath).toBe("owned/small");
+  const { button } = await render();
+  await act(async () => button()!.click());
+  expect(mock.args[1]).toMatchObject({ whisperPath: "owned/small", whisperExact: true });
 });
 
 it("cancels dictation when the composer becomes unavailable", async () => {
@@ -171,7 +224,8 @@ it("starts dictation with the chosen cloud recognizer and model", async () => {
   });
   const { button } = await render();
   await act(async () => button()!.click());
-  expect(mock.args.slice(3)).toEqual(["openai", "whisper-1"]);
+  expect(mock.args.slice(3, 5)).toEqual(["openai", "whisper-1"]);
+  expect(mock.args[5]).toMatchObject({ dictionary: [], removeFillers: false });
 });
 
 it("reports its run with the session and whether its message box is on screen", async () => {

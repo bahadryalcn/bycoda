@@ -34,7 +34,11 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
           aria-label={t("Assistant status")}
         >
           <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
-            <AssistantPresenceStatus snapshot={snapshot} details />
+            <AssistantPresenceStatus
+              snapshot={snapshot}
+              offline={Boolean(room.readError)}
+              details
+            />
             {roomPrivacy.pending && (
               <Text as="p" tone="secondary" leading="normal">
                 {t("Confirming Room privacy protection...")}

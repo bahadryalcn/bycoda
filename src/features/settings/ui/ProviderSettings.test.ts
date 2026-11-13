@@ -99,3 +99,32 @@ it("separates Accounts from CLI and keeps setup rows mounted across tabs", async
   await act(async () => tabs.find((node) => node.textContent === "Accounts")!.click());
   expect(container.querySelector('[data-setting-id="cli-path-codex"]')).toBe(row);
 });
+
+it("validates new account names against the selected provider before sign-in", async () => {
+  await render();
+  const add = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent?.trim() === "Add account",
+  )!;
+  await act(async () => add.click());
+  const editor = container.querySelector<HTMLFormElement>('[data-settings-part="account-editor"]')!;
+  const input = editor.querySelector("input")!;
+  expect(editor.textContent).toContain("Account name");
+  expect(editor.textContent).toContain("Enter an account name");
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Default account",
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(editor.textContent).toContain("An account with this name already exists");
+  const submit = container.querySelector<HTMLButtonElement>(
+    `button[form="${editor.id}"][type="submit"]`,
+  )!;
+  expect(submit.getAttribute("aria-disabled")).toBe("true");
+  const cancel = [...editor.querySelectorAll<HTMLButtonElement>("button")].find(
+    (node) => node.textContent === "Cancel",
+  )!;
+  await act(async () => cancel.click());
+  expect(document.activeElement).toBe(add);
+});

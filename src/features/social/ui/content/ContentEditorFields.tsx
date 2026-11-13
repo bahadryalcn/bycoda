@@ -1,3 +1,4 @@
+import type { SetStateAction } from "react";
 import { Text } from "../../../../shared/ui/Text";
 import { t } from "../../../../shared/i18n";
 import { wallClockNow } from "../../../../shared/lib/time/wallClock";
@@ -27,7 +28,8 @@ export type ContentEditorFieldsProps = {
   snapshot?: SocialSnapshot;
   projectId?: string;
   draft: ContentDraft;
-  onDraft: (next: ContentDraft) => void;
+  onDraft: (next: SetStateAction<ContentDraft>) => void;
+  onMediaBusyChange?: (busy: boolean) => void;
   /** Why the post cannot be changed here (already scheduled). Disables every field. */
   locked?: string;
   aiStopped: boolean;
@@ -44,6 +46,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
     projectId,
     draft,
     onDraft,
+    onMediaBusyChange,
     locked,
     aiStopped,
     creators,
@@ -52,6 +55,8 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
   const accounts = snapshot?.accounts ?? [];
   const selected = selectedAccounts(draft, accounts);
   const disabled = !!locked;
+  // Uploads may finish after this editor unmounts; update its retained workspace current draft.
+  const changeMedia = (media: ContentMedia[]) => onDraft((current) => ({ ...current, media }));
   const mediaBlocked =
     selected.length > 0 &&
     selected.every((account) => {
@@ -193,7 +198,8 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
         media={draft.media}
         disabled={disabled || mediaBlocked}
         disabledReason={locked ?? (mediaBlocked ? mediaReason : undefined)}
-        onChange={(next: ContentMedia[]) => onDraft({ ...draft, media: next })}
+        onChange={changeMedia}
+        onBusyChange={onMediaBusyChange}
       />
       {selected.map((account) => (
         <section key={account.id} className="content-platform-section" aria-label={account.name}>

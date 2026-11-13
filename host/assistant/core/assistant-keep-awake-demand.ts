@@ -7,6 +7,8 @@ export const KEEP_AWAKE_HOURS_LOOKAHEAD_MINUTES = 60;
 export const KEEP_AWAKE_BRIEFING_LOOKAHEAD_MINUTES = 15;
 
 export type KeepAwakeDemandInput = {
+  /** Away mode holds even while idle; the owner can disable its separate setting. */
+  away?: boolean;
   /** A planning/running/stalled job or a manual assistant turn is running now. */
   running: boolean;
   /** A project job is queued and could start once active hours open. */
@@ -44,8 +46,9 @@ export function minutesUntilBriefing(
   return Math.max(0, due - current);
 }
 
-/** Whether the system should stay awake: running work, or work about to start. */
+/** Whether the system should stay awake: away mode, running work, or work about to start. */
 export function keepAwakeDemand(input: KeepAwakeDemandInput): boolean {
+  if (input.away) return true;
   if (input.running) return true;
   if (input.queuedJobs && input.canStartJobs) {
     const wait = minutesUntilActiveHours(input.policy, input.now);

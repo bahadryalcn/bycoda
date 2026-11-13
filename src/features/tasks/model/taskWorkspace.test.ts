@@ -46,7 +46,9 @@ describe("workspace contracts", () => {
         workspaces: { project: { baseBranch: "integration" } },
       }),
     ).toMatchObject({ maxRunningTasks: 3, manualStart: true });
-    for (const maxRunningTasks of [0, 9, 1.5, "2"])
+    for (const maxRunningTasks of [9, 99, Number.MAX_SAFE_INTEGER])
+      expect(parseHostGoal({ ...goal, maxRunningTasks }).maxRunningTasks).toBe(maxRunningTasks);
+    for (const maxRunningTasks of [0, -1, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN, 1.5, "2"])
       expect(() => parseHostGoal({ ...goal, maxRunningTasks })).toThrow("concurrency");
     expect(() => parseHostGoal({ ...goal, manualStart: "yes" })).toThrow("start mode");
     expect(() => parseHostGoal({ ...goal, workspaces: { other: { baseBranch: "main" } } })).toThrow(

@@ -24,6 +24,7 @@ import {
   isRuntimeManagementAction,
 } from "../../conversation/conversation-management-runtime";
 import { isRoomFileAction } from "../room/assistant-room-files";
+import { isDesktopControlConversationTool } from "../../conversation/conversation-desktop-control-tools";
 import { isRoomAppRead } from "../room/assistant-room-app-reads";
 import { isRoomPrWatchAction } from "../room/assistant-room-pr-watch";
 import { isRoomFolderAction } from "../folders/assistant-folder-schemas";
@@ -366,7 +367,9 @@ export function createRoomManagementDispatcher(ports: {
         : {}),
       ...(!call.projectId &&
       call.family === "conversation" &&
-      (isRoomFileAction(call.action) || isRoomFolderAction(call.action))
+      (isRoomFileAction(call.action) ||
+        isRoomFolderAction(call.action) ||
+        isDesktopControlConversationTool(call.action))
         ? { contributorProjectIds: [] }
         : {}),
       ...(!call.projectId &&

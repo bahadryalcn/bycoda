@@ -55,6 +55,20 @@ function gate() {
   return { opened, open };
 }
 
+it("keeps notification destination discovery owner-only on the captured Host", async () => {
+  const target = {
+    accountId: "account",
+    accountLabel: "Telegram",
+    conversationId: "conversation",
+    conversationLabel: "Owner",
+  };
+  const f = await fixture({ notificationTargets: async () => [target] });
+  expect((await f.request({ op: "notifications.targets" })).notificationTargets).toEqual([target]);
+  await expect(f.service.request({ op: "notifications.targets" }, "assistant")).rejects.toThrow(
+    "owner's direct authority",
+  );
+});
+
 it("answers owner reads while a reply model turn holds the request queue", async () => {
   const model = gate(),
     started = gate();

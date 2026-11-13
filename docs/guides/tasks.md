@@ -10,10 +10,10 @@ Local project options can appear while other sources are still loading. Sprint d
 
 ## Model selection
 
-Tasks, goals and stewards choose **Default**, **Pool** or **Fixed** for each model
-role. Default follows the matching role in **Settings > Models**. Pool uses a
-named ordered subset; Fixed keeps the selected model. **Manage in Models** opens
-the shared order and limits. Workers, reviewers and planners resolve when their
+Tasks, epics and stewards choose **Default**, **Pool** or **Fixed** for each model
+role. Default follows the matching role in **Settings > Background work**. Pool uses a
+named ordered subset; Fixed keeps the selected model. **Manage models** opens
+the shared Work order and limits. Workers, reviewers and planners resolve when their
 run starts; changing settings never switches an existing session. If every model
 is skipped, pending work waits for eligibility. See [Models](models.md).
 
@@ -29,9 +29,26 @@ Automatic correction is bounded. Repeating an unchanged failed check stops anoth
 
 A review with acceptance criteria is bound to the working-copy contents it inspected. In a shared checkout it waits while another task's worker is still writing there. If the contents still change during the review, the stale verdict is discarded and the current contents are reviewed again, at most twice; a third change blocks the task with that reason.
 
-A goal runs only the reviews its plan needs. A plan with one task skips the final goal review, because that task's own review already covered the whole job. When the planner marks a small, low-risk job as simple, its tasks run their configured checks without a separate reviewer. Neither rule adds a review you turned off.
+An epic runs only the reviews its plan needs. A plan with one task skips the final epic review, because that task's own review already covered the whole job. When the planner marks a small, low-risk job as simple, its tasks run their configured checks without a separate reviewer. Neither rule adds a review you turned off.
+
+An epic is a planned outcome split into tasks for owner approval. Existing saved goal records and Host API identifiers continue to work. Codex's native `/goal` command remains a separate conversation capability; it does not create or approve an epic.
 
 ## Retry safely
+
+Automatic correction allows one repair, after a configured read-only advisor has
+returned advice. A second failed review keeps its findings for owner review.
+Transient worker failures retry once. Missing advisor access or incomplete advice
+leaves the task waiting with its reason; it does not silently skip consultation.
+Capacity waits and advice taking more than one minute retain the same queued
+consultation across scheduler ticks. The repair allowance is consumed only after
+nonempty successful advice.
+Under Advanced, **Allow subagents** enables Automatic delegation; disabling it
+keeps subagents off for that task, including after changing its model.
+
+Eligible blocked tasks offer **Finish with findings** in card actions and task
+details. This retains the failed review and notices, and grants no delivery approval.
+Stopped, unauthorized and resource-blocked work cannot use this action. Machine
+concurrency accepts any positive safe integer; the configured global limit still applies.
 
 If creating a task loses its reply, keep the draft and retry it. The draft retains its creation identity and checks the original Host for the existing task before another save. If the original result is still unknown, resolve it on that project and machine before changing the target. Closing the draft and creating a separate new one is a new request.
 

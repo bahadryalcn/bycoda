@@ -4,7 +4,10 @@ import { expect, test, type Page } from "@playwright/test";
 const captures = join(process.cwd(), "temp/verification/voice-visual-styles");
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
-    test(`bounded voice motion on high-refresh display ${theme} ${width}`, async ({ browser }) => {
+    test(`bounded voice motion on high-refresh display ${theme} ${width}`, async ({
+      browser,
+      baseURL,
+    }) => {
       const output = join(process.cwd(), "temp/verification/2026-11-13-voice-motion");
       await mkdir(output, { recursive: true });
       const context = await browser.newContext({
@@ -13,7 +16,7 @@ for (const theme of ["light", "dark"])
         recordVideo: { dir: output },
       });
       const page = await context.newPage();
-      const base = "http://127.0.0.1:1497/tests/browser/voice/";
+      const base = new URL("/tests/browser/voice/", baseURL).href;
       const moving = async (selector: string) => {
         const node = page.locator(selector).first();
         await expect(node).toBeVisible();
@@ -276,12 +279,21 @@ for (const theme of ["light", "dark"])
           "working",
         ]) {
           const panel = await open(page, visual, state, theme, width);
-          await expect(panel.locator(`[data-visual="${visual}"]`)).toBeVisible();
+          const actualState = state === "working" ? "listening" : state;
+          await expect(
+            panel
+              .locator(`span[data-state="${actualState}"]`)
+              .filter({ has: page.locator("[data-spoke]") }),
+          ).toBeVisible();
           expect(await panel.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
           await panel.screenshot({
             path: join(captures, `${theme}-${width}-${visual}-${state}.png`),
             animations: "disabled",
           });
+          await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
+          await expect(panel.locator(`[data-visual="${visual}"]`)).toBeVisible();
+          await expect(panel).toHaveAttribute("data-voice-state", actualState);
+          await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
         }
         await panelCompact(page, visual, theme, width);
       }
@@ -290,9 +302,11 @@ for (const theme of ["light", "dark"])
       const picker = page.getByRole("radiogroup", { name: "Visual style", exact: true });
       await picker.scrollIntoViewIfNeeded();
       await picker.getByRole("radio", { name: "Wave", exact: true }).click();
-      await expect(
-        page.locator("section[data-voice-state]").locator('[data-visual="wave"]'),
-      ).toBeVisible();
+      await expect(picker.getByRole("radio", { name: "Wave", exact: true })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      await expect(picker.locator('[data-visual="wave"]')).toBeVisible();
       await picker.getByRole("radio", { name: "Wave", exact: true }).press("ArrowRight");
       await expect(picker.getByRole("radio", { name: "Dots", exact: true })).toBeFocused();
       await expect(picker.getByRole("radio", { name: "Dots", exact: true })).toHaveAttribute(
@@ -304,6 +318,9 @@ for (const theme of ["light", "dark"])
         path: join(captures, `${theme}-${width}-picker.png`),
         animations: "disabled",
       });
+      const panel = page.locator("section[data-voice-state]");
+      await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
+      await expect(panel.locator('[data-visual="dots"]')).toBeVisible();
     });
   }
 async function panelCompact(page: Page, visual: string, theme: string, width: number) {
@@ -349,7 +366,18 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
     })
     .toBe(true);
   await page.emulateMedia({ reducedMotion: "reduce" });
+  const core = panel.locator("span[data-state]").filter({ has: page.locator("[data-spoke]") });
+  const still = await core.innerHTML();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  expect(await core.innerHTML()).toBe(still);
+  await panel.getByRole("button", { name: "Compact voice companion", exact: true }).click();
   await expect(panel.locator("[data-visual]")).toHaveAttribute("data-animating", "false");
+  await panel.getByRole("button", { name: "Expand voice companion", exact: true }).click();
   await page.screenshot({
     path: join(captures, "reduced-motion-dark-800.png"),
     animations: "disabled",
@@ -363,8 +391,9 @@ test("keyboard move, drag, compact double click, viewport clamp, Escape and redu
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
-    test(`voice header coarse targets ${theme} ${width}`, async ({ browser }) => {
+    test(`voice header coarse targets ${theme} ${width}`, async ({ browser, baseURL }) => {
       const context = await browser.newContext({
+        baseURL,
         viewport: { width, height: 900 },
         hasTouch: true,
       });

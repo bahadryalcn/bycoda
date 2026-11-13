@@ -1,4 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { IS_MAC } from "../../../platform/tauri/platform";
+import { keybindingPressed } from "../../settings/public/settings";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
+import { bindDictationShortcut, DICTATION_COMMAND } from "../model/dictationShortcut";
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { motionAttributes } from "../../../shared/ui/Motion";
@@ -20,12 +24,16 @@ import styles from "./DictationButton.module.css";
  */
 export function DictationButton({
   sessionId,
+  projectId,
+  editorRef,
   disabled = false,
   onText,
   onError,
 }: {
   /** Session whose message box receives the text, named by the off-screen indicator. */
   sessionId?: string;
+  projectId?: string;
+  editorRef?: RefObject<HTMLTextAreaElement | null>;
   disabled?: boolean;
   onText: (text: string, final: boolean, run: object) => void;
   onError: (message: string) => void;
@@ -33,6 +41,7 @@ export function DictationButton({
   const t = useT();
   const locale = useLocale();
   const settings = useVoiceSettings();
+  const shortcut = useKeybindingShortcut(DICTATION_COMMAND);
   const [state, setState] = useState<DictationState>("idle");
   const dictation = useRef<Dictation | null>(null);
   const visual = useRef<HTMLSpanElement>(null);
@@ -71,9 +80,8 @@ export function DictationButton({
     if (disabled || !settings.dictationEnabled) dictation.current?.cancel();
   }, [disabled, settings.dictationEnabled]);
 
-  if (!settings.dictationEnabled) return null;
-
   const toggle = () => {
+    if (disabled || !settings.dictationEnabled) return;
     const current = dictation.current;
     if (state === "finishing") {
       current?.cancel();
@@ -103,16 +111,68 @@ export function DictationButton({
         },
       },
       dictationLanguage(settings, locale),
-      voiceRuntimeSettings(settings),
+      {
+        ...voiceRuntimeSettings(settings),
+        idleUnloadMinutes: settings.dictationIdleUnloadMinutes,
+        ...(settings.dictationLocalModelPath
+          ? { whisperPath: settings.dictationLocalModelPath, whisperExact: true }
+          : {}),
+      },
       settings.microphoneId,
       settings.dictationEngine,
       settings.dictationEngine === "local"
         ? undefined
         : settings.dictationModels[settings.dictationEngine],
+      {
+        dictionary: settings.dictationDictionary,
+        projectId,
+        removeFillers: settings.dictationRemoveFillers,
+        language: dictationLanguage(settings, locale),
+        correctionCue: settings.dictationCleanup.correctionCue,
+        cleanup: settings.dictationCleanup,
+        silenceFilter: settings.dictationSilenceFilter,
+      },
     );
     dictation.current = next;
     void next.start();
   };
+
+  const shortcutState = useRef({ toggle, settings, disabled, editorRef });
+  shortcutState.current = { toggle, settings, disabled, editorRef };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Attach focused-composer shortcut listeners for this mounted composer and release held capture with those listeners.
+  useEffect(
+    () =>
+      bindDictationShortcut(window, {
+        mode: () => shortcutState.current.settings.dictationShortcutMode,
+        focused: () => {
+          const current = shortcutState.current;
+          return (
+            !current.disabled &&
+            current.settings.dictationEnabled &&
+            !!current.editorRef?.current &&
+            document.activeElement === current.editorRef.current
+          );
+        },
+        matches: (event) =>
+          keybindingPressed(
+            DICTATION_COMMAND,
+            event,
+            (IS_MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) &&
+              event.shiftKey &&
+              !event.altKey &&
+              event.key.toLowerCase() === "m",
+          ),
+        active: () => !!dictation.current,
+        start: () => shortcutState.current.toggle(),
+        stop: () => {
+          void dictation.current?.stop().catch(() => {});
+        },
+        cancel: () => dictation.current?.cancel(),
+      }),
+    [],
+  );
+
+  if (!settings.dictationEnabled) return null;
 
   const listening = state === "listening";
   const label =
@@ -130,6 +190,7 @@ export function DictationButton({
         motion="none"
         iconOnly
         label={label}
+        shortcut={shortcut ?? undefined}
         tooltip={state === "idle" ? t("Dictate: speak and the text appears here") : label}
         data-dictation-state={state}
         aria-busy={state === "starting" || state === "finishing" || undefined}

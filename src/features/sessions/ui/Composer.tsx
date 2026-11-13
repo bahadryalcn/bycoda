@@ -3907,6 +3907,8 @@ export const Composer = memo(function Composer({
               ) : null}
               <DictationButton
                 sessionId={sessionId}
+                projectId={projectKey(cwd)}
+                editorRef={ref}
                 disabled={disabled}
                 onText={(text, final, run) => {
                   if (ref.current && canMutateDraft())

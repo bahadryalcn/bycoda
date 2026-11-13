@@ -281,3 +281,19 @@ it("saves the first-use model through the reviewed policy path, keeping the rest
   });
   act(() => probeRoot.unmount());
 });
+
+it("keeps text entered after planning began", async () => {
+  let resolve!: (value: typeof plan) => void;
+  const client = fakeClient({
+    command: () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  });
+  await mount(client);
+  await typeCommand("First revision");
+  await click(buttonWithText("Plan"));
+  await typeCommand("Next request");
+  await act(async () => resolve(plan));
+  expect(area().value).toBe("Next request");
+});

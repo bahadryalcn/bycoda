@@ -38,6 +38,10 @@ branch rather than the project name. Its full path remains available separately
 from workspace switching. Use the root control to collapse or expand the tree;
 file and folder context menus retain their filesystem actions.
 
+If you switch projects while a submitted file creation finishes, the file stays
+in its original folder without opening over your current editor. IME candidate
+confirmation in the tree does not open files or change the selection.
+
 The compact header keeps New File, New Folder, Collapse All, search and refresh
 as icon actions next to the root name; each has a name and a tooltip. In a narrow
 pane Collapse All and search fold into the Explorer actions menu, whose first group

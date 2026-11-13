@@ -1,3 +1,4 @@
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { Divider } from "../../../shared/ui/Divider";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -232,7 +233,7 @@ export function TabGroupMenu({
             loading={logoBusy}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              if (logoOperation.current) return;
+              if (logoOperation.current || !commitName()) return;
               logoOperation.current = true;
               setLogoBusy(true);
               setLogoError(null);
@@ -371,7 +372,7 @@ export function TabGroupMenu({
       label: item.label,
       description: item.description,
       danger: item.danger,
-      disabled: item.disabled,
+      disabled: item.disabled || logoBusy,
       icon: item.badge ? (
         <span className="relative grid shrink-0 place-items-center">
           <Icon className="icon-sm" strokeWidth={1.75} />
@@ -401,10 +402,11 @@ export function TabGroupMenu({
             startAdornment={<Pencil className="icon-sm" strokeWidth={1.75} />}
             ref={input}
             value={name}
+            disabled={logoBusy}
             onChange={(e) => setName(e.target.value)}
             onBlur={() => void commitName()}
             onKeyDown={(e) => {
-              if (e.key !== "Enter") return;
+              if (e.key !== "Enter" || isImeComposition(e.nativeEvent)) return;
               e.preventDefault();
               if (commitName()) onClose();
             }}
@@ -455,8 +457,13 @@ export function TabGroupMenu({
       items={items}
       // Standard actions are closed by the caller; extras close unless onExtraPick vetoes.
       closeOnSelect={false}
-      onPick={(id) => (standard.has(id) ? onPick(id as TabGroupMenuAction) : pickExtra(id))}
-      onClose={onClose}
+      onPick={(id) => {
+        if (!logoBusy) {
+          if (standard.has(id)) onPick(id as TabGroupMenuAction);
+          else pickExtra(id);
+        }
+      }}
+      onClose={logoBusy ? () => {} : onClose}
     />
   );
 }

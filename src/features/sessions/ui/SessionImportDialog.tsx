@@ -45,7 +45,7 @@ import {
   type ImportSummary,
 } from "../import/importRunner";
 import { HarnessIcon } from "./HarnessIcon";
-import { DoneView, RunningView, plural } from "./SessionImportResult";
+import { DoneView, RunningView, importCount } from "./SessionImportResult";
 
 type Props = {
   initialContext?: SessionImportContext;
@@ -158,7 +158,6 @@ async function performImport({
 export function SessionImportDialog({ onClose, onImported, initialContext }: Props) {
   const t = useT();
   const locale = useLocale();
-  const { formatNumber } = useFormat();
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [providers, setProviders] = useState<ReadonlySet<ImportProvider>>(
     () => new Set(initialContext ? [initialContext.provider] : PROVIDERS),
@@ -489,7 +488,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                     description={
                       temporaryCount > 0
                         ? t("{p0} in scratch folders. They are never deleted.", {
-                            p0: plural(formatNumber, temporaryCount, "conversation"),
+                            p0: importCount(t, temporaryCount, "conversation"),
                           })
                         : t("Scratch folders such as the system temp directory.")
                     }
@@ -537,8 +536,8 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   }
                 />
                 <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                  {plural(formatNumber, folders.length, "folder")} ·{" "}
-                  {plural(formatNumber, visible.length, "conversation")}
+                  {importCount(t, folders.length, "folder")} ·{" "}
+                  {importCount(t, visible.length, "conversation")}
                   {report.candidates.length !== visible.length
                     ? t(" (of {p0})", { p0: report.candidates.length.toLocaleString(locale) })
                     : ""}
@@ -647,7 +646,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                     <Text size="micro" tone="muted" className="shrink-0">
                       {groupPreview.length === 0
                         ? t("No groups")
-                        : plural(formatNumber, groupPreview.length, "group")}
+                        : importCount(t, groupPreview.length, "group")}
                     </Text>
                     <InfoPopover label={t("Sidebar groups")}>
                       <p>
@@ -672,13 +671,13 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                   {counts.toImport === 0
                     ? t("Nothing selected to import.")
                     : t("{p0} in {p1} will be imported ({p2} on disk).", {
-                        p0: plural(formatNumber, counts.toImport, "conversation"),
-                        p1: plural(formatNumber, counts.folders, "folder"),
+                        p0: importCount(t, counts.toImport, "conversation"),
+                        p1: importCount(t, counts.folders, "folder"),
                         p2: formatBytes(counts.bytes),
                       })}
                   {counts.alreadyImported > 0
                     ? t(" {p0} already imported will be skipped.", {
-                        p0: plural(formatNumber, counts.alreadyImported, "conversation"),
+                        p0: importCount(t, counts.alreadyImported, "conversation"),
                       })
                     : ""}
                   {hiddenSelected > 0 ? (

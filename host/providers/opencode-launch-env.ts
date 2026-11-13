@@ -29,3 +29,45 @@ export function opencodeLaunchEnv(
   const content = external ? opencodeConfigContent(external) : undefined;
   return content ? { OPENCODE_CONFIG_CONTENT: content } : {};
 }
+
+/** Only an isolated serve process accepts a renderer's primitive compaction choice. */
+export function opencodeSessionCompaction(args: Record<string, unknown>): "on" | "off" | undefined {
+  const value = args.autoCompact;
+  if (value === undefined) return undefined;
+  if (
+    (value !== "on" && value !== "off") ||
+    args.binaryProvider !== "opencode" ||
+    args.genericAcpId ||
+    !Array.isArray(args.args) ||
+    args.args[0] !== "serve"
+  ) {
+    throw new Error("Invalid isolated OpenCode compaction setting.");
+  }
+  return value;
+}
+
+/** Merge into Host-owned config; renderer environment/MCP credentials are never copied. */
+export function opencodeCompactionEnv(
+  content: string | undefined,
+  mode: "on" | "off" | undefined,
+): Record<string, string> {
+  if (!mode) return {};
+  if (content && content.length > 64 * 1024)
+    throw new Error("OpenCode inline configuration is too large.");
+  const config: unknown = content ? JSON.parse(content) : {};
+  if (!config || typeof config !== "object" || Array.isArray(config))
+    throw new Error("Invalid OpenCode inline configuration.");
+  const current = config as Record<string, unknown>;
+  const compaction = current.compaction;
+  if (
+    compaction !== undefined &&
+    (!compaction || typeof compaction !== "object" || Array.isArray(compaction))
+  )
+    throw new Error("Invalid OpenCode compaction configuration.");
+  return {
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({
+      ...current,
+      compaction: { ...(compaction as Record<string, unknown>), auto: mode === "on" },
+    }),
+  };
+}

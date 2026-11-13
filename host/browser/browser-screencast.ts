@@ -36,6 +36,7 @@ export function browserFrameCursor(after: unknown, waitMs: unknown) {
  */
 export class BrowserScreencast {
   private page?: ScreencastPage;
+  private generation = 0;
   private session?: ScreencastSession;
   private starting?: Promise<void>;
   private latest?: ScreencastFrame;
@@ -57,16 +58,18 @@ export class BrowserScreencast {
   async next(page: ScreencastPage, after: number, waitMs: number) {
     if (this.page !== page) await this.stop();
     this.page = page;
+    const generation = this.generation;
     if (this.idle) clearTimeout(this.idle);
     this.idle = setTimeout(() => void this.stop().catch(() => {}), IDLE_STOP_MS);
     this.idle.unref?.();
     try {
-      await (this.starting ??= this.start(page));
+      await (this.starting ??= this.start(page, generation));
     } catch (error) {
       // Forget the failed start so the next read tries again.
-      await this.stop();
+      if (this.generation === generation) await this.stop();
       throw error;
     }
+    if (this.generation !== generation) return undefined;
     const current = () =>
       this.latest && this.latest.sequence > after && this.latest.stamp === this.describe().stamp
         ? this.latest
@@ -81,6 +84,7 @@ export class BrowserScreencast {
         const timer = setTimeout(done, waitMs);
         this.waiters.add(done);
       });
+    if (this.generation !== generation) return undefined;
     const frame = current();
     // A document that changed without repainting gets a fresh first picture next read.
     if (!frame && this.page === page && this.latest?.stamp !== this.describe().stamp)
@@ -88,9 +92,10 @@ export class BrowserScreencast {
     return frame;
   }
 
-  private async start(page: ScreencastPage) {
+  private async start(page: ScreencastPage, generation: number) {
     const session = (await page.context!().newCDPSession(page)) as ScreencastSession;
-    if (this.page !== page) return void session.detach().catch(() => {});
+    if (this.page !== page || this.generation !== generation)
+      return void session.detach().catch(() => {});
     this.session = session;
     session.on?.("Page.screencastFrame", (frame: { data?: unknown; sessionId?: unknown }) => {
       // Chromium holds the next picture until this one is acknowledged.
@@ -104,6 +109,7 @@ export class BrowserScreencast {
   }
 
   async stop() {
+    this.generation++;
     if (this.idle) clearTimeout(this.idle);
     this.idle = undefined;
     const session = this.session;

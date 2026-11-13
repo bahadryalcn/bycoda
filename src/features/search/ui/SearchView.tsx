@@ -180,9 +180,15 @@ export function SearchView({
     DEFAULT_CHAT_FILTERS,
   );
 
-  const trimmed = query.trim();
-
   const appliedRequest = useRef<SearchRequest | undefined>(undefined);
+  const sourceScope = open && request && appliedRequest.current !== request ? request.scope : scope;
+  const trimmed = query.trim();
+  const fileMode = sourceScope === "all" || sourceScope === "files";
+  const conversationMode = sourceScope === "all" || sourceScope === "conversations";
+  const filesEnabled = open && fileMode;
+  const localConversationsEnabled = open && sourceScope === "all";
+  const projectsEnabled = open && (sourceScope === "all" || sourceScope === "projects");
+
   useEffect(() => {
     if (!open || !request || appliedRequest.current === request) return;
     appliedRequest.current = request;
@@ -220,8 +226,9 @@ export function SearchView({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open]);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keep the visible file index in sync with file-index notifications and release its subscription when hidden.
   useEffect(() => {
-    if (!open) return;
+    if (!filesEnabled) return;
     if (!looksLikeProject(cwd)) {
       setFileIndex({ cwd, files: [] });
       return;
@@ -252,31 +259,37 @@ export function SearchView({
       cancelled = true;
       unsubscribe();
     };
-  }, [cwd, open, fileRetry]);
+  }, [cwd, filesEnabled, fileRetry]);
 
   const deferredTrimmed = useDeferredValue(trimmed);
   const deferredSessions = useDeferredValue(sessions);
   const [messageSearch] = useState(() => new SessionMessageSearch());
   const conversationRows = useMemo(
-    () => conversationRowsFrom(history, deferredSessions),
-    [history, deferredSessions],
+    () => (localConversationsEnabled ? conversationRowsFrom(history, deferredSessions) : []),
+    [localConversationsEnabled, history, deferredSessions],
   );
   const fileHits = useMemo(
     () =>
-      deferredTrimmed && looksLikeProject(cwd)
+      filesEnabled && deferredTrimmed && looksLikeProject(cwd)
         ? hitsFromFileRanks(rankProjectFiles(files, deferredTrimmed, recentOpenedFiles(cwd), 40))
         : [],
-    [cwd, files, deferredTrimmed],
+    [filesEnabled, cwd, files, deferredTrimmed],
   );
   const titleHits = useMemo(
-    () => (deferredTrimmed ? searchConversationTitles(conversationRows, deferredTrimmed) : []),
-    [conversationRows, deferredTrimmed],
-  );
-  const liveMessageHits = useMemo(
     () =>
-      messageSearch.search(
-        deferredTrimmed
-          ? deferredSessions.map((session) => ({
+      localConversationsEnabled && deferredTrimmed
+        ? searchConversationTitles(conversationRows, deferredTrimmed)
+        : [],
+    [localConversationsEnabled, conversationRows, deferredTrimmed],
+  );
+  const liveMessageHits = useMemo(() => {
+    if (!localConversationsEnabled) return [];
+    const eligibleIds = new Set(conversationRows.map((session) => session.id));
+    return messageSearch.search(
+      deferredTrimmed
+        ? deferredSessions
+            .filter((session) => eligibleIds.has(session.id))
+            .map((session) => ({
               id: session.id,
               cwd: session.cwd,
               harness: session.harness,
@@ -284,14 +297,19 @@ export function SearchView({
               updatedAt: Date.now(),
               blocks: session.blocks,
             }))
-          : [],
-        deferredTrimmed,
-      ),
-    [messageSearch, deferredSessions, deferredTrimmed],
-  );
+        : [],
+      deferredTrimmed,
+    );
+  }, [
+    localConversationsEnabled,
+    conversationRows,
+    messageSearch,
+    deferredSessions,
+    deferredTrimmed,
+  ]);
   const projectHits = useMemo(
-    () => (trimmed ? searchRecentProjects(recents, trimmed) : []),
-    [recents, trimmed],
+    () => (projectsEnabled && trimmed ? searchRecentProjects(recents, trimmed) : []),
+    [projectsEnabled, recents, trimmed],
   );
   const grouping = useMemo(
     () => {
@@ -316,24 +334,22 @@ export function SearchView({
   );
   const conversationRevision = useMemo(
     () =>
-      JSON.stringify([
-        history.map((session) => session.id).sort(),
-        sessions.map((session) => session.id).sort(),
-      ]),
-    [history, sessions],
+      open && conversationMode
+        ? JSON.stringify([
+            history.map((session) => session.id).sort(),
+            sessions.map((session) => session.id).sort(),
+          ])
+        : "",
+    [open, conversationMode, history, sessions],
   );
   const conversation = useConversationSearch(
-    open && (scope === "all" || scope === "conversations"),
+    open && conversationMode,
     conversationOptions,
     conversationRevision,
   );
   const chatSessions = conversation.result.sessions;
   const pendingIndex = conversation.result.pending;
-  const projectSearch = useProjectFileSearch(
-    open && (scope === "all" || scope === "files") && looksLikeProject(cwd),
-    cwd,
-    trimmed,
-  );
+  const projectSearch = useProjectFileSearch(filesEnabled && looksLikeProject(cwd), cwd, trimmed);
   const contentHits = useMemo(
     () => hitsFromContentMatches(projectSearch.result.matches),
     [projectSearch.result.matches],
@@ -342,8 +358,6 @@ export function SearchView({
     scope === "all" || scope === "files"
       ? (projectSearch.error ?? (fileIndexError?.cwd === cwd ? fileIndexError.error : null))
       : null;
-  const fileMode = scope === "all" || scope === "files";
-  const conversationMode = scope === "all" || scope === "conversations";
   const conversationError = conversationMode ? conversation.error : null;
   const loading =
     (fileMode && projectSearch.loading) ||

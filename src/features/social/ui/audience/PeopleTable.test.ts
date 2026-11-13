@@ -138,3 +138,30 @@ describe("PeopleTable", () => {
     expect(buttonByText("Load more people")).toBeUndefined();
   });
 });
+
+it("reserves intrinsic categorical cells and bounds long identities with full value access", () => {
+  const name = "Alexandria " + "VeryLongFamilyName".repeat(12);
+  const address = "long.".repeat(35) + "@example.com";
+  renderTable({
+    people: [
+      person({
+        id: "long",
+        name,
+        handles: [],
+        emails: [{ address, source: "manual", verified: false }],
+        stage: "new",
+      }),
+    ],
+  });
+  const table = document.querySelector("table")!;
+  expect(table.hasAttribute("data-intrinsic")).toBe(true);
+  expect(table.hasAttribute("data-fixed")).toBe(false);
+  expect(table.querySelector("tbody td[data-primary]")?.getAttribute("data-sizing")).toBe("flex");
+  expect(table.querySelector('tbody td[data-label="Status"]')?.getAttribute("data-sizing")).toBe(
+    "content",
+  );
+  expect(table.querySelector('tbody td[data-label="Status"]')?.textContent).toBe("New");
+  expect(table.querySelector('tbody td[data-label="Accounts"]')?.textContent).toBe("No account");
+  expect(table.querySelector("tbody td[data-primary]")?.textContent).toContain(name);
+  expect(table.querySelector("tbody td[data-primary]")?.textContent).toContain(address);
+});

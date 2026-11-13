@@ -174,6 +174,7 @@ export async function handleNativeRpc(
     case "native.services.assistant.notification.authorize":
 
     case "native.services.assistant.workspace.authorize":
+    case "native.services.assistant.background.execute":
 
     case "native.services.assistant.browser.panel":
 

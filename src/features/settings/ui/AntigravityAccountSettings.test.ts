@@ -27,6 +27,7 @@ vi.mock("../../sessions/model/models", () => ({
   setHarnessModels: mock.setModels,
 }));
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
+import { RevealedSetting } from "./settingsControls";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -91,6 +92,19 @@ it("shows both native installers and the real agy authentication instructions", 
   expect(container.textContent).toContain("GEMINI_API_KEY");
   expect(container.textContent).toContain("enterprise Gemini Code Assist");
   expect(container.textContent).not.toContain("npm install");
+});
+
+it("expands shared-account instructions when Settings search reveals them", () => {
+  act(() =>
+    root.render(
+      createElement(
+        RevealedSetting.Provider,
+        { value: "antigravity-account" },
+        createElement(AntigravityAccountSettings, { embedded: true }),
+      ),
+    ),
+  );
+  expect(container.querySelector<HTMLDetailsElement>("details")?.open).toBe(true);
 });
 it("does not discover models or claim sign-in when the CLI is missing", async () => {
   render();

@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
@@ -132,7 +133,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
     <ExplorerMenu
       x={x}
       y={y}
-      ariaLabel="Inbox actions"
+      ariaLabel={t("Inbox actions")}
       width={272}
       items={items}
       onClose={onClose}
@@ -154,7 +155,7 @@ export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onCl
             )}
           />
           {seenStatus.state === "loading" ? (
-            <Alert tone="info">{t("Loading Inbox read status…")}</Alert>
+            <LoadingText>{t("Loading Inbox read status…")}</LoadingText>
           ) : seenStatus.state === "error" ? (
             <Alert tone="danger">
               {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}{" "}

@@ -56,10 +56,12 @@ export {
 export function SettingResetButton({
   onReset,
   label,
+  disabled = false,
 }: {
   onReset: () => void;
   /** Accessible name and tooltip. Defaults to "Restore default". */
   label?: string;
+  disabled?: boolean;
 }) {
   useLocale();
   const name = label ?? t("Restore default");
@@ -73,6 +75,7 @@ export function SettingResetButton({
       className="settings-reset shrink-0"
       textTone="secondary"
       onClick={onReset}
+      disabled={disabled}
     >
       <RotateCcw aria-hidden className="icon-xs" strokeWidth={1.75} />
     </Button>
@@ -612,6 +615,10 @@ export function Row({
         rowSurface.className,
       )}
       {...(inactive && disabledReason ? reasonTip.trigger : null)}
+      role={inactive ? "group" : undefined}
+      aria-labelledby={inactive ? labelId : undefined}
+      aria-describedby={inactive && hasDescription ? descriptionId : undefined}
+      aria-disabled={inactive || undefined}
     >
       <div className="settings-row-label">
         <div className="settings-title-line">
@@ -646,7 +653,9 @@ export function Row({
             </InfoPopover>
           ) : null}
           <InfoSlot info={info} />
-          {modified && onReset ? <SettingResetButton onReset={onReset} label={resetLabel} /> : null}
+          {modified && onReset ? (
+            <SettingResetButton onReset={onReset} label={resetLabel} disabled={inactive} />
+          ) : null}
         </div>
         <div id={descriptionId}>
           {hasInfo ? <p className="sr-only">{description}</p> : null}

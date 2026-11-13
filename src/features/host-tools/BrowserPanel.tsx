@@ -1,11 +1,14 @@
+import { resolveBrowserAddress } from "./model/browserAddress";
+import { browserDefaultViewport, toolPreferences } from "./model/toolPreferences";
+import type { BrowserViewState as BrowserState } from "./model/browserViewState";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
 import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Alert } from "../../shared/ui/Alert";
 import { Heading } from "../../shared/ui/Heading";
+import { PanelHeader } from "../../shared/ui/PanelHeader";
 import { Progress } from "../../shared/ui/Progress";
-import { InlineError } from "../../shared/ui/InlineError";
 import { DetailedInlineError } from "../../shared/ui/ErrorDetails";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
@@ -24,7 +27,6 @@ import {
 import { BrowserAnnotationDetails } from "./BrowserAnnotationDetails";
 import { BrowserInspectorNavigation } from "./BrowserInspectorNavigation";
 import { Button } from "../../shared/ui/Button";
-import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { Popover } from "../../shared/ui/Popover";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
@@ -38,43 +40,25 @@ import {
   CursorMagicSelection,
   RefreshCw,
   SlidersHorizontal,
-  Globe,
   Maximize2,
-  Pause,
-  Play,
   MessageSquarePlus,
   X,
 } from "../../shared/ui/icons";
-import { BrowserControlToggle, BrowserControlsPopover } from "./ui/BrowserControls";
+import {
+  BrowserAddressInput,
+  BrowserControlToggle,
+  BrowserControlsPopover,
+  BrowserLiveToggle,
+} from "./ui/BrowserControls";
 import { BrowserStartPage } from "./ui/BrowserStartPage";
+import { BrowserViewportMenu } from "./ui/BrowserViewportMenu";
 import { rememberBrowserUrl } from "./model/browserRecents";
-import { browserStatusPresentation } from "./model/browserStatus";
+import { browserInputDisabledReason, browserStatusPresentation } from "./model/browserStatus";
 import { browserKeyInput } from "./model/browserKeys";
 import { useBrowserLeaseKeepAlive, useBrowserLiveFrames } from "./hooks/useBrowserLiveFrames";
 import { Disclosure } from "../../shared/ui/Disclosure";
 import "./BrowserPanel.css";
 
-type BrowserState = {
-  open: boolean;
-  url: string | null;
-  controlling: boolean;
-  leaseId?: string;
-  leaseExpiresAt?: number;
-  data?: string;
-  mimeType?: string;
-  width?: number;
-  height?: number;
-  viewport?: { width: number; height: number };
-  navigationId?: string;
-  documentId?: string;
-  frameSequence?: number;
-  cursor?: string;
-  annotationId?: string;
-  selection?: BrowserAnnotationCapture;
-  hover?: BrowserElementTarget;
-  limitation?: string;
-  runtime?: { installed: boolean; installing: boolean; version: string };
-};
 type Frame = {
   src: string;
   width: number;
@@ -136,19 +120,24 @@ function ProjectBrowserPanel({
   }, [onMounted]);
   useLocale();
   const [state, setState] = useState<BrowserState>();
-  const [url, setUrl] = useState(initialUrl ?? "http://localhost:3000");
+  const [url, setUrl] = useState(() => initialUrl ?? toolPreferences.browserHomeUrl.load());
   const [text, setText] = useState("");
   const [frame, setFrame] = useState<Frame>();
   const [cursor, setCursor] = useState<string>();
   // Mounting always starts with a status read; controls wait for it instead of
   // accepting a submit that the pending read would drop.
   const [busy, setBusy] = useState(true);
-  const [live, setLive] = useState(true);
+  const [defaultViewport] = useState(browserDefaultViewport);
+  const [searchSettings] = useState(() => ({
+    engine: toolPreferences.browserSearchEngine.load(),
+    template: toolPreferences.browserSearchTemplate.load(),
+  }));
+  const [live, setLive] = useState(() => toolPreferences.browserLiveView.load());
   const activeRef = useRef(active);
   activeRef.current = active;
   const initialized = useRef(false);
   const [controlsOpen, setControlsOpen] = useState(false);
-  const [actualSize, setActualSize] = useState(false);
+  const [actualSize, setActualSize] = useState(() => toolPreferences.browserActualSize.load());
   const controlsTrigger = useRef<HTMLButtonElement>(null);
   const statusTrigger = useRef<HTMLButtonElement>(null);
   const [controlsFromStatus, setControlsFromStatus] = useState(false);
@@ -178,6 +167,8 @@ function ProjectBrowserPanel({
     ...(savedDraft?.captures ?? []),
     ...(savedDraft?.current ? [savedDraft.current] : []),
   ]);
+  const currentCaptures = useRef(captures);
+  currentCaptures.current = captures;
   const [limitation, setLimitation] = useState("");
   const [notice, setNotice] = useState("");
   const alive = useRef(false);
@@ -186,6 +177,7 @@ function ProjectBrowserPanel({
   const generation = useRef(0);
   const frameSequence = useRef(0);
   const serial = useRef<Promise<unknown>>(Promise.resolve());
+  const readRevision = useRef(0);
   const inputQueue = useRef<Promise<void>>(Promise.resolve());
   const queuedInputs = useRef(0);
   const inputFrameTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -344,6 +336,8 @@ function ProjectBrowserPanel({
         throw new Error(t("Browser input was not sent because the page or control changed."));
       if (roomSubject && !roomSubject.valid())
         throw new Error("Room browser source is unavailable.");
+      const serialChange = !beside && method !== "browser.input";
+      const revision = serialChange ? ++readRevision.current : readRevision.current;
       const result = roomSubject
         ? await invoke<BrowserState>("control_room_browser_panel_request", {
             environmentId: roomSubject.environmentId,
@@ -356,6 +350,16 @@ function ProjectBrowserPanel({
         : annotationMethod || hostTarget.kind === "project"
           ? await hostFeatureRequest<BrowserState>(cwd, capability, method, parameters)
           : await hostToolRequest<BrowserState>(cwd, capability, method, parameters, hostTarget);
+      // Page/control changes invalidate live reads; same-page input keeps streaming.
+      if (beside && revision !== readRevision.current) return;
+      if (
+        serialChange ||
+        (!beside &&
+          (result.documentId !== latest.current?.documentId ||
+            result.navigationId !== latest.current?.navigationId ||
+            result.leaseId !== latest.current?.leaseId))
+      )
+        readRevision.current++;
       if (roomSubject && !roomSubject.valid()) throw new Error("Room browser source changed.");
       if (!alive.current || version !== generation.current) {
         if (method === "browser.annotation.start" && result.annotationId)
@@ -390,6 +394,10 @@ function ProjectBrowserPanel({
         };
       result.runtime ??= latest.current?.runtime;
       if (result.cursor && /^[a-z-]+$/.test(result.cursor)) setCursor(result.cursor);
+      const previousUrl = latest.current?.url;
+      const nextUrl = result.url;
+      if (nextUrl && previousUrl && nextUrl !== previousUrl)
+        setUrl((draft) => (draft === previousUrl ? nextUrl : draft));
       latest.current = result;
       setState(result);
       if (method === "browser.annotation.select")
@@ -529,7 +537,10 @@ function ProjectBrowserPanel({
           throw new Error(t("Use an HTTP or HTTPS address."));
         const claimed = await request("browser.claim");
         if (!claimed?.controlling) throw new Error(t("Take control, then open a URL"));
-        if (await request("browser.open", { url: initialUrl })) await request("browser.frame");
+        if (await request("browser.open", { url: initialUrl })) {
+          if (status.open || (await request("browser.resize", defaultViewport)))
+            await request("browser.frame");
+        }
         return;
       }
       if (status?.url) setUrl(status.url);
@@ -739,6 +750,13 @@ function ProjectBrowserPanel({
   const canInput =
     active && !!state?.open && !!state.controlling && !busy && frameCurrent && !inputBlocked;
   const canPageInput = canInput && !selecting;
+  const inputDisabledReason = browserInputDisabledReason({
+    busy,
+    state,
+    frameCurrent,
+    inputBlocked,
+    selecting,
+  });
   wheelHandler.current = (event) => {
     if (
       !canPageInput ||
@@ -761,17 +779,11 @@ function ProjectBrowserPanel({
     return () => element.removeEventListener("wheel", handle);
   }, [Boolean(frame)]);
   const setupRequired = state?.runtime?.installed === false;
-  const validUrl = (() => {
-    try {
-      const parsed = new URL(url.trim());
-      return ["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password;
-    } catch {
-      return false;
-    }
-  })();
+  const validUrl = !!resolveBrowserAddress(url, searchSettings);
 
   const openWebsite = async (target = url.trim()) => {
-    if ((target === url.trim() && !validUrl) || selecting) return;
+    const resolved = resolveBrowserAddress(target, searchSettings);
+    if (!resolved || selecting) return;
     const current = latest.current ?? (await request("browser.status"));
     if (!current) return;
     if (current.runtime?.installed === false)
@@ -786,8 +798,10 @@ function ProjectBrowserPanel({
           t("Browser control is unavailable. Try again when the other device releases it."),
         );
     }
-    if (await request("browser.open", { url: target })) {
-      rememberBrowserUrl(target);
+    if (await request("browser.open", { url: resolved })) {
+      setUrl((draft) => (draft.trim() === target ? resolved : draft));
+      rememberBrowserUrl(resolved);
+      if (!current.open && !(await request("browser.resize", defaultViewport))) return;
       const result = await request("browser.frame");
       if (result?.data) {
         inputBlockedRef.current = false;
@@ -854,34 +868,24 @@ function ProjectBrowserPanel({
           >
             <StatusDot data-browser-status-dot="" tone={statusTone} appearance="solid" size="md" />
           </Button>
-          <TextField
-            fieldClassName="host-browser-url"
-            label={t("Website address")}
-            hideLabel
-            value={url}
-            maxLength={4096}
-            disabled={busy || selecting}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="http://localhost:3000"
-            required
+          <BrowserAddressInput
+            url={url}
+            busy={busy}
+            selecting={selecting}
+            setupRequired={setupRequired}
+            validUrl={validUrl}
+            searchEnabled={searchSettings.engine !== "disabled"}
+            onChange={setUrl}
           />
-          <Button
-            motion="none"
-            type="submit"
-            variant="ghost"
-            iconOnly
-            label={t("Open website")}
-            disabled={busy || selecting || setupRequired || !validUrl}
-          >
-            <Globe className="icon-sm" aria-hidden />
-          </Button>
           <Button
             motion="none"
             type="button"
             variant="ghost"
             iconOnly
             label={t("Refresh frame")}
+            tooltipDetails={[t("Capture the current page without reloading it.")]}
             disabled={busy || !state?.open}
+            disabledReason={busy ? t("Working on the host…") : t("Open a website")}
             onClick={() =>
               void action(async () => {
                 const result = await request("browser.frame");
@@ -900,38 +904,41 @@ function ProjectBrowserPanel({
           role="toolbar"
           aria-label={t("Browser controls and setup")}
         >
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Live view")}
-            role="switch"
-            aria-checked={live}
-            selected={live}
-            disabled={busy || !state?.open || selecting}
-            onClick={() => setLive((value) => !value)}
-          >
-            {live ? (
-              <Pause className="icon-sm" aria-hidden />
-            ) : (
-              <Play className="icon-sm" aria-hidden />
-            )}
-          </Button>
+          <BrowserLiveToggle
+            live={live}
+            open={!!state?.open}
+            busy={busy}
+            selecting={selecting}
+            onToggle={() => setLive((value) => !value)}
+          />
           <Button
             variant="ghost"
             iconOnly
             label={actualSize ? t("Fit preview") : t("Actual size")}
+            tooltipDetails={frame ? [`${frame.width} × ${frame.height}`] : undefined}
             aria-pressed={actualSize}
             selected={actualSize}
             disabled={!frame}
+            disabledReason={t("Refresh frame")}
             onClick={() => setActualSize((value) => !value)}
           >
             <Maximize2 className="icon-sm" aria-hidden />
           </Button>
+          {active && state?.open && state.viewport ? (
+            <BrowserViewportMenu
+              viewport={state.viewport}
+              disabled={!canPageInput}
+              disabledReason={inputDisabledReason}
+              action={action}
+              request={request}
+            />
+          ) : null}
           <Button
             ref={controlsTrigger}
             variant="ghost"
             iconOnly
             label={t("Browser controls and setup")}
+            tooltipDetails={[t("Keyboard, scrolling, control and browser setup")]}
             aria-haspopup="dialog"
             aria-expanded={controlsOpen && !controlsFromStatus}
             selected={controlsOpen && !controlsFromStatus}
@@ -958,6 +965,11 @@ function ProjectBrowserPanel({
             selected={selecting}
             disabled={
               !canInput || !sessionId || !frame?.navigationId || selecting || !annotationsAllowed
+            }
+            disabledReason={
+              !annotationsAllowed
+                ? t("Browser selections can be attached only on this conversation's project host.")
+                : (inputDisabledReason ?? t("Select a conversation and refresh the frame first."))
             }
             onClick={() =>
               void action(async () => {
@@ -1035,7 +1047,9 @@ function ProjectBrowserPanel({
         {statusLabel}
         {notice ? ` · ${notice}` : ""}
       </span>
-      {error && !selectionOpen ? <InlineError icon={null}>{errorSummary}</InlineError> : null}
+      {error && !selectionOpen && !controlsOpen ? (
+        <DetailedInlineError summary={errorSummary} error={error} />
+      ) : null}
       {setupRequired ? (
         <Text
           as="section"
@@ -1452,13 +1466,13 @@ function ProjectBrowserPanel({
           )}
         </div>
       </div>
-      {(selection || captures.length > 0) && selectionOpen ? (
+      {active && (selection || captures.length > 0) && selectionOpen ? (
         <Popover
           anchor={selectionTrigger}
           side="top"
           align="end"
           width={360}
-          role="dialog"
+          kind="dialog"
           aria-label={t("Selected browser element")}
           data-dialog-popover
           autoFocus
@@ -1466,6 +1480,11 @@ function ProjectBrowserPanel({
           className="host-browser-selection-popover bycoda-arc"
           onDismiss={() => setSelectionOpen(false)}
         >
+          <PanelHeader
+            title={t("Selected browser element")}
+            closeLabel={t("Close")}
+            onClose={() => setSelectionOpen(false)}
+          />
           <section
             {...surfaceAttributes(
               { variant: "transparent", radius: "none" },
@@ -1602,13 +1621,23 @@ function ProjectBrowserPanel({
                           setUncertainDelivery(true);
                         throw cause;
                       }
-                      setCaptures((current) => current.filter((capture) => capture.id !== item.id));
+                      setCaptures((current) =>
+                        current.filter(
+                          (capture) => capture.id !== item.id || capture.comment !== item.comment,
+                        ),
+                      );
                       if (selection?.id === item.id) {
                         setSelection(undefined);
                         setComment("");
                       }
                     }
-                    cancelSelection();
+                    const newerDraft = currentCaptures.current.some(
+                      (capture) =>
+                        !items.some(
+                          (item) => item.id === capture.id && item.comment === capture.comment,
+                        ),
+                    );
+                    if (!newerDraft) cancelSelection();
                     setNotice(t("Added to composer. Review the attachment and send when ready."));
                   }, deliveryFailed);
                 }}
@@ -1653,7 +1682,7 @@ function ProjectBrowserPanel({
           </section>
         </Popover>
       ) : null}
-      {controlsOpen ? (
+      {active && controlsOpen ? (
         <BrowserControlsPopover
           anchor={controlsFromStatus ? statusTrigger : controlsTrigger}
           align={controlsFromStatus ? "start" : "end"}
@@ -1667,6 +1696,7 @@ function ProjectBrowserPanel({
           selecting={selecting}
           canInput={canInput}
           canPageInput={canPageInput}
+          inputDisabledReason={inputDisabledReason}
           setupRequired={setupRequired}
           annotationsAllowed={annotationsAllowed}
           text={text}

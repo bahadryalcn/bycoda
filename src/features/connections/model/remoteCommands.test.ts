@@ -105,16 +105,16 @@ it("runs the same file command on the machine with host paths", async () => {
 });
 
 it("routes Windows folders outside projects to metadata browsing on their owning machine", async () => {
-  const path = "C:/Users/kraba/.bycoda-build/packages";
+  const path = "C:/Users/alice/.bycoda-build/packages";
   remoteRequest.mockResolvedValue({
     path,
-    parent: "C:/Users/kraba/.bycoda-build",
+    parent: "C:/Users/alice/.bycoda-build",
     canOpenFiles: false,
     entries: [{ name: "bycoda.exe", path: `${path}/bycoda.exe`, isDir: false, ignored: false }],
   });
   expect(await browseDirectory(`remote://env/${path}/bycoda.exe`, true)).toEqual({
     path: `remote://env/${path}`,
-    parent: "remote://env/C:/Users/kraba/.bycoda-build",
+    parent: "remote://env/C:/Users/alice/.bycoda-build",
     canOpenFiles: false,
     entries: [
       { name: "bycoda.exe", path: `remote://env/${path}/bycoda.exe`, isDir: false, ignored: false },

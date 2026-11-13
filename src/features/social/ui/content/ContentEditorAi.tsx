@@ -119,6 +119,7 @@ export function ContentEditorAi({
               <Button
                 variant="primary"
                 size="sm"
+                disabled={disabled}
                 onClick={() => {
                   onUse(suggestion);
                   setSuggestion(undefined);

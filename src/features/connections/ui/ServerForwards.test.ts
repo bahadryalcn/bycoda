@@ -74,10 +74,16 @@ it.each([false, true])(
     mocks.list.mockRejectedValueOnce(new Error("Status read unavailable"));
     await render();
     expect(container.textContent).toContain("Couldn’t read forwarding status.");
+    expect(container.textContent).toContain("Status unknown");
+    expect(container.textContent).not.toContain("Stopped");
     if (actionFailure) {
+      await click("Retry");
       mocks.start.mockRejectedValueOnce(new Error("SSH start failed"));
       await click("Start");
       expect(container.textContent).toContain("SSH start failed");
+      mocks.list.mockRejectedValueOnce(new Error("Status read unavailable again"));
+      await act(async () => vi.advanceTimersByTimeAsync(30_000));
+      expect(container.textContent).toContain("Couldn’t read forwarding status.");
     }
     await act(async () => vi.advanceTimersByTimeAsync(30_000));
     expect(container.textContent).not.toContain("Couldn’t read forwarding status.");
@@ -85,6 +91,17 @@ it.each([false, true])(
     else expect(container.querySelector('[role="alert"]')).toBeNull();
   },
 );
+
+it("does not claim a stopped forward or allow Start before the first status response", async () => {
+  mocks.list.mockImplementationOnce(() => new Promise(() => {}));
+  await render();
+  expect(container.textContent).toContain("Status unknown");
+  expect(container.textContent).not.toContain("Stopped");
+  expect(
+    [...container.querySelectorAll("button")].find((button) => button.textContent === "Start"),
+  ).toBeUndefined();
+  expect(mocks.start).not.toHaveBeenCalled();
+});
 const render = async () => {
   await act(async () => root.render(createElement(ServerForwards, { server })));
 };

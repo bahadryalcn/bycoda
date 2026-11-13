@@ -147,7 +147,7 @@ function TaskCardBody({
       {...surfaceAttributes({ radius: "row" }, "task-board-card cursor-pointer")}
     >
       {goal ? (
-        <Tooltip label={t("Part of the goal “{p0}”", { p0: goal })} asChild>
+        <Tooltip label={t("Part of the epic “{p0}”", { p0: goal })} asChild>
           <Text
             as="p"
             tone="muted"

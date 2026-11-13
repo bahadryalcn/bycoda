@@ -12,6 +12,7 @@ export type TaskRunBudget = {
 };
 
 export type BudgetRunRole =
+  | "advisor"
   | "planner"
   | "worker"
   | "reviewer"

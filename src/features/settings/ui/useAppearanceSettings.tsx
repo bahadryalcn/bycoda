@@ -132,6 +132,7 @@ import {
 } from "../model/uiScale";
 
 import { IS_LINUX } from "../../../platform/tauri/platform";
+import { generatorSession } from "./appearance/controls/themeGeneratorSession";
 
 import {
   loadCollapsedProjectRailMode,
@@ -347,10 +348,14 @@ export function useAppearanceSettings(
    * Picks an image, or takes a path the user dropped on the preview; the Host validates it.
    * Resolves to the stored image path, or `null` when nothing was applied (cancelled, busy or failed).
    * The image is kept in the background library: `meta` says how it came about, and `libraryId`
-   * marks a path that already is a library image.
+   * marks a path that already is a library image. Async owners may supply
+   * `isCurrent` to discard a completed copy before it changes the active background.
    */
   const onChooseChatBackground = useCallback(
-    async (droppedPath?: string, meta?: BackgroundLibraryMeta & { libraryId?: string }) => {
+    async (
+      droppedPath?: string,
+      meta?: BackgroundLibraryMeta & { libraryId?: string; isCurrent?: () => boolean },
+    ) => {
       if (chatBackgroundPending.current) return null;
       chatBackgroundPending.current = true;
       setChatBackgroundBusy(true);
@@ -361,6 +366,7 @@ export function useAppearanceSettings(
           ? await saveChatBackgroundFrom(droppedPath)
           : await pickAndSaveChatBackground();
         if (!path) return null;
+        if (meta?.isCurrent && !meta.isCurrent()) return null;
         saveChatBackgroundPath(path);
         applyChatBackground(path);
         setChatBackgroundPath(path);
@@ -479,6 +485,7 @@ export function useAppearanceSettings(
   );
 
   const restoreDefaults = useCallback(() => {
+    generatorSession.invalidateImageIntent();
     saveWorkspaceBackground(WORKSPACE_BACKGROUND_DEFAULT, { replace: true });
     onPreferences({
       ...APPEARANCE_DEFAULTS,

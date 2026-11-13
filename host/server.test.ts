@@ -5687,8 +5687,8 @@ describe("remote host API", () => {
     expect((await s.call("environment.describe")).value.result.capabilities).toContain(
       "tasks.notes",
     );
-    expect((await s.call("environment.describe")).value.result.capabilities).toContain(
-      "tasks.review-recheck",
+    expect((await s.call("environment.describe")).value.result.capabilities).toEqual(
+      expect.arrayContaining(["tasks.review-recheck", "tasks.finish-with-findings"]),
     );
     const saved = (
       await s.call("tasks.save", {
@@ -5831,7 +5831,11 @@ describe("host settings commands", () => {
       dailyAgentMinutes: 240,
     });
     expect(
-      (await s.call("host.settings.save", { settings: { maxRunningTasks: 9 } })).value.error,
+      (
+        await s.call("host.settings.save", {
+          settings: { maxRunningTasks: Number.MAX_SAFE_INTEGER + 1 },
+        })
+      ).value.error,
     ).toBe("Invalid concurrent task limit");
   });
 });

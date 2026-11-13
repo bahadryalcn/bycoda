@@ -19,6 +19,7 @@ export type ContentMediaFieldProps = {
   /** Why attaching is off (for example the account cannot upload media). */
   disabledReason?: string;
   onChange: (next: ContentMedia[]) => void;
+  onBusyChange?: (busy: boolean) => void;
 };
 
 /** Attach images or one video. Rules per platform are checked in the preview and the publish gate. */
@@ -29,11 +30,13 @@ export function ContentMediaField({
   disabled,
   disabledReason,
   onChange,
+  onBusyChange,
 }: ContentMediaFieldProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const add = async (files: File[]) => {
     setBusy(true);
+    onBusyChange?.(true);
     setError(undefined);
     try {
       // Refuse the whole pick before any upload, so a batch with one bad file uploads nothing.
@@ -57,6 +60,7 @@ export function ContentMediaField({
       setError(caught instanceof Error ? caught.message : t("The file could not be attached."));
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
   const remove = (item: ContentMedia) => {

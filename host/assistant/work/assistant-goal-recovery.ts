@@ -4,6 +4,8 @@ import type {
   AssistantProjectJob,
 } from "../../../src/shared/model/host-contracts/assistant";
 import type { AssistantPorts } from "../service";
+import { assistantProjectMutationAllowed } from "../management/assistant-permissions";
+import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
 
 /** The job's linked goal row is missing: it was never written, or was lost. */
 export class AssistantGoalMissingError extends Error {
@@ -32,6 +34,7 @@ export async function resubmitGoal(
   if (
     !hasErrorCode(error, "ASSISTANT_GOAL_MISSING") ||
     !ports.createGoal ||
+    !assistantProjectMutationAllowed(profile, assistantJobProjectIds(job)) ||
     job.dispatchState !== "submitted" ||
     job.status !== "planning" ||
     job.taskIds.length > 0 ||

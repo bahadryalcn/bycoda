@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_RUNNING_TASKS } from "../../src/features/tasks/model/hostSettings";
+import { MAX_TASK_REPAIR_ATTEMPTS } from "../../src/features/tasks/model/taskRules";
 export const TICK_MS = 30000;
 
 export const TASK_HISTORY_RETAINED = 10_000;
@@ -17,12 +18,12 @@ export const RETRY_FEEDBACK_LIMIT = 12000;
 
 export const SHARED_EDITS_LIMIT = 60;
 
-export const MAX_REPAIR_ATTEMPTS = 3;
+export const MAX_REPAIR_ATTEMPTS = MAX_TASK_REPAIR_ATTEMPTS;
 
 export const OWNER_NOTICE_LIMIT = 30;
 
 /** Automatic retries of a worker run that failed for a transient runtime reason. */
-export const MAX_RUNTIME_RETRIES = 2;
+export const MAX_RUNTIME_RETRIES = 1;
 
 /** Automatic continuations when an unattended worker asks the owner a question. */
 export const MAX_QUESTION_CONTINUATIONS = 2;

@@ -1,3 +1,4 @@
+import { useDecisionTarget } from "./DecisionTarget";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
@@ -43,6 +44,7 @@ export function LocalInstallWizard({
   onInstalled: () => void;
   onClose: () => void;
 }) {
+  const target = useDecisionTarget();
   const [step, setStep] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
@@ -52,6 +54,7 @@ export function LocalInstallWizard({
   const [installError, setInstallError] = useState<unknown>(null);
   const [plan, setPlan] = useState<LocalPlan | null>(null);
   const [planError, setPlanError] = useState<unknown>(null);
+  const [planAttempt, setPlanAttempt] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -91,10 +94,11 @@ export function LocalInstallWizard({
       setPlan(null);
       setPlanError(null);
     };
-  }, [client, modelId, offer]);
+  }, [client, modelId, offer, planAttempt]);
 
+  const readyToInstall = plan !== null && plan.installable && plan.fits && planError === null;
   const install = () => {
-    if (!modelId) return;
+    if (!modelId || !readyToInstall) return;
     setInstallError(null);
     setInstalling(true);
     void client.local
@@ -110,7 +114,7 @@ export function LocalInstallWizard({
   };
 
   const steps: StepperStep[] = [
-    { id: "computer", label: t("This computer") },
+    { id: "computer", label: target ?? t("This computer") },
     { id: "recommendation", label: t("Recommendation") },
     {
       id: "install",
@@ -122,10 +126,15 @@ export function LocalInstallWizard({
 
   return (
     <Modal
-      title={t("Install on this computer")}
-      description={t("A local model runs on this computer and needs no key.")}
+      title={target ? t("Install on Host {p1}", { p1: target }) : t("Install on this computer")}
+      description={
+        target
+          ? t("A local model runs on Host {p1} and needs no key.", { p1: target })
+          : t("A local model runs on this computer and needs no key.")
+      }
       size="lg"
       onClose={onClose}
+      closeDisabled={installing}
       footer={
         <ModalActions>
           <Button variant="ghost" disabled={installing} onClick={onClose}>
@@ -144,7 +153,7 @@ export function LocalInstallWizard({
             </Button>
           ) : null}
           {step === 1 && offer === "install" ? (
-            <Button variant="primary" onClick={() => setStep(2)}>
+            <Button variant="primary" disabled={!readyToInstall} onClick={() => setStep(2)}>
               {t("Continue")}
             </Button>
           ) : null}
@@ -157,7 +166,7 @@ export function LocalInstallWizard({
             <Button
               variant="primary"
               loading={installing}
-              disabled={installing || !modelId || result !== null}
+              disabled={installing || !modelId || !readyToInstall || result !== null}
               onClick={install}
             >
               {t("Install")}
@@ -198,7 +207,15 @@ export function LocalInstallWizard({
                 <Text as="p" size="caption" tone="secondary">
                   {t("Model: {p1}", { p1: modelName })}
                 </Text>
-                {planError !== null ? <ErrorNotice error={planError} /> : null}
+                {planError !== null ? (
+                  <ErrorNotice
+                    error={planError}
+                    onRetry={() => setPlanAttempt((value) => value + 1)}
+                  />
+                ) : null}
+                {plan === null && planError === null ? (
+                  <Progress label={t("Checking this computer…")} />
+                ) : null}
                 {plan !== null && !plan.installable ? (
                   <InlineMessage tone="warning">
                     {t("No verified download exists for this model yet.")}
@@ -219,11 +236,18 @@ export function LocalInstallWizard({
                     })}
                   </InlineMessage>
                 ) : null}
+                {plan !== null && (!plan.installable || !plan.fits) ? (
+                  <Button variant="secondary" onClick={onChooseApi}>
+                    {t("Choose an API provider")}
+                  </Button>
+                ) : null}
               </>
             ) : null}
             {offer === "unknown" ? (
               <InlineMessage tone="neutral">
-                {t("No local model is listed for this computer yet.")}
+                {target
+                  ? t("No local model is listed for Host {p1} yet.", { p1: target })
+                  : t("No local model is listed for this computer yet.")}
               </InlineMessage>
             ) : null}
           </div>
@@ -231,7 +255,11 @@ export function LocalInstallWizard({
         {step === 2 ? (
           <div className="flex min-w-0 flex-col gap-2">
             {result === null && !installing && installError === null ? (
-              <p>{t("Install {p1} on this computer?", { p1: modelName })}</p>
+              <p>
+                {target
+                  ? t("Install {p1} on Host {p2}?", { p1: modelName, p2: target })
+                  : t("Install {p1} on this computer?", { p1: modelName })}
+              </p>
             ) : null}
             {installing ? <Progress label={t("Installing…")} /> : null}
             {installed ? (

@@ -2,19 +2,25 @@ import { ActionHost } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
-import { recoverRoomPrivacyProjection } from "../model/roomPrivacyProjection";
+import {
+  getPrivacySettingsOperations,
+  subscribePrivacySettingsOperations,
+  runPrivacySettingsOperation,
+} from "../model/privacySettingsOperations";
 import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { useRef, useState, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 import { Lock } from "../../../shared/ui/icons";
 import "./GroupPrivacy.css";
 import { Badge } from "../../../shared/ui/Badge";
 import { useGroupLock } from "../hooks/useGroupLock";
 import { AUTO_LOCK_MINUTES, autoLockLabel, parseAutoLockMinutes } from "../model/autoLock";
 import {
+  getGroupLockView,
   lockAllGroups,
   makeGroupLockable,
   removeGroupLock,
@@ -28,6 +34,7 @@ import { PasswordPromptDialog } from "./PasswordPromptDialog";
 import { SetLockPasswordDialog } from "./SetLockPasswordDialog";
 import { HiddenGroupsSettings } from "./HiddenGroupsSettings";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
+import { PrivacyStorageError } from "./PrivacyStorageError";
 
 /** The Settings building blocks, passed in so this page matches the others. */
 export type GroupLockControls = {
@@ -62,6 +69,7 @@ export type GroupLockControls = {
     value: string;
     options: { value: string; label: string }[];
     onChange: (value: string) => void;
+    disabled?: boolean;
   }) => ReactNode;
 };
 
@@ -82,33 +90,36 @@ export function GroupLockSettings({
   const lock = useGroupLock();
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [groupQuery, setGroupQuery] = useState("");
-  // Choices apply to this window at once; a save that did not reach storage stays visible with a retry.
-  const [unsaved, setUnsaved] = useState<Record<string, () => void>>({});
-  const [pendingWrites, setPendingWrites] = useState<Record<string, boolean>>({});
-  const writesInFlight = useRef(new Set<string>());
-  const commit = (id: string, write: () => boolean | Promise<boolean>) => {
-    if (writesInFlight.current.has(id)) return;
-    writesInFlight.current.add(id);
-    setPendingWrites((current) => ({ ...current, [id]: true }));
-    void Promise.resolve()
-      .then(write)
-      .catch(() => false)
-      .then((saved) =>
-        setUnsaved((current) => {
-          const next = { ...current };
-          if (saved) delete next[id];
-          else next[id] = () => commit(id, write);
-          return next;
-        }),
-      )
-      .finally(() => {
-        writesInFlight.current.delete(id);
-        setPendingWrites((current) => ({ ...current, [id]: false }));
-      })
-      .catch((error: unknown) => console.error("Privacy settings feedback failed", error));
+  const { pending: pendingWrites, failed: unsaved } = useSyncExternalStore(
+    subscribePrivacySettingsOperations,
+    getPrivacySettingsOperations,
+  );
+  const commit = (id: string, write: () => boolean | Promise<boolean>, recover = false) => {
+    void runPrivacySettingsOperation(id, write, recover).catch((error: unknown) =>
+      console.error("Privacy feedback failed", error),
+    );
+  };
+  const optionKeys: Record<string, string> = {
+    relock: "relockOnLaunch",
+    idle: "autoLockMinutes",
+    together: "unlockAll",
+  };
+  const retryOption = (id: string) => {
+    const writes: Record<string, () => boolean> = {
+      relock: () => setRelockOnLaunch(getGroupLockView().settings.relockOnLaunch),
+      idle: () => setAutoLockMinutes(getGroupLockView().settings.autoLockMinutes),
+      together: () => setUnlockAll(getGroupLockView().settings.unlockAll),
+    };
+    if (writes[id]) commit(id, writes[id], true);
+    else if (id.startsWith("lockable:"))
+      commit(id, () => makeGroupLockable(id.slice("lockable:".length)), true);
   };
   const unsavedNote = (id: string, applied = true) =>
-    unsaved[id] ? (
+    pendingWrites[id] && !unsaved[id] && !lock.unsavedOptions?.includes(optionKeys[id]) ? (
+      <div className="privacy-save-feedback">
+        <LoadingText>{t("Saving…")}</LoadingText>
+      </div>
+    ) : unsaved[id] || lock.unsavedOptions?.includes(optionKeys[id]) ? (
       <div className="privacy-save-feedback">
         <Alert tone="danger">
           {applied
@@ -120,11 +131,10 @@ export function GroupLockSettings({
         <Button
           size="sm"
           variant="ghost"
-          onClick={() => {
-            void recoverRoomPrivacyProjection()
-              .then(() => unsaved[id]?.())
-              .catch(() => {});
-          }}
+          loading={Boolean(pendingWrites[id])}
+          disabled={Boolean(pendingWrites[id])}
+          loadingLabel={t("Checking…")}
+          onClick={() => retryOption(id)}
         >
           {t("Retry")}
         </Button>
@@ -155,6 +165,7 @@ export function GroupLockSettings({
     else commit(`lockable:${id}`, () => makeGroupLockable(id));
   };
 
+  if (lock.storageAvailable === false) return <PrivacyStorageError />;
   return (
     <div className="group-privacy-controls">
       <Group id="group-lock-password" title={t("Lock password")}>
@@ -213,6 +224,7 @@ export function GroupLockSettings({
               p0: PRODUCT_IDENTITY.displayName,
             })}
             on={lock.settings.relockOnLaunch}
+            disabled={Boolean(pendingWrites.relock)}
             onChange={(on) => commit("relock", () => setRelockOnLaunch(on))}
           />
         </Row>
@@ -225,6 +237,7 @@ export function GroupLockSettings({
           <Select
             label={t("Auto-lock after inactivity")}
             value={String(lock.settings.autoLockMinutes)}
+            disabled={Boolean(pendingWrites.idle)}
             options={AUTO_LOCK_MINUTES.map((minutes) => ({
               value: String(minutes),
               label: autoLockLabel(minutes),
@@ -243,6 +256,7 @@ export function GroupLockSettings({
           <Toggle
             label={t("Unlocking one group unlocks all")}
             on={lock.settings.unlockAll}
+            disabled={Boolean(pendingWrites.together)}
             onChange={(on) => commit("together", () => setUnlockAll(on))}
           />
         </Row>
@@ -283,16 +297,19 @@ export function GroupLockSettings({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => {
-                void recoverRoomPrivacyProjection()
-                  .then(() =>
-                    commit("lock-all", async () => {
-                      await lockAllGroups();
-                      return true;
-                    }),
-                  )
-                  .catch(() => {});
-              }}
+              loading={Boolean(pendingWrites["lock-all"])}
+              disabled={Boolean(pendingWrites["lock-all"])}
+              loadingLabel={t("Checking…")}
+              onClick={() =>
+                commit(
+                  "lock-all",
+                  async () => {
+                    await lockAllGroups();
+                    return true;
+                  },
+                  true,
+                )
+              }
             >
               {t("Retry")}
             </Button>
@@ -428,6 +445,7 @@ export function GroupLockSettings({
                       <Toggle
                         label={t("{p0} is lockable", { p0: group.name })}
                         on={group.lockable === true}
+                        disabled={Boolean(pendingWrites[`lockable:${group.id}`])}
                         onChange={(on) => toggleLockable(group.id, group.name, on)}
                       />
                     </span>

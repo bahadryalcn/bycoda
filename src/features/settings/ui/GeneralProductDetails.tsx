@@ -5,7 +5,7 @@ import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
-import { Check, Copy, Star } from "../../../shared/ui/icons";
+import { Check, Copy } from "../../../shared/ui/icons";
 import { startContribution, useContributeFlow } from "../../projects/public/contribute";
 import { Row, SettingsFeedback } from "./settingsControls";
 
@@ -15,19 +15,13 @@ function ContributeRow() {
   if (!repositoryUrl) return null;
   return (
     <>
-      <Row
+      <ProductLink
         id="star-github"
         label={t("Star on GitHub")}
-        description={t("Open the project repository on GitHub.")}
-      >
-        <Button
-          className="general-action shrink-0"
-          startIcon={<Star strokeWidth={1.75} aria-hidden />}
-          onClick={() => void openExternal(repositoryUrl).catch(() => undefined)}
-        >
-          {t("View on GitHub")}
-        </Button>
-      </Row>
+        address={repositoryUrl}
+        href={repositoryUrl}
+        openLabel={t("View on GitHub")}
+      />
       <Row
         id="contribute"
         label={t("Contribute to bycoda")}
@@ -83,12 +77,14 @@ export function ProductDetails() {
 
 /** Each target owns its pending/error recovery; opening a link never sends a message. */
 function ProductLink({
+  id,
   label,
   address,
   href,
   displayAddress = address,
   openLabel,
 }: {
+  id?: string;
   label: string;
   address: string;
   href: string;
@@ -144,6 +140,7 @@ function ProductLink({
 
   return (
     <Row
+      id={id}
       label={label}
       feedback={
         failure ? (

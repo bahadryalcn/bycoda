@@ -1,5 +1,6 @@
 import type { Terminal } from "@xterm/xterm";
 import { IS_MAC } from "../../../platform/tauri/platform";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { isMacTerminalClearShortcut, macTerminalShortcutData } from "../model/terminalKeys";
 
 /**
@@ -30,6 +31,7 @@ export function bindTerminalDomInput(options: {
   host.addEventListener("paste", onPaste);
 
   term.attachCustomKeyEventHandler((event) => {
+    if (isImeComposition(event)) return true;
     const shortcutData = IS_MAC ? macTerminalShortcutData(event) : null;
     if (shortcutData) {
       if (event.type === "keydown") {
@@ -40,7 +42,6 @@ export function bindTerminalDomInput(options: {
       return false;
     }
     if (IS_MAC && isMacTerminalClearShortcut(event)) {
-      if (event.isComposing) return false;
       if (event.type === "keydown") {
         event.preventDefault();
         term.clear();

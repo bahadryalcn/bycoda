@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DecisionSource, SourceTestResult } from "../model/decisionTypes";
 import { ManualPathDialog } from "./ManualPathDialog";
@@ -8,6 +8,7 @@ import {
   clickButton,
   mountDecisionUi,
   settleDecisionUi,
+  setInputValue,
   unmountDecisionUi,
 } from "./decisionTestDom";
 
@@ -46,6 +47,36 @@ function render(options: {
 }
 
 describe("ManualPathDialog", () => {
+  it("requires explicit discard before closing an edited source and keeps edits when cancelled", async () => {
+    const onClose = vi.fn();
+    mounted = mountDecisionUi(
+      createElement(ManualPathDialog, {
+        onAdd: vi.fn(async () => created),
+        onTest: vi.fn(async () => ({ sourceId: "new", ok: true })),
+        onClose,
+      }),
+    );
+    const field = mounted.container.ownerDocument.querySelector<HTMLInputElement>("input")!;
+    setInputValue(field, "Unsent source");
+    clickButton("Cancel");
+    await settleDecisionUi();
+    expect(bodyText()).toContain("Discard changes?");
+    expect(onClose).not.toHaveBeenCalled();
+    act(() =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+        .filter((button) => button.textContent === "Cancel")
+        .at(-1)!
+        .click(),
+    );
+    await settleDecisionUi();
+    expect(field.value).toBe("Unsent source");
+    expect(onClose).not.toHaveBeenCalled();
+    clickButton("Cancel");
+    await settleDecisionUi();
+    clickButton("Discard changes");
+    await settleDecisionUi();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
   it("asks for a name and a model file before adding anything", async () => {
     const { onAdd } = render({});
     clickButton("Add and test");

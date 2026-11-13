@@ -42,6 +42,9 @@ it("publishes original task locals before each readiness wait", async () => {
   let settled = false;
   const ready = createTasksRuntime(
     {
+      executeBackgroundEffect: vi.fn(async () => {
+        throw new Error("Unexpected native effect");
+      }),
       automationsOverride: automations,
       tasksOverride: tasks,
       goalsOverride: goals,

@@ -257,11 +257,11 @@ export function ProviderDefaultsSaveBar({
         </div>
       ) : null}
       <div className="provider-save-bar-actions">
-        <div className="provider-defaults-field">
-          <Text size="caption" tone="muted">
-            {t("Apply to")}
-          </Text>
-          {draft && onDraftChange ? (
+        {draft && onDraftChange && (pending > 0 || draft.providerScope === "all") ? (
+          <div className="provider-defaults-field">
+            <Text size="caption" tone="muted">
+              {t("Apply to")}
+            </Text>
             <SegmentedControl
               label={t("Provider scope")}
               value={draft.providerScope ?? "this"}
@@ -283,8 +283,8 @@ export function ProviderDefaultsSaveBar({
                 onDraftChange({ ...draft, providerScope: value === "all" ? "all" : undefined })
               }
             />
-          ) : null}
-        </div>
+          </div>
+        ) : null}
         <div className="provider-defaults-field">
           <Text size="caption" tone="muted">
             {t("Save in")}

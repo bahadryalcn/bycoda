@@ -86,3 +86,14 @@ it("blocks a second request while a report is being created", () => {
   act(() => create()?.click());
   expect(onLoad).not.toHaveBeenCalled();
 });
+
+it("labels generated period and warns when selection differs", () => {
+  render({
+    report: { period: "day", data: { done: ["Day results"], results: [], suggestions: [] } },
+  });
+  expect(element.textContent).toContain("Day report");
+  act(() => period("Week")?.click());
+  expect(element.textContent).toContain("Day report");
+  expect(element.textContent).toContain("Create a new report for the selected period.");
+  expect(element.textContent).toContain("Day results");
+});

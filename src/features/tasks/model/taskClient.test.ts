@@ -153,11 +153,11 @@ describe("task board", () => {
     ).not.toHaveProperty("reviewerConfig");
   });
 
-  it("starts a draft with no time limit and refuses agents a host cannot run", () => {
+  it("starts a draft with inherited time limit and refuses agents a host cannot run", () => {
     const draft = newTaskDraft("G:/app", "claude", "claude:test");
     expect(draft).toMatchObject({
       runtimeMode: "auto",
-      maxRunMinutes: 0,
+      maxRunMinutes: undefined,
       verifyCommand: "",
       review: false,
       continueUntilDone: true,
@@ -434,3 +434,38 @@ it.each([undefined, true, false])(
     expect(parsed.isolate).toBe(isolate);
   },
 );
+
+describe("task runtime inheritance", () => {
+  it("keeps omitted limits distinct from explicit unlimited through wire and parsing", () => {
+    const draft = newTaskDraft("G:/app", "claude", "claude:test");
+    const wire = hostTaskFromDraft({ ...draft, title: "Task" }, "runtime", "project-1");
+    expect(wire).not.toHaveProperty("maxRunMinutes");
+    expect(parseHostTask(wire)).toMatchObject({ maxRunMinutes: 0, inheritMaxRunMinutes: true });
+    const explicit = parseHostTask({ ...wire, maxRunMinutes: 0 });
+    expect(explicit.maxRunMinutes).toBe(0);
+    expect(explicit.inheritMaxRunMinutes).toBeUndefined();
+    // Editing an inherited task to unlimited must clear its previous marker on spread.
+    expect({ ...parseHostTask(wire), ...explicit }.inheritMaxRunMinutes).toBeUndefined();
+  });
+
+  it("retains inherited selection when editing an already resolved task", () => {
+    const task = { ...stored, maxRunMinutes: 45, inheritMaxRunMinutes: true as const };
+    const parsed = parseHostTask(task);
+    const board = boardTaskFromHost(local, "G:/app", {
+      ...parsed,
+      status: "todo",
+      createdAt: 1,
+      updatedAt: 1,
+      reviewNotes: [],
+    });
+    const draft = draftFromTask(board);
+    expect(draft.maxRunMinutes).toBeUndefined();
+    expect(hostTaskFromDraft(draft, task.id, task.projectId)).not.toHaveProperty("maxRunMinutes");
+    const unlimited = draftFromTask({
+      ...board,
+      inheritMaxRunMinutes: undefined,
+      maxRunMinutes: 0,
+    });
+    expect(hostTaskFromDraft(unlimited, task.id, task.projectId).maxRunMinutes).toBe(0);
+  });
+});

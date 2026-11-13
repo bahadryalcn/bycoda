@@ -34,7 +34,6 @@ import {
   ChevronsUpDown,
   ChevronLeft,
   CheckCheck,
-  CircleX,
   Inbox,
   ListBullet,
   ListFilter,
@@ -843,7 +842,7 @@ export function InboxView({
         </Alert>
       ) : null}
       {seenStorageStatus.state === "loading" ? (
-        <Alert tone="info">{t("Loading Inbox read status…")}</Alert>
+        <LoadingText>{t("Loading Inbox read status…")}</LoadingText>
       ) : seenStorageStatus.state === "error" ? (
         <Alert tone="danger">
           {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}
@@ -877,23 +876,7 @@ export function InboxView({
               ) : undefined
             }
           />
-        ) : sourceError && visibleItems.length === 0 ? (
-          <EmptyState
-            icon={<CircleX aria-hidden="true" />}
-            description={t("Could not load.")}
-            action={
-              <Button
-                variant="secondary"
-                type="button"
-                loading={refreshAction === "retry"}
-                disabled={refreshAction === "toolbar"}
-                onClick={() => requestRefresh("retry", source === "github")}
-              >
-                {t("Refresh")}
-              </Button>
-            }
-          />
-        ) : loading && items.length === 0 ? (
+        ) : sourceError && visibleItems.length === 0 ? null : loading && items.length === 0 ? (
           <LoadingText className="justify-center py-10" />
         ) : visibleItems.length === 0 &&
           !(source === "jira" && collection.jiraContinuation.hasMore) ? (

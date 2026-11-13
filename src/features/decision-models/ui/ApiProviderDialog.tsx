@@ -1,3 +1,4 @@
+import { useDecisionTarget } from "./DecisionTarget";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
@@ -10,6 +11,7 @@ import { PasswordField } from "../../../shared/ui/PasswordField";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { useAddAndTest } from "../hooks/useAddAndTest";
+import { useDecisionDialogClose } from "../hooks/useDecisionDialogClose";
 import type {
   DecisionCatalogEntry,
   DecisionSource,
@@ -27,6 +29,8 @@ export function ApiProviderDialog({
   catalog,
   catalogError,
   preselectId,
+  onRetryCatalog,
+  catalogRetrying = false,
   onAdd,
   onTest,
   onClose,
@@ -34,10 +38,13 @@ export function ApiProviderDialog({
   catalog: DecisionCatalogEntry[] | null;
   catalogError: unknown;
   preselectId?: string;
+  onRetryCatalog?: () => void;
+  catalogRetrying?: boolean;
   onAdd: (input: DecisionSourceInput, apiKey?: string) => Promise<DecisionSource>;
   onTest: (id: string) => Promise<SourceTestResult>;
   onClose: () => void;
 }) {
+  const target = useDecisionTarget();
   const entries = catalog ?? [];
   const [selectedId, setSelectedId] = useState(
     () => entries.find((entry) => entry.id === preselectId)?.id ?? entries[0]?.id ?? "",
@@ -48,7 +55,15 @@ export function ApiProviderDialog({
   const [linkFailure, setLinkFailure] = useState<unknown>(null);
   const flow = useAddAndTest({ onAdd, onTest });
   const locked = flow.busy || flow.done;
-  const entry = entries.find((item) => item.id === selectedId);
+  const effectiveId =
+    selectedId || entries.find((item) => item.id === preselectId)?.id || entries[0]?.id || "";
+  const entry = entries.find((item) => item.id === effectiveId);
+  const [initialProvider] = useState(selectedId);
+  const close = useDecisionDialogClose(
+    !flow.done && (selectedId !== initialProvider || model !== "" || apiKey !== ""),
+    flow.busy,
+    onClose,
+  );
 
   const submit = () => {
     if (!entry) {
@@ -85,10 +100,10 @@ export function ApiProviderDialog({
         "Add a provider with your own key. The address and contract come from the catalog.",
       )}
       size="md"
-      onClose={onClose}
+      onClose={close.requestClose}
       footer={
         <ModalActions>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={flow.busy} onClick={close.requestClose}>
             {flow.done ? t("Close") : t("Cancel")}
           </Button>
           {flow.done || catalog === null ? null : (
@@ -105,7 +120,9 @@ export function ApiProviderDialog({
       }
     >
       <div className="flex min-w-0 flex-col gap-3">
-        {catalogError !== null ? <ErrorNotice error={catalogError} /> : null}
+        {catalogError !== null ? (
+          <ErrorNotice error={catalogError} onRetry={onRetryCatalog} retrying={catalogRetrying} />
+        ) : null}
         {catalog === null && catalogError === null ? (
           <LoadingText delay={false}>{t("Loading providers…")}</LoadingText>
         ) : null}
@@ -115,7 +132,7 @@ export function ApiProviderDialog({
         {entries.length > 0 ? (
           <Select
             label={t("Provider")}
-            value={selectedId}
+            value={effectiveId}
             disabled={locked}
             error={errors.provider}
             options={entries.map((item) => ({ value: item.id, label: catalogLabel(item) }))}
@@ -160,7 +177,11 @@ export function ApiProviderDialog({
         />
         <PasswordField
           label={t("API key")}
-          description={t("Saved on this computer. It is never shown again.")}
+          description={
+            target
+              ? t("Saved on Host {p1}. It is never shown again.", { p1: target })
+              : t("Saved on this computer. It is never shown again.")
+          }
           value={apiKey}
           autoComplete="off"
           disabled={locked}
@@ -176,6 +197,7 @@ export function ApiProviderDialog({
           <InlineMessage tone={flow.outcome.tone}>{flow.outcome.text}</InlineMessage>
         ) : null}
       </div>
+      {close.dialog}
     </Modal>
   );
 }

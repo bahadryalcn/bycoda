@@ -56,7 +56,7 @@ describe("voice management source ownership", () => {
   it("publishes renamed display metadata to live context and workspace listing without creating a session", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     localStorage.clear();
-    const path = "G:/Projects/my_projects/upstream",
+    const path = "G:/Projects/work/upstream",
       launch = vi.fn(async () => {}),
       appendEmpty = vi.fn();
     let bridge: ReturnType<typeof useVoiceAppBridge> | undefined;

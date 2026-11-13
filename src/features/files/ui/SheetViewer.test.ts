@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SheetViewer from "./SheetViewer";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { loadSpreadsheet } from "../model/spreadsheetClient";
 vi.mock("../model/spreadsheetClient", () => ({ loadSpreadsheet: vi.fn() }));
 vi.mock("./documentZoom", () => ({
@@ -78,4 +79,38 @@ describe("spreadsheet keyboard accessibility", () => {
     expect(cell?.parentElement?.getAttribute("aria-rowindex")).toBe("100001");
     expect(host.querySelectorAll('[role="gridcell"]').length).toBeLessThan(100);
   });
+});
+
+it("updates preview limit counts with locale while preserving technical cells and indices", async () => {
+  vi.mocked(loadSpreadsheet).mockResolvedValueOnce({
+    omittedSheets: 0,
+    sheets: [
+      {
+        name: "Sheet",
+        columns: ["A"],
+        rowCount: 1234,
+        totalRows: 5678,
+        totalColumns: 1,
+        cells: { "0:0": "1234.56" },
+        truncated: true,
+        budgetLimited: false,
+      },
+    ],
+  });
+  try {
+    await act(async () => root.render(createElement(SheetViewer, { bytes: new Uint8Array([2]) })));
+    expect(host.textContent).toContain("1,234");
+    expect(host.textContent).toContain("5,678");
+    await act(async () => {
+      await setLanguagePreference("tr");
+    });
+    expect(host.textContent).toContain("1.234");
+    expect(host.textContent).toContain("5.678");
+    expect(host.querySelector('[role="gridcell"]')?.getAttribute("aria-label")).toBe("A1: 1234.56");
+    expect(host.querySelector('[role="rowheader"]')?.textContent).toBe("1");
+  } finally {
+    await act(async () => {
+      await setLanguagePreference("en");
+    });
+  }
 });

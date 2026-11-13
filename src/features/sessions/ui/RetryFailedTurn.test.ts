@@ -34,6 +34,14 @@ const blocks: Block[] = [
 ];
 const chat = () => ({ ...newSession("codex", "/tmp"), blocks });
 
+it.each([
+  "You've hit your weekly limit · resets 8am (Europe/Istanbul)",
+  "You've hit your weekly limit · resets 8am (Europe/Istanbul) (HTTP 429)",
+  'HTTP 429 {"error":{"message":"Weekly usage limit reached. Choose another account."}}',
+])("does not offer retry for a persisted quota failure without usageLimit metadata: %s", (text) => {
+  expect(failedTurnRetry({ ...chat(), blocks: [blocks[0], { ...blocks[1], text }] })).toBeNull();
+});
+
 it.each([{}, { resetsAt: Date.now() + 60_000 }])(
   "leaves usage-limit recovery to the account and model notice: %o",
   (usageLimit) => {
@@ -116,6 +124,7 @@ it("resends the original text, attachments and intent once without needing a pro
   const onSubmit = vi.fn();
   act(() => root.render(createElement(RetryFailedTurn, { session: chat(), onSubmit })));
   const button = host.querySelector("button")!;
+  expect(host.textContent).not.toContain("The last turn failed");
   act(() => {
     button.click();
     button.click();

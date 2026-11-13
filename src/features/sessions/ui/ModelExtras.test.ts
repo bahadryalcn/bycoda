@@ -148,7 +148,10 @@ it("offers only the provider catalog options and removes unsupported settings fr
     select.value = "high";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(onChange).toHaveBeenLastCalledWith({ reasoningEffort: "high" });
+  expect(onChange).toHaveBeenLastCalledWith({
+    reasoningEffort: "high",
+    autoCompactWindow: "default",
+  });
   act(() =>
     root.render(
       createElement(ModelExtras, {

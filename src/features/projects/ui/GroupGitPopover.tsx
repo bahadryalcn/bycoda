@@ -1,4 +1,5 @@
 import { Tooltip } from "../../../shared/ui/Tooltip";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
@@ -126,11 +127,16 @@ export function GroupGitPopover({
                 type="button"
                 tooltip={t("Open this project's Changes tab")}
                 onClick={() => onSelect(path)}
-                className="flex w-full items-center gap-2 text-left"
+                className="flex w-full flex-wrap items-center gap-2 text-left"
               >
-                <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
-                  {basename(path)}
-                </Text>
+                <span className="min-w-0 flex-1">
+                  <Text as="div" size="inherit" tone="inherit" wrap="anywhere">
+                    {basename(path)}
+                  </Text>
+                  <Text as="div" size="micro" tone="muted" wrap="anywhere">
+                    {path}
+                  </Text>
+                </span>
                 {!local ? (
                   <Text size="micro" tone="muted" className="shrink-0">
                     {t("remote")}
@@ -140,18 +146,16 @@ export function GroupGitPopover({
                     …
                   </Text>
                 ) : detail.state === "error" ? (
-                  <Tooltip label={detail.message} asChild>
-                    <Text size="micro" tone="muted" className="shrink-0">
-                      {t("no git info")}
-                    </Text>
-                  </Tooltip>
+                  <Text size="micro" tone="danger" className="shrink-0">
+                    {t("no git info")}
+                  </Text>
                 ) : (
                   <Text
                     size="micro"
                     tone="muted"
-                    className="flex shrink-0 items-center gap-2 tabular-nums"
+                    className="flex min-w-0 flex-wrap items-center gap-2 tabular-nums"
                   >
-                    <Text size="inherit" tone="inherit" truncate className="max-w-[110px]">
+                    <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
                       {detail.branch ?? t("detached")}
                     </Text>
                     <Tooltip
@@ -174,6 +178,13 @@ export function GroupGitPopover({
                   </Text>
                 )}
               </Button>
+              {detail?.state === "error" ? (
+                <Disclosure summary={t("Details")} size="sm" textSize="micro" className="px-2.5">
+                  <Text size="micro" tone="danger" wrap="anywhere">
+                    {detail.message}
+                  </Text>
+                </Disclosure>
+              ) : null}
             </li>
           );
         })}

@@ -53,7 +53,7 @@ export function ActivitySources({ overview }: { overview: ActivityOverview }) {
           onValueChange={(value) => overview.setScope(value as "all" | "machines")}
           options={[
             { value: "all", label: t("All my devices") },
-            { value: "machines", label: t("This machine") },
+            { value: "machines", label: t("Machines") },
           ]}
         />
       ) : null}

@@ -14,8 +14,6 @@
 }
 .path {
   min-inline-size: 0;
-  overflow: hidden;
-  white-space: nowrap;
 }
 .empty {
   margin: 0;

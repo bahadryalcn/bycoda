@@ -99,6 +99,52 @@ it("shares the recognizer for dictation without loading natural speech", async (
   }
 });
 
+it("marks a selected model path as exact while keeping automatic detection automatic", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python", whisperPath: "owned/small" });
+  const internals = service as unknown as {
+    ensureWorker: () => Promise<unknown>;
+    runtime: runtime.VoiceRuntimeConfig;
+  };
+  vi.spyOn(internals, "ensureWorker").mockResolvedValue({ model: "small", device: "cpu" });
+  try {
+    await service.start({ whisperPath: "owned/small", whisperExact: true }, true);
+    expect(internals.runtime.whisperExact).toBe(true);
+    service.close();
+    await service.start({}, true);
+    expect(internals.runtime.whisperExact).toBeUndefined();
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
+it("shares a running companion recognizer when only dictation idle timeout differs", async () => {
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = service as unknown as {
+    ensureWorker: () => Promise<unknown>;
+    loading?: Promise<unknown>;
+  };
+  vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.loading = Promise.resolve({ model: "small", device: "cpu", turn: false });
+    return { model: "small", device: "cpu", turn: false };
+  });
+  try {
+    await service.start({ natural: false });
+    await expect(
+      service.start({ natural: false, idleUnloadMinutes: 1 }, true),
+    ).resolves.toMatchObject({ model: "small" });
+  } finally {
+    inspect.mockRestore();
+    service.close();
+  }
+});
+
 it("keeps the recognizer warm after dictation, reuses it and unloads after the grace period", async () => {
   vi.useFakeTimers();
   const service = new LocalVoiceService();
@@ -135,6 +181,43 @@ it("keeps the recognizer warm after dictation, reuses it and unloads after the g
     inspect.mockRestore();
     close.mockRestore();
     (internals as { child?: unknown }).child = undefined;
+    service.close();
+    vi.useRealTimers();
+  }
+});
+
+it("honors the configured idle timeout, including immediate unload", async () => {
+  vi.useFakeTimers();
+  const service = new LocalVoiceService();
+  const inspect = vi
+    .spyOn(runtime, "inspectVoiceRuntime")
+    .mockResolvedValue({ ready: true, missing: [], python: "python" });
+  const internals = service as unknown as { ensureWorker: () => Promise<unknown>; child?: unknown };
+  vi.spyOn(internals, "ensureWorker").mockImplementation(async () => {
+    internals.child = { kill: () => {} };
+    return { model: "small", device: "cpu" };
+  });
+  const close = vi.spyOn(service, "close");
+  try {
+    const first = await service.start({ idleUnloadMinutes: 1 }, true);
+    service.release(first.lease);
+    vi.advanceTimersByTime(59_999);
+    expect(close).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(close).toHaveBeenCalledTimes(1);
+    const second = await service.start({ idleUnloadMinutes: 0 }, true);
+    service.release(second.lease);
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(() => runtime.voiceRuntimeConfig({ idleUnloadMinutes: -1 })).toThrow(
+      "Invalid dictation idle timeout",
+    );
+    expect(() => runtime.voiceRuntimeConfig({ idleUnloadMinutes: 121 })).toThrow(
+      "Invalid dictation idle timeout",
+    );
+  } finally {
+    inspect.mockRestore();
+    close.mockRestore();
+    internals.child = undefined;
     service.close();
     vi.useRealTimers();
   }

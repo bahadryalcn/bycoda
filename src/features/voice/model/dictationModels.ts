@@ -24,8 +24,8 @@ export const DICTATION_LANGUAGES = [
 ] as const;
 
 /**
- * Transcription models the owner can choose per provider; the first is the default.
- * The Host accepts only these, so a stored or forged value cannot pick another endpoint model.
+ * Built-in transcription choices. OpenRouter discovery replaces these in the UI;
+ * the Host checks OpenRouter selections against its live transcription catalog.
  */
 export const DICTATION_MODELS: Record<
   CloudDictationProvider,
@@ -50,8 +50,14 @@ export const DICTATION_MODELS: Record<
   ],
 };
 
-/** The chosen model when the provider offers it, otherwise the provider default. */
+/** Preserve OpenRouter selections until the Host can validate its current catalog. */
 export function dictationModel(provider: CloudDictationProvider, chosen: unknown): string {
   const models = DICTATION_MODELS[provider];
+  if (
+    provider === "openrouter" &&
+    typeof chosen === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(chosen)
+  )
+    return chosen;
   return models.find((model) => model.id === chosen)?.id ?? models[0].id;
 }

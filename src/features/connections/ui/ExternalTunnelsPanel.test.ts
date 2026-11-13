@@ -121,13 +121,16 @@ async function render() {
   );
 }
 function button(text: string) {
-  const value = [...container.querySelectorAll("button")].find((b) => b.textContent === text);
+  const value = [...container.querySelectorAll("button")].find(
+    (b) => !b.closest("[hidden]") && b.textContent === text,
+  );
   if (!value) throw new Error(`Missing ${text}`);
   return value;
 }
 async function choose(label: string, value: string) {
   const group = [...container.querySelectorAll("fieldset")].find(
-    (fieldset) => fieldset.querySelector("legend")?.textContent === label,
+    (fieldset) =>
+      !fieldset.closest("[hidden]") && fieldset.querySelector("legend")?.textContent === label,
   );
   const radio = group?.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`);
   if (radio) {
@@ -144,11 +147,99 @@ async function choose(label: string, value: string) {
   await act(async () => option.click());
 }
 
+it("keeps a rejected token for retry and clears it only after acknowledged save", async () => {
+  let reject = true;
+  const original = vi.mocked(remoteRequest).getMockImplementation()!;
+  vi.mocked(remoteRequest).mockImplementation(async (...args) => {
+    if (args[1] === "tunnels.credential" && reject) throw new Error("credential-store-unavailable");
+    return original(...args);
+  });
+  await render();
+  await choose("Tunnel provider", "ngrok");
+  const field = container.querySelector<HTMLInputElement>('input[type="password"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      field,
+      "fixture-token",
+    );
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const save = () =>
+    act(async () =>
+      field
+        .closest("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+  await save();
+  expect(field.value).toBe("fixture-token");
+  expect(container.textContent).toContain("secure");
+  reject = false;
+  // Failed mutations remain retryable without a separate status refresh.
+  await save();
+  expect(field.value).toBe("");
+});
+
+it("retains separate machine drafts and binds delayed token completion to its owner", async () => {
+  let finish!: (value: unknown) => void;
+  const original = vi.mocked(remoteRequest).getMockImplementation()!;
+  vi.mocked(remoteRequest).mockImplementation(async (...args) =>
+    args[1] === "tunnels.credential"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : original(...args),
+  );
+  await render();
+  await choose("Tunnel provider", "ngrok");
+  const field = () =>
+    [...container.querySelectorAll<HTMLInputElement>('input[type="password"]')].find(
+      (item) => !item.closest("[hidden]"),
+    )!;
+  const fill = (value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        field(),
+        value,
+      );
+      field().dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  await fill("local-token");
+  await act(async () =>
+    field()
+      .closest("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(field().disabled).toBe(true);
+  expect(container.querySelector<HTMLInputElement>('input[value="host"]')!.disabled).toBe(true);
+  expect(button("Save token securely").getAttribute("aria-busy")).toBe("true");
+  await choose("Computer", "Home Mac");
+  await choose("Tunnel provider", "ngrok");
+  await fill("remote-token");
+  await act(async () => finish({}));
+  expect(field().value).toBe("remote-token");
+  await choose("Computer", "This computer");
+  expect(field().value).toBe("");
+  await choose("Computer", "Home Mac");
+  expect(field().value).toBe("remote-token");
+  await act(async () =>
+    root.render(
+      createElement(ExternalTunnelsPanel, {
+        machines: [remote, local],
+        loaded: true,
+        loading: true,
+      }),
+    ),
+  );
+  expect(field().value).toBe("remote-token");
+});
+
 it("separates dev and host targets and routes host start to the selected computer", async () => {
   await render();
   await choose("Computer", "Home Mac");
   await choose("Tunnel target", "host");
-  const field = [...container.querySelectorAll("input")].find((input) => input.readOnly)!;
+  const field = [...container.querySelectorAll("input")].find(
+    (input) => !input.closest("[hidden]") && input.readOnly,
+  )!;
   expect(field.value).toBe("http://127.0.0.1:3777");
   await act(async () => button("Start tunnel").click());
   expect(remoteRequest).toHaveBeenCalledWith(
@@ -250,3 +341,18 @@ it("lists no empty-state line and one setup popover in the Sharing form", async 
   ).toHaveLength(1);
   expect(container.querySelector('button[aria-label="Check again"]')).not.toBeNull();
 });
+
+it.each([false, true])(
+  "does not assert missing setup before a successful status read (failed=%s)",
+  async (failed) => {
+    vi.mocked(remoteRequest).mockImplementation(() =>
+      failed ? Promise.reject(new Error("Host disconnected")) : new Promise(() => {}),
+    );
+    await render();
+    expect(container.textContent).not.toContain("CLI needed");
+    await choose("Tunnel provider", "ngrok");
+    expect(container.textContent).not.toContain("needs a valid authtoken");
+    expect(button("Start tunnel").disabled).toBe(true);
+    if (failed) expect(container.textContent).toContain("could not be reached");
+  },
+);

@@ -160,7 +160,7 @@ export function AssistantBriefingCard({
     if (job && !assistantJobVisible(job, canSeeProject))
       throw new Error("The selected project is no longer visible.");
     if (target.kind === "goal") {
-      if (!onOpenGoal) throw new Error("Goal navigation is unavailable.");
+      if (!onOpenGoal) throw new Error("Epic navigation is unavailable.");
       await onOpenGoal(target);
     } else {
       if (!onOpenSession) throw new Error("Session navigation is unavailable.");

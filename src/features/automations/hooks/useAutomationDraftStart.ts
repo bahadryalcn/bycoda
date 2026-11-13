@@ -78,6 +78,12 @@ export function useAutomationDraftStart({
         prompt: t(template.prompt),
       }),
       ...(routingHost.supported ? { modelChoice: { kind: "default" as const } } : {}),
+      ...(template.id === "project-scan"
+        ? {
+            runInBackground: true,
+            hostTemplate: { kind: "project-scan" as const, sourceStewardId: "new" },
+          }
+        : {}),
     });
   };
 

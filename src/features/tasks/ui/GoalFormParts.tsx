@@ -1,12 +1,11 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { NumberField } from "../../../shared/ui/NumberField";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Select } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { MAX_RUNNING_TASKS_LIMIT } from "../model/hostSettings";
 import "./task-goals.css";
 
 /** A titled group of goal settings. Option rows sit in one hairline frame; other content is `framed={false}`. */
@@ -102,24 +101,31 @@ export function GoalConcurrencyOption({
   value: number;
   onChange: (value: number) => void;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = draft ?? String(value);
+  const valid = text.trim() !== "" && Number.isSafeInteger(Number(text)) && Number(text) >= 0;
   return (
     <GoalOption
-      title={t("Concurrent tasks in this goal")}
-      description={t("How many of this goal's tasks may run at once.")}
+      title={t("Concurrent tasks in this epic")}
+      description={t("How many of this epic's tasks may run at once.")}
     >
-      <SearchableSelect
+      <NumberField
         hideLabel
-        label={t("Concurrent tasks in this goal")}
-        searchable={false}
-        value={String(value)}
-        options={[
-          { value: "0", label: t("Use machine limit") },
-          ...Array.from({ length: MAX_RUNNING_TASKS_LIMIT }, (_, index) => ({
-            value: String(index + 1),
-            label: String(index + 1),
-          })),
-        ]}
-        onChange={(next) => onChange(Number(next))}
+        label={t("Concurrent tasks in this epic")}
+        description={t("Use machine limit")}
+        min={0}
+        step={1}
+        value={text}
+        aria-invalid={!valid || undefined}
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          if (next.trim() !== "" && Number.isSafeInteger(Number(next)) && Number(next) >= 0) {
+            setDraft(null);
+            onChange(Number(next));
+          } else {
+            setDraft(next);
+          }
+        }}
       />
     </GoalOption>
   );

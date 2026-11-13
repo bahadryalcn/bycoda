@@ -3,9 +3,15 @@ import { useCallback, useRef } from "react";
 import type { RemoteMachine } from "../../connections/model/protocol";
 import { automationKey } from "../model/automationKey";
 import type { Automation } from "../model/automations";
-import { listHostAutomationResults, probeMachines } from "../model/hostAutomationClient";
+import {
+  hostProjectFor,
+  listHostAutomationResults,
+  probeMachines,
+} from "../model/hostAutomationClient";
 import { failedMachineNames } from "../model/machineResults";
-import { HOST_AUTOMATIONS } from "../model/hostAutomations";
+import { migrateNativeAutomations } from "../model/nativeAutomationMigration";
+import { machineCapabilities } from "../model/machineSnapshot";
+import { HOST_AUTOMATION_MIGRATION, HOST_AUTOMATIONS } from "../model/hostAutomations";
 
 export const HOST_AUTOMATIONS_QUERY_KEY = ["automations", "hosts"] as const;
 
@@ -15,6 +21,7 @@ export type HostAutomationsSnapshot = {
   unreachable: string[];
   /** Why each of them did not answer, one line per machine. */
   unreachableDetail?: string;
+  migrationBlocked?: string[];
   automations: Automation[];
 };
 
@@ -60,6 +67,24 @@ export function useHostAutomations(enabled: boolean) {
       const fresh = forceProbe.current;
       forceProbe.current = false;
       const reach = await probeMachines(HOST_AUTOMATIONS, fresh);
+      const migrationBlocked = (
+        await Promise.all(
+          reach.capable.map(async (machine) => {
+            try {
+              if (!(await machineCapabilities(machine)).includes(HOST_AUTOMATION_MIGRATION))
+                return [];
+              const result = await migrateNativeAutomations(machine, (cwd) =>
+                hostProjectFor(machine, cwd),
+              );
+              return result.blocked.map(
+                (entry) => `${machine.name}: ${entry.automationId}: ${entry.reason}`,
+              );
+            } catch (error) {
+              return [`${machine.name}: ${error instanceof Error ? error.message : String(error)}`];
+            }
+          }),
+        )
+      ).flat();
       const results = await listHostAutomationResults(reach.capable, reach.unreachableMachines);
       let automations = results.flatMap((result) => result.data);
       for (const [key, change] of confirmed.current) {
@@ -72,6 +97,7 @@ export function useHostAutomations(enabled: boolean) {
       }
       return {
         machines: reach.capable,
+        migrationBlocked,
         unreachable: failedMachineNames(results),
         unreachableDetail:
           results
@@ -125,6 +151,7 @@ export function useHostAutomations(enabled: boolean) {
 
   const data = query.data;
   return {
+    migrationBlocked: data?.migrationBlocked ?? NO_NAMES,
     machines: data?.machines ?? NO_MACHINES,
     unreachable: data?.unreachable ?? NO_NAMES,
     unreachableDetail: data?.unreachableDetail,

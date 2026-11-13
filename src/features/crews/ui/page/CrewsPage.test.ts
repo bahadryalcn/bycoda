@@ -8,13 +8,24 @@ import { CrewsPage } from "./CrewsPage";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const hosts = vi.hoisted(() => ({ supported: true, items: [] as unknown[] }));
+const hosts = vi.hoisted(() => ({
+  supported: true,
+  items: [] as unknown[],
+  loaded: true,
+  error: null as Error | null,
+  refetch: vi.fn(),
+}));
 const worked = vi.hoisted(() => vi.fn());
 const opened = vi.hoisted(() => vi.fn());
 
 vi.mock("../../model/crewActive", () => ({
   useActiveCrewSupported: () => hosts.supported,
-  useActiveCrewMembers: () => ({ data: { items: hosts.items, truncated: false } }),
+  useActiveCrewMembers: () => ({
+    data: hosts.loaded ? { items: hosts.items, truncated: false } : undefined,
+    error: hosts.error,
+    refetch: hosts.refetch,
+    isFetching: false,
+  }),
 }));
 vi.mock("../../model/crewClient", () => ({
   useProjectCrews: () => ({
@@ -76,7 +87,22 @@ afterEach(() => {
   host?.remove();
   hosts.supported = true;
   hosts.items = [];
+  hosts.loaded = true;
+  hosts.error = null;
   vi.clearAllMocks();
+});
+
+it("does not call an unread Active result zero and exposes its failed read recovery", async () => {
+  hosts.loaded = false;
+  hosts.error = new Error("Active hosts unavailable");
+  const page = mount();
+  expect(page.textContent).toContain("Active hosts unavailable");
+  expect(page.textContent).not.toContain("Loading crews");
+  expect(tabs()[0]).toBe("Active");
+  await act(async () =>
+    [...page.querySelectorAll("button")].find((button) => button.textContent === "Retry")!.click(),
+  );
+  expect(hosts.refetch).toHaveBeenCalledOnce();
 });
 
 it("lands on Active first when someone is working and lists the member", () => {

@@ -1,4 +1,5 @@
 import { Text } from "../../../shared/ui/Text";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -6,7 +7,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { useT } from "../../../shared/i18n";
 import { useState } from "react";
 import { basename } from "../../../platform/tauri/fs";
-import { pathKey, prettyCwd } from "../../../shared/lib/paths";
+import { pathKey } from "../../../shared/lib/paths";
 import { Modal } from "../../../shared/ui/Modal";
 import {
   additionalDirCandidatesFrom,
@@ -31,6 +32,7 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
   const recents = useRecents();
   const assignments = useProjectGroupAssignments();
   const [query, setQuery] = useState("");
+  const [saveError, setSaveError] = useState(false);
   const [selected, setSelected] = useState(() => loadAdditionalDirs(project));
   const selectedKeys = new Set(selected.map(pathKey));
   // A folder picked earlier stays listed after it leaves the group, so it can
@@ -51,8 +53,9 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
     const next = selectedKeys.has(pathKey(path))
       ? selected.filter((dir) => pathKey(dir) !== pathKey(path))
       : [...selected, path];
-    setSelected(next);
-    saveAdditionalDirs(project, next);
+    const saved = saveAdditionalDirs(project, next);
+    setSaveError(!saved);
+    if (saved) setSelected(next);
   };
 
   return (
@@ -67,6 +70,11 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
       fitViewport
       onClose={onClose}
     >
+      {saveError ? (
+        <InlineError className="px-3 pt-2">
+          {t("Could not save project changes. Try again.")}
+        </InlineError>
+      ) : null}
       {candidates.length ? (
         <div className="px-2 pt-2">
           <SearchInput
@@ -101,11 +109,11 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
                   label={
                     <>
                       <span className="flex min-w-0 flex-col">
-                        <Text truncate size="secondary" tone="primary">
+                        <Text wrap="anywhere" size="secondary" tone="primary">
                           {basename(path)}
                         </Text>
-                        <Text truncate size="micro" tone="muted">
-                          {prettyCwd(path)}
+                        <Text wrap="anywhere" size="micro" tone="muted">
+                          {path}
                         </Text>
                       </span>
                     </>

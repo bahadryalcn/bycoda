@@ -6,7 +6,7 @@ import {
   NEW_LOCAL_HOST_SESSION,
   newLocalHostSession,
 } from "../../features/connections/model/newLocalHostSession";
-import { useT } from "../../shared/i18n";
+import { useFormat, useT } from "../../shared/i18n";
 import {
   useProjectDiffStats,
   useProjectsDiffStats,
@@ -171,6 +171,7 @@ export function useProjectMenu({
   isProjectBusy,
 }: Options) {
   const t = useT();
+  const format = useFormat();
   const [projectMenu, setProjectMenu] = useState<
     | (Point & {
         path: string;
@@ -182,7 +183,7 @@ export function useProjectMenu({
     | null
   >(null);
   const menuStats = useProjectDiffStats(projectMenu?.path ?? "", projectMenu != null);
-  const menuChange = projectGitChange(menuStats);
+  const menuChange = projectGitChange(menuStats, format.formatNumber);
   const menuConnection = useRemoteConnection(projectMenu?.path);
   const menuIndicator = connectionIndicator(menuConnection, menuConnection.reconnecting);
   const menuRemoteProject = useRemoteProject(projectMenu?.path ?? "");
@@ -241,6 +242,7 @@ export function useProjectMenu({
           }),
           { files: 0, additions: 0, deletions: 0 },
         ),
+        format.formatNumber,
       )
     : null;
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);

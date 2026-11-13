@@ -1,4 +1,7 @@
+import { retireReviewedPlanner } from "./planner-retirement";
+import type { HostEngine } from "../engine";
 import { resolveGoalRunModel } from "./model-routing";
+import { readSessionWorkReceipt } from "../work/session-adapter";
 import { routingRun, routingWait, routingWaitDue } from "../tasks/model-routing";
 import { parseHostGoal } from "./routing-input";
 import { lastTurnReply } from "../sessions/turn-reply";
@@ -28,7 +31,6 @@ import {
 } from "../sessions/sessionRuns";
 import type { HostStore } from "../store";
 import type { HostTasks } from "../tasks/tasks";
-import { newRequestId } from "../../src/shared/lib/id/requestId";
 import {
   FINAL_ACCEPTANCE_CRITERIA,
   finalReviewPrompt,
@@ -49,25 +51,24 @@ import {
 import { hasUnmergedBranch, orderTasksForDeletion } from "../../src/features/tasks/model/taskRules";
 const FEEDBACK_LIMIT = 8000;
 const MAX_PLANNER_FORMAT_REPAIRS = 2;
-/** Breaks one main job into tasks across several of this machine's projects
- * and follows them to the end. A planner agent writes the plan in the lead
- * project; each planned task is an ordinary task on the board, on a branch of
- * its own, that starts once the tasks it depends on are merged. Runs on the
- * task board's timer. */
+/** Plans a job in its lead project and follows ordinary board tasks across projects.
+ * Tasks start after their dependencies are merged; progression uses the board timer. */
 export class HostGoals {
   onDelete?: (goal: { id: string }) => void;
   readonly ready: Promise<void>;
   private readonly engine: SessionRunEngine;
+  private readonly waitForRun?: HostEngine["waitForRun"];
   private readonly assistantPlanning = new Set<string>();
   private readonly retiredAssistantGoals = new Set<string>();
   constructor(
     private readonly store: HostStore,
-    engine: SessionRunEngine,
+    engine: SessionRunEngine & Partial<Pick<HostEngine, "waitForRun">>,
     private readonly tasks: HostTasks,
     private readonly now: () => number = Date.now,
   ) {
     // The Store's AsyncLocal authorization follows an admitted owner request
     // across preparation and SQL waits. Scheduler calls have no request grant.
+    this.waitForRun = engine.waitForRun?.bind(engine);
     this.engine = {
       withCommandAdmission: engine.withCommandAdmission?.bind(engine),
       withMessageAuthor: (author, work) => {
@@ -115,9 +116,7 @@ export class HostGoals {
           "SELECT 1 FROM task_run_budget_ledger WHERE session_id=? AND run_id=? AND goal_id=?",
         );
         for (const goal of await this.all()) {
-          const finalReceipt = goal.finalAcceptance?.requestId
-            ? await store.receiptStatus(`goal-final:${goal.finalAcceptance.requestId}:send`)
-            : undefined;
+          const finalReceipt = await this.finalReceipt(goal);
           if (
             finalReceipt?.runId &&
             goal.finalAcceptance?.startedAt !== undefined &&
@@ -318,6 +317,7 @@ export class HostGoals {
       plannerSessionId,
       plannerRunId,
       plannerStartedAt,
+      plannerRequestId: _plannerRequestId,
       plannerRepairAttempts,
       plannerRecoveryPending,
       feedback: earlier,
@@ -529,8 +529,7 @@ export class HostGoals {
         ) {
           await this.queuePlannerRecovery(goal, HOST_INTERRUPTED, now);
         } else if (goal.status === "planning" && !goal.plannerSessionId) {
-          // Waiting for daily agent time: planning starts once there is some.
-          if (!(await this.tasks.limits.reached())) await this.plan(goal);
+          await this.plan(goal);
         } else if (goal.status === "planning") await this.settlePlanner(goal, now);
       } catch (error) {
         console.error("Could not settle a goal planner:", errorMessage(error));
@@ -637,52 +636,6 @@ export class HostGoals {
       reviewed,
     );
   }
-  /** Preserve only this already-started run when its reviewed goal loses admission.
-   * Recovery bookkeeping never restores goal state or starts another provider. */
-  private async retireReviewedPlanner(
-    goalId: string,
-    started: { sessionId: string; runId: string },
-    cause: unknown,
-  ): Promise<never> {
-    const key = `goal-planner-retirement:${goalId}:${started.runId}`;
-    let persistedState: string | undefined;
-    const record = async (state: string, cleanupError?: string) => {
-      try {
-        await this.store.db.runRecoveryBookkeeping(() =>
-          this.store.db
-            .prepare(
-              "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            )
-            .run(
-              key,
-              JSON.stringify({
-                goalId,
-                ...started,
-                state,
-                cause: errorMessage(cause),
-                ...(cleanupError ? { cleanupError } : {}),
-              }),
-            ),
-        );
-        persistedState = state;
-      } catch {
-        // Storage failure cannot skip cancellation or erase the exact run from
-        // the caller's uncertain outcome. No effects use bookkeeping authority.
-      }
-    };
-    await record("cancellation-pending");
-    let cancellation = "requested";
-    try {
-      await cancelSessionRun(this.engine, started);
-      await record("cancellation-requested");
-    } catch (error) {
-      cancellation = "unknown";
-      await record("uncertain", errorMessage(error));
-    }
-    throw new Error(
-      `${errorMessage(cause)} Planner session ${started.sessionId}, run ${started.runId}; cancellation ${cancellation}; retirement receipt ${key}: ${persistedState ?? "not persisted"}. Inspect this exact run before recovery.`,
-    );
-  }
   /** Starts the planner in the lead project's folder. */
   private async plan(goal: HostGoal, reviewed?: HostGoal): Promise<HostGoal> {
     if (goal.plannerSessionId || !routingWaitDue(goal, this.now())) return goal;
@@ -718,9 +671,6 @@ export class HostGoals {
           now,
           admitted,
         );
-      // With the day's agent time used up the goal waits, still planning.
-      if (await this.tasks.limits.reached())
-        return await this.write({ ...goal, updatedAt: now }, admitted);
       let projects;
       try {
         projects = await mapAsync(goal.projectIds, async (projectId) => {
@@ -756,7 +706,13 @@ export class HostGoals {
         );
       }
       goal = await this.write(
-        { ...goal, plannerTarget, modelRoutingWait: undefined, error: undefined },
+        {
+          ...goal,
+          plannerTarget,
+          plannerRequestId: goal.plannerRequestId ?? randomUUID(),
+          modelRoutingWait: undefined,
+          error: undefined,
+        },
         admitted,
       );
       if (admitted) admitted = goal;
@@ -778,6 +734,7 @@ export class HostGoals {
           this.engine,
           {
             projectId: goal.leadProjectId,
+            work: { kind: "goal.planner", id: goal.id, occurrence: goal.plannerRequestId! },
             ...(goal.isolate !== undefined &&
             (goal.isolate === false || !goal.workspaces?.[goal.leadProjectId]?.checkoutCwd)
               ? { workspaceMode: goal.isolate ? ("worktree" as const) : ("current" as const) }
@@ -803,7 +760,10 @@ export class HostGoals {
         admitted && this.engine.withCommandAdmission
           ? await this.engine.withCommandAdmission({ check: checkAdmission }, launch)
           : await launch();
-      if (started.deferred) return goal;
+      if (started.deferred) {
+        await checkAdmission();
+        return goal;
+      }
       const planning: HostGoal = {
         ...goal,
         status: "planning",
@@ -833,7 +793,10 @@ export class HostGoals {
         return await this.write(planning, admitted);
       } catch (error) {
         if (admitted && started.sessionId && started.runId)
-          return this.retireReviewedPlanner(
+          return retireReviewedPlanner(
+            this.store,
+            this.engine,
+            this.waitForRun,
             goal.id,
             { sessionId: started.sessionId, runId: started.runId },
             error,
@@ -895,7 +858,6 @@ export class HostGoals {
   /** Retain the conversation and its inspected evidence. Daily limits delay
    * recovery rather than turning a recoverable interruption into a blocker. */
   private async resumePlanner(goal: HostGoal, now: number): Promise<void> {
-    if (await this.tasks.limits.reached()) return;
     const budget = await this.tasks.budgets.evaluate({ goalId: goal.id }, goal.budget, {
       starting: true,
     });
@@ -928,23 +890,31 @@ export class HostGoals {
         goal.awaitingOwnerRestart
       )
         return;
-      const resume = () =>
-        this.engine.command({
-          type: "send",
-          commandId: newRequestId(),
-          sessionId,
-          text: [
+      const target = session.session;
+      const resumedLaunch = await launchSessionRun(
+        this.store,
+        this.engine,
+        {
+          projectId: goal.leadProjectId,
+          harness: target.harness,
+          model: target.model,
+          modelSettings: target.modelSettings,
+          providerAccountId: target.providerAccountId,
+          runtimeMode: target.runtimeMode,
+          title: target.title ?? goal.title,
+          resumeSessionId: sessionId,
+          work: { kind: "goal.planner", id: goal.id, occurrence: `resume:${goal.plannerRunId}` },
+          author: { kind: "task", id: goal.id, name: goal.title, reason: "planner recovery" },
+          prompt: [
             "Continue the existing read-only planning conversation. Reuse the projects and evidence already inspected; do not edit files, commit, start implementation, switch branches, ask for approval or enter plan mode.",
             `The host could not complete planning: ${goal.planError ?? HOST_INTERRUPTED}`,
             "Return a corrected, self-contained plan in the required fenced json shape, using only the project's allowed paths and valid acyclic dependencies. Preserve the original objective and constraints. If the host interrupted the turn, continue the unfinished plan from the existing evidence.",
           ].join("\n\n"),
-        });
-      await (this.engine.withMessageAuthor
-        ? this.engine.withMessageAuthor(
-            { kind: "task", id: goal.id, name: goal.title, reason: "planner recovery" },
-            resume,
-          )
-        : resume());
+        },
+        () => this.tasks.goalExecutionAllowed(goal.id),
+      );
+      if (resumedLaunch.deferred) return;
+      if (resumedLaunch.error) throw new Error(resumedLaunch.error);
       await this.write({
         ...goal,
         status: "planning",
@@ -1080,6 +1050,7 @@ export class HostGoals {
           title: task.title,
           prompt: task.prompt,
           projectId,
+          ...(goal.crewDefinitionId ? { crewDefinitionId: goal.crewDefinitionId } : {}),
           harness: goal.harness,
           modelChoice: routingRun(goal).modelChoice,
           providerAccountId: goal.providerAccountId,
@@ -1233,11 +1204,19 @@ export class HostGoals {
     ).length;
   }
   /** A pending database write can lag an accepted provider launch at host shutdown. */
+  private async finalReceipt(goal: HostGoal) {
+    const requestId = goal.finalAcceptance?.requestId;
+    if (!requestId) return;
+    const work = await readSessionWorkReceipt(this.store, {
+      kind: "goal.finalReview",
+      id: goal.id,
+      occurrence: requestId,
+    });
+    return work.exists ? work.receipt : this.store.receiptStatus(`goal-final:${requestId}:send`);
+  }
   private async attachFinalReceipt(goal: HostGoal, now: number): Promise<HostGoal | undefined> {
     const final = goal.finalAcceptance;
-    const receipt = final?.requestId
-      ? await this.store.receiptStatus(`goal-final:${final.requestId}:send`)
-      : undefined;
+    const receipt = await this.finalReceipt(goal);
     if (!receipt?.runId) return;
     let executionWorkspace: { cwd: string; workspaceId?: string };
     try {
@@ -1323,7 +1302,6 @@ export class HostGoals {
     if (!(await this.tasks.goalExecutionAllowed(goal.id))) return;
     if (await this.attachFinalReceipt(goal, now)) return;
     if (goal.finalAcceptance?.sessionId || !routingWaitDue(goal, now)) return;
-    if (await this.tasks.limits.reached()) return;
     const budget = await this.tasks.budgets.evaluate({ goalId: goal.id }, goal.budget, {
       starting: true,
     });
@@ -1335,15 +1313,6 @@ export class HostGoals {
       );
       return;
     }
-    const runningTasks = (await this.tasks.list()).filter(
-      (task) =>
-        !task.crewDefinitionId && (task.status === "running" || task.status === "verifying"),
-    ).length;
-    if (
-      runningTasks + (await this.runningFinalReviews()) >=
-      (await this.tasks.limits.settings()).maxRunningTasks
-    )
-      return;
     const tasks = await this.tasks.taskIndex(goal.taskIds);
     if (goal.taskIds.some((id) => tasks.get(id)?.status !== "done")) {
       await this.blockFinalReview(
@@ -1388,16 +1357,6 @@ export class HostGoals {
         );
         return;
       }
-      if (
-        (await this.tasks.limits.reached()) ||
-        (await this.tasks.list()).filter(
-          (task) =>
-            !task.crewDefinitionId && (task.status === "running" || task.status === "verifying"),
-        ).length +
-          (await this.runningFinalReviews()) >=
-          (await this.tasks.limits.settings()).maxRunningTasks
-      )
-        return;
       const currentBudget = await this.tasks.budgets.evaluate({ goalId: goal.id }, current.budget, {
         starting: true,
       });
@@ -1460,6 +1419,7 @@ export class HostGoals {
         this.engine,
         {
           requestId: `goal-final:${requestId}`,
+          work: { kind: "goal.finalReview", id: goal.id, occurrence: requestId },
           projectId: goal.leadProjectId,
           ...(goal.isolate !== undefined &&
           (goal.isolate === false || !goal.workspaces?.[goal.leadProjectId]?.checkoutCwd)
@@ -1629,7 +1589,6 @@ export class HostGoals {
     }
   }
   private async resumeFinalReview(goal: HostGoal, now: number): Promise<void> {
-    if (await this.tasks.limits.reached()) return;
     const budget = await this.tasks.budgets.evaluate({ goalId: goal.id }, goal.budget, {
       starting: true,
     });
@@ -1663,23 +1622,31 @@ export class HostGoals {
         goal.awaitingOwnerRestart
       )
         return;
-      const resume = () =>
-        this.engine.command({
-          type: "send",
-          commandId: newRequestId(),
-          sessionId: final.sessionId!,
-          text: [
+      const target = (await this.store.session(final.sessionId!)).session;
+      const resumedLaunch = await launchSessionRun(
+        this.store,
+        this.engine,
+        {
+          projectId: goal.leadProjectId,
+          harness: target.harness,
+          model: target.model,
+          modelSettings: target.modelSettings,
+          providerAccountId: target.providerAccountId,
+          runtimeMode: target.runtimeMode,
+          title: target.title ?? goal.title,
+          resumeSessionId: final.sessionId!,
+          work: { kind: "goal.finalReview", id: goal.id, occurrence: `resume:${final.runId}` },
+          author: { kind: "task", id: goal.id, name: goal.title, reason: "final recovery" },
+          prompt: [
             "Continue the existing independent read-only final goal review. Preserve inspected evidence, inspect current delivered files, and verify the complete original objective. Do not edit files, launch implementation, commit, merge or publish.",
             acceptanceReviewInstructions(FINAL_ACCEPTANCE_CRITERIA),
             "End with VERDICT: PASS only if both conditions are verified, otherwise VERDICT: FAIL - <concrete missing proof and next action>.",
           ].join("\n\n"),
-        });
-      await (this.engine.withMessageAuthor
-        ? this.engine.withMessageAuthor(
-            { kind: "task", id: goal.id, name: goal.title, reason: "final review recovery" },
-            resume,
-          )
-        : resume());
+        },
+        () => this.tasks.goalExecutionAllowed(goal.id),
+      );
+      if (resumedLaunch.deferred) return;
+      if (resumedLaunch.error) throw new Error(resumedLaunch.error);
       await this.write({
         ...goal,
         finalAcceptance: {

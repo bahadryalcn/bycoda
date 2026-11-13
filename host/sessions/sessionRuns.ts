@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { WorkSource, WorkWait } from "../../src/shared/model/host-contracts/work";
+import { submitSessionWork } from "../work/session-adapter";
+import type { BudgetRunRegistration } from "../tasks/task-budgets";
 import { runLimitBreach } from "../../src/features/automations/model/automationLimits";
 import type { RemoteProvider } from "../../src/features/connections/model/protocol";
 import {
@@ -20,9 +23,16 @@ export type SessionRunEngine = Pick<HostEngine, "command" | "updateSession"> &
 
 /** What an unattended run needs to start: one prompt in a fresh session. */
 export type SessionRunSpec = {
+  work?: WorkSource;
+  workRootWorkId?: string;
+  workBudgetScope?: Pick<BudgetRunRegistration, "taskId" | "parentTaskId" | "goalId" | "role">;
+  /** Continue an existing, producer-validated conversation through Work admission. */
+  resumeSessionId?: string;
   author?: SessionMessageAuthor;
   /** Optional durable launch identity; explicit retries reuse host receipts. */
   requestId?: string;
+  /** Internal queue receipts; IDs also become filesystem-backed user block IDs. */
+  commandIds?: { create: string; send: string };
   projectId: string;
   harness: RemoteProvider;
   providerAccountId?: string;
@@ -68,41 +78,56 @@ export async function launchSessionRun(
   engine: SessionRunEngine,
   spec: SessionRunSpec,
   admitted: () => boolean | Promise<boolean> = () => true,
-): Promise<{ sessionId?: string; runId?: string; error?: string; deferred?: boolean }> {
-  let sessionId: string | undefined;
+): Promise<{
+  sessionId?: string;
+  runId?: string;
+  error?: string;
+  deferred?: boolean;
+  wait?: WorkWait;
+}> {
+  if (spec.work)
+    return submitSessionWork(store, engine, spec, admitted, (accepted, workAdmitted) =>
+      launchSessionRun(store, engine, { ...accepted, work: undefined }, workAdmitted ?? admitted),
+    );
+  let sessionId: string | undefined = spec.resumeSessionId;
   try {
     if (!(await admitted())) return { deferred: true };
-    sessionId = (
-      await engine.command({
-        type: "create",
-        commandId: spec.requestId ? `${spec.requestId}:create` : randomUUID(),
-        projectId: spec.projectId,
-        ...(spec.workspaceId ? { workspaceId: spec.workspaceId } : {}),
-        ...(spec.workspaceMode ? { workspaceMode: spec.workspaceMode } : {}),
-        ...(spec.worktreeCwd ? { worktreeCwd: spec.worktreeCwd } : {}),
-        harness: spec.harness,
-        ...(spec.providerAccountId === undefined
-          ? {}
-          : { providerAccountId: spec.providerAccountId }),
-        model: spec.model,
-        modelSettings: spec.modelSettings,
-        runtimeMode: spec.runtimeMode,
-      })
-    ).sessionId;
+    if (!sessionId)
+      sessionId = (
+        await engine.command({
+          type: "create",
+          commandId:
+            spec.commandIds?.create ?? (spec.requestId ? `${spec.requestId}:create` : randomUUID()),
+          projectId: spec.projectId,
+          ...(spec.workspaceId ? { workspaceId: spec.workspaceId } : {}),
+          ...(spec.workspaceMode ? { workspaceMode: spec.workspaceMode } : {}),
+          ...(spec.worktreeCwd ? { worktreeCwd: spec.worktreeCwd } : {}),
+          harness: spec.harness,
+          ...(spec.providerAccountId === undefined
+            ? {}
+            : { providerAccountId: spec.providerAccountId }),
+          model: spec.model,
+          modelSettings: spec.modelSettings,
+          runtimeMode: spec.runtimeMode,
+        })
+      ).sessionId;
     if (!(await admitted())) return { sessionId, deferred: true };
     await engine.updateSession(sessionId, { title: spec.title });
     if (!(await admitted())) return { sessionId, deferred: true };
     const send = () =>
       engine.command({
         type: "send",
-        commandId: spec.requestId ? `${spec.requestId}:send` : randomUUID(),
+        commandId:
+          spec.commandIds?.send ?? (spec.requestId ? `${spec.requestId}:send` : randomUUID()),
         sessionId,
         text: spec.prompt,
         ...(spec.intent ? { intent: spec.intent } : {}),
       });
-    if (spec.author && engine.withMessageAuthor) await engine.withMessageAuthor(spec.author, send);
-    else await send();
-    return { sessionId, runId: (await store.session(sessionId)).runId };
+    const receipt =
+      spec.author && engine.withMessageAuthor
+        ? await engine.withMessageAuthor(spec.author, send)
+        : await send();
+    return { sessionId, runId: receipt.runId ?? (await store.session(sessionId)).runId };
   } catch (error) {
     return { sessionId, error: errorMessage(error) };
   }

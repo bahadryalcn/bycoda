@@ -8,13 +8,20 @@ const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
   revokeOthers: vi.fn(),
   devices: [] as object[],
+  isPending: false,
+  isError: false,
 }));
 vi.mock("../../../shared/ui/ConfirmDialog", () => ({
   useConfirm: () => ({ confirm: mocks.confirm, dialog: null }),
 }));
 vi.mock("../hooks/useAccountData", () => ({
   useDevices: () => ({
-    query: { data: mocks.devices, isPending: false, isError: false },
+    query: {
+      data: mocks.devices,
+      isPending: mocks.isPending,
+      isError: mocks.isError,
+      isSuccess: !mocks.isPending && !mocks.isError,
+    },
     rename: { mutateAsync: vi.fn() },
     revoke: { mutateAsync: vi.fn(), isPending: false },
     revokeOthers: { mutateAsync: mocks.revokeOthers, isPending: false },
@@ -52,8 +59,29 @@ describe("AccountDevices sign out of other devices", () => {
     root = createRoot(container);
     mocks.confirm.mockReset();
     mocks.revokeOthers.mockReset().mockResolvedValue({ revoked: 1 });
+    mocks.isPending = false;
+    mocks.isError = false;
   });
   afterEach(() => act(() => root.unmount()));
+
+  it.each(["pending", "error"])("does not claim an empty phone list while %s", async (state) => {
+    mocks.devices = [];
+    mocks.isPending = state === "pending";
+    mocks.isError = state === "error";
+    await render();
+    expect(container.textContent).not.toContain("No phone signed in");
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(
+        state === "pending" ? "Loading devices" : "Could not load your devices",
+      ),
+    );
+  });
+
+  it("shows the phone empty state only after a successful list", async () => {
+    mocks.devices = [];
+    await render();
+    expect(container.textContent).toContain("No phone signed in");
+  });
 
   it("is offered only with more than one device", async () => {
     mocks.devices = [device("a")];

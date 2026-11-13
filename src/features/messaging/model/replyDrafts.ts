@@ -55,8 +55,11 @@ export function beginReplySend(key: string, body: string, createId = () => crypt
   return next.requestId as string;
 }
 
-export function clearReplyDraft(key: string): void {
+/** A send receipt clears only its exact attempted snapshot, never a newer remounted editor. */
+export function clearReplyDraft(key: string, attempted?: ReplyDraft): boolean {
+  if (attempted && readReplyDraft(key) !== attempted) return false;
   drafts.delete(key);
+  return true;
 }
 
 export function resetReplyDraftsForTests(): void {

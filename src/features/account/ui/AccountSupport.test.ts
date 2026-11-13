@@ -103,6 +103,31 @@ describe("support tab", () => {
     expect(container.textContent).toContain("Your message is kept");
     expect(message().value).toBe("It never finishes.");
   });
+
+  it("keeps newer unsent edits when an earlier ticket succeeds", async () => {
+    let complete!: (receipt: { id: string; createdAt: string }) => void;
+    mocks.createSupportTicket.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    await act(async () => root.render(createElement(AccountSupport)));
+    type(subject(), "Original issue");
+    type(message(), "Original message");
+    await click(button("Send to support"));
+    expect(subject().disabled).toBe(false);
+    expect(message().disabled).toBe(false);
+    type(subject(), "New unsent issue");
+    type(message(), "New unsent message");
+    await act(async () => complete({ id: "earlier-ticket", createdAt: "2026-11-13T10:00:00Z" }));
+    expect(mocks.createSupportTicket).toHaveBeenCalledWith({
+      body: { subject: "Original issue", body: "Original message", category: "bug" },
+    });
+    expect(subject().value).toBe("New unsent issue");
+    expect(message().value).toBe("New unsent message");
+    expect(container.textContent).toContain("Reference: earlier-ticket");
+  });
 });
 
 describe("guest support", () => {

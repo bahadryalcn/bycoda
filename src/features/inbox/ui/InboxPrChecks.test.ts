@@ -429,6 +429,7 @@ it("opens a job that fails during polling and lets the user retry unavailable de
   await act(async () => {});
   expect(rowOpen("Linux")).toBe(true);
   expect(container.textContent).toContain("Could not load job details.");
+  expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
   invoke.mockResolvedValueOnce({
     steps: [{ name: "Build", state: "fail", startedAt: null, completedAt: null }],
     annotations: [],

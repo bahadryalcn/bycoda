@@ -318,7 +318,7 @@ export function TaskDetail({
             >
               <Sparkles className="icon-xs shrink-0" />
               <Text truncate size="inherit" tone="inherit" className="min-w-0">
-                {t("Part of the goal “")}
+                {t("Part of the epic “")}
                 {goal}”
               </Text>
             </Text>
@@ -335,9 +335,11 @@ export function TaskDetail({
               </DetailRow>
               <DetailRow label={t("Access")}>{t(RUNTIME_MODE_LABEL[task.runtimeMode])}</DetailRow>
               <DetailRow label={t("Time limit")}>
-                {RUN_TIME_LIMIT_OPTIONS.find(
-                  (option) => option.value === String(task.maxRunMinutes),
-                )?.label ?? t("{p0} minutes", { p0: task.maxRunMinutes })}
+                {task.inheritMaxRunMinutes && task.runtimeLimitResolvedAt === undefined
+                  ? t("Default")
+                  : (RUN_TIME_LIMIT_OPTIONS.find(
+                      (option) => option.value === String(task.maxRunMinutes),
+                    )?.label ?? t("{p0} minutes", { p0: task.maxRunMinutes }))}
               </DetailRow>
               {task.branch ? (
                 <DetailRow label={t("Branch")}>

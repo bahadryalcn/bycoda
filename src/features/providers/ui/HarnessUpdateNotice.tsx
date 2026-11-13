@@ -1,5 +1,4 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -109,11 +108,14 @@ export function HarnessUpdateNotice() {
       placement="top-end"
       width="lg"
       onDismiss={dismiss}
+      actionsPlacement="footer"
       actions={
         pending.length > 1 ? (
-          <Button variant="ghost" size="sm" type="button" onClick={() => start(pending)}>
-            {t("Update all")}
-          </Button>
+          <div className="flex w-full justify-end">
+            <Button variant="primary" size="sm" type="button" onClick={() => start(pending)}>
+              {t("Update all")}
+            </Button>
+          </div>
         ) : null
       }
     >
@@ -149,18 +151,18 @@ function HarnessUpdateRow({
   return (
     <article className="py-2.5">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <HarnessIcon harness={update.harness} className="icon-md shrink-0" />
+        <div className="flex min-w-0 items-start gap-2">
+          <HarnessIcon harness={update.harness} className="icon-md mt-0.5 shrink-0" />
+          <div className="flex min-w-0 flex-col gap-1">
             <Text size="secondary" tone="inherit" weight="medium" className="min-w-0 break-words">
               {HARNESS_TITLE[update.harness]}
             </Text>
+            {state.status !== "updated" ? (
+              <Text size="micro" tone="muted" className="break-words tabular-nums">
+                {update.installed} → {update.latest}
+              </Text>
+            ) : null}
           </div>
-          {state.status !== "updated" ? (
-            <Code size="micro" tone="muted" className="block pt-1 tabular-nums">
-              {update.installed} → {update.latest}
-            </Code>
-          ) : null}
         </div>
         {state.status === "updated" ? (
           <Text

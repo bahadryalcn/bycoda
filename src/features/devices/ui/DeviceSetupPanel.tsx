@@ -32,7 +32,8 @@ export function DeviceSetupPanel({
   hostLabel?: string;
   /** The last status or discovery read failed, so the running state is not known. */
   unknown: boolean;
-  deviceCount: number;
+  /** Unknown until discovery succeeds; a failed read never means zero devices. */
+  deviceCount?: number;
   showLastError: boolean;
   refresh: Action;
   setup: Action;
@@ -61,7 +62,9 @@ export function DeviceSetupPanel({
             weight="regular"
             className="host-tool-muted"
           >
-            {t("{p0} devices found", { p0: deviceCount })}
+            {deviceCount === undefined
+              ? `${t("Devices")} · ${t("Unknown")}`
+              : t("{p0} devices found", { p0: deviceCount })}
           </Text>
         </Text>
         <InfoPopover>

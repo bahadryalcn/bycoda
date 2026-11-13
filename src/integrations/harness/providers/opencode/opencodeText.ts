@@ -102,17 +102,19 @@ export function warmupOpenCodeText(cwd: string): Promise<void> {
   return observeProviderProbeCleanup(run);
 }
 
-export async function runOpenCodeTextPrompt(input: {
-  cwd: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  intent?: TurnIntent;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-  operationContext?: HarnessOperationContext;
-}): Promise<string> {
+export async function runOpenCodeTextPrompt(
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    intent?: TurnIntent;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
+  },
+): Promise<string> {
   input = captureTextInput(input);
   // HTTP requests retain their own source view. SSE subscription/close remains
   // an explicitly separate observation path, never a child stdin/run ACK.
@@ -123,23 +125,26 @@ export async function runOpenCodeTextPrompt(input: {
   return run;
 }
 
-async function promptOnLive(input: {
-  cwd: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  intent?: TurnIntent;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-  operationContext?: HarnessOperationContext;
-}): Promise<string> {
+async function promptOnLive(
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    intent?: TurnIntent;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
+  },
+): Promise<string> {
   input.signal?.throwIfAborted();
   const session = await ensureLive(
     input.cwd,
     input.model,
     input.modelSettings,
     input.operationContext,
+    input,
   );
   const writer = input.operationContext?.hostRun
     ? session.client.withHostRun(input.operationContext.hostRun, session.sessionId)
@@ -181,6 +186,7 @@ async function promptOnLive(input: {
       session.onEvent = undefined;
       await dropLive(session, undefined, cleanup);
     },
+    input,
   );
 }
 
@@ -189,6 +195,7 @@ async function ensureLive(
   requestedModel?: string,
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   const model = pickTextModel(requestedModel);
   const settingsKey = modelSettingsKey(modelSettings);
@@ -205,7 +212,7 @@ async function ensureLive(
     if (current.child) prepareTextProcess(current.child, operationContext);
     return current;
   }
-  return startLive(cwd, model, modelSettings, captureDrop(), operationContext);
+  return startLive(cwd, model, modelSettings, captureDrop(), operationContext, retirement);
 }
 
 async function startLive(
@@ -214,6 +221,7 @@ async function startLive(
   modelSettings: Record<string, string> | undefined,
   previous: ReturnType<typeof captureDrop>,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   if (wireRetirements.size + (live ? 1 : 0) + (pendingSetup ? 1 : 0) >= 512)
     throw new ProviderRetirementError(
@@ -362,6 +370,7 @@ async function startLive(
     return preserveProviderFailure(
       error,
       settleProviderRetirements([stopping, session ? dropLive(session) : stopSetup(setup)]),
+      retirement,
     );
   }
 }

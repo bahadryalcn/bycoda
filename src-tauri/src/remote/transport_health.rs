@@ -75,7 +75,7 @@ impl<'a> Exchange<'a> {
     /// again only after an attempt that was refused before anything was sent.
     pub(super) fn send(
         &self,
-        attempt: impl FnMut(Duration) -> Result<ureq::Response, ureq::Error>,
+        attempt: impl FnMut(Duration) -> Result<ureq::Response, Box<ureq::Error>>,
     ) -> Result<ureq::Response, Box<ureq::Transport>> {
         health().send(
             self,
@@ -229,9 +229,9 @@ impl TransportHealth {
         &self,
         exchange: &Exchange<'_>,
         timeout: Duration,
-        attempt: &mut impl FnMut(Duration) -> Result<ureq::Response, ureq::Error>,
+        attempt: &mut impl FnMut(Duration) -> Result<ureq::Response, Box<ureq::Error>>,
     ) -> Result<ureq::Response, Box<ureq::Transport>> {
-        match attempt(timeout) {
+        match attempt(timeout).map_err(|error| *error) {
             Ok(response) | Err(ureq::Error::Status(_, response)) => {
                 self.reached(exchange);
                 Ok(response)
@@ -245,7 +245,7 @@ impl TransportHealth {
         exchange: &Exchange<'_>,
         local: impl FnOnce() -> bool,
         listening: impl Fn(Instant) -> bool,
-        mut attempt: impl FnMut(Duration) -> Result<ureq::Response, ureq::Error>,
+        mut attempt: impl FnMut(Duration) -> Result<ureq::Response, Box<ureq::Error>>,
     ) -> Result<ureq::Response, Box<ureq::Transport>> {
         let refusal = match self.attempt(exchange, exchange.timeout, &mut attempt) {
             Ok(response) => return Ok(response),
@@ -293,15 +293,15 @@ mod tests {
     use super::*;
     use std::cell::Cell;
 
-    fn refused() -> ureq::Error {
-        ureq::Error::from(std::io::Error::new(
+    fn refused() -> Box<ureq::Error> {
+        Box::new(ureq::Error::from(std::io::Error::new(
             std::io::ErrorKind::ConnectionRefused,
             "http://user:secret@host",
-        ))
+        )))
     }
 
-    fn answered() -> Result<ureq::Response, ureq::Error> {
-        ureq::Response::new(200, "OK", "{}")
+    fn answered() -> Result<ureq::Response, Box<ureq::Error>> {
+        ureq::Response::new(200, "OK", "{}").map_err(Box::new)
     }
 
     fn exchange(endpoint: &str, timeout: Duration) -> Exchange<'_> {
@@ -445,7 +445,9 @@ mod tests {
                     |_| panic!("A sent request was waited out"),
                     |_| {
                         attempts.set(attempts.get() + 1);
-                        Err(ureq::Error::from(std::io::Error::new(kind, "lost")))
+                        Err(Box::new(ureq::Error::from(std::io::Error::new(
+                            kind, "lost",
+                        ))))
                     },
                 )
                 .unwrap_err();
@@ -464,10 +466,10 @@ mod tests {
                     Err(if attempts.get() == 1 {
                         refused()
                     } else {
-                        ureq::Error::from(std::io::Error::new(
+                        Box::new(ureq::Error::from(std::io::Error::new(
                             std::io::ErrorKind::ConnectionReset,
                             "lost",
-                        ))
+                        )))
                     })
                 },
             )
@@ -480,7 +482,7 @@ mod tests {
         let health = TransportHealth::default();
         let endpoint = "https://host.example";
         let fail = || {
-            let ureq::Error::Transport(error) = refused() else {
+            let ureq::Error::Transport(error) = *refused() else {
                 unreachable!("An I/O error becomes a transport error")
             };
             health.failed(&exchange(endpoint, Duration::from_secs(1)), &error);
@@ -513,9 +515,35 @@ mod tests {
 
     #[test]
     fn diagnostics_name_only_the_error_kind() {
-        let ureq::Error::Transport(error) = refused() else {
+        let ureq::Error::Transport(error) = *refused() else {
             unreachable!("An I/O error becomes a transport error")
         };
         assert_eq!(class(&error), "ConnectionRefused");
+    }
+
+    #[test]
+    fn a_boxed_authorization_rejection_preserves_the_response_without_retry() {
+        let health = TransportHealth::default();
+        let endpoint = "http://127.0.0.1:3776";
+        let attempts = Cell::new(0);
+        let response = health
+            .send(
+                &exchange(endpoint, Duration::from_secs(1)),
+                || true,
+                |_| panic!("An answered authorization rejection must not be probed"),
+                |_| {
+                    attempts.set(attempts.get() + 1);
+                    Err(Box::new(ureq::Error::Status(
+                        403,
+                        ureq::Response::new(403, "Forbidden", "{\"authorized\":false}").unwrap(),
+                    )))
+                },
+            )
+            .unwrap();
+        assert_eq!(attempts.get(), 1);
+        assert_eq!(response.status(), 403);
+        assert_eq!(response.into_string().unwrap(), "{\"authorized\":false}");
+        assert!(health.with(endpoint, |health| health.reached
+            && health.down_since.is_none()));
     }
 }

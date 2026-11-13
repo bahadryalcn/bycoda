@@ -8,6 +8,7 @@ const native = vi.hoisted(() => ({
   copy: vi.fn(),
   open: vi.fn(),
   choose: vi.fn(),
+  isLocalDirectory: vi.fn(),
 }));
 vi.mock("../../../platform/tauri/fs", async (original) => ({
   ...(await original<typeof import("../../../platform/tauri/fs")>()),
@@ -16,7 +17,7 @@ vi.mock("../../../platform/tauri/fs", async (original) => ({
   prepareLocalFileCopy: native.copy,
   openPathWithDefaultApp: native.open,
   pickNativeFolders: native.choose,
-  isLocalDirectory: vi.fn(async () => true),
+  isLocalDirectory: native.isLocalDirectory,
 }));
 import { ChatFolderBrowser } from "./ChatFolderBrowser";
 let root: Root;
@@ -34,6 +35,7 @@ beforeEach(() => {
   native.live.mockReset().mockResolvedValue(undefined);
   native.open.mockReset().mockResolvedValue(undefined);
   native.choose.mockReset();
+  native.isLocalDirectory.mockReset().mockResolvedValue(true);
   native.copy.mockReset();
   host = document.createElement("div");
   document.body.append(host);
@@ -105,4 +107,36 @@ it("shows only the chosen folder chooser as pending without losing mapping input
   expect(choose.getAttribute("aria-busy")).toBe("true");
   await act(async () => finish(["/shared"]));
   expect([...document.querySelectorAll("input")].map((input) => input.value)).toContain("/shared");
+});
+
+it("locks mapping roots while validation owns their values and restores editing on failure", async () => {
+  let reject!: (error: Error) => void;
+  native.isLocalDirectory.mockImplementationOnce(
+    () =>
+      new Promise((_yes, no) => {
+        reject = no;
+      }),
+  );
+  await render();
+  await act(async () => button("Shared folder settings").click());
+  const inputs = [...document.querySelectorAll<HTMLInputElement>("input")];
+  const inputValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    inputValue.call(inputs[1], "/shared/retained-folder");
+    inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    document
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  expect(inputs.every((input) => input.disabled)).toBe(true);
+  expect(button("Cancel").disabled).toBe(true);
+  await act(async () => reject(new Error("Mapping connection unavailable")));
+  expect(inputs.every((input) => !input.disabled)).toBe(true);
+  expect(inputs[1].value).toBe("/shared/retained-folder");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Mapping connection unavailable",
+  );
+  expect(native.open).not.toHaveBeenCalled();
 });

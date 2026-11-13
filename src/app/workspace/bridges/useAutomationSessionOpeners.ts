@@ -1,11 +1,21 @@
-import { reserveSessionWindow } from "../../model/sessionWindowOwnership";
+import {
+  remoteSessionOwnershipKey,
+  reserveSessionWindow,
+} from "../../model/sessionWindowOwnership";
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { routeWindowDestination } from "../../model/windowNavigation";
 import type { ToolWindow } from "../../model/toolWindows";
 import { ADOPTED_SESSION_ADDED } from "../../../features/connections/model/adoptedSessions";
 import { openLocalHostSession } from "../../../features/connections/model/openLocalHostSession";
-import { loadRemoteSession, remoteRequest } from "../../../features/connections/model/connections";
+import {
+  loadRemoteSession,
+  remoteRequest,
+  remoteMachineFor,
+  remoteSessionFor,
+  rememberRemoteSession,
+} from "../../../features/connections/model/connections";
+import { remoteSessionState } from "../../../features/connections/model/remoteSessionState";
 import {
   parseRemotePath,
   rememberRemoteProject,
@@ -19,7 +29,12 @@ import {
   upsertSessionIfUnchanged,
 } from "../../../features/sessions/data/sessionStore";
 import { loadRecents, rememberProject } from "../../../features/projects/model/recents";
-import { sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
+import {
+  newDefaultSession,
+  sessionWorkCwd,
+  type Session,
+} from "../../../features/sessions/model/session";
+import { sameProjectPath } from "../../../features/projects/model/recents";
 import { sessionsRef, setSessions } from "../../../features/sessions/model/sessionsStore";
 import type { SidebarTabId } from "../../../features/settings/model/appearance";
 
@@ -106,7 +121,7 @@ export function useAutomationSessionOpeners({
   // Host-owned task and automation conversations open in the normal transcript
   // pane. Local copies keep following the host through the adopted-session mirror.
   const onOpenBackgroundSession = useCallback(
-    async (target: BackgroundSessionTarget, routed = false) => {
+    async (target: BackgroundSessionTarget, routed = false, embedded = false) => {
       if (
         routed !== true &&
         (await routeWindowDestination(
@@ -152,6 +167,10 @@ export function useAutomationSessionOpeners({
               return true;
             },
           });
+          if (embedded) {
+            retained = true;
+            return;
+          }
           setAutomationsViewOpen(false);
           setServersViewOpen?.(false);
           setSearchViewOpen(false);
@@ -168,6 +187,47 @@ export function useAutomationSessionOpeners({
         } finally {
           await release(retained);
         }
+      }
+      if (embedded) {
+        const machine = await remoteMachineFor(remote.environmentId);
+        if (!machine || machine.id !== target.machineId)
+          throw new Error("This conversation belongs to another machine.");
+        const release = await reserveSessionWindow([
+          remoteSessionOwnershipKey(target.cwd, target.sessionId),
+        ]);
+        if (!release) throw new Error("This conversation is already open in another window.");
+        let retained = false;
+        try {
+          const listed = await remoteRequest<HostProject[]>(machine.id, "projects.list");
+          const owner = listed.find((entry) => entry.id === target.projectId);
+          if (!owner) throw new Error("This project is no longer on that machine.");
+          const project = rememberRemoteProject(remote.environmentId, owner);
+          if (!sameProjectPath(project.key, target.cwd))
+            throw new Error("This conversation belongs to another project.");
+          const snapshot = await loadRemoteSession(machine.id, target.sessionId);
+          if (snapshot.projectId !== owner.id || snapshot.session.id !== target.sessionId)
+            throw new Error("This conversation belongs to another project.");
+          const existing = sessionsRef.current.find(
+            (entry) =>
+              sameProjectPath(entry.cwd, project.key) &&
+              remoteSessionFor(entry.id) === target.sessionId,
+          );
+          const shell = existing ?? newDefaultSession(project.key, snapshot.session.runtimeMode);
+          // Bind only the exact claimed Host session; reuse its canonical shell,
+          // never a blank composer that may already own an in-flight request.
+          rememberRemoteSession(shell.id, target.sessionId);
+          setSessions((current) => {
+            const latest = current.find((entry) => entry.id === shell.id);
+            const hydrated = remoteSessionState(latest ?? shell, snapshot, project);
+            return latest
+              ? current.map((entry) => (entry.id === shell.id ? hydrated : entry))
+              : [...current, hydrated];
+          });
+          retained = true;
+        } finally {
+          await release(retained);
+        }
+        return;
       }
       // By the host's project ID: a task's session may run in a worktree.
       let project = remoteProjectsOn(remote.environmentId).find(

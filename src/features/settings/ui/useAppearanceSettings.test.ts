@@ -2,7 +2,12 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { initAppearance, saveSidebarOpacity } from "../model/appearance";
+import {
+  initAppearance,
+  saveSidebarOpacity,
+  saveChatBackgroundPath,
+  loadChatBackgroundPath,
+} from "../model/appearance";
 import { applyUiScale, loadUiScale, saveUiScale, zoomInUiScale } from "../model/uiScale";
 import {
   CREW_GROWTH_ENABLED_DEFAULT,
@@ -46,12 +51,14 @@ import {
   saveWorkingIndicator,
 } from "../model/workingIndicator";
 import { useAppearanceSettings, type AppearanceSettings } from "./useAppearanceSettings";
+import { generatorSession } from "./appearance/controls/themeGeneratorSession";
 
 const mocks = vi.hoisted(() => ({
   zoom: vi.fn().mockResolvedValue(undefined),
   invoke: vi.fn().mockResolvedValue(undefined),
   background: vi.fn().mockResolvedValue(undefined),
   clear: vi.fn(),
+  copy: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ setZoom: mocks.zoom }) }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -69,6 +76,7 @@ vi.mock("../model/newThreadBackgroundEffects", () => ({
 }));
 vi.mock("../../projects/model/chatBackground", () => ({
   pickAndSaveChatBackground: vi.fn(),
+  saveChatBackgroundFrom: mocks.copy,
   removeChatBackground: vi.fn(),
 }));
 
@@ -112,6 +120,54 @@ afterEach(async () => {
 });
 
 describe("mounted shared appearance preferences", () => {
+  it("discards a delayed image copy when its generator intent was revoked", async () => {
+    let finish!: (path: string) => void;
+    mocks.copy.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const intent = generatorSession.imageIntent();
+    let pending!: Promise<string | null>;
+    act(() => {
+      pending = states[0].onChooseChatBackground("/generated.png", {
+        libraryId: "generated",
+        isCurrent: () => intent === generatorSession.imageIntent(),
+      });
+    });
+    await act(async () => {
+      generatorSession.invalidateImageIntent();
+      saveChatBackgroundPath("/manual.png");
+      finish("/copied-generated.png");
+      expect(await pending).toBeNull();
+    });
+    expect(loadChatBackgroundPath()).toBe("/manual.png");
+    expect(states[0].chatBackgroundPath).toBe("/manual.png");
+    expect(states[0].chatBackgroundBusy).toBe(false);
+    expect(states[0].chatBackgroundError).toBeNull();
+  });
+
+  it.each([true, undefined])(
+    "keeps image copies when the optional current guard is %s",
+    async (current) => {
+      mocks.copy.mockResolvedValueOnce("/copied.png");
+      await act(async () => {
+        expect(
+          await states[0].onChooseChatBackground("/source.png", {
+            libraryId: "manual-or-current",
+            ...(current === undefined ? {} : { isCurrent: () => current }),
+          }),
+        ).toBe("/copied.png");
+      });
+      expect(loadChatBackgroundPath()).toBe("/copied.png");
+      expect(states[0].chatBackgroundBusy).toBe(false);
+    },
+  );
+  it("revokes generated-image intent before a page reset", async () => {
+    generatorSession.select(1);
+    await act(async () => states[0].restoreDefaults());
+    expect(generatorSession.selected()).toBeNull();
+  });
   it("applies sibling native scale, consecutive shortcuts, removal and reset without writing back", async () => {
     const writes = vi.spyOn(localStorage, "setItem");
     await storage("bycoda.uiScale", "1.5");

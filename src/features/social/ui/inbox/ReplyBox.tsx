@@ -1,5 +1,5 @@
 import { Text } from "../../../../shared/ui/Text";
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import { t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
@@ -11,6 +11,8 @@ import type { SocialThread } from "../../model/social";
 import type { SocialClient } from "../../model/socialClient";
 import { socialQueryScope } from "../../model/socialQuery";
 import { inboxApi } from "./inboxApi";
+import { createInboxReplyOperation } from "./inboxReplyOperation";
+import { inboxReplyState } from "./inboxReplyState";
 import { replyBlockedText } from "./inboxModel";
 import { useInboxInvalidate, useInboxReplyOptions, useInboxSnapshot } from "./useInboxData";
 import "./inbox.css";
@@ -18,15 +20,11 @@ import "./inbox.css";
 /** Host limit for one AI reply: 1 to 20 verified facts. */
 const MAX_FACTS = 20;
 
-type Busy = "" | "suggest" | "send";
-
 /**
  * Reply editor for one conversation. The Host decides whether a reply is allowed (replyOptions);
  * a blocked reply shows its reason next to the disabled Send button. AI text lands in the editor.
  */
 type ReplyDraft = { text: string; factIds: string[] };
-// Client identity owns unsent drafts; a thread id alone must never cross Hosts.
-const drafts = new WeakMap<SocialClient, Map<string, ReplyDraft>>();
 
 export function ReplyBox(props: { client: SocialClient; thread: SocialThread }) {
   return (
@@ -42,23 +40,16 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
   const options = useInboxReplyOptions(client, thread.id);
   const snapshot = useInboxSnapshot(client);
   const invalidate = useInboxInvalidate(client);
-  const [draft, setDraft] = useState<ReplyDraft>(
-    () => drafts.get(client)?.get(thread.id) ?? { text: "", factIds: [] },
+  const state = inboxReplyState(client, thread.id);
+  const { draft, busy, error, queued, operation } = useSyncExternalStore(
+    state.subscribe,
+    state.snapshot,
   );
-  const { text, factIds } = draft;
-  const changeDraft = (next: ReplyDraft) => {
-    let byThread = drafts.get(client);
-    if (!byThread) {
-      byThread = new Map();
-      drafts.set(client, byThread);
-    }
-    if (next.text || next.factIds.length) byThread.set(thread.id, next);
-    else byThread.delete(thread.id);
-    setDraft(next);
-  };
-  const [busy, setBusy] = useState<Busy>("");
-  const [error, setError] = useState("");
-  const [queued, setQueued] = useState(false);
+  const { text } = draft;
+  const changeDraft = (next: ReplyDraft) => state.update({ draft: next });
+  const setBusy = (busy: "" | "suggest" | "send") => state.update({ busy });
+  const setError = (error: string) => state.update({ error });
+  const setQueued = (queued: boolean) => state.update({ queued });
   const confirmation = useConfirm();
 
   const blocked = options.data ? replyBlockedText(options.data) : undefined;
@@ -68,7 +59,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     : options.data
       ? undefined
       : t("Checking whether this conversation can take a reply.");
-  const blockedReason = unknownReason ?? blocked;
+  const blockedReason = operation?.sendAttempted ? undefined : (unknownReason ?? blocked);
   const facts =
     snapshot.data?.profiles.find((profile) => profile.projectId === thread.projectId)?.facts ?? [];
 
@@ -77,11 +68,13 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
     : facts.length === 0
       ? t("Add verified facts for this project first.")
       : undefined;
-  const suggestGate: ActionGate = aiPrerequisite
-    ? { disabled: true, disabledReason: aiPrerequisite }
-    : busy
-      ? { disabled: true, disabledReason: t("Working…") }
-      : { disabled: false };
+  const suggestGate: ActionGate = operation
+    ? { disabled: true, disabledReason: t("Resolve the pending reply before changing its draft.") }
+    : aiPrerequisite
+      ? { disabled: true, disabledReason: aiPrerequisite }
+      : busy
+        ? { disabled: true, disabledReason: t("Working…") }
+        : { disabled: false };
 
   const sendGate: ActionGate = blockedReason
     ? { disabled: true, disabledReason: blockedReason }
@@ -92,6 +85,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         : { disabled: false };
 
   const suggest = async () => {
+    if (state.snapshot().busy || state.snapshot().operation) return;
     setBusy("suggest");
     setError("");
     setQueued(false);
@@ -128,12 +122,31 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
   };
 
   const send = async () => {
+    const current = state.snapshot();
+    if (
+      current.busy ||
+      !current.draft.text.trim() ||
+      (blockedReason && !current.operation?.sendAttempted)
+    )
+      return;
     setBusy("send");
     setError("");
     setQueued(false);
+    const attempt =
+      current.operation ??
+      createInboxReplyOperation({
+        threadId: thread.id,
+        text: current.draft.text.trim(),
+        factIds: current.draft.factIds,
+      });
+    state.update({ operation: attempt });
     try {
-      await api.sendReply({ threadId: thread.id, text: text.trim(), factIds });
-      changeDraft({ text: "", factIds: [] });
+      await api.sendReply(attempt);
+      if (attempt.job && ["failed", "cancelled", "review"].includes(attempt.job.status)) {
+        setError(t("Reply requires review in Activity. Its original draft has been kept."));
+        return;
+      }
+      state.update({ draft: { text: "", factIds: [] }, operation: undefined });
       setQueued(true);
       await invalidate().catch(() => {
         setError(
@@ -142,8 +155,15 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
           ),
         );
       });
-    } catch {
-      setError(t("The reply was not sent. Check the conversation and try again."));
+    } catch (cause) {
+      setError(
+        (attempt.sendAttempted
+          ? t(
+              "Reply result is unconfirmed. Retry the same reply to check its status; do not send a separate copy.",
+            )
+          : t("Reply preparation could not finish. Retry the same reply or edit its draft.")) +
+          (cause instanceof Error ? ` ${cause.message}` : ""),
+      );
     } finally {
       setBusy("");
     }
@@ -160,7 +180,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         minRows={3}
         maxRows={10}
         value={text}
-        disabled={!!blocked || busy !== ""}
+        disabled={!!blocked || busy !== "" || !!operation}
         placeholder={t("Write a reply")}
         onChange={(event) => {
           changeDraft({ text: event.target.value, factIds: [] });
@@ -186,7 +206,7 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
               loadingLabel={t("Sending…")}
               {...sendGate}
             >
-              {t("Send")}
+              {operation && !busy ? t("Retry same reply") : t("Send")}
             </Button>
           </>
         }
@@ -214,6 +234,15 @@ function ThreadReplyBox({ client, thread }: { client: SocialClient; thread: Soci
         </Button>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
+      {operation && !operation.sendAttempted && !busy ? (
+        <Button
+          variant="link"
+          layout="text"
+          onClick={() => state.update({ operation: undefined, error: "" })}
+        >
+          {t("Edit reply")}
+        </Button>
+      ) : null}
       {queued ? <InlineMessage tone="success">{t("Reply queued.")}</InlineMessage> : null}
       {confirmation.dialog}
     </div>

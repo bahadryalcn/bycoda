@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initAppearancePreferences } from "../../../src/features/settings/model/appearancePreferences";
 import { createRoot } from "react-dom/client";
 import { ModelOrderLimits } from "../../../src/features/model-routing/ui/order/ModelOrderLimits";
+import { workSettingsFixture } from "./settings-work-fixture";
 import { orderDraft } from "../../../src/features/model-routing/model/modelRoutingDraft";
 import { EMPTY_MODEL_ROUTING } from "../../../src/shared/model/host-contracts/model-routing";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
@@ -124,8 +125,44 @@ const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
   configPath: `/fixture/${"long-project-directory/".repeat(8)}config-${index}.json`,
   enabled: index !== 1,
 }));
+// Memory-only native consent mirror. No native owner grant or device authority.
+const consentFixture = new Map<
+  string,
+  {
+    revision: number;
+    environmentId: string;
+    permissionLevel: string;
+    projectIds: string[];
+    criticalExclusions: string[];
+  }
+>();
 mockIPC(
   (command, args) => {
+    if (command === "assistant_consent_get")
+      return structuredClone(consentFixture.get(String(args.environmentId)) ?? null);
+    if (command === "assistant_consent_set") {
+      const environmentId = String(args.environmentId);
+      const previous = consentFixture.get(environmentId);
+      if (args.expectedRevision !== (previous?.revision ?? 0))
+        throw new Error("Native consent revision changed");
+      if (
+        !["watch", "projects", "everything"].includes(String(args.permissionLevel)) ||
+        !Array.isArray(args.projectIds) ||
+        !Array.isArray(args.criticalExclusions)
+      )
+        throw new Error("Invalid assistant consent");
+      const consent = {
+        revision: (previous?.revision ?? 0) + 1,
+        environmentId,
+        permissionLevel: String(args.permissionLevel),
+        projectIds: args.projectIds as string[],
+        criticalExclusions: args.criticalExclusions as string[],
+      };
+      consentFixture.set(environmentId, structuredClone(consent));
+      return structuredClone(consent);
+    }
+    const workFixture = workSettingsFixture(command, args);
+    if (workFixture) return workFixture.value;
     if (
       command === "list_background_library" &&
       new URLSearchParams(location.search).has("libraryProbe")

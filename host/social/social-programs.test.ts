@@ -447,7 +447,7 @@ describe("AI campaign programs through SocialService", () => {
     expect((await f.detail(p)).occurrences[0].targets[0].approvals.text).toBeTruthy();
   });
   it("saves paused, generates through the chosen model and publishes an exact occurrence once", async () => {
-    const generate = vi.fn(async () =>
+    const generate = vi.fn<SocialTextGenerator>(async () =>
       JSON.stringify({ text: "An owner-provided practical workflow", factIds: [] }),
     );
     const f = await fixture(generate),
@@ -459,6 +459,10 @@ describe("AI campaign programs through SocialService", () => {
     await f.service.programs.idle();
     expect(generate.mock.calls[0][0]).toEqual(f.config.textAgent);
     expect(generate.mock.calls[0][1]).toContain("Effective policy");
+    expect(generate.mock.calls[0][3]).toEqual({
+      operationId: expect.stringMatching(/^occurrence:.*:text$/),
+      actorScope: expect.stringContaining(p.id),
+    });
     await f.call("execution.enable", { confirm: "ENABLE_EXTERNAL_SENDS" });
     await f.service.tick();
     await f.service.tick();
@@ -646,7 +650,7 @@ describe("AI campaign programs through SocialService", () => {
     }
   });
   it("enforces generation budgets and lets the program's selected text model override platform overrides", async () => {
-    const generate = vi.fn(async () =>
+    const generate = vi.fn<SocialTextGenerator>(async () =>
       JSON.stringify({ text: "An owner-provided practical workflow", factIds: [] }),
     );
     const f = await fixture(generate);

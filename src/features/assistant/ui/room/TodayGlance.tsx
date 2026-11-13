@@ -19,6 +19,7 @@ import {
   assistantJobCounts,
   jobStatusCounts,
   updatesSince,
+  type AssistantJobListFilter,
 } from "./todayGlanceData";
 import styles from "./TodayTab.module.css";
 
@@ -89,8 +90,8 @@ export function TodayGlance({
 }: {
   jobs: ReadonlyArray<AssistantJob>;
   activity: ReadonlyArray<AssistantActivity>;
-  /** Opens the Jobs tab filtered to a status. */
-  onOpenJobs?: (status: AssistantJob["status"]) => void;
+  /** Opens exactly the jobs counted by the selected tile. */
+  onOpenJobs?: (status: AssistantJobListFilter) => void;
   onOpenHistory?: () => void;
 }) {
   const now = useMinuteNow();
@@ -109,16 +110,15 @@ export function TodayGlance({
           caption={t("Waiting for you")}
           onOpen={onOpenJobs && (() => onOpenJobs("waiting"))}
         />
-        {/* shortcut: the Jobs filter takes one status, so Working opens "running"; add multi-status filters if this misleads. */}
         <Tile
           value={counts.working}
           caption={t("Working")}
-          onOpen={onOpenJobs && (() => onOpenJobs("running"))}
+          onOpen={onOpenJobs && (() => onOpenJobs("working"))}
         />
         <Tile
           value={counts.doneToday}
           caption={t("Done today")}
-          onOpen={onOpenJobs && (() => onOpenJobs("done"))}
+          onOpen={onOpenJobs && (() => onOpenJobs("doneToday"))}
         />
         <Tile
           value={updatesSince(activity, dayStart)}

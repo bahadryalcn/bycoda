@@ -11,6 +11,17 @@ import { ExternalLink } from "../../../shared/ui/icons";
 import styles from "./AssistantHistory.module.css";
 
 export const assistantActivityLabels: Record<string, string> = {
+  "action.started": "Started",
+  "action.completed": "Completed",
+  "action.submitted": "Submitted",
+  "action.accepted": "Accepted",
+  "action.unknown": "Outcome unknown",
+  "action.failed": "Failed",
+  "action.refused": "Refused",
+  "action.cancelled": "Cancelled",
+  "action.pending": "Pending",
+  "action.running": "Running",
+  "action.waiting": "Waiting",
   "budget.exhausted": "Budget exhausted",
   "chief.woke": "Status reviewed",
   "conversation.replied": "Conversation reply",
@@ -29,7 +40,7 @@ export const assistantActivityLabels: Record<string, string> = {
   "job.problem": "Job problem",
 };
 /** Problems keep the danger tone; every other kind stays neutral. */
-const DANGER_KINDS = new Set(["job.problem", "job.unknown"]);
+const DANGER_KINDS = new Set(["job.problem", "job.unknown", "action.failed", "action.unknown"]);
 
 export function AssistantHistory({
   entries,
@@ -94,7 +105,9 @@ export function AssistantHistory({
                   leading="normal"
                   className={styles.summary}
                 >
-                  {entry.summary}
+                  {entry.operation
+                    ? `${entry.operation.tool} · ${entry.operation.target}`
+                    : entry.summary}
                 </Text>
                 <Badge size="xs" tone={DANGER_KINDS.has(entry.kind) ? "danger" : "neutral"}>
                   {t(assistantActivityLabels[entry.kind] ?? "Activity")}

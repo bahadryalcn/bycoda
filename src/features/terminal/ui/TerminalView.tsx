@@ -9,6 +9,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getPtyStatus } from "../../../platform/tauri/pty";
 import { shouldPollTerminalMeta } from "../model/terminalMetaPolling";
 import { isTerminalTextEdit, terminalToolShortcut } from "../model/terminalKeys";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { defaultTerminalTitle, parseOsc7Cwd, type TerminalMetaPatch } from "../model/terminalTab";
 import { isLightScheme } from "../../settings/model/appearance";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -596,7 +597,7 @@ export function TerminalView({
       onMouseDown={() => termRef.current?.focus()}
       onKeyDownCapture={(event) => {
         if (snippetsOpen) return;
-        if (event.nativeEvent.isComposing) return;
+        if (isImeComposition(event.nativeEvent)) return;
         const next = terminalToolShortcut(event, !privateTerminal || integrated);
         if (!next) return;
         // Scope shortcuts to this terminal (including split panes), before xterm

@@ -37,6 +37,19 @@ export function parseGroupLockSettings(raw: string | null): GroupLockSettings {
   }
 }
 
+/** Missing storage is first use; malformed existing protection is never first use. */
+export function groupLockSettingsReadable(raw: string | null): boolean {
+  if (raw === null) return true;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const record = (value as Record<string, unknown>).record;
+    return record === undefined || record === null || parsePasswordRecord(record) !== null;
+  } catch {
+    return false;
+  }
+}
+
 export function parseUnlockedIds(raw: string | null): string[] {
   if (!raw) return [];
   try {

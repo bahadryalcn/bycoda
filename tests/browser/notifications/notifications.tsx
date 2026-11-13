@@ -22,7 +22,7 @@ const titles = [
   "Tek commit ve yeni sürüm yayını (local copy)",
   "A very long conversation title with multiple words and a repository name that must remain readable on narrow screens",
 ];
-const cwd = "G:/Projects/my_projects/upstream";
+const cwd = "G:/Projects/work/upstream";
 rememberNotificationProjects([
   { id: "repository:fixture", name: "bycoda", detail: "fixture", kind: "repository", paths: [cwd] },
 ]);

@@ -1,5 +1,5 @@
 import type { ComponentPropsWithRef } from "react";
-import { formatInteger } from "../lib/numbers";
+import { useFormat } from "../i18n";
 import styles from "./DiffStat.module.css";
 import { textAttributes, type TextSize } from "./Text";
 
@@ -34,6 +34,7 @@ export function DiffStat({
   className,
   ...props
 }: DiffStatProps) {
+  const format = useFormat();
   const added = showZero || additions > 0;
   const removed = showZero || deletions > 0;
   if (!added && !removed) return null;
@@ -42,8 +43,16 @@ export function DiffStat({
       {...props}
       {...textAttributes({ size, weight }, [styles.stat, className].filter(Boolean).join(" "))}
     >
-      {added ? <span data-side="added">+{formatInteger(additions)}</span> : null}
-      {removed ? <span data-side="removed">−{formatInteger(deletions)}</span> : null}
+      {added ? (
+        <span data-side="added">
+          +{format.formatNumber(additions, { maximumFractionDigits: 0 })}
+        </span>
+      ) : null}
+      {removed ? (
+        <span data-side="removed">
+          −{format.formatNumber(deletions, { maximumFractionDigits: 0 })}
+        </span>
+      ) : null}
     </span>
   );
 }

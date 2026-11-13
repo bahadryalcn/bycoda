@@ -185,11 +185,11 @@ describe("keybinding overrides", () => {
   });
 
   it("matches real keyboard events whose modifiers are prototype accessors", () => {
-    saveKeybindingOverride("App: Search", { shortcut: "Control+Shift+KeyM" });
+    saveKeybindingOverride("App: Search", { shortcut: "Control+Shift+F24" });
     // Browsers define metaKey/ctrlKey/altKey/shiftKey on KeyboardEvent.prototype,
     // so they are not own properties and must be read, never spread.
     const prototyped = Object.create({
-      code: "KeyM",
+      code: "F24",
       metaKey: false,
       ctrlKey: true,
       altKey: false,
@@ -651,11 +651,27 @@ describe("collapsed project rail setting", () => {
 });
 
 describe("settings navigation", () => {
+  it.each([
+    ["phone", "connections-phone"],
+    ["pairing", "connections-phone"],
+    ["sharing", "connections-sharing"],
+    ["ngrok", "connections-sharing"],
+    ["tunnel", "connections-sharing"],
+    ["automatically reconnect", "remote-auto-reconnect"],
+  ])("finds the Connections target for %s", (query, settingId) => {
+    expect(
+      searchSettings(query).some(
+        (result) => result.section === "connections" && result.settingId === settingId,
+      ),
+    ).toBe(true);
+  });
+
   it("lists every section under exactly one rail group", () => {
     const groups = settingsSectionsByGroup();
     expect(groups.map((group) => group.id)).toEqual([
       "app",
       "agents",
+      "tools",
       "code",
       "connections",
       "about",
@@ -663,8 +679,8 @@ describe("settings navigation", () => {
     ]);
     expect(groups.at(-1)?.sections.map((section) => section.id)).toEqual(["account"]);
     const ids = groups.flatMap((group) => group.sections.map((section) => section.id));
-    expect(ids).toHaveLength(23);
-    expect(new Set(ids).size).toBe(23);
+    expect(ids).toHaveLength(24);
+    expect(new Set(ids).size).toBe(24);
     expect([...ids].sort()).toEqual(SETTINGS_SECTIONS.map((section) => section.id).sort());
     for (const group of groups) {
       expect(group.sections.every((section) => section.group === group.id)).toBe(true);
@@ -681,20 +697,13 @@ describe("settings navigation", () => {
       "chat",
       "voice",
       "notifications",
+      "permissions",
       "keybindings",
       "terminal",
       "groupLock",
     ]);
-    expect(byGroup.agents).toEqual([
-      "providers",
-      "models",
-      "crews",
-      "skills",
-      "mcp",
-      "usage",
-      "limits",
-      "secrets",
-    ]);
+    expect(byGroup.agents).toEqual(["providers", "models", "work", "crews"]);
+    expect(byGroup.tools).toEqual(["skills", "mcp", "secrets", "tools"]);
     expect(byGroup.code).toEqual(["workspace", "worktrees"]);
     expect(byGroup.connections).toEqual(["connections", "integrations"]);
     expect(byGroup.about).toEqual(["archive", "policies"]);
@@ -711,6 +720,18 @@ describe("settings navigation", () => {
 });
 
 describe("settings search", () => {
+  it("routes tool search results to one page with stable row anchors", () => {
+    for (const query of ["viewport", "device", "logs", "development servers", "search engine"]) {
+      const matches = searchSettings(query, 100).filter((result) => result.section === "tools");
+      expect(matches.length, query).toBeGreaterThan(0);
+      expect(matches.every((result) => result.sectionLabel === "Tool preferences")).toBe(true);
+    }
+    expect(
+      SETTINGS_SECTIONS.filter((section) =>
+        ["tools", "browser", "devices", "logs", "devServers"].includes(section.id),
+      ).map((section) => section.id),
+    ).toEqual(["tools"]);
+  });
   it("returns nothing for an empty query", () => {
     expect(searchSettings("   ")).toEqual([]);
   });

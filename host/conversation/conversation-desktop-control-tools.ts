@@ -6,6 +6,7 @@ import {
   isPlainDesktopAppName,
 } from "../desktop/desktop-control-permission";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
+import type { GlobalManagementPrincipal } from "./conversation-management-tools";
 import {
   DesktopControlRequestValidationSchema,
   isForbiddenDesktopShortcut,
@@ -139,7 +140,7 @@ export const isDesktopControlConversationTool = (
   Object.hasOwn(DESKTOP_CONTROL_CONVERSATION_TOOLS, action);
 export function describeDesktopControlConversationTool(action: string): string | undefined {
   if (action === "desktop.launch")
-    return "Launch or attach to one exact application by name, headless only. No arguments, environment, cwd, activation, CDP or force controls. An app the owner has not approved yet asks them once and is then remembered. The owner's permission mode decides whether each launch asks again (ask mode asks every time; auto and full access do not); you cannot change the mode. Approval is not proof of launch completion: inspect the actual operation receipt. Reuse requestId with identical payload after an uncertain result; never blindly repeat.";
+    return "Launch or attach to one exact application by name, headless only. No arguments, environment, cwd, activation, CDP or force controls. An app the owner has not approved yet asks them once and is then remembered. The owner's permission mode decides whether each launch asks again (ask mode asks every time; auto and full access do not); you cannot change the mode. Approval is not proof of launch completion: inspect the actual operation receipt. Reuse requestId with identical payload after an uncertain result; never blindly repeat. Use this for the owner's own browser (Chrome, Edge, Firefox) and other desktop apps; to visit a site, snapshot its window and type the address with desktop.act. The browser.* tools are a separate in-app project preview browser.";
   if (action === "desktop.clipboard")
     return "Read, replace or clear the GLOBAL plain-text clipboard, bounded to 10000 characters. Ask and auto modes need owner-present exact in-app approval in the verified coding session or assistant thread; full access asks nothing; an approved app is not clipboard permission. Set requires exact text, get/clear forbid text. Reuse requestId after uncertainty: retries return receipt metadata only, never old clipboard contents. No images, files or arbitrary formats.";
   if (action === "desktop.status")
@@ -184,6 +185,13 @@ export type DesktopApprovalOperation =
       text?: string;
     };
 export type DesktopToolAuthorization = () => boolean | Promise<boolean>;
+/** A coding session, a project assistant thread, or a Global assistant thread (no project, no
+ * working copy). Desktop control acts on owner-approved apps, never on a project folder. */
+export type DesktopConversationSubject = RuntimeLogSubjectPrincipal | GlobalManagementPrincipal;
+export const isGlobalDesktopSubject = (
+  subject: DesktopConversationSubject,
+): subject is GlobalManagementPrincipal =>
+  subject.kind === "assistant-thread" && subject.projectId === undefined;
 export interface ConversationDesktopControlPorts {
   environmentId: string;
   desktop: Pick<HostDesktopControl, "request"> &
@@ -193,8 +201,8 @@ export interface ConversationDesktopControlPorts {
     input: {
       operation: DesktopApprovalOperation;
       operationHash: string;
-      principal: RuntimeLogSubjectPrincipal;
-      cwd: string;
+      principal: DesktopConversationSubject;
+      cwd: string | undefined;
     },
     authorized: DesktopToolAuthorization,
   ): Promise<unknown>;
@@ -205,11 +213,14 @@ type Observation = { owner: string; app: string; windowId: string; at: number };
 /** Stable source identity, never a short-lived request token or model-supplied owner id. */
 export function desktopConversationPrincipal(
   environmentId: string,
-  principal: RuntimeLogSubjectPrincipal,
+  principal: DesktopConversationSubject,
 ): DesktopControlPrincipal {
-  const thread =
-    principal.kind === "assistant-thread" ? principal.threadId : principal.assistantThreadId;
-  const source = thread ? ["thread", thread] : ["session", principal.sessionId, principal.provider];
+  const source =
+    principal.kind === "assistant-thread"
+      ? ["thread", principal.threadId]
+      : principal.assistantThreadId
+        ? ["thread", principal.assistantThreadId]
+        : ["session", principal.sessionId, principal.provider];
   return {
     kind: "assistant",
     id: `conversation:${createHash("sha256")
@@ -226,8 +237,8 @@ export class ConversationDesktopControlTools {
   async call(
     action: string,
     raw: unknown,
-    principal: RuntimeLogSubjectPrincipal,
-    cwd: string,
+    principal: DesktopConversationSubject,
+    cwd: string | undefined,
     authorized: DesktopToolAuthorization,
   ): Promise<DesktopControlResponse & { allowedApps?: string[] }> {
     if (!isDesktopControlConversationTool(action))
@@ -404,8 +415,8 @@ export class ConversationDesktopControlTools {
    * when this call obtained the approval. Full access and approved apps ask nothing. */
   private async approveApp(
     app: string,
-    principal: RuntimeLogSubjectPrincipal,
-    cwd: string,
+    principal: DesktopConversationSubject,
+    cwd: string | undefined,
     authorized: DesktopToolAuthorization,
   ) {
     const { appAllowed, allowApp } = this.ports.desktop;

@@ -10,6 +10,7 @@ export const ASSISTANT_QUEUE_FREE_READS: ReadonlySet<string> = new Set([
   "models.pool.get",
   "folders.get",
   "alwaysOn.get",
+  "notifications.targets",
   "memory.search",
   "threads.messages",
 ]);

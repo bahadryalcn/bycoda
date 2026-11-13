@@ -1,6 +1,8 @@
+import { AutomationTemplateCard } from "./AutomationTemplateCard";
+import { HostAutomationFields } from "./HostAutomationFields";
 import { AutomationModelChoice } from "./AutomationModelChoice";
 import { useAutomationRoutingHost } from "../hooks/useAutomationRoutingHost";
-import { resolveModel } from "../../sessions/model/models";
+import { resolveModel } from "../../sessions/public/models";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
 import { ClampText } from "../../../shared/ui/ClampText";
@@ -70,14 +72,6 @@ import { Row } from "../../settings/ui/settingsControls";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
-  AlertCircle,
-  CheckCircle,
-  ChevronRight,
-  File,
-  Gauge,
-  GitPullRequest,
-  Inbox,
-  Lock,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -85,8 +79,6 @@ import {
   Plus,
   Search,
   Sparkles,
-  StickyNote,
-  Terminal,
   Trash2,
   Zap,
 } from "../../../shared/ui/icons";
@@ -125,7 +117,6 @@ import {
   templatesForCategory,
   type AutomationTemplate,
   type AutomationTemplateCategoryId,
-  type AutomationTemplateIcon,
 } from "../model/automationTemplates";
 import { backgroundMachineFor } from "../model/hostAutomationClient";
 import type { RemoteMachine } from "../../connections/model/protocol";
@@ -160,6 +151,9 @@ type Props = {
   onToggleSidebar?: () => void;
   onLaunchAssistant?: (launch: QuickLaunch, deliveryId: string) => Promise<unknown>;
   onLaunch: (automation: Automation, run: AutomationRun) => void | Promise<void>;
+  onOpenTask?: (
+    target: import("../../tasks/model/taskReveal").TaskRevealTarget,
+  ) => void | Promise<void>;
   onOpenSession: (sessionId: string) => void | Promise<void>;
   /** Opens a session a machine's host ran for a background automation. */
   onOpenBackgroundSession: (target: BackgroundSessionTarget) => void | Promise<void>;
@@ -177,6 +171,7 @@ export function AutomationsView({
   onLaunch,
   onOpenSession,
   onOpenBackgroundSession,
+  onOpenTask,
 }: Props) {
   useLocale();
   // Inside the workspace the tool switcher takes the title's place.
@@ -212,6 +207,7 @@ export function AutomationsView({
         onLaunch={onLaunch}
         onOpenSession={onOpenSession}
         onOpenBackgroundSession={onOpenBackgroundSession}
+        onOpenTask={onOpenTask}
         onLaunchAssistant={onLaunchAssistant}
       />
     </Text>
@@ -225,6 +221,7 @@ function AutomationsContent({
   onLaunch,
   onOpenSession,
   onOpenBackgroundSession,
+  onOpenTask,
   onLaunchAssistant,
 }: Pick<
   Props,
@@ -234,6 +231,7 @@ function AutomationsContent({
   | "onLaunch"
   | "onOpenSession"
   | "onOpenBackgroundSession"
+  | "onOpenTask"
   | "onLaunchAssistant"
 >) {
   useLocale();
@@ -495,6 +493,16 @@ function AutomationsContent({
           </Button>
         </Text>
       )}
+      {host.migrationBlocked.length ? (
+        <Alert tone="warning">
+          {host.migrationBlocked.join("\n")}
+          <Button variant="ghost" loading={host.fetching} onClick={() => void refreshHost(true)}>
+            {t("Retry")}
+          </Button>
+        </Alert>
+      ) : host.fetching ? (
+        <LoadingText>{t("Loading…")}</LoadingText>
+      ) : null}
       {assistantOpen && onLaunchAssistant ? (
         <AutomationAssistant
           cwd={cwd}
@@ -717,7 +725,8 @@ function AutomationsContent({
               machine={
                 selected?.host && editorDraft.id
                   ? machines.find((entry) => entry.id === selected.host!.machineId)
-                  : backgroundMachineFor(machines, editorDraft.cwd)
+                  : (machines.find((entry) => entry.id === editorDraft.hostMachineId) ??
+                    backgroundMachineFor(machines, editorDraft.cwd))
               }
               cwd={editorDraft.cwd}
               model={editorDraft.model}
@@ -725,6 +734,7 @@ function AutomationsContent({
             >
               <AutomationEditor
                 key={editorDraft.id ? selectedId : "new"}
+                machines={machines}
                 draft={editorDraft}
                 recents={recents}
                 runs={editorDraft.id ? history.runs : []}
@@ -744,12 +754,14 @@ function AutomationsContent({
                 backgroundMachine={
                   selected?.host && editorDraft.id
                     ? selected.host.machineName
-                    : backgroundMachineName(machines, editorDraft.cwd)
+                    : (machines.find((entry) => entry.id === editorDraft.hostMachineId)?.name ??
+                      backgroundMachineName(machines, editorDraft.cwd))
                 }
                 backgroundMachineId={
                   selected?.host && editorDraft.id
                     ? selected.host.machineId
-                    : backgroundMachineFor(machines, editorDraft.cwd)?.id
+                    : (editorDraft.hostMachineId ??
+                      backgroundMachineFor(machines, editorDraft.cwd)?.id)
                 }
                 onChange={(nextDraft) => void (!savingRef.current && setDraft(nextDraft))}
                 onClose={() => {
@@ -760,6 +772,23 @@ function AutomationsContent({
                 onSubmit={(event) => onSave(event, editorDraft)}
                 onRun={selected && editorDraft.id ? () => void onRun(selected) : undefined}
                 onDelete={selected && editorDraft.id ? () => void onDelete(selected) : undefined}
+                onOpenTask={
+                  selected?.host && onOpenTask
+                    ? async (taskId) => {
+                        try {
+                          await onOpenTask({
+                            machineId: selected.host!.machineId,
+                            environmentId: selected.host!.environmentId,
+                            projectId: selected.host!.projectId,
+                            cwd: selected.cwd,
+                            taskId,
+                          });
+                        } catch (reason) {
+                          setActionError(reason instanceof Error ? reason.message : String(reason));
+                        }
+                      }
+                    : undefined
+                }
                 onOpenSession={async (sessionId) => {
                   try {
                     if (selected?.host && editorDraft.id)
@@ -845,7 +874,7 @@ function AutomationCard({
   useLocale();
   const seed = projectName(automation.cwd);
   const key = projectKey(automation.cwd);
-  const project = resolveTabGroupLabel(key, labels, seed);
+  const project = automation.cwd ? resolveTabGroupLabel(key, labels, seed) : t("General");
   const logoPath = resolveTabGroupLogo(key, logos);
   const mascotName = resolveTabGroupMascot(key, mascots);
   const mascotColor = resolveTabGroupColor(key, colors, customColors, seed);
@@ -998,60 +1027,6 @@ function AutomationPicker({
       .includes(templateQuery.trim().toLocaleLowerCase()),
   );
   const collapsible = !templateQuery.trim() && category === "all";
-  const renderTemplate = (template: (typeof templates)[number]) => {
-    const Icon = TEMPLATE_ICONS[template.icon];
-    return (
-      <Button
-        key={template.id}
-        type="button"
-        onClick={() => onPick(template)}
-        variant="item"
-        layout="stacked"
-        className="automation-template"
-        tooltip={t(template.description)}
-      >
-        <span className="flex gap-3">
-          <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">
-            <Icon className="icon-md" strokeWidth={1.75} />
-          </Text>
-          <span className="min-w-0 flex-1">
-            <ClampText
-              as="span"
-              lines={2}
-              expandable={false}
-              size="secondary"
-              tone="neutral"
-              weight="medium"
-            >
-              {t(template.name)}
-            </ClampText>
-            <ClampText
-              as="span"
-              lines={2}
-              expandable={false}
-              size="caption"
-              tone="muted"
-              leading="snug"
-              className="mt-1"
-            >
-              {t(template.description)}
-            </ClampText>
-          </span>
-          <ChevronRight aria-hidden className="icon-sm mt-1 shrink-0" tone="muted" />
-        </span>
-        <Text
-          size="micro"
-          tone="muted"
-          className="mt-auto flex min-w-0 items-center gap-1.5 ps-10 pt-2"
-        >
-          <TriggerMark kind={template.trigger.kind} className="icon-xs shrink-0" />
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {t(template.triggerLabel)}
-          </Text>
-        </Text>
-      </Button>
-    );
-  };
 
   return (
     <div ref={lockOverscroll} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none">
@@ -1150,7 +1125,9 @@ function AutomationPicker({
             />
           ) : null}
           <div className="automation-gallery mt-3">
-            {(collapsible ? templates.slice(0, FIRST_TEMPLATES) : templates).map(renderTemplate)}
+            {(collapsible ? templates.slice(0, FIRST_TEMPLATES) : templates).map((template) => (
+              <AutomationTemplateCard key={template.id} template={template} onPick={onPick} />
+            ))}
           </div>
           {collapsible && templates.length > FIRST_TEMPLATES ? (
             <Disclosure
@@ -1160,7 +1137,9 @@ function AutomationPicker({
               summary={`${t(allTemplates ? "Show less" : "Show all")} · ${templates.length}`}
             >
               <div className="automation-gallery">
-                {templates.slice(FIRST_TEMPLATES).map(renderTemplate)}
+                {templates.slice(FIRST_TEMPLATES).map((template) => (
+                  <AutomationTemplateCard key={template.id} template={template} onPick={onPick} />
+                ))}
               </div>
             </Disclosure>
           ) : null}
@@ -1174,11 +1153,13 @@ const RUN_GRID =
   "grid grid-cols-[minmax(0,1.4fr)_9.5rem_6.75rem_3.5rem] items-center gap-x-4 gap-y-1 px-4";
 
 function RunRow({
+  onOpenTask,
   run,
   draft,
   onOpenSession,
 }: {
   run: AutomationRun;
+  onOpenTask?: (taskId: string) => void | Promise<void>;
   draft: AutomationDraft;
   onOpenSession: (sessionId: string) => void | Promise<void>;
 }) {
@@ -1189,10 +1170,20 @@ function RunRow({
     <li>
       <Button
         type="button"
-        disabled={!sessionId}
-        tooltip={sessionId ? t("Open session") : undefined}
-        disabledReason={sessionId ? undefined : (run.error ?? t("This run has no session yet"))}
+        disabled={!sessionId && !(run.taskId && onOpenTask)}
+        tooltip={
+          run.taskId && onOpenTask ? t("Open task") : sessionId ? t("Open session") : undefined
+        }
+        disabledReason={
+          sessionId || (run.taskId && onOpenTask)
+            ? undefined
+            : (run.error ?? t("This run has no session yet"))
+        }
         onClick={() => {
+          if (run.taskId && onOpenTask) {
+            void onOpenTask(run.taskId);
+            return;
+          }
           if (!sessionId) return;
           void onOpenSession(sessionId);
         }}
@@ -1221,21 +1212,12 @@ function RunRow({
         <Text size="inherit" tone="muted" className="text-right tabular-nums">
           {formatAutomationRunDuration(run)}
         </Text>
-        {run.error && (run.status === "failed" || run.status === "skipped") ? (
-          <OverflowTooltip label={run.error}>
-            <ClampText
-              as="span"
-              lines={2}
-              expandable={false}
-              size="micro"
-              tone="danger"
-              className="col-span-full break-words text-start"
-            >
-              {run.error}
-            </ClampText>
-          </OverflowTooltip>
-        ) : null}
       </Button>
+      {run.error && (run.status === "failed" || run.status === "skipped") ? (
+        <ClampText lines={2} size="micro" tone="danger" className="px-4 pb-2 break-words">
+          {run.error}
+        </ClampText>
+      ) : null}
     </li>
   );
 }
@@ -1280,6 +1262,9 @@ function runTriggerMeta(
         return t("Test run");
       },
     };
+  if (draft.hostTrigger?.kind === "continuous")
+    return { kind: "time", label: automationScheduleLabel(draft) };
+  if (draft.hostTrigger?.kind === "event") return { kind: "tasks", label: draft.hostTrigger.event };
   if (run.trigger === "event") {
     const kind = run.eventKind ?? draft.triggerKind;
     const event = run.event ?? draft.triggerEvent;
@@ -1310,6 +1295,8 @@ function runTriggerMeta(
 }
 
 function AutomationEditor({
+  onOpenTask,
+  machines,
   draft,
   recents,
   runs,
@@ -1329,6 +1316,8 @@ function AutomationEditor({
   onDelete,
   onOpenSession,
 }: {
+  machines: readonly RemoteMachine[];
+  onOpenTask?: (taskId: string) => void | Promise<void>;
   draft: AutomationDraft;
   recents: RecentProject[];
   runs: AutomationRun[];
@@ -1368,7 +1357,8 @@ function AutomationEditor({
   const valid =
     draft.name.trim().length > 0 &&
     draft.prompt.trim().length > 0 &&
-    looksLikeProject(draft.cwd) &&
+    (looksLikeProject(draft.cwd) ||
+      (draft.runInBackground && !draft.cwd && !!draft.hostMachineId)) &&
     draft.model.length > 0;
   const folderChoices = useAutomationFolderOptions(draft.cwd, draft.sessionFolderId);
   const update = <K extends keyof AutomationDraft>(key: K, value: AutomationDraft[K]) =>
@@ -1516,7 +1506,7 @@ function AutomationEditor({
                 disabled={!!draft.id && draft.runInBackground}
                 onSelectProject={(cwd) => {
                   if (!draft.id || !draft.runInBackground)
-                    onChange({ ...draft, cwd, sessionFolderId: "" });
+                    onChange({ ...draft, cwd, sessionFolderId: "", hostMachineId: undefined });
                 }}
               />
             </Text>
@@ -1573,6 +1563,9 @@ function AutomationEditor({
                   <SectionLabel as="h2" className="px-1">
                     {t("Triggers")}
                   </SectionLabel>
+                  {draft.runInBackground ? (
+                    <HostAutomationFields draft={draft} machines={machines} onChange={onChange} />
+                  ) : null}
                   {draft.triggers.some(
                     (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
                   ) ? (
@@ -1582,7 +1575,7 @@ function AutomationEditor({
                       )}
                     </Text>
                   ) : null}
-                  {draft.triggers.length > 0 ? (
+                  {(!draft.runInBackground || !draft.hostTrigger) && draft.triggers.length > 0 ? (
                     <ul className="mt-1 px-2">
                       {draft.triggers.map((trigger) => (
                         <li key={trigger.id}>
@@ -1608,7 +1601,10 @@ function AutomationEditor({
                       placeholder={t("Add Trigger")}
                       options={triggerOptions}
                       onChange={selectTrigger}
-                      disabled={draft.triggers.length >= 20}
+                      disabled={
+                        draft.triggers.length >= 20 ||
+                        (draft.runInBackground && !!draft.hostTrigger)
+                      }
                       searchPlaceholder={t("Search triggers")}
                     />
                   </div>
@@ -1630,7 +1626,7 @@ function AutomationEditor({
                       <SettingsSelect
                         label={t("Runs")}
                         value={draft.runInBackground ? "background" : "app"}
-                        disabled={draft.id != null || !backgroundMachine}
+                        disabled={draft.id != null || !!draft.hostTemplate || !backgroundMachine}
                         options={[
                           {
                             value: "app",
@@ -1647,7 +1643,13 @@ function AutomationEditor({
                             },
                           },
                         ]}
-                        onChange={(value) => update("runInBackground", value === "background")}
+                        onChange={(value) =>
+                          onChange({
+                            ...draft,
+                            runInBackground: value === "background",
+                            hostMachineId: backgroundMachineId,
+                          })
+                        }
                       />
                     </SettingsRow>
                     {draft.runInBackground ? null : (
@@ -1731,16 +1733,11 @@ function AutomationEditor({
                   <div>
                     <SettingsRow
                       label={t("Missed-run grace")}
-                      hint={
-                        draft.runInBackground
-                          ? "Background runs catch up within 12 hours"
-                          : "Catch up if a scheduled run was missed"
-                      }
+                      hint={"Catch up if a scheduled run was missed"}
                     >
                       <SettingsSelect
                         label={t("Missed-run grace")}
-                        value={String(draft.runInBackground ? 720 : draft.missedRunGraceMinutes)}
-                        disabled={draft.runInBackground}
+                        value={String(draft.missedRunGraceMinutes)}
                         options={GRACE_OPTIONS}
                         onChange={(value) => update("missedRunGraceMinutes", Number(value))}
                       />
@@ -1801,7 +1798,13 @@ function AutomationEditor({
                   <Divider decorative />
                   <ul {...surfaceAttributes({ dividers: "stroke" })}>
                     {runs.slice(0, 100).map((run) => (
-                      <RunRow key={run.id} run={run} draft={draft} onOpenSession={onOpenSession} />
+                      <RunRow
+                        key={run.id}
+                        run={run}
+                        draft={draft}
+                        onOpenSession={onOpenSession}
+                        onOpenTask={onOpenTask}
+                      />
                     ))}
                   </ul>
                 </Surface>
@@ -1960,19 +1963,6 @@ const CONVERSATION_OPTIONS = [
   },
 ] as const;
 
-const TEMPLATE_ICONS: Record<AutomationTemplateIcon, typeof Search> = {
-  search: Search,
-  alert: AlertCircle,
-  file: File,
-  check: CheckCircle,
-  lock: Lock,
-  pr: GitPullRequest,
-  inbox: Inbox,
-  gauge: Gauge,
-  terminal: Terminal,
-  note: StickyNote,
-};
-
 function triggerText(trigger: AutomationTrigger): string {
   return trigger.kind === "time"
     ? automationScheduleLabel(trigger)
@@ -1981,6 +1971,7 @@ function triggerText(trigger: AutomationTrigger): string {
 
 /** The first trigger; the card lists the others behind a "+N". */
 function triggerLabel(automation: Automation): string {
+  if (automation.hostTrigger) return automationScheduleLabel(automation);
   const first = automationTriggers(automation)[0];
   return first ? triggerText(first) : "No trigger";
 }

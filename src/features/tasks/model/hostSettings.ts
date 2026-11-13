@@ -3,13 +3,12 @@
  * advertises this capability when it has it. */
 export const HOST_SETTINGS = "host.settings";
 
-export const MAX_RUNNING_TASKS_LIMIT = 8;
 export const DEFAULT_MAX_RUNNING_TASKS = 2;
 // Concurrent agents accumulate time independently, so a day's total can exceed 24h.
 export const MAX_DAILY_AGENT_MINUTES = Number.MAX_SAFE_INTEGER;
 
 export type HostSettings = {
-  /** How many tasks the host works on at once, 1 to 8. */
+  /** How many tasks the host works on at once; a positive safe integer. */
   maxRunningTasks: number;
   /** Agent minutes the host may start work for per day; zero means no limit. */
   dailyAgentMinutes: number;
@@ -36,7 +35,7 @@ export const DAILY_LIMIT_UNCERTAIN_SKIP = "Daily agent time is incomplete";
 export const DAILY_LIMIT_CHOICES = [0, 60, 120, 240, 480, 720] as const;
 
 function whole(value: unknown, min: number, max: number, label: string) {
-  if (!Number.isInteger(value) || Number(value) < min || Number(value) > max)
+  if (!Number.isSafeInteger(value) || Number(value) < min || Number(value) > max)
     throw new Error(`Invalid ${label}`);
   return Number(value);
 }
@@ -54,7 +53,7 @@ export function parseHostSettings(
     maxRunningTasks:
       v.maxRunningTasks === undefined
         ? current.maxRunningTasks
-        : whole(v.maxRunningTasks, 1, MAX_RUNNING_TASKS_LIMIT, "concurrent task limit"),
+        : whole(v.maxRunningTasks, 1, Number.MAX_SAFE_INTEGER, "concurrent task limit"),
     dailyAgentMinutes:
       v.dailyAgentMinutes === undefined
         ? current.dailyAgentMinutes

@@ -44,6 +44,12 @@ it("returns to Servers after opening and changing settings sections", () => {
     expect(deps.setServersViewOpen).toHaveBeenLastCalledWith(false);
     deps.settingsOpenRef.current = true;
     deps.serversViewOpenRef!.current = false;
+    act(() => actions.openSettings("devices"));
+    expect(deps.setSettingsSection).toHaveBeenLastCalledWith("tools");
+    expect(deps.setSettingsAnchor).toHaveBeenLastCalledWith("device-auto-live");
+    expect(deps.setNotificationSettingsRequest).toHaveBeenCalledTimes(1);
+    act(() => actions.openSettings("devices"));
+    expect(deps.setNotificationSettingsRequest).toHaveBeenCalledTimes(2);
     act(() => actions.openSettings("appearance"));
     act(() => actions.onCloseSettings());
     expect(deps.setServersViewOpen).toHaveBeenLastCalledWith(true);
@@ -89,7 +95,7 @@ it("opens Settings at Providers when Decision models asks for it", () => {
     expect(deps.setSettingsSection).toHaveBeenLastCalledWith("providers");
     for (const tab of ["order", "roles", "chat", "delegation"] as const) {
       act(() => openModelsSettings(tab));
-      expect(deps.setSettingsSection).toHaveBeenLastCalledWith("models");
+      expect(deps.setSettingsSection).toHaveBeenLastCalledWith(tab === "chat" ? "models" : "work");
       expect(deps.setSettingsAnchor).toHaveBeenLastCalledWith(`models-${tab}`);
     }
 

@@ -15,7 +15,7 @@ import {
   type MutableRefObject,
 } from "react";
 import type { EditorView } from "@codemirror/view";
-import { t, useLocale } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { NotePreviewParser, notePreviewReferences, replacePreviewBlock } from "../previewBlocks";
 import { NoteMarkdownEditor } from "./NoteMarkdownEditor";
@@ -50,7 +50,7 @@ export function NoteEditablePreview({
   canMutate?: () => boolean;
   readOnly?: boolean;
 }) {
-  useLocale();
+  const t = useT();
   const previewRoot = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<{
     from: number;
@@ -197,7 +197,7 @@ export function NoteEditablePreview({
             </InlineAction>
           </ActionHost>
         )),
-    [blocks, referencesFor, cwd],
+    [blocks, referencesFor, cwd, t],
   );
 
   const previewFrom = currentActive?.previewFrom ?? previewValue.length;

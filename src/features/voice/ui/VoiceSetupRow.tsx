@@ -1,3 +1,4 @@
+import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
@@ -10,7 +11,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Modal } from "../../../shared/ui/Modal";
 import { t } from "../../../shared/i18n";
-import { Row, SettingsFeedback } from "../../settings/public/settingsControls";
+import { SettingsFeedback } from "../../settings/public/settingsControls";
 import type { VoiceSettings as Preferences } from "../model/voiceSettings";
 import type { PathKey, VoiceSetup } from "./useVoiceSetup";
 import styles from "./VoiceSettings.module.css";

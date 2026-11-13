@@ -16,6 +16,7 @@ export type GateInput = {
   /** Set when the post cannot be changed here (for example it is already scheduled). */
   locked?: string;
   busy: boolean;
+  busyReason?: string;
 };
 
 function closed(reason: string): ActionGate {
@@ -31,7 +32,7 @@ function commonGate(input: GateInput): ActionGate | undefined {
     return closed(
       t("Scheduling is offline. Scheduled posts and replies wait until the Host is back."),
     );
-  if (input.busy) return closed(t("Publishing…"));
+  if (input.busy) return closed(input.busyReason ?? t("Publishing…"));
   return undefined;
 }
 

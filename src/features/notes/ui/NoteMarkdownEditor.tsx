@@ -1,4 +1,4 @@
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { indentWithTab, redo } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
@@ -127,14 +127,24 @@ export function NoteMarkdownEditor({
   /** Freeze edits while the owning save operation has an unresolved outcome. */
   readOnly?: boolean;
 }) {
-  useLocale();
+  const translate = useT();
+  const placeholderText = translate("Write markdown…");
+  const editorLabel = label ?? translate("Note body");
   const hostRef = useRef<HTMLDivElement>(null);
   const scheme = useColorScheme();
   const schemeConfig = useRef(new Compartment());
   const readOnlyConfig = useRef(new Compartment());
+  const localeConfig = useRef(new Compartment());
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
-  const initial = useRef({ scheme, autoFocus, minHeight, showLineNumbers });
+  const initial = useRef({
+    scheme,
+    autoFocus,
+    minHeight,
+    showLineNumbers,
+    placeholderText,
+    editorLabel,
+  });
   const valueRef = useRef(value);
   const documentValue = useRef<string | undefined>(undefined);
   const onChangeRef = useRef(onChange);
@@ -169,13 +179,15 @@ export function NoteMarkdownEditor({
         ...(initial.current.showLineNumbers ? [lineNumbers()] : []),
         EditorView.lineWrapping,
         markdown(),
-        placeholder(t("Write markdown…")),
+        localeConfig.current.of([
+          placeholder(initial.current.placeholderText),
+          EditorView.contentAttributes.of({
+            "aria-label": initial.current.editorLabel,
+            spellcheck: "true",
+          }),
+        ]),
         schemeConfig.current.of(schemeExtensions(initial.current.scheme)),
         noteEditorTheme(initial.current.minHeight, !initial.current.showLineNumbers),
-        EditorView.contentAttributes.of({
-          "aria-label": label ?? t("Note body"),
-          spellcheck: "true",
-        }),
         editorSearch,
         // Keep a match clear of the find panel pinned to the top of the page.
         EditorView.scrollMargins.of((view) => ({
@@ -397,6 +409,19 @@ export function NoteMarkdownEditor({
     if (inputRef.current) inputRef.current.external(apply);
     else apply();
   }, [scheme, viewRef]);
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes localized editor chrome without replacing its draft, selection or undo history.
+  useEffect(() => {
+    const apply = () =>
+      viewRef.current?.dispatch({
+        effects: localeConfig.current.reconfigure([
+          placeholder(placeholderText),
+          EditorView.contentAttributes.of({ "aria-label": editorLabel, spellcheck: "true" }),
+        ]),
+      });
+    if (inputRef.current) inputRef.current.external(apply);
+    else apply();
+  }, [placeholderText, editorLabel, viewRef]);
 
   return <div ref={hostRef} data-note-editor className="min-w-0" onFocus={onFocus} />;
 }

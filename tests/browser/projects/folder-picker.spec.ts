@@ -32,7 +32,7 @@ test("hover and wheel scrolling leave keyboard navigation in control", async ({ 
   await expect(list.getByRole("option").nth(1)).toBeInViewport();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("textbox", { name: "Folder path" })).toHaveValue(
-    "C:/Users/kraba/.agent-device",
+    "C:/Users/alice/.agent-device",
   );
 });
 

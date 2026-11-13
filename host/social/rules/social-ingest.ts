@@ -344,7 +344,10 @@ export async function generateQueuedDraftOnce(s: SocialServiceInternals): Promis
     let output: string;
     try {
       output = await Promise.race([
-        s.generateText(generation.agent, generation.prompt, controller.signal),
+        s.generateText(generation.agent, generation.prompt, controller.signal, {
+          operationId: `draft:${draft.id}`,
+          actorScope: JSON.stringify(["rule", generation.ruleId, draft.projectId, draft.accountId]),
+        }),
         new Promise<never>((_, reject) =>
           controller.signal.addEventListener(
             "abort",

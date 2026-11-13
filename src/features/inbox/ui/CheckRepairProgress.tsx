@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { useState, useSyncExternalStore } from "react";
 import { getCiRepairs, subscribeCiRepairs, type TrackedCiRepair } from "../model/ciRepairTracking";
 import { sameProjectPath } from "../../projects/model/recents";
@@ -322,7 +322,9 @@ function RepairCard({
     "pass",
   ];
   const lead = priority.find((state) => counts.has(state))!;
-  const label = `${group.items.length} ${group.items.length === 1 ? "check" : "checks"}`;
+  const label = t(group.items.length === 1 ? "{p0} check" : "{p0} checks", {
+    p0: formatNumber(group.items.length),
+  });
   const single = group.items.length === 1 ? group.items[0] : undefined;
   const canShowCheck =
     single?.state === "pass" &&

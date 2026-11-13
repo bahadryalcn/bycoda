@@ -38,7 +38,7 @@ export function CrewEditorFooter({
   onCreate: () => void;
   onStart: () => void;
 }) {
-  const state = issue ? (
+  const state = blocked ? null : issue ? (
     <InlineError live="polite">{issue}</InlineError>
   ) : status === "error" ? (
     <InlineError retry={{ onRetry }}>{error}</InlineError>

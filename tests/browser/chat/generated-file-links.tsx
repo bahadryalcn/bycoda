@@ -4,9 +4,9 @@ import { AgentMarkdown } from "../../../src/features/sessions/ui/AgentMarkdown";
 import { documentKind } from "../../../src/features/files/model/documentViewer";
 import "../../../src/styles/index.css";
 
-const cwd = "G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests";
+const cwd = "G:/Projects/Acme/UI DEVELOPMENTS/ui-tests";
 const directory = `${cwd}/investor-deck`;
-const name = "Firisbe-Observer-Yatirimci-Sunumu";
+const name = "Acme-Observer-Yatirimci-Sunumu";
 const existing = new Set(
   ["html", "pdf", "docx"].map((extension) => `${directory}/${name}.${extension}`),
 );

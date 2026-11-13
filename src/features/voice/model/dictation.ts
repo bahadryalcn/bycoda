@@ -8,6 +8,7 @@ import { VoiceVad, pcmBase64, resamplePcm } from "./voiceVad";
 import { errorText } from "../../../shared/lib/errors";
 import { openMicrophone } from "./microphoneAccess";
 import { t } from "../../../shared/i18n";
+import { processDictationText, type DictationProcessingOptions } from "./dictationProcessing";
 
 const noop = () => {};
 /** New speech (seconds) before the next live preview of the phrase in progress.
@@ -58,6 +59,10 @@ export class Dictation {
   private previewing = false;
   /** Phrase length (samples) at the last preview. */
   private previewed = 0;
+  private rawChunks: Int16Array[] = [];
+  private rawLength = 0;
+  private audioRate = 16000;
+  private readonly cleanupRunId = crypto.randomUUID();
 
   constructor(
     private callbacks: Callbacks,
@@ -68,7 +73,21 @@ export class Dictation {
     private engine: "local" | CloudDictationProvider = "local",
     /** Cloud transcription model; omitted uses the provider default. */
     private model?: string,
-  ) {}
+    private processing: DictationProcessingOptions = {},
+  ) {
+    this.processing = {
+      ...processing,
+      ...(processing.dictionary
+        ? {
+            dictionary: processing.dictionary.map((entry) => ({
+              ...entry,
+              aliases: [...entry.aliases],
+            })),
+          }
+        : {}),
+      ...(processing.cleanup ? { cleanup: { ...processing.cleanup } } : {}),
+    };
+  }
 
   async start() {
     this.callbacks.state("starting");
@@ -99,6 +118,7 @@ export class Dictation {
       await audio.audioWorklet.addModule(captureUrl);
       if (this.closed) return this.stopCapture();
       const rate = audio.sampleRate;
+      this.audioRate = rate;
       this.vad = new VoiceVad(
         rate,
         () => {},
@@ -112,8 +132,14 @@ export class Dictation {
         let squares = 0;
         for (const sample of frame) squares += (sample / 32768) ** 2;
         this.callbacks.level?.(frame.length ? Math.min(1, Math.sqrt(squares / frame.length)) : 0);
-        this.vad?.push(frame);
-        this.preview(rate);
+        if (this.processing.silenceFilter === false) {
+          this.rawChunks.push(frame);
+          this.rawLength += frame.length;
+          if (this.rawLength >= rate * 19) this.flushRaw(rate);
+        } else {
+          this.vad?.push(frame);
+          this.preview(rate);
+        }
       };
       this.source.connect(this.capture);
       this.capture.connect(audio.destination);
@@ -152,11 +178,12 @@ export class Dictation {
     const pcm = pcmBase64(resamplePcm(audio, rate));
     const hint = /^[a-z]{2}$/.test(this.language) ? this.language : undefined;
     const slot = this.inflight.length >= 2 ? this.inflight[0] : undefined;
-    const pending = Promise.all([backend, slot]).then(([lease]) =>
-      this.engine === "local"
+    const pending = Promise.all([backend, slot]).then(([lease]) => {
+      if (this.closed) return { text: "" };
+      return this.engine === "local"
         ? localVoiceBackend.transcribe(lease, pcm, hint)
-        : localVoiceBackend.cloudTranscribe(this.engine, pcm, hint, this.model),
-    );
+        : localVoiceBackend.cloudTranscribe(this.engine, pcm, hint, this.model);
+    });
     this.inflight = [...this.inflight, pending.then(noop, noop)].slice(-2);
     return pending;
   }
@@ -184,6 +211,21 @@ export class Dictation {
       });
   }
 
+  private flushRaw(rate: number) {
+    const chunks = this.rawChunks;
+    const length = this.rawLength;
+    this.rawChunks = [];
+    this.rawLength = 0;
+    if (length < rate * 0.1) return;
+    const audio = new Int16Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      audio.set(chunk, offset);
+      offset += chunk.length;
+    }
+    this.transcribe(audio, rate);
+  }
+
   private fail(cause: unknown) {
     if (this.closed) return;
     this.cancel();
@@ -200,7 +242,28 @@ export class Dictation {
     this.finals++;
     this.queue = this.queue.then(async () => {
       try {
-        const text = (await pending).text.trim();
+        let text = processDictationText((await pending).text.trim(), this.processing);
+        if (text && this.processing.cleanup?.enabled && !this.closed) {
+          try {
+            const cleanup = this.processing.cleanup;
+            text = (
+              await localVoiceBackend.processDictation({
+                text,
+                runId: this.cleanupRunId,
+                model: cleanup.model,
+                instructions: cleanup.instructions,
+                correctionCue: cleanup.correctionCue,
+                translateToEnglish: cleanup.translateToEnglish,
+              })
+            ).text;
+          } catch {
+            // Keep the recognized phrase when cleanup is unavailable; never lose speech.
+            if (!this.closed)
+              this.callbacks.error(
+                t("Dictation cleanup failed. The original transcript was kept."),
+              );
+          }
+        }
         // Delivered even when empty, so a preview of no real speech is removed.
         if (!this.closed) this.callbacks.text(text, true);
       } catch (cause) {
@@ -221,7 +284,8 @@ export class Dictation {
     if (this.closed) return;
     this.callbacks.state("finishing");
     this.stopCapture();
-    this.vad?.flush();
+    if (this.processing.silenceFilter === false) this.flushRaw(this.audioRate);
+    else this.vad?.flush();
     await this.queue;
     this.cancel();
   }
@@ -230,7 +294,12 @@ export class Dictation {
   cancel() {
     if (this.closed) return;
     this.closed = true;
+    if (this.processing.cleanup?.enabled) {
+      void localVoiceBackend.cancelDictationCleanup(this.cleanupRunId).catch(noop);
+    }
     this.stopCapture();
+    this.rawChunks = [];
+    this.rawLength = 0;
     this.stopHeartbeat();
     this.release();
     this.callbacks.state("idle");

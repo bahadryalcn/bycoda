@@ -26,7 +26,6 @@ export const APP_UI_SETTINGS = [
   "voice",
   "providers",
   "crews",
-  "usage",
   "mcp",
   "skills",
   "inbox",

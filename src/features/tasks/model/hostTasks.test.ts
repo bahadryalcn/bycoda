@@ -51,7 +51,7 @@ describe("continuous task execution contract", () => {
     );
   });
 
-  it("holds legacy budgets but allows progress beyond them in continuous mode", () => {
+  it("keeps the shared repair allowance in continuous mode", () => {
     const task: HostTask = {
       ...parseHostTask(input),
       status: "queued",
@@ -61,7 +61,24 @@ describe("continuous task execution contract", () => {
       reviewFailureCount: 7,
     };
     expect(taskRequiresInstructions(task)).toBe(true);
-    expect(taskRequiresInstructions({ ...task, continueUntilDone: true })).toBe(false);
+    expect(taskRequiresInstructions({ ...task, continueUntilDone: true })).toBe(true);
+  });
+
+  it.each([false, true])("bounds corrections with continuous execution %s", (continueUntilDone) => {
+    const task: HostTask = {
+      ...parseHostTask(input),
+      continueUntilDone,
+      status: "blocked",
+      createdAt: 0,
+      updatedAt: 0,
+      repairAttempts: 0,
+      reviewFailureCount: 1,
+    };
+    expect(taskRequiresInstructions(task)).toBe(false);
+    expect(taskRequiresInstructions({ ...task, repairAttempts: 1 })).toBe(true);
+    expect(taskRequiresInstructions({ ...task, status: "queued", reviewFailureCount: 2 })).toBe(
+      true,
+    );
   });
 
   it.each(["external", "no_progress"] as const)(

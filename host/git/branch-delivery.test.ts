@@ -168,6 +168,53 @@ async function fixture() {
 }
 
 describe("SHA-bound branch delivery", () => {
+  it("rejects Stop during stale final async authorization before changing the checkout or ref", async () => {
+    const r = await fixture();
+    const controller = new AbortController();
+    let release!: () => void;
+    let reached!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const atFinalAuthorization = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    let authorizations = 0;
+    const physicalFence = vi.fn(() => {
+      if (controller.signal.aborted) throw new Error("Task stopped before physical Git mutation.");
+    });
+    const service = r.createService({
+      authorize: async () => {
+        if (++authorizations === 2) {
+          reached();
+          await held;
+          // Simulate a verifier whose in-flight result predates Stop.
+        }
+      },
+      physicalFence,
+    });
+    const plan = await service.review({
+      workspaceId: "workspace",
+      expectedRevision: 3,
+      action: "merge",
+    });
+    const beforeHead = r.git("rev-parse", "HEAD");
+    const beforeIndex = r.git("ls-files", "--stage");
+    const beforeStatus = r.git("status", "--porcelain=v1");
+    const beforeFile = readFileSync(join(r.cwd, "shared.txt"), "utf8");
+    const delivery = service.merge(r.mutation(plan.token), owner);
+    const rejected = expect(delivery).rejects.toThrow("Task stopped before physical Git mutation.");
+    await atFinalAuthorization;
+    controller.abort();
+    release();
+    await rejected;
+    expect(physicalFence).toHaveBeenCalledOnce();
+    expect(r.git("rev-parse", "HEAD")).toBe(beforeHead);
+    expect(r.git("ls-files", "--stage")).toBe(beforeIndex);
+    expect(r.git("status", "--porcelain=v1")).toBe(beforeStatus);
+    expect(readFileSync(join(r.cwd, "shared.txt"), "utf8")).toBe(beforeFile);
+  });
+
   it("explains a review whose source branch was deleted outside bycoda", async () => {
     const r = await fixture();
     r.git("worktree", "remove", "--force", r.source);
@@ -298,6 +345,10 @@ describe("SHA-bound branch delivery", () => {
     r.write("unrelated.txt", "owner\n");
     const before = r.git("status", "--porcelain=v1");
     const plan = await r.review();
+    expect(plan.committedConflict).toEqual({
+      sourceHead: plan.sourceHead,
+      targetHead: plan.targetHead,
+    });
     expect(plan.blockers.join(" ")).toContain("conflict");
     await expect(r.service.merge(r.mutation(plan.token), owner)).rejects.toThrow("conflict");
     expect(r.git("status", "--porcelain=v1")).toBe(before);

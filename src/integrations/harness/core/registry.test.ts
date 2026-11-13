@@ -1718,6 +1718,66 @@ describe("harness registry", () => {
       }),
     ).rejects.toThrow("does not support manual compaction");
   });
+  it.each(["disconnected", "unsupported", "aborted"] as const)(
+    "proves isolated text never entered its adapter after %s local preflight",
+    async (failure) => {
+      const runTextPrompt = vi.fn(async () => "Must not enter");
+      registerHarness(
+        stub("claude", {
+          live: failure !== "disconnected",
+          ...(failure !== "unsupported" ? { runTextPrompt } : {}),
+        }),
+      );
+      const controller = new AbortController();
+      if (failure === "aborted") controller.abort();
+      const original = Symbol("original helper");
+      const onRetired = vi.fn();
+      await expect(
+        runHarnessTextPrompt({
+          harness: "claude",
+          cwd: "/tmp",
+          prompt: "question",
+          signal: controller.signal,
+          retirementIdentity: original,
+          onRetired,
+        }),
+      ).rejects.toThrow(
+        failure === "disconnected"
+          ? "not connected"
+          : failure === "unsupported"
+            ? "does not support isolated text prompts"
+            : "cancelled",
+      );
+      expect(runTextPrompt).not.toHaveBeenCalled();
+      expect(onRetired).toHaveBeenCalledExactlyOnceWith({
+        original,
+        dispatch: "not-entered",
+        cleanupSuccess: true,
+      });
+    },
+  );
+
+  it("keeps foreign model remapping and never fabricates no-dispatch proof after adapter entry", async () => {
+    const runTextPrompt = vi.fn(async (_input: import("./registry").TextPromptInput) => {
+      throw new Error("entered adapter failed");
+    });
+    registerHarness(stub("claude", { runTextPrompt }));
+    const onRetired = vi.fn();
+    await expect(
+      runHarnessTextPrompt({
+        harness: "claude",
+        cwd: "/tmp",
+        prompt: "question",
+        model: "codex:foreign-model",
+        retirementIdentity: Symbol("original helper"),
+        onRetired,
+      }),
+    ).rejects.toThrow("entered adapter failed");
+    expect(runTextPrompt).toHaveBeenCalledOnce();
+    expect(runTextPrompt.mock.calls[0]?.[0]).toMatchObject({ model: defaultModelId("claude") });
+    expect(onRetired).not.toHaveBeenCalled();
+  });
+
   it("cancels an isolated text prompt through the adapter lifecycle", async () => {
     const runTextPrompt = vi.fn(() => new Promise<string>(() => undefined));
     const stopTextPrompt = vi.fn(async () => undefined);

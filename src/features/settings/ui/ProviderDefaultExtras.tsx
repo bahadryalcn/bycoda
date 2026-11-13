@@ -1,5 +1,6 @@
 import { EffortScale } from "../../../shared/ui/EffortScale";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { Select } from "../../../shared/ui/Select";
 import { delegationSelectChoice } from "../../sessions/public/modelPickerData";
 import type { CSSProperties } from "react";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -50,9 +51,16 @@ export function ProviderDefaultExtras({
   projectScope: boolean;
   resetLabel: string;
 }) {
+  const threshold = extras.find((setting) => setting.id === "autoCompactWindow");
+  const orderedExtras =
+    threshold && extras.some((setting) => setting.id === "autoCompact")
+      ? extras
+          .filter((setting) => setting !== threshold)
+          .flatMap((setting) => (setting.id === "autoCompact" ? [setting, threshold] : [setting]))
+      : extras;
   return (
     <>
-      {extras.map((setting) => {
+      {orderedExtras.map((setting) => {
         const saved = scopeDefaults.extras?.[setting.id];
         const inherited = inheritedDefaults?.extras?.[setting.id];
         const delegation = setting.id === CROSS_SUBAGENTS_KEY || setting.id === CROSS_ADVISOR_KEY;
@@ -78,6 +86,30 @@ export function ProviderDefaultExtras({
           saved !== "null" &&
           !delegation &&
           !setting.options.some((option) => option.value === saved);
+        const compact = setting.id === "autoCompact" || setting.id === "autoCompactWindow";
+        const compactDisabled =
+          setting.id === "autoCompactWindow" && effectiveValues.autoCompact === "off";
+        const updateCompact = (next: string) => {
+          const extras = { ...scopeDefaults.extras };
+          if (next) extras[setting.id] = next;
+          else delete extras[setting.id];
+          onSessionDefaultsChange({ ...scopeDefaults, extras });
+        };
+        const compactOptions = compact
+          ? [
+              {
+                value: "",
+                label: inheritedChoiceLabel(
+                  inheritedLabel ? t(inheritedLabel) : undefined,
+                  Boolean(inheritedOption),
+                ),
+              },
+              ...(savedIsUnavailable
+                ? [{ value: saved!, label: `${saved} (${t("Unavailable")})` }]
+                : []),
+              ...setting.options.map((option) => ({ value: option.value, label: t(option.label) })),
+            ]
+          : [];
         return (
           <Row
             key={setting.id}
@@ -92,7 +124,28 @@ export function ProviderDefaultExtras({
             }}
             resetLabel={resetLabel}
           >
-            {setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY ? (
+            {compact ? (
+              setting.id === "autoCompact" && !savedIsUnavailable ? (
+                <SegmentedControl
+                  label={t(setting.label)}
+                  value={saved ?? ""}
+                  options={compactOptions}
+                  onValueChange={updateCompact}
+                />
+              ) : (
+                <Select
+                  hideLabel
+                  label={t("{p0} default {p1}", {
+                    p0: HARNESS_TITLE[harness],
+                    p1: t(setting.label),
+                  })}
+                  value={saved ?? ""}
+                  options={compactOptions}
+                  disabled={compactDisabled}
+                  onValueChange={updateCompact}
+                />
+              )
+            ) : setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY ? (
               <div className="provider-effort provider-effort-ceiling">
                 <SubagentEffortSwitch
                   value={effectiveValues[setting.id] ?? ""}
@@ -105,6 +158,7 @@ export function ProviderDefaultExtras({
                 />
                 <EffortScale
                   label={t(setting.label)}
+                  showLabel={false}
                   value={subagentEffortCeiling(effectiveValues[setting.id]) || ""}
                   disabled={!subagentEffortCeiling(effectiveValues[setting.id])}
                   options={setting.options

@@ -7,6 +7,7 @@ import {
 } from "react";
 import { basename } from "../../../platform/tauri/fs";
 import { parentPath } from "../../../shared/lib/paths";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import type { OpenFileFn } from "../../search/model/search";
 import type { TreeSelectionModifiers } from "../model/treeSelection";
 import { isDirAt, type Clip, type MenuTarget } from "./fileTreeSupport";
@@ -207,6 +208,7 @@ export function useFileTreeKeyboard({
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (isImeComposition(e.nativeEvent)) return;
     if ((e.target as HTMLElement).closest("input")) return;
     if (
       (e.target as HTMLElement).closest("button") &&

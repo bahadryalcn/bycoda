@@ -23,7 +23,11 @@
         "path": "/tests/browser/projects/folder-picker.html"
       },
       "projects": [
-        { "name": "chromium", "browser": "chromium", "files": ["folder-picker.spec.ts"] }
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["folder-picker.spec.ts"]
+        }
       ]
     },
     {
@@ -1732,6 +1736,23 @@
           "name": "chromium",
           "browser": "chromium",
           "files": ["title-settings.e2e.ts"]
+        }
+      ]
+    },
+    {
+      "id": "settings-privacy-permissions",
+      "config": "tests/browser/settings/playwright.privacy-permissions-06.config.ts",
+      "files": ["privacy-permissions-06.e2e.ts"],
+      "fixture": {
+        "config": "tests/browser/settings/vite.privacy-permissions-06.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/settings/privacy-permissions-06.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["privacy-permissions-06.e2e.ts"]
         }
       ]
     }

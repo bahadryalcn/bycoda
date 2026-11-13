@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { registerRoomCommandHandle } from "../../automations/room-command-lifetime";
 import { stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { z } from "zod";
@@ -221,6 +222,7 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
           cwd,
           timeoutMs: Number(rest.timeoutSeconds) * 1000,
         });
+        const roomOwned = registerRoomCommandHandle(handle);
         const key = runKey(principal, requestId);
         const entry: Entry = { signature: sha(["commands.run", args]), handle };
         ledger.set(key, entry);
@@ -234,7 +236,9 @@ export function createAssistantFolderTools(ports: FolderToolPorts) {
             });
           })
           .catch((error) => console.error("Assistant command receipt failed:", error));
-        await Promise.race([handle.done, sleep(inlineWaitMs)]);
+        // Automation parent retains the original process and native source permit through retirement.
+        if (roomOwned) await handle.done;
+        else await Promise.race([handle.done, sleep(inlineWaitMs)]);
         if (!(await authorized())) {
           handle.cancel();
           await handle.done;

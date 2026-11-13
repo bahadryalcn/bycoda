@@ -1,5 +1,6 @@
 import { ActionHost, actionContentAttributes } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Text } from "../../../shared/ui/Text";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { useState } from "react";
@@ -192,6 +193,11 @@ export function WorkspaceManagedRow({
             <DescriptionItem term={t("Branch")} monospace>
               {workspace.branchRef}
             </DescriptionItem>
+            {cleanupDueAt !== undefined ? (
+              <DescriptionItem term={t("Automatic cleanup")}>
+                <Timestamp value={cleanupDueAt} format="datetime-seconds" />
+              </DescriptionItem>
+            ) : null}
             <DescriptionItem term={t("Workspace ID")} monospace>
               {workspace.id}
             </DescriptionItem>

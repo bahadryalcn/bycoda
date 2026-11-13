@@ -1,6 +1,7 @@
 import { type HostTask } from "../../src/features/tasks/model/hostTasks";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { TaskContext } from "./context";
+import { readTaskRuntimeBudget } from "../work/runtime-budget";
 export async function goalExecutionAllowed(
   context: TaskContext,
   goalId?: string,
@@ -80,8 +81,14 @@ export async function budgetReason(
   task: HostTask,
   starting = false,
 ): Promise<string | undefined> {
+  const runtime = await readTaskRuntimeBudget(context.budgets, task, starting);
+  if (runtime.blocked) return `Task ${task.title}: ${runtime.reason}`;
   const own = await context.budgets.evaluate({ taskId: task.id }, task.budget, { starting });
   const parent = await context.budgetParent(task);
+  if (parent) {
+    const parentRuntime = await readTaskRuntimeBudget(context.budgets, parent, starting);
+    if (parentRuntime.blocked) return `Crew task ${parent.title}: ${parentRuntime.reason}`;
+  }
   const parentLimit = parent?.budget
     ? await context.budgets.evaluate({ taskId: parent.id }, parent.budget, { starting })
     : undefined;
@@ -103,6 +110,17 @@ export async function budgetParent(
   context: TaskContext,
   task: HostTask,
 ): Promise<HostTask | undefined> {
+  if (task.conflictParent) {
+    const parent = await context.find(task.conflictParent.id);
+    if (
+      parent &&
+      parent.createdAt === task.conflictParent.createdAt &&
+      parent.workInvocationId === task.conflictParent.workInvocationId &&
+      parent.conflictRecovery?.childId === task.id
+    )
+      return parent;
+    return;
+  }
   if (!task.crewRunId) return;
   const row = await context.store.db
     .prepare("SELECT value FROM tasks WHERE json_extract(value, '$.crewExecutionId')=? LIMIT 1")

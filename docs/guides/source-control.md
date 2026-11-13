@@ -65,9 +65,11 @@ stay together, and the full relative path is available on the file tooltip.
 The commit field retains its checkout draft. Message generation remains cancellable
 and allows staging. Commit variants are unavailable while generation is pending;
 if the draft or index changes, an obsolete generated result does not replace the
-current draft. The generation settings control shows effective provider/model,
-checkout override versus global/default selection, and provider-default account
-provenance in optional details. Account selection is resolved when generation runs.
+current draft. Configure the commit and pull request generation model globally in
+**Settings > Background work > Assignments**. The commit field keeps only the generate/cancel
+action, without a separate model settings menu. Saved legacy checkout selections
+remain available as a fallback when global model routing is unavailable. Account
+selection is resolved when generation runs.
 
 While there are changes, the main button is **Commit**: it commits what is staged,
 or every change when nothing is staged (amending never adds unstaged files). It

@@ -9,6 +9,17 @@ export type NativeAssistantPresence = {
 /** Captured by actual paired-device composition; no token/hash is supplied by
  * method params, and scoped tool/peer credentials cannot acquire this port. */
 export interface NativeServiceOwnerPorts {
+  executeAssistantBackground?(
+    input: {
+      environmentId: string;
+      threadId: string;
+      operationId: string;
+      operationHash: string;
+      challenge: string;
+      relayId: string;
+    },
+    current: () => boolean,
+  ): Promise<unknown>;
   browserPanel?(input: Record<string, unknown>): Promise<unknown>;
   observationsIngest?(input: Record<string, unknown>): Promise<unknown>;
   delegation?(

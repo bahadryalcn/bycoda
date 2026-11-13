@@ -11,6 +11,7 @@ import {
 } from "../../../sessions/public/providerSessionDefaults";
 import { expectedProductExtras as productExtras } from "../settingsDefaultsFixture";
 import { ModelsPage, resetRetainedModelsPage } from "./ModelsPage";
+import { WorkPage } from "../work/WorkPage";
 import { machineCapabilities } from "../../../automations/model/machineSnapshot";
 import { remoteRequest } from "../../../connections/public/connections";
 import {
@@ -36,9 +37,10 @@ vi.mock("../../../../integrations/harness/core/availability", () => ({
   harnessUnavailableHint: () => "",
 }));
 
-vi.mock("../../../model-routing/public/settings", () => ({
-  ModelOrderSettings: () => null,
-  ModelRolesSettings: () => null,
+vi.mock("../../../model-routing/public/settings", async (original) => ({
+  ...(await original<typeof import("../../../model-routing/public/settings")>()),
+  ModelOrderSettings: () => createElement("div", { "data-testid": "model-order" }),
+  ModelRolesSettings: () => createElement("div", { "data-testid": "model-assignments" }),
 }));
 
 let container: HTMLDivElement;
@@ -66,36 +68,62 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function render() {
+async function render(work = false) {
   await act(async () =>
     root.render(
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(ModelsPage, { cwd: "/repo" }),
+        createElement(work ? WorkPage : ModelsPage, { cwd: "/repo" }),
       ),
     ),
   );
 }
 
 describe("model defaults scope inheritance", () => {
-  it("keeps hidden defaults from clipping the model order and role pages", async () => {
+  it("waits for the Host identity before offering an editable defaults draft", async () => {
+    let finish!: (value: unknown) => void;
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === "remote_machines"
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : undefined,
+    );
+    vi.mocked(machineCapabilities).mockResolvedValue([]);
     await render();
     expect(container.querySelector(".provider-defaults-save-bar")).toBeNull();
-    const selectTab = async (label: string) => {
-      const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+    await act(async () =>
+      finish([{ id: "initial-host", localHost: true, endpoint: "http://127.0.0.1:7777" }]),
+    );
+    await vi.waitFor(() =>
+      expect(container.querySelector(".provider-defaults-save-bar")).not.toBeNull(),
+    );
+  });
+
+  it("keeps work routing and chat defaults in their respective sections", async () => {
+    await render(true);
+    const tab = (label: string) =>
+      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
         (node) => node.textContent === label,
-      )!;
-      await act(async () => tab.click());
-    };
-    await selectTab("Assignments");
+      );
+    expect(tab("Model order")).toBeTruthy();
+    expect(tab("Assignments")).toBeTruthy();
+    expect(tab("Chat")).toBeUndefined();
     expect(container.querySelector(".provider-defaults-save-bar")).toBeNull();
-    await selectTab("Chat defaults");
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="model-order"]')).not.toBeNull(),
+    );
+    expect(container.querySelector('[data-testid="model-order"]')?.closest("[hidden]")).toBeNull();
+    await act(async () => tab("Assignments")!.click());
+    expect(
+      container.querySelector('[data-testid="model-assignments"]')?.closest("[hidden]"),
+    ).toBeNull();
+    await act(async () => tab("Subagents")!.click());
     expect(container.querySelector(".provider-defaults-save-bar")).not.toBeNull();
-    await selectTab("Subagents");
-    expect(container.querySelector(".provider-defaults-save-bar")).not.toBeNull();
-    await selectTab("Model order");
-    expect(container.querySelector(".provider-defaults-save-bar")).toBeNull();
+    await render();
+    expect(tab("Chat")).toBeTruthy();
+    expect(tab("Model order")).toBeUndefined();
   });
 
   it("saves default effort and permissions through the provider controls", async () => {
@@ -162,6 +190,9 @@ describe("model defaults scope inheritance", () => {
     }
   });
   async function pick(label: string, optionLabel: string) {
+    await vi.waitFor(() =>
+      expect(container.querySelector(`[aria-label^="${label}"]`)).toBeTruthy(),
+    );
     const trigger = container.querySelector<HTMLButtonElement>(`[aria-label^="${label}"]`)!;
     expect(trigger).toBeTruthy();
     const radio =
@@ -188,7 +219,7 @@ describe("model defaults scope inheritance", () => {
     );
   async function openDefaults(provider: string) {
     const tab = Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find((node) =>
-      node.textContent?.trim().startsWith("Chat defaults"),
+      node.textContent?.trim().startsWith("Chat"),
     )!;
     await act(async () => tab.click());
     await pick("Provider defaults", provider);
@@ -200,7 +231,7 @@ describe("model defaults scope inheritance", () => {
       (node) =>
         [...node.querySelectorAll("span.truncate")].some((span) => span.textContent === label),
     );
-    expect(option).toBeTruthy();
+    expect(option, document.body.textContent ?? "").toBeTruthy();
     await act(async () => option!.click());
     expect(option!.getAttribute("aria-selected")).toBe("true");
     const global = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
@@ -221,9 +252,11 @@ describe("model defaults scope inheritance", () => {
       Array.from(container.querySelectorAll<HTMLElement>('[role="tab"]')).find((node) =>
         node.textContent?.trim().startsWith(name),
       )!;
+    await render(true);
     await act(async () => tab("Subagents").click());
-    expect(tab("Chat defaults").querySelector('[aria-label="Unsaved changes"]')).not.toBeNull();
-    await act(async () => tab("Chat defaults").click());
+    expect(tab("Subagents").querySelector('[aria-label="Unsaved changes"]')).not.toBeNull();
+    await render();
+    expect(tab("Chat").querySelector('[aria-label="Unsaved changes"]')).not.toBeNull();
     expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
       "1 unsaved change",
     );
@@ -274,9 +307,10 @@ describe("model defaults scope inheritance", () => {
     expect(container.querySelector(".provider-cli-selector")).toBeNull();
     expect(
       [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent?.trim()),
-    ).toEqual(["Model order", "Assignments", "Chat defaults", "Subagents"]);
+    ).toEqual(["Chat"]);
     expect(container.querySelector('[aria-label^="Claude Code default Advisor"]')).toBeNull();
     await pick("Claude Code default permissions", "Full access");
+    await render(true);
     const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) =>
       tab.textContent?.startsWith("Subagents"),
     )!;
@@ -296,7 +330,7 @@ describe("model defaults scope inheritance", () => {
     });
   });
 
-  it("keeps account override scope while switching between both defaults tabs", async () => {
+  it("keeps account selection and drafts between Models and Work", async () => {
     localStorage.setItem(
       "bycoda.providerAccounts.v1",
       JSON.stringify({ claude: [{ id: "account-work", label: "Work" }] }),
@@ -305,6 +339,7 @@ describe("model defaults scope inheritance", () => {
     await openDefaults("Claude Code");
     await pick("Account", "Work");
     await pick("Claude Code default permissions", "Full access");
+    await render(true);
     const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((tab) =>
       tab.textContent?.startsWith("Subagents"),
     )!;
@@ -348,6 +383,7 @@ describe("model defaults scope inheritance", () => {
     });
     await render();
     await openDefaults("Claude Code");
+    await render(true);
     const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((node) =>
       node.textContent?.startsWith("Subagents"),
     )!;
@@ -370,5 +406,243 @@ describe("model defaults scope inheritance", () => {
       crossSubagents: "[]",
       crossSubagentMaxEffort: "high",
     });
+  });
+  it("retains a delayed defaults save across remount and blocks duplicate submission", async () => {
+    let hostState: ModelRoutingState = {
+      ...structuredClone(EMPTY_MODEL_ROUTING),
+      version: 5,
+      updatedAt: 1,
+    };
+    vi.mocked(invoke).mockResolvedValue([
+      { id: "local", localHost: true, endpoint: "http://127.0.0.1:7777" },
+    ]);
+    vi.mocked(machineCapabilities).mockResolvedValue(["models.routing.v1"]);
+    let finish!: (value: unknown) => void;
+    vi.mocked(remoteRequest).mockImplementation(async (_id, method) =>
+      method === "modelRouting.save"
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : { state: hostState },
+    );
+    await render();
+    await openDefaults("Claude Code");
+    await render(true);
+    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((node) =>
+      node.textContent?.startsWith("Subagents"),
+    )!;
+    await act(async () => tab.click());
+    const group = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
+    await act(async () =>
+      [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+        .find((node) => node.textContent === "Off")!
+        .click(),
+    );
+    act(() => {
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent?.trim() === "Save")!
+        .click();
+    });
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    await act(async () =>
+      root.render(createElement(QueryClientProvider, { client: queryClient }, null)),
+    );
+    await render(true);
+    const again = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((node) =>
+      node.textContent?.startsWith("Subagents"),
+    )!;
+    await act(async () => again.click());
+    expect(
+      vi.mocked(remoteRequest).mock.calls.filter((call) => call[1] === "modelRouting.save"),
+    ).toHaveLength(1);
+    hostState = {
+      ...hostState,
+      version: 6,
+      delegation: { ...hostState.delegation, providers: { claude: { crossSubagents: "[]" } } },
+    };
+    await act(async () => finish({ state: hostState }));
+    await vi.waitFor(() =>
+      expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
+        "Saved",
+      ),
+    );
+  });
+
+  async function pendingDefaults(hostId: string, account = false) {
+    if (account)
+      localStorage.setItem(
+        "bycoda.providerAccounts.v1",
+        JSON.stringify({ claude: [{ id: "account-work", label: "Work" }] }),
+      );
+    let hostState: ModelRoutingState = {
+      ...structuredClone(EMPTY_MODEL_ROUTING),
+      version: 5,
+      updatedAt: 1,
+    };
+    vi.mocked(invoke).mockResolvedValue([
+      { id: hostId, localHost: true, endpoint: "http://127.0.0.1:7777" },
+    ]);
+    vi.mocked(machineCapabilities).mockResolvedValue(["models.routing.v1"]);
+    let reject!: (error: Error) => void;
+    let resolve!: (value: unknown) => void;
+    vi.mocked(remoteRequest).mockImplementation(async (_id, method) =>
+      method === "modelRouting.save"
+        ? new Promise((done, fail) => {
+            resolve = done;
+            reject = fail;
+          })
+        : { state: hostState },
+    );
+    await render();
+    await openDefaults("Claude Code");
+    if (account) await pick("Account", "Work");
+    await render(true);
+    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((node) =>
+      node.textContent?.startsWith("Subagents"),
+    )!;
+    await act(async () => tab.click());
+    const group = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
+    await act(async () =>
+      [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+        .find((node) => node.textContent === "Off")!
+        .click(),
+    );
+    act(() => {
+      [...container.querySelectorAll<HTMLButtonElement>("button")]
+        .find((button) => button.textContent?.trim() === "Save")!
+        .click();
+    });
+    await vi.waitFor(() => expect(reject).toBeDefined());
+    return {
+      reject: (error: Error) => reject(error),
+      resolve: () => {
+        hostState = { ...hostState, version: 6 };
+        resolve({ state: hostState });
+      },
+    };
+  }
+  it("retains a failed delayed save after remount and retries once", async () => {
+    const pending = await pendingDefaults("fail-host");
+    await act(async () =>
+      root.render(createElement(QueryClientProvider, { client: queryClient }, null)),
+    );
+    await render(true);
+    await act(async () => pending.reject(new Error("deferred failure")));
+    await vi.waitFor(() =>
+      expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
+        "Retry",
+      ),
+    );
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Retry");
+    vi.mocked(remoteRequest).mockImplementation(async (_id, method) => ({
+      state: {
+        ...structuredClone(EMPTY_MODEL_ROUTING),
+        version: method === "modelRouting.save" ? 6 : 5,
+        updatedAt: 1,
+      },
+    }));
+    await clickButton("Retry");
+    expect(
+      vi.mocked(remoteRequest).mock.calls.filter((call) => call[1] === "modelRouting.save"),
+    ).toHaveLength(2);
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Saved");
+  });
+  it("does not apply a pending target outcome to a different target draft", async () => {
+    const pending = await pendingDefaults("target-host");
+    const request = vi
+      .mocked(remoteRequest)
+      .mock.calls.find((call) => call[1] === "modelRouting.save")!;
+    expect(request[0]).toBe("target-host");
+    expect(request[2]).toMatchObject({
+      expectedVersion: 5,
+      draft: { delegation: { providers: { claude: { crossSubagents: "[]" } } } },
+    });
+    await selectScope("repo (Chats only)");
+    const group = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
+    await act(async () =>
+      [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+        .find((node) => node.textContent === "Off")!
+        .click(),
+    );
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
+      "1 unsaved change",
+    );
+    await act(async () => pending.resolve());
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain(
+      "1 unsaved change",
+    );
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).not.toContain(
+      "Saved",
+    );
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Save in"]')!;
+    await act(async () => trigger.click());
+    const global = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (node) => node.querySelector("span.truncate")?.textContent === "Global",
+    )!;
+    await act(async () => global.click());
+    const project = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (node) => node.textContent?.includes("repo (Chats only)"),
+    )!;
+    await act(async () => project.click());
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")]
+        .find((node) => node.textContent === "Done")!
+        .click(),
+    );
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Saved");
+  });
+  it("keeps provider and account drafts separate in one project", async () => {
+    localStorage.setItem(
+      "bycoda.providerAccounts.v1",
+      JSON.stringify({ claude: [{ id: "account-work", label: "Work" }] }),
+    );
+    await render();
+    await openDefaults("Claude Code");
+    await pick("Claude Code default permissions", "Full access");
+    await pick("Account", "Work");
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).not.toContain(
+      "1 unsaved change",
+    );
+    await pick("Provider defaults", "Codex");
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).not.toContain(
+      "1 unsaved change",
+    );
+  });
+
+  it("shows loading while Host capabilities are pending", async () => {
+    let finish!: (value: string[]) => void;
+    vi.mocked(invoke).mockResolvedValue([
+      { id: "pending", localHost: true, endpoint: "http://127.0.0.1:7777" },
+    ]);
+    vi.mocked(machineCapabilities).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await render(true);
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    await vi.waitFor(() => expect(container.textContent).toContain("Loading"));
+    expect(container.textContent).not.toContain("unavailable on this Host");
+    await act(async () => finish(["models.routing.v1"]));
+  });
+
+  it("keeps originating account payload when the provider changes during save", async () => {
+    const pending = await pendingDefaults("account-host", true);
+    const request = vi
+      .mocked(remoteRequest)
+      .mock.calls.find((call) => call[1] === "modelRouting.save")!;
+    expect(request[0]).toBe("account-host");
+    expect(request[2]).toMatchObject({
+      expectedVersion: 5,
+      draft: { delegation: { accounts: { "claude\naccount-work": { crossSubagents: "[]" } } } },
+    });
+    await pick("Provider defaults", "Codex");
+    await act(async () => pending.resolve());
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).not.toContain(
+      "Saved",
+    );
+    await pick("Provider defaults", "Claude Code");
+    expect(container.querySelector(".provider-defaults-save-bar")?.textContent).toContain("Saved");
   });
 });

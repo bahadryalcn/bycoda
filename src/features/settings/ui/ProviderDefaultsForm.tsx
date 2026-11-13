@@ -184,13 +184,17 @@ export function ProviderDefaultsForm({
     <Group
       id={section === "delegation" ? "models-delegation" : "agent-clis"}
       layout="full"
-      title={section === "delegation" ? t("Subagents") : t("New conversation defaults")}
+      title={section === "delegation" ? null : t("New conversation defaults")}
       description={
-        inherits
+        section === "delegation"
           ? t(
-              "Fields left on Global follow the global defaults. Existing conversations keep their settings.",
+              "Global settings apply to chats and unattended work. Project, group and workspace settings apply to chats only.",
             )
-          : t("Applies to new conversations. Existing conversations keep their settings.")
+          : inherits
+            ? t(
+                "Fields left on Global follow the global defaults. Existing conversations keep their settings.",
+              )
+            : t("Applies to new conversations. Existing conversations keep their settings.")
       }
     >
       {providerControl}
@@ -263,6 +267,7 @@ export function ProviderDefaultsForm({
               <div className="provider-effort">
                 <EffortScale
                   label={t("{p0} default effort", { p0: HARNESS_TITLE[harness] })}
+                  showLabel={false}
                   value={scopeDefaults.effort ?? ""}
                   options={effortOptions}
                   onValueChange={(next) =>

@@ -115,6 +115,7 @@ function fixture() {
   const observe = (principal = session as RuntimeLogSubjectPrincipal) =>
     call("desktop.snapshot", { app: "Editor" }, principal);
   return {
+    tools,
     call,
     observe,
     request,
@@ -481,6 +482,25 @@ describe("desktop conversation tool authority", () => {
     expect(
       desktopConversationPrincipal("host", { ...session, assistantThreadId: undefined }),
     ).not.toEqual(desktopConversationPrincipal("host", thread));
+  });
+  it("runs a Global assistant thread without a project and asks with that thread's identity", async () => {
+    const f = fixture();
+    const global = { kind: "assistant-thread", threadId: "thread", environmentId: "host" } as const;
+    const authorized = async () => true;
+    await f.tools.call("desktop.snapshot", { app: "Editor" }, global, undefined, authorized);
+    await f.tools.call("desktop.act", act, global, undefined, authorized);
+    expect(f.approved.mock.calls[0][0]).toMatchObject({ principal: global, cwd: undefined });
+    expect(f.request).toHaveBeenLastCalledWith(
+      expect.objectContaining({ op: "act", ref: act.ref }),
+      desktopConversationPrincipal("host", global),
+      expect.any(Function),
+      expect.any(Function),
+      expect.any(Function),
+    );
+    // Its snapshots belong to the Global thread, not to the same thread id inside a project.
+    expect(desktopConversationPrincipal("host", global)).not.toEqual(
+      desktopConversationPrincipal("host", thread),
+    );
   });
   it("gives voice and Room tools no way to change the permission mode", async () => {
     const f = fixture();

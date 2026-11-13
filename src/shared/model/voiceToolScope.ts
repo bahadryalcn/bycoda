@@ -57,6 +57,13 @@ export function voiceGlobalToolAllowed(family: string, action: string) {
     ["observations.read", "observations.ack", "observations.resnapshot"].includes(action)
   )
     return true;
+  // Computer use acts on owner-approved apps, not on a project; the owner's permission mode,
+  // app approvals, presence and Stop gate every call in both scopes.
+  if (
+    family === "conversation" &&
+    (voiceDesktopObservation(action) || voiceDesktopInputAction(action))
+  )
+    return true;
   if (
     family === "conversation" &&
     [
@@ -93,6 +100,17 @@ export function voiceGlobalToolAllowed(family: string, action: string) {
       "servers.ssh.remove",
     ].includes(action)
   );
+}
+
+function voiceDesktopObservation(action: string) {
+  return [
+    "desktop.status",
+    "desktop.snapshot",
+    "desktop.windows.list",
+    "desktop.find",
+    "desktop.screenshot",
+    "desktop.wait",
+  ].includes(action);
 }
 
 export function voiceDesktopInputAction(action: string) {
@@ -332,17 +350,8 @@ export function voiceThreadToolAllowed(family: string, action: string) {
       "automations.stopRun",
     ].includes(action) ||
     voiceDesktopInputAction(action) ||
+    voiceDesktopObservation(action) ||
     /^(notes|inbox)\./.test(action) ||
-    [
-      "host.limits.status",
-      "models.pool.list",
-      "shell.profiles",
-      "desktop.status",
-      "desktop.snapshot",
-      "desktop.windows.list",
-      "desktop.find",
-      "desktop.screenshot",
-      "desktop.wait",
-    ].includes(action)
+    ["host.limits.status", "models.pool.list", "shell.profiles"].includes(action)
   );
 }

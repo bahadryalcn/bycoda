@@ -26,6 +26,7 @@ describe("consumeDelegationCommand", () => {
     const command = consumeDelegationCommand("/TASK add dark mode to settings");
     expect(command?.name).toBe("task");
     expect(command?.prompt).toContain("tasks.create");
+    expect(command?.prompt).toContain("Create one bycoda task");
     expect(command?.prompt).toContain("Do not implement it in this turn.");
     expect(command?.prompt.endsWith("Work:\nadd dark mode to settings")).toBe(true);
   });

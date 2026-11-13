@@ -1,3 +1,7 @@
+import {
+  HostAutomationSchema,
+  type HostAutomation,
+} from "../../../src/shared/model/host-contracts/automations";
 import { TriggerRow } from "../../../src/features/automations/ui/TriggerEditor";
 import { createAutomationTrigger } from "../../../src/features/automations/model/automations";
 import { createRoot } from "react-dom/client";
@@ -45,6 +49,36 @@ const remoteMachine = {
   name: "tailm",
   endpoint: "http://fixture-tailm.invalid:3774",
   environmentId: "fixture-tailm-environment",
+};
+const hostWork = new URLSearchParams(location.search).has("hostWork");
+const roomWork = new URLSearchParams(location.search).has("room");
+const fixtureHost = {
+  id: "fixture-work",
+  name: "This computer (local sync)",
+  localHost: true,
+  environmentId: "fixture-work",
+  endpoint: "http://127.0.0.1:1",
+};
+const hostProject = { id: "fixture-project", cwd: "C:/fixture/project", name: "Fixture project" };
+let hostAutomation: HostAutomation = {
+  id: "fixture-host-review",
+  name: roomWork ? "Room review" : "Project review",
+  prompt: "Review fixture activity and report findings",
+  projectId: roomWork ? "" : hostProject.id,
+  harness: "claude",
+  model: "claude:fixture",
+  modelSettings: {},
+  runtimeMode: "supervised",
+  scheduleKind: "daily",
+  minute: 0,
+  time: "09:00",
+  dayOfWeek: 1,
+  maxRunMinutes: 30,
+  maxRunsPerDay: 3,
+  enabled: true,
+  nextRunAt: Date.now() + 3600000,
+  createdAt: 1,
+  updatedAt: 1,
 };
 const at = Date.now();
 const sampleRuns: AutomationRun[] = [
@@ -143,7 +177,7 @@ Object.assign(window, {
       if (command === "default_cwd") return "C:/fixture/home";
       if (command === "plugin:event|listen") return 1;
       if (command === "automations_list")
-        return hasLocalAutomation ? [structuredClone(automation)] : [];
+        return !hostWork && hasLocalAutomation ? [structuredClone(automation)] : [];
       if (command === "automations_upsert") {
         if (control.holdSave) {
           await new Promise<void>((resolve, reject) => {
@@ -166,6 +200,79 @@ Object.assign(window, {
           throw new Error("Fixture: run history is unavailable right now");
         return runsMode ? structuredClone(sampleRuns) : [];
       }
+      if (hostWork && command === "remote_machines") return [fixtureHost];
+      if (hostWork && command === "local_host_connect") return fixtureHost;
+      if (hostWork && command === "remote_request" && args.machineId === fixtureHost.id) {
+        const input = (args.params ?? {}) as Record<string, unknown>;
+        switch (args.method) {
+          case "environment.describe":
+            return {
+              environmentId: fixtureHost.environmentId,
+              capabilities: [
+                "automations",
+                "automations.room.v1",
+                "automations.triggers.v1",
+                "automations.project-tasks",
+                "models.routing.v1",
+              ],
+            };
+          case "projects.list":
+            return [hostProject];
+          case "modelRouting.get":
+            return {
+              state: {
+                version: 1,
+                updatedAt: 1,
+                entries: [
+                  {
+                    id: "fixture-model",
+                    harness: "claude",
+                    model: "claude:fixture",
+                    modelSettings: {},
+                    unknownLimit: "use",
+                  },
+                ],
+                pools: [],
+                roles: {},
+                delegation: { global: {}, providers: {}, accounts: {} },
+              },
+            };
+          case "modelRouting.status":
+            return { entries: [{ entryId: "fixture-model", leftPercent: 80 }] };
+          case "automations.list":
+            return [structuredClone(hostAutomation)];
+          case "automations.runs":
+            runReads++;
+            if (runsMode === "slow") await runsHeld;
+            if (runsMode === "error" && runReads === 1)
+              throw new Error("Fixture: run history is unavailable right now");
+            return sampleRuns.map((run) => ({
+              ...run,
+              automationId: hostAutomation.id,
+              ...(roomWork ? {} : { taskId: `task-${run.id}` }),
+            }));
+          case "automations.preview":
+            return { timeZone: "UTC", nextRunAt: at + 3600000 };
+          case "automations.save": {
+            const incoming = input.automation as Record<string, unknown>;
+            if (
+              incoming.expectedConfiguration &&
+              JSON.stringify(incoming.expectedConfiguration) !== JSON.stringify(hostAutomation)
+            )
+              throw new Error("Automation changed. Reload before saving.");
+            const { expectedConfiguration: _expected, ...configuration } = incoming;
+            hostAutomation = HostAutomationSchema.parse({
+              ...configuration,
+              createdAt: hostAutomation.createdAt,
+              updatedAt: hostAutomation.updatedAt + 1,
+              nextRunAt: at + 3600000,
+            });
+            return structuredClone(hostAutomation);
+          }
+          default:
+            throw new Error(`Unexpected Work automation fixture operation: ${String(args.method)}`);
+        }
+      }
       if (command === "remote_machines")
         return offlineHostMode ? [structuredClone(remoteMachine)] : [];
       if (command === "remote_request" && args.machineId === remoteMachine.id) {
@@ -182,6 +289,10 @@ Object.assign(window, {
     },
   },
 });
+document.documentElement.classList.toggle(
+  "theme-light",
+  new URLSearchParams(location.search).get("theme") === "light",
+);
 setHarnessModels("claude", [{ id: "claude:fixture", harness: "claude", name: "Demo agent" }]);
 const source = {
   modelsFor,
@@ -212,7 +323,7 @@ void languageReady
             ) : (
               <AutomationsView
                 besideRail
-                cwd="C:/fixture/project"
+                cwd={roomWork ? undefined : "C:/fixture/project"}
                 recents={[]}
                 onClose={() => {}}
                 onLaunch={() => {}}

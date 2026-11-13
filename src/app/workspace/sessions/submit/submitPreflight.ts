@@ -21,6 +21,8 @@ import {
 import { steerAppliesModelSettings } from "../../../../integrations/harness";
 import { saveRecentModelChoice } from "../../../../features/sessions/model/models";
 import { consumeDelegationCommand } from "../../../../features/sessions/model/delegationCommands";
+import { consumeWorkCommand } from "../../../../features/sessions/model/workCommands";
+import { openAutomationProposal } from "../../../../features/automations/public/proposal";
 import {
   consumeOperatorCommand,
   operatorEnabledInThread,
@@ -100,6 +102,28 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
   )
     return { settled: true, value: false };
   if (!storedCurrent) return { settled: true, value: false };
+  const automationCommand = consumeWorkCommand(text);
+  if (automationCommand?.name === "automation") {
+    if (
+      options?.managed ||
+      options?.resendEdited ||
+      options?.ciRepair ||
+      options?.queuedMessageId ||
+      (options?.intent ?? "default") !== "default" ||
+      storedCurrent.inboxAsk ||
+      storedCurrent.orchestrationLeadId
+    )
+      return refuse("Use /automation from a regular session turn outside Plan mode.");
+    if (attachments.length > 0)
+      return refuse(
+        "Automation proposals do not support attachments. Your draft and attachments were kept.",
+      );
+    if (!automationCommand.request) return refuse("Add a recurring request after /automation.");
+    if (!openAutomationProposal(storedCurrent, automationCommand.request))
+      return refuse("Finish or cancel the open automation proposal first.");
+    // Opening a proposal is not sending a turn. Keep the complete composer draft.
+    return { settled: true, value: false };
+  }
   if (
     storedCurrent.worktreeRemoved ||
     [...removingWorktreePaths.current].some((path) =>
@@ -238,15 +262,17 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
     (intent === "default" || intent === "plan") &&
     !options?.managed &&
     !options?.ciRepair
-      ? consumeDelegationCommand(submittedText)
+      ? (consumeWorkCommand(submittedText) ?? consumeDelegationCommand(submittedText))
       : null;
   const delegationError = !delegation
     ? undefined
     : delegation.name === "task" && intent === "plan"
       ? "Use /task outside Plan mode."
-      : !delegation.request
-        ? `Add a request after /${delegation.name}.`
-        : undefined;
+      : delegation.name !== "subagents" && intent === "plan"
+        ? "Use work commands outside Plan mode."
+        : !delegation.request
+          ? `Add a request after /${delegation.name}.`
+          : undefined;
   if (delegationError) return refuse(delegationError);
   const promptText = operatorCommand.matched
     ? operatorCommand.text.trim() || "Explain what you can do in bycoda with the app CLI."

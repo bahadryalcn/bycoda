@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   killChild: vi.fn(async (_id: string) => {}),
   resolveBinary: vi.fn(async () => ({ path: "/fake/pi" })),
   setHarnessModels: vi.fn(),
+  inspectHarnessBinary: vi.fn(),
   spawnChild: vi.fn(async () => {}),
   unwatchChild: vi.fn(),
   watchChild: vi.fn(),
@@ -14,8 +15,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../../../platform/tauri/fs", () => ({
   homeDir: vi.fn(async () => "/home/test"),
 }));
-vi.mock("../../../../features/sessions/model/models", () => ({
+vi.mock("../../../../features/sessions/model/models", async () => ({
   setHarnessModels: mocks.setHarnessModels,
+  withAutoCompactToggle: (await import("../../../../features/sessions/model/autoCompact"))
+    .withAutoCompactToggle,
 }));
 beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", () => {
@@ -23,6 +26,7 @@ vi.mock("../../core/child", () => {
     killChild: mocks.killChild,
     resolveOmpBinary: mocks.resolveBinary,
     resolvePiBinary: mocks.resolveBinary,
+    inspectHarnessBinary: mocks.inspectHarnessBinary,
     spawnChild: mocks.spawnChild,
     unwatchChild: mocks.unwatchChild,
     watchChild: mocks.watchChild,
@@ -97,6 +101,7 @@ beforeEach(() => {
   vi.setSystemTime(0);
   vi.clearAllMocks();
   mocks.resolveBinary.mockResolvedValue({ path: "/fake/pi" });
+  mocks.inspectHarnessBinary.mockResolvedValue({ version: "18.0.6" });
   mocks.spawnChild.mockResolvedValue();
   mocks.killChild.mockResolvedValue();
   mocks.writeChild.mockImplementation(async (id, line) => {
@@ -159,6 +164,18 @@ it("loads extensions and preserves immediate discovery for omp", async () => {
   expect(Date.now()).toBe(0);
   expectStopped();
 });
+
+it.each(["18.2.0", "18.2.1"])(
+  "advertises omp compaction only after verifying session isolation in %s",
+  async (version) => {
+    mocks.inspectHarnessBinary.mockResolvedValue({ version });
+    const models = await discoverOmpModels("/workspace");
+    expect(models[0].settings?.some((setting) => setting.id === "autoCompact") ?? false).toBe(
+      version === "18.2.1",
+    );
+    expectStopped();
+  },
+);
 
 it("keeps polling unchanged early snapshots through the startup window", async () => {
   let settled = false;

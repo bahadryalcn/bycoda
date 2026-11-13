@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { retainedTransactionValue, useRetainedTransaction } from "../../model/retainedTransaction";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HOST_MODEL_ROUTING,
@@ -40,13 +40,26 @@ type Baseline = { routing: ModelRoutingState; limits: HostSettings };
 /** One editing transaction; each separate Host acknowledgement becomes its own baseline. */
 export function useOrderDraft(settings: Settings, initial: Baseline, machineId: string) {
   const client = useQueryClient();
-  const [baseline, setBaseline] = useState(initial);
-  const [draft, setDraft] = useState(() => orderDraft(initial.routing, initial.limits));
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
-  const [saveConflict, setSaveConflict] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const submitting = useRef(false);
+  const [baseline, setBaseline] = useRetainedTransaction(`order:${machineId}:baseline`, initial);
+  const [draft, setDraft] = useRetainedTransaction(
+    `order:${machineId}:draft`,
+    orderDraft(initial.routing, initial.limits),
+  );
+  const [pending, setPending] = useRetainedTransaction(`order:${machineId}:pending`, false);
+  const [error, setError] = useRetainedTransaction(`order:${machineId}:error`, "");
+  const [saveConflict, setSaveConflict] = useRetainedTransaction(
+    `order:${machineId}:conflict`,
+    false,
+  );
+  const [saved, setSaved] = useRetainedTransaction(`order:${machineId}:saved`, false);
+  const submitting = {
+    get current() {
+      return retainedTransactionValue<boolean>(`order:${machineId}:pending`) ?? false;
+    },
+    set current(value: boolean) {
+      setPending(value);
+    },
+  };
   const dirty = !sameOrderDraft(draft, orderDraft(baseline.routing, baseline.limits));
   // Query notifications can lag a mutation's acknowledgement by one render.
   const observedRouting = settings.routing.state;

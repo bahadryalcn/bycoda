@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 // @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
 import type { z } from "zod";
@@ -599,14 +600,43 @@ it("validates actual isolated HostCrews outputs for every paired method, includi
       return row;
     }),
   };
+  type Admission = Parameters<HostEngine["withCommandAdmission"]>[0];
+  const admissions = new AsyncLocalStorage<Admission>();
+  const retired = new Set<string>();
   const engine = {
-    command: vi.fn(async (command) => ({
-      commandId: command.commandId,
-      sessionId: command.sessionId ?? "coordinator",
-      revision: 1,
-      runId: "turn",
-    })),
+    command: vi.fn(async (command: Record<string, unknown>) => {
+      const sessionId = String(command.sessionId ?? "coordinator");
+      const commandId = String(command.commandId);
+      const admission = admissions.getStore();
+      if (command.type !== "cancel") await admission?.check({ phase: "command", sessionId });
+      const previous = await store.receiptStatus(commandId);
+      if (previous) return previous;
+      const receipt = {
+        commandId,
+        sessionId,
+        revision: 1,
+        ...(command.type === "create" ? {} : { runId: "turn" }),
+      };
+      await store.recordReceipt(JSON.stringify(command), receipt);
+      if (command.type === "send") {
+        // Persist acceptance before entering the fake provider's live turn.
+        retired.add(`${sessionId}:turn`);
+        await admission?.onAccepted?.(receipt);
+        await admission?.check({ phase: "provider", sessionId, runId: "turn" });
+        retired.delete(`${sessionId}:turn`);
+      }
+      if (command.type === "cancel") {
+        retired.add(`${sessionId}:${String(command.runId)}`);
+        status = "idle";
+      }
+      return receipt;
+    }),
     updateSession: vi.fn(async () => {}),
+    waitForRun: vi.fn(async (sessionId: string, runId: string) => {
+      if (!retired.has(`${sessionId}:${runId}`)) throw new Error("Exact run has not retired.");
+    }),
+    withCommandAdmission: <T>(admission: Admission, action: () => Promise<T>) =>
+      admissions.run(admission, action),
   };
   const owner = new HostCrews(
     store,

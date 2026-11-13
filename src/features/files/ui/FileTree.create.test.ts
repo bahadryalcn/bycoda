@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, type ComponentProps } from "react";
+import { act, createElement, StrictMode, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
@@ -7,6 +7,7 @@ import {
   listCachedDir,
   loadExpanded,
   loadSelected,
+  peekDir,
   saveExpanded,
   saveSelected,
 } from "../model/fileTree";
@@ -144,6 +145,45 @@ afterEach(() => {
 });
 
 describe("Explorer create target", () => {
+  it.each(["switch root", "unmount"])(
+    "finishes a pending create without opening its file after %s",
+    async (navigation) => {
+      let release!: () => void;
+      gate.hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await mount(null);
+      await act(async () => header("new-file").click());
+      type("late.ts");
+      await enter();
+      const originalRoot = cwd;
+      await act(async () => {
+        if (navigation === "switch root") {
+          props = { ...props, cwd: `${cwd}-other` };
+          root.render(createElement(FileTree, props));
+        } else root.render(null);
+      });
+      await act(async () => release());
+
+      expect(created).toEqual([{ parent: originalRoot, name: "late.ts", isDir: false }]);
+      expect(props.onOpenFile).not.toHaveBeenCalled();
+      expect(peekDir(originalRoot)?.some((entry) => entry.name === "late.ts")).toBe(true);
+    },
+  );
+
+  it("opens a newly created file after StrictMode lifecycle replay", async () => {
+    saveExpanded(cwd, new Set([cwd]));
+    await act(async () =>
+      root.render(createElement(StrictMode, null, createElement(FileTree, props))),
+    );
+    await act(async () => header("new-file").click());
+    type("strict.ts");
+    await enter();
+    expect(props.onOpenFile).toHaveBeenCalledExactlyOnceWith(`${cwd}/strict.ts`, undefined, {
+      exact: true,
+    });
+  });
+
   it("creates at the root from the header when nothing is selected, and names it", async () => {
     await mount(null);
     await act(async () => header("new-file").click());

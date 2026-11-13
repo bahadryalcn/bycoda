@@ -65,3 +65,34 @@ it("fills ordered bars, retains long accessible labels and supports keyboard sel
     vi.unstubAllGlobals();
   }
 });
+
+it("can drop the visible label when a row already names the scale", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const node = document.createElement("div");
+  document.body.append(node);
+  const root = createRoot(node);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(EffortScale, {
+          options: [
+            { value: "low", label: "Low" },
+            { value: "high", label: "High" },
+          ],
+          value: "high",
+          label: "Subagent max effort",
+          showLabel: false,
+          onValueChange: vi.fn(),
+        }),
+      ),
+    );
+    expect(node.textContent).not.toContain("Subagent max effort");
+    expect(node.textContent).toContain("High");
+    expect(node.querySelector('[role="radiogroup"]')?.getAttribute("aria-label")).toBe(
+      "Subagent max effort",
+    );
+  } finally {
+    await act(async () => root.unmount());
+    node.remove();
+  }
+});

@@ -409,9 +409,46 @@ export function socialClient(machineId: string) {
         acknowledgeRisk: true,
         ...(resourceId ? { resourceId } : {}),
       }),
+    browserChromeTabs: (accountId: string, acknowledgeChromeAccess: boolean) =>
+      remoteRequest<{ tabs: import("./socialBrowser").SocialChromeTab[] }>(
+        machineId,
+        "social.browser.availability",
+        {
+          accountId,
+          existingChrome: true,
+          acknowledgeChromeAccess,
+        },
+      ),
+    browserChromeConnect: (
+      accountId: string,
+      chromeTargetId: string,
+      acknowledgeChromeAccess: boolean,
+      resourceId?: string,
+    ) =>
+      remoteRequest<{ status: string; expiresAt: number; source: "existing-chrome" }>(
+        machineId,
+        "social.browser.begin",
+        {
+          accountId,
+          chromeTargetId,
+          existingChrome: true,
+          acknowledgeRisk: true,
+          acknowledgeChromeAccess,
+          ...(resourceId ? { resourceId } : {}),
+        },
+      ),
     browserStatus: (accountId: string) =>
-      remoteRequest<{ status: string; error?: string }>(machineId, "social.browser.status", {
+      remoteRequest<{ status: string; error?: string; source?: "existing-chrome" | "dedicated" }>(
+        machineId,
+        "social.browser.status",
+        {
+          accountId,
+        },
+      ),
+    browserCancelLogin: (accountId: string) =>
+      remoteRequest<{ status: "idle" }>(machineId, "social.browser.workflow.cancel", {
         accountId,
+        loginFlow: true,
       }),
     mediaInspect: (mediaId: string) =>
       remoteRequest<{ mediaId: string; managed: boolean; revision: number }>(

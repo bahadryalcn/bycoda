@@ -149,3 +149,9 @@ it("summarizes only the operations that are available", async () => {
   ).toBe("Post · Messages");
   expect(capabilitySummary([{ operation: "publish", status: "pending" }])).toBe("");
 });
+
+it("does not report a healthy connection when intervention status is unknown", () => {
+  expect(
+    accountHealth({ account: account(), capabilities: [], needsHuman: undefined, now: NOW }).text,
+  ).toBe("Connection status unknown");
+});

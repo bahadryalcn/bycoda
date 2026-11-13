@@ -70,7 +70,7 @@ import {
   type ProviderAccount,
 } from "../../features/providers/model/providerAccounts";
 import {
-  accountStatus,
+  accountStatusWith,
   accountUsageKey,
   bestAlternativeAccount,
   needsProviderLogin,
@@ -224,6 +224,7 @@ function UsageProviderDetails({
   setUsageAccountId: (accountId: string | null) => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const usageAccount =
     usageOnly && !onSelectUsageAccount
       ? accounts.find((account) => account.id === usageAccountId)
@@ -273,7 +274,7 @@ function UsageProviderDetails({
   // The footer's own snapshot is fresher for the active account.
   const usageFor = (account: ProviderAccount) =>
     account.id === accountId ? limits : accountUsage.usage[accountUsageKey(account)];
-  const activeStatus = accountStatus(limits, now);
+  const activeStatus = accountStatusWith(limits, now, t, format);
   const suggestion =
     activeStatus.tone === "exhausted" || activeStatus.tone === "low"
       ? bestAlternativeAccount(otherAccounts, usageFor, now)
@@ -592,6 +593,7 @@ function ProviderAccountPicker({
   onSelect: (accountId: string) => void;
 }) {
   const t = useT();
+  const format = useFormat();
   const statusId = useId();
   return (
     <div>
@@ -681,7 +683,10 @@ function ProviderAccountPicker({
                     // Without meters, a long "unknown" reason truncates.
                     className={meters.length > 0 ? "shrink-0" : "min-w-0"}
                   >
-                    <AccountStatusLabel status={accountStatus(usage, now)} className="min-w-0" />
+                    <AccountStatusLabel
+                      status={accountStatusWith(usage, now, t, format)}
+                      className="min-w-0"
+                    />
                   </span>
                   {meters.length > 0 ? (
                     <span className="flex min-w-0 flex-1 gap-2.5">
@@ -744,6 +749,7 @@ function SwitchSuggestion({
   onSwitch: () => void;
 }) {
   const t = useT();
+  const format = useFormat();
   return (
     <Surface variant="outline" padding="md" as="section" className="mt-2 flex items-center gap-2.5">
       <div className="min-w-0 flex-1">
@@ -756,7 +762,7 @@ function SwitchSuggestion({
           <Text size="inherit" tone="inherit" weight="medium" truncate className="min-w-0">
             {account.label}
           </Text>
-          <AccountStatusLabel status={accountStatus(limits, now)} size="caption" />
+          <AccountStatusLabel status={accountStatusWith(limits, now, t, format)} size="caption" />
         </Text>
       </div>
       <Button variant="ghost" motion="none" type="button" className="shrink-0" onClick={onSwitch}>

@@ -47,46 +47,62 @@ export function GrokLimits({ refresh }: { refresh: number }) {
         ) : null}
       </div>
       <div className="usage-quota-list">
-        {windows.map(({ kind, window }) => (
-          <div className="usage-quota" key={kind}>
-            <Text
-              as="div"
-              size="caption"
-              tone="inherit"
-              leading="inherit"
-              className="usage-quota-heading"
-            >
-              <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
-                {kind === "weekly"
-                  ? t("Weekly")
-                  : kind === "monthly"
-                    ? t("Monthly")
-                    : formatWindowLabel(window.windowMinutes)}
-                <Text size="inherit" tone="muted" weight="regular" className="usage-quota-reset">
-                  {window.resetsAt == null
-                    ? t("Reset time unavailable")
-                    : formatResetCountdown(window.resetsAt - now)}
+        {windows.map(({ kind, window }) => {
+          const windowLabel =
+            kind === "weekly"
+              ? t("Weekly")
+              : kind === "monthly"
+                ? t("Monthly")
+                : window.windowMinutes === 300
+                  ? t("5 hours")
+                  : `${t("Session")} · ${formatWindowLabel(window.windowMinutes)}`;
+          return (
+            <div className="usage-quota" key={kind}>
+              <Text
+                as="div"
+                size="caption"
+                tone="inherit"
+                leading="inherit"
+                className="usage-quota-heading"
+              >
+                <SectionLabel as="h4" classNames={{ label: "usage-quota-title" }}>
+                  {windowLabel}
+                  <Text size="inherit" tone="muted" weight="regular" className="usage-quota-reset">
+                    {window.resetsAt == null ? (
+                      t("Reset time unavailable")
+                    ) : (
+                      <>
+                        {formatResetCountdown(window.resetsAt - now)}
+                        <br />
+                        <Timestamp
+                          value={window.resetsAt}
+                          format="datetime-seconds"
+                          tooltip={false}
+                        />
+                      </>
+                    )}
+                  </Text>
+                </SectionLabel>
+                <Text as="p" size="inherit" tone="secondary">
+                  <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
+                    {Math.round(showRemaining ? 100 - window.usedPercent : window.usedPercent)}%
+                  </Text>
+                  <span>{showRemaining ? t("left") : t("used")}</span>
                 </Text>
-              </SectionLabel>
-              <Text as="p" size="inherit" tone="secondary">
-                <Text as="strong" size="body" tone="primary" weight="medium" leading="inherit">
-                  {Math.round(showRemaining ? 100 - window.usedPercent : window.usedPercent)}%
-                </Text>
-                <span>{showRemaining ? t("left") : t("used")}</span>
               </Text>
-            </Text>
-            <UsageMeter
-              label={`Grok ${kind}`}
-              segments={[{ id: "used", label: t("used"), value: window.usedPercent }]}
-              limit={100}
-              unit="%"
-              decimals={0}
-              compact
-              showLegend={false}
-              showRemaining={showRemaining}
-            />
-          </div>
-        ))}
+              <UsageMeter
+                label={`Grok · ${windowLabel} · ${showRemaining ? t("left") : t("used")}`}
+                segments={[{ id: "used", label: t("used"), value: window.usedPercent }]}
+                limit={100}
+                unit="%"
+                decimals={0}
+                compact
+                showLegend={false}
+                showRemaining={showRemaining}
+              />
+            </div>
+          );
+        })}
       </div>
       {loading ? <LoadingText>{t("Loading usage…")}</LoadingText> : null}
       {limits.error ? (

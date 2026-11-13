@@ -24,7 +24,7 @@ export function GoalFinalReview({
   return (
     <div className="grid min-w-0 gap-2">
       <p role="status">
-        {t("Final goal acceptance")}:{" "}
+        {t("Final epic acceptance")}:{" "}
         {t(
           goal.finalAcceptance?.status === "passed"
             ? "Verified"

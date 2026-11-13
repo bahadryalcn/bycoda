@@ -14,6 +14,7 @@ import {
   isModelPoolConversationTool,
 } from "../conversation/conversation-model-pool-source";
 import { isManagementAction } from "../conversation/conversation-management-tools";
+import { isDesktopControlConversationTool } from "../conversation/conversation-desktop-control-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { serializedResponse } from "../sync/sync-transfer";
 import { HostVoiceToolDisclosure } from "../voice/voice-tool-disclosure";
@@ -39,6 +40,7 @@ export async function handleVoiceTools(
     | "deviceHost"
     | "conversationManagementRuntime"
     | "conversationDesktop"
+    | "conversationDesktopControl"
     | "globalServerManagement"
     | "globalAssistantManagement"
     | "withRoomProjectScope"
@@ -436,6 +438,18 @@ export async function handleVoiceTools(
       );
     else if (call.action === "devices.list")
       request.result = await listHostDevices(dependencies.deviceHost, call.input, authorizeGlobal);
+    else if (isDesktopControlConversationTool(call.action))
+      request.result = await dependencies.conversationDesktopControl.call(
+        call.action,
+        call.input,
+        {
+          kind: "assistant-thread",
+          threadId: call.threadId!,
+          environmentId: dependencies.engine.store.environmentId,
+        },
+        undefined,
+        authorizeGlobal,
+      );
     else if (isGlobalRuntimeRead(call.action))
       request.result = await dependencies.conversationManagementRuntime.call(
         call.action as import("../conversation/conversation-management-runtime").RuntimeManagementAction,

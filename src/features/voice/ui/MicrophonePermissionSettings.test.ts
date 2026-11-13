@@ -8,6 +8,7 @@ vi.mock("../../../platform/tauri/privacySettings", () => ({ openPrivacySettings:
 vi.mock("../model/microphoneAccess", () => ({
   openMicrophone: mock.capture,
   microphoneBlockedMessage: () => "Microphone blocked",
+  webviewMicrophoneBlockedMessage: () => "Webview blocked",
   isMicrophoneBlocked: (message: string) => message === "Microphone blocked",
   canOpenMicrophoneSettings: () => mock.canOpen,
 }));
@@ -104,9 +105,9 @@ it("shows denial recovery without treating opening settings as a grant", async (
   await render();
   await click("Check microphone access");
   expect(element.textContent).toContain("Microphone blocked");
-  await click("Open Privacy Settings");
-  expect(mock.open).toHaveBeenCalledWith("microphone");
-  expect(element.textContent).toContain("Could not open microphone settings.");
+  await click("Review access");
+  expect(mock.open).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("Check access");
   expect(element.textContent).not.toContain("Microphone allowed");
 });
 
@@ -153,14 +154,14 @@ it("clears a stale denial when permission resets to prompt without claiming acce
   mock.capture.mockRejectedValue(new Error("Microphone blocked"));
   await render();
   await click("Check microphone access");
-  expect(button("Open Privacy Settings")).toBeDefined();
+  expect(button("Review access")).toBeDefined();
   await act(async () => {
     status.state = "prompt";
     status.dispatchEvent(new Event("change"));
   });
   expect(element.textContent).not.toContain("Microphone blocked");
   expect(element.textContent).not.toContain("Microphone allowed");
-  expect(button("Open Privacy Settings")).toBeUndefined();
+  expect(button("Review access")).toBeUndefined();
   expect(mock.capture).toHaveBeenCalledOnce();
 });
 
@@ -173,4 +174,18 @@ it("keeps routine microphone lifetime guidance in help without starting capture"
   await act(async () => help.click());
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("requested only when");
   expect(mock.capture).not.toHaveBeenCalled();
+});
+
+it("keeps a webview denial out of OS settings even when browser permission says denied", async () => {
+  const status = Object.assign(new EventTarget(), { state: "denied" as PermissionState });
+  Object.defineProperty(navigator, "permissions", {
+    configurable: true,
+    value: { query: vi.fn().mockResolvedValue(status) },
+  });
+  mock.capture.mockRejectedValue(new Error("Webview blocked"));
+  await render();
+  await click("Check microphone access");
+  expect(element.textContent).toContain("Webview blocked");
+  expect(button("Review access")).toBeUndefined();
+  expect(button("Check microphone access")).toBeDefined();
 });

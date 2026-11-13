@@ -240,7 +240,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
         <section className={styles.block}>
           <Text as="p" leading="inherit" className={styles.muted}>
             {t(
-              "Restoring keeps the goal and tasks stopped. Review them in the task board before restarting.",
+              "Restoring keeps the epic and tasks stopped. Review them in the task board before restarting.",
             )}
           </Text>
           {props.onReviewJobTasks && (
@@ -271,7 +271,7 @@ function JobDetailBody({ job, notes }: { job: AssistantJob; notes: readonly Assi
         <div className={styles.related}>
           {job.goalId && (
             <p>
-              {t("Goal")}:{" "}
+              {t("Epic")}:{" "}
               <Button
                 variant="link"
                 disabled={!props.onReviewJobTasks || !!pending}

@@ -10,11 +10,17 @@ const mocks = vi.hoisted(() => ({
   refetch: vi.fn(),
   remember: vi.fn(),
   invalidate: vi.fn(),
+  machineError: null as Error | null,
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) =>
     queryKey[1] === "machines"
-      ? { data: [mocks.machine] }
+      ? {
+          data: mocks.machineError ? undefined : [mocks.machine],
+          error: mocks.machineError,
+          refetch: mocks.refetch,
+          isFetching: false,
+        }
       : { data: [{ cwd: "G:/Projects/existing" }], refetch: mocks.refetch },
 }));
 vi.mock("../../automations/public/hostMachines", () => ({
@@ -44,6 +50,7 @@ function Harness() {
     null,
     createElement("output", null, scope.cwd),
     scope.projectPicker(false),
+    scope.picker(false),
   );
 }
 const button = (text: string) =>
@@ -85,11 +92,20 @@ beforeEach(() => {
     },
   );
   vi.clearAllMocks();
+  mocks.machineError = null;
   mocks.refetch.mockResolvedValue({});
   mocks.remember.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+});
+
+it("keeps a failed machine read visible and offers retry even without machine data", async () => {
+  mocks.machineError = new Error("Host machines unavailable");
+  await act(async () => root.render(createElement(Harness)));
+  expect(container.textContent).toContain("Host machines unavailable");
+  await click(button("Retry"));
+  expect(mocks.refetch).toHaveBeenCalledOnce();
 });
 afterEach(async () => {
   await act(async () => root.unmount());

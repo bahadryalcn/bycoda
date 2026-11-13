@@ -16,6 +16,7 @@ export function ModelLabel({
   name,
   size = "sm",
   iconOnly = false,
+  wrap = false,
   className,
 }: {
   /** Raw model id; stored and submitted values stay this id. */
@@ -26,6 +27,8 @@ export function ModelLabel({
   name?: string;
   size?: IdentitySize;
   iconOnly?: boolean;
+  /** Full identity in expanded detail; compact callers retain their one-line label. */
+  wrap?: boolean;
   className?: string;
 }) {
   const provider = useModelHarness(model, harness);
@@ -38,7 +41,7 @@ export function ModelLabel({
         <Bot aria-hidden className={`${IDENTITY_SIZE_CLASS[size]} shrink-0`} />
       )}
       {!iconOnly && (
-        <Text size="inherit" tone="inherit" truncate>
+        <Text size="inherit" tone="inherit" truncate={!wrap} wrap={wrap ? "anywhere" : undefined}>
           {name ?? displayName}
         </Text>
       )}

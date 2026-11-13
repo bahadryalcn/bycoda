@@ -1,16 +1,15 @@
 import { useT } from "../../../../shared/i18n";
+import { HARNESS_TITLE } from "../../../../shared/model/harnessIdentity";
+import { SessionProviderSchema } from "../../../../shared/model/host-contracts/session-commands";
+import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Text } from "../../../../shared/ui/Text";
 import { Badge } from "../../../../shared/ui/Badge";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../../shared/ui/UsageMeter";
 import { Group, Row } from "../../../settings/public/settingsControls";
-import {
-  MAX_RUNNING_TASKS_LIMIT,
-  formatAgentMinutes,
-  type MachineLimits,
-} from "../../../tasks/public/hostSettings";
-import type { OrderDraft } from "../../model/modelRoutingDraft";
+import { formatAgentMinutes, type MachineLimits } from "../../../tasks/public/hostSettings";
+import type { CapDraft, OrderDraft } from "../../model/modelRoutingDraft";
 
 export function ModelOrderLimits({
   draft,
@@ -79,7 +78,6 @@ export function ModelOrderLimits({
           label={t("Max concurrent tasks")}
           hideLabel
           min={1}
-          max={MAX_RUNNING_TASKS_LIMIT}
           step={1}
           value={draft.limits.maxRunningTasks}
           onChange={(event) =>
@@ -119,6 +117,68 @@ export function ModelOrderLimits({
           onChange={(event) => onChange({ ...draft, maxRunMinutes: event.currentTarget.value })}
         />
       </Row>
+      <Disclosure summary={t("Token and cost limits")} variant="row">
+        <Text size="secondary" tone="secondary">
+          {t(
+            "Empty or 0 means no limit. Limits apply before new turns and may be exceeded by a running turn.",
+          )}
+        </Text>
+        {(["total", ...SessionProviderSchema.options] as const).map((scope) => {
+          const caps = scope === "total" ? draft.workCaps.total : draft.workCaps.providers[scope];
+          const empty: CapDraft = {
+            daily: { tokens: "", costUsd: "" },
+            monthly: { tokens: "", costUsd: "" },
+          };
+          const current = caps ?? empty;
+          return (
+            <Disclosure
+              key={scope}
+              summary={scope === "total" ? t("All providers") : HARNESS_TITLE[scope]}
+              variant="row"
+            >
+              {(["daily", "monthly"] as const).flatMap((period) =>
+                (["tokens", "costUsd"] as const).map((metric) => {
+                  const label =
+                    period === "daily"
+                      ? metric === "tokens"
+                        ? t("Daily tokens")
+                        : t("Daily cost (USD)")
+                      : metric === "tokens"
+                        ? t("Monthly tokens")
+                        : t("Monthly cost (USD)");
+                  return (
+                    <Row key={`${period}-${metric}`} label={label}>
+                      <NumberField
+                        label={label}
+                        hideLabel
+                        min={0}
+                        step={metric === "tokens" ? 1 : "any"}
+                        value={current[period][metric]}
+                        onChange={(event) => {
+                          const next = {
+                            ...current,
+                            [period]: { ...current[period], [metric]: event.currentTarget.value },
+                          };
+                          onChange({
+                            ...draft,
+                            workCaps:
+                              scope === "total"
+                                ? { ...draft.workCaps, total: next }
+                                : {
+                                    ...draft.workCaps,
+                                    providers: { ...draft.workCaps.providers, [scope]: next },
+                                  },
+                          });
+                        }}
+                      />
+                    </Row>
+                  );
+                }),
+              )}
+            </Disclosure>
+          );
+        })}
+      </Disclosure>
     </Group>
   );
 }

@@ -5,9 +5,7 @@ const SCREEN_RECORDING_DENIED = "screen-recording-permission-required";
 
 /** Copy for the recovery notice; the Host never sends user-facing text for this case. */
 export function screenRecordingBlockedMessage(): string {
-  return t(
-    "Screenshots need Screen Recording access. Allow bycoda in System Settings > Privacy & Security > Screen & System Audio Recording, then restart bycoda and try again.",
-  );
+  return t("Screenshots need Screen Recording access. Review access to set it up, then try again.");
 }
 
 export function isScreenRecordingBlocked(message: string | null): boolean {

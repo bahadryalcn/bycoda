@@ -26,6 +26,7 @@ import {
   STOPPED_BY_USER,
   cancelSessionRun,
   errorMessage,
+  launchSessionRun,
   sessionRunState,
 } from "../sessions/sessionRuns";
 import { reviewerVerdict } from "./review-outcomes";
@@ -33,7 +34,6 @@ import { reviewerReply } from "./review-outcomes";
 import { ownerNotice, reviewRerunCount } from "./review-outcomes";
 import { MAX_REVIEW_RERUNS, OWNER_NOTICE_LIMIT, REVIEW_RERUN_NOTICE } from "./constants";
 import type { TaskContext } from "./context";
-import { newRequestId } from "../../src/shared/lib/id/requestId";
 export async function settleVerification(
   context: TaskContext,
   task: HostTask,
@@ -409,12 +409,39 @@ export async function resumeReviewer(
       );
       return;
     }
-    const receipt = await context.taskMessage(task, "review-recovery", () =>
-      context.engine.command({
-        type: "send",
-        commandId: newRequestId(),
-        sessionId,
-        text:
+    // Retire the exact prior turn before its session can accept a successor.
+    // Shared Work reconciles that receipt before registering the continuation.
+    if (!context.waitRecoveryRun) throw new Error("Reviewer retirement proof is unavailable.");
+    await context.waitRecoveryRun(sessionId, task.reviewer!.runId);
+    const receipt = await launchSessionRun(
+      context.store,
+      context.engine,
+      {
+        projectId: task.projectId,
+        harness: session.session.harness,
+        providerAccountId: session.session.providerAccountId,
+        model: session.session.model,
+        modelSettings: session.session.modelSettings,
+        runtimeMode: session.session.runtimeMode,
+        title: `Review: ${task.title}`.slice(0, 200),
+        resumeSessionId: sessionId,
+        ...(task.workspaceId ? { workspaceId: task.workspaceId } : {}),
+        ...(task.worktreeCwd ? { worktreeCwd: task.worktreeCwd } : {}),
+        ...(task.isolate === false ? { workspaceMode: "current" as const } : {}),
+        author: { kind: "task", id: task.id, name: task.title, reason: "review-recovery" },
+        work: {
+          kind: "task.reviewer",
+          id: task.id,
+          occurrence: JSON.stringify([
+            "review-recovery",
+            sessionId,
+            task.reviewer!.runId,
+            task.reviewer!.verdictRepairAttempts ?? 0,
+            Boolean(interrupted),
+            task.workInvocationId,
+          ]),
+        },
+        prompt:
           (interrupted
             ? "The host interrupted this review. Continue the unfinished review in the existing conversation, preserving the inspected evidence and completed checks. "
             : "") +
@@ -422,8 +449,22 @@ export async function resumeReviewer(
           (task.reviewer!.acceptanceRequired
             ? acceptanceReviewInstructions(readTaskInstructions(task.prompt)?.acceptance ?? [])
             : ""),
-      }),
+      },
+      async () => {
+        const latest = await context.find(task.id);
+        return (
+          !context.closing &&
+          (await context.goalExecutionAllowed(task.goalId)) &&
+          latest?.status === "verifying" &&
+          latest.reviewer?.sessionId === sessionId &&
+          latest.workInvocationId === task.workInvocationId &&
+          !latest.awaitingOwnerRestart
+        );
+      },
     );
+    if (receipt.deferred) return;
+    if (!receipt.sessionId || !receipt.runId)
+      throw new Error(receipt.error ?? "Reviewer continuation has no exact receipt.");
     await context.write({
       ...task,
       reviewer: {

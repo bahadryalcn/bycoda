@@ -93,11 +93,14 @@ const FOCUSABLE =
   'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])';
 
 /** Dialog popovers take focus on open, unless a descendant already autofocused itself. */
-function focusDialog(surface: HTMLElement | null) {
+function focusDialog(surface: HTMLElement | null, initialFocus?: string) {
   if (!surface || surface.contains(document.activeElement)) return;
-  const first = [...surface.querySelectorAll<HTMLElement>(FOCUSABLE)].find(
+  const options = [...surface.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
     (el) => el.getAttribute("aria-disabled") !== "true" && !el.closest("[inert]"),
   );
+  const first =
+    (initialFocus ? options.find((element) => element.matches(initialFocus)) : undefined) ??
+    options[0];
   (first ?? surface).focus({ preventScroll: true });
 }
 
@@ -143,6 +146,8 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   frosted?: boolean;
   style?: CSSProperties;
   autoFocus?: boolean;
+  /** Focus this eligible descendant when a dialog is visible, with first-control fallback. */
+  initialFocus?: string;
   /** See {@link PopoverKind}. `"dialog"` sets the role and the focus contract. */
   kind?: PopoverKind;
   /** Wiring this in hands Popover the outside-click and Escape handling. */
@@ -254,6 +259,7 @@ function NativePopover({
   ref,
   style,
   autoFocus,
+  initialFocus,
   dismissOnEscape = true,
   restoreFocus = true,
   passive = false,
@@ -274,9 +280,9 @@ function NativePopover({
   );
   const dialog = kind === "dialog";
   useEffect(() => {
-    if (dialog && autoFocus !== false) focusDialog(surface.current);
+    if (dialog && autoFocus !== false) focusDialog(surface.current, initialFocus);
     else if (autoFocus) surface.current?.focus({ preventScroll: true });
-  }, [autoFocus, dialog]);
+  }, [autoFocus, dialog, initialFocus]);
   useEffect(() => {
     if (!onDismiss) return;
     const outside = (event: PointerEvent) => {
@@ -355,6 +361,7 @@ function WebPopover({
   className,
   style,
   autoFocus,
+  initialFocus,
   kind,
   onDismiss,
   dismissOnEscape = true,
@@ -500,11 +507,11 @@ function WebPopover({
   useEffect(() => {
     // The measuring frame is hidden and cannot receive browser focus.
     if (!positioned) return;
-    if (dialog && autoFocus !== false) focusDialog(surface.current);
+    if (dialog && autoFocus !== false) focusDialog(surface.current, initialFocus);
     // Content that already took focus (a menu row) keeps it.
     else if (autoFocus && !surface.current?.contains(document.activeElement))
       surface.current?.focus({ preventScroll: true });
-  }, [autoFocus, positioned, dialog]);
+  }, [autoFocus, positioned, dialog, initialFocus]);
 
   useEffect(() => {
     if (!onDismiss) return;

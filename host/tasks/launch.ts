@@ -1,3 +1,4 @@
+import { hostModelRoutingService } from "../model-routing/runtime";
 import { someAsync } from "../async-collections";
 import { resolveRunModel, routingRun, routingWait, routingWaitDue } from "./model-routing";
 import { AssistantTurnPolicyDeferredError } from "../assistant/core/assistant-turn-policy";
@@ -22,10 +23,21 @@ import { writerWorkspaceMode } from "./task-workspace-runtime";
 import { SHARED_EDITS_LIMIT } from "./constants";
 import { TaskPreparationSuperseded } from "./errors";
 import { git } from "./git";
+import { conflictChildAdmitted } from "./conflict-recovery";
 import { available } from "./git";
 import { workerPrompt } from "./prompts";
 import { canResumeAfterUsageLimit } from "./usage-limit";
 import type { TaskContext } from "./context";
+import {
+  AUTOMATIC_SUBAGENTS,
+  CROSS_SUBAGENTS_KEY,
+} from "../../src/shared/model/host-contracts/delegation";
+
+/** Resolve Automatic through agents.options at execution, retaining owner overrides. */
+export function taskLaunchSettings(settings: Record<string, string>): Record<string, string> {
+  return { [CROSS_SUBAGENTS_KEY]: AUTOMATIC_SUBAGENTS, ...settings };
+}
+
 export async function workingCopy(context: TaskContext, task: HostTask): Promise<HostTask> {
   const expected = await context.taskValue(task.id);
   const project = await context.store.project(task.projectId);
@@ -150,6 +162,15 @@ export async function launch(
   now: number,
   active: readonly HostTask[],
 ): Promise<HostTask> {
+  if (context.assistantTaskAdmission && !(await context.assistantTaskAdmission(task))) return task;
+  if (task.inheritMaxRunMinutes && task.runtimeLimitResolvedAt === undefined) {
+    const routing = await hostModelRoutingService(context.store).get();
+    task = await context.write({
+      ...task,
+      maxRunMinutes: routing.defaultMaxRunMinutes ?? 0,
+      runtimeLimitResolvedAt: now,
+    });
+  }
   if (await hasShellPhysicalOwner(context.store, "task", task.id))
     throw new Error(
       "The original verification command tree is not proven stopped. Inspect Host diagnostics before retrying.",
@@ -158,7 +179,11 @@ export async function launch(
     context.store,
     task.worktreeCwd ?? (await context.store.project(task.projectId)).cwd,
   );
-  if (!(await context.goalExecutionAllowed(task.goalId))) return task;
+  if (
+    !(await context.goalExecutionAllowed(task.goalId)) ||
+    (context.assistantTaskAdmission && !(await context.assistantTaskAdmission(task)))
+  )
+    return task;
   if (assistantRecoveryHoldsTask(await readAssistantRecovery(context.store, task.id), task))
     return task;
   const budgetReason = await context.budgetReason(task, true);
@@ -200,6 +225,8 @@ export async function launch(
       );
     try {
       if (context.closing || (task.goalId && context.pausedGoals.has(task.goalId))) return pending;
+      if (context.assistantTaskAdmission && !(await context.assistantTaskAdmission(pending)))
+        return pending;
       const coordinator = await context.crewRunner.start(pending);
       const latest = await context.find(task.id);
       if (
@@ -268,6 +295,9 @@ export async function launch(
       const resolved = {
         ...current,
         ...(resolution.ok ? resolution.target : {}),
+        modelSettings: taskLaunchSettings(
+          resolution.ok ? resolution.target.modelSettings : current.modelSettings,
+        ),
         modelRoutingWait: undefined,
         error: routingRun(current).modelRoutingWait ? undefined : current.error,
       };
@@ -507,6 +537,10 @@ export async function launch(
   const ordinaryAdmission: Parameters<NonNullable<HostEngine["withCommandAdmission"]>>[0] = {
     check: async (stage) => {
       const current = await launchCurrent();
+      if (!(await conflictChildAdmitted(context, current)))
+        throw new Error("Conflict recovery parent or commits changed before dispatch.");
+      if (context.assistantTaskAdmission && !(await context.assistantTaskAdmission(current)))
+        throw new AssistantTurnPolicyDeferredError();
       if (!(await context.goalExecutionAllowed(current.goalId)))
         throw new AssistantTurnPolicyDeferredError();
       if (stage.sessionId) {
@@ -540,6 +574,7 @@ export async function launch(
           runId: receipt.runId,
           startedAt: now,
           status: "running",
+          modelRoutingWait: undefined,
           updatedAt: now,
         });
         launchExpected = await context.taskValue(ready.id);
@@ -558,6 +593,17 @@ export async function launch(
       {
         ...ready,
         ...(recovering ? { requestId: recovery!.launchRequestId } : {}),
+        work: {
+          kind: recovering ? "task.recovery" : ready.repairAttempts ? "task.repair" : "task.worker",
+          id: ready.id,
+          occurrence: JSON.stringify([
+            ...(ready.workInvocationId ? [ready.workInvocationId] : []),
+            ready.createdAt,
+            ready.repairAttempts ?? 0,
+            ready.ownerNotices?.length ?? 0,
+            ready.attemptHistory?.length ?? 0,
+          ]),
+        },
         ...(ready.isolate === false ? { workspaceMode: "current" as const } : {}),
         author: {
           kind: "task",
@@ -569,10 +615,16 @@ export async function launch(
         prompt: workerPrompt(ready, projectCwd, sharedEdits),
       },
       async () => {
-        await launchCurrent();
-        return context.goalExecutionAllowed(ready.goalId);
+        const current = await launchCurrent();
+        return (
+          (await conflictChildAdmitted(context, current)) &&
+          (await context.goalExecutionAllowed(current.goalId)) &&
+          (!context.assistantTaskAdmission || (await context.assistantTaskAdmission(current)))
+        );
       },
     );
+  if (ready.conflictParent && !context.admitCommand)
+    throw new Error("Guarded conflict recovery dispatch is unavailable on this host.");
   const ordinaryLaunch = () => (resumable ? context.resumeInterrupted(ready) : launch());
   const started = !recovering
     ? context.admitCommand
@@ -647,8 +699,20 @@ export async function launch(
     await context.stopWorkspaceActivity(ready);
     return await context.store.transaction(async () => {
       const current = await context.unchangedTask(ready.id, launchExpected);
+      const reason = started.wait?.message;
+      if (
+        current?.status === "queued" &&
+        current.workspaceActivityId === undefined &&
+        current.modelRoutingWait?.reason === reason
+      )
+        return current;
       return current
-        ? await context.write({ ...current, workspaceActivityId: undefined, status: "queued" })
+        ? await context.write({
+            ...current,
+            workspaceActivityId: undefined,
+            status: "queued",
+            modelRoutingWait: reason ? { reason } : undefined,
+          })
         : ((await context.find(ready.id)) ?? ready);
     }, "critical");
   }
@@ -659,6 +723,7 @@ export async function launch(
       ...current,
       awaitingOwnerRestart: undefined,
       sessionId: started.sessionId,
+      modelRoutingWait: undefined,
       runId: started.runId,
       startedAt: now,
     };

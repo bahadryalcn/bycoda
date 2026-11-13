@@ -9,6 +9,7 @@ import { assistantJobProjectIds } from "../../../src/shared/model/assistantProje
 import { assistantActiveHours } from "../../../src/shared/model/assistantPolicy";
 import type { AssistantRepository } from "../repository";
 import { assertAssistantGoalProjects } from "./assistant-job-scope";
+import { assistantProjectMutationAllowed } from "../management/assistant-permissions";
 
 export interface GoalAdmissionDeps {
   store: HostStore;
@@ -83,6 +84,7 @@ export async function autonomousJobAllowed(
     const profile = await deps.profile();
     if (
       !profile.enabled ||
+      !assistantProjectMutationAllowed(profile, assistantJobProjectIds(job)) ||
       !profile.setupComplete ||
       profile.autonomy === "report" ||
       !assistantActiveHours(profile, deps.now()) ||

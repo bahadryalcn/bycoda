@@ -432,7 +432,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
               resultAuthorities.push(check);
               if (lease) options.bulk!.retainAuthority(lease, check);
             },
-            signal: definition.cancellation === "query" ? controller.signal : undefined,
+            signal:
+              definition.cancellation === "query" ||
+              request.method === "native.services.assistant.background.execute"
+                ? controller.signal
+                : undefined,
           });
           for (const check of resultAuthorities)
             if (!(await check())) throw new HostBulkError(409, "Result authority expired.");

@@ -63,6 +63,7 @@ export type BoardTask = HostTask & {
   /** The machine did not answer; this is what it last reported. */
   stale?: boolean;
   reviewRecheckSupported?: boolean;
+  finishWithFindingsSupported?: boolean;
   blockedTakeoverSupported?: boolean;
   workspaceControlsSupported?: boolean;
 };
@@ -93,7 +94,7 @@ export type TaskDraft = {
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
-  maxRunMinutes: number;
+  maxRunMinutes?: number;
   /** Run on a new branch of its own when the project is a git repository. */
   isolate?: boolean;
   /** Empty for no check. */
@@ -184,7 +185,7 @@ export function newTaskDraft(
     ...(routingSupported ? { modelChoice: { kind: "default" as const } } : {}),
     modelSettings: defaultModelSettings(resolveModel(harness, model)),
     runtimeMode: "auto",
-    maxRunMinutes: 0,
+    maxRunMinutes: undefined,
 
     verifyCommand: "",
     review: false,
@@ -214,7 +215,7 @@ export function draftFromTask(task: BoardTask): TaskDraft {
     model: task.model,
     modelSettings: task.modelSettings,
     runtimeMode: task.runtimeMode,
-    maxRunMinutes: task.maxRunMinutes,
+    maxRunMinutes: task.inheritMaxRunMinutes ? undefined : task.maxRunMinutes,
     isolate: task.isolate,
     workspace: task.workspace,
     workspaceLocked: Boolean(task.branch || task.sessionId),
@@ -290,7 +291,7 @@ export function hostTaskFromDraft(
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
-    maxRunMinutes: draft.maxRunMinutes,
+    ...(draft.maxRunMinutes === undefined ? {} : { maxRunMinutes: draft.maxRunMinutes }),
     isolate: draft.crewDefinitionId ? false : draft.isolate,
     ...(!draft.crewDefinitionId && draft.workspace ? { workspace: draft.workspace } : {}),
     ...(draft.verifyCommand.trim() ? { verifyCommand: draft.verifyCommand.trim() } : {}),
@@ -479,6 +480,7 @@ export async function listBoardTaskResults(
             return boardTasksFromHost(machine, projects, tasks).map((task) => ({
               ...task,
               reviewRecheckSupported: capabilities.includes("tasks.review-recheck"),
+              finishWithFindingsSupported: capabilities.includes("tasks.finish-with-findings"),
               blockedTakeoverSupported: capabilities.includes("tasks.blocked-takeover"),
               workspaceControlsSupported: capabilities.includes(HOST_TASK_WORKSPACES),
               evaluationSupported: capabilities.includes("tasks.evaluation"),
@@ -690,6 +692,7 @@ function updatedBoardTask(task: BoardTask, updated: HostTask): BoardTask {
     machineName: task.machineName,
     cwd: task.cwd,
     reviewRecheckSupported: task.reviewRecheckSupported,
+    finishWithFindingsSupported: task.finishWithFindingsSupported,
     blockedTakeoverSupported: task.blockedTakeoverSupported,
     workspaceControlsSupported: task.workspaceControlsSupported,
     evaluationSupported: task.evaluationSupported,
@@ -771,6 +774,17 @@ export async function recheckTaskReview(task: BoardTask): Promise<BoardTask> {
     task.machineId,
     "tasks.review.recheck",
     { taskId: task.id },
+    false,
+    true,
+  );
+  return updatedBoardTask(task, updated);
+}
+
+export async function finishTaskWithFindings(task: BoardTask): Promise<BoardTask> {
+  const updated = await remoteRequest<HostTask>(
+    task.machineId,
+    "tasks.finishWithFindings",
+    { taskId: task.id, expectedUpdatedAt: task.updatedAt },
     false,
     true,
   );

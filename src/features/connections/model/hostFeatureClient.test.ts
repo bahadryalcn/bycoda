@@ -323,7 +323,11 @@ describe("explicit host tool targets", () => {
   });
 
   it("runs realtime and cloud voice requests on this computer", async () => {
-    machineCapabilities.mockResolvedValue(["voice.realtime.v2", "voice.cloud.v1"]);
+    machineCapabilities.mockResolvedValue([
+      "voice.realtime.v2",
+      "voice.cloud.v1",
+      "voice.local.setup.v1",
+    ]);
     await hostToolRequest(
       "G:/repo",
       "voice.realtime.v2",
@@ -336,6 +340,17 @@ describe("explicit host tool targets", () => {
       provider: "openai",
     });
     expect(remoteRequest).toHaveBeenCalledWith("local", "voice.cloud.status", {});
+    for (const method of [
+      "voice.local.models",
+      "voice.local.modelAction",
+      "voice.local.modelStatus",
+      "voice.local.modelCancel",
+    ]) {
+      await hostToolRequest("G:/repo", "voice.local.setup.v1", method, {}, { kind: "local" });
+      expect(remoteRequest).toHaveBeenCalledWith("local", method, {});
+    }
+    await hostToolRequest("G:/repo", "voice.cloud.v1", "voice.cloud.models", {}, { kind: "local" });
+    expect(remoteRequest).toHaveBeenCalledWith("local", "voice.cloud.models", {});
   });
 
   it("uses the selected MacBook for a local conversation and omits foreign project/session IDs", async () => {

@@ -49,6 +49,17 @@ export type AutomationTemplate = {
 };
 
 export const AUTOMATION_TEMPLATES: AutomationTemplate[] = [
+  {
+    id: "project-scan",
+    category: "tasks",
+    popular: true,
+    icon: "search",
+    name: "Project scan",
+    description: "Inspect a project and propose work for the task board.",
+    prompt: "Inspect the project and propose the next useful work.",
+    trigger: { kind: "time", event: "weekdays", scheduleKind: "weekdays", time: "09:00" },
+    triggerLabel: "Weekdays at 09:00",
+  },
   ...(
     [
       [

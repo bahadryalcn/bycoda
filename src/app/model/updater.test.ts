@@ -51,6 +51,19 @@ beforeEach(() => {
   mocks.ask.mockResolvedValue(true);
 });
 
+it("does not turn failed build reads into disabled updates or a fake version", async () => {
+  mocks.updaterEnabled = true;
+  mocks.getIdentifier.mockRejectedValueOnce(new Error("identifier unavailable"));
+  mocks.getVersion.mockRejectedValueOnce(new Error("version unavailable"));
+  const updater = await import("./updater");
+  await expect(updater.isUpdaterEnabled()).rejects.toThrow("identifier unavailable");
+  await expect(updater.readAppVersion()).rejects.toThrow("version unavailable");
+  expect(updater.knownUpdaterEnabledState()).toBeUndefined();
+  expect(updater.knownAppVersionState()).toBeUndefined();
+  await expect(updater.isUpdaterEnabled()).resolves.toBe(true);
+  await expect(updater.readAppVersion()).resolves.toBe("0.1.22");
+});
+
 async function updaterWithPendingUpdate() {
   mocks.updaterEnabled = true;
   mocks.getIdentifier.mockResolvedValue("com.bycoda.desktop");

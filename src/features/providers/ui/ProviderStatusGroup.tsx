@@ -12,6 +12,7 @@ import {
   ArrowDownCircle,
   RefreshCw,
   Check,
+  CircleX,
   CircleHelp,
   Minus,
   Bot,
@@ -169,15 +170,17 @@ export function ProviderStatusGroup({
                   ? t("Unavailable")
                   : t("Unknown");
   const StatusIcon =
-    busy || run.status === "updating"
-      ? RefreshCw
-      : notFound
-        ? Minus
-        : check?.status === "behind"
-          ? ArrowDownCircle
-          : check?.status === "current"
-            ? Check
-            : CircleHelp;
+    run.status === "failed"
+      ? CircleX
+      : busy || run.status === "updating"
+        ? RefreshCw
+        : notFound
+          ? Minus
+          : check?.status === "behind"
+            ? ArrowDownCircle
+            : check?.status === "current"
+              ? Check
+              : CircleHelp;
   const hint =
     !canCheck && !notFound
       ? t("This CLI has no release feed. Update checks are not available.")

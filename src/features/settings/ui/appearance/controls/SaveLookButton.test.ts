@@ -53,3 +53,28 @@ it("opens an unnamed handmade look with an empty editable name", () => {
   act(() => container.querySelector<HTMLButtonElement>("button")!.click());
   expect(document.querySelector<HTMLInputElement>("input[maxlength]")!.value).toBe("");
 });
+
+it("explains that a pending generated image is excluded while keeping Save available", async () => {
+  writeGeneratorValue("chipImages", { 0: { status: "loading" } }, {});
+  act(() =>
+    root.render(
+      createElement(SaveLookButton, {
+        appearance: {} as AppearanceSettings,
+      }),
+    ),
+  );
+  act(() => container.querySelector<HTMLButtonElement>("button")!.click());
+  expect(document.body.textContent).toContain(
+    "The image is still generating. This saves your current look without the pending image.",
+  );
+  const input = document.querySelector<HTMLInputElement>("input[maxlength]")!;
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  act(() => {
+    setter.call(input, "Current look");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(save).toHaveBeenCalledWith(expect.anything(), "Current look");
+});

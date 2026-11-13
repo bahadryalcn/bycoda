@@ -1,3 +1,4 @@
+import { crewTaskPrompt } from "./crew-task-prompt";
 import { createHash } from "node:crypto";
 import {
   crewWorkTitle,
@@ -184,12 +185,12 @@ export async function askCrewMember(
       expectedAbsent: true,
       projectId: input.projectId,
       title: crewWorkTitle(prompt) ?? agent.name,
-      prompt: [
-        agent.instructions,
-        CREW_TOOL_INSTRUCTIONS,
-        prompt,
-        `${files ? `Your write scopes: ${files.join(", ")}. Read outside them as needed. ` : ""}Preserve other sessions' work. Do not stage, commit, merge or push.`,
-      ].join("\n\n"),
+      prompt: crewTaskPrompt({
+        request: prompt,
+        instructions: agent.instructions,
+        tools: CREW_TOOL_INSTRUCTIONS,
+        scope: `${files ? `Your write scopes: ${files.join(", ")}. Read outside them as needed. ` : ""}Preserve other sessions' work. Do not stage, commit, merge or push.`,
+      }),
       harness: selected.candidate.harness,
       providerAccountId: selected.candidate.providerAccountId,
       model: selected.candidate.model,

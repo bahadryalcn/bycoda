@@ -109,8 +109,14 @@ describe("model routing order draft", () => {
     edit.limits.dailyAgentMinutes = "1.5";
     expect(() => prepareOrderSave(edit)).toThrow("Daily agent time");
     edit.limits.dailyAgentMinutes = "0";
-    edit.limits.maxRunningTasks = "9";
-    expect(() => prepareOrderSave(edit)).toThrow("Concurrent tasks");
+    for (const count of [9, 99, Number.MAX_SAFE_INTEGER]) {
+      edit.limits.maxRunningTasks = String(count);
+      expect(prepareOrderSave(edit).limits.maxRunningTasks).toBe(count);
+    }
+    for (const count of ["0", "-1", "1.5", "", "Infinity", String(Number.MAX_SAFE_INTEGER + 1)]) {
+      edit.limits.maxRunningTasks = count;
+      expect(() => prepareOrderSave(edit)).toThrow("Concurrent tasks");
+    }
   });
 
   it.each([1080, 2880, 750, 0])("retains custom daily work budgets of %i minutes", (minutes) => {
@@ -150,5 +156,28 @@ describe("model routing order draft", () => {
     const changed = structuredClone(edit);
     changed.maxRunMinutes = "30";
     expect(sameOrderDraft(edit, changed)).toBe(false);
+  });
+});
+
+describe("Work calendar cap drafts", () => {
+  it("retains partial values and saves valid total and provider caps", () => {
+    const edit = draft();
+    edit.workCaps.total.daily.tokens = "123";
+    edit.workCaps.total.monthly.costUsd = "2.75";
+    edit.workCaps.providers.codex = {
+      daily: { tokens: "0", costUsd: "" },
+      monthly: { tokens: "", costUsd: "3" },
+    };
+    const caps = prepareOrderSave(edit).routing.workCaps!;
+    expect(caps.total?.daily?.tokens).toBe(123);
+    expect(caps.total?.monthly?.costUsd).toBe(2.75);
+    expect(caps.providers?.codex?.daily?.tokens).toBe(0);
+    expect(caps.providers?.codex?.monthly?.costUsd).toBe(3);
+    edit.workCaps.total.daily.tokens = "1.5";
+    expect(() => prepareOrderSave(edit)).toThrow("Token limits");
+    expect(edit.workCaps.total.daily.tokens).toBe("1.5");
+    edit.workCaps.total.daily.tokens = "";
+    edit.workCaps.total.daily.costUsd = "Infinity";
+    expect(() => prepareOrderSave(edit)).toThrow("Cost limits");
   });
 });

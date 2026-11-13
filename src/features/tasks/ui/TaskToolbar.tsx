@@ -287,7 +287,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
               {
                 kind: "item",
                 id: "goal",
-                label: t("New goal"),
+                label: t("New epic"),
                 disabled: menu.newGoalDisabled,
                 icon: <Sparkles className="icon-sm" />,
               },

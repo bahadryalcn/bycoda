@@ -35,9 +35,8 @@ export const gitBlobOid = (bytes: Buffer) =>
   createHash("sha1").update(`blob ${bytes.length}\0`).update(bytes).digest("hex");
 
 function environment(gitDir: string, extra: Record<string, string>) {
-  const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(process.env))
-    if (value !== undefined && !name.toUpperCase().startsWith("GIT_")) env[name] = value;
+  const env = { ...process.env };
+  for (const name of Object.keys(env)) if (name.toUpperCase().startsWith("GIT_")) delete env[name];
   return {
     ...env,
     GIT_DIR: gitDir,

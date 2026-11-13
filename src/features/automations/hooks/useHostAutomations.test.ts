@@ -8,11 +8,20 @@ import type { Automation } from "../model/automations";
 import type { MachineResult } from "../model/machineResults";
 import { useHostAutomations } from "./useHostAutomations";
 
-const client = vi.hoisted(() => ({ probe: vi.fn(), list: vi.fn() }));
+const client = vi.hoisted(() => ({
+  probe: vi.fn(),
+  list: vi.fn(),
+  capabilities: vi.fn(),
+  migrate: vi.fn(),
+}));
 vi.mock("../model/hostAutomationClient", () => ({
+  hostProjectFor: vi.fn(),
   probeMachines: client.probe,
   listHostAutomationResults: client.list,
 }));
+
+vi.mock("../model/machineSnapshot", () => ({ machineCapabilities: client.capabilities }));
+vi.mock("../model/nativeAutomationMigration", () => ({ migrateNativeAutomations: client.migrate }));
 
 type Hook = ReturnType<typeof useHostAutomations>;
 let latest: Hook;
@@ -77,6 +86,8 @@ beforeEach(() => {
     unreachableMachines: [],
   });
   client.list.mockReset();
+  client.capabilities.mockReset().mockResolvedValue([]);
+  client.migrate.mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -242,4 +253,19 @@ describe("useHostAutomations confirmed-mutation ledger", () => {
     await settle();
     expect(ids()).toEqual(["early", "old"]);
   });
+});
+
+it("never prepares native migration without the capability and keeps blocked imports visible beside the Host list", async () => {
+  await mountWith([ok("a", [automation("kept")])]);
+  expect(client.migrate).not.toHaveBeenCalled();
+  client.capabilities.mockResolvedValue(["automations.host-migration"]);
+  client.migrate.mockResolvedValue({
+    migrated: [],
+    blocked: [{ automationId: "native", reason: "Needs owner review" }],
+  });
+  client.list.mockResolvedValue([ok("a", [automation("kept")])]);
+  await act(async () => latest.refresh());
+  expect(client.migrate).toHaveBeenCalledOnce();
+  expect(latest.automations.map((entry) => entry.id)).toEqual(["kept"]);
+  expect(latest.migrationBlocked).toEqual(["Host a: native: Needs owner review"]);
 });

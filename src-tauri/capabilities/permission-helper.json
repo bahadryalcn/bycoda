@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "permission-helper",
+  "description": "macOS permission helper card (permission-helper.html): no plugin, process, updater or window-creation access.",
+  "windows": ["permission-helper"],
+  "permissions": ["core:default", "core:window:allow-set-theme"]
+}

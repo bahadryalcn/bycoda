@@ -17,7 +17,7 @@
   font-variant-numeric: tabular-nums;
 }
 .privacy-group-columns,
-.privacy-group-row {
+.privacy-group-list .privacy-group-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 7rem 8rem;
   align-items: center;
@@ -54,7 +54,7 @@
   .privacy-group-columns {
     display: none;
   }
-  .privacy-group-row {
+  .privacy-group-list .privacy-group-row {
     grid-template-columns: minmax(0, 1fr) auto;
     row-gap: 4px;
   }

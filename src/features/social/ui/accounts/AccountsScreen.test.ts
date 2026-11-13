@@ -235,3 +235,15 @@ it("warns that scheduled work waits while the Host is offline", async () => {
     "Scheduling is offline. Scheduled posts and replies wait until the Host is back.",
   );
 });
+
+it("shows unknown health and retry when intervention read fails", async () => {
+  const input = props(async () => ({ snapshot: snapshot([account("a1")]) }));
+  input.client.browser.needsHuman.list = vi.fn(async () => {
+    throw new Error("offline");
+  });
+  act(() => root.render(createElement(AccountsScreen, input)));
+  await flush();
+  expect(element.textContent).toContain("Could not check whether accounts need your attention.");
+  expect(element.textContent).toContain("Connection status unknown");
+  expect(element.textContent).toContain("Try again");
+});

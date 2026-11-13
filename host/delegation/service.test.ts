@@ -470,19 +470,46 @@ describe("requests and limits", () => {
     for (let index = 0; index < DELEGATION_LIMITS.runningSubagents; index++) {
       await delegate(`req-${index}`);
     }
-    await expect(delegate("req-over")).rejects.toThrow("Running subagent limit reached.");
+    expect(await delegate("req-over")).toMatchObject({ status: "queued", sessionId: "" });
     expect(host.commandsOf("create")).toHaveLength(DELEGATION_LIMITS.runningSubagents);
   });
 
   it("allows one running advisor at a time", async () => {
     setup({ advisor: codexSix });
     await consult("req-1");
-    await expect(consult("req-2")).rejects.toThrow("An advisor is already running.");
+    expect(await consult("req-2")).toMatchObject({ status: "queued", sessionId: "" });
     expect(host.commandsOf("create")).toHaveLength(1);
   });
 });
 
 describe("agents.wait", () => {
+  it("reenters a queued advisor from persisted immutable args after capacity clears", async () => {
+    setup({ advisor: codexSix });
+    const first = await consult("req-first");
+    const pending = await consult("req-pending");
+    expect(pending.status).toBe("queued");
+    host.finish(String(first.sessionId), "Done.");
+    delegation = new ConversationDelegation(deps);
+    const waited = await call("agents.wait", { runId: pending.runId, timeoutSeconds: 1 });
+    expect(waited).toMatchObject({ runId: pending.runId, status: "running" });
+    expect(host.commandsOf("create")).toHaveLength(2);
+    expect((await consult("req-pending")).sessionId).toBe(waited.sessionId);
+  });
+
+  it("cancels a queued launch when original caller configuration changes", async () => {
+    setup({ advisor: codexSix });
+    await consult("req-first");
+    const pending = await consult("req-pending");
+    (await host.store.session(parent.sessionId)).session.runtimeMode = "auto";
+    await expect(call("agents.wait", { runId: pending.runId, timeoutSeconds: 1 })).rejects.toThrow(
+      "caller configuration changed",
+    );
+    expect(await call("agents.wait", { runId: pending.runId, timeoutSeconds: 1 })).toMatchObject({
+      status: "cancelled",
+    });
+    expect(host.commandsOf("create")).toHaveLength(1);
+  });
+
   it("returns running when the timeout passes before the child finishes", async () => {
     setup({ subagents: [codexFive] });
     const started = await delegate("req-1");
@@ -657,6 +684,41 @@ describe("agents.cancel and parent cancel", () => {
 });
 
 describe("recursion and caller checks", () => {
+  it("allows only the persisted task repair to consult from a child session", async () => {
+    setup({ advisor: codexSix });
+    host.add("crew-child", {
+      modelSettings: {
+        [CROSS_ADVISOR_KEY]: JSON.stringify(codexSix),
+        [DELEGATION_PARENT_KEY]: JSON.stringify({
+          parentSessionId: "parent",
+          runId: "crew-run",
+          kind: "subagent",
+          model: "codex:gpt-5",
+          startedAt: 1,
+        }),
+      },
+    } as Partial<Session>);
+    const caller = { sessionId: "crew-child", projectId: "p" };
+    const args = { requestId: "repair-1", question: "Review findings" };
+    const row = {
+      projectId: "p",
+      status: "queued",
+      repairAdvisor: { sessionId: caller.sessionId, requestId: args.requestId },
+    };
+    Object.assign(host.store, {
+      db: { prepare: () => ({ get: async () => ({ value: JSON.stringify(row) }) }) },
+    });
+    await expect(call("agents.consult", args, caller)).rejects.toThrow(
+      "A subagent cannot start agents runs.",
+    );
+    await expect(
+      delegation.consultTaskRepair("task", { ...args, requestId: "other" }, caller, locate),
+    ).rejects.toThrow("Task repair advisor identity is no longer current.");
+    await expect(delegation.consultTaskRepair("task", args, caller, locate)).resolves.toMatchObject(
+      { status: "running" },
+    );
+  });
+
   it("rejects agents runs started by a subagent", async () => {
     setup({ subagents: [codexFive], advisor: codexSix });
     const started = await delegate("req-1");

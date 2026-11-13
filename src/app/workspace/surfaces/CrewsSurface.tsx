@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, type ReactNode } from "react";
 import type { BackgroundSessionTarget } from "../../../features/tasks/model/backgroundSession";
 import { CrewsPage } from "../../../features/crews/ui/page/CrewsPage";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -13,6 +13,7 @@ export type CrewsSurfaceProps = {
   besideRail?: boolean;
   compactRail?: boolean;
   onOpenSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
+  renderCoordinator?: (target: BackgroundSessionTarget) => ReactNode;
 };
 
 /** The app's window chrome around the Crews page, as the Social view does for its header. */

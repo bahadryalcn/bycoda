@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { UserRound } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import styles from "./AccountAvatar.module.css";
+import { graphemes } from "../../../shared/lib/text/truncate";
 
 export type AccountAvatarUser = {
   displayName?: string | null;
@@ -10,9 +11,9 @@ export type AccountAvatarUser = {
   avatarUrl?: string | null;
 };
 
-/** First letter of the name (or e-mail) for the avatar fallback. */
+/** First whole grapheme of the name (or e-mail) for the avatar fallback. */
 export function accountInitial(user: AccountAvatarUser): string {
-  return (user.displayName || user.email || "").trim().charAt(0).toUpperCase();
+  return graphemes((user.displayName || user.email || "").trim())[0]?.toUpperCase() ?? "";
 }
 
 /**

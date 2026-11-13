@@ -1,9 +1,11 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { TextField } from "../../../../../shared/ui/TextField";
 import { canRunHarnessTextPrompt } from "../../../../../integrations/harness";
-import { defaultTextActionChoice } from "../../../../sessions/public/translationPreferences";
+import { useThemeGeneratorModel } from "./useThemeGeneratorModel";
+import { generatorSession, useGeneratorState } from "./themeGeneratorSession";
+import { themeSuggestionFailureDetail } from "./themeSuggestionRequest";
 import type { BackgroundGradientSuggestion } from "../../../model/backgroundGradient";
 import { SettingsFeedback } from "../../settingsControls";
 import { requestBackgroundSuggestion } from "./backgroundSuggestionRequest";
@@ -16,19 +18,20 @@ export function BackgroundGenerator({
   onGenerated: (suggestion: BackgroundGradientSuggestion) => void;
 }) {
   useLocale();
-  const [prompt, setPrompt] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const epoch = useRef(0);
-  const [choice] = useState(defaultTextActionChoice);
+  const [prompt, setPrompt] = useGeneratorState("gradientPrompt", "");
+  const [busy, setBusy] = useGeneratorState("gradientBusy", false);
+  const [failure, setFailure] = useGeneratorState<string | null>("gradientFailure", null);
+  const [choice] = useThemeGeneratorModel();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Bind the mounted gradient editor as the session's destination for in-flight generation.
+  useEffect(() => generatorSession.bindGradient(onGenerated), [onGenerated]);
   const available = canRunHarnessTextPrompt(choice.harness);
   const trimmed = prompt.trim();
 
   const generate = async () => {
     if (!trimmed || !available || busy) return;
-    const version = ++epoch.current;
+    const intent = generatorSession.imageIntent();
     setBusy(true);
-    setFailed(false);
+    setFailure(null);
     try {
       const next = await requestBackgroundSuggestion({
         prompt: trimmed,
@@ -37,11 +40,11 @@ export function BackgroundGenerator({
         modelSettings: choice.modelSettings,
         providerAccountId: choice.providerAccountId,
       });
-      if (version === epoch.current) onGenerated(next);
-    } catch {
-      if (version === epoch.current) setFailed(true);
+      if (intent === generatorSession.imageIntent()) generatorSession.applyGradient(next);
+    } catch (error) {
+      setFailure(themeSuggestionFailureDetail(error));
     } finally {
-      if (version === epoch.current) setBusy(false);
+      setBusy(false);
     }
   };
 
@@ -61,6 +64,11 @@ export function BackgroundGenerator({
           onChange={(event) => setPrompt(event.target.value)}
           onKeyDown={onKeyDown}
         />
+        <span>
+          {t("Model: {p1}", {
+            p1: `${choice.harness} / ${choice.model}${choice.providerAccountId ? ` / ${choice.providerAccountId}` : ""}`,
+          })}
+        </span>
         <Button
           variant="primary"
           tone="accent"
@@ -76,12 +84,13 @@ export function BackgroundGenerator({
           }
           onClick={() => void generate().catch(console.error)}
         >
-          {t("Generate")}
+          {t("Generate gradient")}
         </Button>
       </div>
-      {failed ? (
+      <span>{t("Applies when ready")}</span>
+      {failure !== null ? (
         <SettingsFeedback state="error">
-          {t("Gradient generation failed. Try again.")}
+          {t("Gradient generation failed. Try again.")} {failure}
         </SettingsFeedback>
       ) : null}
     </div>

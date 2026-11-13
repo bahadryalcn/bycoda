@@ -271,6 +271,53 @@ afterEach(async () => {
   __openCodeTestReset();
 });
 
+it("isolates v1 compaction settings and resumes the same conversation on changes and reset", async () => {
+  for (const [index, autoCompact] of ["off", "on", "default"].entries()) {
+    let accepted = false;
+    const turn = sendOpenCodeTurn({
+      sessionId: "opencode-live",
+      cwd: "/repo",
+      model: "opencode:openai/gpt-5",
+      runtimeMode: "supervised",
+      text: "test",
+      attachments: [],
+      modelSettings: { autoCompact },
+      onEvent: () => undefined,
+      onAccepted: () => {
+        accepted = true;
+      },
+    });
+    await vi.waitFor(() => expect(accepted).toBe(true));
+    expect(spawnChild).toHaveBeenCalledTimes(index + 1);
+    const override = (spawnChild.mock.calls.at(-1) as unknown[] | undefined)?.[10];
+    expect(override).toBe(autoCompact === "default" ? undefined : autoCompact);
+    expect(
+      harnessHttp.mock.calls.filter(
+        ([input]) => input.method === "POST" && new URL(input.url).pathname === "/session",
+      ),
+    ).toHaveLength(1);
+    idle();
+    await turn;
+  }
+});
+
+it("refuses a stale v1 compaction override on a shared v2 service", async () => {
+  openCodeVersion = "opencode v2.0.15";
+  await expect(
+    sendOpenCodeTurn({
+      sessionId: "opencode-live",
+      cwd: "/repo",
+      model: "opencode:openai/gpt-5",
+      runtimeMode: "supervised",
+      text: "test",
+      attachments: [],
+      modelSettings: { autoCompact: "off" },
+      onEvent: () => undefined,
+    }),
+  ).rejects.toThrow("does not support session auto-compaction settings");
+  expect(spawnChild).not.toHaveBeenCalled();
+});
+
 it.each(["v1", "v2"] as const)(
   "keeps %s main HTTP views original and permits captured control after normal close",
   async (generation) => {

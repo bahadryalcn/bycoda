@@ -1,3 +1,5 @@
+import type { WorkspaceSessionPaneProps } from "./WorkspaceMainArea";
+import { CrewCoordinatorSession } from "../surfaces/CrewCoordinatorSession";
 import { OverlayNav } from "../../shell/TitleBar";
 import { AssistantView } from "../surfaces/lazySurfaces";
 import { isProjectLocked } from "../../../features/group-lock/model/groupLock";
@@ -56,6 +58,8 @@ type AutomationsProps = ComponentProps<typeof AutomationsView>;
 type SetBoolean = Dispatch<SetStateAction<boolean>>;
 
 export interface WorkspaceToolPanelsProps {
+  sessionPaneProps?: WorkspaceSessionPaneProps;
+  onLoadCrewCoordinator?: AutomationsProps["onOpenBackgroundSession"];
   auxiliaryTool?: AuxiliaryToolId | null;
   setAuxiliaryTool?: (tool: AuxiliaryToolId | null) => void;
   conversationTools?: ConversationTools;
@@ -120,6 +124,8 @@ export interface WorkspaceToolPanelsProps {
 }
 
 function WorkspaceToolPanelsComponent({
+  sessionPaneProps,
+  onLoadCrewCoordinator,
   auxiliaryTool,
   setAuxiliaryTool,
   conversationTools,
@@ -181,6 +187,9 @@ function WorkspaceToolPanelsComponent({
     goalId: string;
     token: number;
   }>();
+  const [taskReveal, setTaskReveal] = useState<
+    import("../../../features/tasks/model/taskReveal").TaskRevealTarget & { token: number }
+  >();
   const [automationReveal, setAutomationReveal] = useState<AssistantAutomationReveal>();
   const canOpenAssistantProject = useStableCallback((path: string) => {
     const key = (value: string) => value.replace(/\\/g, "/").replace(/\/$/, "").toLocaleLowerCase();
@@ -537,6 +546,18 @@ function WorkspaceToolPanelsComponent({
             onClose={onLeaveServers}
             onToggleSidebar={onToggleSidebar}
             onOpenSession={onOpenBackgroundSession}
+            renderCoordinator={
+              sessionPaneProps
+                ? (target) => (
+                    <CrewCoordinatorSession
+                      key={`${target.machineId}:${target.sessionId}`}
+                      target={target}
+                      paneProps={sessionPaneProps}
+                      onOpen={onLoadCrewCoordinator ?? onOpenBackgroundSession}
+                    />
+                  )
+                : undefined
+            }
           />
         </NavigationBoundary>
       </ToolPanel>
@@ -603,6 +624,7 @@ function WorkspaceToolPanelsComponent({
         <NavigationBoundary name="Tasks" onBack={onLeaveAutomations}>
           <TasksView
             goalReveal={goalReveal}
+            taskReveal={taskReveal}
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}
             cwd={projectCwd}
@@ -619,6 +641,12 @@ function WorkspaceToolPanelsComponent({
         <NavigationBoundary name="Automations" onBack={onLeaveAutomations}>
           <AutomationsView
             revealAutomation={automationReveal}
+            onOpenTask={(target) => {
+              if (isProjectLocked(target.cwd))
+                throw new Error("The linked project is unavailable.");
+              setTaskReveal({ ...target, token: Date.now() });
+              onSelectTool("tasks");
+            }}
             besideRail={!detachedSessionWindow && (projectRailOpen || compactProjectRail)}
             compactRail={compactRailActive}
             cwd={projectCwd}

@@ -8,6 +8,12 @@ export async function handleTasksRpc(
   request: OwnerRpcRequest,
 ): Promise<void> {
   switch (request.input.method) {
+    case "automations.propose":
+      request.result = await dependencies.automationsService.propose(
+        request.params,
+        request.domainContext,
+      );
+      break;
     case "automations.list":
       request.result = await dependencies.automationsService.list(
         request.params,
@@ -207,6 +213,13 @@ export async function handleTasksRpc(
         request.params,
         request.domainContext,
         { legacy: true },
+      );
+      break;
+
+    case "tasks.finishWithFindings":
+      request.result = await dependencies.tasksService.finishWithFindings(
+        request.params,
+        request.domainContext,
       );
       break;
 

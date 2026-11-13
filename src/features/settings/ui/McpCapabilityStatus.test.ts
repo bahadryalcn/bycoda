@@ -30,6 +30,17 @@ it("clears a stale connected reading on refresh failure", () => {
   expect(markup).toContain('aria-label="Unknown"');
 });
 
+it("clears stale sign-in readings after failed or ambiguous health checks", () => {
+  for (const provenance of [{ failed: true }, { ambiguous: true }]) {
+    const markup = render({
+      server: { ...server, provider: "claude", auth: "signed_out", status: "Needs authentication" },
+      ...provenance,
+    });
+    expect(markup).toContain('data-mcp-state="unknown"');
+    expect(markup).toContain('aria-label="Unknown"');
+  }
+});
+
 it("does not verify separate scopes from the same name-only CLI connection observation", () => {
   const markup = render({
     server: { ...server, provider: "claude", status: "Connected" },

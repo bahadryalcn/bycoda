@@ -127,7 +127,7 @@ function WorkspaceFooterComponent({
         canRefresh={
           inboxViewOpen ||
           (settingsOpen
-            ? settingsSection === "usage"
+            ? settingsSection === "providers"
             : !searchViewOpen && !notesViewOpen && !serversViewOpen && !automationsViewOpen)
         }
         onHiddenGroups={() => openSettings("groupLock")}
@@ -135,10 +135,10 @@ function WorkspaceFooterComponent({
           onOpenInbox();
           setPullRequestsOnly(true);
         }}
-        onUsage={() => openSettings("usage")}
+        onUsage={() => openSettings("providers", "provider-usage")}
         active={
           settingsOpen
-            ? settingsSection === "usage"
+            ? settingsSection === "providers"
               ? "usage"
               : settingsSection === "groupLock"
                 ? "hiddenGroups"

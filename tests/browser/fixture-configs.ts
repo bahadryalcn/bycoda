@@ -1,3 +1,4 @@
+import settingsPrivacyPermissions from "./settings/playwright.privacy-permissions-06.config.ts";
 import c0 from "./app-shell/compact-navigation.playwright.config.ts";
 import attachmentCards from "./chat/attachment-cards.playwright.config.ts";
 import sessionRowLayout from "./sessions/session-row-layout.playwright.config.ts";
@@ -147,4 +148,5 @@ export const fixtureConfigs = {
   "tests/browser/skills/playwright.skill-catalog.config.ts": skillCatalog,
   "tests/browser/settings/playwright.title-settings.config.ts": titleSettings,
   "tests/browser/messaging/messaging-integrations.playwright.config.ts": messagingIntegrations,
+  "tests/browser/settings/playwright.privacy-permissions-06.config.ts": settingsPrivacyPermissions,
 };

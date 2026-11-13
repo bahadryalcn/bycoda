@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t, getLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -33,12 +33,28 @@ export function AutomationAssistant({
 }) {
   const [scope, setScope] = useRetainedState(`${stateKey}:scope`, cwd ? "project" : "general");
   const [project, setProject] = useRetainedState(`${stateKey}:project`, cwd ?? "");
-  const [prompt, setPrompt] = useRetainedState(`${stateKey}:prompt`, "");
-  const [choice, setChoice] = useState(() => defaultSessionChoice(cwd));
-  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [prompt, setPrompt, retirePrompt] = useRetainedState(`${stateKey}:prompt`, "");
+  const [choice, setChoice] = useRetainedState(`${stateKey}:model`, () =>
+    defaultSessionChoice(cwd),
+  );
+  const [settings, setSettings] = useRetainedState<Record<string, string>>(
+    `${stateKey}:settings`,
+    {},
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const mounted = useRef(true);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Tracks this dialog's lifetime so its pending external delivery cannot clear or close a replacement draft.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const latest = useRef({ scope, project, prompt, choice, settings });
+  latest.current = { scope, project, prompt, choice, settings };
   const launch = async () => {
+    const submitted = latest.current;
     if (busy) return;
     setBusy(true);
     setError("");
@@ -57,8 +73,16 @@ export function AutomationAssistant({
         },
         crypto.randomUUID(),
       );
-      setPrompt("");
-      onClose();
+      const current = latest.current;
+      if (
+        mounted.current &&
+        current.scope === submitted.scope &&
+        current.project === submitted.project &&
+        current.choice === submitted.choice &&
+        current.settings === submitted.settings &&
+        retirePrompt(submitted.prompt, "")
+      )
+        onClose();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {

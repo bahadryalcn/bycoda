@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   spawnChild: vi.fn(),
   killChild: vi.fn(),
   acquireHarnessBridge: vi.fn(),
+  inspectHarnessBinary: vi.fn(),
   frames: [] as Array<(record: Record<string, unknown>) => void>,
 }));
 
@@ -27,6 +28,7 @@ vi.mock("../../core/child", () =>
     watchChild: vi.fn(),
     writeChild: vi.fn(),
     acquireHarnessBridge: mocks.acquireHarnessBridge,
+    inspectHarnessBinary: mocks.inspectHarnessBinary,
   }),
 );
 
@@ -101,6 +103,7 @@ describe("Pi live session", () => {
     mocks.killChild.mockReset();
     mocks.frames.length = 0;
     mocks.resolveBinary.mockResolvedValue({ path: "/fake/pi" });
+    mocks.inspectHarnessBinary.mockResolvedValue({ path: "/fake/pi", version: "18.2.1" });
     mocks.spawnChild.mockResolvedValue(undefined);
     mocks.killChild.mockResolvedValue(undefined);
     mocks.acquireHarnessBridge.mockResolvedValue(() => undefined);
@@ -118,6 +121,102 @@ describe("Pi live session", () => {
       }
       return { data: {} };
     });
+  });
+
+  it("applies omp compaction per session and resumes without an override on Default", async () => {
+    const sessionId = "omp-compact-defaults";
+    for (const [index, autoCompact] of ["off", "on", "default"].entries()) {
+      mocks.request.mockClear();
+      const done = sendTurn(OMP_FLAVOR, {
+        sessionId,
+        cwd: "/repo",
+        model: "omp:default",
+        runtimeMode: "supervised",
+        text: "test",
+        attachments: [],
+        modelSettings: { autoCompact },
+        onEvent: () => undefined,
+      });
+      await vi.waitFor(() =>
+        expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(true),
+      );
+      if (autoCompact === "default") {
+        expect(mocks.request).not.toHaveBeenCalledWith(
+          expect.objectContaining({ type: "set_auto_compaction" }),
+        );
+      } else {
+        expect(mocks.request).toHaveBeenCalledWith({
+          type: "set_auto_compaction",
+          enabled: autoCompact === "on",
+        });
+      }
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(index + 1);
+      if (index)
+        expect(mocks.spawnChild.mock.calls.at(-1)?.[2]).toEqual(
+          expect.arrayContaining(["--resume", "pi_session"]),
+        );
+      mocks.frames.at(-1)!({ type: "agent_end" });
+      await done;
+    }
+    await stopOmpSession(sessionId);
+  });
+
+  it("refuses omp versions that would change the global compaction profile", async () => {
+    mocks.inspectHarnessBinary.mockResolvedValue({ version: "18.2.0" });
+    await expect(
+      sendTurn(OMP_FLAVOR, {
+        sessionId: "omp-compact-old",
+        cwd: "/repo",
+        model: "omp:default",
+        runtimeMode: "supervised",
+        text: "test",
+        attachments: [],
+        modelSettings: { autoCompact: "off" },
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("omp 18.2.1 or newer");
+    expect(mocks.spawnChild).not.toHaveBeenCalled();
+  });
+
+  it("keeps the original omp conversation when applying compaction settings fails", async () => {
+    const sessionId = "omp-compact-failed-resume";
+    const base = {
+      sessionId,
+      cwd: "/repo",
+      model: "omp:default",
+      runtimeMode: "supervised" as const,
+      text: "test",
+      attachments: [],
+      onEvent: () => undefined,
+    };
+    const first = sendTurn(OMP_FLAVOR, base);
+    await vi.waitFor(() =>
+      expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(true),
+    );
+    mocks.frames.at(-1)!({ type: "agent_end" });
+    await first;
+    const originalRequest = mocks.request.getMockImplementation()!;
+    mocks.request.mockImplementation(async (command: Record<string, unknown>) => {
+      if (command.type === "set_auto_compaction") throw new Error("RPC failed");
+      return originalRequest(command);
+    });
+    await expect(
+      sendTurn(OMP_FLAVOR, { ...base, modelSettings: { autoCompact: "off" } }),
+    ).rejects.toThrow("Could not apply session auto-compaction settings");
+    expect(mocks.spawnChild).toHaveBeenCalledTimes(2);
+    expect(mocks.spawnChild.mock.calls.at(-1)?.[2]).toEqual(
+      expect.arrayContaining(["--resume", "pi_session"]),
+    );
+    mocks.request.mockImplementation(originalRequest);
+    const retry = sendTurn(OMP_FLAVOR, base);
+    await vi.waitFor(() => expect(mocks.spawnChild).toHaveBeenCalledTimes(3));
+    expect(mocks.spawnChild.mock.calls.at(-1)?.[2]).toEqual(
+      expect.arrayContaining(["--resume", "pi_session"]),
+    );
+    await vi.waitFor(() => expect(mocks.frames).toHaveLength(3));
+    mocks.frames.at(-1)!({ type: "agent_end" });
+    await retry;
+    await stopOmpSession(sessionId);
   });
 
   it.each([PI_FLAVOR, OMP_FLAVOR])(

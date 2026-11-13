@@ -1,3 +1,4 @@
+import { wireCrewSourceTasks } from "./crew-source-task.fixture";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { HostCrews } from "./crews";
@@ -56,17 +57,21 @@ async function fixture() {
       }) as unknown as HostSession,
   );
   let now = 1000;
-  const restart = () =>
-    new HostCrews(
+  const restart = () => {
+    const tasks = { list: () => [], tick: vi.fn() } as unknown as HostTasks;
+    const service = new HostCrews(
       store,
       {
         command: vi.fn(() => ({ sessionId: "coordinator" })),
         updateSession: vi.fn(),
       } as unknown as HostEngine,
-      { list: () => [], tick: vi.fn() } as unknown as HostTasks,
+      tasks,
       async () => catalog(),
       () => now++,
     );
+    wireCrewSourceTasks(service, tasks, store);
+    return service;
+  };
   const service = restart();
   const list = (host = service) => host.call("crews.list", {}, project.id);
   const saveAgent = (agent: CrewAgent, expectedUpdatedAt?: number, projectId?: string) =>

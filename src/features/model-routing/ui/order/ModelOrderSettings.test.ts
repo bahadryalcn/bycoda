@@ -186,3 +186,25 @@ it("provides non-drag ordering and removal controls with boundary state", async 
   );
   expect(props.onRemove).toHaveBeenCalledOnce();
 });
+
+it("distinguishes a genuine unknown quota from loading", async () => {
+  const props = rowProps();
+  props.status = { entryId: "a" };
+  props.statusLoading = false;
+  await act(() => root.render(createElement(ModelOrderRow, props)));
+  expect(container.textContent).toContain("Limit unknown");
+  expect(container.textContent).not.toContain("could not be read");
+  props.statusLoading = true;
+  await act(() => root.render(createElement(ModelOrderRow, props)));
+  expect(container.textContent).toContain("Reading limit");
+});
+
+it("shows unavailable rather than unknown when the quota read fails", async () => {
+  const props = rowProps();
+  props.status = undefined;
+  props.statusLoading = false;
+  props.statusError = true;
+  await act(() => root.render(createElement(ModelOrderRow, props)));
+  expect(container.textContent).toContain("Limit unavailable");
+  expect(container.textContent).not.toContain("Limit unknown");
+});

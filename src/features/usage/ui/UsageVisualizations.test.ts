@@ -3,15 +3,19 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
-import { TimeDistribution } from "./UsageVisualizations";
+import { TimeDistribution, UsageTrend } from "./UsageVisualizations";
 import { zeroUsage, type UsageSample } from "../model/usageAnalytics";
 import { usageProviderLabel } from "./UsageProviderIdentity";
 
+const chartData = vi.hoisted(() => ({ labels: [] as string[] }));
 vi.mock("../../../shared/ui/Charts", () => ({
   ActivityHeatmap: () => null,
   BarChart: () => null,
   DonutChart: () => null,
-  LineChart: () => null,
+  LineChart: ({ data }: { data: { label: string }[] }) => {
+    chartData.labels = data.map((point) => point.label);
+    return null;
+  },
 }));
 vi.mock("../../../shared/ui/Button", () => ({
   Button: ({
@@ -133,4 +137,51 @@ it("keeps unpriced usage visible without reporting a zero cost", async () => {
   expect(details).toContain("Unavailable");
   expect(details).toContain("$12.00");
   expect(details).not.toContain("$0.00");
+});
+
+it("updates cached trend date labels when language changes with identical data", async () => {
+  const { setLanguagePreference } = await import("../../../shared/i18n");
+  const { formatBucket } = await import("./UsageCharts");
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  await setLanguagePreference("en");
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const start = new Date(2026, 10, 4).getTime();
+  const values = { ...zeroUsage(), cost: 12 };
+  const buckets = [0, 1].map((index) => ({
+    ...values,
+    key: String(index),
+    start: start + index * 86400000,
+    end: start + (index + 1) * 86400000,
+    series: { codex: values },
+  }));
+  const series = [
+    { ...values, key: "codex", label: "codex", unpricedTokens: 0, logSamples: 1, timedSamples: 0 },
+  ];
+  try {
+    await act(async () =>
+      root.render(
+        createElement(UsageTrend, {
+          buckets,
+          series,
+          metric: "cost",
+          resolution: "day",
+          percent: false,
+          colors: new Map(),
+          onSelect: vi.fn(),
+        }),
+      ),
+    );
+    const english = chartData.labels[0];
+    await act(async () => {
+      await setLanguagePreference("tr");
+    });
+    expect(chartData.labels[0]).toBe(formatBucket(start, "day"));
+    expect(chartData.labels[0]).not.toBe(english);
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    await setLanguagePreference("en");
+  }
 });

@@ -18,8 +18,7 @@ import "../../../src/features/sessions/ui/chat-controls.css";
 setLanguagePreference("en");
 const long =
   "A very long readable control label that only deserves a tooltip when the available space clips its content";
-const path =
-  "G:/Projects/my_projects/upstream/src/features/sessions/ui/AgentTranscriptActivity.tsx";
+const path = "G:/Projects/work/upstream/src/features/sessions/ui/AgentTranscriptActivity.tsx";
 const blocks: Block[] = [
   {
     id: "search",

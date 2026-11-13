@@ -9,15 +9,28 @@ export interface JobCounts {
   doneToday: number;
 }
 
+export type AssistantJobListFilter = AssistantJob["status"] | "working" | "doneToday" | "";
+
+/** The Today counters and Jobs list share the same local-day/status boundary. */
+export function matchesAssistantJobFilter(
+  job: Pick<AssistantJob, "status" | "updatedAt">,
+  filter: string,
+  dayStart: number,
+): boolean {
+  if (filter === "working") return ["planning", "running", "stalled"].includes(job.status);
+  if (filter === "doneToday") return job.status === "done" && job.updatedAt >= dayStart;
+  return !filter || job.status === filter;
+}
+
 /** Job counts shown on Today: waiting for the owner, in flight, and finished since `dayStart`. */
 export function assistantJobCounts(
   jobs: ReadonlyArray<Pick<AssistantJob, "status" | "updatedAt">>,
   dayStart: number,
 ): JobCounts {
   return {
-    waiting: jobs.filter((job) => job.status === "waiting").length,
-    working: jobs.filter((job) => ["planning", "running", "stalled"].includes(job.status)).length,
-    doneToday: jobs.filter((job) => job.status === "done" && job.updatedAt >= dayStart).length,
+    waiting: jobs.filter((job) => matchesAssistantJobFilter(job, "waiting", dayStart)).length,
+    working: jobs.filter((job) => matchesAssistantJobFilter(job, "working", dayStart)).length,
+    doneToday: jobs.filter((job) => matchesAssistantJobFilter(job, "doneToday", dayStart)).length,
   };
 }
 

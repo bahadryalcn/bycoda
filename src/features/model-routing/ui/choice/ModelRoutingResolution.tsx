@@ -16,12 +16,15 @@ export function ModelRoutingResolution({
   choice,
   fixed,
   revision,
+  problemsOnly = false,
 }: {
   machineId: string;
   role: ModelRoutingRole;
   choice?: ModelRoutingItemChoice;
   fixed?: ModelRoutingTarget;
   revision?: unknown;
+  /** Hide the routine "Now uses" line and the pending state; show only what needs attention. */
+  problemsOnly?: boolean;
 }) {
   useLocale();
   const query = useQuery({
@@ -32,6 +35,7 @@ export function ModelRoutingResolution({
     refetchInterval: 60_000,
   });
   const result = query.data;
+  if (problemsOnly && !query.isError && (!result || result.ok)) return null;
   return (
     <Text as="p" tone="secondary">
       {query.isError ? (

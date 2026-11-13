@@ -21,11 +21,14 @@ configuration, and **Local project** applies only to the selected project in you
 personal Claude configuration. Filters can narrow the list by provider and scope.
 **Add MCP server** starts with the Global scope. Choose provider and scope, then paste
 an `mcpServers` block or a named server object. The project path appears only for
-project scopes. Saving adds configuration; Refresh checks available status. Credentials saved by one provider are not evidence that another
+project scopes. Saving adds configuration; Refresh checks available status. If saving
+succeeds but refreshing fails, the dialog keeps the saved fields locked. **Retry**
+only refreshes discovery; it does not add the server again. **Done** closes the dialog.
+Credentials saved by one provider are not evidence that another
 provider is signed in; complete that provider's authorization when needed.
 
-Use a connection's action menu to **Enable** a disabled server or **Disable** an
-enabled server for Codex, OpenCode or Claude Code. Codex and OpenCode changes apply
+Use a connection's switch to enable or disable a server for Codex, OpenCode or
+Claude Code. Codex and OpenCode changes apply
 to that exact provider, scope and configuration file. Claude Code changes apply to
 every scope with that server name in the selected project. Cursor and Claude Desktop
 connections require their own client controls and do not support this action here.
@@ -59,7 +62,8 @@ do not offer this browser action. Manage Claude Desktop authentication
 in that client. Cursor uses its [CLI MCP login](https://cursor.com/docs/cli/mcp).
 Some MCP services use API keys or environment variables instead
 of OAuth; follow the service's setup instructions in the owning provider's config.
-The **Connection details** disclosure identifies that config file.
+The row's status hint identifies its config file. The action menu offers **Show
+config** and **Copy config path**.
 
 Adding a Cursor, Claude Desktop or OpenCode server keeps unrelated JSON/JSONC
 settings, comments and property order. Existing symbolic links continue to point to the

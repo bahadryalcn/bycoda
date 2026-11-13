@@ -13,13 +13,13 @@ for (const theme of ["light", "dark"]) {
       page.on("pageerror", (error) => errors.push(error.message));
       await page.goto(`/tests/browser/chat/generated-file-links.html?theme=${theme}`);
       for (const [index, extension] of ["html", "pdf", "docx"].entries()) {
-        const filename = `Firisbe-Observer-Yatirimci-Sunumu.${extension}`;
+        const filename = `Acme-Observer-Yatirimci-Sunumu.${extension}`;
         const link = page.getByRole("link", { name: filename, exact: true });
         await expect(link).toBeVisible();
         await link.click();
         await expect(page.getByTestId("open-count")).toHaveText(String(index * 2 + 1));
         await expect(page.getByTestId("opened-path")).toHaveText(
-          `G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests/investor-deck/${filename}`,
+          `G:/Projects/Acme/UI DEVELOPMENTS/ui-tests/investor-deck/${filename}`,
         );
         await expect(page.getByTestId("viewer-kind")).toHaveText(`Viewer: ${extension}`);
         await link.focus();

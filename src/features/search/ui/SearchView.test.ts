@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SearchView } from "./SearchView";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import type { ProjectFile } from "../../../platform/tauri/fs";
+import type { SessionSummary } from "../../sessions/data/sessionStore";
+import { newSession } from "../../sessions/model/session";
 
 const index = vi.hoisted(() => ({
   files: new Map<string, ProjectFile[]>(),
@@ -95,6 +97,34 @@ const file = (name: string, cwd = "/repo"): ProjectFile => ({
   name,
   path: `${cwd}/${name}`,
   relative: name,
+});
+
+it("keeps archived history titles and loaded messages out of All results", async () => {
+  const archived: SessionSummary = {
+    id: "archived",
+    cwd: "/repo",
+    harness: "cursor",
+    model: "model",
+    runtimeMode: "supervised",
+    title: "needle archived title",
+    createdAt: 1,
+    updatedAt: 2,
+    archived: true,
+  };
+  const live = newSession("cursor", "/repo");
+  live.id = archived.id;
+  live.title = "needle loaded title";
+  live.blocks = [{ id: "message", role: "user", text: "needle archived message" }];
+  const storedArchived = { ...archived, id: "stored-archived", title: "needle stored archive" };
+  const visible = { ...archived, id: "visible", title: "needle visible title", archived: false };
+  await render("/repo", true, { history: [archived, storedArchived, visible], sessions: [live] });
+  await typeQuery("needle");
+
+  expect(host.textContent).toContain("needle visible title");
+  expect(host.textContent).not.toContain("needle archived title");
+  expect(host.textContent).not.toContain("needle loaded title");
+  expect(host.textContent).not.toContain("needle stored archive");
+  expect(host.textContent).not.toContain("needle archived message");
 });
 
 it("retains the exact active destination when asynchronous filename arrivals reorder results", async () => {

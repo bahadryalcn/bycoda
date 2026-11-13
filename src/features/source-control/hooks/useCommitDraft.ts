@@ -54,8 +54,7 @@ export function useCommitDraft({
   // take `busy` and files can be staged while it runs.
   const [generating, setGenerating] = useGitPanelState(cwd, "generating");
   const [storedMessage, setStoredMessage] = useGitPanelState(cwd, "message");
-  const [generationChoice, setGenerationChoice, hasGenerationOverride] =
-    useGitGenerationChoice(cwd);
+  const [generationChoice] = useGitGenerationChoice(cwd);
   const [storedAmendTarget, setStoredAmendTarget] = useGitPanelState(cwd, "amendTarget");
   // An amend belongs to the branch and HEAD it was started on. Once either
   // moves, it and its message no longer apply: they read as cleared here and
@@ -177,8 +176,6 @@ export function useCommitDraft({
     generating,
     amend,
     generationChoice,
-    setGenerationChoice,
-    hasGenerationOverride,
     generate,
     cancelGenerate,
     toggleAmend,

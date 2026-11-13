@@ -11,6 +11,31 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it.each([Number.NaN, Infinity, -Infinity, 1e20, -1e20])(
+  "keeps the surrounding view usable for an invalid stored timestamp %s",
+  async (value) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          createElement(
+            "div",
+            null,
+            createElement(Timestamp, { value }),
+            createElement("button", null, "Retry"),
+          ),
+        ),
+      );
+      expect(container.querySelector("time")).toBeNull();
+      expect(container.querySelector("button")?.textContent).toBe("Retry");
+    } finally {
+      await act(async () => root.unmount());
+    }
+  },
+);
+
 it("localizes calendar labels, rolls over at midnight and refreshes after resume", async () => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

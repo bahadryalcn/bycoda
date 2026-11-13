@@ -7,7 +7,6 @@ import { Button } from "../../../shared/ui/Button";
 import { Divider } from "../../../shared/ui/Divider";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Star } from "../../../shared/ui/icons";
 import { Select } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
@@ -24,6 +23,7 @@ import {
   type SupportSubmitResult,
 } from "../model/supportTicket";
 import { openFeedbackDialog } from "../model/feedbackDialog";
+import { AccountExternalLink } from "./AccountExternalLink";
 import styles from "./account.module.css";
 
 function categoryLabel(category: SupportCategory): string {
@@ -84,30 +84,9 @@ export function ContactByEmail() {
 /** Opens the project repository in the browser; absent when the build has no repository. */
 export function ProjectLinks() {
   useLocale();
-  const [failed, setFailed] = useState(false);
   const url = PRODUCT_IDENTITY.repositoryUrl;
   if (!url) return null;
-  return (
-    <>
-      <div className={styles.actions}>
-        <Button
-          variant="secondary"
-          startIcon={<Star strokeWidth={1.75} aria-hidden />}
-          onClick={() => {
-            setFailed(false);
-            openExternal(url).catch(() => setFailed(true));
-          }}
-        >
-          {t("View on GitHub")}
-        </Button>
-      </div>
-      {failed ? (
-        <InlineError>
-          {t("Could not open the link. Copy the address and open it manually.")}
-        </InlineError>
-      ) : null}
-    </>
-  );
+  return <AccountExternalLink url={url} label={t("View on GitHub")} />;
 }
 
 /** The guest panel's only support entry: a mail link, since tickets need an account. */
@@ -147,7 +126,14 @@ export function AccountSupport() {
     try {
       const next = await submitSupportTicket(accountApi(), draft, reportAccountFailure);
       setResult(next);
-      if (next.status === "sent") setDraft(EMPTY_SUPPORT_DRAFT);
+      if (next.status === "sent")
+        setDraft((current) =>
+          current.subject === draft.subject &&
+          current.body === draft.body &&
+          current.category === draft.category
+            ? EMPTY_SUPPORT_DRAFT
+            : current,
+        );
     } finally {
       setBusy(false);
     }

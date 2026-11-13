@@ -28,6 +28,10 @@ it("sends only proposable, valid draft fields as the current profile", () => {
     avatar: "preset:fox",
     execution: null,
     enabled: true,
+    permissionLevel: "everything",
+    permissionProjectIds: ["private-project"],
+    criticalExclusions: [],
+    notificationTelegram: { accountId: "account", conversationId: "conversation" },
     dailyTokenBudget: -5,
     quietStart: 22,
   });

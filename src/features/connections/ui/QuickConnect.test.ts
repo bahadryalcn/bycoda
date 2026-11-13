@@ -21,6 +21,8 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
+  callbacks.quick.mockResolvedValue("accepted");
+  callbacks.saved.mockResolvedValue("accepted");
   resetRetainedState();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
@@ -115,4 +117,68 @@ it("rejects unsafe endpoints instead of connecting or saving", async () => {
   expect(callbacks.quick).not.toHaveBeenCalled();
   expect(saveSshConnection).not.toHaveBeenCalled();
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("valid SSH endpoint");
+});
+
+it.each(["cancelled", "error", "accepted"])(
+  "retains pending draft until terminal handoff: %s",
+  async (outcome) => {
+    let complete!: (value: string) => void;
+    let fail!: (reason: Error) => void;
+    callbacks.quick.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          complete = resolve;
+          fail = reject;
+        }),
+    );
+    const close = vi.fn();
+    const render = () => root.render(createElement(QuickConnect, { onClose: close }));
+    await act(async () => render());
+    await field("Host", "retained.example");
+    await submit();
+    expect(close).not.toHaveBeenCalled();
+    expect(
+      [...document.querySelectorAll("input")].some((input) => input.value === "retained.example"),
+    ).toBe(true);
+    await act(async () =>
+      outcome === "error" ? fail(new Error("Tab admission failed")) : complete(outcome),
+    );
+    expect(close).toHaveBeenCalledTimes(outcome === "accepted" ? 1 : 0);
+    if (outcome === "error") expect(document.body.textContent).toContain("Tab admission failed");
+    await act(async () => root.render(null));
+    await act(async () => render());
+    expect(
+      [...document.querySelectorAll("input")].some((input) => input.value === "retained.example"),
+    ).toBe(outcome !== "accepted");
+  },
+);
+
+it("reuses the confirmed saved record when a cancelled handoff is retried after reopening", async () => {
+  const saved: ServerRecord = {
+    id: "saved-once",
+    kind: "ssh",
+    name: "Saved quick target",
+    sshEndpoint: { host: "retry.example", port: 22 },
+    metadata: { tags: [], favorite: false },
+  };
+  vi.mocked(saveSshConnection).mockResolvedValue(saved);
+  callbacks.saved.mockResolvedValueOnce("cancelled").mockResolvedValueOnce("accepted");
+  const close = vi.fn();
+  const render = () => root.render(createElement(QuickConnect, { onClose: close }));
+  await act(async () => render());
+  await field("Name", saved.name);
+  await field("Host", "retry.example");
+  const saveOption = [...document.querySelectorAll("label")]
+    .find((label) => label.textContent?.trim() === "Save connection")!
+    .querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  await act(async () => saveOption.click());
+  await submit();
+  expect(close).not.toHaveBeenCalled();
+  await act(async () => root.render(null));
+  await act(async () => render());
+  await submit();
+  expect(saveSshConnection).toHaveBeenCalledTimes(1);
+  expect(callbacks.saved).toHaveBeenNthCalledWith(1, saved);
+  expect(callbacks.saved).toHaveBeenNthCalledWith(2, saved);
+  expect(close).toHaveBeenCalledTimes(1);
 });

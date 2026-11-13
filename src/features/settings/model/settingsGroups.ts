@@ -5,7 +5,14 @@ import type { SettingsSectionId } from "./settings";
  * Rail buckets. `account` is not a list group: the rail shows it as the avatar row at the
  * bottom of the list and of the in-dialog navigation.
  */
-export type SettingsGroupId = "app" | "agents" | "code" | "connections" | "about" | "account";
+export type SettingsGroupId =
+  | "app"
+  | "agents"
+  | "tools"
+  | "code"
+  | "connections"
+  | "about"
+  | "account";
 
 export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
   {
@@ -18,6 +25,12 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
     id: "agents",
     get label() {
       return t("Agents");
+    },
+  },
+  {
+    id: "tools",
+    get label() {
+      return t("Tools");
     },
   },
   {
@@ -53,17 +66,18 @@ export const SETTINGS_SECTION_ORDER: readonly SettingsSectionId[] = [
   "chat",
   "voice",
   "notifications",
+  "permissions",
   "keybindings",
   "terminal",
   "groupLock",
   "providers",
   "models",
+  "work",
   "crews",
   "skills",
   "mcp",
-  "usage",
-  "limits",
   "secrets",
+  "tools",
   "workspace",
   "worktrees",
   "connections",

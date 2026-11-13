@@ -1,3 +1,6 @@
+/* Hallmark · scope: app · theme: bycoda (locked) · genre: modern-minimal · built: the project */
+/* Hallmark · pre-emit critique: P4 H4 E4 S3 R5 V3 · weakest: S, put device ownership beside its target instead of an unlabeled rail icon */
+/* Hallmark · waive 24b · existing Bycoda media controls are 28px with 6px insets · preserving the desktop rail density keeps the device preview usable */
 .host-tool-panel.device-panel {
   display: flex;
   flex-direction: column;
@@ -168,6 +171,9 @@
   padding: 12px;
   max-inline-size: calc(100% - 16px);
   overflow-y: auto;
+}
+.device-panel-popover > header {
+  margin-block-end: 8px;
 }
 .device-panel-popover .host-tool-muted {
   margin-block: 8px 0;

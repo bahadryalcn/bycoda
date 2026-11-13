@@ -1,3 +1,6 @@
+import { CrewCoordinatorFixture } from "./crew-coordinator-fixture";
+import { hydrateHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
+import { hydrateComposerDrafts } from "../../../src/features/sessions/data/composerDraftStore";
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
@@ -488,6 +491,10 @@ Object.assign(window, {
   crewFixtureReleaseOperation: () => releaseOperation(),
 });
 mockIPC(async (command, args) => {
+  if (command === "canonical_store_session_guard_ready") return false;
+  if (command === "canonical_store_list") return { entries: [], revision: 0 };
+  if (command === "session_list_drafts") return [];
+  if (command === "session_checkpoint_status") return { files: [] };
   if (command === "generic_acp_list")
     return [
       { id: "a", name: "Fixture agent A", command: "agent-a", args: [], envKeys: [] },
@@ -515,6 +522,9 @@ mockIPC(async (command, args) => {
           capabilities: [
             "crews.v1",
             "crews.tasks.v1",
+            ...(params.has("work-model")
+              ? ["tasks", "tasks.todo", "tasks.workspaces", "models.routing.v1"]
+              : []),
             "crews.delete.v1",
             ...(params.has("noAccess") ? [] : ["crews.access.v1"]),
             ...(params.has("noTools") ? [] : ["crews.tools.v1"]),
@@ -616,6 +626,30 @@ mockIPC(async (command, args) => {
             ],
           },
           errors: {},
+        };
+      case "tasks.list":
+        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        return [];
+      case "host.settings.get":
+        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        return { maxRunningTasks: 2, dailyAgentMinutes: 120, usedMinutes: 20, limitReached: false };
+      case "git.branches":
+        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        return { current: "main", branches: ["main"], remotes: [] };
+      case "git.worktrees":
+        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        return { worktrees: [{ path: cwd, branch: "main" }] };
+      case "modelRouting.get":
+        if (!params.has("work-model")) throw new Error("Task fixtures require work-model");
+        return {
+          state: {
+            version: 1,
+            updatedAt: 1,
+            entries: [],
+            pools: [],
+            roles: {},
+            delegation: { global: {}, providers: {}, accounts: {} },
+          },
         };
       case "crews.pools.list":
         return { pools: modelPools };
@@ -801,7 +835,7 @@ const drag = {
 };
 function Fixture() {
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [view, setView] = useState("sessions");
+  const [view, setView] = useState(params.has("work-model") ? "page" : "sessions");
   useEffect(() => {
     const open = () => setView("page");
     window.addEventListener(OPEN_CREWS_PAGE_EVENT, open);
@@ -819,6 +853,7 @@ function Fixture() {
     <QueryProvider>
       <main className="bycoda-arc flex min-h-screen flex-wrap bg-(--ui-surface) text-(--color-content)">
         <aside
+          hidden={params.has("work-model")}
           className="@container/rail flex shrink-0 flex-col border-e border-(--ui-tone-neutral-border) pt-2"
           style={{ width: 256 }}
         >
@@ -834,7 +869,10 @@ function Fixture() {
             onOpenSession={openSession}
           />
         </aside>
-        <aside className="w-80 max-w-full shrink-0 border-e border-(--ui-tone-neutral-border)">
+        <aside
+          hidden={params.has("work-model")}
+          className="w-80 max-w-full shrink-0 border-e border-(--ui-tone-neutral-border)"
+        >
           <CrewSidebar cwd={cwd} onOpen={openSession} onManagedChange={() => {}} />
         </aside>
         <div className="min-w-0 flex-1 p-4" style={{ flexBasis: "24rem" }}>
@@ -864,7 +902,15 @@ function Fixture() {
             </div>
           ) : view === "page" ? (
             <div className="flex h-[600px] min-w-0 flex-col border border-(--ui-pane-border)">
-              <CrewsPage cwd={cwd} onOpenSession={openSession} />
+              <CrewsPage
+                cwd={cwd}
+                onOpenSession={openSession}
+                renderCoordinator={
+                  params.has("work-model")
+                    ? (target) => <CrewCoordinatorFixture key={target.sessionId} target={target} />
+                    : undefined
+                }
+              />
             </div>
           ) : view === "settings" ? (
             <div className="bycoda-settings-content bycoda-settings-form">
@@ -875,6 +921,10 @@ function Fixture() {
       </main>
     </QueryProvider>
   );
+}
+if (params.has("work-model")) {
+  await hydrateHostSessionBindings();
+  await hydrateComposerDrafts();
 }
 createRoot(document.getElementById("root")!).render(
   params.has("shared-settings-fixture") ? (

@@ -5,17 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import PdfViewer from "./PdfViewer";
 import { PdfRasterBudget } from "../model/pdfRasterBudget";
 
-const pdf = vi.hoisted(() => ({ getPage: vi.fn(), pages: 2 }));
+const pdf = vi.hoisted(() => ({ getPage: vi.fn(), pages: 2, load: vi.fn() }));
 vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
   GlobalWorkerOptions: {},
   TextLayer: class {
     render = () => Promise.resolve();
     cancel() {}
   },
-  getDocument: () => ({
-    promise: Promise.resolve({ numPages: pdf.pages, getPage: pdf.getPage }),
-    destroy: vi.fn(),
-  }),
+  getDocument: () => pdf.load(),
 }));
 
 function deferred() {
@@ -47,6 +44,10 @@ beforeEach(() => {
   localStorage.clear();
   pdf.getPage.mockReset();
   pdf.pages = 2;
+  pdf.load.mockReset().mockImplementation(() => ({
+    promise: Promise.resolve({ numPages: pdf.pages, getPage: pdf.getPage }),
+    destroy: vi.fn(),
+  }));
   observers = [];
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(632);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(800);
@@ -190,4 +191,58 @@ it("bounds page scaffolding and releases visited PDF resources after render sett
   expect(first.cleanup).not.toHaveBeenCalled();
   await act(async () => observers.find(({ target }) => target === frame(1))!.notify(false));
   expect(first.cleanup).toHaveBeenCalled();
+});
+
+it("recovers a parse error when the same mounted viewer receives repaired bytes", async () => {
+  pdf.load.mockImplementationOnce(() => ({
+    promise: Promise.reject(new Error("Invalid PDF structure")),
+    destroy: vi.fn(),
+  }));
+  pdf.getPage.mockResolvedValue(page());
+  await mount();
+  expect(host.textContent).toContain("Invalid PDF structure");
+  let finish!: (document: { numPages: number; getPage: typeof pdf.getPage }) => void;
+  pdf.load.mockImplementationOnce(() => ({
+    promise: new Promise((resolve) => {
+      finish = resolve;
+    }),
+    destroy: vi.fn(),
+  }));
+  await act(async () => root.render(createElement(PdfViewer, { bytes: new Uint8Array([2]) })));
+  expect(host.textContent).not.toContain("Invalid PDF structure");
+  await vi.waitFor(() => expect(host.textContent).toContain("Loading PDF\u2026"));
+  await act(async () => finish({ numPages: 2, getPage: pdf.getPage }));
+  expect(host.querySelector('[aria-label="PDF preview"]')).not.toBeNull();
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("hides the retired PDF during replacement without losing page and scroll state", async () => {
+  pdf.getPage.mockResolvedValue(page());
+  await mount();
+  const input = host.querySelector<HTMLInputElement>('[aria-label="Page number"]')!;
+  const scroller = host.querySelector<HTMLElement>('[aria-label="PDF preview"]')!;
+  const nativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    nativeValue.call(input, "2");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  scroller.scrollTop = 417;
+  let finish!: (document: { numPages: number; getPage: typeof pdf.getPage }) => void;
+  pdf.load.mockImplementationOnce(() => ({
+    promise: new Promise((resolve) => {
+      finish = resolve;
+    }),
+    destroy: vi.fn(),
+  }));
+  await act(async () => root.render(createElement(PdfViewer, { bytes: new Uint8Array([3]) })));
+  expect(scroller.closest(".hidden")).not.toBeNull();
+  expect(host.querySelector("[data-loading-card]")).not.toBeNull();
+  await act(async () => finish({ numPages: 2, getPage: pdf.getPage }));
+  expect(host.querySelector('[aria-label="Page number"]')).toBe(input);
+  expect(input.value).toBe("2");
+  expect(scroller.closest(".hidden")).toBeNull();
+  expect(scroller.scrollTop).toBe(417);
 });

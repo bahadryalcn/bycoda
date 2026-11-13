@@ -34,14 +34,14 @@ export const MODEL_ROLE_METADATA: readonly RoleMetadata[] = [
   {
     role: "goal.planner",
     group: "Unattended work",
-    labelKey: "Goal planner",
-    descriptionKey: "Plans work for a goal.",
+    labelKey: "Epic planner",
+    descriptionKey: "Plans work for an epic.",
   },
   {
     role: "goal.finalReview",
     group: "Unattended work",
-    labelKey: "Goal final review",
-    descriptionKey: "Reviews a completed goal.",
+    labelKey: "Epic final review",
+    descriptionKey: "Reviews a completed epic.",
   },
   {
     role: "steward",

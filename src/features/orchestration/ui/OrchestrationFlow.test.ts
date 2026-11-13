@@ -162,6 +162,89 @@ async function input(element: HTMLInputElement | HTMLTextAreaElement, value: str
 }
 
 describe("orchestration composer and card", () => {
+  it("reveals full task and model identities in expanded worker details without another workspace", async () => {
+    const title = "Uzun görev / مساحة العمل 👩🏽‍💻 " + "long-task-name".repeat(12);
+    const modelName = "Detailed model " + "long-model-name".repeat(16);
+    setHarnessModels("codex", [{ id: "codex:long", name: modelName, harness: "codex" }]);
+    const summary: OrchestrationSummary = {
+      status: "active",
+      live: true,
+      tasks: [
+        {
+          sessionId: "long-worker",
+          title,
+          harness: "codex",
+          model: "codex:long",
+          status: "running",
+        },
+      ],
+    };
+    await act(async () =>
+      root.render(createElement(OrchestrationSidebarAgents, { leadId: "lead", summary })),
+    );
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-expanded="false"]')!;
+    await click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      [...trigger.querySelectorAll('[data-wrap="anywhere"]')].some(
+        (node) => node.textContent === title,
+      ),
+    ).toBe(true);
+    const fullModel = [...container.querySelectorAll('[data-wrap="anywhere"]')].find(
+      (node) => node.textContent === modelName,
+    );
+    expect(fullModel).toBeDefined();
+    expect(fullModel?.getAttribute("data-truncate")).not.toBe("true");
+    expect(container.textContent).toContain("Codex");
+  });
+
+  it("keeps readonly proposal and task identities readable after assignment editing ends", async () => {
+    const title = "Uzun onaylanmış görev / مساحة العمل " + "long-title".repeat(18);
+    const name = "Approved model " + "long-model".repeat(18);
+    const choice = { harness: "codex" as const, model: "codex:long", name };
+    const proposal: OrchestrationProposal = {
+      version: 1,
+      leadId: "lead",
+      cwd: "/repo",
+      request: "Build",
+      author: choice,
+      settings: { choices: [choice], maxWorkers: 2 },
+      status: "approved",
+      title,
+      summary: "",
+      tasks: [
+        {
+          id: "long",
+          title,
+          prompt: "Preserved instructions",
+          harness: "codex",
+          model: "codex:long",
+          files: [],
+          dependsOn: [],
+        },
+      ],
+    };
+    await act(async () =>
+      root.render(
+        createElement(OrchestrationPreview, {
+          block: { id: "long-proposal", role: "plan", text: "", orchestration: proposal },
+        }),
+      ),
+    );
+    await click(container.querySelector('[aria-expanded="false"]')!);
+    expect(
+      [...container.querySelectorAll('[data-wrap="anywhere"]')].filter(
+        (node) => node.textContent === title,
+      ),
+    ).toHaveLength(2);
+    expect(
+      [...container.querySelectorAll('[data-wrap="anywhere"]')].some(
+        (node) => node.textContent === name,
+      ),
+    ).toBe(true);
+    expect(container.textContent).toContain("Preserved instructions");
+    expect(container.querySelector("input")).toBeNull();
+  });
   it("toggles a badge through the plus menu and submits without a team setup or execution", async () => {
     const model = modelsFor("codex")[0];
     const submit = vi.fn();

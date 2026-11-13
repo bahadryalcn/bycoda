@@ -27,3 +27,4 @@ export {
 export type { SkillGroupPickerItem } from "./model/skillGroupPicker";
 
 export type * as skillGroupsApi from "./public/skillGroups";
+export type { BuiltinSkill } from "./model/skills";

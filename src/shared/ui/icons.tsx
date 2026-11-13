@@ -161,6 +161,7 @@ import {
   Wrench as LucideWrench,
   X as LucideX,
   Zap as LucideZap,
+  UsersRound as LucideUsersRound,
   type LucideIcon,
   type LucideProps,
 } from "lucide-react";
@@ -411,6 +412,7 @@ export const Search = wrap(LucideSearch, "Search");
 export const Settings = wrap(LucideSettings, "Settings");
 export const Briefcase = wrap(LucideBriefcase, "Briefcase");
 export const UserRound = wrap(LucideUserRound, "UserRound");
+export const UsersRound = wrap(LucideUsersRound, "UsersRound");
 export const Share = wrap(LucideShare, "Share");
 export const Shield = wrap(LucideShield, "Shield");
 export const SlidersHorizontal = wrap(LucideSlidersHorizontal, "SlidersHorizontal");

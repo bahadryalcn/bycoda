@@ -35,6 +35,7 @@ import type { SshShellController } from "../model/sshShellIntegration";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
 import { localTerminalPrefix } from "../model/localTerminalCompletion";
 import { useHideWhileTyping } from "./useHideWhileTyping";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 const SEARCH_RESULT_LIMIT = 1000;
@@ -197,7 +198,7 @@ export function TerminalTools({
       onMouseDown={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
         event.stopPropagation();
-        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+        if (event.key === "Escape" && !isImeComposition(event.nativeEvent)) {
           event.preventDefault();
           close();
         }
@@ -218,7 +219,7 @@ export function TerminalTools({
                 setQuery(event.target.value);
               }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
                   event.preventDefault();
                   find(event.shiftKey);
                 }

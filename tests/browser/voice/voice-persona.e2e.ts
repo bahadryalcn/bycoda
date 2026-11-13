@@ -34,11 +34,20 @@ for (const theme of ["light", "dark"])
       await expect(page.getByRole("dialog")).toHaveCount(0);
       // Identity sits in its own Companion group, visible without a disclosure.
       const row = page.locator('[data-setting-id="voice-persona"]');
-      await row.getByRole("button", { name: "Customize", exact: true }).click();
+      await row.getByRole("button", { name: "Assistant settings", exact: true }).click();
       expect(await page.evaluate(() => (window as any).assistantNavigation)).toEqual([
         { tab: "settings" },
       ]);
-      await row.getByRole("button", { name: "Voice style", exact: true }).click();
+      const appearance = page.getByRole("button", {
+        name: "Appearance and voice style",
+        exact: true,
+      });
+      await expect(appearance).toHaveAttribute("aria-expanded", "false");
+      await appearance.click();
+      await page
+        .locator('[data-setting-id="voice-style"]')
+        .getByRole("button", { name: "Customize", exact: true })
+        .click();
       const dialog = page.getByRole("dialog", { name: "Voice style", exact: true });
       await expect(dialog).toBeVisible();
       await expect(dialog.getByLabel("Companion name", { exact: true })).toHaveCount(0);

@@ -71,6 +71,23 @@ async function submit() {
   });
 }
 
+it("reveals the typed Jira token with the shared control while preserving its value", async () => {
+  await act(async () => root.render(createElement(JiraSettings)));
+  await input("Jira API token", "fixture-token");
+  const field = container.querySelector<HTMLInputElement>('input[aria-label="Jira API token"]')!;
+  expect(field.type).toBe("password");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Show password"]')!.click(),
+  );
+  expect(field.type).toBe("text");
+  expect(field.value).toBe("fixture-token");
+  expect(document.activeElement).toBe(field);
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Hide password"]')!.click(),
+  );
+  expect(field.type).toBe("password");
+});
+
 it("shows progress on the active Jira operation without labelling a successful connection as disconnecting", async () => {
   let finishProjects!: () => void;
   vi.mocked(invoke).mockImplementation(async (command, args) => {

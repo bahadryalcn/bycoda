@@ -14,6 +14,24 @@ Skills show only the saved owner preference: the switch on a skill's page, and *
 in the list. Bycoda does not observe skill readiness or activity, so the Skills
 screen does not display them.
 
+## Tool defaults
+
+**Settings > Tools** has Browser, Devices, Logs and Development Servers tabs on
+one page. It saves local application defaults. New tool views use these defaults;
+retained views, explicit choices and restored drafts keep their own state. Reset
+applies to the active tab.
+
+Browser's initial address prefills a new view without navigating; open it when
+ready. Address-bar search is disabled by default. When enabled, search terms use
+the selected engine. A custom HTTP or HTTPS search URL uses one `{query}`
+placeholder for encoded search terms and cannot contain credentials. Browser
+viewport offers presets or custom integer dimensions: width 240–2560 and height
+240–2160 pixels. The viewport applies on the first explicit open of a fresh
+Browser session; an active session keeps its viewport.
+
+Live view does not claim device control or start the Host. Log and server
+refreshes pause while hidden and retain their existing backoff behavior.
+
 ## Delegation readiness
 
 Host delegation checks the exact provider process's scoped bridge route. A missing,
@@ -30,7 +48,7 @@ An installed Device Host starts only after **Connect devices**. Opening the pane
 reads its status. Failed status or discovery refreshes invalidate the previous
 readiness and activity observation; retained device drafts and frames stay intact.
 
-The device bar holds the device picker and refresh. Each device carries its platform
+The device header holds the device picker, refresh and control state. Each device carries its platform
 icon (Android or iOS), green while the device is running; its version, kind and state
 are in the picker list and tooltip. The screen fills the panel with its controls on a
 vertical rail beside it; **Device options** at the end of the rail holds the
@@ -43,10 +61,15 @@ so the screen moves as it does on the phone and input shows its result at once.
 iOS simulators, older Hosts and any stream failure use still captures instead,
 about one per second. Pausing keeps the picture that was on screen.
 
-Devices opens in view-only mode. Claim control explicitly before sending input;
+Devices opens in view-only mode. The header shows whether control is active or in use
+by another controller. Claim control explicitly before sending input;
 release it when finished. Another controller's claim, an expired lease or an older
 Host without control ownership support prevents input. Switching conversations or
 computers does not transfer control. App and text drafts remain with their device.
+
+Text, app and accessibility search panels focus their input when opened. Close or
+Escape returns focus to the action that opened the panel. Hidden tool panels keep
+their drafts without leaving a dialog over another tool.
 
 Inspect device screen captures a fresh native accessibility tree and screen frame.
 Hover or select an element to review its label and bounds; selection sends no
@@ -59,7 +82,8 @@ Android supports pointer gestures, arrow-key swipes on the focused preview and
 coordinate controls. Windows Android text input supports printable ASCII with the
 displayed platform restrictions; unsupported text stays in its input for editing
 or entry on the device. A failed capture retains the last frame and identifies it
-as stale. Refresh successfully before sending more input.
+as stale. Refresh successfully before sending more input. Input controls explain when
+control, a selected device or a fresh frame is missing; viewing never claims control.
 
 Marking freezes the exact captured frame. Notes and marks remain tied to that
 device and conversation. If adding the screenshot has an unknown result, use
@@ -93,7 +117,11 @@ correct that argument before retrying the read.
 When you ask for a web application to be checked in the browser, the assistant
 uses the integrated preview first when available. The preview opens in the
 originating conversation's Browser panel by default. A responsive check can resize
-the browser viewport; this does not simulate a physical phone.
+the browser viewport; this does not simulate a physical phone. The dimensions control
+in the Browser toolbar opens presets for desktop, tablet and phone, custom dimensions,
+and rotation. Browser controls and setup remain in their separate menu. Width must be
+240–2560 pixels and height 240–2160 pixels. Resizing requires browser control and
+invalidates the previous element selection and frame geometry.
 
 Before a page is open, the Browser panel lists recently opened addresses on this
 computer; choose one to open it, or remove it from the list. Addresses with a user
@@ -230,7 +258,9 @@ member when a Host provider works, and for Antigravity members through Nano Bana
 
 ## Cross-provider advisor and subagents
 
-**Settings > Models > Subagents** sets advisor and subagent defaults for new
+When Work concurrency is one, an active Work turn cannot start a delegated child while it holds the only slot. The child returns a failed result immediately; the caller can do the work itself or the owner can increase Work concurrency. An advisor requested after the parent turn has retired can still run.
+
+**Settings > Background work > Subagents** sets advisor and subagent defaults for new
 conversations. **Chat defaults** holds provider, model, effort, permissions and
 Fast / Service Tier choices. Main-model effort uses a stepped scale; Subagent max
 effort uses a select.
@@ -457,6 +487,16 @@ them in Settings > Secrets. If a secret with the same name already exists in the
 `secrets.request` reuses it without asking; pass `replace: true` to ask the owner for a new
 value. The agent receives only a `secretRef` and its name. If the owner cancels, or does
 not answer within about four minutes, the result is `cancelled`.
+
+Settings > Secrets lists metadata from this computer's local Host, grouped by
+project. It never displays saved values or edits them. An unknown project stays
+listed under its ID. **Retry** reloads a failed inventory or rediscovers an unavailable
+local Host; a remote computer is not substituted. **Remove** asks for confirmation,
+and a failed removal keeps the entry available for another attempt.
+
+The masked request form accepts up to 8192 characters. An oversized entry stays in
+the open form with a length error until corrected; it is not truncated or submitted.
+The draft exists only in memory. Cancelling or closing the request discards it.
 
 `secrets.run` runs a command in the project with the secrets injected as environment
 variables and returns output with the secret values redacted. Use it first. When a command

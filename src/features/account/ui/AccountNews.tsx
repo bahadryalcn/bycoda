@@ -1,10 +1,9 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
-import { openExternal } from "../../../platform/tauri/openExternal";
+import { AccountExternalLink } from "./AccountExternalLink";
 import { t, useLocale } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
-import { Button } from "../../../shared/ui/Button";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useAnnouncementFeed } from "../hooks/useAnnouncements";
 import styles from "./account.module.css";
@@ -43,16 +42,7 @@ export function AccountNews() {
                 {item.body}
               </Text>
             </div>
-            {item.url ? (
-              <Button
-                variant="link"
-                onClick={() => {
-                  openExternal(item.url!).catch(() => undefined); // -- an unopenable link changes nothing on screen.
-                }}
-              >
-                {t("Read more")}
-              </Button>
-            ) : null}
+            {item.url ? <AccountExternalLink url={item.url} label={t("Read more")} /> : null}
           </li>
         ))}
       </ul>

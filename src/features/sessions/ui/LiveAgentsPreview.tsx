@@ -1,10 +1,8 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge } from "../../../shared/ui/Badge";
-import { StatusDot } from "../../../shared/ui/StatusDot";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useId, useState } from "react";
@@ -80,21 +78,28 @@ export function LiveAgentsPreview({
   const groupMascots = groupMascotsProp ?? loadedGroupMascots;
   const [expanded, setExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedProject, setExpandedProject] = useState<string | null>(null);
   const listId = useId();
   const lockList = useLockOverscroll<HTMLDivElement>();
   const summary = summarizeLiveAgents(agents);
   const currentProjectKey =
     currentProject && currentProject !== "~" ? projectKey(currentProject) : null;
-  const listedAgents = currentProjectKey
+  const projectAgents = currentProjectKey
     ? agents.filter(
         (agent) =>
-          projectKey(agent.cwd) !== currentProjectKey ||
-          agent.done ||
-          agent.issue ||
-          agent.needsApproval,
+          projectKey(agent.cwd) === currentProjectKey &&
+          !agent.done &&
+          !agent.issue &&
+          !agent.needsApproval &&
+          !agent.waiting,
       )
-    : agents;
-  const projectWorkingCount = agents.length - listedAgents.length;
+    : [];
+  const projectWorkingCount = projectAgents.length;
+  const projectExpanded = currentProjectKey != null && expandedProject === currentProjectKey;
+  const attentionAgents = agents.filter((agent) => agent.issue || agent.needsApproval);
+  const listedAgents = agents.filter(
+    (agent) => !agent.issue && !agent.needsApproval && !projectAgents.includes(agent),
+  );
   const visibleOnRail = projectWorkingCount > 0 || shouldShowLiveAgents(agents, activeSessionId);
   const ticking =
     visibleOnRail && !collapsed && agents.some((agent) => !agent.done && agent.startedAt != null);
@@ -108,57 +113,59 @@ export function LiveAgentsPreview({
   const cap = collapsible ? 2 : LIVE_AGENT_CAP;
   const extra = listedAgents.length - cap;
   const visible = expanded || extra <= 0 ? listedAgents : listedAgents.slice(0, cap);
-  const { title, count: headlineCount } = liveHeadline(summary, t);
-  const attentionAgents = agents.filter((agent) => agent.issue || agent.needsApproval);
+  const title = t("Activity");
   const attentionTone =
     attentionAgents.length === 1 && attentionAgents[0].issue === "failed" ? "danger" : "warning";
-  const attentionLabel = t(
-    summary.attention === 1 ? "{p0} needs attention" : "{p0} need attention",
-    {
-      p0: summary.attention,
-    },
-  );
-  const statusMark =
-    summary.headline === "attention" ? (
-      <CircleAlert
-        aria-hidden
-        className="icon-sm shrink-0"
-        tone={attentionTone}
-        strokeWidth={1.75}
-      />
-    ) : summary.headline === "finished" ? (
-      <Check aria-hidden className="icon-sm shrink-0" tone="success" strokeWidth={2} />
-    ) : summary.headline === "waiting" ? (
-      <Clock aria-hidden className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
-    ) : (
-      <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
-        <StatusDot label={t("Working")} aria-hidden />
-      </span>
-    );
+  const statusMark = <Clock aria-hidden className="icon-sm shrink-0" strokeWidth={1.75} />;
   const countText = (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap">
-      <Badge
-        variant="count"
-        size="xs"
-        tone={summary.headline === "attention" ? attentionTone : "accent"}
-      >
-        {headlineCount}
+    <span className="inline-flex items-center gap-1">
+      <Badge variant="count" size="xs" tone="neutral">
+        {agents.length}
       </Badge>
-      {summary.headline !== "attention" && summary.attention > 0 ? (
-        <Tooltip label={attentionLabel} asChild>
-          <Badge
-            variant="count"
-            tone={attentionTone}
-            size="xs"
-
-            icon={<CircleAlert aria-hidden className="icon-xs" strokeWidth={1.75} />}
-          >
-            <span aria-label={attentionLabel}>{summary.attention}</span>
-          </Badge>
-        </Tooltip>
+      {collapsed && summary.attention > 0 ? (
+        <Badge
+          variant="count"
+          size="xs"
+          tone={attentionTone}
+          aria-label={t(summary.attention === 1 ? "{p0} needs attention" : "{p0} need attention", {
+            p0: summary.attention,
+          })}
+          icon={<CircleAlert aria-hidden className="icon-xs" />}
+        >
+          {summary.attention}
+        </Badge>
       ) : null}
     </span>
   );
+  const groups = [
+    {
+      key: "attention",
+      label: t("Needs attention"),
+      count: summary.attention,
+      rows: attentionAgents,
+    },
+    {
+      key: "working",
+      label: t("Working"),
+      count: summary.working,
+      rows: [
+        ...(projectExpanded ? projectAgents : []),
+        ...visible.filter((agent) => !agent.done && !agent.waiting),
+      ],
+    },
+    {
+      key: "waiting",
+      label: t("Waiting"),
+      count: summary.waiting,
+      rows: visible.filter((agent) => !agent.done && agent.waiting),
+    },
+    {
+      key: "finished",
+      label: t("Finished"),
+      count: summary.finished,
+      rows: visible.filter((agent) => agent.done),
+    },
+  ];
   // Announced when a count changes, never per second: elapsed times stay out of this text.
   const announcement = [
     summary.working > 0
@@ -187,135 +194,108 @@ export function LiveAgentsPreview({
 
   return (
     <section
-      aria-label={
-        summary.headline === "working"
-          ? t("Working agents")
-          : summary.headline === "attention"
-            ? t("Agents needing attention")
-            : summary.headline === "waiting"
-              ? t("Waiting agents")
-              : t("Finished agents")
-      }
-      {...surfaceAttributes(
-        {
-          radius: collapsible ? "card" : undefined,
-          variant: collapsible ? "navigation-quiet" : undefined,
-        },
-        `min-w-0 shrink-0 ${
-          collapsible ? "mb-2 data-[collapsed]:mb-0.5" : "px-2"
-        } ${bottomSpacing ? "pb-2" : ""}`,
-      )}
+      aria-label={t("Activity")}
+      className={`min-w-0 shrink-0 ${collapsible ? "mb-2" : "px-2"} ${bottomSpacing ? "pb-2" : ""}`}
       data-live-agents-preview="full"
       data-live-agents-headline={summary.headline}
       data-collapsed={collapsible && collapsed ? "" : undefined}
     >
       <LiveText className="sr-only" text={announcement} />
-      {/* On the rail the header is the shared 28px section row: one line with status mark,
-          title, summary counts and the collapse control. */}
-      <div
-        {...surfaceAttributes(
-          {
-            radius: collapsible ? undefined : "card",
-            frame: collapsible ? undefined : "accent",
-            tone: collapsible ? undefined : "accent",
-          },
-          collapsible ? "" : "overflow-hidden",
-        )}
-      >
-        {collapsible ? (
-          <RailSectionHeader
-            label={title}
-            icon={statusMark}
-            count={countText}
-            collapsed={collapsed}
-            onToggleCollapsed={() => setCollapsed((value) => !value)}
-            controlsId={listId}
-          />
-        ) : (
-          <div className="flex w-full min-w-0 items-center gap-2 px-2.5 py-2 text-start">
-            {statusMark}
-            <Text
-              size="caption"
-              tone="secondary"
-              weight="medium"
-              truncate
-              className="min-w-0 flex-1"
-            >
-              {title}
-            </Text>
-            <span className="shrink-0">{countText}</span>
-          </div>
-        )}
-        {/* px-2 puts row icons, titles and trailing times on the header's columns. */}
-        <div id={listId} hidden={collapsed} className="px-2 pb-1">
-          {projectWorkingCount > 0 ? (
-            // Same columns as a row: status mark under the row icons, text under the titles.
-            <Text
-              as="p"
-              size="caption"
-              tone="secondary"
-              {...surfaceAttributes(
-                { frame: "transparent" },
-                "flex min-w-0 items-center gap-1.5 px-2.5 py-1",
-              )}
-            >
-              <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
-                <StatusDot label={t("Working")} aria-hidden />
-              </span>
-              <Text
-                data-live-agents-project-summary
-                size="inherit"
-                tone="inherit"
-                truncate
-                className="min-w-0 flex-1"
-              >
-                {t("{p0} working in this project", { p0: projectWorkingCount })}
-              </Text>
-            </Text>
-          ) : null}
-          <div
-            ref={lockList}
-            className={`flex flex-col gap-0 ${
-              collapsible
-                ? "max-h-[min(18rem,30vh)] overflow-y-auto overscroll-none"
-                : expanded
-                  ? "max-h-[45vh] overflow-y-auto overscroll-none"
-                  : ""
-            }`}
-          >
-            {visible.map((agent) => (
-              <LiveAgentCard
-                key={agent.id}
-                agent={agent}
-                now={now}
-                selected={agent.id === activeSessionId}
-                onSelect={onSelect}
-                groupLabels={groupLabels}
-                groupColors={groupColors}
-                groupCustomColors={groupCustomColors}
-                groupMascots={groupMascots}
-              />
-            ))}
-          </div>
-          {extra > 0 ? (
-            <Button
-              fullWidth
-              variant="item"
-              type="button"
-              aria-expanded={expanded}
-              aria-controls={listId}
-              onClick={() => setExpanded((open) => !open)}
-              className="w-full"
-            >
-              {expanded ? (
-                <ChevronUp className="icon-sm shrink-0" strokeWidth={1.75} />
-              ) : (
-                <ChevronDown className="icon-sm shrink-0" strokeWidth={1.75} />
-              )}
-              {expanded ? t("Show less") : t("{p0} more", { p0: extra })}
-            </Button>
-          ) : null}
+      {collapsible ? (
+        <RailSectionHeader
+          label={title}
+          icon={statusMark}
+          count={countText}
+          collapsed={collapsed}
+          onToggleCollapsed={() => setCollapsed((value) => !value)}
+          controlsId={listId}
+        />
+      ) : (
+        <SectionLabel icon={statusMark} count={agents.length}>
+          {title}
+        </SectionLabel>
+      )}
+      <div id={listId} hidden={collapsed} className="px-2 pb-1">
+        <div
+          ref={lockList}
+          className="flex max-h-[min(24rem,40vh)] flex-col gap-2 overflow-y-auto overscroll-none"
+        >
+          {groups.map((group) =>
+            group.rows.length > 0 || (group.key === "working" && projectWorkingCount > 0) ? (
+              <div key={group.key} data-live-agents-group={group.key} className="min-w-0">
+                <SectionLabel
+                  count={group.count}
+                  tone={group.key === "attention" ? attentionTone : "secondary"}
+                >
+                  {group.label}
+                </SectionLabel>
+                {group.key === "working" && projectWorkingCount > 0 ? (
+                  <Button
+                    variant="item"
+                    fullWidth
+                    motion="none"
+                    aria-expanded={projectExpanded}
+                    aria-controls={`${listId}-project`}
+                    onClick={() => setExpandedProject(projectExpanded ? null : currentProjectKey)}
+                    aria-label={t("{p0} working in this project", { p0: projectWorkingCount })}
+                    data-live-agents-project-summary
+                    className="min-w-0 gap-1.5"
+                  >
+                    <Text
+                      size="caption"
+                      tone="secondary"
+                      truncate
+                      className="min-w-0 flex-1 text-start"
+                    >
+                      {t("This project")}
+                    </Text>
+                    <Badge variant="count" size="xs" tone="neutral">
+                      {projectWorkingCount}
+                    </Badge>
+                    {projectExpanded ? (
+                      <ChevronUp aria-hidden className="icon-sm shrink-0" />
+                    ) : (
+                      <ChevronDown aria-hidden className="icon-sm shrink-0" />
+                    )}
+                  </Button>
+                ) : null}
+                <div id={group.key === "working" ? `${listId}-project` : undefined}>
+                  {group.rows.map((agent) => (
+                    <LiveAgentCard
+                      key={agent.id}
+                      agent={agent}
+                      now={now}
+                      selected={agent.id === activeSessionId}
+                      onSelect={onSelect}
+                      groupLabels={groupLabels}
+                      groupColors={groupColors}
+                      groupCustomColors={groupCustomColors}
+                      groupMascots={groupMascots}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null,
+          )}
         </div>
+        {extra > 0 ? (
+          <Button
+            fullWidth
+            variant="item"
+            motion="none"
+            type="button"
+            aria-expanded={expanded}
+            aria-controls={listId}
+            onClick={() => setExpanded((open) => !open)}
+          >
+            {expanded ? (
+              <ChevronUp aria-hidden className="icon-sm shrink-0" />
+            ) : (
+              <ChevronDown aria-hidden className="icon-sm shrink-0" />
+            )}
+            {expanded ? t("Show less") : t("{p0} more", { p0: extra })}
+          </Button>
+        ) : null}
       </div>
     </section>
   );
@@ -397,11 +377,11 @@ function LiveAgentCard({
     : agent.needsApproval
       ? t(agent.inputKind === "question" ? "Question" : "Need approval")
       : agent.done
-        ? "Done"
+        ? t("Done")
         : agent.waiting
           ? t("Waiting")
           : agent.activity;
-  const live = !agent.needsApproval && !agent.done && !agent.waiting;
+  const live = !agent.issue && !agent.needsApproval && !agent.done && !agent.waiting;
   const remote = isRemoteProjectPath(agent.cwd);
   const waitReason = agent.waiting && !agent.done ? sessionWaitReasonWith(t, agent.waiting) : "";
   const title = [
@@ -432,6 +412,7 @@ function LiveAgentCard({
       padding={{ block: "xs" }}
       className="min-w-0 shrink-0 flex-col items-stretch gap-0.5 text-start"
       fullWidth
+      motion="none"
       selected={selected}
       variant="item"
       type="button"
@@ -460,16 +441,27 @@ function LiveAgentCard({
         <Text size="secondary" tone="inherit" leading="snug" truncate className="min-w-0 flex-1">
           {agent.title}
         </Text>
-        {elapsed ? (
-          <Text
-            data-live-agent-elapsed
-            size="caption"
-            tone="secondary"
-            className="shrink-0 tabular-nums @max-[200px]/rail:hidden"
-          >
-            {elapsed}
-          </Text>
-        ) : null}
+        <Text
+          size="caption"
+          tone={tone}
+          className="inline-flex min-w-0 max-w-[50%] items-center gap-1"
+          data-live-agent-status
+        >
+          {agent.issue || agent.needsApproval ? (
+            <CircleAlert aria-hidden className="icon-xs shrink-0" />
+          ) : agent.done ? (
+            <Check aria-hidden className="icon-xs shrink-0" />
+          ) : agent.waiting ? (
+            <Clock aria-hidden className="icon-xs shrink-0" />
+          ) : (
+            <SessionWorkingStatus startedAt={agent.startedAt} showElapsed={false} />
+          )}
+          {flagged ? (
+            <Text size="inherit" tone="inherit" truncate>
+              {activity}
+            </Text>
+          ) : null}
+        </Text>
       </span>
       {/* Secondary line: where the work lives on the left, its real state on the right. */}
       <Text
@@ -502,28 +494,16 @@ function LiveAgentCard({
         >
           {project}
         </Text>
-        <Badge
-          size="xs"
-          appearance="subtle"
-          tone={tone}
-          className="min-w-0 max-w-[60%] shrink-0 @max-[220px]/rail:max-w-full @max-[220px]/rail:flex-1"
-          data-live-agent-status
-        >
-          {agent.issue || agent.needsApproval ? (
-            <CircleAlert className="icon-xs shrink-0" strokeWidth={1.75} />
-          ) : agent.done ? (
-            <Check className="icon-xs shrink-0" strokeWidth={2} />
-          ) : agent.waiting ? (
-            <Clock className="icon-xs shrink-0" strokeWidth={1.75} />
-          ) : (
-            <SessionWorkingStatus startedAt={agent.startedAt} showElapsed={false} />
-          )}
-          {flagged ? (
-            <Text size="inherit" tone="inherit" truncate className="min-w-0">
-              {activity}
-            </Text>
-          ) : null}
-        </Badge>
+        {elapsed ? (
+          <Text
+            data-live-agent-elapsed
+            size="inherit"
+            tone="inherit"
+            className="shrink-0 tabular-nums @max-[200px]/rail:hidden"
+          >
+            {elapsed}
+          </Text>
+        ) : null}
       </Text>
     </Button>
   );

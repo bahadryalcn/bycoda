@@ -280,10 +280,10 @@ function InboxFixture() {
     >
       <div className="flex h-dvh min-w-0 flex-col">
         <InboxView
-          cwd="G:/fixture/monocode"
+          cwd="/fixture/workspace"
           recents={[
-            { path: "G:/fixture/monocode", openedAt: 1 },
-            { path: "G:/fixture/portal", openedAt: 1 },
+            { path: "/fixture/workspace", openedAt: 1 },
+            { path: "/fixture/portal", openedAt: 1 },
           ]}
           onAsk={async () => ""}
           onAskRestart={async () => ""}

@@ -2643,6 +2643,10 @@ describe("Merkezi sosyal servis", () => {
     await expect(s.social.call(agentPrincipal, "social.replies.suggest", input)).rejects.toThrow();
     const result = await s.call<{ text: string; factIds: string[] }>("replies.suggest", input);
     expect(result).toMatchObject({ text: "It ships in October.", factIds: ["fact"] });
+    expect(generator.mock.calls[0][3]).toEqual({
+      operationId: expect.any(String),
+      actorScope: expect.stringContaining("replies.suggest"),
+    });
     expect(generator.mock.calls[0][1]).toContain('"maxCharacters":100');
     expect(generator.mock.calls[0][1]).toContain("untrusted data");
     expect(generator.mock.calls[0][1]).not.toContain("synthetic-private-token");
@@ -2897,6 +2901,11 @@ describe("Merkezi sosyal servis", () => {
     expect(generator.mock.calls[0][0]).toEqual({
       provider: "antigravity",
       model: "rule-model",
+    });
+    const generatedDraft = (await s.social.snapshot(owner)).drafts[0];
+    expect(generator.mock.calls[0][3]).toEqual({
+      operationId: `draft:${generatedDraft.id}`,
+      actorScope: expect.stringContaining(rule.id),
     });
     expect(generator.mock.calls[0][1]).not.toContain("unique-incoming-text");
     expect((await s.social.snapshot(owner)).drafts[0].text).toBe("A warm verified answer.");

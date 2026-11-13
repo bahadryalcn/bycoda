@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FileEditor } from "./FileEditor";
 import { setRemoteCommandRunner } from "../../../platform/tauri/fs";
+import { setLanguagePreference } from "../../../shared/i18n";
 import { invalidateWatchedFiles } from "../model/fileWatch";
 
 const bridge = vi.hoisted(() => ({ invoke: vi.fn() }));
@@ -237,5 +238,31 @@ describe("HTML Go Live", () => {
     await render("remote://machine/repo/gallery.html");
     expect(button()?.disabled).toBe(true);
     expect(opened()).toHaveLength(0);
+  });
+  it("localizes HTML reveal labels after changing language", async () => {
+    await render();
+    try {
+      await act(async () => {
+        await setLanguagePreference("tr");
+      });
+      const labels = [...container.querySelectorAll("button")].map((action) =>
+        action.getAttribute("aria-label"),
+      );
+      expect(labels).not.toContain("Open Containing Folder");
+      expect(labels).not.toContain("Reveal in File Explorer");
+      expect(labels).not.toContain("Reveal in Finder");
+      expect(
+        labels.some(
+          (label) =>
+            label?.toLocaleLowerCase("tr").includes("klasör") ||
+            label?.includes("Finder") ||
+            label?.includes("Gezgini"),
+        ),
+      ).toBe(true);
+    } finally {
+      await act(async () => {
+        await setLanguagePreference("en");
+      });
+    }
   });
 });

@@ -18,6 +18,8 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import {
   setDomainLanguagePreference,
   setLanguagePreference,
+  LANGUAGE_STORAGE_KEY,
+  DOMAIN_LANGUAGE_STORAGE_KEYS,
   t,
   useLocale,
 } from "../../../shared/i18n";
@@ -96,18 +98,44 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
   };
   // The shell confirms first; this restores only the settings on this page.
   useSettingsPageReset(async () => {
-    if (IS_WIN) onCloseToTray(CLOSE_TO_TRAY_DEFAULT);
-    saveKeepAwakeEnabled(KEEP_AWAKE_DEFAULT);
-    saveKeepAwakeHoldAfter(KEEP_AWAKE_HOLD_AFTER_DEFAULT);
-    saveKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT);
-    restorePerformanceTraceDefault();
-    restoreNewProjectFolderDefault();
-    await Promise.allSettled([
-      restoreSessionFolderDefault(),
-      setLanguagePreference("system"),
-      setDomainLanguagePreference("git", "app"),
-      setDomainLanguagePreference("technical", "app"),
-    ]);
+    const results = await Promise.allSettled(
+      [
+        () => {
+          if (IS_WIN) {
+            onCloseToTray(CLOSE_TO_TRAY_DEFAULT);
+            return loadCloseToTray() === CLOSE_TO_TRAY_DEFAULT;
+          }
+        },
+        () => {
+          saveKeepAwakeEnabled(KEEP_AWAKE_DEFAULT);
+          return loadKeepAwakeEnabled() === KEEP_AWAKE_DEFAULT;
+        },
+        () => {
+          saveKeepAwakeHoldAfter(KEEP_AWAKE_HOLD_AFTER_DEFAULT);
+          return loadKeepAwakeHoldAfter() === KEEP_AWAKE_HOLD_AFTER_DEFAULT;
+        },
+        () => {
+          saveKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT);
+          return loadKeepAwakeScreen() === KEEP_AWAKE_SCREEN_DEFAULT;
+        },
+        restorePerformanceTraceDefault,
+        restoreNewProjectFolderDefault,
+        restoreSessionFolderDefault,
+        async () => {
+          await setLanguagePreference("system");
+          const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+          return saved === null || saved === "system";
+        },
+        ...(["git", "technical"] as const).map((domain) => async () => {
+          await setDomainLanguagePreference(domain, "en");
+          const saved = localStorage.getItem(DOMAIN_LANGUAGE_STORAGE_KEYS[domain]);
+          return saved === null || saved === "en";
+        }),
+      ].map(async (reset) => reset()),
+    );
+    if (results.some((result) => result.status === "rejected" || result.value === false)) {
+      throw new Error(t("Some settings could not be reset. Retry to finish restoring defaults."));
+    }
   });
   const sleepBehavior = IS_WIN
     ? t(
@@ -283,24 +311,32 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
   const [updatesEnabled, setUpdatesEnabled] = useState<boolean | null>(
     () => knownUpdaterEnabledState() ?? null,
   );
+  const [metadataError, setMetadataError] = useState(false);
+  const [metadataAttempt, setMetadataAttempt] = useState(0);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- owns cancellable native build reads for this mounted update row and retry attempt.
   useEffect(() => {
     let cancelled = false;
+    setMetadataError(false);
     void readAppVersion()
       .then((currentVersion) => {
         if (cancelled) return;
         setSnapshot((current) => ({ ...current, currentVersion }));
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setMetadataError(true);
+      });
     void isUpdaterEnabled()
       .then((enabled) => {
         if (!cancelled) setUpdatesEnabled(enabled);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setMetadataError(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [metadataAttempt]);
 
   const [flowBusy, setFlowBusy] = useState(false);
   const busy = flowBusy || snapshot.phase === "checking" || snapshot.phase === "downloading";
@@ -315,6 +351,12 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
         return;
       }
       await runUpdateFlow(true, setSnapshot);
+    } catch (cause) {
+      setSnapshot((current) => ({
+        ...current,
+        phase: "error",
+        error: cause instanceof Error ? cause.message : t("Update check failed."),
+      }));
     } finally {
       setFlowBusy(false);
     }
@@ -363,6 +405,18 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
         description={snapshot.phase === "idle" && updatesEnabled !== false ? status : undefined}
         feedback={
           <>
+            {metadataError ? (
+              <SettingsFeedback
+                state="error"
+                action={
+                  <Button onClick={() => setMetadataAttempt((attempt) => attempt + 1)}>
+                    {t("Retry")}
+                  </Button>
+                }
+              >
+                {t("Could not read update information. Retry to check this build.")}
+              </SettingsFeedback>
+            ) : null}
             {snapshot.phase !== "idle" || updatesEnabled === false ? (
               <SettingsFeedback
                 state={
@@ -395,7 +449,9 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
               className="shrink-0"
               stableWidth
               onClick={() => void onClick()}
-              disabled={busy || updatesEnabled !== true}
+              disabled={
+                busy || metadataError || snapshot.currentVersion === "…" || updatesEnabled !== true
+              }
               loading={busy}
               startIcon={
                 hasUpdate ? (

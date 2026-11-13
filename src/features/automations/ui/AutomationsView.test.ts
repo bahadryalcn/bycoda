@@ -1070,3 +1070,59 @@ it("keeps same-ID local and host automations independent and preserves the host 
     remove.mockRestore();
   }
 });
+
+it("keeps a failed run's full error outside its disabled session button", async () => {
+  const automation: Automation = {
+    ...newAutomationDraft("/work/history-project", "codex", "model"),
+    id: "failed-history",
+    name: "Failed history",
+    prompt: "Review",
+    nextRunAt: 0,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const error = "Complete failure detail. ".repeat(80);
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "automations_list") return [automation];
+    if (command === "automation_runs_list")
+      return [
+        {
+          id: "failed-run",
+          automationId: automation.id,
+          trigger: "manual",
+          scheduledFor: 1,
+          createdAt: 1,
+          status: "failed",
+          error,
+        },
+      ];
+    if (command.endsWith("_status")) return { connected: false };
+    return [];
+  });
+  await act(async () =>
+    root.render(
+      createElement(AutomationsView, {
+        cwd: automation.cwd,
+        recents: [],
+        onClose: vi.fn(),
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+        onOpenBackgroundSession: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Open Failed history"]')!.click(),
+  );
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      .find((button) => button.textContent === "Run history")!
+      .click(),
+  );
+  const detail = [...container.querySelectorAll("div")].find(
+    (element) => element.textContent === error && element.children.length === 0,
+  )!;
+  expect(detail).toBeDefined();
+  expect(detail.closest("button")).toBeNull();
+  expect(detail.parentElement?.closest("li")?.querySelector("button[disabled]")).not.toBeNull();
+});

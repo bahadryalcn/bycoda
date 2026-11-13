@@ -543,18 +543,18 @@ function selection(entries: readonly ManagedTool[], input: ToolSearchInput) {
       'Unsupported tool group. Expected one of: "conversation", "social", "runtime-logs". Omit group to search all groups; use family for domains such as sessions, providers or browser.',
     );
   const terms = query.split(/\s+/).filter(Boolean);
+  // Any matching word lists a tool, most matches first: models search with several
+  // words ("agents delegate wait") that no single tool contains together.
   const tools = entries
-    .filter(
-      (entry) =>
-        (!group || entry.group === group) &&
-        (!family || entry.family === family) &&
-        terms.every((term) =>
-          `${entry.id} ${entry.name} ${entry.summary} ${entry.description}`
-            .toLocaleLowerCase("en")
-            .includes(term),
-        ),
-    )
-    .sort((a, b) => a.id.localeCompare(b.id, "en"));
+    .filter((entry) => (!group || entry.group === group) && (!family || entry.family === family))
+    .map((entry) => {
+      const text =
+        `${entry.id} ${entry.name} ${entry.summary} ${entry.description}`.toLocaleLowerCase("en");
+      return { entry, score: terms.filter((term) => text.includes(term)).length };
+    })
+    .filter(({ score }) => !terms.length || score > 0)
+    .sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id, "en"))
+    .map(({ entry }) => entry);
   return { tools, query, family, group };
 }
 function compact(entry: ManagedTool) {

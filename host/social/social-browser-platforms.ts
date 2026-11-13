@@ -14,7 +14,7 @@ import {
   browserOperations,
 } from "../../src/integrations/social/browserCapabilities";
 import { xMediaFormat } from "../../src/integrations/social/xMedia";
-import { challengeError } from "./browser/challenge";
+import { challengeError, detectChallenge } from "./browser/challenge";
 import { BrowserSendLimiter } from "./browser/limiter";
 import { UnexpectedScreen } from "./browser-layers/types";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
@@ -28,7 +28,7 @@ import type { BrowserRecipe, BrowserRecipeContext } from "./social-browser-recip
 import type { SocialPrincipal, SocialService } from "./social";
 
 type Login = {
-  status: "waiting" | "connected" | "failed";
+  status: "waiting" | "checking" | "connected" | "failed";
   expiresAt: number;
   error?: string;
   cancelled?: boolean;
@@ -73,7 +73,8 @@ export class PlatformBrowserSessions {
     background = this.background,
   ): Promise<BrowserSession> {
     const visibility = await visibilityOf(this.wiring, account.id);
-    const session = await this.launcher!(this.profile(account.id), background, visibility);
+    const fallback = () => this.launcher!(this.profile(account.id), background, visibility);
+    const session = await (this.wiring.openSession?.(account.id, fallback) ?? fallback());
     const release = this.wiring.tracker?.track(account.id, session);
     return {
       ...session,
@@ -90,11 +91,57 @@ export class PlatformBrowserSessions {
     return recipe;
   }
   waiting(id: string): boolean {
-    return this.logins.get(id)?.status === "waiting";
+    return ["waiting", "checking"].includes(this.logins.get(id)?.status ?? "");
   }
   status(id: string) {
     const flow = this.logins.get(id);
     return flow ? { status: flow.status, error: flow.error } : { status: "idle" as const };
+  }
+  async check(service: SocialService, principal: SocialPrincipal, account: SocialAccount) {
+    const flow = this.logins.get(account.id);
+    if (flow?.status === "waiting" || flow?.status === "checking") return this.status(account.id);
+    if (!account.connected || !account.platformId)
+      return flow?.status === "failed" ? this.status(account.id) : { status: "idle" as const };
+    try {
+      if (!this.launcher || account.executorId !== service.store.environmentId)
+        throw new Error("Check this account on its executor host.");
+      return await this.exclusive(account.id, async () => {
+        const current = await service.accountForOAuth(principal, account.id);
+        if (
+          current.platformId !== account.platformId ||
+          current.executorId !== account.executorId ||
+          !current.connected
+        )
+          throw new Error("The account changed. Try again.");
+        const recipe = this.recipe(current);
+        const session = await this.open(current, true);
+        try {
+          await session.page.goto(recipe.connectionUrl?.(current) ?? recipe.loginUrl);
+          const challenge = await challengeError(session.page, this.directory);
+          if (challenge) throw challenge;
+          if (await detectChallenge(session.page)) throw new SocialPlatformError("expired");
+          const identity = await runLayered(this.wiring, current.id, {
+            name: "identity",
+            recipe: () => recipe.identity(session.page, current),
+          });
+          if (
+            !identity ||
+            identity.platformId !== current.platformId ||
+            (identity.accountType && identity.accountType !== current.accountType)
+          )
+            throw new Error("The saved browser identity could not be verified.");
+          return { status: "connected" as const };
+        } finally {
+          await session.close();
+          await session.profileReleased?.();
+        }
+      });
+    } catch (error) {
+      return {
+        status: "failed" as const,
+        error: error instanceof Error ? error.message : "Browser identity verification failed.",
+      };
+    }
   }
   async begin(
     service: SocialService,
@@ -131,6 +178,7 @@ export class PlatformBrowserSessions {
         if (!closed) await window.close().catch(() => undefined);
       }
       if (flow.cancelled) return;
+      flow.status = "checking";
       const session = await this.open(account, true);
       try {
         await session.page.goto(connectionUrl);
@@ -143,8 +191,9 @@ export class PlatformBrowserSessions {
           }).catch(identityFailure);
           if (!identity) await this.wait(500);
         }
-        const challenge = identity ? undefined : await challengeError(session.page, this.directory);
+        const challenge = await challengeError(session.page, this.directory);
         if (challenge) throw challenge;
+        if (await detectChallenge(session.page)) throw new SocialPlatformError("expired");
         if (
           !identity ||
           !identity.platformId ||

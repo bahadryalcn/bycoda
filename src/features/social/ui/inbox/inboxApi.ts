@@ -1,4 +1,5 @@
-import type { SocialDraft, SocialThread } from "../../model/social";
+import type { SocialThread } from "../../model/social";
+import { resumeInboxReply, type InboxReplyOperation } from "./inboxReplyOperation";
 import type { SocialClient } from "../../model/socialClient";
 import type {
   InboxFilterState,
@@ -16,13 +17,6 @@ type RequestFn = <T>(
   input?: Record<string, unknown>,
   requestId?: string,
 ) => Promise<T>;
-
-export type InboxReplyInput = {
-  threadId: string;
-  text: string;
-  /** Verified fact ids the reply was written from (empty for a manual reply). */
-  factIds: string[];
-};
 
 function newRequestId(): string {
   return crypto.randomUUID();
@@ -43,19 +37,11 @@ export function unifiedFilterInput(filter: InboxFilterState): Record<string, unk
  * rest (autonomy, suppression, limits). The draft is passed back unchanged as `reviewedDraft`.
  * Marking the conversation "replied" happens only after the reply is queued and never fails it.
  */
-export async function sendInboxReply(call: RequestFn, input: InboxReplyInput): Promise<void> {
-  const draft = await call<SocialDraft>(
-    "replies.draft",
-    { threadId: input.threadId, text: input.text, factIds: input.factIds },
-    newRequestId(),
-  );
-  await call("drafts.approve", { id: draft.id, reviewedDraft: draft }, newRequestId());
-  await call("replies.send", { id: draft.id }, newRequestId());
-  await call(
-    "inbox.setStatus",
-    { threadId: input.threadId, status: "replied" satisfies InboxStatus },
-    newRequestId(),
-  ).catch(() => undefined);
+export async function sendInboxReply(
+  call: RequestFn,
+  operation: InboxReplyOperation,
+): Promise<void> {
+  return resumeInboxReply(call, operation);
 }
 
 /** Typed calls for the inbox screen. Every write gets its own request id. */
@@ -81,6 +67,6 @@ export function inboxApi(client: SocialClient) {
       call<{ text: string; factIds: string[] }>("replies.suggest", { threadId, factIds }),
     setAutoRefresh: (autoRefresh: boolean) =>
       call<InboxSettings>("inbox.settings", { autoRefresh }, newRequestId()),
-    sendReply: (input: InboxReplyInput) => sendInboxReply(call, input),
+    sendReply: (operation: InboxReplyOperation) => sendInboxReply(call, operation),
   };
 }

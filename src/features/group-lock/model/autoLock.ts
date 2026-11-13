@@ -1,3 +1,5 @@
+import { t, formatNumber } from "../../../shared/i18n";
+
 /** Minutes of inactivity before every group locks. 0 turns it off. */
 export const AUTO_LOCK_MINUTES = [0, 5, 15, 30, 60] as const;
 export type AutoLockMinutes = (typeof AUTO_LOCK_MINUTES)[number];
@@ -8,7 +10,7 @@ export function parseAutoLockMinutes(value: unknown): AutoLockMinutes {
 }
 
 export function autoLockLabel(minutes: AutoLockMinutes): string {
-  return minutes === 0 ? "Off" : `${minutes} minutes`;
+  return minutes === 0 ? t("Off") : t("{p0} minutes", { p0: formatNumber(minutes) });
 }
 
 /** True once the app has seen no input for the whole interval. */

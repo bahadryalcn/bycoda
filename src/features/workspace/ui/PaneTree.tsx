@@ -525,14 +525,14 @@ function PaneTreeComponent({
             "window",
             ev,
             dragContents.current.sessionById.get(fromId)?.busy
-              ? "Move after response finishes"
+              ? t("Move after response finishes")
               : undefined,
           );
           setPaneDrag({ fromId, overId: null, edge: "left" });
           return;
         }
         if (titleTab) {
-          setDropFeedback("move", ev, "Release to create a tab");
+          setDropFeedback("move", ev, t("Release to create a tab"));
           setPaneDrag({ fromId, overId: null, edge: "left" });
           return;
         }
@@ -552,10 +552,26 @@ function PaneTreeComponent({
           "move",
           ev,
           over.id === fromId
-            ? `Split ${over.edge} with a new session`
+            ? t(
+                over.edge === "left"
+                  ? "Split left with a new session"
+                  : over.edge === "right"
+                    ? "Split right with a new session"
+                    : over.edge === "top"
+                      ? "Split above with a new session"
+                      : "Split below with a new session",
+              )
             : over.edge === "center"
-              ? "Add as pane tab"
-              : `Place ${over.edge}`,
+              ? t("Add as pane tab")
+              : t(
+                  over.edge === "left"
+                    ? "Place left"
+                    : over.edge === "right"
+                      ? "Place right"
+                      : over.edge === "top"
+                        ? "Place above"
+                        : "Place below",
+                ),
         );
       };
 
@@ -626,7 +642,7 @@ function PaneTreeComponent({
       handle.addEventListener("lostpointercapture", onCancel);
       cancelPaneDrag.current = onCancel;
     },
-    [setPaneDrag],
+    [setPaneDrag, t],
   );
 
   return (

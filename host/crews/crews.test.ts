@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { bindSessionWork } from "../work/session-adapter";
 import { forEachAsync } from "../async-collections";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
@@ -17,17 +19,48 @@ async function setup() {
   stores.push(store);
   const project = await store.addProject("/crew-fixture", "Crew fixture");
   const session = {
-    session: { runtimeMode: "supervised", harness: "codex", model: "codex:fixture", blocks: [] },
+    session: {
+      runtimeMode: "supervised",
+      harness: "codex",
+      model: "codex:fixture",
+      modelSettings: {},
+      title: "Coordinator",
+      blocks: [],
+    },
     projectId: project.id,
     status: "idle",
+    runId: undefined as string | undefined,
   };
-  vi.spyOn(store, "session").mockImplementation(() => session as ReturnType<HostStore["session"]>);
+  vi.spyOn(store, "session").mockResolvedValue(
+    session as Awaited<ReturnType<HostStore["session"]>>,
+  );
   const rows: HostTask[] = [];
+  const sourceRows: HostTask[] = [];
   const tasks = {
-    list: () => rows,
-    tick: vi.fn(),
+    list: () => [...rows, ...sourceRows],
+    reserveCrewExecution: vi.fn(async (id: string, runId: string) => {
+      sourceRows.find((task) => task.id === id)!.crewExecutionId = runId;
+    }),
+    startTask: vi.fn(async (id: string) => sourceRows.find((task) => task.id === id)!),
+    tick: vi.fn(async () => {
+      for (const task of sourceRows.filter((entry) => entry.status === "queued")) {
+        const run = await service.startRun(
+          task.projectId,
+          task.crewDefinitionId!,
+          task.prompt,
+          task.crewExecutionId!,
+          task.runtimeMode,
+          undefined,
+          false,
+          task.id,
+        );
+        task.status = "running";
+        task.sessionId = run.coordinatorSessionId;
+      }
+    }),
     save: vi.fn((task) => {
-      rows.push({ ...task, status: "queued", updatedAt: 1 });
+      const row = { ...task, status: "queued" as const, updatedAt: 1 };
+      (String(task.id).startsWith("crew-") ? sourceRows : rows).push(row);
       return task;
     }),
     acceptCrewTask: vi.fn((id) => {
@@ -36,7 +69,86 @@ async function setup() {
       return task;
     }),
   };
-  const engine = { command: vi.fn(() => ({ sessionId: "coordinator" })), updateSession: vi.fn() };
+  type Admission = Parameters<HostEngine["withCommandAdmission"]>[0];
+  const admissions = new AsyncLocalStorage<Admission>();
+  const physicalRuns = new Map<string, boolean>();
+  const effect = vi.fn<
+    (input: Record<string, unknown>) => { sessionId: string } | Promise<{ sessionId: string }>
+  >(() => ({ sessionId: "coordinator" }));
+  let nextRun = 0;
+  let acceptanceFailure: string | undefined;
+  const hiddenReceipts = new Set<string>();
+  const receiptStatus = store.receiptStatus.bind(store);
+  vi.spyOn(store, "receiptStatus").mockImplementation(async (id, options) =>
+    hiddenReceipts.has(id) ? undefined : receiptStatus(id, options),
+  );
+  const engine = {
+    command: vi.fn(async (input: Record<string, unknown>) => {
+      const admission = admissions.getStore();
+      if (input.type !== "cancel")
+        await admission?.check({ phase: "command", sessionId: String(input.sessionId ?? "") });
+      if (input.type === "create") {
+        const commandId = String(input.commandId);
+        const previous = await store.receiptStatus(commandId);
+        if (previous) return previous;
+        const created = await effect(input);
+        const receipt = { commandId, sessionId: created.sessionId, revision: 0 };
+        await store.recordReceipt(JSON.stringify(input), receipt);
+        return receipt;
+      }
+      if (input.type === "send") {
+        const commandId = String(input.commandId);
+        const previous = await store.receiptStatus(commandId);
+        if (previous) return previous;
+        const sessionId = String(input.sessionId);
+        const runId = `fixture-run-${++nextRun}`;
+        const receipt = { commandId, sessionId, runId, revision: nextRun };
+        await store.recordReceipt(JSON.stringify(input), receipt);
+        const current = await store.session(sessionId);
+        current.runId = runId;
+        // Host acceptance is durable before callbacks or provider effects. A lost
+        // callback leaves recovery to the persisted receipt, never a fresh send.
+        if (acceptanceFailure) {
+          const message = acceptanceFailure;
+          acceptanceFailure = undefined;
+          physicalRuns.set(`${sessionId}:${runId}`, true);
+          hiddenReceipts.add(commandId);
+          throw new Error(message);
+        }
+        physicalRuns.set(`${sessionId}:${runId}`, true);
+        await admission?.onAccepted?.(receipt);
+        await admission?.check({ phase: "provider", sessionId, runId });
+        physicalRuns.set(`${sessionId}:${runId}`, false);
+        current.status = "running";
+        try {
+          await effect(input);
+          return receipt;
+        } finally {
+          physicalRuns.set(`${sessionId}:${runId}`, true);
+          if (current.runId === runId) current.status = "idle";
+        }
+      }
+      if (input.type === "cancel") {
+        // Cancelling one receipt never retires another physical turn.
+        if (
+          typeof input.runId === "string" &&
+          physicalRuns.has(`${String(input.sessionId)}:${input.runId}`)
+        ) {
+          const current = await store.session(String(input.sessionId));
+          if (current.runId === input.runId) current.status = "idle";
+        }
+        return { sessionId: String(input.sessionId), runId: input.runId };
+      }
+      return effect(input);
+    }),
+    updateSession: vi.fn(),
+    waitForRun: vi.fn(async (sessionId: string, runId: string) => {
+      if (physicalRuns.get(`${sessionId}:${runId}`) !== true)
+        throw new Error("Exact run has not retired.");
+    }),
+    withCommandAdmission: <T>(admission: Admission, action: () => Promise<T>) =>
+      admissions.run(admission, action),
+  };
   const models = async () => ({
     models: {
       codex: [{ id: "codex:fixture", harness: "codex" as const, name: "Fixture" }],
@@ -100,7 +212,14 @@ async function setup() {
     service,
     tasks,
     rows,
+    sourceRows,
     engine,
+    effect,
+    interruptAcceptance: (message: string) => {
+      acceptanceFailure = message;
+    },
+    reconcileAcknowledgement: () => hiddenReceipts.clear(),
+    work: bindSessionWork(store, engine as unknown as HostEngine).work,
     project,
     principal,
     start,
@@ -110,6 +229,32 @@ async function setup() {
   };
 }
 describe("host crews", () => {
+  it("links legacy start to one scheduler-admitted task and retains its original request receipt", async () => {
+    const f = await setup();
+    const first = await f.start();
+    const second = await f.start();
+    expect(first.sourceTaskId).toBe("crew-run");
+    expect(second.id).toBe(first.id);
+    expect(f.sourceRows).toHaveLength(1);
+    expect(f.sourceRows[0]).toMatchObject({
+      crewDefinitionId: "crew",
+      crewExecutionId: "run",
+      projectId: f.project.id,
+    });
+    expect(f.tasks.startTask).toHaveBeenCalledOnce();
+    await expect(
+      f.service.startRun(
+        f.project.id,
+        "crew",
+        "Different request",
+        "run",
+        "supervised",
+        f.principal,
+      ),
+    ).rejects.toThrow("different input");
+    expect(f.sourceRows).toHaveLength(1);
+  });
+
   it("preserves a delegated approval's source occurrence and refuses reused or missing identities", async () => {
     const f = await setup();
     const definition = (await f.service.list(f.project.id)).definitions[0]!;
@@ -238,6 +383,17 @@ describe("host crews", () => {
       f.project.id,
     );
     await f.service.call("crews.resolve", { runId: "run", requestId: "existing" }, f.project.id);
+    const assignment = await f.assign();
+    f.rows[0]!.status = "review";
+    f.rows[0]!.verification = {
+      review: { verdict: "pass", note: "Checked", sessionId: "review-session" },
+    };
+    await f.service.call(
+      "crews.accept",
+      { runId: "run", taskId: assignment.taskId },
+      f.project.id,
+      f.principal,
+    );
     await f.service.call("crews.finish", { runId: "run" }, f.project.id);
     await expect(
       f.service.call(
@@ -320,15 +476,22 @@ describe("host crews", () => {
       { runId: "run", requestId: "first", text: "Need help" },
       f.project.id,
     );
-    f.engine.command.mockImplementationOnce(() => {
-      throw new Error("Unknown delivery");
-    });
-    await expect(f.service.tick()).rejects.toThrow("Unknown delivery");
+    f.interruptAcceptance("Unknown delivery");
+    await f.service.tick();
     const original = f.engine.command.mock.calls.at(-1)?.[0];
+    const pending = (await readCrewRun(f.store, "run"))!.pendingDelivery;
+    expect((await f.work.list())[0]).toMatchObject({ state: "unknown", reserved: true });
+    const calls = f.engine.command.mock.calls.length;
     await f.service.call("crews.pause", { runId: "run" }, f.project.id);
     await f.service.call("crews.resume", { runId: "run" }, f.project.id);
     await f.service.tick();
+    expect(f.engine.command).toHaveBeenCalledTimes(calls);
+    expect((await readCrewRun(f.store, "run"))!.pendingDelivery).toEqual(pending);
+    f.reconcileAcknowledgement();
+    await f.service.tick();
+    expect(f.engine.command).toHaveBeenCalledTimes(calls);
     expect(f.engine.command.mock.calls.at(-1)?.[0]).toEqual(original);
+    expect((await readCrewRun(f.store, "run"))!.notifications).toEqual({ "request:first": "sent" });
   });
   it("retains Stop work when the initial coordinator send completes late", async () => {
     const f = await setup();
@@ -340,7 +503,7 @@ describe("host crews", () => {
     const sending = new Promise<void>((resolve) => {
       started = resolve;
     });
-    f.engine.command.mockImplementation(async (input) => {
+    f.effect.mockImplementation(async (input) => {
       if (input.type === "send") {
         started();
         await sent;
@@ -350,13 +513,13 @@ describe("host crews", () => {
     const starting = f.service.startRun(f.project.id, "crew", "Start", "launch-run", "supervised");
     await sending;
     await f.service.call("crews.stop", { runId: "launch-run" }, f.project.id);
-    vi.mocked(f.store.session).mockResolvedValue({
-      projectId: f.project.id,
-      status: "running",
-      runId: "coordinator-run",
-    } as Awaited<ReturnType<HostStore["session"]>>);
+    const receipt = (await f.work.list())[0]!.receipt!;
+    await expect(f.engine.waitForRun(receipt.sessionId, receipt.runId)).rejects.toThrow(
+      "Exact run has not retired.",
+    );
     release();
     await starting;
+    await expect(f.engine.waitForRun(receipt.sessionId, receipt.runId)).resolves.toBeUndefined();
     expect((await f.service.list(f.project.id)).runs[0]).toMatchObject({
       status: "paused",
       coordinatorSessionId: "coordinator",
@@ -365,7 +528,7 @@ describe("host crews", () => {
       expect.objectContaining({
         type: "cancel",
         sessionId: "coordinator",
-        runId: "coordinator-run",
+        runId: receipt.runId,
       }),
     );
   });
@@ -391,7 +554,12 @@ describe("host crews", () => {
     expect(f.engine.command.mock.calls.some(([command]) => command.type === "send")).toBe(false);
     expect((await f.service.list(f.project.id)).runs[0].status).toBe("paused");
     await f.service.call("crews.resume", { runId: "launch-run" }, f.project.id);
-    expect(f.engine.command.mock.calls.some(([command]) => command.type === "send")).toBe(true);
+    expect(f.engine.command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "send",
+        text: expect.stringContaining("Owner request:\nStart"),
+      }),
+    );
     expect((await f.service.list(f.project.id)).runs[0].status).toBe("active");
   });
   it("preserves independent crew saves across awaited actor reads", async () => {
@@ -523,11 +691,13 @@ describe("host crews", () => {
     expect((await f.service.list(f.project.id)).runs[0]!.notifications).toEqual({
       "request:large-0": "sent",
     });
-    f.engine.command.mockImplementationOnce(() => {
-      throw new Error("delivery uncertain");
-    });
-    await expect(f.service.tick()).rejects.toThrow("delivery uncertain");
+    f.interruptAcceptance("delivery uncertain");
+    await f.service.tick();
     const failed = f.engine.command.mock.calls.at(-1)?.[0];
+    const callsBeforeRecovery = f.engine.command.mock.calls.length;
+    await f.service.tick();
+    expect(f.engine.command).toHaveBeenCalledTimes(callsBeforeRecovery);
+    f.reconcileAcknowledgement();
     await f.service.tick();
     expect(f.engine.command.mock.calls.at(-1)?.[0]).toEqual(failed);
     expect(f.engine.command.mock.calls.at(-1)?.[0]).toMatchObject({
@@ -580,7 +750,7 @@ describe("host crews", () => {
     await f.start();
     const [a, b] = await Promise.all([f.assign(), f.assign()]);
     expect(a.taskId).toBe(b.taskId);
-    expect(f.tasks.save).toHaveBeenCalledTimes(1);
+    expect(f.rows).toHaveLength(1);
     expect(f.rows[0]!.reviewerConfig?.harness).toBe("claude");
     expect(f.rows[0]!.autoMerge).toBe(false);
     expect(f.rows[0]!.isolate).toBe(false);
@@ -652,15 +822,23 @@ describe("host crews", () => {
       f.project.id,
       f.principal,
     );
-    f.engine.command.mockImplementationOnce(() => {
-      throw new Error("transport interrupted");
-    });
-    await expect(f.service.tick()).rejects.toThrow("transport interrupted");
+    f.interruptAcceptance("transport interrupted");
+    await f.service.tick();
     const pending = (await readCrewRun(f.store, "run"))?.pendingDelivery;
     expect(pending?.commandId).toBeTruthy();
+    const work = (await f.work.list())[0]!;
+    expect(work.source.occurrence).toBe(pending!.commandId);
+    expect(work).toMatchObject({ state: "unknown", reserved: true });
+    const attempts = f.engine.command.mock.calls.length;
     await f.service.tick();
-    expect(f.engine.command.mock.calls.at(-1)?.[0]).toMatchObject({
-      commandId: pending!.commandId,
+    expect(f.engine.command).toHaveBeenCalledTimes(attempts);
+    expect((await readCrewRun(f.store, "run"))?.pendingDelivery).toEqual(pending);
+    f.reconcileAcknowledgement();
+    await f.service.tick();
+    expect(f.engine.command).toHaveBeenCalledTimes(attempts);
+    expect((await f.work.get(work.id)).receipt).toBeTruthy();
+    expect((await readCrewRun(f.store, "run"))?.notifications).toEqual({
+      "request:resource": "sent",
     });
     const calls = f.engine.command.mock.calls.length;
     await f.service.tick();
@@ -683,7 +861,7 @@ describe("host crews", () => {
     const sending = new Promise<void>((resolve) => {
       started = resolve;
     });
-    f.engine.command.mockImplementationOnce(async () => {
+    f.effect.mockImplementationOnce(async () => {
       started();
       await delivered;
       return { sessionId: "coordinator" };
@@ -706,6 +884,19 @@ describe("host crews", () => {
     const calls = f.engine.command.mock.calls.length;
     await f.service.tick();
     expect(f.engine.command).toHaveBeenCalledTimes(calls);
+    await f.service.call("crews.resume", { runId: "run" }, f.project.id);
+    await f.service.tick();
+    await f.service.tick();
+    expect((await readCrewRun(f.store, "run"))?.notifications).toEqual({
+      "request:first": "sent",
+      "request:second": "sent",
+    });
+    const sends = f.engine.command.mock.calls.filter(([command]) => command.type === "send");
+    expect(sends).toHaveLength(3);
+    expect(sends.filter(([command]) => command.commandId === sends[0]![0].commandId)).toHaveLength(
+      1,
+    );
+    expect(sends.at(-1)![0].text).toContain("New request");
   });
   it("holds paused work in the existing scheduler and rejects forged tool evidence", async () => {
     const f = await setup();
@@ -735,6 +926,7 @@ describe("crew deletion", () => {
       f.service.call("crews.delete", { definitionId: "crew" }, f.project.id),
     ).rejects.toThrow("Stop");
     await f.service.call("crews.stop", { runId: "run" }, f.project.id);
+    f.sourceRows[0]!.status = "done";
     await f.service.call("crews.delete", { definitionId: "crew" }, f.project.id);
     const view = await f.service.list(f.project.id);
     expect(view.definitions).toEqual([]);
@@ -992,6 +1184,7 @@ describe("crew work deletion", () => {
     const f = await setup();
     await f.start();
     await f.service.call("crews.pause", { runId: "run" }, f.project.id);
+    f.sourceRows.splice(0);
     const run = (await f.service.list(f.project.id)).runs[0];
     let release!: () => void;
     let started!: () => void;
@@ -1082,6 +1275,7 @@ describe("crew work deletion", () => {
       "Stop work",
     );
     await f.service.call("crews.pause", { runId: "run" }, f.project.id);
+    f.sourceRows.splice(0);
     await expect(
       f.service.call(
         "crews.deleteRun",
@@ -1109,6 +1303,7 @@ describe("crew work deletion", () => {
     const f = await setup();
     await f.start();
     await f.service.call("crews.pause", { runId: "run" }, f.project.id);
+    f.sourceRows.splice(0);
     const input = {
       runId: "run",
       expectedUpdatedAt: (await f.service.list(f.project.id)).runs[0].updatedAt,
@@ -1215,32 +1410,40 @@ describe("host crews resume after external coordinator loss", () => {
   it("clears a deleted coordinator and resumes with a fresh, distinct launch", async () => {
     const f = await setup();
     await f.service.startRun(f.project.id, "crew", "Start", "launch-run", "supervised");
-    expect(creates(f)[0].commandId).toBe("crew-launch-run:create");
+    const firstCommandId = creates(f)[0].commandId;
+    expect(firstCommandId).toMatch(/^work-[a-f0-9]{64}$/);
     vi.mocked(f.store.session).mockRejectedValue(new Error("Session not found on this machine"));
     const lost = (await f.service.list(f.project.id)).runs[0];
     expect(lost).toMatchObject({ status: "paused" });
     expect((await readCrewRun(f.store, "launch-run"))?.coordinatorSessionId).toBeUndefined();
     let created = 0;
-    f.engine.command.mockImplementation((...args: unknown[]) => ({
+    f.effect.mockImplementation((...args: unknown[]) => ({
       sessionId: (args[0] as { type?: string }).type === "create" ? `fresh-${++created}` : "x",
     }));
     vi.mocked(f.store.session).mockResolvedValue({
       projectId: f.project.id,
       status: "idle",
+      runId: "fixture-run",
+      session: {
+        runtimeMode: "supervised",
+        harness: "codex",
+        model: "codex:fixture",
+        modelSettings: {},
+        blocks: [],
+      },
     } as Awaited<ReturnType<HostStore["session"]>>);
     await f.service.call("crews.resume", { runId: "launch-run" }, f.project.id);
     const run = await readCrewRun(f.store, "launch-run");
     expect(run).toMatchObject({ status: "active", coordinatorSessionId: "fresh-1" });
     expect(run?.error).toBeUndefined();
-    expect(creates(f).at(-1)?.commandId).toBe("crew-launch-run-1:create");
+    expect(creates(f).at(-1)?.commandId).toMatch(/^work-[a-f0-9]{64}$/);
+    expect(creates(f).at(-1)?.commandId).not.toBe(firstCommandId);
   });
   it("resumes an externally stopped coordinator once, without launching a second", async () => {
     const f = await setup();
     await f.service.startRun(f.project.id, "crew", "Start", "launch-run", "supervised");
-    vi.mocked(f.store.session).mockResolvedValue({
-      projectId: f.project.id,
-      status: "interrupted",
-    } as Awaited<ReturnType<HostStore["session"]>>);
+    const coordinator = await f.store.session("coordinator");
+    vi.mocked(f.store.session).mockResolvedValue({ ...coordinator, status: "interrupted" });
     await f.service.tick();
     expect((await readCrewRun(f.store, "launch-run"))?.status).toBe("paused");
     f.engine.command.mockClear();

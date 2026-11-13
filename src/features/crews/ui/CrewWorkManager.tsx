@@ -1,5 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import type { BackgroundSessionTarget } from "../../tasks";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -47,6 +48,7 @@ export function CrewWorkManager({
   onOpen,
   onClose,
   layout,
+  renderCoordinator,
 }: {
   cwd: string;
   state: CrewState;
@@ -56,6 +58,7 @@ export function CrewWorkManager({
   /** Dialog: closes the modal. Page: called after a session opened; usually omitted. */
   onClose?: () => void;
   layout: "dialog" | "page";
+  renderCoordinator?: (target: BackgroundSessionTarget) => ReactNode;
 }) {
   useLocale();
   const scope = useCrewMachineScope(homeCwd, homeState);
@@ -405,6 +408,19 @@ export function CrewWorkManager({
                   >
                     {state.error.message}
                   </Alert>
+                ) : null}
+                {selected?.coordinatorSessionId && renderCoordinator ? (
+                  <div
+                    className="flex min-h-96 flex-col h-[min(70dvh,800px)]"
+                    data-crew-coordinator
+                  >
+                    {renderCoordinator({
+                      cwd,
+                      machineId: data.machine.id,
+                      projectId: data.project.id,
+                      sessionId: selected.coordinatorSessionId,
+                    })}
+                  </div>
                 ) : null}
                 {selected ? (
                   <CrewWorkDetail

@@ -123,7 +123,6 @@ import { invalidateGitIndex } from "../model/gitIndexStore";
 import { GitFeedback } from "./GitFeedback";
 import { usePrStatus } from "../hooks/usePrStatus";
 import { ACTIVE_PROJECT_REFRESH_MS } from "../model/gitRefreshPolicy";
-import { GitGenerationSettings } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
@@ -822,8 +821,6 @@ function ChangedFiles({
     generating,
     amend,
     generationChoice,
-    setGenerationChoice,
-    hasGenerationOverride,
     generate,
     cancelGenerate,
     toggleAmend: toggleAmendDraft,
@@ -1346,16 +1343,6 @@ function ChangedFiles({
                       <WandSparkles className="icon-sm" strokeWidth={1.75} />
                     )}
                   </InlineAction>
-                  {!isRemoteProjectPath(cwd) && (
-                    <GitGenerationSettings
-                      cwd={cwd}
-                      preferred={textHarness}
-                      choice={generationChoice}
-                      hasOverride={hasGenerationOverride}
-                      onChange={setGenerationChoice}
-                      disabled={generating || committing}
-                    />
-                  )}
                 </>
               }
             />

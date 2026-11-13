@@ -287,7 +287,10 @@ function ProfileLanguage({
             hideLabel
             label={t("Language")}
             value={value}
-            options={LANGUAGES.map(([id, label]) => ({ value: id, label }))}
+            options={LANGUAGES.map(([id, label]) => ({
+              value: id,
+              label: id === "auto" ? t(label) : label,
+            }))}
             onValueChange={onValueChange}
           />
         )}

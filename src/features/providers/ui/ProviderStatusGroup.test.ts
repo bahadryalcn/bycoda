@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { ProviderStatusGroup } from "./ProviderStatusGroup";
-const updateState = vi.hoisted(() => ({ catalogRefresh: "unchanged" }));
+const updateState = vi.hoisted(() => ({ catalogRefresh: "unchanged", failed: false }));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   hasProbedHarnessAvailability: () => true,
 }));
@@ -12,7 +12,9 @@ vi.mock("../model/harnessUpdateActions", () => ({
   getHarnessUpdateSnapshot: () => ({
     checking: false,
     runs: {
-      codex: { status: "updated", version: "0.95.0", catalogRefresh: updateState.catalogRefresh },
+      codex: updateState.failed
+        ? { status: "failed", error: "Version verification failed" }
+        : { status: "updated", version: "0.95.0", catalogRefresh: updateState.catalogRefresh },
     },
     checks: [
       {
@@ -94,4 +96,26 @@ it("omits repeated bulk-check times and explains unavailable release feeds", () 
   expect(html).not.toContain("Check for updates");
   expect(html).not.toContain("now");
   expect(html).toContain("<td");
+});
+
+it("uses failure glyph with a retained successful version check", () => {
+  updateState.catalogRefresh = "unchanged";
+  updateState.failed = true;
+  try {
+    const html = renderToStaticMarkup(
+      createElement(ProviderStatusGroup, {
+        harness: "codex",
+        available: true,
+        checkedAt: null,
+        onCheck: vi.fn(),
+        onSetup: vi.fn(),
+      }),
+    );
+    expect(html).toContain("Update failed");
+    expect(html).toContain("Version verification failed");
+    expect(html).toContain("lucide-circle-x");
+    expect(html).not.toContain("lucide-check");
+  } finally {
+    updateState.failed = false;
+  }
 });

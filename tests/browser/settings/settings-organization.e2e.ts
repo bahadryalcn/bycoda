@@ -1,6 +1,37 @@
 import { test, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 
+test("settings search metadata uses the available result width", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  for (const theme of ["light", "dark"]) {
+    for (const width of [1280, 800]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/settings/settings.html?section=general&theme=${theme}&lang=en&connections=1`,
+      );
+      await page.getByRole("button", { name: "Search settings", exact: true }).click();
+      await page.getByRole("combobox", { name: "Search settings", exact: true }).fill("phone");
+      const result = page
+        .getByRole("option")
+        .filter({ hasText: "Phone" })
+        .filter({ hasText: "Connections" });
+      await expect(result).toHaveCount(1);
+      const metadata = result.locator("span").filter({ hasText: /^Connections$/ });
+      await expect(metadata).toBeVisible();
+      const geometry = await metadata.evaluate((node) => ({
+        height: node.getBoundingClientRect().height,
+        lineHeight: Number.parseFloat(getComputedStyle(node).lineHeight),
+      }));
+      await page.screenshot({
+        path: `temp/verification/settings-ux-20261113/final-search-${theme}-${width}.png`,
+      });
+      expect(geometry.height).toBeLessThanOrEqual(geometry.lineHeight + 1);
+      await result.click();
+      await expect(page.locator("#setting-connections-phone")).toBeVisible();
+    }
+  }
+});
+
 for (const theme of ["light", "dark"])
   for (const width of [390, 1280]) {
     test(`settings search geometry ${theme} ${width}`, async ({ page }) => {

@@ -1,5 +1,4 @@
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
@@ -53,7 +52,7 @@ export function EditorConflictBar({
     <Text
       as="header"
       tone="inherit"
-      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center justify-between gap-2 px-2"
+      className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center justify-between gap-2 px-2 py-1"
       role="toolbar"
       aria-label={t("Merge conflicts")}
     >
@@ -68,13 +67,17 @@ export function EditorConflictBar({
           >
             {count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
           </Text>
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-1">
             {fileNote ? (
-              <OverflowTooltip label={fileNote}>
-                <Text truncate size="inherit" tone="secondary" className="mr-1" role="status">
-                  {fileNote}
-                </Text>
-              </OverflowTooltip>
+              <Text
+                wrap="anywhere"
+                size="inherit"
+                tone="secondary"
+                className="min-w-0 mr-1"
+                role="status"
+              >
+                {fileNote}
+              </Text>
             ) : null}
             {nextFile}
             <Button
@@ -109,24 +112,32 @@ export function EditorConflictBar({
         </>
       ) : (
         <>
-          <OverflowTooltip label={error}>
-            <Text size="inherit" tone="secondary" truncate className="min-w-0" role="status">
-              {error ? (
-                <Text size="inherit" tone="danger">
-                  {error}
-                </Text>
-              ) : (
-                t("All conflicts resolved")
-              )}
-            </Text>
-          </OverflowTooltip>
-          <div className="flex shrink-0 items-center gap-1">
+          <Text
+            size="inherit"
+            tone="secondary"
+            wrap="anywhere"
+            className="min-w-0 flex-1"
+            role="status"
+          >
+            {error ? (
+              <Text size="inherit" tone="danger">
+                {error}
+              </Text>
+            ) : (
+              t("All conflicts resolved")
+            )}
+          </Text>
+          <div className="flex min-w-0 flex-wrap items-center gap-1">
             {fileNote ? (
-              <OverflowTooltip label={fileNote}>
-                <Text truncate size="inherit" tone="secondary" role="status">
-                  {fileNote}
-                </Text>
-              </OverflowTooltip>
+              <Text
+                wrap="anywhere"
+                size="inherit"
+                tone="secondary"
+                className="min-w-0"
+                role="status"
+              >
+                {fileNote}
+              </Text>
             ) : null}
             {nextFile}
             <Button

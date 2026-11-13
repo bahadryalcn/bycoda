@@ -10,6 +10,7 @@ const backend = vi.hoisted(() => ({
   openUrl: vi.fn(),
   cloudStatus: vi.fn(),
   setCloudKey: vi.fn(),
+  transcriptionModels: vi.fn(),
 }));
 vi.mock("../model/localVoiceClient", () => ({ localVoiceBackend: backend }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: backend.browse }));
@@ -18,6 +19,9 @@ vi.mock("../../assistant/model/assistantClient", () => ({
   useAssistantSnapshot: () => ({ snapshot: undefined }),
   assistantIdentity: () => ({ title: "Assistant" }),
 }));
+import { RevealedSetting } from "../../settings/ui/settingsControls";
+import { clearRetainedVoiceDrafts } from "../model/voiceSettingsDrafts";
+import { voiceSaveFailures } from "../model/voiceSettingsSave";
 import { VoiceSettings } from "./VoiceSettings";
 import { loadVoiceSettings, saveVoiceSettings } from "../model/voiceSettings";
 import * as conversationPreset from "../model/voiceConversationPreset";
@@ -36,12 +40,18 @@ beforeEach(() => {
   });
   backend.setupStatus.mockResolvedValue({ state: "idle" });
   backend.cloudStatus.mockResolvedValue({ elevenlabs: false });
+  backend.transcriptionModels.mockResolvedValue([
+    { id: "openai/gpt-4o-mini-transcribe", label: "OpenAI GPT-4o mini Transcribe" },
+  ]);
 });
 afterEach(async () => {
   if (root) await act(async () => root!.unmount());
   root = undefined;
   container?.remove();
   localStorage.clear();
+  clearRetainedVoiceDrafts();
+  voiceSaveFailures.clear();
+  vi.restoreAllMocks();
   vi.resetAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -627,8 +637,11 @@ it("chooses the default cloud dictation model per provider", async () => {
     }),
   );
   expect(model()?.textContent).toContain("GPT-4o Transcribe");
-  // An unknown stored model falls back to the provider default.
-  expect(loadVoiceSettings().dictationModels).toEqual({ openai: "gpt-4o-transcribe" });
+  // OpenRouter model IDs are preserved until the live catalog can validate them.
+  expect(loadVoiceSettings().dictationModels).toEqual({
+    openai: "gpt-4o-transcribe",
+    openrouter: "made/up",
+  });
   expect(document.querySelector('[data-setting-id="voice-openrouter-key"]')).toBeNull();
   await act(async () =>
     saveVoiceSettings({ ...loadVoiceSettings(), dictationEngine: "openrouter" }),
@@ -643,16 +656,97 @@ it("keeps core voice choices visible and retains optional dictation and processi
   expect(row("voice-mode").closest("[hidden]")).toBeNull();
   expect(row("voice-speaker").closest("[hidden]")).toBeNull();
   expect(row("dictation-language").closest("[hidden]")).toBeNull();
-  const recognition = row("dictation-engine");
-  expect(recognition.closest("[hidden]")).not.toBeNull();
+  expect(row("dictation-engine").closest("[hidden]")).toBeNull();
+  expect(row("dictation-model").closest("[hidden]")).toBeNull();
+  expect(row("dictation-shortcut-mode").closest("[hidden]")).toBeNull();
   expect(row("voice-device").closest("[hidden]")).not.toBeNull();
-  expect(
-    recognition.closest('[data-settings-part="advanced"]')?.querySelector("button")?.textContent,
-  ).toContain("OpenAI");
+  const dictionary = row("dictation-dictionary");
+  expect(dictionary.closest("[hidden]")).not.toBeNull();
   await act(async () =>
-    recognition.closest('[data-settings-part="advanced"]')!.querySelector("button")!.click(),
+    dictionary.closest('[data-settings-part="advanced"]')!.querySelector("button")!.click(),
   );
-  expect(row("dictation-engine")).toBe(recognition);
-  expect(recognition.closest("[hidden]")).toBeNull();
+  expect(row("dictation-dictionary")).toBe(dictionary);
+  expect(dictionary.closest("[hidden]")).toBeNull();
   expect(backend.setup).not.toHaveBeenCalled();
+});
+
+it("keeps saved values and row-local retry when ordinary Voice preferences fail", async () => {
+  await setup(false);
+  vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
+    throw new Error("QuotaExceededError");
+  });
+  const row = container.querySelector('[data-setting-id="voice-companion"]')!;
+  await act(async () => row.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  expect(loadVoiceSettings().enabled).toBe(false);
+  expect(row.textContent).toContain("could not be saved");
+  expect(row.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
+  await act(async () =>
+    [...row.querySelectorAll("button")].find((button) => button.textContent === "Retry")!.click(),
+  );
+  expect(loadVoiceSettings().enabled).toBe(true);
+  expect(row.textContent).not.toContain("could not be saved");
+});
+
+it.each([
+  "dictation-dictionary",
+  "dictation-local-models",
+  "dictation-cleanup",
+  "dictation-shortcut-mode",
+])("reveals disabled %s prerequisite without enabling or capture", async (target) => {
+  await setup(false);
+  const before = loadVoiceSettings();
+  await act(async () =>
+    root!.render(
+      createElement(RevealedSetting.Provider, { value: target }, createElement(VoiceSettings)),
+    ),
+  );
+  const row = container.querySelector(`[data-setting-id="${target}"]`)!;
+  expect(row.textContent).toContain("Enable dictation to use this setting");
+  await act(async () => row.querySelector<HTMLButtonElement>("button")!.click());
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Enable dictation");
+  expect(loadVoiceSettings()).toEqual(before);
+  expect(backend.setup).not.toHaveBeenCalled();
+  await act(async () => (document.activeElement as HTMLButtonElement).click());
+  expect(loadVoiceSettings().dictationEnabled).toBe(true);
+  expect(container.querySelector(`[data-setting-id="${target}"]`)?.textContent).not.toContain(
+    "Enable dictation to use this setting",
+  );
+});
+
+it("reveals local-model engine prerequisite under cloud recognition without changing provider", async () => {
+  saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: true, dictationEngine: "openai" });
+  await setup(false);
+  await act(async () =>
+    root!.render(
+      createElement(
+        RevealedSetting.Provider,
+        { value: "dictation-local-models" },
+        createElement(VoiceSettings),
+      ),
+    ),
+  );
+  const row = container.querySelector('[data-setting-id="dictation-local-models"]')!;
+  expect(row.textContent).toContain("Choose This computer");
+  await act(async () => row.querySelector<HTMLButtonElement>("button")!.click());
+  expect(document.activeElement?.getAttribute("aria-label")).toContain("Dictation recognition");
+  expect(loadVoiceSettings().dictationEngine).toBe("openai");
+  expect(backend.setup).not.toHaveBeenCalled();
+});
+
+it("attaches failed memory changes to their own rows with retry", async () => {
+  await setup(true);
+  const write = vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
+    throw new Error("QuotaExceededError");
+  });
+  const memory = container.querySelector('[data-setting-id="voice-memory"]')!;
+  await act(async () => memory.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  expect(memory.textContent).toContain("could not be saved");
+  expect(memory.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("true");
+  write.mockRestore();
+  await act(async () =>
+    [...memory.querySelectorAll("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click(),
+  );
+  expect(memory.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
 });

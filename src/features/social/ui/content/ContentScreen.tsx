@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Button } from "../../../../shared/ui/Button";
+import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import { ChevronLeft, ChevronRight, Plus } from "../../../../shared/ui/icons";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
@@ -26,8 +27,9 @@ import {
   weekDays,
   type CalendarView,
 } from "./calendarModel";
-import { draftFromCampaign, emptyDraft, type ContentDraft } from "./contentDraft";
+import { draftFromCampaign, emptyDraft } from "./contentDraft";
 import { useContentData } from "./useContentData";
+import { useContentDraft } from "./useContentDraft";
 import "./content.css";
 
 const OUTCOME_TEXT: Record<EditorOutcome, () => string> = {
@@ -36,11 +38,6 @@ const OUTCOME_TEXT: Record<EditorOutcome, () => string> = {
   draft: () => t("Draft saved."),
   program: () => t("Repeating program saved as paused. Review it before it starts."),
 };
-
-/** A draft with words or media that is not saved as a campaign yet. */
-function hasUnsaved(draft: ContentDraft): boolean {
-  return !draft.campaignId && (draft.text.trim() !== "" || draft.media.length > 0);
-}
 
 /** Content: calendar or list of posts, and one editor for new and saved posts. */
 export function ContentScreen({
@@ -57,9 +54,8 @@ export function ContentScreen({
   const [anchor, setAnchor] = useState(() => Date.now());
   const [accountFilter, setAccountFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<ContentListStatus>("all");
-  const [draft, setDraft] = useState<ContentDraft>(emptyDraft);
-  const [open, setOpen] = useState(false);
-  const [notice, setNotice] = useState<{ tone: "success" | "warning"; text: string }>();
+  const workspace = useContentDraft(client, projectId);
+  const { draft, setDraft, open, setOpen, notice, setNotice, dirty } = workspace;
   const snapshot = data.snapshot;
   const accounts = snapshot?.accounts ?? [];
   const entries = useMemo(
@@ -78,8 +74,8 @@ export function ContentScreen({
 
   const openNew = (day?: number) => {
     setNotice(undefined);
-    if (!hasUnsaved(draft)) {
-      setDraft(
+    if (!dirty) {
+      workspace.loadDraft(
         day === undefined
           ? emptyDraft()
           : { ...emptyDraft(), when: "later", scheduledAt: `${dayKey(day)}T09:00` },
@@ -88,7 +84,7 @@ export function ContentScreen({
     setOpen(true);
   };
   const openCampaign = (campaign: SocialCampaign) => {
-    if (hasUnsaved(draft)) {
+    if (dirty) {
       setNotice({
         tone: "warning",
         text: t("Finish the post you are writing first, or discard it."),
@@ -96,7 +92,7 @@ export function ContentScreen({
       return;
     }
     setNotice(undefined);
-    setDraft(draftFromCampaign(campaign));
+    workspace.loadDraft(draftFromCampaign(campaign));
     setOpen(true);
   };
   const discard = async () => {
@@ -107,14 +103,13 @@ export function ContentScreen({
       danger: true,
     });
     if (confirmed) {
-      setDraft(emptyDraft());
+      workspace.loadDraft(emptyDraft());
       setNotice(undefined);
     }
   };
   const close = () => {
     setOpen(false);
-    // A saved post is read from the Host again on the next open; only new drafts are kept.
-    if (draft.campaignId) setDraft(emptyDraft());
+    if (!dirty) workspace.loadDraft(emptyDraft());
   };
   // The Host saved the post before a later publish step could fail: later saves revise it, not copy it.
   const saved = (identity: { campaignId: string; revision: number }) =>
@@ -124,8 +119,7 @@ export function ContentScreen({
       revision: identity.revision,
     }));
   const done = (outcome: EditorOutcome) => {
-    setOpen(false);
-    setDraft(emptyDraft());
+    workspace.reset();
     setNotice({ tone: "success", text: OUTCOME_TEXT[outcome]() });
     data.refetch();
   };
@@ -201,7 +195,7 @@ export function ContentScreen({
           {notice.text}
         </InlineMessage>
       ) : null}
-      {!open && hasUnsaved(draft) ? (
+      {!open && dirty ? (
         <InlineMessage
           tone="neutral"
           action={
@@ -213,6 +207,7 @@ export function ContentScreen({
                 variant="link"
                 layout="text"
                 tone="danger"
+                disabled={workspace.busy || workspace.uploading}
                 onClick={() => void discard().catch(() => undefined)}
               >
                 {t("Discard draft")}
@@ -272,8 +267,21 @@ export function ContentScreen({
           )}
         </>
       )}
+      <CollectionFooter
+        hasMore={data.hasMore}
+        loading={data.loadingMore}
+        error={data.moreError}
+        partial={
+          data.hasMore
+            ? t("More posts are available. Load more to include older posts in this view.")
+            : undefined
+        }
+        onLoadMore={data.loadMore}
+        onRetry={data.loadMore}
+      />
       {open && projectId ? (
         <ContentEditor
+          key={workspace.key}
           client={client}
           editor={editor}
           snapshot={snapshot}
@@ -282,6 +290,11 @@ export function ContentScreen({
           draft={draft}
           onDraft={setDraft}
           locked={lockedReason}
+          operationPending={workspace.busy}
+          mediaPending={workspace.uploading}
+          onBusyChange={workspace.setBusy}
+          onMediaBusyChange={workspace.setUploading}
+          onOperationError={(text) => setNotice({ tone: "warning", text })}
           onSaved={saved}
           onDone={done}
           onClose={close}

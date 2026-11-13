@@ -130,7 +130,8 @@ describe("editable bycoda defaults", () => {
       ]),
     );
     for (const member of definition.agents) {
-      expect(member.instructions.length).toBeGreaterThan(200);
+      expect(member.instructions.length).toBeGreaterThan(40);
+      expect(member.instructions.length).toBeLessThan(300);
       expect(member.source).toEqual({ id: member.id, updatedAt: 1000 });
       expect(member.candidates).toEqual([
         {
@@ -291,9 +292,7 @@ describe("editable bycoda defaults", () => {
     const view = await f.service.list(f.project.id);
     expect(view.agents).toHaveLength(17);
     expect(view.definitions[0]!.agents).toHaveLength(17);
-    expect(
-      view.agents.every((agent) => agent.instructions.includes("Technology and evidence")),
-    ).toBe(true);
+    expect(view.agents.every((agent) => agent.instructions.length < 300)).toBe(true);
     for (const member of view.definitions[0]!.agents) {
       const profile = view.agents.find((agent) => agent.id === member.id)!;
       expect(member.instructions).toBe(profile.instructions);

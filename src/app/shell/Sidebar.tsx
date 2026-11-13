@@ -50,7 +50,7 @@ import { themePalette } from "../../shared/theme/palette";
 import { motion as layoutMotion } from "motion/react";
 import { sessionStatusOrder } from "../../features/sessions/model/sessionStatusOrder";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
-import { t, useLocale, useT } from "../../shared/i18n";
+import { t, useFormat, useLocale, useT } from "../../shared/i18n";
 import { DiffStat } from "../../shared/ui/DiffStat";
 import { formatGitLabel } from "./sessionGitLabel";
 import { SocialShortcut } from "../../features/social/ui/SocialShortcut";
@@ -70,6 +70,7 @@ import { nextCrewManagedSessions } from "../../features/crews/model/crewPresenta
 import { CrewSidebar } from "../../features/crews/ui/CrewSessions";
 import { useUnsentComposerDraft } from "../../features/sessions/hooks/useUnsentComposerDraft";
 import { useSessionRankSignals } from "../../features/sessions/hooks/useSessionRankSignals";
+import { useSessionListStatus } from "../../features/sessions/hooks/useSessionListStatus";
 import { useSettledShelf } from "../../features/sessions/hooks/useSettledShelf";
 import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -689,6 +690,7 @@ function SidebarComponent({
 }: Props) {
   "use memo";
   const t = useT();
+  const format = useFormat();
   const remoteProject = isRemoteProjectPath(cwd);
   const tab: SidebarTabId = requestedTab;
   const remote = useRemoteProjectSessions(cwd, remoteProject);
@@ -814,16 +816,12 @@ function SidebarComponent({
     : onSetLocalSessionLinkedWorkItem;
   const activeRemoteId = activeSessionId ? remoteBindings.sessionFor(activeSessionId) : undefined;
   const activeListedSessionId = remoteProject ? activeRemoteId : activeSessionId;
-  const listedBusySessionIds = remoteProject
-    ? new Set(
-        remote.sessions
-          .filter((session) => session.status === "running" && !session.needsInput)
-          .map((session) => session.id),
-      )
-    : busySessionIds;
-  const listedApprovalSessionIds = remoteProject
-    ? new Set(remote.sessions.filter((session) => session.needsInput).map((session) => session.id))
-    : approvalSessionIds;
+  const { listedBusySessionIds, listedApprovalSessionIds } = useSessionListStatus(
+    remoteProject,
+    remote.sessions,
+    busySessionIds,
+    approvalSessionIds,
+  );
   const projectSessions: SessionSummary[] = useMemo(
     () => projectSessionCollection(remoteProject, remote.sessions, sessions, cwd),
     [remoteProject, remote.sessions, sessions, cwd],
@@ -3148,6 +3146,8 @@ function SidebarComponent({
         : TAB_LABELS[itemId];
     const tabDetails = isChangesTab
       ? changesTooltipDetails({
+          translate: t,
+          format,
           scope: changeScope,
           path: lastSessionsOpen ? gitRoot : undefined,
           files: changeFileCount,

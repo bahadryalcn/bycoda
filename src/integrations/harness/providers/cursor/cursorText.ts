@@ -71,16 +71,18 @@ export function warmupCursorText(cwd: string): Promise<void> {
 }
 
 /** Cursor ACP turn in ask mode. Reuses a warm `cursor-agent acp` process. */
-export async function runCursorTextPrompt(input: {
-  cwd: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-  operationContext?: HarnessOperationContext;
-}): Promise<string> {
+export async function runCursorTextPrompt(
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
+  },
+): Promise<string> {
   input = captureTextInput(input);
   const run = turns
     .catch(() => undefined)
@@ -89,22 +91,25 @@ export async function runCursorTextPrompt(input: {
   return run;
 }
 
-async function promptOnLive(input: {
-  cwd: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-  operationContext?: HarnessOperationContext;
-}): Promise<string> {
+async function promptOnLive(
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
+  },
+): Promise<string> {
   input.signal?.throwIfAborted();
   const session = await ensureLive(
     input.cwd,
     input.model,
     input.modelSettings,
     input.operationContext,
+    input,
   );
   let writer: Awaited<ReturnType<typeof acpTurnWriter>>;
   try {
@@ -117,7 +122,7 @@ async function promptOnLive(input: {
     );
     input.signal?.throwIfAborted();
   } catch (error) {
-    return preserveProviderFailure(error, dropLive(session));
+    return preserveProviderFailure(error, dropLive(session), input);
   }
   const acpSessionId = session.acpSessionId;
   const cancel = async () => {
@@ -160,6 +165,7 @@ async function promptOnLive(input: {
       session.onEvent = undefined;
       await dropLive(session);
     },
+    input,
   );
 }
 
@@ -168,6 +174,7 @@ async function ensureLive(
   requestedModel?: string,
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   const model = requestedModel?.trim() || TEXT_MODEL;
   const settingsKey = modelSettingsKey(modelSettings);
@@ -197,7 +204,7 @@ async function ensureLive(
     }
   }
   if (stopGeneration !== generation) throw new Error("Cursor text generator stopped");
-  return startLive(cwd, model, modelSettings, operationContext);
+  return startLive(cwd, model, modelSettings, operationContext, retirement);
 }
 
 async function startLive(
@@ -205,6 +212,7 @@ async function startLive(
   model = TEXT_MODEL,
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
@@ -301,6 +309,7 @@ async function startLive(
         stopping,
         ...(admitted ? [retirements.retire([textProcess])] : []),
       ]),
+      retirement,
     );
   } finally {
     if (starting === textProcess) starting = null;

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import { formatBytes } from "../../../shared/i18n/format";
@@ -69,18 +69,22 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function renderWizard(client: DecisionModelsClient, onChooseApi = vi.fn()) {
+async function renderWizard(
+  client: DecisionModelsClient,
+  onChooseApi = vi.fn(),
+  onClose = vi.fn(),
+) {
   mounted = mountDecisionUi(
     createElement(LocalInstallWizard, {
       client,
       catalog: [],
       onChooseApi,
       onInstalled: vi.fn(),
-      onClose: vi.fn(),
+      onClose,
     }),
   );
   await settleDecisionUi();
-  return { onChooseApi };
+  return { onChooseApi, onClose };
 }
 
 describe("LocalInstallWizard", () => {
@@ -96,6 +100,40 @@ describe("LocalInstallWizard", () => {
     clickButton("Choose an API provider");
     expect(onChooseApi).toHaveBeenCalledTimes(1);
     expect(mocks.install).not.toHaveBeenCalled();
+  });
+
+  it("prevents dismissal while installation is pending and restores it after settlement", async () => {
+    const { client, mocks } = createClient({
+      recommendation: { tier: "strong", modelId: "clef-flash-9b" },
+    });
+    let resolveInstall!: (value: { state: "installed" }) => void;
+    mocks.install.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveInstall = resolve;
+        }),
+    );
+    const { onClose } = await renderWizard(client);
+    clickButton("Continue");
+    await settleDecisionUi();
+    clickButton("Continue");
+    clickButton("Install");
+    await settleDecisionUi();
+    const close = document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!;
+    const backdrop = document.querySelector<HTMLElement>("[data-modal-layer]")!;
+    act(() => {
+      close.click();
+      backdrop.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(close.disabled).toBe(true);
+    await act(async () => resolveInstall({ state: "installed" }));
+    expect(close.disabled).toBe(false);
+    act(() => close.click());
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("installs the recommended model only after an explicit confirmation", async () => {
@@ -143,6 +181,25 @@ describe("LocalInstallWizard", () => {
     expect(bodyText()).toContain(
       `Not enough free disk space: ${formatBytes(5 * 1024 ** 3)} needed.`,
     );
+    expect(buttonByText("Continue")?.disabled).toBe(true);
+    expect(buttonByText("Install")).toBeUndefined();
+    expect(buttonByText("Choose an API provider")).toBeDefined();
+  });
+
+  it("holds install while its plan is unknown and retries a failed plan before enabling Continue", async () => {
+    const { client, mocks } = createClient({
+      recommendation: { tier: "strong", modelId: "clef-flash-9b" },
+    });
+    mocks.plan.mockRejectedValueOnce(new Error("Disk unavailable"));
+    await renderWizard(client);
+    clickButton("Continue");
+    await settleDecisionUi();
+    expect(buttonByText("Continue")?.disabled).toBe(true);
+    expect(mocks.install).not.toHaveBeenCalled();
+    clickButton("Try again");
+    await settleDecisionUi();
+    expect(mocks.plan).toHaveBeenCalledTimes(2);
+    expect(buttonByText("Continue")?.disabled).toBe(false);
   });
 
   it("offers a retry when the hardware check fails", async () => {

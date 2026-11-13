@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { retainedTransactionValue, useRetainedTransaction } from "../../model/retainedTransaction";
 import { t, useLocale } from "../../../../shared/i18n";
 import type { ModelRoutingState } from "../../../../shared/model/host-contracts/model-routing";
 import { Button } from "../../../../shared/ui/Button";
@@ -34,7 +34,12 @@ export function ModelRolesSettings({ machineId, supported, onOpenOrder }: ModelR
     return <Text as="p">{t("Model routing is not available on this Host.")}</Text>;
   if (!routing.state)
     return routing.error ? (
-      <InlineError>{t("Model routing could not be loaded.")}</InlineError>
+      <InlineError>
+        {t("Model routing could not be loaded.")}{" "}
+        <Button size="sm" variant="link" onClick={() => void routing.refetch()}>
+          {t("Try again")}
+        </Button>
+      </InlineError>
     ) : (
       <Text as="p">{t("Loading model routing…")}</Text>
     );
@@ -44,6 +49,7 @@ export function ModelRolesSettings({ machineId, supported, onOpenOrder }: ModelR
       machineId={machineId}
       state={routing.state}
       save={routing.save}
+      refetch={routing.refetch}
       onOpenOrder={onOpenOrder}
     />
   );
@@ -53,29 +59,39 @@ function RolesEditor({
   machineId,
   state,
   save,
+  refetch,
   onOpenOrder,
 }: {
   machineId: string;
   state: ModelRoutingState;
   save: ReturnType<typeof useModelRouting>["save"];
+  refetch: ReturnType<typeof useModelRouting>["refetch"];
   onOpenOrder?: () => void;
 }) {
-  const [base, setBase] = useState(state);
-  const [roles, setRoles] = useState(state.roles);
-  const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [base, setBase] = useRetainedTransaction(`roles:${machineId}:base`, state);
+  const [roles, setRoles] = useRetainedTransaction(`roles:${machineId}:draft`, state.roles);
+  const [error, setError] = useRetainedTransaction(`roles:${machineId}:error`, "");
+  const [saved, setSaved] = useRetainedTransaction(`roles:${machineId}:saved`, false);
+  const [pending, setPending] = useRetainedTransaction(`roles:${machineId}:pending`, false);
   const dirty = MODEL_ROLE_METADATA.some(
     ({ role }) => !modelChoicesEqual(roles[role], base.roles[role], role),
   );
   // A background refresh may update a pristine form, but never overwrites an edited draft.
-  if (state.version > base.version && !dirty && !save.isPending) {
+  if (state.version > base.version && !dirty && !pending) {
     setBase(state);
     setRoles(state.roles);
   }
   async function persist() {
-    if (save.isPending || !dirty) return;
+    if (
+      retainedTransactionValue<boolean>(`roles:${machineId}:pending`) ||
+      !dirty ||
+      state.version > base.version
+    )
+      return;
+    setPending(true);
     setError("");
     setSaved(false);
+    const submittedRoles = roles;
     try {
       const result = await save.mutateAsync({
         expectedVersion: base.version,
@@ -83,12 +99,13 @@ function RolesEditor({
           entries: base.entries,
           pools: base.pools,
           delegation: base.delegation,
+          workCaps: base.workCaps,
           defaultMaxRunMinutes: base.defaultMaxRunMinutes,
-          roles: roleBindingsForSave(pruneMissingPoolBindings(roles, base.pools)),
+          roles: roleBindingsForSave(pruneMissingPoolBindings(submittedRoles, base.pools)),
         },
       });
       setBase(result);
-      setRoles(result.roles);
+      setRoles((current) => (current === submittedRoles ? result.roles : current));
       setSaved(true);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -97,9 +114,11 @@ function RolesEditor({
           ? t("Settings changed elsewhere. Use latest settings, then apply your changes again.")
           : t("Model roles could not be saved. Try again."),
       );
+    } finally {
+      setPending(false);
     }
   }
-  const conflict = state.version !== base.version && dirty;
+  const conflict = state.version > base.version && dirty;
   return (
     <div className="flex min-w-0 flex-col gap-4">
       {!base.entries.length ? (
@@ -133,13 +152,15 @@ function RolesEditor({
               seed={base.entries[0]}
               orderReady={base.entries.length > 0}
               choice={effectiveRoleChoice(roles, item.role)}
-              disabled={save.isPending}
+              disabled={pending}
               onChange={(choice) => {
-                const next = { ...roles };
-                if (!choice || (choice.kind === "order" && !item.role.startsWith("text.")))
-                  delete next[item.role];
-                else next[item.role] = choice;
-                setRoles(next);
+                setRoles((current) => {
+                  const next = { ...current };
+                  if (!choice || (choice.kind === "order" && !item.role.startsWith("text.")))
+                    delete next[item.role];
+                  else next[item.role] = choice;
+                  return next;
+                });
                 setError("");
                 setSaved(false);
               }}
@@ -149,15 +170,30 @@ function RolesEditor({
       ))}
       <RoutingSaveBar
         dirty={dirty}
-        pending={save.isPending}
+        pending={pending}
         saved={saved}
+        canSave={!conflict}
         discardLabel={conflict || error ? t("Use latest settings") : undefined}
         discardEnabled={dirty || Boolean(error)}
         onDiscard={() => {
-          setBase(state);
-          setRoles(state.roles);
-          setError("");
-          setSaved(false);
+          if (!conflict && !error) {
+            setBase(state);
+            setRoles(state.roles);
+            setSaved(false);
+            return;
+          }
+          void refetch()
+            .then((result) => {
+              if (result.isError || !result.data) {
+                setError(t("Model routing could not be loaded."));
+                return;
+              }
+              setBase(result.data);
+              setRoles(result.data.roles);
+              setError("");
+              setSaved(false);
+            })
+            .catch(() => setError(t("Model routing could not be loaded.")));
         }}
         onSave={() => void persist()}
       >

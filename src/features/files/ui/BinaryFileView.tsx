@@ -133,7 +133,7 @@ export function BinaryFileView({ path, cwd }: Props) {
         path={path}
         cwd={cwd}
         title={basename(path)}
-        detail={`${formatFileSize(state.size)} · not a readable image`}
+        detail={`${formatFileSize(state.size)} · ${t("{p0} is not a readable image.", { p0: basename(path) })}`}
         icon={
           <div className="mx-auto mb-3 flex justify-center">
             <FileTypeIcon name={basename(path)} isDir={false} size="lg" />
@@ -313,7 +313,7 @@ function ImageView({
               },
             },
           ]}
-          ariaLabel="Image actions"
+          ariaLabel={t("Image actions")}
           onPick={(id) => {
             if (id === "copy-original") copyOriginal();
           }}

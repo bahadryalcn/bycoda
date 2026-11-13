@@ -5,6 +5,7 @@ import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
@@ -37,12 +38,13 @@ type CrewState = ReturnType<typeof useProjectCrews>;
  * alternatives. */
 export function useCrewMachineScope(cwd: string, state: CrewState) {
   const createFormId = useId();
-  const machines = useQuery({
+  const machineList = useQuery({
     queryKey: [HOST_CREWS, "machines"],
     queryFn: async () => orderCrewMachines(await backgroundMachines(HOST_CREWS)),
     staleTime: 30_000,
     retry: false,
-  }).data;
+  });
+  const machines = machineList.data;
   const [scopeCwd, setScopeCwd] = useState(cwd);
   const away = scopeCwd !== cwd;
   const scoped = useProjectCrews(scopeCwd, away);
@@ -212,22 +214,33 @@ export function useCrewMachineScope(cwd: string, state: CrewState) {
     );
   };
   const picker = (disabled: boolean) =>
-    machines && machines.length > 1 ? (
+    machineList.error || (machines && machines.length > 1) ? (
       <div className="flex min-w-0 flex-1 basis-48 flex-col gap-1">
-        <SearchableSelect
-          label={t("Machine")}
-          value={currentId ?? ""}
-          options={machines.map((machine) => ({
-            value: machine.id,
-            label: crewMachineLabel(machine),
-            description:
-              machine.id === currentId && away ? projectDisplayName(scopeCwd) : undefined,
-          }))}
-          disabled={disabled || switching}
-          onChange={(id) =>
-            void choose(id).catch((reason: unknown) => setSwitchError(String(reason)))
-          }
-        />
+        {machines && machines.length > 1 ? (
+          <SearchableSelect
+            label={t("Machine")}
+            value={currentId ?? ""}
+            options={machines.map((machine) => ({
+              value: machine.id,
+              label: crewMachineLabel(machine),
+              description:
+                machine.id === currentId && away ? projectDisplayName(scopeCwd) : undefined,
+            }))}
+            disabled={disabled || switching}
+            onChange={(id) =>
+              void choose(id).catch((reason: unknown) => setSwitchError(String(reason)))
+            }
+          />
+        ) : null}
+        {machineList.error ? (
+          <InlineError
+            retry={{ onRetry: () => void machineList.refetch(), pending: machineList.isFetching }}
+          >
+            {machineList.error instanceof Error
+              ? machineList.error.message
+              : String(machineList.error)}
+          </InlineError>
+        ) : null}
         {switchError ? <InlineMessage tone="warning">{switchError}</InlineMessage> : null}
       </div>
     ) : null;

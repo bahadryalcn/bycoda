@@ -86,9 +86,9 @@ describe("candidateSourceInput", () => {
           id: "legacy",
           label: "Clef",
           kind: "model_file",
-          detail: `G:\\Projects\\my_projects\\clef\\models\\clef.gguf${suffix}`,
+          detail: `G:\\Projects\\work\\clef\\models\\clef.gguf${suffix}`,
         })?.local?.modelPath,
-      ).toBe("G:\\Projects\\my_projects\\clef\\models\\clef.gguf");
+      ).toBe("G:\\Projects\\work\\clef\\models\\clef.gguf");
     },
   );
 

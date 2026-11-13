@@ -37,6 +37,8 @@ export function SummaryPanel({
   const [includeTitles, setIncludeTitles] = useState(false);
   const [state, setState] = useState<SummaryState>({ status: "idle" });
   const [saveFailed, setSaveFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveInFlight = useRef(false);
   const controller = useRef<AbortController | null>(null);
   const cwd = data.projects.find((project) => project.path)?.path ?? "";
   const provider = useMemo(() => summaryProvider(cwd), [cwd]);
@@ -62,12 +64,18 @@ export function SummaryPanel({
     }
   };
   const save = async (text: string) => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSaving(true);
     setSaveFailed(false);
     try {
       await saveDailyNote(dailyNoteApi, text, new Date());
       setState({ status: "done", text, saved: true });
     } catch {
       setSaveFailed(true);
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
     }
   };
   if (!open)
@@ -116,13 +124,14 @@ export function SummaryPanel({
           size="sm"
           onClick={() => send().catch(() => undefined)}
           loading={state.status === "running"}
-          disabled={!provider}
+          disabled={!provider || saving}
         >
           {t("Send")}
         </Button>
         <Button
           size="sm"
           variant="ghost"
+          disabled={saving}
           onClick={() => {
             controller.current?.abort();
             setState({ status: "idle" });
@@ -150,6 +159,8 @@ export function SummaryPanel({
             size="sm"
             onClick={() => save(state.text).catch(() => undefined)}
             disabled={state.saved}
+            loading={saving}
+            loadingLabel={t("Saving…")}
           >
             {state.saved ? t("Saved to today's note") : t("Save to daily note")}
           </Button>

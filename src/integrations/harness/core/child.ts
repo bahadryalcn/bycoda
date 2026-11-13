@@ -900,6 +900,7 @@ export async function spawnChild(
   authority?: NativeAuthorityScope,
   beforeSpawn?: () => Promise<void>,
   logicalSessionId?: string,
+  autoCompact?: "on" | "off",
 ): Promise<void> {
   const state = childState(handle);
   const { sessionId } = handle;
@@ -944,7 +945,7 @@ export async function spawnChild(
     // Only bridged providers wait here; other spawns keep their synchronous path to invoke.
     const { launchArgs, launchEnv } =
       !state.purpose && bridgedProvider(binaryProvider)
-        ? await bridgedLaunch(binaryProvider, sessionId, args)
+        ? await bridgedLaunch(binaryProvider, sessionId, args, autoCompact)
         : { launchArgs: args, launchEnv: undefined };
     if (beforeSpawn && group && attempt) {
       await beforeSpawn();
@@ -982,6 +983,7 @@ export async function spawnChild(
       sessionId: state.routeId,
       genericAcpId,
       launchEnv,
+      ...(autoCompact ? { autoCompact } : {}),
       ...(managementGrant
         ? {
             nativeManagementToken: managementGrant.token,

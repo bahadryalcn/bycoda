@@ -1,5 +1,6 @@
 import { validateVoiceAudio } from "./voice-local";
 import { realtimeCredential } from "./voice";
+import { captureTranscriptionModels, type TranscriptionModel } from "./voice-transcription-catalog";
 import {
   CLOUD_DICTATION_PROVIDERS,
   DICTATION_MODELS,
@@ -22,6 +23,7 @@ export type CloudDictationDeps = {
   /** Long-lived credential, read on the Host only; never returned to callers. */
   credential: (provider: CloudDictationProvider) => Promise<string | undefined>;
   request?: typeof fetch;
+  transcriptionModels?: () => Promise<TranscriptionModel[]>;
 };
 
 /** OpenAI/xAI use the same sign-in as realtime voice; OpenRouter uses the Host vault. */
@@ -66,7 +68,10 @@ export async function transcribeCloudDictation(
   const chosen = provider as CloudDictationProvider;
   if (
     requestedModel !== undefined &&
-    !DICTATION_MODELS[chosen].some((entry) => entry.id === requestedModel)
+    (chosen === "openrouter"
+      ? typeof requestedModel !== "string" ||
+        !/^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(requestedModel)
+      : !DICTATION_MODELS[chosen].some((entry) => entry.id === requestedModel))
   )
     throw new Error("Invalid dictation model.");
   const valid = validateVoiceAudio(audio, language);
@@ -75,7 +80,18 @@ export async function transcribeCloudDictation(
   if (!credential) throw new Error(`${name} is not signed in. ${SIGN_IN[chosen]}`);
   const wav = pcmWav(Buffer.from(valid.audio, "base64"));
   const lang = typeof valid.language === "string" ? valid.language : undefined;
-  const model = dictationModel(chosen, requestedModel);
+  let model =
+    chosen === "openrouter" && typeof requestedModel === "string"
+      ? requestedModel
+      : dictationModel(chosen, requestedModel);
+  if (chosen === "openrouter") {
+    const models = await (deps.transcriptionModels ?? captureTranscriptionModels)();
+    if (requestedModel === undefined && models[0]) model = models[0].id;
+    if (!models.some((entry) => entry.id === model))
+      throw new Error(
+        "The selected OpenRouter transcription model is no longer available. Choose another model.",
+      );
+  }
   let init: RequestInit;
   let url: string;
   if (chosen === "openrouter") {

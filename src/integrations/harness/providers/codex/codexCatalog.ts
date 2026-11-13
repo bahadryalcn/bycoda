@@ -10,6 +10,7 @@ import { defaultHarnessAccount } from "../../core/auth";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import {
   setHarnessModels,
+  withAutoCompactSettings,
   type AgentModel,
   type ModelSetting,
   type ModelSettingChoice,
@@ -179,14 +180,14 @@ function parseModel(raw: unknown): AgentModel | null {
   const contextWindow = [rec.contextWindow, rec.context_window].find(
     (value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0,
   );
-  return {
+  return withAutoCompactSettings({
     id: `codex:${nativeId}`,
     harness: "codex",
     name,
     nativeId,
     ...(contextWindow ? { contextWindow } : {}),
     ...(settings.length > 0 ? { settings } : {}),
-  };
+  });
 }
 
 function parseModelSettings(rec: Record<string, unknown>): ModelSetting[] {

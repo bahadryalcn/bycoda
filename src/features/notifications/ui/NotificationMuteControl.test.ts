@@ -53,6 +53,53 @@ const pickTime = (hour: number, minute: number) => {
 };
 
 describe("NotificationMuteControl", () => {
+  it("pauses resume and mute when saved choices cannot be read and recovers without resetting intent", () => {
+    updateNotificationPreferences(["private"], { disabled: ["issues"], mutedUntil: null });
+    localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
+    const resume = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Resume notifications"]',
+    )!;
+    const mute = container.querySelector<HTMLButtonElement>('[aria-label="Change mute duration"]')!;
+    expect(resume.disabled).toBe(true);
+    expect(mute.disabled).toBe(true);
+    act(() => {
+      localStorage.setItem(
+        "bycoda.projectNotifications.v1",
+        JSON.stringify({ private: { disabled: ["issues"], mutedUntil: null } }),
+      );
+      window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.projectNotifications.v1" }));
+    });
+    expect(resume.disabled).toBe(false);
+    expect(mute.disabled).toBe(false);
+    expect(loadNotificationPreferences().private.disabled).toEqual(["issues"]);
+    expect(loadNotificationPreferences().private.mutedUntil).toBeNull();
+  });
+
+  it("keeps a custom deadline draft through an unavailable-read pause", () => {
+    vi.mocked(Date.now).mockReturnValue(new Date(2030, 0, 15, 12).getTime());
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
+    click("Mute notifications");
+    click("Choose date and time");
+    pickTime(17, 35);
+    const submit = document.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    act(() => {
+      localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
+      window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.projectNotifications.v1" }));
+    });
+    expect(submit.disabled).toBe(true);
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    act(() => {
+      localStorage.setItem("bycoda.projectNotifications.v1", "{}");
+      window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.projectNotifications.v1" }));
+    });
+    expect(submit.disabled).toBe(false);
+    click("Mute until then");
+    expect(loadNotificationPreferences().private.mutedUntil).toBe(
+      new Date(2030, 0, 15, 17, 35).getTime(),
+    );
+  });
+
   it("mutes selected projects for eight hours without replacing category choices", () => {
     updateNotificationPreferences(["private"], { disabled: ["issues"] });
     act(() =>

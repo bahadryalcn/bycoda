@@ -187,7 +187,7 @@ export function JobRow({
         )}
         {job.dispatchState === "unknown" && (
           <InlineError>
-            {t("Dispatch status unknown. Check the linked goal before retrying.")}
+            {t("Dispatch status unknown. Check the linked epic before retrying.")}
           </InlineError>
         )}
         {error && <InlineError>{error}</InlineError>}

@@ -1,8 +1,10 @@
 import type { HostTasks } from "./service";
 /** Internal receiver shared by task responsibilities; never exported by the public entry. */
 export interface TaskContext {
+  repairDelegation: HostTasks["repairDelegation"];
   assistantRecoveryAdmission: HostTasks["assistantRecoveryAdmission"];
   assistantGoalAdmission: HostTasks["assistantGoalAdmission"];
+  assistantTaskAdmission: HostTasks["assistantTaskAdmission"];
   goalExecutionAllowed: HostTasks["goalExecutionAllowed"];
   assistantRecoveryFailed: HostTasks["assistantRecoveryFailed"];
   assistantRecoveryQueue: HostTasks["assistantRecoveryQueue"];
@@ -44,6 +46,7 @@ export interface TaskContext {
   jobs: HostTasks["jobs"];
   jobControllers: HostTasks["jobControllers"];
   delivering: HostTasks["delivering"];
+  automaticDeliveryControllers: HostTasks["automaticDeliveryControllers"];
   beforeStart: HostTasks["beforeStart"];
   crewCanStart: HostTasks["crewCanStart"];
   crewRunner: HostTasks["crewRunner"];

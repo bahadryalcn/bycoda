@@ -42,6 +42,20 @@ vi.mock("../model/githubTasks", async (original) => ({
 
 const InboxView = withQueryClient(RawInboxView);
 
+it("shows one failure and retry surface when the source has no loaded rows", async () => {
+  read.mockResolvedValue({ items: [], errors: { github: "Source unavailable" } });
+  await show();
+  expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(container.textContent?.match(/Could not load\./g)).toHaveLength(1);
+  const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Retry",
+  )!;
+  expect(retry).toBeDefined();
+  const before = read.mock.calls.length;
+  await act(async () => retry.click());
+  expect(read.mock.calls.length).toBeGreaterThan(before);
+});
+
 /** An Inbox list row by its item title; the title is in the row's accessible name and shared
  *  tooltip now, not a native title attribute. */
 function inboxRow(scope: ParentNode, title: string): HTMLButtonElement | null {
@@ -187,7 +201,7 @@ it.each([
       identifier: "PFDEV-1037",
       state: "DEVELOPMENT IN PROGRESS",
       stateType,
-      teamName: "Firisbe PF Dev Board",
+      teamName: "Acme PF Dev Board",
       labels: [
         { name: "merchant", color: "" },
         { name: "uiux-test", color: "" },
@@ -213,7 +227,7 @@ it.each([
     expect(metadata.textContent).toContain("Development in progress");
     expect(metadata.textContent).not.toContain("Issue PFDEV");
     expect(metadata.querySelector(`[data-tone="${tone}"]`)).not.toBeNull();
-    expect(row.parentElement?.textContent).toContain("Firisbe PF Dev Board");
+    expect(row.parentElement?.textContent).toContain("Acme PF Dev Board");
     expect(row.parentElement?.querySelector('[aria-label="Labels"]')).not.toBeNull();
     await act(async () => row.click());
     expect(row.getAttribute("aria-current")).toBe("true");

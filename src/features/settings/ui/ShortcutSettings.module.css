@@ -74,19 +74,13 @@
   max-inline-size: 100%;
 }
 
-.actionSlot,
-.feedbackSlot {
+.actionSlot {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 28px;
   inline-size: 28px;
   block-size: 28px;
-}
-/* This is an icon status slot even when it announces an error. The generic
-   full-row alert rule must not consume the recorder's flex track. */
-.list :global(.settings-row-control) > .feedbackSlot {
-  flex: 0 0 28px;
 }
 .context {
   display: block;

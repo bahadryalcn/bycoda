@@ -116,11 +116,19 @@ export function ProviderAccountsSettings({
   const pendingAccount = useRef<ProviderAccount | null>(null);
   const registrationAbort = useRef<AbortController | null>(null);
   const editorOpen = useRef(false);
+  const addTrigger = useRef<HTMLButtonElement | null>(null);
   // The parent hears about busy where it changes: an operation starts or ends, or the editor opens or closes.
   const setEditor = (next: AccountEditor | null) => {
     editorOpen.current = next !== null;
     setEditorState(next);
     onBusyChange?.(busy.current || editorOpen.current);
+    if (!next && addTrigger.current) {
+      const trigger = addTrigger.current;
+      addTrigger.current = null;
+      queueMicrotask(() => {
+        if (trigger.isConnected) trigger.focus();
+      });
+    }
   };
   useEffect(
     () => () => {
@@ -155,8 +163,9 @@ export function ProviderAccountsSettings({
     onBusyChange?.(editorOpen.current);
   };
 
-  const startAdd = (provider: ProviderAccountProvider) => {
+  const startAdd = (provider: ProviderAccountProvider, trigger: HTMLButtonElement) => {
     if (busy.current) return;
+    addTrigger.current = trigger;
     pendingAccount.current = null;
     setError(null);
     setEditor({ provider, label: "" });
@@ -349,7 +358,7 @@ export function ProviderAccountsSettings({
                 <Button
                   size="sm"
                   disabled={Boolean(working)}
-                  onClick={() => startAdd(accountProvider)}
+                  onClick={(event) => startAdd(accountProvider, event.currentTarget)}
                 >
                   <Plus className="icon-sm" strokeWidth={1.75} aria-hidden />
                   {t("Add account")}
@@ -590,6 +599,7 @@ export function ProviderAccountsSettings({
                 {adding && editor ? (
                   <ProviderAccountEditor
                     editor={editor}
+                    existingLabels={accounts.map((account) => account.label)}
                     working={Boolean(working)}
                     onLabel={(label) =>
                       setEditorState((current) => (current ? { ...current, label } : current))

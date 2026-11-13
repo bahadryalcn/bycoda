@@ -6,6 +6,8 @@ const backend = vi.hoisted(() => ({
   transcribe: vi.fn(),
   keepAlive: vi.fn(async () => ({ ready: true })),
   cloudTranscribe: vi.fn(),
+  processDictation: vi.fn(),
+  cancelDictationCleanup: vi.fn(async () => {}),
 }));
 vi.mock("./localVoiceClient", () => ({ localVoiceBackend: backend }));
 import { Dictation } from "./dictation";
@@ -314,4 +316,95 @@ it("uses cloud recognition without a local recognizer and reports provider error
   await dictation.stop();
   expect(backend.release).not.toHaveBeenCalled();
   expect(backend.transcribe).not.toHaveBeenCalled();
+});
+it("retains quiet recording when silence filtering is disabled", async () => {
+  const events = setup();
+  backend.transcribe.mockResolvedValueOnce({
+    text: "quiet speech",
+    language: "en",
+    inferenceMs: 80,
+  });
+  const dictation = new Dictation(events, "en", undefined, undefined, "local", undefined, {
+    silenceFilter: false,
+  });
+  await dictation.start();
+  pause();
+  await dictation.stop();
+  expect(events.text).toHaveBeenCalledWith("quiet speech", true);
+});
+
+it("keeps recognized speech when optional cleanup fails", async () => {
+  const events = setup();
+  backend.transcribe.mockResolvedValueOnce({
+    text: "original words",
+    language: "en",
+    inferenceMs: 1,
+  });
+  backend.processDictation.mockRejectedValueOnce(new Error("provider unavailable"));
+  const dictation = new Dictation(events, "en", undefined, undefined, "local", undefined, {
+    cleanup: {
+      enabled: true,
+      model: "",
+      instructions: "",
+      correctionCue: "",
+      translateToEnglish: false,
+    },
+  });
+  await dictation.start();
+  speak();
+  await dictation.stop();
+  expect(events.text).toHaveBeenCalledWith("original words", true);
+  expect(events.error).toHaveBeenCalled();
+});
+
+it("discards a cleanup result arriving after cancellation", async () => {
+  const events = setup();
+  let complete!: (value: { text: string }) => void;
+  backend.transcribe.mockResolvedValueOnce({ text: "original", language: "en", inferenceMs: 1 });
+  backend.processDictation.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      }),
+  );
+  const dictation = new Dictation(events, "en", undefined, undefined, "local", undefined, {
+    cleanup: {
+      enabled: true,
+      model: "",
+      instructions: "",
+      correctionCue: "",
+      translateToEnglish: false,
+    },
+  });
+  await dictation.start();
+  speak();
+  const stopping = dictation.stop();
+  await vi.waitFor(() => expect(backend.processDictation).toHaveBeenCalled());
+  const runId = backend.processDictation.mock.calls[0][0].runId;
+  dictation.cancel();
+  expect(backend.cancelDictationCleanup).toHaveBeenCalledWith(runId);
+  complete({ text: "late" });
+  await stopping;
+  expect(events.text).not.toHaveBeenCalledWith("late", true);
+});
+it("does not dispatch queued cloud audio after cancellation", async () => {
+  const events = setup();
+  const complete: Array<(value: { text: string }) => void> = [];
+  backend.cloudTranscribe.mockImplementation(
+    () => new Promise((resolve) => complete.push(resolve)),
+  );
+  const dictation = new Dictation(events, "en", undefined, undefined, "openai");
+  await dictation.start();
+  speak();
+  pause();
+  speak();
+  pause();
+  speak();
+  pause();
+  await vi.waitFor(() => expect(backend.cloudTranscribe).toHaveBeenCalledTimes(2));
+  dictation.cancel();
+  complete.forEach((resolve) => resolve({ text: "old" }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(backend.cloudTranscribe).toHaveBeenCalledTimes(2);
+  expect(events.text).not.toHaveBeenCalled();
 });

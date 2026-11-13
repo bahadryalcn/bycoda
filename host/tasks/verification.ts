@@ -1,3 +1,4 @@
+import { MAX_REPAIR_ATTEMPTS } from "./constants";
 import {
   resolveRunModel,
   reviewerModelInput,
@@ -23,7 +24,6 @@ import {
 } from "../../src/features/tasks/model/hostTasks";
 import { readTaskInstructions } from "../../src/features/tasks/model/taskInstructions";
 import { withHostGitMutation } from "../git/git-mutations";
-import { confirmedRunElapsed } from "../execution/run-duration";
 import {
   HOST_INTERRUPTED,
   STOPPED_BY_USER,
@@ -43,6 +43,7 @@ import { isTransientRunFailure } from "./review-outcomes";
 import { runtimeRetryCount } from "./review-outcomes";
 import { waitForUsageLimit } from "./usage-limit";
 import type { TaskContext } from "./context";
+import { assertTaskWorkRetired } from "../work/session-adapter";
 export async function acceptCrewTask(context: TaskContext, id: string): Promise<HostTask> {
   await context.ready;
 
@@ -77,6 +78,7 @@ export async function acceptCrewTask(context: TaskContext, id: string): Promise<
 export async function recheckReview(context: TaskContext, id: string): Promise<HostTask> {
   await context.ready;
 
+  const expected = await context.taskValue(id);
   const task = await context.find(id);
   if (
     !task ||
@@ -89,18 +91,24 @@ export async function recheckReview(context: TaskContext, id: string): Promise<H
     );
   if (canTakeOverBlockedTask(task)) throw new Error("Automatic AI takeover is pending.");
   if (taskRequiresInstructions(task)) throw new Error(TASK_INPUT_REQUIRED);
-  const next = await context.write({
-    ...task,
-    status: "verifying",
-    reviewOnly: true,
-    awaitingOwnerRestart: undefined,
-    repairStop: undefined,
-    error: undefined,
-    needsInput: undefined,
-    reviewer: undefined,
-    verification: undefined,
-    completedAt: undefined,
-    updatedAt: context.now(),
+  await assertTaskWorkRetired(context.store, task.id);
+  const next = await context.transaction(async () => {
+    if (!(await context.unchangedTask(task.id, expected)))
+      throw new Error("Task changed before review recheck. Read it again.");
+    return context.write({
+      ...task,
+      workInvocationId: randomUUID(),
+      status: "verifying",
+      reviewOnly: true,
+      awaitingOwnerRestart: undefined,
+      repairStop: undefined,
+      error: undefined,
+      needsInput: undefined,
+      reviewer: undefined,
+      verification: undefined,
+      completedAt: undefined,
+      updatedAt: context.now(),
+    });
   });
   await context.verify(next);
   return next;
@@ -149,25 +157,17 @@ export async function settleCrew(context: TaskContext, task: HostTask, now: numb
   try {
     const run = await context.crewRunner.state(task);
     if (run.status === "finished") {
-      await context.write({
-        ...task,
-        status: "done",
-        completedAt: now,
-        updatedAt: now,
-        needsInput: undefined,
-        error: undefined,
-      });
-    } else if (
-      task.maxRunMinutes > 0 &&
-      task.crewExecutionId &&
-      (await confirmedRunElapsed(
-        context.store,
-        `\u0000crew-task:${task.id}`,
-        task.crewExecutionId,
-        now,
-      )) >=
-        task.maxRunMinutes * 60000
-    ) {
+      await context.verify(
+        await context.write({
+          ...task,
+          status: "verifying",
+          updatedAt: now,
+          needsInput: undefined,
+          error: undefined,
+          verification: undefined,
+        }),
+      );
+    } else if (await context.budgetReason(task)) {
       await context.crewRunner.stop(task);
       const latest = await context.find(task.id);
       if (latest?.status === "running" && latest.crewExecutionId === task.crewExecutionId)
@@ -201,7 +201,7 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
   const outcome = await sessionRunState(
     context.store,
     { ...task, startedAt: task.startedAt ?? task.createdAt },
-    task.maxRunMinutes,
+    0,
     now,
   );
   if (context.continuingSessions.has(task.id)) return;
@@ -331,7 +331,8 @@ export async function settle(context: TaskContext, task: HostTask, now: number):
       outcome.status === "failed" &&
       !task.crewRunId &&
       isTransientRunFailure(task, outcome.error) &&
-      runtimeRetryCount(task) < MAX_RUNTIME_RETRIES
+      runtimeRetryCount(task) < MAX_RUNTIME_RETRIES &&
+      (task.repairAttempts ?? 0) < MAX_REPAIR_ATTEMPTS
     ) {
       await context.retryTransientFailure(task, outcome.error!, now);
       return;
@@ -582,6 +583,17 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
       {
         ...task,
         title: `Review: ${task.title}`.slice(0, 200),
+        work: {
+          kind: "task.reviewer",
+          id: task.id,
+          occurrence: JSON.stringify([
+            task.sessionId,
+            task.runId,
+            task.repairAttempts ?? 0,
+            acceptanceFingerprint,
+            ...(task.workInvocationId ? [task.workInvocationId] : []),
+          ]),
+        },
         author: { kind: "task", id: task.id, name: task.title, reason: "review" },
         ...(task.isolate === false ? { workspaceMode: "current" as const } : {}),
         ...reviewerTarget,

@@ -145,7 +145,13 @@ export function SourceOrderPicker({
               );
             })}
             {!ordered.length ? (
-              <EmptyState size="inline" kind="empty" description={t("No sources connected")} />
+              <EmptyState
+                size="inline"
+                kind={search.trim() ? "filtered" : "empty"}
+                description={search.trim() ? t("No results") : t("No sources connected")}
+                onReset={search.trim() ? () => setSearch("") : undefined}
+                resetLabel={t("Clear search")}
+              />
             ) : null}
             <div className="flex justify-end">
               <Button variant="ghost" size="sm" onClick={() => setAnchor(null)}>

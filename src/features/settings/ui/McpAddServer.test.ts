@@ -24,6 +24,38 @@ beforeEach(() => {
   invoke.mockReset();
   onClose.mockClear();
   onAdded.mockClear();
+  onAdded.mockResolvedValue(undefined);
+});
+
+it("retries discovery without adding the server again after a confirmed write", async () => {
+  invoke.mockResolvedValue(undefined);
+  onAdded.mockRejectedValueOnce(new Error("Discovery unavailable"));
+  await render();
+  const config = dialog().querySelector<HTMLTextAreaElement>("textarea")!;
+  const value = '{"mcpServers":{"docs":{"command":"docs"}}}';
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      config,
+      value,
+    );
+    config.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const submit = () =>
+    dialog()
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await act(async () => {
+    submit();
+  });
+  expect(dialog().textContent).toContain("Server added. Refresh failed. Retry to check status.");
+  expect(config.disabled).toBe(true);
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => {
+    submit();
+  });
+  expect(invoke).toHaveBeenCalledOnce();
+  expect(onAdded).toHaveBeenCalledTimes(2);
+  expect(onClose).toHaveBeenCalledOnce();
 });
 
 afterEach(async () => {

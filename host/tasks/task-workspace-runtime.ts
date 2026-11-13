@@ -11,7 +11,11 @@ import type {
 } from "../workspaces/workspace-service-contracts";
 import { createWorkspacePolicyResolver } from "../workspaces/workspace-policy";
 import type { HostStore } from "../store";
-import type { ManagedWorkspace, WorkspaceMutation } from "../workspaces/workspace-contracts";
+import type {
+  BranchDeliveryPlan,
+  ManagedWorkspace,
+  WorkspaceMutation,
+} from "../workspaces/workspace-contracts";
 
 /** Supplied by the execution host. Never construct a second registry in an orchestrator. */
 export interface TaskWorkspaceServices {
@@ -21,6 +25,13 @@ export interface TaskWorkspaceServices {
   removal: WorkspaceRemovalService;
   delivery: BranchDeliveryService;
   environmentId: string;
+  /** Native owns the consent and supplies its authenticated actor to execute. */
+  automaticDelivery?(
+    task: HostTask,
+    plan: BranchDeliveryPlan,
+    execute: (owner: WorkspaceOwnerAuthorization) => Promise<HostTask>,
+    fence: { signal: AbortSignal; valid(): boolean },
+  ): Promise<void>;
   /** S1 extension: owner-authorized target changes must advance the registry revision,
    * invalidating earlier delivery plans. The frozen update contract excludes target refs. */
   retargetWorkspace?(
@@ -88,7 +99,6 @@ export function suspendedTaskDelivery(task: HostTask): HostTask {
   return task.autoMerge || task.deliveryRequested
     ? {
         ...task,
-        autoMerge: undefined,
         deliveryRequested: undefined,
         deliveryApprovalRequired: true,
         deliveryState: task.merged ? "merged" : "awaitingOwner",

@@ -1,6 +1,5 @@
 import "./ProviderDefaults.css";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
-import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { isHarnessAvailable } from "../../../integrations/harness/core/availability";
 import { HARNESS_TITLE, type HarnessId } from "../../../shared/model/harnessIdentity";
@@ -45,19 +44,22 @@ export function ProviderDefaultsPanel({
   onDraftChange,
   section,
   providerControl,
+  accountScope,
+  onAccountScopeChange,
 }: {
   section?: "chat" | "delegation";
   providerControl?: {
     options: { value: string; label: string }[];
     onChange: (id: HarnessId) => void;
   };
+  accountScope: Partial<Record<HarnessId, string>>;
+  onAccountScopeChange: (harness: HarnessId, accountId: string) => void;
   harness: HarnessId;
   target: DefaultsTarget;
   draft: DefaultsDraft;
   onDraftChange: (next: DefaultsDraft) => void;
 }) {
   useLocale();
-  const [accountScope, setAccountScope] = useState<Partial<Record<HarnessId, string>>>({});
   const project = target.kind === "project" ? target.path : null;
   const globalModel = globalModelFor(harness);
   const accountId =
@@ -176,7 +178,7 @@ export function ProviderDefaultsPanel({
             <defaultsScope.AccountDefaultsScope
               harness={harness}
               value={accountScope[harness] ?? ""}
-              onChange={(id) => setAccountScope((all) => ({ ...all, [harness]: id }))}
+              onChange={(id) => onAccountScopeChange(harness, id)}
             />
           ) : null
         }

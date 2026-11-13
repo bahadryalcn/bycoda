@@ -54,8 +54,8 @@ function subagentsPrompt(request: string, count?: number): string {
 
 function taskPrompt(request: string): string {
   return [
-    "Create bycoda tasks for the work below with Conversation Tools (tasks.create). Do not implement it in this turn.",
-    "Write each task prompt as a self-contained spec: goal, relevant files, constraints and acceptance checks. Split independent parts into separate tasks and use task dependencies for work that must run in order. Keep this project's default agent, model and workspace unless the request names others.",
+    "Create one bycoda task for the work below with Conversation Tools (tasks.create). Do not implement it in this turn.",
+    "Write its prompt as a self-contained spec: goal, relevant files, constraints and acceptance checks. Keep this project's default agent, model and workspace unless the request names others. Use /epic when the owner asks for a planned parent with subtasks.",
     "Report the created task titles and ids. If Conversation Tools are unavailable, say so instead of doing the work.",
     `Work:\n${request}`,
   ].join("\n\n");

@@ -7,22 +7,31 @@ import {
 import { InlineError } from "./InlineError";
 import { CircleAlert } from "./icons";
 import { Button } from "./Button";
+import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import styles from "./FailureState.module.css";
 
+const moduleLoadFailures = new WeakSet<object>();
+
+/** Preserve the original diagnostic while remembering an actual rejected loader. */
+export function markModuleLoadError(error: unknown) {
+  const reason =
+    (typeof error === "object" && error !== null) || typeof error === "function"
+      ? error
+      : new Error(String(error));
+  moduleLoadFailures.add(reason);
+  return reason;
+}
+
 export function isModuleLoadError(error: unknown): boolean {
+  if (
+    ((typeof error === "object" && error !== null) || typeof error === "function") &&
+    moduleLoadFailures.has(error)
+  )
+    return true;
   const message = error instanceof Error ? error.message : String(error);
   return /failed to fetch dynamically imported module|importing a module script failed|error loading dynamically imported module|loading (?:chunk|css chunk) .+ failed|outdated optimize dep/i.test(
     message,
   );
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Waits for a retry the caller owns; its own failure is reported by the caller. */
@@ -87,12 +96,12 @@ export function FailureState({
   const detailsId = useId();
   const titleId = useId();
   const [details, setDetails] = useState(false);
-  const [copy, setCopy] = useState<"idle" | "pending" | "done" | "failed">("idle");
   const [retryPending, setRetryPending] = useState(false);
   const retryGuard = useRef(false);
-  const copyGuard = useRef(false);
   const preview = useRef<HTMLPreElement>(null);
   const full = error instanceof Error ? error.message : String(error ?? "");
+  const copyFeedback = useCopyFeedback({ resetKeys: [title, full] });
+  const copy = copyFeedback.status;
   const truncated = full.length > FAILURE_PREVIEW_CHARS;
   // After a failed copy the whole text is shown, so a manual selection includes everything.
   const showAll = truncated && copy === "failed";
@@ -100,13 +109,8 @@ export function FailureState({
   const retryBusy = retrying || retryPending;
   const Heading = fullScreen ? "h1" : "h2";
 
-  async function copyDetails() {
-    if (copyGuard.current) return;
-    copyGuard.current = true;
-    setCopy("pending");
-    const copied = await copyText(`${title}\n\n${full}`);
-    setCopy(copied ? "done" : "failed");
-    copyGuard.current = false;
+  function copyDetails() {
+    copyFeedback.copy(() => navigator.clipboard.writeText(`${title}\n\n${full}`));
   }
   async function retry() {
     if (retryGuard.current || retrying || !onRetry) return;
@@ -114,9 +118,10 @@ export function FailureState({
     let result: void | Promise<unknown>;
     try {
       result = onRetry();
-    } catch (cause) {
+    } catch {
       retryGuard.current = false;
-      throw cause;
+      // The caller reports failed retries, including synchronous failures.
+      return;
     }
     if (!result || typeof result.then !== "function") {
       retryGuard.current = false;
@@ -252,13 +257,13 @@ export function FailureState({
                 onClick={() => void copyDetails()}
                 loading={copy === "pending" || undefined}
               >
-                {copy === "done" ? t("Copied") : t("Copy details")}
+                {copy === "copied" ? t("Copied") : t("Copy details")}
               </Button>
               {/* Always mounted so the polite live region exists before its text changes. */}
               <span role="status" className={styles.copyStatus} data-state={copy}>
                 {copy === "failed" ? (
                   t("Could not copy. Select the details and copy them manually.")
-                ) : copy === "done" ? (
+                ) : copy === "copied" ? (
                   <span className="sr-only">{t("Copied")}</span>
                 ) : null}
               </span>

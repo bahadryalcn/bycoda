@@ -94,7 +94,15 @@ const manualCandidateSchema = z.strictObject({
 });
 const retentionDays = z.union([z.literal(0), z.literal(30), z.literal(90), z.literal(365)]);
 /** Style fields stay optional on reads: an older Host omits them and readers use defaults. */
-type AssistantStyleKey = "addressFrequency" | "tone" | "allowProfanity" | "persona" | "confirmJobs";
+type AssistantStyleKey =
+  | "addressFrequency"
+  | "tone"
+  | "allowProfanity"
+  | "persona"
+  | "confirmJobs"
+  | "permissionLevel"
+  | "permissionProjectIds"
+  | "criticalExclusions";
 export type AssistantProfile = Required<
   Omit<AssistantProfilePatch, keyof AssistantPolicy | "voiceNarration" | AssistantStyleKey>
 > &
@@ -234,6 +242,14 @@ export type AssistantActivity = {
   supervisionId?: string;
   sessionId?: string;
   tokens?: number;
+  projectIds?: string[];
+  operation?: {
+    identity: string;
+    threadId?: string;
+    tool: string;
+    target: string;
+    outcome: string;
+  };
 };
 export type AssistantNote = {
   id: string;
@@ -279,6 +295,10 @@ export type AssistantNotification = {
   title: string;
   body: string;
   createdAt: number;
+  /** Host-derived urgency and bounded reminder policy; acknowledgement removes this item. */
+  urgent?: boolean;
+  repeatCount?: number;
+  repeatIntervalMinutes?: number;
   jobId?: string;
   taskId?: string;
   taskCreatedAt?: number;
@@ -286,6 +306,12 @@ export type AssistantNotification = {
   projectIds?: string[];
   eligible: boolean;
   deferredReason: "quiet" | "away" | "idle" | "dnd" | "unknown" | "settings" | null;
+};
+export type AssistantNotificationTarget = {
+  accountId: string;
+  accountLabel: string;
+  conversationId: string;
+  conversationLabel: string;
 };
 /** Provider worker root-turn measurements; percent is a per-turn mean, not a billing rate. */
 export type AssistantCacheUsage = {
@@ -631,6 +657,7 @@ export const AssistantRequestValidationSchema = z.union([
       time: z.string().min(5).max(5),
     }),
     z.strictObject({ op: z.literal("notifications.ack"), id }),
+    z.strictObject({ op: z.literal("notifications.targets") }),
     z.strictObject({ op: z.literal("tick") }),
     z.strictObject({ op: z.literal("chief.retry") }),
   ]),
@@ -638,6 +665,7 @@ export const AssistantRequestValidationSchema = z.union([
 ]);
 export type AssistantRequest = z.infer<typeof AssistantRequestValidationSchema>;
 export type AssistantResponse = {
+  notificationTargets?: AssistantNotificationTarget[];
   sendIdentity?: { instanceId: string };
   narrationEvents?: {
     eventId: string;
@@ -705,6 +733,9 @@ const profileSchema = AssistantProfilePatchSchema.required().extend({
   allowProfanity: AssistantProfilePatchSchema.shape.allowProfanity,
   persona: AssistantProfilePatchSchema.shape.persona,
   confirmJobs: AssistantProfilePatchSchema.shape.confirmJobs,
+  permissionLevel: AssistantProfilePatchSchema.shape.permissionLevel,
+  permissionProjectIds: AssistantProfilePatchSchema.shape.permissionProjectIds,
+  criticalExclusions: AssistantProfilePatchSchema.shape.criticalExclusions,
   version,
   updatedAt: version,
   dailyTokenBudget: z.number().int().min(0).max(1_000_000_000),
@@ -839,6 +870,16 @@ const activitySchema = z.strictObject({
   ...metadata,
   kind: text(100),
   summary: z.string().max(4000),
+  projectIds: z.array(id).max(1000).optional(),
+  operation: z
+    .strictObject({
+      identity: text(200),
+      threadId: id.optional(),
+      tool: text(300),
+      target: text(300),
+      outcome: text(100),
+    })
+    .optional(),
   ownerQuestionId: id.optional(),
   jobId: id.optional(),
   supervisionId: id.optional(),
@@ -918,6 +959,9 @@ export const AssistantSnapshotSchema = z.strictObject({
         projectIds: z.array(id).max(1000).optional(),
         eligible: z.boolean(),
         deferredReason: z.enum(["quiet", "away", "idle", "dnd", "unknown", "settings"]).nullable(),
+        urgent: z.boolean().optional(),
+        repeatCount: z.number().int().min(0).max(10).optional(),
+        repeatIntervalMinutes: z.number().int().min(1).max(1440).optional(),
       }),
     )
     .max(100)
@@ -978,6 +1022,17 @@ export const AssistantSnapshotSchema = z.strictObject({
   }),
 });
 export const AssistantResponseValidationSchema = z.strictObject({
+  notificationTargets: z
+    .array(
+      z.strictObject({
+        accountId: id,
+        accountLabel: z.string().max(300),
+        conversationId: id,
+        conversationLabel: z.string().max(300),
+      }),
+    )
+    .max(200)
+    .optional(),
   sendIdentity: z.strictObject({ instanceId: id }).optional(),
   narrationEvents: z
     .array(

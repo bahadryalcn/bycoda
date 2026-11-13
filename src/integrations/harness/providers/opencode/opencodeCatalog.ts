@@ -1,6 +1,7 @@
 import { homeDir } from "../../../../platform/tauri/fs";
 import {
   setHarnessModels,
+  withAutoCompactToggle,
   type AgentModel,
   type ModelSetting,
   type ModelSettingChoice,
@@ -102,7 +103,7 @@ export async function discoverOpenCodeModels(workingDirectory?: string): Promise
   } catch (error) {
     console.debug("[bycoda] opencode agents", error);
   }
-  return flattenOpenCodeModels(parsed, agents);
+  return flattenOpenCodeModels(parsed, agents).map(withAutoCompactToggle);
 }
 
 async function discoverOpenCodeV2Models(path: string, cwd: string): Promise<AgentModel[]> {

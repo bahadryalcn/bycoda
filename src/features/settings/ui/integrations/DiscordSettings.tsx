@@ -28,12 +28,12 @@ export function DiscordSettings() {
   );
 }
 
-function DiscordAccountForm({ account, onSaved, onCancel }: AccountFormProps) {
+function DiscordAccountForm({ account, onSaved, onCancel, onSavingChange }: AccountFormProps) {
   useLocale();
   const [initialChannels] = useState(() => accountChannelIds(account).join("\n"));
   const [token, setToken] = useState("");
   const [channels, setChannels] = useState(initialChannels);
-  const { saving, error, save } = useAccountSave(onSaved);
+  const { saving, error, save } = useAccountSave(onSaved, onSavingChange);
   const dirty = token !== "" || channels !== initialChannels;
   const submit = () => {
     save(discordSaveInput(token, channels, account?.id)).catch(() => undefined);

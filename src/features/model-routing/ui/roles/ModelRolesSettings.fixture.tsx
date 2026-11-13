@@ -1,3 +1,4 @@
+import { clearRetainedTransactions } from "../../model/retainedTransaction";
 // @vitest-environment happy-dom
 import { Button } from "../../../../shared/ui/Button";
 import { NativeSelect } from "../../../../shared/ui/Select";
@@ -127,6 +128,7 @@ let container: HTMLDivElement;
 let client: QueryClient;
 let state: ModelRoutingState;
 beforeEach(() => {
+  clearRetainedTransactions();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   state = {
@@ -139,6 +141,7 @@ beforeEach(() => {
     state,
     supported: true,
     loading: false,
+    refetch: async () => ({ data: state, isError: false }),
     save: { mutateAsync: mocks.save, isPending: false },
   }));
   mocks.resolve.mockResolvedValue({
@@ -243,7 +246,7 @@ it("resolves Default and opens Models without changing form choice", async () =>
     choice: { kind: "default" },
     fixed: undefined,
   });
-  await click("Manage in Models");
+  await click("Manage models");
   expect(onManage).toHaveBeenCalledOnce();
 });
 it.each([
@@ -293,14 +296,60 @@ it("omits roles switched to Model order", async () => {
   await click("Save");
   expect(mocks.save.mock.calls[0][0].draft.roles).toEqual({});
 });
+it("acknowledges a saved role snapshot without discarding a newer fixed target", async () => {
+  state.roles = {
+    "task.worker": {
+      kind: "fixed",
+      target: {
+        harness: "codex",
+        model: "initial",
+        modelSettings: {},
+      },
+    },
+  };
+  let resolve!: (value: ModelRoutingState) => void;
+  const pending = {
+    promise: new Promise<ModelRoutingState>((done) => {
+      resolve = done;
+    }),
+    resolve: (value: ModelRoutingState) => resolve(value),
+  };
+  mocks.save.mockImplementationOnce(() => pending.promise);
+  await render(<ModelRolesSettings machineId="host" supported />);
+  const row = container.querySelector('section[aria-label="Task worker"]')!;
+  await click("Set options", row);
+  await click("Save");
+  const submitted = mocks.save.mock.calls[0][0];
+  await click("Pick target", row);
+  state = { ...state, ...submitted.draft, version: 8, updatedAt: 1 };
+  await act(async () => {
+    pending.resolve(state);
+  });
+  expect(container.textContent).toContain("Unsaved changes");
+  await click("Save");
+  expect(mocks.save.mock.calls[1][0]).toMatchObject({
+    expectedVersion: 8,
+    draft: {
+      roles: {
+        "task.worker": {
+          kind: "fixed",
+          target: {
+            harness: "claude",
+            model: "sonnet",
+            providerAccountId: "account-2",
+          },
+        },
+      },
+    },
+  });
+});
 it("keeps edited draft and original version when another save arrives, and reports conflicts", async () => {
   await render(<ModelRolesSettings machineId="host" supported />);
   await choose(container.querySelector('section[aria-label="Task worker"]')!, "pool:p");
   state = { ...state, version: 9 };
   await render(<ModelRolesSettings machineId="host" supported />);
-  mocks.save.mockRejectedValue(new Error("version conflict"));
   await click("Save");
-  expect(mocks.save.mock.calls[0][0].expectedVersion).toBe(7);
+  expect(mocks.save).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Settings changed elsewhere.");
   expect(container.querySelector('section[aria-label="Task worker"] select')).toBeTruthy();
   await click("Use latest settings");
@@ -337,6 +386,26 @@ it("describes helper fallback when every entry is ineligible", async () => {
   expect(row.textContent).not.toContain("Runs wait");
 });
 
+it("keeps rows on the order quiet and previews only pools", async () => {
+  state.entries = [
+    { id: "e", harness: "codex", model: "m", modelSettings: {}, unknownLimit: "use" },
+  ];
+  state.pools = [{ id: "p", name: "Named pool", entryIds: ["e"] }];
+  state.roles["task.worker"] = { kind: "order" };
+  state.roles["task.reviewer"] = { kind: "pool", poolId: "p" };
+  mocks.resolve.mockResolvedValue({
+    ok: true,
+    target: { harness: "codex", model: "m", modelSettings: {} },
+    skipped: [],
+  });
+  await render(<ModelRolesSettings machineId="host" supported />);
+  await act(async () => {});
+  const worker = container.querySelector('section[aria-label="Task worker"]')!;
+  const reviewer = container.querySelector('section[aria-label="Task reviewer"]')!;
+  expect(worker.textContent).not.toContain("Now uses");
+  expect(reviewer.textContent).toContain("Now uses");
+});
+
 it("explains an empty order once and links to it instead of repeating per row", async () => {
   const onOpenOrder = vi.fn();
   await render(<ModelRolesSettings machineId="host" supported onOpenOrder={onOpenOrder} />);
@@ -345,4 +414,122 @@ it("explains an empty order once and links to it instead of repeating per row", 
   expect(mocks.resolve).not.toHaveBeenCalled();
   await click("Add models");
   expect(onOpenOrder).toHaveBeenCalledOnce();
+});
+
+it("keeps a conflicted draft on failed fresh read and applies a successful retry", async () => {
+  let rejectRead!: (error: Error) => void;
+  let resolveRead!: (value: { data: ModelRoutingState; isError: boolean }) => void;
+  const refetch = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectRead = reject;
+        }),
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+  mocks.routing.mockImplementation(() => ({
+    state,
+    supported: true,
+    loading: false,
+    refetch,
+    save: { mutateAsync: mocks.save, isPending: false },
+  }));
+  await render(<ModelRolesSettings machineId="host" supported />);
+  const row = container.querySelector('section[aria-label="Task worker"]')!;
+  await choose(row, "pool:p");
+  state = { ...state, version: 9 };
+  await render(<ModelRolesSettings machineId="host" supported />);
+  await click("Save");
+  expect(mocks.save).not.toHaveBeenCalled();
+  await click("Use latest settings");
+  await act(async () => rejectRead(new Error("offline")));
+  expect(selected(row)).toBe("Pool: Named pool");
+  expect(container.textContent).toContain("Model routing could not be loaded.");
+  await click("Use latest settings");
+  await act(async () => resolveRead({ data: state, isError: false }));
+  expect(selected(row)).toBe("Model order");
+});
+
+it("offers retry when initial roles read fails", async () => {
+  const refetch = vi.fn(async () => ({ data: state, isError: false }));
+  mocks.routing.mockReturnValue({
+    supported: true,
+    state: undefined,
+    error: "offline",
+    refetch,
+    save: { mutateAsync: mocks.save, isPending: false },
+  });
+  await render(<ModelRolesSettings machineId="host" supported />);
+  expect(container.textContent).toContain("Model routing could not be loaded.");
+  await click("Try again");
+  expect(refetch).toHaveBeenCalledOnce();
+});
+
+it("retains a dirty role choice after unmount", async () => {
+  await render(<ModelRolesSettings machineId="retention-host" supported />);
+  await choose(container.querySelector('section[aria-label="Task worker"]')!, "pool:p");
+  await render(null);
+  await render(<ModelRolesSettings machineId="retention-host" supported />);
+  expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
+    "Pool: Named pool",
+  );
+});
+
+it("keeps originating Host pending save across remount and isolates another Host", async () => {
+  let finish!: (state: ModelRoutingState) => void;
+  mocks.save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render(<ModelRolesSettings machineId="host-a" supported />);
+  await choose(container.querySelector('section[aria-label="Task worker"]')!, "pool:p");
+  await click("Save");
+  await render(null);
+  await render(<ModelRolesSettings machineId="host-b" supported />);
+  expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
+    "Model order",
+  );
+  await render(<ModelRolesSettings machineId="host-a" supported />);
+  expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
+    "Pool: Named pool",
+  );
+  await click("Save");
+  expect(mocks.save).toHaveBeenCalledTimes(1);
+  const acknowledged = {
+    ...state,
+    version: 8,
+    roles: { "task.worker": { kind: "pool" as const, poolId: "p" } },
+  };
+  await act(async () => finish(acknowledged));
+  expect(container.textContent).toContain("No unsaved changes");
+  await render(<ModelRolesSettings machineId="host-b" supported />);
+  expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
+    "Model order",
+  );
+});
+it("preserves a dirty Host draft across failed read and recovery", async () => {
+  await render(<ModelRolesSettings machineId="host-a" supported />);
+  await choose(container.querySelector('section[aria-label="Task worker"]')!, "pool:p");
+  await render(null);
+  mocks.routing.mockReturnValueOnce({
+    supported: true,
+    state: undefined,
+    error: "offline",
+    refetch: vi.fn(),
+    save: { mutateAsync: mocks.save, isPending: false },
+  });
+  await render(<ModelRolesSettings machineId="host-a" supported />);
+  expect(container.textContent).toContain("could not be loaded");
+  await render(<ModelRolesSettings machineId="host-a" supported />);
+  expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
+    "Pool: Named pool",
+  );
 });

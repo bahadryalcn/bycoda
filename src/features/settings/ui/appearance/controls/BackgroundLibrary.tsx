@@ -4,7 +4,7 @@ import {
 } from "../../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { Sparkles, Trash2 } from "../../../../../shared/ui/icons";
@@ -23,9 +23,10 @@ import {
   themesUsingImage,
   useSavedThemes,
 } from "../../../model/savedThemes";
-import { Row } from "../../settingsControls";
+import { Row, SettingsFeedback } from "../../settingsControls";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import styles from "./BackgroundLibrary.module.css";
+import { generatorSession } from "./themeGeneratorSession";
 
 /**
  * Every image applied before, generated or added, as thumbnails: click to apply it again, delete
@@ -34,7 +35,8 @@ import styles from "./BackgroundLibrary.module.css";
  */
 export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
-  const { images, currentId, loaded } = useBackgroundLibrary();
+  const { images, currentId, loaded, loading, error, retry } = useBackgroundLibrary();
+  const [applyingId, setApplyingId] = useState<string | null>(null);
   const themes = useSavedThemes();
   const { confirm, dialog } = useConfirm();
   const backfilled = useRef<string | null>(null);
@@ -42,16 +44,19 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
 
   // An image applied before the library existed joins it, so it can be picked and saved again.
   useEffect(() => {
-    if (!loaded || !path || currentId || backfilled.current === path) return;
+    if (!loaded || error || !path || currentId || backfilled.current === path) return;
     backfilled.current = path;
     ensureCurrentLibraryImage(path).catch(() => undefined);
-  }, [loaded, path, currentId]);
+  }, [loaded, error, path, currentId]);
 
   const apply = (image: BackgroundLibraryImage) => {
-    if (image.id === currentId || appearance.chatBackgroundBusy) return;
+    if (image.id === currentId || appearance.chatBackgroundBusy || applyingId) return;
+    generatorSession.invalidateImageIntent();
+    setApplyingId(image.id);
     appearance
       .onChooseChatBackground(image.path, { libraryId: image.id })
-      .catch((error: unknown) => console.error(error));
+      .catch((error: unknown) => console.error(error))
+      .finally(() => setApplyingId(null));
   };
 
   const remove = (image: BackgroundLibraryImage) => {
@@ -67,19 +72,39 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
       confirmLabel: t("Delete"),
       onConfirm: async () => {
         await deleteBackgroundLibraryImage(image.id);
-        if (using.length > 0) saveSavedThemes(dropImageReference(loadSavedThemes(), image.id));
+        const currentThemes = loadSavedThemes();
+        if (
+          themesUsingImage(currentThemes, image.id).length > 0 &&
+          !saveSavedThemes(dropImageReference(currentThemes, image.id))
+        )
+          throw new Error(t("Could not save the theme."));
       },
     }).catch((error: unknown) => console.error(error));
   };
 
-  if (!loaded) return null;
   return (
     <Row id="background-library" stacked label={t("Library")}>
-      {images.length === 0 ? (
+      {error ? (
+        <SettingsFeedback
+          state="error"
+          action={
+            <Button loading={loading} loadingLabel={t("Loading…")} onClick={retry}>
+              {t("Retry")}
+            </Button>
+          }
+        >
+          {t("Could not load the image library. Retry to see your saved images.")}
+        </SettingsFeedback>
+      ) : !loaded ? (
+        <Text as="p" size="caption" tone="muted">
+          {t("Loading…")}
+        </Text>
+      ) : null}
+      {loaded && !error && images.length === 0 ? (
         <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.empty}>
           {t("Images you use appear here.")}
         </Text>
-      ) : (
+      ) : images.length > 0 ? (
         <ul className={styles.grid} aria-label={t("Library")}>
           {images.map((image) => {
             const generated = image.source === "generated";
@@ -89,6 +114,9 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                   variant="item"
                   {...surfaceAttributes({ variant: "selected", radius: "row" }, styles.tile)}
                   selected={image.id === currentId}
+                  disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
+                  loading={applyingId === image.id}
+                  loadingLabel={t("Applying…")}
                   selectionIndicator="accent-ring"
                   aria-label={generated ? t("Generated image") : t("Added image")}
                   tooltip={image.prompt ?? undefined}
@@ -116,6 +144,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                     styles.remove,
                   )}
                   label={t("Delete image")}
+                  disabled={appearance.chatBackgroundBusy || applyingId !== null || loading}
                   onClick={() => remove(image)}
                 >
                   <Trash2 />
@@ -124,7 +153,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
             );
           })}
         </ul>
-      )}
+      ) : null}
       {dialog}
     </Row>
   );

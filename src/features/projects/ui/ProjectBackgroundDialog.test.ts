@@ -10,6 +10,11 @@ import {
   saveProjectChatBackgroundSettings,
 } from "../model/projectChatBackground";
 
+const pickImage = vi.hoisted(() => vi.fn());
+vi.mock("../model/chatBackground", async (original) => ({
+  ...(await original<typeof import("../model/chatBackground")>()),
+  pickAndSaveProjectChatBackground: pickImage,
+}));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   convertFileSrc: (path: string) => path,
@@ -32,6 +37,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mockLocalStorage();
   vi.mocked(invoke).mockReset().mockResolvedValue(undefined);
+  pickImage.mockReset().mockResolvedValue(null);
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => {
@@ -52,6 +58,53 @@ afterEach(async () => {
 });
 
 describe("project background dialog", () => {
+  it("keeps visibility and scope immutable while native image selection owns the submitted settings", async () => {
+    let resolve!: (path: string | null) => void;
+    const pending = new Promise<string | null>((finish) => {
+      resolve = finish;
+    });
+    pickImage.mockReturnValueOnce(pending);
+    const onClose = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ProjectBackgroundDialog, {
+          project: "/work/pending",
+          name: "Pending",
+          onClose,
+        }),
+      ),
+    );
+    const choose = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (node) => node.textContent === "Choose image",
+    )!;
+    await act(async () => choose.click());
+    try {
+      const close = document.querySelector<HTMLButtonElement>('[aria-label="Close"]')!;
+      expect(close.disabled).toBe(true);
+      await act(async () => close.click());
+      expect(onClose).not.toHaveBeenCalled();
+      expect(choose.getAttribute("aria-busy")).toBe("true");
+      expect(choose.getAttribute("aria-disabled")).toBe("true");
+      await act(async () => choose.click());
+      expect(pickImage).toHaveBeenCalledTimes(1);
+      expect(
+        [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].every(
+          (node) => node.disabled,
+        ),
+      ).toBe(true);
+      const slider = document.querySelector<HTMLElement>('[role="slider"]')!;
+      expect(slider.getAttribute("aria-disabled")).toBe("true");
+    } finally {
+      await act(async () => {
+        resolve(null);
+        await pending;
+      });
+    }
+    expect(choose.hasAttribute("aria-busy")).toBe(false);
+    expect(choose.hasAttribute("aria-disabled")).toBe(false);
+    expect(document.querySelector<HTMLButtonElement>('[aria-label="Close"]')?.disabled).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+  });
   it.each(["storage", "native"])(
     "retains recoverable background state after %s removal failure",
     async (failure) => {

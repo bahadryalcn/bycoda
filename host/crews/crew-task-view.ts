@@ -1,4 +1,19 @@
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
+import type { CrewDefinition, SavedCrewAgent } from "../../src/features/crews/model/crew";
+
+/** Conversation views retain profile identity while excluding private instructions. */
+export function redactCrewProfiles<
+  T extends { definitions: CrewDefinition[]; agents: SavedCrewAgent[] },
+>(view: T) {
+  return {
+    ...view,
+    definitions: view.definitions.map((definition) => ({
+      ...definition,
+      agents: definition.agents.map((agent) => ({ ...agent, instructions: "" })),
+    })),
+    agents: view.agents.map((agent) => ({ ...agent, instructions: "" })),
+  };
+}
 
 /** Read-view redaction of a crew task: no prompt, feedback, notes, summaries or reviewer instructions. */
 export function redactCrewTask(task: HostTask) {

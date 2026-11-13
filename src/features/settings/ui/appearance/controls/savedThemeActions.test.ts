@@ -13,7 +13,8 @@ import {
 import { loadScrollbarStyle } from "../../../model/scrollbarStyle";
 import { loadCrewTheme, saveCrewTheme } from "../../../model/settings";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
-import { applyAppearanceSnapshot } from "./savedThemeActions";
+import { applyAppearanceSnapshot, applySavedTheme } from "./savedThemeActions";
+import { generatorSession } from "./themeGeneratorSession";
 
 function mockAppearance() {
   const fns = {
@@ -45,6 +46,18 @@ function mockAppearance() {
 beforeEach(() => localStorage.clear());
 
 describe("applyAppearanceSnapshot", () => {
+  it("revokes pending generated image intent before applying a saved look", async () => {
+    const { appearance } = mockAppearance();
+    generatorSession.select(2);
+    await applySavedTheme(appearance, {
+      id: "night",
+      name: "Night",
+      look: {},
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    expect(generatorSession.selected()).toBeNull();
+  });
   it("restores every captured setting exactly, without contrast guards", () => {
     saveLiveBackground("silk");
     saveLiveBackgroundIntensity(0.5);

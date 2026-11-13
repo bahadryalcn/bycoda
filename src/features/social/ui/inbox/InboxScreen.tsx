@@ -38,6 +38,13 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
   const snapshot = useInboxSnapshot(client, active);
   const [filter, setFilter] = useState<InboxFilterState>(NO_FILTER);
   const [chosen, setChosen] = useState<string | undefined>(() => targetThreadId(target));
+  const [lastTarget, setLastTarget] = useState(target);
+  // Retained screens receive navigation occurrences without remounting reply drafts.
+  if (target !== lastTarget) {
+    setLastTarget(target);
+    const threadId = targetThreadId(target);
+    if (threadId) setChosen(threadId);
+  }
   const [settingsError, setSettingsError] = useState("");
   const [checking, setChecking] = useState(false);
   const [savingRefresh, setSavingRefresh] = useState(false);

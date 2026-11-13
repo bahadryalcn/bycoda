@@ -94,6 +94,12 @@ describe("managed tool discovery", () => {
       "runtime-logs:read",
     );
     expect(searchManagedTools(entries, { query: "absent" }).total).toBe(0);
+    // Several words list any tool that matches one, best match first.
+    expect(
+      searchManagedTools(entries, { query: "browser screenshot notes" }).tools.map(
+        (entry) => entry.id,
+      ),
+    ).toEqual(["conversation:browser.frame", "conversation:notes.read", "runtime-logs:read"]);
   });
 
   it("pages a stable compact result without schemas or repeated descriptions", () => {

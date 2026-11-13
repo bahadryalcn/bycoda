@@ -37,5 +37,5 @@ export function useSessionRankSignals(
     () => "",
   );
   const draftIds = useMemo(() => new Set(draftKey ? draftKey.split("\0") : []), [draftKey]);
-  return { doneIds, draftIds };
+  return useMemo(() => ({ doneIds, draftIds }), [doneIds, draftIds]);
 }

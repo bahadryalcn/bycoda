@@ -18,7 +18,8 @@ export function useForwardStatuses(source: string, active: boolean) {
     source: string;
     statuses: ForwardStatus[];
     error: string;
-  }>({ source, statuses: [], error: "" });
+    verified: boolean;
+  }>({ source, statuses: [], error: "", verified: false });
   const owner = useRef({ source, active });
   owner.current = { source, active };
   const sequence = useRef(0);
@@ -55,6 +56,7 @@ export function useForwardStatuses(source: string, active: boolean) {
                 source,
                 statuses: statuses.filter((item) => item.connectionId === source),
                 error: "",
+                verified: true,
               });
           },
           () => {
@@ -68,6 +70,7 @@ export function useForwardStatuses(source: string, active: boolean) {
                 source,
                 statuses: old.source === source ? old.statuses : [],
                 error: t("Couldn’t read forwarding status."),
+                verified: false,
               }));
           },
         )
@@ -102,6 +105,7 @@ export function useForwardStatuses(source: string, active: boolean) {
   return {
     statuses: result.source === source ? result.statuses : [],
     statusError: result.source === source ? result.error : "",
+    verified: result.source === source && result.verified,
     refresh,
   };
 }

@@ -20,6 +20,9 @@ import {
 } from "./automations";
 import {
   HOST_AUTOMATIONS,
+  HOST_AUTOMATION_ROOM,
+  HOST_AUTOMATION_PROJECT_TASKS,
+  HOST_AUTOMATION_PROJECT_SCAN,
   type HostAutomation,
   type HostAutomationInput,
   type HostAutomationRun,
@@ -145,6 +148,8 @@ export function automationFromHost(
 ): Automation {
   return {
     id: host.id,
+    hostTrigger: host.trigger,
+    hostTemplate: host.template,
     name: host.name,
     prompt: host.prompt,
     harness: host.harness,
@@ -173,7 +178,7 @@ export function automationFromHost(
         dayOfWeek: host.dayOfWeek,
       }),
     ],
-    missedRunGraceMinutes: 720,
+    missedRunGraceMinutes: host.missedRunGraceMinutes ?? 720,
     maxRunMinutes: host.maxRunMinutes,
     maxRunsPerDay: host.maxRunsPerDay,
     enabled: host.enabled,
@@ -202,11 +207,14 @@ export function hostAutomationFromDraft(
   projectId: string,
 ): HostAutomationInput {
   const [trigger, ...others] = draft.triggers;
-  if (!trigger || trigger.kind !== "time" || others.length > 0)
+  if (!draft.hostTrigger && (!trigger || trigger.kind !== "time" || others.length > 0))
     throw new Error(BACKGROUND_TRIGGER_ERROR);
   if (!isRemoteProvider(draft.harness)) throw new Error("This agent cannot run in the background.");
   return {
     id,
+    ...(draft.hostTrigger ? { trigger: draft.hostTrigger } : {}),
+    ...(draft.hostTemplate ? { template: draft.hostTemplate } : {}),
+    missedRunGraceMinutes: draft.missedRunGraceMinutes,
     name: draft.name,
     prompt: draft.prompt,
     projectId,
@@ -216,10 +224,10 @@ export function hostAutomationFromDraft(
     model: draft.model,
     modelSettings: draft.modelSettings,
     runtimeMode: draft.runtimeMode,
-    scheduleKind: trigger.scheduleKind,
-    minute: trigger.minute,
-    time: trigger.time,
-    dayOfWeek: trigger.dayOfWeek,
+    scheduleKind: trigger?.scheduleKind ?? draft.scheduleKind,
+    minute: trigger?.minute ?? draft.minute,
+    time: trigger?.time ?? draft.time,
+    dayOfWeek: trigger?.dayOfWeek ?? draft.dayOfWeek,
     ...(draft.workspaceMode === "worktree"
       ? { isolate: true }
       : draft.workspaceMode === "current"
@@ -263,9 +271,9 @@ export function listHostAutomationResults(
       ]);
       return automations.flatMap((automation) => {
         const project = projects.find((entry) => entry.id === automation.projectId);
-        return project
-          ? [automationFromHost(machine, hostProjectCwd(machine, project), automation)]
-          : [];
+        return [
+          automationFromHost(machine, project ? hostProjectCwd(machine, project) : "", automation),
+        ];
       });
     },
     (automation) =>
@@ -285,19 +293,35 @@ export async function saveHostAutomation(
   machines: readonly RemoteMachine[],
   draft: AutomationDraft,
 ): Promise<Automation> {
-  const machine = backgroundMachineFor(machines, draft.cwd);
-  if (!machine) throw new Error(BACKGROUND_MACHINE_ERROR);
-  const project = await hostProjectFor(machine, draft.cwd);
+  const machine = draft.hostMachineId
+    ? machines.find((entry) => entry.id === draft.hostMachineId)
+    : backgroundMachineFor(machines, draft.cwd);
+  if (!machine || (draft.cwd && backgroundMachineFor(machines, draft.cwd)?.id !== machine.id))
+    throw new Error(BACKGROUND_MACHINE_ERROR);
+  const capabilities = await machineCapabilities(machine);
+  if (!draft.cwd && !capabilities.includes(HOST_AUTOMATION_ROOM))
+    throw new Error("Update this Host to run projectless automations.");
+  if (draft.cwd && !capabilities.includes(HOST_AUTOMATION_PROJECT_TASKS))
+    throw new Error("Update this Host to run project automations as Tasks.");
+  if (draft.hostTrigger && !capabilities.includes("automations.triggers.v1"))
+    throw new Error("Update this Host to use automation triggers.");
+  if (draft.hostTemplate && !capabilities.includes(HOST_AUTOMATION_PROJECT_SCAN))
+    throw new Error("Update this Host to use Project scan.");
+  const project = draft.cwd ? await hostProjectFor(machine, draft.cwd) : undefined;
   const saved = await remoteRequest<HostAutomation>(
     machine.id,
     "automations.save",
     {
-      automation: hostAutomationFromDraft(draft, draft.id ?? crypto.randomUUID(), project.id),
+      automation: hostAutomationFromDraft(
+        draft,
+        draft.id ?? crypto.randomUUID(),
+        project?.id ?? "",
+      ),
     },
     false,
     true,
   );
-  return automationFromHost(machine, hostProjectCwd(machine, project), saved);
+  return automationFromHost(machine, project ? hostProjectCwd(machine, project) : "", saved);
 }
 
 export async function deleteHostAutomation(automation: Automation): Promise<void> {

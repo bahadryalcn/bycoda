@@ -823,6 +823,7 @@
               "confirmJobs": { "type": "boolean" },
               "dailyTokenBudget": { "maximum": 1000000000, "minimum": 20000, "type": "integer" },
               "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
+              "keepAwakeWhileAway": { "type": "boolean" },
               "keepAwakeWhileWorking": { "type": "boolean" },
               "language": { "maxLength": 40, "type": "string" },
               "name": { "maxLength": 80, "type": "string" },
@@ -844,6 +845,12 @@
                 "enum": ["friendly", "neutral", "formal", "casual", "blunt"],
                 "type": "string"
               },
+              "urgentNotificationIntervalMinutes": {
+                "maximum": 1440,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "urgentNotificationRepeats": { "maximum": 10, "minimum": 0, "type": "integer" },
               "voiceNarration": { "type": "boolean" },
               "workerCompactPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
               "workerHandoffPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
@@ -941,6 +948,7 @@
                     "type": "integer"
                   },
                   "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
+                  "keepAwakeWhileAway": { "type": "boolean" },
                   "keepAwakeWhileWorking": { "type": "boolean" },
                   "language": { "maxLength": 40, "type": "string" },
                   "name": { "maxLength": 80, "type": "string" },
@@ -962,6 +970,12 @@
                     "enum": ["friendly", "neutral", "formal", "casual", "blunt"],
                     "type": "string"
                   },
+                  "urgentNotificationIntervalMinutes": {
+                    "maximum": 1440,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "urgentNotificationRepeats": { "maximum": 10, "minimum": 0, "type": "integer" },
                   "voiceNarration": { "type": "boolean" },
                   "workerCompactPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
                   "workerHandoffPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
@@ -1468,6 +1482,21 @@
                       },
                       "chiefWakeLimit": { "maximum": 120, "minimum": 1, "type": "integer" },
                       "confirmJobs": { "type": "boolean" },
+                      "criticalExclusions": {
+                        "items": {
+                          "enum": [
+                            "pushMain",
+                            "deleteProject",
+                            "deleteSession",
+                            "sendMessages",
+                            "computerUse",
+                            "spend"
+                          ],
+                          "type": "string"
+                        },
+                        "maxItems": 6,
+                        "type": "array"
+                      },
                       "dailyTokenBudget": {
                         "maximum": 1000000000,
                         "minimum": 20000,
@@ -1524,6 +1553,7 @@
                         ]
                       },
                       "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
+                      "keepAwakeWhileAway": { "type": "boolean" },
                       "keepAwakeWhileWorking": { "type": "boolean" },
                       "language": { "type": "string" },
                       "name": { "type": "string" },
@@ -1533,10 +1563,33 @@
                         "enum": ["all", "urgent", "none"],
                         "type": "string"
                       },
+                      "notificationTelegram": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "accountId": { "type": "string" },
+                              "conversationId": { "type": "string" }
+                            },
+                            "required": ["accountId", "conversationId"],
+                            "type": "object"
+                          },
+                          { "type": "null" }
+                        ]
+                      },
                       "nudgeLimit": { "maximum": 2, "minimum": 0, "type": "integer" },
                       "observationTaskDone": { "type": "boolean" },
                       "observationTaskNeedsInput": { "type": "boolean" },
                       "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
+                      "permissionLevel": {
+                        "enum": ["watch", "projects", "everything"],
+                        "type": "string"
+                      },
+                      "permissionProjectIds": {
+                        "items": { "type": "string" },
+                        "maxItems": 100,
+                        "type": "array"
+                      },
                       "persona": { "type": "string" },
                       "planApproval": { "enum": ["always", "large", "never"], "type": "string" },
                       "planningExecution": {
@@ -1654,6 +1707,16 @@
                       "tone": {
                         "enum": ["friendly", "neutral", "formal", "casual", "blunt"],
                         "type": "string"
+                      },
+                      "urgentNotificationIntervalMinutes": {
+                        "maximum": 1440,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "urgentNotificationRepeats": {
+                        "maximum": 10,
+                        "minimum": 0,
+                        "type": "integer"
                       },
                       "voiceNarration": { "type": "boolean" },
                       "voiceSetupComplete": { "type": "boolean" },
@@ -2288,6 +2351,12 @@
               },
               {
                 "additionalProperties": false,
+                "properties": { "op": { "const": "notifications.targets", "type": "string" } },
+                "required": ["op"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
                 "properties": { "op": { "const": "tick", "type": "string" } },
                 "required": ["op"],
                 "type": "object"
@@ -2899,7 +2968,20 @@
                 "id": { "type": "string" },
                 "jobId": { "type": "string" },
                 "kind": { "type": "string" },
+                "operation": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "identity": { "type": "string" },
+                    "outcome": { "type": "string" },
+                    "target": { "type": "string" },
+                    "threadId": { "type": "string" },
+                    "tool": { "type": "string" }
+                  },
+                  "required": ["identity", "tool", "target", "outcome"],
+                  "type": "object"
+                },
                 "ownerQuestionId": { "type": "string" },
+                "projectIds": { "items": { "type": "string" }, "maxItems": 1000, "type": "array" },
                 "sessionId": { "type": "string" },
                 "summary": { "type": "string" },
                 "supervisionId": { "type": "string" },
@@ -3253,6 +3335,21 @@
               },
               { "type": "null" }
             ]
+          },
+          "notificationTargets": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": { "type": "string" },
+                "accountLabel": { "type": "string" },
+                "conversationId": { "type": "string" },
+                "conversationLabel": { "type": "string" }
+              },
+              "required": ["accountId", "accountLabel", "conversationId", "conversationLabel"],
+              "type": "object"
+            },
+            "maxItems": 200,
+            "type": "array"
           },
           "observationDeliveries": {
             "items": {
@@ -3620,6 +3717,21 @@
               "chiefSoftContext": { "maximum": 1000000, "minimum": 10000, "type": "integer" },
               "chiefWakeLimit": { "maximum": 120, "minimum": 1, "type": "integer" },
               "confirmJobs": { "type": "boolean" },
+              "criticalExclusions": {
+                "items": {
+                  "enum": [
+                    "pushMain",
+                    "deleteProject",
+                    "deleteSession",
+                    "sendMessages",
+                    "computerUse",
+                    "spend"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 6,
+                "type": "array"
+              },
               "dailyTokenBudget": { "maximum": 1000000000, "minimum": 0, "type": "integer" },
               "enabled": { "type": "boolean" },
               "execution": {
@@ -3668,16 +3780,37 @@
                 ]
               },
               "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
+              "keepAwakeWhileAway": { "type": "boolean" },
               "keepAwakeWhileWorking": { "type": "boolean" },
               "language": { "type": "string" },
               "name": { "type": "string" },
               "notificationAway": { "enum": ["all", "urgent", "none"], "type": "string" },
               "notificationDnd": { "const": "none", "type": "string" },
               "notificationPresent": { "enum": ["all", "urgent", "none"], "type": "string" },
+              "notificationTelegram": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "accountId": { "type": "string" },
+                      "conversationId": { "type": "string" }
+                    },
+                    "required": ["accountId", "conversationId"],
+                    "type": "object"
+                  },
+                  { "type": "null" }
+                ]
+              },
               "nudgeLimit": { "maximum": 2, "minimum": 0, "type": "integer" },
               "observationTaskDone": { "type": "boolean" },
               "observationTaskNeedsInput": { "type": "boolean" },
               "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
+              "permissionLevel": { "enum": ["watch", "projects", "everything"], "type": "string" },
+              "permissionProjectIds": {
+                "items": { "type": "string" },
+                "maxItems": 100,
+                "type": "array"
+              },
               "persona": { "type": "string" },
               "planApproval": { "enum": ["always", "large", "never"], "type": "string" },
               "planningExecution": {
@@ -3782,6 +3915,12 @@
                 "type": "string"
               },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "urgentNotificationIntervalMinutes": {
+                "maximum": 1440,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "urgentNotificationRepeats": { "maximum": 10, "minimum": 0, "type": "integer" },
               "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "voiceNarration": { "type": "boolean" },
               "voiceSetupComplete": { "type": "boolean" },
@@ -3803,6 +3942,10 @@
               "perWakeTokenCap",
               "enabled",
               "keepAwakeWhileWorking",
+              "keepAwakeWhileAway",
+              "urgentNotificationRepeats",
+              "urgentNotificationIntervalMinutes",
+              "notificationTelegram",
               "setupComplete",
               "voiceSetupComplete",
               "proactiveSpeech",
@@ -3914,7 +4057,24 @@
                     "id": { "type": "string" },
                     "jobId": { "type": "string" },
                     "kind": { "type": "string" },
+                    "operation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "identity": { "type": "string" },
+                        "outcome": { "type": "string" },
+                        "target": { "type": "string" },
+                        "threadId": { "type": "string" },
+                        "tool": { "type": "string" }
+                      },
+                      "required": ["identity", "tool", "target", "outcome"],
+                      "type": "object"
+                    },
                     "ownerQuestionId": { "type": "string" },
+                    "projectIds": {
+                      "items": { "type": "string" },
+                      "maxItems": 1000,
+                      "type": "array"
+                    },
                     "sessionId": { "type": "string" },
                     "summary": { "type": "string" },
                     "supervisionId": { "type": "string" },
@@ -4642,13 +4802,16 @@
                       "maxItems": 1000,
                       "type": "array"
                     },
+                    "repeatCount": { "maximum": 10, "minimum": 0, "type": "integer" },
+                    "repeatIntervalMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
                     "taskCreatedAt": {
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
                     },
                     "taskId": { "type": "string" },
-                    "title": { "type": "string" }
+                    "title": { "type": "string" },
+                    "urgent": { "type": "boolean" }
                   },
                   "required": [
                     "id",
@@ -4953,6 +5116,21 @@
                   "chiefSoftContext": { "maximum": 1000000, "minimum": 10000, "type": "integer" },
                   "chiefWakeLimit": { "maximum": 120, "minimum": 1, "type": "integer" },
                   "confirmJobs": { "type": "boolean" },
+                  "criticalExclusions": {
+                    "items": {
+                      "enum": [
+                        "pushMain",
+                        "deleteProject",
+                        "deleteSession",
+                        "sendMessages",
+                        "computerUse",
+                        "spend"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 6,
+                    "type": "array"
+                  },
                   "dailyTokenBudget": { "maximum": 1000000000, "minimum": 0, "type": "integer" },
                   "enabled": { "type": "boolean" },
                   "execution": {
@@ -5001,16 +5179,40 @@
                     ]
                   },
                   "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
+                  "keepAwakeWhileAway": { "type": "boolean" },
                   "keepAwakeWhileWorking": { "type": "boolean" },
                   "language": { "type": "string" },
                   "name": { "type": "string" },
                   "notificationAway": { "enum": ["all", "urgent", "none"], "type": "string" },
                   "notificationDnd": { "const": "none", "type": "string" },
                   "notificationPresent": { "enum": ["all", "urgent", "none"], "type": "string" },
+                  "notificationTelegram": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "accountId": { "type": "string" },
+                          "conversationId": { "type": "string" }
+                        },
+                        "required": ["accountId", "conversationId"],
+                        "type": "object"
+                      },
+                      { "type": "null" }
+                    ]
+                  },
                   "nudgeLimit": { "maximum": 2, "minimum": 0, "type": "integer" },
                   "observationTaskDone": { "type": "boolean" },
                   "observationTaskNeedsInput": { "type": "boolean" },
                   "perWakeTokenCap": { "maximum": 1000000, "minimum": 1000, "type": "integer" },
+                  "permissionLevel": {
+                    "enum": ["watch", "projects", "everything"],
+                    "type": "string"
+                  },
+                  "permissionProjectIds": {
+                    "items": { "type": "string" },
+                    "maxItems": 100,
+                    "type": "array"
+                  },
                   "persona": { "type": "string" },
                   "planApproval": { "enum": ["always", "large", "never"], "type": "string" },
                   "planningExecution": {
@@ -5115,6 +5317,12 @@
                     "type": "string"
                   },
                   "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "urgentNotificationIntervalMinutes": {
+                    "maximum": 1440,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "urgentNotificationRepeats": { "maximum": 10, "minimum": 0, "type": "integer" },
                   "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "voiceNarration": { "type": "boolean" },
                   "voiceSetupComplete": { "type": "boolean" },
@@ -5136,6 +5344,10 @@
                   "perWakeTokenCap",
                   "enabled",
                   "keepAwakeWhileWorking",
+                  "keepAwakeWhileAway",
+                  "urgentNotificationRepeats",
+                  "urgentNotificationIntervalMinutes",
+                  "notificationTelegram",
                   "setupComplete",
                   "voiceSetupComplete",
                   "proactiveSpeech",
@@ -5532,6 +5744,7 @@
             "maxRunMinutes": { "maximum": 10080, "minimum": 0, "type": "integer" },
             "maxRunsPerDay": { "maximum": 1000, "minimum": 0, "type": "integer" },
             "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+            "missedRunGraceMinutes": { "maximum": 43200, "minimum": 0, "type": "integer" },
             "model": { "type": "string" },
             "modelChoice": {
               "oneOf": [
@@ -5570,6 +5783,17 @@
               "type": "object"
             },
             "name": { "type": "string" },
+            "nativeMigrationState": {
+              "additionalProperties": false,
+              "properties": {
+                "fingerprint": { "type": "string" },
+                "phase": { "enum": ["prepared", "committed"], "type": "string" },
+                "receipt": { "type": "string" },
+                "sourceAutomationId": { "type": "string" }
+              },
+              "required": ["receipt", "fingerprint", "phase", "sourceAutomationId"],
+              "type": "object"
+            },
             "needsInput": { "type": "boolean" },
             "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
             "projectId": { "type": "string" },
@@ -5580,7 +5804,46 @@
               "type": "string"
             },
             "scheduleKind": { "enum": ["hourly", "daily", "weekdays", "weekly"], "type": "string" },
+            "template": {
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "const": "project-scan", "type": "string" },
+                "sourceStewardId": { "type": "string" }
+              },
+              "required": ["kind", "sourceStewardId"],
+              "type": "object"
+            },
             "time": { "type": "string" },
+            "trigger": {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": { "const": "continuous", "type": "string" },
+                    "minimumGapMinutes": { "maximum": 10080, "minimum": 1, "type": "integer" }
+                  },
+                  "required": ["kind", "minimumGapMinutes"],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "event": {
+                      "enum": [
+                        "task.finished",
+                        "task.blocked",
+                        "session.waiting",
+                        "automation.failed"
+                      ],
+                      "type": "string"
+                    },
+                    "kind": { "const": "event", "type": "string" }
+                  },
+                  "required": ["kind", "event"],
+                  "type": "object"
+                }
+              ]
+            },
             "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
           },
           "required": [
@@ -5653,6 +5916,105 @@
       "retry": "safe-query",
       "scope": "device"
     },
+    "automations.propose": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "currentExecution": {
+            "additionalProperties": false,
+            "properties": {
+              "harness": {
+                "enum": [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp"
+                ],
+                "type": "string"
+              },
+              "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+              "modelSettings": {
+                "additionalProperties": { "type": "string" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            },
+            "required": ["harness", "model", "modelSettings"],
+            "type": "object"
+          },
+          "operationId": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "projectId": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "request": { "maxLength": 32000, "minLength": 1, "type": "string" }
+        },
+        "required": ["operationId", "request", "projectId", "currentExecution"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.automations.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "confirmationRequired": { "const": true, "type": "boolean" },
+          "instruction": { "maxLength": 32000, "minLength": 1, "type": "string" },
+          "name": { "maxLength": 200, "minLength": 1, "type": "string" },
+          "operationId": { "type": "string" },
+          "outputTarget": { "enum": ["room", "projectTask"], "type": "string" },
+          "preview": {
+            "additionalProperties": false,
+            "properties": {
+              "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "timeZone": { "type": "string" }
+            },
+            "required": ["timeZone", "nextRunAt"],
+            "type": "object"
+          },
+          "projectId": { "type": "string" },
+          "schedule": {
+            "additionalProperties": false,
+            "properties": {
+              "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
+              "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+              "scheduleKind": {
+                "enum": ["hourly", "daily", "weekdays", "weekly"],
+                "type": "string"
+              },
+              "time": { "maxLength": 5, "minLength": 5, "type": "string" }
+            },
+            "required": ["scheduleKind", "minute", "time", "dayOfWeek"],
+            "type": "object"
+          },
+          "timeZone": { "maxLength": 100, "minLength": 1, "type": "string" }
+        },
+        "required": [
+          "name",
+          "instruction",
+          "schedule",
+          "timeZone",
+          "outputTarget",
+          "operationId",
+          "projectId",
+          "preview",
+          "confirmationRequired"
+        ],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
     "automations.runNow": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -5674,6 +6036,7 @@
         "properties": {
           "activityId": { "type": "string" },
           "automationId": { "type": "string" },
+          "cancellationRequested": { "type": "boolean" },
           "cleanupPending": { "type": "boolean" },
           "completedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
           "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -5710,6 +6073,8 @@
           },
           "id": { "type": "string" },
           "maxRunMinutes": { "maximum": 10080, "minimum": 0, "type": "integer" },
+          "nativeRunId": { "type": "string" },
+          "nativeSessionId": { "type": "string" },
           "needsInput": { "type": "boolean" },
           "runId": { "type": "string" },
           "scheduledFor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -5719,7 +6084,8 @@
             "enum": ["pending", "running", "succeeded", "failed", "skipped", "cancelled"],
             "type": "string"
           },
-          "trigger": { "enum": ["scheduled", "manual"], "type": "string" },
+          "taskId": { "type": "string" },
+          "trigger": { "enum": ["scheduled", "manual", "event"], "type": "string" },
           "workspaceId": { "type": "string" }
         },
         "required": ["id", "automationId", "trigger", "scheduledFor", "createdAt", "status"],
@@ -5750,6 +6116,7 @@
           "properties": {
             "activityId": { "type": "string" },
             "automationId": { "type": "string" },
+            "cancellationRequested": { "type": "boolean" },
             "cleanupPending": { "type": "boolean" },
             "completedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
             "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -5786,6 +6153,8 @@
             },
             "id": { "type": "string" },
             "maxRunMinutes": { "maximum": 10080, "minimum": 0, "type": "integer" },
+            "nativeRunId": { "type": "string" },
+            "nativeSessionId": { "type": "string" },
             "needsInput": { "type": "boolean" },
             "runId": { "type": "string" },
             "scheduledFor": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -5795,7 +6164,8 @@
               "enum": ["pending", "running", "succeeded", "failed", "skipped", "cancelled"],
               "type": "string"
             },
-            "trigger": { "enum": ["scheduled", "manual"], "type": "string" },
+            "taskId": { "type": "string" },
+            "trigger": { "enum": ["scheduled", "manual", "event"], "type": "string" },
             "workspaceId": { "type": "string" }
           },
           "required": ["id", "automationId", "trigger", "scheduledFor", "createdAt", "status"],
@@ -5822,6 +6192,7 @@
               "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
               "enabled": { "type": "boolean" },
+              "expectedAbsent": { "type": "boolean" },
               "expectedConfiguration": {
                 "additionalProperties": false,
                 "properties": {
@@ -5856,6 +6227,7 @@
                   "maxRunMinutes": { "maximum": 10080, "minimum": 0, "type": "integer" },
                   "maxRunsPerDay": { "maximum": 1000, "minimum": 0, "type": "integer" },
                   "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+                  "missedRunGraceMinutes": { "maximum": 43200, "minimum": 0, "type": "integer" },
                   "model": { "type": "string" },
                   "modelChoice": {
                     "oneOf": [
@@ -5894,6 +6266,17 @@
                     "type": "object"
                   },
                   "name": { "type": "string" },
+                  "nativeMigrationState": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "fingerprint": { "type": "string" },
+                      "phase": { "enum": ["prepared", "committed"], "type": "string" },
+                      "receipt": { "type": "string" },
+                      "sourceAutomationId": { "type": "string" }
+                    },
+                    "required": ["receipt", "fingerprint", "phase", "sourceAutomationId"],
+                    "type": "object"
+                  },
                   "needsInput": { "type": "boolean" },
                   "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                   "projectId": { "type": "string" },
@@ -5907,7 +6290,46 @@
                     "enum": ["hourly", "daily", "weekdays", "weekly"],
                     "type": "string"
                   },
+                  "template": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "project-scan", "type": "string" },
+                      "sourceStewardId": { "type": "string" }
+                    },
+                    "required": ["kind", "sourceStewardId"],
+                    "type": "object"
+                  },
                   "time": { "type": "string" },
+                  "trigger": {
+                    "oneOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "kind": { "const": "continuous", "type": "string" },
+                          "minimumGapMinutes": { "maximum": 10080, "minimum": 1, "type": "integer" }
+                        },
+                        "required": ["kind", "minimumGapMinutes"],
+                        "type": "object"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "event": {
+                            "enum": [
+                              "task.finished",
+                              "task.blocked",
+                              "session.waiting",
+                              "automation.failed"
+                            ],
+                            "type": "string"
+                          },
+                          "kind": { "const": "event", "type": "string" }
+                        },
+                        "required": ["kind", "event"],
+                        "type": "object"
+                      }
+                    ]
+                  },
                   "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                 },
                 "required": [
@@ -5953,6 +6375,7 @@
               "maxRunMinutes": { "maximum": 10080, "minimum": 0, "type": "integer" },
               "maxRunsPerDay": { "maximum": 1000, "minimum": 0, "type": "integer" },
               "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+              "missedRunGraceMinutes": { "maximum": 43200, "minimum": 0, "type": "integer" },
               "model": { "type": "string" },
               "modelChoice": {
                 "oneOf": [
@@ -5991,6 +6414,30 @@
                 "type": "object"
               },
               "name": { "type": "string" },
+              "nativeMigration": {
+                "additionalProperties": false,
+                "properties": {
+                  "automationId": { "type": "string" },
+                  "hostAutomationId": { "type": "string" },
+                  "phase": { "enum": ["prepared", "committed"], "type": "string" },
+                  "receipt": { "maxLength": 200, "minLength": 1, "type": "string" },
+                  "snapshot": { "maxLength": 32000000, "minLength": 1, "type": "string" },
+                  "targetHostId": { "type": "string" }
+                },
+                "required": ["automationId", "receipt", "targetHostId", "snapshot", "phase"],
+                "type": "object"
+              },
+              "nativeMigrationState": {
+                "additionalProperties": false,
+                "properties": {
+                  "fingerprint": { "type": "string" },
+                  "phase": { "enum": ["prepared", "committed"], "type": "string" },
+                  "receipt": { "type": "string" },
+                  "sourceAutomationId": { "type": "string" }
+                },
+                "required": ["receipt", "fingerprint", "phase", "sourceAutomationId"],
+                "type": "object"
+              },
               "needsInput": { "type": "boolean" },
               "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
               "projectId": { "type": "string" },
@@ -6004,7 +6451,46 @@
                 "enum": ["hourly", "daily", "weekdays", "weekly"],
                 "type": "string"
               },
+              "template": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "project-scan", "type": "string" },
+                  "sourceStewardId": { "type": "string" }
+                },
+                "required": ["kind", "sourceStewardId"],
+                "type": "object"
+              },
               "time": { "type": "string" },
+              "trigger": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "kind": { "const": "continuous", "type": "string" },
+                      "minimumGapMinutes": { "maximum": 10080, "minimum": 1, "type": "integer" }
+                    },
+                    "required": ["kind", "minimumGapMinutes"],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "event": {
+                        "enum": [
+                          "task.finished",
+                          "task.blocked",
+                          "session.waiting",
+                          "automation.failed"
+                        ],
+                        "type": "string"
+                      },
+                      "kind": { "const": "event", "type": "string" }
+                    },
+                    "required": ["kind", "event"],
+                    "type": "object"
+                  }
+                ]
+              },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
             },
             "required": [
@@ -6063,6 +6549,7 @@
           "maxRunMinutes": { "maximum": 10080, "minimum": 0, "type": "integer" },
           "maxRunsPerDay": { "maximum": 1000, "minimum": 0, "type": "integer" },
           "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+          "missedRunGraceMinutes": { "maximum": 43200, "minimum": 0, "type": "integer" },
           "model": { "type": "string" },
           "modelChoice": {
             "oneOf": [
@@ -6101,6 +6588,17 @@
             "type": "object"
           },
           "name": { "type": "string" },
+          "nativeMigrationState": {
+            "additionalProperties": false,
+            "properties": {
+              "fingerprint": { "type": "string" },
+              "phase": { "enum": ["prepared", "committed"], "type": "string" },
+              "receipt": { "type": "string" },
+              "sourceAutomationId": { "type": "string" }
+            },
+            "required": ["receipt", "fingerprint", "phase", "sourceAutomationId"],
+            "type": "object"
+          },
           "needsInput": { "type": "boolean" },
           "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
           "projectId": { "type": "string" },
@@ -6111,7 +6609,46 @@
             "type": "string"
           },
           "scheduleKind": { "enum": ["hourly", "daily", "weekdays", "weekly"], "type": "string" },
+          "template": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "const": "project-scan", "type": "string" },
+              "sourceStewardId": { "type": "string" }
+            },
+            "required": ["kind", "sourceStewardId"],
+            "type": "object"
+          },
           "time": { "type": "string" },
+          "trigger": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "continuous", "type": "string" },
+                  "minimumGapMinutes": { "maximum": 10080, "minimum": 1, "type": "integer" }
+                },
+                "required": ["kind", "minimumGapMinutes"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "event": {
+                    "enum": [
+                      "task.finished",
+                      "task.blocked",
+                      "session.waiting",
+                      "automation.failed"
+                    ],
+                    "type": "string"
+                  },
+                  "kind": { "const": "event", "type": "string" }
+                },
+                "required": ["kind", "event"],
+                "type": "object"
+              }
+            ]
+          },
           "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
         },
         "required": [
@@ -8211,6 +8748,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -8382,6 +8921,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -8512,6 +9052,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -8639,12 +9203,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -8712,6 +9277,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -11732,6 +12298,8 @@
                 },
                 "autoMerge": { "type": "boolean" },
                 "autoMerged": { "type": "boolean" },
+                "automationId": { "type": "string" },
+                "automationRunId": { "type": "string" },
                 "awaitingOwnerRestart": { "type": "boolean" },
                 "baseBranch": { "type": "string" },
                 "baseCommit": { "type": "string" },
@@ -11914,6 +12482,7 @@
                   "type": "array"
                 },
                 "id": { "type": "string" },
+                "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
                 "isolate": { "type": "boolean" },
                 "maxRunMinutes": { "type": "number" },
                 "mergeError": { "type": "string" },
@@ -12054,6 +12623,37 @@
                 "projectId": { "type": "string" },
                 "prompt": { "const": "", "type": "string" },
                 "providerAccountId": { "type": "string" },
+                "repairAdvisor": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": { "type": "string" },
+                    "feedback": { "type": "string" },
+                    "findings": { "type": "string" },
+                    "fingerprint": { "type": "string" },
+                    "requestId": { "type": "string" },
+                    "runtimeRetryNotice": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "at": { "type": "number" },
+                        "id": { "type": "string" },
+                        "message": { "type": "string" }
+                      },
+                      "required": ["id", "message", "at"],
+                      "type": "object"
+                    },
+                    "sessionId": { "type": "string" },
+                    "takeover": { "type": "boolean" }
+                  },
+                  "required": [
+                    "requestId",
+                    "sessionId",
+                    "findings",
+                    "feedback",
+                    "error",
+                    "fingerprint"
+                  ],
+                  "type": "object"
+                },
                 "repairAttempts": { "type": "number" },
                 "repairNote": { "type": "string" },
                 "repairStop": {
@@ -12185,12 +12785,13 @@
                   "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
                   "type": "object"
                 },
+                "runtimeLimitResolvedAt": { "type": "number" },
                 "runtimeMode": {
                   "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                   "type": "string"
                 },
                 "sessionId": { "type": "string" },
-                "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+                "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
                 "startedAt": { "type": "number" },
                 "status": {
                   "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -12262,6 +12863,7 @@
                   "type": "object"
                 },
                 "verifyCommand": { "type": "string" },
+                "workInvocationId": { "type": "string" },
                 "workflowId": { "type": "string" },
                 "workflowVersion": { "type": "number" },
                 "workspace": {
@@ -16024,6 +16626,8 @@
                       },
                       "autoMerge": { "type": "boolean" },
                       "autoMerged": { "type": "boolean" },
+                      "automationId": { "type": "string" },
+                      "automationRunId": { "type": "string" },
                       "awaitingOwnerRestart": { "type": "boolean" },
                       "baseBranch": { "type": "string" },
                       "baseCommit": { "type": "string" },
@@ -16218,6 +16822,7 @@
                         "type": "array"
                       },
                       "id": { "type": "string" },
+                      "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
                       "isolate": { "type": "boolean" },
                       "maxRunMinutes": { "type": "number" },
                       "mergeError": { "type": "string" },
@@ -16374,6 +16979,37 @@
                       "projectId": { "type": "string" },
                       "prompt": { "const": "", "type": "string" },
                       "providerAccountId": { "type": "string" },
+                      "repairAdvisor": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "error": { "type": "string" },
+                          "feedback": { "type": "string" },
+                          "findings": { "type": "string" },
+                          "fingerprint": { "type": "string" },
+                          "requestId": { "type": "string" },
+                          "runtimeRetryNotice": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "at": { "type": "number" },
+                              "id": { "type": "string" },
+                              "message": { "type": "string" }
+                            },
+                            "required": ["id", "message", "at"],
+                            "type": "object"
+                          },
+                          "sessionId": { "type": "string" },
+                          "takeover": { "type": "boolean" }
+                        },
+                        "required": [
+                          "requestId",
+                          "sessionId",
+                          "findings",
+                          "feedback",
+                          "error",
+                          "fingerprint"
+                        ],
+                        "type": "object"
+                      },
                       "repairAttempts": { "type": "number" },
                       "repairNote": { "type": "string" },
                       "repairStop": {
@@ -16523,12 +17159,16 @@
                         "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
                         "type": "object"
                       },
+                      "runtimeLimitResolvedAt": { "type": "number" },
                       "runtimeMode": {
                         "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
                         "type": "string"
                       },
                       "sessionId": { "type": "string" },
-                      "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+                      "source": {
+                        "enum": ["manual", "goal", "steward", "automation"],
+                        "type": "string"
+                      },
                       "startedAt": { "type": "number" },
                       "status": {
                         "enum": [
@@ -16613,6 +17253,7 @@
                         "type": "object"
                       },
                       "verifyCommand": { "type": "string" },
+                      "workInvocationId": { "type": "string" },
                       "workflowId": { "type": "string" },
                       "workflowVersion": { "type": "number" },
                       "workspace": {
@@ -23872,6 +24513,7 @@
                 "type": "string"
               },
               "errorCode": { "type": "string" },
+              "errorMessage": { "type": "string" },
               "ok": { "type": "boolean" },
               "requestId": { "type": "string" },
               "retry": { "enum": ["unknown", "safe", "unsafe"], "type": "string" },
@@ -23921,6 +24563,38 @@
               "enabled": { "type": "boolean" },
               "installed": { "type": "boolean" },
               "message": { "type": "string" },
+              "permissions": {
+                "additionalProperties": false,
+                "properties": {
+                  "accessibility": {
+                    "enum": [
+                      "granted",
+                      "denied",
+                      "not-determined",
+                      "restricted",
+                      "not-required",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "checkedAt": { "type": "string" },
+                  "elevated": { "type": "boolean" },
+                  "screenRecording": {
+                    "enum": [
+                      "granted",
+                      "denied",
+                      "not-determined",
+                      "restricted",
+                      "not-required",
+                      "unknown"
+                    ],
+                    "type": "string"
+                  },
+                  "source": { "enum": ["agent-desktop", "unavailable"], "type": "string" }
+                },
+                "required": ["accessibility", "screenRecording", "source", "checkedAt"],
+                "type": "object"
+              },
               "protocol": { "type": "string" },
               "stopped": { "type": "boolean" },
               "upstreamRef": { "type": "string" },
@@ -27046,6 +27720,7 @@
           },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "crewDefinitionId": { "minLength": 1, "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "error": { "type": "string" },
           "feedback": { "type": "string" },
@@ -27503,6 +28178,7 @@
           },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "crewDefinitionId": { "minLength": 1, "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "error": { "type": "string" },
           "feedback": { "type": "string" },
@@ -27919,6 +28595,7 @@
                 "type": "object"
               },
               "continueUntilDone": { "type": "boolean" },
+              "crewDefinitionId": { "minLength": 1, "type": "string" },
               "finalReview": { "type": "boolean" },
               "harness": {
                 "enum": [
@@ -28114,6 +28791,7 @@
           },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "crewDefinitionId": { "minLength": 1, "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "error": { "type": "string" },
           "feedback": { "type": "string" },
@@ -28599,6 +29277,7 @@
           },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "crewDefinitionId": { "minLength": 1, "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "error": { "type": "string" },
           "feedback": { "type": "string" },
@@ -29056,6 +29735,7 @@
             },
             "continueUntilDone": { "type": "boolean" },
             "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            "crewDefinitionId": { "minLength": 1, "type": "string" },
             "deliveryApprovalRequired": { "type": "boolean" },
             "error": { "type": "string" },
             "feedback": { "type": "string" },
@@ -29525,6 +30205,7 @@
           },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "crewDefinitionId": { "minLength": 1, "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "error": { "type": "string" },
           "feedback": { "type": "string" },
@@ -30006,6 +30687,7 @@
           },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "crewDefinitionId": { "minLength": 1, "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "error": { "type": "string" },
           "feedback": { "type": "string" },
@@ -30607,7 +31289,84 @@
                 "type": "object"
               },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+              "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "workCaps": {
+                "additionalProperties": false,
+                "properties": {
+                  "providers": {
+                    "additionalProperties": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "daily": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "monthly": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "propertyNames": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "total": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "daily": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      },
+                      "monthly": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
             },
             "required": ["entries", "pools", "roles", "delegation", "version", "updatedAt"],
             "type": "object"
@@ -31054,6 +31813,83 @@
                   "type": "string"
                 },
                 "type": "object"
+              },
+              "workCaps": {
+                "additionalProperties": false,
+                "properties": {
+                  "providers": {
+                    "additionalProperties": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "daily": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "monthly": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "propertyNames": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "total": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "daily": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      },
+                      "monthly": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
               }
             },
             "required": ["entries", "pools", "roles", "delegation"],
@@ -31263,7 +32099,84 @@
                 "type": "object"
               },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
-              "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+              "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "workCaps": {
+                "additionalProperties": false,
+                "properties": {
+                  "providers": {
+                    "additionalProperties": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "daily": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "monthly": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "costUsd": { "minimum": 0, "type": "number" },
+                            "tokens": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "propertyNames": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "total": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "daily": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      },
+                      "monthly": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "costUsd": { "minimum": 0, "type": "number" },
+                          "tokens": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object"
+              }
             },
             "required": ["entries", "pools", "roles", "delegation", "version", "updatedAt"],
             "type": "object"
@@ -33742,6 +34655,60 @@
       "retry": "never",
       "scope": "device"
     },
+    "native.services.assistant.background.execute": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "additionalProperties": false,
+            "properties": {
+              "challenge": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+              "environmentId": { "maxLength": 200, "minLength": 1, "type": "string" },
+              "operationHash": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+              "operationId": { "maxLength": 200, "minLength": 1, "type": "string" },
+              "relayId": { "maxLength": 200, "minLength": 1, "type": "string" },
+              "threadId": { "maxLength": 200, "minLength": 1, "type": "string" }
+            },
+            "required": [
+              "environmentId",
+              "threadId",
+              "operationId",
+              "operationHash",
+              "challenge",
+              "relayId"
+            ],
+            "type": "object"
+          }
+        },
+        "required": ["input"],
+        "type": "object"
+      },
+      "requiredCapability": "native.services.v1",
+      "responseTimeoutMs": 30000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "null" },
+          { "items": { "$ref": "#" }, "type": "array" },
+          {
+            "additionalProperties": { "$ref": "#" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          }
+        ]
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "native.services.assistant.browser.panel": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -34772,6 +35739,7 @@
               "ui.tools.status",
               "assistant.notification.deliver",
               "assistant.notification.status",
+              "assistant.background.effect",
               "desktop.act.authorize",
               "management.write.authorize",
               "secrets.input.authorize",
@@ -44742,6 +45710,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -44913,6 +45883,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -45043,6 +46014,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -45170,12 +46165,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -45243,6 +46239,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -45354,6 +46351,637 @@
       "retry": "safe-query",
       "scope": "device"
     },
+    "tasks.finishWithFindings": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "expectedUpdatedAt": { "type": "number" }, "taskId": { "type": "string" } },
+        "required": ["taskId", "expectedUpdatedAt"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.tasks.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "artifactDeliveryActivityId": { "type": "string" },
+          "artifactDeliveryPending": { "type": "boolean" },
+          "artifactHashes": {
+            "additionalProperties": { "type": "string" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          },
+          "artifactPaths": { "items": { "type": "string" }, "type": "array" },
+          "assistantFollowups": {
+            "additionalProperties": false,
+            "properties": {
+              "delivered": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "unconfirmed": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+            },
+            "required": ["delivered", "unconfirmed"],
+            "type": "object"
+          },
+          "attemptHistory": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "attempt": { "type": "number" },
+                "findings": { "items": { "type": "string" }, "type": "array" },
+                "note": { "type": "string" },
+                "reviewOnly": { "type": "boolean" },
+                "reviewerSessionId": { "type": "string" },
+                "verdict": { "enum": ["pass", "fail"], "type": "string" },
+                "workerSessionId": { "type": "string" },
+                "workerSummary": { "type": "string" },
+                "workspaceFingerprint": { "type": "string" }
+              },
+              "required": [
+                "attempt",
+                "at",
+                "reviewerSessionId",
+                "workerSummary",
+                "verdict",
+                "note",
+                "findings"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "autoMerge": { "type": "boolean" },
+          "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
+          "awaitingOwnerRestart": { "type": "boolean" },
+          "baseBranch": { "type": "string" },
+          "baseCommit": { "type": "string" },
+          "blockedTakeover": {
+            "additionalProperties": false,
+            "properties": {
+              "at": { "type": "number" },
+              "blocker": { "type": "string" },
+              "previousSessionId": { "type": "string" }
+            },
+            "required": ["at", "blocker"],
+            "type": "object"
+          },
+          "branch": { "type": "string" },
+          "budget": {
+            "additionalProperties": false,
+            "properties": {
+              "maxAgentMinutes": { "type": "number" },
+              "maxAttempts": { "type": "number" },
+              "maxTokens": { "type": "number" },
+              "warningPercent": { "type": "number" }
+            },
+            "type": "object"
+          },
+          "budgetStop": { "type": "string" },
+          "budgetUsage": {
+            "additionalProperties": false,
+            "properties": {
+              "agentMinutes": { "type": "number" },
+              "attempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "completedRuns": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "estimatedCostUsd": { "type": "null" },
+              "historyComplete": { "type": "boolean" },
+              "measuredAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "reportedCostUsd": { "type": ["number", "null"] },
+              "reportedTokens": { "type": "number" },
+              "runningRuns": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "tokens": { "type": ["number", "null"] },
+              "tokensComplete": { "type": "boolean" },
+              "unknownTokenRuns": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+            },
+            "required": [
+              "historyComplete",
+              "agentMinutes",
+              "attempts",
+              "completedRuns",
+              "runningRuns",
+              "reportedTokens",
+              "tokens",
+              "tokensComplete",
+              "unknownTokenRuns",
+              "reportedCostUsd",
+              "estimatedCostUsd",
+              "measuredAt"
+            ],
+            "type": "object"
+          },
+          "checkFailureFingerprint": { "type": "string" },
+          "cleanupArchives": { "items": { "type": "string" }, "type": "array" },
+          "cleanupError": { "type": "string" },
+          "cleanupRetryAfter": { "type": "number" },
+          "completedAt": { "type": "number" },
+          "completedWithFindings": { "type": "boolean" },
+          "continueUntilDone": { "type": "boolean" },
+          "createdAt": { "type": "number" },
+          "crewDefinitionId": { "type": "string" },
+          "crewExecutionId": { "type": "string" },
+          "crewReviewFingerprint": { "type": "string" },
+          "crewRunId": { "type": "string" },
+          "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "deliveredCommit": { "type": "string" },
+          "deliveryApprovalRequired": { "type": "boolean" },
+          "deliveryArtifacts": {
+            "additionalProperties": false,
+            "properties": {
+              "blockers": { "items": { "type": "string" }, "type": "array" },
+              "hashes": {
+                "additionalProperties": { "type": "string" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              },
+              "paths": { "items": { "type": "string" }, "type": "array" },
+              "planToken": { "type": "string" },
+              "sourceFingerprint": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetFingerprint": { "type": "string" },
+              "targetHashes": {
+                "additionalProperties": { "type": ["string", "null"] },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              }
+            },
+            "required": [
+              "paths",
+              "hashes",
+              "sourceFingerprint",
+              "targetFingerprint",
+              "targetHashes",
+              "blockers",
+              "planToken",
+              "sourceHead",
+              "targetDirectory"
+            ],
+            "type": "object"
+          },
+          "deliveryCwd": { "type": "string" },
+          "deliveryNote": { "type": "string" },
+          "deliveryOperationId": { "type": "string" },
+          "deliveryRequested": { "type": "boolean" },
+          "deliveryState": { "enum": ["awaitingOwner", "merged", "published"], "type": "string" },
+          "dependencyArtifactsPrepared": { "type": "boolean" },
+          "dependsOn": { "items": { "type": "string" }, "type": "array" },
+          "diffStat": { "type": "string" },
+          "error": { "type": "string" },
+          "evaluation": {
+            "additionalProperties": false,
+            "properties": {
+              "accepted": { "type": "boolean" },
+              "corrections": { "type": "number" },
+              "recordedAt": { "type": "number" },
+              "reviewMinutes": { "type": "number" }
+            },
+            "required": ["accepted", "reviewMinutes", "corrections", "recordedAt"],
+            "type": "object"
+          },
+          "finalization": {
+            "additionalProperties": false,
+            "properties": {
+              "branch": { "type": "string" },
+              "clean": { "type": "boolean" },
+              "diff": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "head": { "type": "string" },
+              "status": { "type": "string" }
+            },
+            "required": ["branch", "head", "status", "diff", "fingerprint", "clean"],
+            "type": "object"
+          },
+          "goalId": { "type": "string" },
+          "harness": {
+            "enum": [
+              "codex",
+              "claude",
+              "cursor",
+              "grok",
+              "opencode",
+              "pi",
+              "omp",
+              "fx",
+              "hermes",
+              "antigravity",
+              "acp"
+            ],
+            "type": "string"
+          },
+          "historyRecovery": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "baseCommit": { "type": "string" },
+                "branch": { "type": "string" },
+                "head": { "type": "string" },
+                "worktreeCwd": { "type": "string" }
+              },
+              "required": ["branch", "baseCommit", "head"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
+          "isolate": { "type": "boolean" },
+          "maxRunMinutes": { "type": "number" },
+          "mergeError": { "type": "string" },
+          "mergeRepair": {
+            "additionalProperties": false,
+            "properties": {
+              "attempts": { "type": "number" },
+              "baseHead": { "type": "string" },
+              "conflicts": { "items": { "type": "string" }, "type": "array" },
+              "prepared": { "type": "boolean" },
+              "replayCommit": { "type": "string" },
+              "replayStarted": { "type": "boolean" }
+            },
+            "required": ["baseHead", "conflicts", "attempts"],
+            "type": "object"
+          },
+          "mergeRetry": {
+            "additionalProperties": false,
+            "properties": { "after": { "type": "number" }, "fingerprint": { "type": "string" } },
+            "required": ["fingerprint", "after"],
+            "type": "object"
+          },
+          "merged": { "type": "boolean" },
+          "mergedAt": { "type": "number" },
+          "model": { "type": "string" },
+          "modelChoice": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": { "kind": { "const": "default", "type": "string" } },
+                "required": ["kind"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "kind": { "const": "order", "type": "string" } },
+                "required": ["kind"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": { "const": "pool", "type": "string" },
+                  "poolId": { "maxLength": 200, "minLength": 1, "type": "string" }
+                },
+                "required": ["kind", "poolId"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "kind": { "const": "fixed", "type": "string" } },
+                "required": ["kind"],
+                "type": "object"
+              }
+            ]
+          },
+          "modelRoutingWait": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": { "type": "string" },
+              "retryAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+            },
+            "required": ["reason"],
+            "type": "object"
+          },
+          "modelSettings": {
+            "additionalProperties": { "type": "string" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          },
+          "needsInput": { "type": "boolean" },
+          "ownerNotices": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": { "type": "number" },
+                "id": { "type": "string" },
+                "kind": {
+                  "enum": ["remaining_finding", "external_check", "auto_continued", "info"],
+                  "type": "string"
+                },
+                "message": { "type": "string" }
+              },
+              "required": ["id", "kind", "message", "at"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "position": { "type": "number" },
+          "preflight": {
+            "additionalProperties": false,
+            "properties": {
+              "checkedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "items": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "checkedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "detail": { "type": "string" },
+                    "key": { "type": "string" },
+                    "label": { "type": "string" },
+                    "required": { "type": "boolean" },
+                    "state": { "enum": ["ready", "blocked", "unknown"], "type": "string" }
+                  },
+                  "required": ["key", "label", "state", "required"],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "state": { "enum": ["ready", "blocked", "unknown"], "type": "string" }
+            },
+            "required": ["checkedAt", "state", "items"],
+            "type": "object"
+          },
+          "preflightRequirements": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": { "type": "string" },
+                "kind": { "enum": ["source", "skill", "connection", "tool"], "type": "string" },
+                "required": { "type": "boolean" }
+              },
+              "required": ["kind", "id"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "projectId": { "type": "string" },
+          "prompt": { "type": "string" },
+          "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
+          "repairAttempts": { "type": "number" },
+          "repairNote": { "type": "string" },
+          "repairStop": {
+            "additionalProperties": false,
+            "properties": {
+              "message": { "type": "string" },
+              "reason": { "enum": ["external", "no_progress", "limit"], "type": "string" }
+            },
+            "required": ["reason", "message"],
+            "type": "object"
+          },
+          "retryFeedback": { "type": "string" },
+          "review": { "type": "boolean" },
+          "reviewFailureCount": { "type": "number" },
+          "reviewNotes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "category": { "enum": ["code", "external"], "type": "string" },
+                "createdAt": { "type": "number" },
+                "details": { "type": "string" },
+                "finding": { "type": "string" },
+                "id": { "type": "string" },
+                "kind": { "enum": ["finding", "suggestion"], "type": "string" },
+                "occurrences": { "type": "number" },
+                "readAt": { "type": "number" },
+                "resolvedAt": { "type": "number" },
+                "sessionId": { "type": "string" },
+                "sessionIds": { "items": { "type": "string" }, "type": "array" },
+                "suggestion": { "type": "string" },
+                "updatedAt": { "type": "number" }
+              },
+              "required": ["id", "finding", "kind", "createdAt", "updatedAt", "occurrences"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "reviewOnly": { "type": "boolean" },
+          "reviewer": {
+            "additionalProperties": false,
+            "properties": {
+              "acceptanceRequired": { "type": "boolean" },
+              "error": { "type": "string" },
+              "recoveryPending": { "type": "boolean" },
+              "runId": { "type": "string" },
+              "sessionId": { "type": "string" },
+              "startedAt": { "type": "number" },
+              "verdictRepairAttempts": { "type": "number" },
+              "verdictRepairPending": { "type": "boolean" },
+              "workspaceFingerprint": { "type": "string" }
+            },
+            "required": ["startedAt"],
+            "type": "object"
+          },
+          "reviewerConfig": {
+            "additionalProperties": false,
+            "properties": {
+              "harness": {
+                "enum": [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp"
+                ],
+                "type": "string"
+              },
+              "instructions": { "type": "string" },
+              "model": { "type": "string" },
+              "modelSettings": {
+                "additionalProperties": { "type": "string" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              },
+              "providerAccountId": { "minLength": 1, "type": "string" }
+            },
+            "required": ["harness", "model", "modelSettings", "instructions"],
+            "type": "object"
+          },
+          "reviewerTarget": {
+            "additionalProperties": false,
+            "properties": {
+              "harness": {
+                "enum": [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp"
+                ],
+                "type": "string"
+              },
+              "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+              "modelSettings": {
+                "additionalProperties": { "type": "string" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              },
+              "providerAccountId": { "maxLength": 200, "minLength": 1, "type": "string" }
+            },
+            "required": ["harness", "model", "modelSettings"],
+            "type": "object"
+          },
+          "runId": { "type": "string" },
+          "runStall": {
+            "additionalProperties": false,
+            "properties": {
+              "detectedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "runId": { "type": "string" },
+              "sessionId": { "type": "string" }
+            },
+            "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
+            "type": "object"
+          },
+          "runtimeLimitResolvedAt": { "type": "number" },
+          "runtimeMode": {
+            "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+            "type": "string"
+          },
+          "sessionId": { "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
+          "startedAt": { "type": "number" },
+          "status": {
+            "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
+            "type": "string"
+          },
+          "stewardId": { "type": "string" },
+          "title": { "type": "string" },
+          "updatedAt": { "type": "number" },
+          "verification": {
+            "additionalProperties": false,
+            "properties": {
+              "acceptance": {
+                "additionalProperties": false,
+                "properties": {
+                  "checkedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "criteria": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "criterion": { "type": "string" },
+                        "criterionIndex": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "evidence": { "items": { "type": "string" }, "type": "array" },
+                        "note": { "type": "string" },
+                        "verdict": {
+                          "enum": ["verified", "failed", "unresolved"],
+                          "type": "string"
+                        }
+                      },
+                      "required": ["criterionIndex", "criterion", "verdict", "evidence"],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "sessionId": { "type": "string" },
+                  "workspaceFingerprint": { "type": "string" }
+                },
+                "required": ["checkedAt", "sessionId", "criteria"],
+                "type": "object"
+              },
+              "command": {
+                "additionalProperties": false,
+                "properties": {
+                  "exitCode": { "type": ["number", "null"] },
+                  "output": { "type": "string" },
+                  "timedOut": { "type": "boolean" }
+                },
+                "required": ["exitCode", "output", "timedOut"],
+                "type": "object"
+              },
+              "review": {
+                "additionalProperties": false,
+                "properties": {
+                  "note": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "verdict": { "enum": ["pass", "fail"], "type": "string" }
+                },
+                "required": ["verdict", "note", "sessionId"],
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
+          "workflowId": { "type": "string" },
+          "workflowVersion": { "type": "number" },
+          "workspace": {
+            "additionalProperties": false,
+            "properties": {
+              "baseBranch": { "type": "string" },
+              "branchName": { "type": "string" },
+              "checkoutCwd": { "type": "string" }
+            },
+            "type": "object"
+          },
+          "workspaceActivityId": { "type": "string" },
+          "workspaceGenerationId": { "type": "string" },
+          "workspaceId": { "type": "string" },
+          "worktreeCwd": { "type": "string" }
+        },
+        "required": [
+          "id",
+          "title",
+          "prompt",
+          "projectId",
+          "harness",
+          "model",
+          "runtimeMode",
+          "modelSettings",
+          "maxRunMinutes",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "tasks.list": {
       "admissionTimeoutMs": 5000,
       "cancellation": "query",
@@ -45420,6 +47048,8 @@
             },
             "autoMerge": { "type": "boolean" },
             "autoMerged": { "type": "boolean" },
+            "automationId": { "type": "string" },
+            "automationRunId": { "type": "string" },
             "awaitingOwnerRestart": { "type": "boolean" },
             "baseBranch": { "type": "string" },
             "baseCommit": { "type": "string" },
@@ -45591,6 +47221,7 @@
               "type": "array"
             },
             "id": { "type": "string" },
+            "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
             "isolate": { "type": "boolean" },
             "maxRunMinutes": { "type": "number" },
             "mergeError": { "type": "string" },
@@ -45721,6 +47352,37 @@
             "projectId": { "type": "string" },
             "prompt": { "type": "string" },
             "providerAccountId": { "type": "string" },
+            "repairAdvisor": {
+              "additionalProperties": false,
+              "properties": {
+                "error": { "type": "string" },
+                "feedback": { "type": "string" },
+                "findings": { "type": "string" },
+                "fingerprint": { "type": "string" },
+                "requestId": { "type": "string" },
+                "runtimeRetryNotice": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "type": "number" },
+                    "id": { "type": "string" },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["id", "message", "at"],
+                  "type": "object"
+                },
+                "sessionId": { "type": "string" },
+                "takeover": { "type": "boolean" }
+              },
+              "required": [
+                "requestId",
+                "sessionId",
+                "findings",
+                "feedback",
+                "error",
+                "fingerprint"
+              ],
+              "type": "object"
+            },
             "repairAttempts": { "type": "number" },
             "repairNote": { "type": "string" },
             "repairStop": {
@@ -45848,12 +47510,13 @@
               "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
               "type": "object"
             },
+            "runtimeLimitResolvedAt": { "type": "number" },
             "runtimeMode": {
               "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
               "type": "string"
             },
             "sessionId": { "type": "string" },
-            "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+            "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
             "startedAt": { "type": "number" },
             "status": {
               "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -45921,6 +47584,7 @@
               "type": "object"
             },
             "verifyCommand": { "type": "string" },
+            "workInvocationId": { "type": "string" },
             "workflowId": { "type": "string" },
             "workflowVersion": { "type": "number" },
             "workspace": {
@@ -46030,6 +47694,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -46201,6 +47867,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -46331,6 +47998,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -46458,12 +48149,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -46531,6 +48223,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -46635,6 +48328,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -46806,6 +48501,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -46936,6 +48632,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -47063,12 +48783,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -47136,6 +48857,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -47241,6 +48963,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -47412,6 +49136,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -47542,6 +49267,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -47669,12 +49418,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -47742,6 +49492,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -47828,6 +49579,8 @@
               },
               "autoMerge": { "type": "boolean" },
               "autoMerged": { "type": "boolean" },
+              "automationId": { "type": "string" },
+              "automationRunId": { "type": "string" },
               "awaitingOwnerRestart": { "type": "boolean" },
               "baseBranch": { "type": "string" },
               "baseCommit": { "type": "string" },
@@ -48002,6 +49755,8 @@
                   },
                   "autoMerge": { "type": "boolean" },
                   "autoMerged": { "type": "boolean" },
+                  "automationId": { "type": "string" },
+                  "automationRunId": { "type": "string" },
                   "awaitingOwnerRestart": { "type": "boolean" },
                   "baseBranch": { "type": "string" },
                   "baseCommit": { "type": "string" },
@@ -48192,6 +49947,7 @@
                     "type": "array"
                   },
                   "id": { "type": "string" },
+                  "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
                   "isolate": { "type": "boolean" },
                   "maxRunMinutes": { "type": "number" },
                   "mergeError": { "type": "string" },
@@ -48332,6 +50088,37 @@
                   "projectId": { "type": "string" },
                   "prompt": { "type": "string" },
                   "providerAccountId": { "type": "string" },
+                  "repairAdvisor": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "error": { "type": "string" },
+                      "feedback": { "type": "string" },
+                      "findings": { "type": "string" },
+                      "fingerprint": { "type": "string" },
+                      "requestId": { "type": "string" },
+                      "runtimeRetryNotice": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": { "type": "number" },
+                          "id": { "type": "string" },
+                          "message": { "type": "string" }
+                        },
+                        "required": ["id", "message", "at"],
+                        "type": "object"
+                      },
+                      "sessionId": { "type": "string" },
+                      "takeover": { "type": "boolean" }
+                    },
+                    "required": [
+                      "requestId",
+                      "sessionId",
+                      "findings",
+                      "feedback",
+                      "error",
+                      "fingerprint"
+                    ],
+                    "type": "object"
+                  },
                   "repairAttempts": { "type": "number" },
                   "repairNote": { "type": "string" },
                   "repairStop": {
@@ -48484,7 +50271,10 @@
                     "type": "string"
                   },
                   "sessionId": { "type": "string" },
-                  "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+                  "source": {
+                    "enum": ["manual", "goal", "steward", "automation"],
+                    "type": "string"
+                  },
                   "startedAt": { "type": "number" },
                   "status": {
                     "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -48556,6 +50346,7 @@
                     "type": "object"
                   },
                   "verifyCommand": { "type": "string" },
+                  "workInvocationId": { "type": "string" },
                   "workflowId": { "type": "string" },
                   "workflowVersion": { "type": "number" },
                   "workspace": {
@@ -48629,6 +50420,7 @@
                 "type": "array"
               },
               "id": { "type": "string" },
+              "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
               "isolate": { "type": "boolean" },
               "maxRunMinutes": { "type": "number" },
               "mergeError": { "type": "string" },
@@ -48766,6 +50558,37 @@
               "projectId": { "type": "string" },
               "prompt": { "type": "string" },
               "providerAccountId": { "type": "string" },
+              "repairAdvisor": {
+                "additionalProperties": false,
+                "properties": {
+                  "error": { "type": "string" },
+                  "feedback": { "type": "string" },
+                  "findings": { "type": "string" },
+                  "fingerprint": { "type": "string" },
+                  "requestId": { "type": "string" },
+                  "runtimeRetryNotice": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": { "type": "number" },
+                      "id": { "type": "string" },
+                      "message": { "type": "string" }
+                    },
+                    "required": ["id", "message", "at"],
+                    "type": "object"
+                  },
+                  "sessionId": { "type": "string" },
+                  "takeover": { "type": "boolean" }
+                },
+                "required": [
+                  "requestId",
+                  "sessionId",
+                  "findings",
+                  "feedback",
+                  "error",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
               "repairAttempts": { "type": "number" },
               "repairNote": { "type": "string" },
               "repairStop": {
@@ -48907,7 +50730,7 @@
                 "type": "string"
               },
               "sessionId": { "type": "string" },
-              "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+              "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
               "startedAt": { "type": "number" },
               "status": {
                 "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -48975,6 +50798,7 @@
                 "type": "object"
               },
               "verifyCommand": { "type": "string" },
+              "workInvocationId": { "type": "string" },
               "workflowId": { "type": "string" },
               "workflowVersion": { "type": "number" },
               "workspace": {
@@ -49096,6 +50920,8 @@
             },
             "autoMerge": { "type": "boolean" },
             "autoMerged": { "type": "boolean" },
+            "automationId": { "type": "string" },
+            "automationRunId": { "type": "string" },
             "awaitingOwnerRestart": { "type": "boolean" },
             "baseBranch": { "type": "string" },
             "baseCommit": { "type": "string" },
@@ -49267,6 +51093,7 @@
               "type": "array"
             },
             "id": { "type": "string" },
+            "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
             "isolate": { "type": "boolean" },
             "maxRunMinutes": { "type": "number" },
             "mergeError": { "type": "string" },
@@ -49397,6 +51224,37 @@
             "projectId": { "type": "string" },
             "prompt": { "type": "string" },
             "providerAccountId": { "type": "string" },
+            "repairAdvisor": {
+              "additionalProperties": false,
+              "properties": {
+                "error": { "type": "string" },
+                "feedback": { "type": "string" },
+                "findings": { "type": "string" },
+                "fingerprint": { "type": "string" },
+                "requestId": { "type": "string" },
+                "runtimeRetryNotice": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "at": { "type": "number" },
+                    "id": { "type": "string" },
+                    "message": { "type": "string" }
+                  },
+                  "required": ["id", "message", "at"],
+                  "type": "object"
+                },
+                "sessionId": { "type": "string" },
+                "takeover": { "type": "boolean" }
+              },
+              "required": [
+                "requestId",
+                "sessionId",
+                "findings",
+                "feedback",
+                "error",
+                "fingerprint"
+              ],
+              "type": "object"
+            },
             "repairAttempts": { "type": "number" },
             "repairNote": { "type": "string" },
             "repairStop": {
@@ -49524,12 +51382,13 @@
               "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
               "type": "object"
             },
+            "runtimeLimitResolvedAt": { "type": "number" },
             "runtimeMode": {
               "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
               "type": "string"
             },
             "sessionId": { "type": "string" },
-            "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+            "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
             "startedAt": { "type": "number" },
             "status": {
               "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -49597,6 +51456,7 @@
               "type": "object"
             },
             "verifyCommand": { "type": "string" },
+            "workInvocationId": { "type": "string" },
             "workflowId": { "type": "string" },
             "workflowVersion": { "type": "number" },
             "workspace": {
@@ -49712,6 +51572,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -49883,6 +51745,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -50013,6 +51876,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -50140,12 +52027,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -50213,6 +52101,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -50314,6 +52203,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -50485,6 +52376,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -50615,6 +52507,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -50742,12 +52658,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -50815,6 +52732,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -50901,6 +52819,8 @@
               },
               "autoMerge": { "type": "boolean" },
               "autoMerged": { "type": "boolean" },
+              "automationId": { "type": "string" },
+              "automationRunId": { "type": "string" },
               "awaitingOwnerRestart": { "type": "boolean" },
               "baseBranch": { "type": "string" },
               "baseCommit": { "type": "string" },
@@ -51075,6 +52995,8 @@
                   },
                   "autoMerge": { "type": "boolean" },
                   "autoMerged": { "type": "boolean" },
+                  "automationId": { "type": "string" },
+                  "automationRunId": { "type": "string" },
                   "awaitingOwnerRestart": { "type": "boolean" },
                   "baseBranch": { "type": "string" },
                   "baseCommit": { "type": "string" },
@@ -51265,6 +53187,7 @@
                     "type": "array"
                   },
                   "id": { "type": "string" },
+                  "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
                   "isolate": { "type": "boolean" },
                   "maxRunMinutes": { "type": "number" },
                   "mergeError": { "type": "string" },
@@ -51405,6 +53328,37 @@
                   "projectId": { "type": "string" },
                   "prompt": { "type": "string" },
                   "providerAccountId": { "type": "string" },
+                  "repairAdvisor": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "error": { "type": "string" },
+                      "feedback": { "type": "string" },
+                      "findings": { "type": "string" },
+                      "fingerprint": { "type": "string" },
+                      "requestId": { "type": "string" },
+                      "runtimeRetryNotice": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "at": { "type": "number" },
+                          "id": { "type": "string" },
+                          "message": { "type": "string" }
+                        },
+                        "required": ["id", "message", "at"],
+                        "type": "object"
+                      },
+                      "sessionId": { "type": "string" },
+                      "takeover": { "type": "boolean" }
+                    },
+                    "required": [
+                      "requestId",
+                      "sessionId",
+                      "findings",
+                      "feedback",
+                      "error",
+                      "fingerprint"
+                    ],
+                    "type": "object"
+                  },
                   "repairAttempts": { "type": "number" },
                   "repairNote": { "type": "string" },
                   "repairStop": {
@@ -51557,7 +53511,10 @@
                     "type": "string"
                   },
                   "sessionId": { "type": "string" },
-                  "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+                  "source": {
+                    "enum": ["manual", "goal", "steward", "automation"],
+                    "type": "string"
+                  },
                   "startedAt": { "type": "number" },
                   "status": {
                     "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -51629,6 +53586,7 @@
                     "type": "object"
                   },
                   "verifyCommand": { "type": "string" },
+                  "workInvocationId": { "type": "string" },
                   "workflowId": { "type": "string" },
                   "workflowVersion": { "type": "number" },
                   "workspace": {
@@ -51702,6 +53660,7 @@
                 "type": "array"
               },
               "id": { "type": "string" },
+              "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
               "isolate": { "type": "boolean" },
               "maxRunMinutes": { "type": "number" },
               "mergeError": { "type": "string" },
@@ -51839,6 +53798,37 @@
               "projectId": { "type": "string" },
               "prompt": { "type": "string" },
               "providerAccountId": { "type": "string" },
+              "repairAdvisor": {
+                "additionalProperties": false,
+                "properties": {
+                  "error": { "type": "string" },
+                  "feedback": { "type": "string" },
+                  "findings": { "type": "string" },
+                  "fingerprint": { "type": "string" },
+                  "requestId": { "type": "string" },
+                  "runtimeRetryNotice": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "at": { "type": "number" },
+                      "id": { "type": "string" },
+                      "message": { "type": "string" }
+                    },
+                    "required": ["id", "message", "at"],
+                    "type": "object"
+                  },
+                  "sessionId": { "type": "string" },
+                  "takeover": { "type": "boolean" }
+                },
+                "required": [
+                  "requestId",
+                  "sessionId",
+                  "findings",
+                  "feedback",
+                  "error",
+                  "fingerprint"
+                ],
+                "type": "object"
+              },
               "repairAttempts": { "type": "number" },
               "repairNote": { "type": "string" },
               "repairStop": {
@@ -51980,7 +53970,7 @@
                 "type": "string"
               },
               "sessionId": { "type": "string" },
-              "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+              "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
               "startedAt": { "type": "number" },
               "status": {
                 "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -52048,6 +54038,7 @@
                 "type": "object"
               },
               "verifyCommand": { "type": "string" },
+              "workInvocationId": { "type": "string" },
               "workflowId": { "type": "string" },
               "workflowVersion": { "type": "number" },
               "workspace": {
@@ -52124,6 +54115,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -52295,6 +54288,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -52425,6 +54419,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -52552,12 +54570,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -52625,6 +54644,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -52772,6 +54792,8 @@
           },
           "autoMerge": { "type": "boolean" },
           "autoMerged": { "type": "boolean" },
+          "automationId": { "type": "string" },
+          "automationRunId": { "type": "string" },
           "awaitingOwnerRestart": { "type": "boolean" },
           "baseBranch": { "type": "string" },
           "baseCommit": { "type": "string" },
@@ -52943,6 +54965,7 @@
             "type": "array"
           },
           "id": { "type": "string" },
+          "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
           "isolate": { "type": "boolean" },
           "maxRunMinutes": { "type": "number" },
           "mergeError": { "type": "string" },
@@ -53073,6 +55096,30 @@
           "projectId": { "type": "string" },
           "prompt": { "type": "string" },
           "providerAccountId": { "type": "string" },
+          "repairAdvisor": {
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "feedback": { "type": "string" },
+              "findings": { "type": "string" },
+              "fingerprint": { "type": "string" },
+              "requestId": { "type": "string" },
+              "runtimeRetryNotice": {
+                "additionalProperties": false,
+                "properties": {
+                  "at": { "type": "number" },
+                  "id": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["id", "message", "at"],
+                "type": "object"
+              },
+              "sessionId": { "type": "string" },
+              "takeover": { "type": "boolean" }
+            },
+            "required": ["requestId", "sessionId", "findings", "feedback", "error", "fingerprint"],
+            "type": "object"
+          },
           "repairAttempts": { "type": "number" },
           "repairNote": { "type": "string" },
           "repairStop": {
@@ -53200,12 +55247,13 @@
             "required": ["sessionId", "runId", "lastActivityAt", "detectedAt"],
             "type": "object"
           },
+          "runtimeLimitResolvedAt": { "type": "number" },
           "runtimeMode": {
             "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
             "type": "string"
           },
           "sessionId": { "type": "string" },
-          "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+          "source": { "enum": ["manual", "goal", "steward", "automation"], "type": "string" },
           "startedAt": { "type": "number" },
           "status": {
             "enum": ["todo", "queued", "running", "verifying", "review", "done", "blocked"],
@@ -53273,6 +55321,7 @@
             "type": "object"
           },
           "verifyCommand": { "type": "string" },
+          "workInvocationId": { "type": "string" },
           "workflowId": { "type": "string" },
           "workflowVersion": { "type": "number" },
           "workspace": {
@@ -56472,6 +58521,21 @@
                             },
                             "chiefWakeLimit": { "maximum": 120, "minimum": 1, "type": "integer" },
                             "confirmJobs": { "type": "boolean" },
+                            "criticalExclusions": {
+                              "items": {
+                                "enum": [
+                                  "pushMain",
+                                  "deleteProject",
+                                  "deleteSession",
+                                  "sendMessages",
+                                  "computerUse",
+                                  "spend"
+                                ],
+                                "type": "string"
+                              },
+                              "maxItems": 6,
+                              "type": "array"
+                            },
                             "dailyTokenBudget": {
                               "maximum": 1000000000,
                               "minimum": 20000,
@@ -56533,6 +58597,7 @@
                               ]
                             },
                             "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
+                            "keepAwakeWhileAway": { "type": "boolean" },
                             "keepAwakeWhileWorking": { "type": "boolean" },
                             "language": { "type": "string" },
                             "name": { "type": "string" },
@@ -56545,6 +58610,20 @@
                               "enum": ["all", "urgent", "none"],
                               "type": "string"
                             },
+                            "notificationTelegram": {
+                              "anyOf": [
+                                {
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "accountId": { "type": "string" },
+                                    "conversationId": { "type": "string" }
+                                  },
+                                  "required": ["accountId", "conversationId"],
+                                  "type": "object"
+                                },
+                                { "type": "null" }
+                              ]
+                            },
                             "nudgeLimit": { "maximum": 2, "minimum": 0, "type": "integer" },
                             "observationTaskDone": { "type": "boolean" },
                             "observationTaskNeedsInput": { "type": "boolean" },
@@ -56552,6 +58631,15 @@
                               "maximum": 1000000,
                               "minimum": 1000,
                               "type": "integer"
+                            },
+                            "permissionLevel": {
+                              "enum": ["watch", "projects", "everything"],
+                              "type": "string"
+                            },
+                            "permissionProjectIds": {
+                              "items": { "type": "string" },
+                              "maxItems": 100,
+                              "type": "array"
                             },
                             "persona": { "type": "string" },
                             "planApproval": {
@@ -56683,6 +58771,16 @@
                             "tone": {
                               "enum": ["friendly", "neutral", "formal", "casual", "blunt"],
                               "type": "string"
+                            },
+                            "urgentNotificationIntervalMinutes": {
+                              "maximum": 1440,
+                              "minimum": 1,
+                              "type": "integer"
+                            },
+                            "urgentNotificationRepeats": {
+                              "maximum": 10,
+                              "minimum": 0,
+                              "type": "integer"
                             },
                             "voiceNarration": { "type": "boolean" },
                             "voiceSetupComplete": { "type": "boolean" },
@@ -57356,6 +59454,14 @@
                         "op": { "const": "notifications.ack", "type": "string" }
                       },
                       "required": ["op", "id"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "op": { "const": "notifications.targets", "type": "string" }
+                      },
+                      "required": ["op"],
                       "type": "object"
                     },
                     {
@@ -60591,6 +62697,46 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.services.assistant.background.execute", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "input": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "challenge": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+                    "environmentId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "operationHash": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+                    "operationId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "relayId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "threadId": { "maxLength": 200, "minLength": 1, "type": "string" }
+                  },
+                  "required": [
+                    "environmentId",
+                    "threadId",
+                    "operationId",
+                    "operationHash",
+                    "challenge",
+                    "relayId"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": ["input"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "native.services.assistant.browser.panel", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -60835,6 +62981,7 @@
                     "ui.tools.status",
                     "assistant.notification.deliver",
                     "assistant.notification.status",
+                    "assistant.background.effect",
                     "desktop.act.authorize",
                     "management.write.authorize",
                     "secrets.input.authorize",
@@ -61204,6 +63351,7 @@
                       "type": "integer"
                     },
                     "idleMinutes": { "maximum": 1440, "minimum": 1, "type": "integer" },
+                    "keepAwakeWhileAway": { "type": "boolean" },
                     "keepAwakeWhileWorking": { "type": "boolean" },
                     "language": { "maxLength": 40, "type": "string" },
                     "name": { "maxLength": 80, "type": "string" },
@@ -61228,6 +63376,12 @@
                       "enum": ["friendly", "neutral", "formal", "casual", "blunt"],
                       "type": "string"
                     },
+                    "urgentNotificationIntervalMinutes": {
+                      "maximum": 1440,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "urgentNotificationRepeats": { "maximum": 10, "minimum": 0, "type": "integer" },
                     "voiceNarration": { "type": "boolean" },
                     "workerCompactPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
                     "workerHandoffPercent": { "maximum": 99, "minimum": 1, "type": "integer" },
@@ -64032,6 +66186,91 @@
                         "type": "string"
                       },
                       "type": "object"
+                    },
+                    "workCaps": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "providers": {
+                          "additionalProperties": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "daily": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "costUsd": { "minimum": 0, "type": "number" },
+                                  "tokens": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "type": "object"
+                              },
+                              "monthly": {
+                                "additionalProperties": false,
+                                "properties": {
+                                  "costUsd": { "minimum": 0, "type": "number" },
+                                  "tokens": {
+                                    "maximum": 9007199254740991,
+                                    "minimum": 0,
+                                    "type": "integer"
+                                  }
+                                },
+                                "type": "object"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          "propertyNames": {
+                            "enum": [
+                              "codex",
+                              "claude",
+                              "cursor",
+                              "grok",
+                              "opencode",
+                              "pi",
+                              "omp",
+                              "fx",
+                              "hermes",
+                              "antigravity",
+                              "acp"
+                            ],
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "total": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "daily": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "costUsd": { "minimum": 0, "type": "number" },
+                                "tokens": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "monthly": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "costUsd": { "minimum": 0, "type": "number" },
+                                "tokens": {
+                                  "maximum": 9007199254740991,
+                                  "minimum": 0,
+                                  "type": "integer"
+                                }
+                              },
+                              "type": "object"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
                     }
                   },
                   "required": ["entries", "pools", "roles", "delegation"],
@@ -65581,6 +67820,58 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "automations.propose", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "currentExecution": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "harness": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "model": { "maxLength": 200, "minLength": 1, "type": "string" },
+                    "modelSettings": {
+                      "additionalProperties": { "type": "string" },
+                      "propertyNames": { "type": "string" },
+                      "type": "object"
+                    }
+                  },
+                  "required": ["harness", "model", "modelSettings"],
+                  "type": "object"
+                },
+                "operationId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "projectId": { "maxLength": 200, "minLength": 1, "type": "string" },
+                "request": { "maxLength": 32000, "minLength": 1, "type": "string" }
+              },
+              "required": ["operationId", "request", "projectId", "currentExecution"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "automations.save", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -65591,6 +67882,7 @@
                     "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                     "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
                     "enabled": { "type": "boolean" },
+                    "expectedAbsent": { "type": "boolean" },
                     "expectedConfiguration": {
                       "additionalProperties": false,
                       "properties": {
@@ -65640,6 +67932,11 @@
                         "maxRunMinutes": { "maximum": 10080, "minimum": 0, "type": "integer" },
                         "maxRunsPerDay": { "maximum": 1000, "minimum": 0, "type": "integer" },
                         "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+                        "missedRunGraceMinutes": {
+                          "maximum": 43200,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "model": { "type": "string" },
                         "modelChoice": {
                           "oneOf": [
@@ -65678,6 +67975,17 @@
                           "type": "object"
                         },
                         "name": { "type": "string" },
+                        "nativeMigrationState": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "fingerprint": { "type": "string" },
+                            "phase": { "enum": ["prepared", "committed"], "type": "string" },
+                            "receipt": { "type": "string" },
+                            "sourceAutomationId": { "type": "string" }
+                          },
+                          "required": ["receipt", "fingerprint", "phase", "sourceAutomationId"],
+                          "type": "object"
+                        },
                         "needsInput": { "type": "boolean" },
                         "nextRunAt": {
                           "maximum": 9007199254740991,
@@ -65695,7 +68003,50 @@
                           "enum": ["hourly", "daily", "weekdays", "weekly"],
                           "type": "string"
                         },
+                        "template": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": { "const": "project-scan", "type": "string" },
+                            "sourceStewardId": { "type": "string" }
+                          },
+                          "required": ["kind", "sourceStewardId"],
+                          "type": "object"
+                        },
                         "time": { "type": "string" },
+                        "trigger": {
+                          "oneOf": [
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "kind": { "const": "continuous", "type": "string" },
+                                "minimumGapMinutes": {
+                                  "maximum": 10080,
+                                  "minimum": 1,
+                                  "type": "integer"
+                                }
+                              },
+                              "required": ["kind", "minimumGapMinutes"],
+                              "type": "object"
+                            },
+                            {
+                              "additionalProperties": false,
+                              "properties": {
+                                "event": {
+                                  "enum": [
+                                    "task.finished",
+                                    "task.blocked",
+                                    "session.waiting",
+                                    "automation.failed"
+                                  ],
+                                  "type": "string"
+                                },
+                                "kind": { "const": "event", "type": "string" }
+                              },
+                              "required": ["kind", "event"],
+                              "type": "object"
+                            }
+                          ]
+                        },
                         "updatedAt": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
@@ -65745,6 +68096,7 @@
                     "maxRunMinutes": { "maximum": 10080, "minimum": 0, "type": "integer" },
                     "maxRunsPerDay": { "maximum": 1000, "minimum": 0, "type": "integer" },
                     "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+                    "missedRunGraceMinutes": { "maximum": 43200, "minimum": 0, "type": "integer" },
                     "model": { "type": "string" },
                     "modelChoice": {
                       "oneOf": [
@@ -65783,6 +68135,30 @@
                       "type": "object"
                     },
                     "name": { "type": "string" },
+                    "nativeMigration": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "automationId": { "type": "string" },
+                        "hostAutomationId": { "type": "string" },
+                        "phase": { "enum": ["prepared", "committed"], "type": "string" },
+                        "receipt": { "maxLength": 200, "minLength": 1, "type": "string" },
+                        "snapshot": { "maxLength": 32000000, "minLength": 1, "type": "string" },
+                        "targetHostId": { "type": "string" }
+                      },
+                      "required": ["automationId", "receipt", "targetHostId", "snapshot", "phase"],
+                      "type": "object"
+                    },
+                    "nativeMigrationState": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "fingerprint": { "type": "string" },
+                        "phase": { "enum": ["prepared", "committed"], "type": "string" },
+                        "receipt": { "type": "string" },
+                        "sourceAutomationId": { "type": "string" }
+                      },
+                      "required": ["receipt", "fingerprint", "phase", "sourceAutomationId"],
+                      "type": "object"
+                    },
                     "needsInput": { "type": "boolean" },
                     "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                     "projectId": { "type": "string" },
@@ -65796,7 +68172,50 @@
                       "enum": ["hourly", "daily", "weekdays", "weekly"],
                       "type": "string"
                     },
+                    "template": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": { "const": "project-scan", "type": "string" },
+                        "sourceStewardId": { "type": "string" }
+                      },
+                      "required": ["kind", "sourceStewardId"],
+                      "type": "object"
+                    },
                     "time": { "type": "string" },
+                    "trigger": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "kind": { "const": "continuous", "type": "string" },
+                            "minimumGapMinutes": {
+                              "maximum": 10080,
+                              "minimum": 1,
+                              "type": "integer"
+                            }
+                          },
+                          "required": ["kind", "minimumGapMinutes"],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "event": {
+                              "enum": [
+                                "task.finished",
+                                "task.blocked",
+                                "session.waiting",
+                                "automation.failed"
+                              ],
+                              "type": "string"
+                            },
+                            "kind": { "const": "event", "type": "string" }
+                          },
+                          "required": ["kind", "event"],
+                          "type": "object"
+                        }
+                      ]
+                    },
                     "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                   },
                   "required": [
@@ -66270,6 +68689,7 @@
                       "type": "object"
                     },
                     "continueUntilDone": { "type": "boolean" },
+                    "crewDefinitionId": { "minLength": 1, "type": "string" },
                     "finalReview": { "type": "boolean" },
                     "harness": {
                       "enum": [
@@ -67058,6 +69478,8 @@
                     },
                     "autoMerge": { "type": "boolean" },
                     "autoMerged": { "type": "boolean" },
+                    "automationId": { "type": "string" },
+                    "automationRunId": { "type": "string" },
                     "awaitingOwnerRestart": { "type": "boolean" },
                     "baseBranch": { "type": "string" },
                     "baseCommit": { "type": "string" },
@@ -67248,6 +69670,8 @@
                         },
                         "autoMerge": { "type": "boolean" },
                         "autoMerged": { "type": "boolean" },
+                        "automationId": { "type": "string" },
+                        "automationRunId": { "type": "string" },
                         "awaitingOwnerRestart": { "type": "boolean" },
                         "baseBranch": { "type": "string" },
                         "baseCommit": { "type": "string" },
@@ -67442,6 +69866,7 @@
                           "type": "array"
                         },
                         "id": { "type": "string" },
+                        "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
                         "isolate": { "type": "boolean" },
                         "maxRunMinutes": { "type": "number" },
                         "mergeError": { "type": "string" },
@@ -67598,6 +70023,37 @@
                         "projectId": { "type": "string" },
                         "prompt": { "type": "string" },
                         "providerAccountId": { "type": "string" },
+                        "repairAdvisor": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "error": { "type": "string" },
+                            "feedback": { "type": "string" },
+                            "findings": { "type": "string" },
+                            "fingerprint": { "type": "string" },
+                            "requestId": { "type": "string" },
+                            "runtimeRetryNotice": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "at": { "type": "number" },
+                                "id": { "type": "string" },
+                                "message": { "type": "string" }
+                              },
+                              "required": ["id", "message", "at"],
+                              "type": "object"
+                            },
+                            "sessionId": { "type": "string" },
+                            "takeover": { "type": "boolean" }
+                          },
+                          "required": [
+                            "requestId",
+                            "sessionId",
+                            "findings",
+                            "feedback",
+                            "error",
+                            "fingerprint"
+                          ],
+                          "type": "object"
+                        },
                         "repairAttempts": { "type": "number" },
                         "repairNote": { "type": "string" },
                         "repairStop": {
@@ -67757,7 +70213,10 @@
                           "type": "string"
                         },
                         "sessionId": { "type": "string" },
-                        "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+                        "source": {
+                          "enum": ["manual", "goal", "steward", "automation"],
+                          "type": "string"
+                        },
                         "startedAt": { "type": "number" },
                         "status": {
                           "enum": [
@@ -67845,6 +70304,7 @@
                           "type": "object"
                         },
                         "verifyCommand": { "type": "string" },
+                        "workInvocationId": { "type": "string" },
                         "workflowId": { "type": "string" },
                         "workflowVersion": { "type": "number" },
                         "workspace": {
@@ -67918,6 +70378,7 @@
                       "type": "array"
                     },
                     "id": { "type": "string" },
+                    "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
                     "isolate": { "type": "boolean" },
                     "maxRunMinutes": { "type": "number" },
                     "mergeError": { "type": "string" },
@@ -68067,6 +70528,37 @@
                     "projectId": { "type": "string" },
                     "prompt": { "type": "string" },
                     "providerAccountId": { "type": "string" },
+                    "repairAdvisor": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "error": { "type": "string" },
+                        "feedback": { "type": "string" },
+                        "findings": { "type": "string" },
+                        "fingerprint": { "type": "string" },
+                        "requestId": { "type": "string" },
+                        "runtimeRetryNotice": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": { "type": "number" },
+                            "id": { "type": "string" },
+                            "message": { "type": "string" }
+                          },
+                          "required": ["id", "message", "at"],
+                          "type": "object"
+                        },
+                        "sessionId": { "type": "string" },
+                        "takeover": { "type": "boolean" }
+                      },
+                      "required": [
+                        "requestId",
+                        "sessionId",
+                        "findings",
+                        "feedback",
+                        "error",
+                        "fingerprint"
+                      ],
+                      "type": "object"
+                    },
                     "repairAttempts": { "type": "number" },
                     "repairNote": { "type": "string" },
                     "repairStop": {
@@ -68219,7 +70711,10 @@
                       "type": "string"
                     },
                     "sessionId": { "type": "string" },
-                    "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+                    "source": {
+                      "enum": ["manual", "goal", "steward", "automation"],
+                      "type": "string"
+                    },
                     "startedAt": { "type": "number" },
                     "status": {
                       "enum": [
@@ -68299,6 +70794,7 @@
                       "type": "object"
                     },
                     "verifyCommand": { "type": "string" },
+                    "workInvocationId": { "type": "string" },
                     "workflowId": { "type": "string" },
                     "workflowVersion": { "type": "number" },
                     "workspace": {
@@ -68455,6 +70951,28 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "tasks.finishWithFindings", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "expectedUpdatedAt": { "type": "number" },
+                "taskId": { "type": "string" }
+              },
+              "required": ["taskId", "expectedUpdatedAt"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "tasks.notes.read", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -68572,6 +71090,8 @@
                     },
                     "autoMerge": { "type": "boolean" },
                     "autoMerged": { "type": "boolean" },
+                    "automationId": { "type": "string" },
+                    "automationRunId": { "type": "string" },
                     "awaitingOwnerRestart": { "type": "boolean" },
                     "baseBranch": { "type": "string" },
                     "baseCommit": { "type": "string" },
@@ -68762,6 +71282,8 @@
                         },
                         "autoMerge": { "type": "boolean" },
                         "autoMerged": { "type": "boolean" },
+                        "automationId": { "type": "string" },
+                        "automationRunId": { "type": "string" },
                         "awaitingOwnerRestart": { "type": "boolean" },
                         "baseBranch": { "type": "string" },
                         "baseCommit": { "type": "string" },
@@ -68956,6 +71478,7 @@
                           "type": "array"
                         },
                         "id": { "type": "string" },
+                        "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
                         "isolate": { "type": "boolean" },
                         "maxRunMinutes": { "type": "number" },
                         "mergeError": { "type": "string" },
@@ -69112,6 +71635,37 @@
                         "projectId": { "type": "string" },
                         "prompt": { "type": "string" },
                         "providerAccountId": { "type": "string" },
+                        "repairAdvisor": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "error": { "type": "string" },
+                            "feedback": { "type": "string" },
+                            "findings": { "type": "string" },
+                            "fingerprint": { "type": "string" },
+                            "requestId": { "type": "string" },
+                            "runtimeRetryNotice": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "at": { "type": "number" },
+                                "id": { "type": "string" },
+                                "message": { "type": "string" }
+                              },
+                              "required": ["id", "message", "at"],
+                              "type": "object"
+                            },
+                            "sessionId": { "type": "string" },
+                            "takeover": { "type": "boolean" }
+                          },
+                          "required": [
+                            "requestId",
+                            "sessionId",
+                            "findings",
+                            "feedback",
+                            "error",
+                            "fingerprint"
+                          ],
+                          "type": "object"
+                        },
                         "repairAttempts": { "type": "number" },
                         "repairNote": { "type": "string" },
                         "repairStop": {
@@ -69271,7 +71825,10 @@
                           "type": "string"
                         },
                         "sessionId": { "type": "string" },
-                        "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+                        "source": {
+                          "enum": ["manual", "goal", "steward", "automation"],
+                          "type": "string"
+                        },
                         "startedAt": { "type": "number" },
                         "status": {
                           "enum": [
@@ -69359,6 +71916,7 @@
                           "type": "object"
                         },
                         "verifyCommand": { "type": "string" },
+                        "workInvocationId": { "type": "string" },
                         "workflowId": { "type": "string" },
                         "workflowVersion": { "type": "number" },
                         "workspace": {
@@ -69432,6 +71990,7 @@
                       "type": "array"
                     },
                     "id": { "type": "string" },
+                    "inheritMaxRunMinutes": { "const": true, "type": "boolean" },
                     "isolate": { "type": "boolean" },
                     "maxRunMinutes": { "type": "number" },
                     "mergeError": { "type": "string" },
@@ -69581,6 +72140,37 @@
                     "projectId": { "type": "string" },
                     "prompt": { "type": "string" },
                     "providerAccountId": { "type": "string" },
+                    "repairAdvisor": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "error": { "type": "string" },
+                        "feedback": { "type": "string" },
+                        "findings": { "type": "string" },
+                        "fingerprint": { "type": "string" },
+                        "requestId": { "type": "string" },
+                        "runtimeRetryNotice": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "at": { "type": "number" },
+                            "id": { "type": "string" },
+                            "message": { "type": "string" }
+                          },
+                          "required": ["id", "message", "at"],
+                          "type": "object"
+                        },
+                        "sessionId": { "type": "string" },
+                        "takeover": { "type": "boolean" }
+                      },
+                      "required": [
+                        "requestId",
+                        "sessionId",
+                        "findings",
+                        "feedback",
+                        "error",
+                        "fingerprint"
+                      ],
+                      "type": "object"
+                    },
                     "repairAttempts": { "type": "number" },
                     "repairNote": { "type": "string" },
                     "repairStop": {
@@ -69733,7 +72323,10 @@
                       "type": "string"
                     },
                     "sessionId": { "type": "string" },
-                    "source": { "enum": ["manual", "goal", "steward"], "type": "string" },
+                    "source": {
+                      "enum": ["manual", "goal", "steward", "automation"],
+                      "type": "string"
+                    },
                     "startedAt": { "type": "number" },
                     "status": {
                       "enum": [
@@ -69813,6 +72406,7 @@
                       "type": "object"
                     },
                     "verifyCommand": { "type": "string" },
+                    "workInvocationId": { "type": "string" },
                     "workflowId": { "type": "string" },
                     "workflowVersion": { "type": "number" },
                     "workspace": {
@@ -74411,5 +77005,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "ac8f4b51501adcd6c56ab4793b9021bf91f73e8f8c19ab740260d04fb1d86585"
+  "schemaHash": "4c80bec7d9e7a7631cfaf734e324d56baea6c98417ec22c7cd9f5e2d10bc616c"
 }

@@ -78,7 +78,7 @@ export function ProviderAccountEditor({
       className={adding ? "provider-account-editor" : "provider-account-dialog-editor"}
       data-settings-part={adding ? "account-editor" : undefined}
       onSubmit={(event) => {
-        if (error) {
+        if (working || error) {
           event.preventDefault();
           return;
         }
@@ -96,14 +96,13 @@ export function ProviderAccountEditor({
       ) : null}
       <TextField
         label={t("Account name")}
-        hideLabel={adding}
         autoFocus
         type="text"
         maxLength={48}
         value={editor.label}
         disabled={working}
         placeholder={t("Work or Personal")}
-        error={!adding ? error : undefined}
+        error={error}
         aria-label={t(adding ? "New {p1} account" : "Rename {p1} account", {
           p1: HARNESS_TITLE[editor.provider],
         })}

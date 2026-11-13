@@ -2,15 +2,28 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   PROJECT_GIT_DETAIL_BUCKETS,
-  projectGitChange,
-  projectGitChangeSpoken,
-  projectGitChangeSummary,
+  projectGitChange as readProjectGitChange,
+  projectGitChangeSpoken as readProjectGitChangeSpoken,
+  projectGitChangeSummary as readProjectGitChangeSummary,
   projectGitCountLabel,
   projectGitDetailBucket,
 } from "./projectGitChange";
 
 const t = (text: string, params?: Record<string, string | number>) =>
   text.replace(/\{p(\d)\}/g, (_, index) => String(params?.[`p${index}`] ?? ""));
+
+const formatCount = (value: number, options?: Intl.NumberFormatOptions) =>
+  new Intl.NumberFormat("en-US", options).format(value);
+const projectGitChange = (stats: Parameters<typeof readProjectGitChange>[0]) =>
+  readProjectGitChange(stats, formatCount);
+const projectGitChangeSummary = (
+  change: Parameters<typeof readProjectGitChangeSummary>[0],
+  translate: typeof t,
+) => readProjectGitChangeSummary(change, translate, formatCount);
+const projectGitChangeSpoken = (
+  change: Parameters<typeof readProjectGitChangeSpoken>[0],
+  translate: typeof t,
+) => readProjectGitChangeSpoken(change, translate, formatCount);
 
 describe("projectGitChange", () => {
   it("claims nothing without data or for a clean tree", () => {
@@ -87,4 +100,17 @@ describe("projectGitDetailBucket", () => {
       expect(css).toContain(`[data-git-bucket="${bucket}"] [data-git-detail]`);
     }
   });
+});
+
+it("uses the supplied locale consistently for visible detail, summaries and spoken counts", () => {
+  const format = (value: number, options?: Intl.NumberFormatOptions) =>
+    new Intl.NumberFormat("tr", options).format(value);
+  const change = readProjectGitChange({ files: 1234, additions: 120149, deletions: 1344 }, format)!;
+  expect(change.detail).toBe("+120.149 -1.344");
+  expect(readProjectGitChangeSummary(change, t, format)).toBe("1.234 files · +120.149 -1.344");
+  expect(readProjectGitChangeSpoken(change, t, format)).toBe(
+    "1.234 changed files, 120.149 lines added, 1.344 lines removed",
+  );
+  expect(change.files).toBe(1234);
+  expect(change.additions).toBe(120149);
 });

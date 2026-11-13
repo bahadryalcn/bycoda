@@ -1,4 +1,26 @@
 import { asRecord, stringField } from "./codexProtocol";
+import type { SessionGoal } from "../../../../shared/model/providerGoal";
+
+export function codexGoalState(response: unknown): SessionGoal | null | undefined {
+  const record = asRecord(response);
+  if (record?.goal === null) return null;
+  const goal = asRecord(record?.goal);
+  const objective = stringField(goal, "objective");
+  const providerSessionId = stringField(goal, "threadId");
+  const status = stringField(goal, "status");
+  if (!objective || !providerSessionId) return undefined;
+  switch (status) {
+    case "active":
+    case "paused":
+    case "blocked":
+    case "usageLimited":
+    case "budgetLimited":
+    case "complete":
+      return { provider: "codex", providerSessionId, objective, status };
+    default:
+      return undefined;
+  }
+}
 
 export type CodexGoalCommand =
   | { action: "get" | "clear" | "pause" | "resume" }

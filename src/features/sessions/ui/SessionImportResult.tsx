@@ -1,38 +1,47 @@
 import { Text } from "../../../shared/ui/Text";
-import { useFormat, useLocale, useT } from "../../../shared/i18n";
+import { useFormat, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Surface } from "../../../shared/ui/Surface";
 import { Progress } from "../../../shared/ui/Progress";
 import { candidateKey } from "../import/importModel";
 import type { ImportProgress, ImportSummary } from "../import/importRunner";
 
-export function plural(
-  formatNumber: (count: number) => string,
+/** Complete count labels: translators own number placement and noun forms. */
+export function importCount(
+  t: (message: string, values?: Record<string, unknown>) => string,
   count: number,
-  one: string,
-  many = `${one}s`,
+  noun: "conversation" | "folder" | "group",
 ): string {
-  return `${formatNumber(count)} ${count === 1 ? one : many}`;
+  switch (noun) {
+    case "conversation":
+      return count === 1
+        ? t("{p0} conversation", { p0: count })
+        : t("{p0} conversations", { p0: count });
+    case "folder":
+      return count === 1 ? t("{p0} folder", { p0: count }) : t("{p0} folders", { p0: count });
+    case "group":
+      return count === 1 ? t("{p0} group", { p0: count }) : t("{p0} groups", { p0: count });
+  }
 }
 
 export function RunningView({ progress }: { progress: ImportProgress }) {
   const t = useT();
-  const locale = useLocale();
+  const { formatNumber } = useFormat();
   const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0;
   return (
     <div className="flex flex-col gap-3 py-6" role="status">
       <Text as="p" size="secondary" tone="inherit" weight="medium">
-        {t("Importing ")}
-        {progress.done.toLocaleString(locale)}
-        {t(" of")} {progress.total.toLocaleString(locale)}…
+        {t("Importing {p0} of {p1}…", {
+          p0: formatNumber(progress.done),
+          p1: formatNumber(progress.total),
+        })}
       </Text>
       <Progress compact value={percent} max={100} />
       <Text as="p" size="caption" tone="secondary" truncate>
         {progress.current ?? " "}
       </Text>
       <Text as="p" size="micro" tone="secondary">
-        {progress.imported.toLocaleString(locale)}
-        {t(" imported")}
+        {t("Imported: {p0}", { p0: formatNumber(progress.imported) })}
         {progress.skipped > 0 ? t(" · {p0} skipped", { p0: progress.skipped }) : ""}
         {progress.failed.length > 0 ? t(" · {p0} failed", { p0: progress.failed.length }) : ""}
       </Text>
@@ -42,29 +51,24 @@ export function RunningView({ progress }: { progress: ImportProgress }) {
 
 export function DoneView({ summary }: { summary: ImportSummary }) {
   const t = useT();
-  const { formatNumber } = useFormat();
   return (
     <div className="flex flex-col gap-3 py-4">
       <Text as="p" size="body" tone="inherit" weight="medium">
         {summary.cancelled ? t("Import cancelled") : t("Import finished")}
       </Text>
       <Text as="ul" className="flex flex-col gap-1">
-        <li>
-          {plural(formatNumber, summary.imported, "conversation")}
-          {t(" imported.")}
-        </li>
+        <li>{t("Imported conversations: {p0}.", { p0: summary.imported })}</li>
         {summary.skipped > 0 ? (
           <li>
-            {summary.skipped}
-            {t(" already in ")}
-            {PRODUCT_IDENTITY.displayName}
-            {t(", skipped.")}
+            {t("Skipped {p0} conversations already in {p1}.", {
+              p0: summary.skipped,
+              p1: PRODUCT_IDENTITY.displayName,
+            })}
           </li>
         ) : null}
         {summary.projects > 0 ? (
           <li>
-            {plural(formatNumber, summary.projects, "folder")}
-            {t(" added to the sidebar")}
+            {t("Folders added to the sidebar: {p0}", { p0: summary.projects })}
             {summary.groups.length > 0
               ? t(", grouped as {p0}", { p0: summary.groups.join(", ") })
               : ""}
@@ -73,24 +77,24 @@ export function DoneView({ summary }: { summary: ImportSummary }) {
         ) : null}
         {summary.readOnly > 0 ? (
           <li>
-            {summary.readOnly}
             {t(
-              " can only be read: their folder is gone or could not be matched, so a new message starts a new conversation.",
+              "Read-only conversations: {p0}. Their folder is gone or could not be matched, so a new message starts a new conversation.",
+              { p0: summary.readOnly },
             )}
           </li>
         ) : null}
         {summary.truncated > 0 ? (
           <li>
-            {summary.truncated}
-            {t(" were large, so only their most recent part was imported.")}
+            {t("Large conversations: {p0}. Only their most recent part was imported.", {
+              p0: summary.truncated,
+            })}
           </li>
         ) : null}
       </Text>
       {summary.failed.length > 0 ? (
         <Surface variant="card" frame="danger" tone="danger" padding="sm">
           <Text as="p" size="inherit" tone="danger">
-            {plural(formatNumber, summary.failed.length, "conversation")}
-            {t(" could not be imported")}
+            {t("Conversations that could not be imported: {p0}", { p0: summary.failed.length })}
           </Text>
           <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">
             {summary.failed.map((failure) => (

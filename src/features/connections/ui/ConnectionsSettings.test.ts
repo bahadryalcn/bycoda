@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { ConnectionsSettings } from "./ConnectionsSettings";
+import { RevealedSetting } from "../../settings/public/ConnectionRecoverySettings";
 import { requestMachineAdd } from "../model/machineAdd";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
 import { REMOTE_PROVIDERS, type RemoteMachine, type SshSetup } from "../model/protocol";
@@ -95,6 +96,38 @@ async function render() {
   await act(async () => root.render(createElement(ConnectionsSettings)));
 }
 
+it("reveals Phone, Sharing and recovery from any nested tab while preserving manual tab choice", async () => {
+  for (const start of ["Machines", "Phone", "Sharing"]) {
+    await render();
+    const tab = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+      (item) => item.textContent === start,
+    )!;
+    await act(async () => tab.click());
+    for (const [id, title] of [
+      ["connections-phone", "Phone"],
+      ["connections-sharing", "Sharing"],
+      ["remote-auto-reconnect", "Machines"],
+    ]) {
+      await act(async () =>
+        root.render(
+          createElement(
+            RevealedSetting.Provider,
+            { value: id },
+            createElement(ConnectionsSettings),
+          ),
+        ),
+      );
+      expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+        title,
+      );
+      if (id !== "remote-auto-reconnect")
+        expect(
+          container.querySelector(`[data-setting-id="${id}"]`)?.closest("[hidden]"),
+        ).toBeNull();
+    }
+  }
+});
+
 it("shows a failed sync as one inline message with a retry", async () => {
   machines = [machine];
   vi.mocked(useSyncStatus).mockReturnValue({
@@ -168,6 +201,41 @@ async function fill(selector: string, value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
+
+it("locks the connection method while SSH setup is pending", async () => {
+  await render();
+  await act(async () => button("Add machine").click());
+  await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "owner@fixture");
+  await act(async () => button("Connect").click());
+  const methods = [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
+  expect(methods.length).toBeGreaterThan(0);
+  expect(methods.every((item) => item.disabled)).toBe(true);
+});
+
+it("keeps Add SSH fields through method switches, cancel and editing another machine", async () => {
+  machines = [machine];
+  await render();
+  const target = 'input[placeholder="user@my-mac-mini or an SSH alias"]';
+  await act(async () => button("Add machine").click());
+  await fill(target, "owner@new-computer");
+  await chooseMethod("Host URL");
+  await fill('input[type="url"]', "https://new-computer.example");
+  await chooseMethod("SSH");
+  expect(container.querySelector<HTMLInputElement>(target)?.value).toBe("owner@new-computer");
+  await act(async () => button("Cancel").click());
+  await editMachine("Home Mac");
+  expect(container.querySelector<HTMLInputElement>(target)?.value).toBe("me@home");
+  await fill(target, "owner@edited-computer");
+  await act(async () => button("Cancel").click());
+  await act(async () => button("Add machine").click());
+  expect(container.querySelector<HTMLInputElement>(target)?.value).toBe("owner@new-computer");
+  await chooseMethod("Host URL");
+  expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
+    "https://new-computer.example",
+  );
+  expect(requested("remote_ssh_begin")).toBe(false);
+  expect(requested("remote_machine_update")).toBe(false);
+});
 async function start() {
   await render();
   await act(async () => button("Add machine").click());
@@ -297,6 +365,12 @@ it("starts SSH setup from Settings and makes the machine available after native 
   expect(
     container.querySelector('input[placeholder="user@my-mac-mini or an SSH alias"]'),
   ).toBeNull();
+  await act(async () => button("Add machine").click());
+  expect(
+    container.querySelector<HTMLInputElement>(
+      'input[placeholder="user@my-mac-mini or an SSH alias"]',
+    )?.value,
+  ).toBe("");
 });
 
 it("requires an explicit host trust answer and forwards secrets only to the native prompt", async () => {
@@ -404,7 +478,7 @@ it("names the machine being worked on in connection progress", async () => {
   expect(container.textContent).toContain("Host port 3774");
 });
 
-it("keeps the Add machine button visible while the add form is open", async () => {
+it("keeps the Add machine button visible without resetting the open draft", async () => {
   machines = [machine];
   await render();
   await act(async () => button("Add machine").click());
@@ -415,7 +489,7 @@ it("keeps the Add machine button visible while the add form is open", async () =
     container.querySelector<HTMLInputElement>(
       'input[placeholder="user@my-mac-mini or an SSH alias"]',
     )!.value,
-  ).toBe("");
+  ).toBe("me@second");
   expect(container.textContent).toContain("Home Mac");
 });
 
@@ -599,6 +673,7 @@ it("only renames without reconnecting, and offers the host's name for a raw IP",
   await fill(address, "me@192.168.1.5");
   await fill('input[placeholder="Optional, e.g. Home Mac mini"]', "Office");
   expect(button("Save")).toBeTruthy();
+  expect(container.textContent).toContain("Saving changes the machine name without reconnecting.");
   await act(async () => button("Save").click());
   expect(requested("remote_ssh_reconnect")).toBe(false);
   expect(container.textContent).toContain("was renamed");

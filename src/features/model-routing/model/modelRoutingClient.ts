@@ -50,6 +50,7 @@ export function useModelRouting(machineId: string | undefined, supported: boolea
     state: query.data,
     loading: enabled && query.isPending,
     error: query.error instanceof Error ? query.error.message : undefined,
+    refetch: query.refetch,
     save,
   };
 }
@@ -68,7 +69,13 @@ export function useModelRoutingStatus(machineId: string | undefined, supported: 
     refetchInterval: 60_000,
     retry: false,
   });
-  return { entries: query.data ?? [], loading: enabled && query.isPending };
+  return {
+    entries: query.data ?? [],
+    loading: enabled && query.isPending,
+    error: query.error,
+    refetch: query.refetch,
+    refreshing: query.isFetching,
+  };
 }
 
 /** Asks the Host which model a role (or one item's choice) would run on right now. */

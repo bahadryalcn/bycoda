@@ -51,7 +51,11 @@ import {
   nativeControlTurnReceipt,
   type ControlTurnHandle,
 } from "./controlTurn";
-import { drainRetirementsForWriter, retireProviderOwner } from "./providerRetirement";
+import {
+  drainRetirementsForWriter,
+  retireProviderOwner,
+  preserveProviderFailure,
+} from "./providerRetirement";
 import { beginHandoffPhase } from "./handoffPhase";
 import { formatDuration } from "../../../shared/i18n/format";
 import { t } from "../../../shared/i18n/core";
@@ -92,7 +96,7 @@ export type TitleInput = {
 };
 
 /** One-shot, isolated text generation shared by titles and side questions. */
-export type TextPromptInput = {
+export type TextPromptInput = import("./providerRetirement").ProviderRetirementObserver & {
   cwd: string;
   operationContext?: HarnessOperationContext;
   providerAccountId?: string;
@@ -1478,41 +1482,51 @@ function cancelledTextPrompt(): Error {
 export async function runHarnessTextPrompt(
   request: TextPromptInput & { harness: HarnessId },
 ): Promise<string> {
-  const input = providerInput({ ...request });
-  assertHarnessModel(input.harness, input);
-  const adapter = requireHarness(input.harness);
-  if (!adapter.live) {
-    throw new Error(`${input.harness} is not connected yet`);
+  let input: TextPromptInput & { harness: HarnessId };
+  let adapter: HarnessAdapter;
+  try {
+    // Pure local preflight only. No adapter allocation or provider request has begun.
+    input = providerInput({ ...request });
+    assertHarnessModel(input.harness, input);
+    adapter = requireHarness(input.harness);
+    if (!adapter.live) throw new Error(`${input.harness} is not connected yet`);
+    if (!adapter.runTextPrompt)
+      throw new Error(`${input.harness} does not support isolated text prompts`);
+    if (input.signal?.aborted) throw cancelledTextPrompt();
+  } catch (error) {
+    return preserveProviderFailure(
+      error,
+      Promise.resolve().then(async () => {
+        if (request.retirementIdentity && request.onRetired)
+          await request.onRetired({
+            original: request.retirementIdentity,
+            dispatch: "not-entered",
+            cleanupSuccess: true,
+          });
+      }),
+    );
   }
-  if (!adapter.runTextPrompt) {
-    throw new Error(`${input.harness} does not support isolated text prompts`);
-  }
-
   const signal = input.signal;
-  if (signal?.aborted) {
-    throw cancelledTextPrompt();
-  }
 
   const owner = beginTextPrompt(adapter);
   let run: Promise<string>;
   try {
-    run = adapter.runTextPrompt(input);
+    run = adapter.runTextPrompt!(input);
   } catch (error) {
     finishTextPrompt(adapter, owner, false);
     throw error;
   }
-  if (!signal) {
-    try {
-      return await run;
-    } finally {
-      finishTextPrompt(adapter, owner, false);
-    }
-  }
+  // Caller cancellation does not retire the original provider operation.
+  // Keep its owner until that operation itself settles.
+  void run.then(
+    () => finishTextPrompt(adapter, owner, false),
+    () => finishTextPrompt(adapter, owner, false),
+  );
+  if (!signal) return run;
 
   let abortHandler: (() => void) | undefined;
   const abortPromise = new Promise<never>((_, reject) => {
     abortHandler = () => {
-      finishTextPrompt(adapter, owner, false);
       reject(cancelledTextPrompt());
     };
     signal.addEventListener("abort", abortHandler, { once: true });
@@ -1522,7 +1536,6 @@ export async function runHarnessTextPrompt(
     return await Promise.race([run, abortPromise]);
   } finally {
     if (abortHandler) signal.removeEventListener("abort", abortHandler);
-    finishTextPrompt(adapter, owner, false);
   }
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { t } from "../../../../shared/i18n";
+import { isImeComposition } from "../../../../shared/lib/keyboard";
 import { Button } from "../../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { RadioGroup } from "../../../../shared/ui/RadioGroup";
@@ -56,7 +57,7 @@ export function AvatarGenerator({
     generate().catch((error: unknown) => setFailure(assistantBuilderFailureDetail(error)));
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !isImeComposition(event.nativeEvent)) {
       event.preventDefault();
       start();
     }

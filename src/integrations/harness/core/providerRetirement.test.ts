@@ -290,3 +290,34 @@ it("keeps actual owner capacity across keeper reuse and refuses B admission befo
   expect(kill).toHaveBeenCalledTimes(4096);
   expect(restored.observation()[0].active).toBe(0);
 });
+
+it("publishes exact retirement receipt only after actual cleanup and distinguishes failed cleanup", async () => {
+  const original = Symbol("isolated original");
+  const physical = gate();
+  const onRetired = vi.fn();
+  const primary = new Error("cancelled before physical stop");
+  const result = withProviderRetirement(
+    async () => {
+      throw primary;
+    },
+    () => physical.promise,
+    { retirementIdentity: original, onRetired },
+  );
+  const rejected = expect(result).rejects.toBe(primary);
+  await tick();
+  expect(onRetired).not.toHaveBeenCalled();
+  physical.resolve();
+  await rejected;
+  expect(onRetired).toHaveBeenCalledExactlyOnceWith({ original, cleanupSuccess: true });
+  onRetired.mockClear();
+  await expect(
+    withProviderRetirement(
+      async () => "answer",
+      async () => {
+        throw new Error("stop unknown");
+      },
+      { retirementIdentity: original, onRetired },
+    ),
+  ).resolves.toBe("answer");
+  expect(onRetired).toHaveBeenCalledExactlyOnceWith({ original, cleanupSuccess: false });
+});

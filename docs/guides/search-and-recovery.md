@@ -7,6 +7,9 @@ execution directory, conversations use their existing search scope, and projects
 come from the supplied recent-project list. Read the scope description before
 opening a result.
 
+All excludes archived conversations from both title and message results. Use the
+archive filter in Conversations to include them.
+
 Ctrl+P opens Go to File with the current project name above the search field and
 one close button. Its file index includes workspace packages, nested Git repositories
 and initialized submodules inside the current directory. Each repository keeps its

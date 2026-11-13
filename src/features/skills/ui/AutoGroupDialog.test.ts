@@ -55,9 +55,7 @@ async function render() {
 it("keeps one direct model-settings action without instructional copy", async () => {
   await render();
   expect(container.textContent).not.toContain("Model set in Settings");
-  const settings = container.querySelector<HTMLButtonElement>(
-    'button[aria-label="Manage in Models"]',
-  );
+  const settings = container.querySelector<HTMLButtonElement>('button[aria-label="Manage models"]');
   expect(settings).not.toBeNull();
   await act(async () => settings!.click());
   expect(openModelsSettings).toHaveBeenCalledExactlyOnceWith("roles");

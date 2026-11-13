@@ -1,4 +1,6 @@
 import type { HostTask, TaskStatus } from "./hostTasks";
+import { NO_VERDICT } from "../../../shared/model/host-contracts/task-findings";
+export { NO_VERDICT };
 /** Shared task rules. This module has no desktop or native runtime dependencies. */
 
 /** Where the user may move a task from each status. Running or verifying to
@@ -25,10 +27,11 @@ export function canEditTask(status: TaskStatus): boolean {
   return status === "todo" || status === "queued" || status === "blocked";
 }
 
-/** After this many consecutive failed reviews the host stops correcting. A task
+/** Initial failed review plus the review of its one automatic repair. A task
  * whose worker succeeded then finishes with owner notices (completedWithFindings)
  * instead of blocking; only tasks that still end blocked need new instructions. */
-export const MAX_TASK_REVIEW_FAILURES = 3;
+export const MAX_TASK_REPAIR_ATTEMPTS = 1;
+export const MAX_TASK_REVIEW_FAILURES = MAX_TASK_REPAIR_ATTEMPTS + 1;
 
 export const TASK_INPUT_REQUIRED =
   "Update the task description before retrying: explain what changed, provide the missing evidence, or revise the requirement.";
@@ -53,10 +56,9 @@ export function taskRequiresInstructions(task: HostTask): boolean {
     ["blocked", "todo", "queued"].includes(task.status) &&
     Boolean(
       task.repairStop ||
-      (!task.continueUntilDone &&
-        (task.blockedTakeover ||
-          (task.status !== "queued" && (task.repairAttempts ?? 0) >= MAX_TASK_REVIEW_FAILURES) ||
-          taskReviewFailureCount(task) >= MAX_TASK_REVIEW_FAILURES)),
+      task.blockedTakeover ||
+      (task.status !== "queued" && (task.repairAttempts ?? 0) >= MAX_TASK_REPAIR_ATTEMPTS) ||
+      taskReviewFailureCount(task) >= MAX_TASK_REVIEW_FAILURES,
     )
   );
 }
@@ -67,6 +69,9 @@ export function canTakeOverBlockedTask(
   if (task.blockedTakeoverSupported === false) return false;
   if (
     task.status !== "blocked" ||
+    task.repairStop ||
+    (task.repairAttempts ?? 0) >= MAX_TASK_REPAIR_ATTEMPTS ||
+    taskReviewFailureCount(task) >= MAX_TASK_REVIEW_FAILURES ||
     task.blockedTakeover ||
     task.awaitingOwnerRestart ||
     !task.sessionId
@@ -90,8 +95,6 @@ export function canTakeOverBlockedTask(
 export function hasUnmergedBranch(task: Pick<HostTask, "branch" | "merged">): boolean {
   return Boolean(task.branch) && !task.merged;
 }
-
-export const NO_VERDICT = "Reviewer gave no verdict";
 
 /** Remove dependents before their prerequisites, within one host's explicit selection. */
 export function orderTasksForDeletion<T extends Pick<HostTask, "id" | "dependsOn">>(

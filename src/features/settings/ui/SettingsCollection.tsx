@@ -45,7 +45,7 @@ export function CollectionToolbar({
         />
       </div>
       {children ? <div className="settings-collection-tools">{children}</div> : null}
-      {count ? (
+      {count != null && count !== false ? (
         <Text
           size="caption"
           tone="secondary"

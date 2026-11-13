@@ -59,7 +59,7 @@ export function DeviceBar({
                     device.id,
                   ]
                     .filter(Boolean)
-                    .join(" · ")
+                    .join(", ")
                 : undefined
             }
             label={t("Selected device")}
@@ -78,10 +78,10 @@ export function DeviceBar({
                 <DevicePlatformIcon
                   platform={item.platform}
                   active={item.booted}
-                  label={`${platformLabel(item.platform)} · ${stateLabel(item)}`}
+                  label={`${platformLabel(item.platform)}, ${stateLabel(item)}`}
                 />
               ),
-              description: `${platformVersionLabel(item)} · ${kindLabel(item)}`,
+              description: `${platformVersionLabel(item)}, ${kindLabel(item)}`,
               meta: stateLabel(item),
               keywords: `${item.id} ${kindLabel(item)} ${item.version}`,
             }))}

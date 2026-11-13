@@ -622,6 +622,7 @@ fn rpc_timeout(method: &str, params: &Value) -> std::time::Duration {
         "voice.local.inspect" | "devices.start" => std::time::Duration::from_secs(60),
         "voice.local.start" => std::time::Duration::from_secs(180),
         "voice.local.transcribe" | "voice.cloud.transcribe" => std::time::Duration::from_secs(40),
+        "voice.dictation.process" => std::time::Duration::from_secs(110),
         // Tool calls may await an existing native owner approval dialog.
         "voice.tools.call" => std::time::Duration::from_secs(250),
         "devices.boot" => std::time::Duration::from_secs(240),
@@ -721,6 +722,7 @@ fn rpc_timed(
             .set("Authorization", &format!("Bearer {token}"))
             .set("Content-Type", "application/json")
             .send_string(&payload)
+            .map_err(Box::new)
     });
     let response = match response {
         Ok(response) => response,

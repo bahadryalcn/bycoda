@@ -40,6 +40,7 @@ export const HostGoalInputSchema = z.strictObject({
   prompt: z.string(),
   projectIds: z.array(z.string()),
   leadProjectId: z.string(),
+  crewDefinitionId: z.string().min(1).optional(),
   modelChoice: ModelRoutingItemChoiceSchema.optional(),
   harness: SessionProviderSchema,
   providerAccountId: z.string().optional(),

@@ -12,7 +12,7 @@ export function SecondOpinionCard({ card }: Props) {
   const t = useT();
   const files =
     card.files != null && card.files > 0
-      ? `${card.files} ${card.files === 1 ? "file" : "files"}`
+      ? t(card.files === 1 ? "{p0} file" : "{p0} files", { p0: card.files })
       : null;
 
   return (

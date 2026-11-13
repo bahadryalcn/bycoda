@@ -32,19 +32,20 @@ type Dependencies = {
   /** Pending Assistant notifications with the Host's own delivery verdicts; absent disables that channel. */
   assistant?: AssistantPushSource;
   assistantLedger?: AssistantPushLedger;
+  /** Native-authorized configured Telegram channel; runs even when no phone is paired. */
+  telegram?: () => Promise<void>;
   /** Remote-answerable owner approvals; absent disables that channel. */
   approvals?: ApprovalRegistry;
   send?: typeof sendExpoPush;
   now?: () => number;
+  /** Durable notification timestamps use wall time, never the desktop heartbeat clock. */
+  wallNow?: () => number;
   pollMs?: number;
 };
 
 /**
- * Sends Expo pushes when a conversation finishes, fails or waits for the
- * owner. The Host decides once for every phone: nothing is sent while someone
- * is using the desktop app on this computer, because its own banners and
- * in-app indicators already reach them. A phone looking at the conversation
- * suppresses its own banner.
+ * Sends conversation events while the desktop is away. Assistant reports use
+ * their independent phone settings, including while the desktop is active.
  */
 export class PushNotifications {
   private snapshot: PushSnapshot | undefined;
@@ -104,6 +105,11 @@ export class PushNotifications {
 
   /** One read of every conversation; exported for tests. */
   async tick(): Promise<void> {
+    try {
+      await this.deps.telegram?.();
+    } catch {
+      hostWarnDeduped("Assistant Telegram delivery is unavailable; mobile push remains active.");
+    }
     const recipients = await this.deps.store.recipients();
     if (recipients.length === 0) {
       // Nobody to notify: skip the list read, and start from a fresh baseline later.
@@ -122,7 +128,7 @@ export class PushNotifications {
             .map((event) => this.message(recipient, event)),
         ),
       );
-    if (away) await this.tickAssistant(recipients);
+    await this.tickAssistant(recipients);
     if (away) await this.tickApprovals(recipients);
   }
 
@@ -159,8 +165,8 @@ export class PushNotifications {
   }
 
   /**
-   * Assistant notifications wait on the Host for a desktop window that may never open. With no desktop
-   * in use, each phone hears about each one once; acknowledging stays with the owner.
+   * Phones receive their configured Assistant channel independently of desktop
+   * activity. Urgent reminders stop on acknowledgement.
    */
   private async tickAssistant(recipients: PushRecipient[]): Promise<void> {
     const { assistant, assistantLedger: ledger } = this.deps;
@@ -168,25 +174,39 @@ export class PushNotifications {
     if (!assistant || !ledger || interested.length === 0) return;
     const pending = await assistant();
     if (pending.length === 0) return;
-    const sends: { recipient: PushRecipient; id: string; message: ExpoPushMessage }[] = [];
+    const sends: { recipient: PushRecipient; id: string }[] = [];
     for (const recipient of interested) {
-      const done = await ledger.sent(
-        recipient.deviceHash,
-        pending.map((item) => item.id),
-      );
       for (const item of pending) {
-        if (done.has(item.id) || !assistantPushAllowed(item, recipient)) continue;
+        if (!assistantPushAllowed(item, recipient)) continue;
         sends.push({
           recipient,
           id: item.id,
-          message: assistantPushMessage(recipient, item, this.deps.environmentId),
         });
       }
     }
     if (sends.length === 0) return;
-    await this.deliver(sends.map((send) => send.message));
-    for (const send of sends) await ledger.record(send.recipient.deviceHash, send.id, Date.now());
-    await ledger.prune(Date.now());
+    // One receipt per occurrence: a partial or unknown Expo result never permits a restart replay.
+    for (const send of sends) {
+      const current = (await assistant()).find((item) => item.id === send.id);
+      const recipient = (await this.deps.store.recipients(send.recipient.deviceHash))[0];
+      if (!current || !recipient || !assistantPushAllowed(current, recipient)) continue;
+      const occurrence = await ledger.reserve(
+        recipient.deviceHash,
+        current,
+        (this.deps.wallNow ?? Date.now)(),
+      );
+      if (occurrence === null) continue;
+      const result = await this.send([
+        assistantPushMessage(recipient, current, this.deps.environmentId),
+      ]);
+      for (const token of result.unregistered) await this.deps.store.forgetToken(token);
+      if (result.failed === 0 && result.unregistered.length === 0)
+        await ledger.accept(send.recipient.deviceHash, send.id, occurrence);
+      else
+        hostWarnDeduped(
+          "Assistant push delivery was not confirmed; reminder is retained without replay.",
+        );
+    }
   }
 
   /**

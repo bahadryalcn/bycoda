@@ -1,6 +1,7 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { useState } from "react";
+import { dateTimeFormat } from "../../../../shared/lib/intl";
 import { t } from "../../../../shared/i18n";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
@@ -27,8 +28,6 @@ export function AccountsScreen({
   const data = useAccountsData({ client, machineId, projectId, active });
   const [selectedId, setSelectedId] = useState<string>();
   const [connectOpen, setConnectOpen] = useState(false);
-  // Health is judged at the time this screen opened, so render stays pure.
-  const [openedAt] = useState(Date.now);
   const { snapshot } = data;
   const accounts = snapshot?.accounts ?? [];
   const selected = accounts.find((account) => account.id === selectedId);
@@ -61,6 +60,19 @@ export function AccountsScreen({
           {data.error}
         </InlineError>
       ) : null}
+      {data.projectsError ? (
+        <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>
+          {t("Could not read projects. Previous results may be out of date.")}
+        </InlineError>
+      ) : null}
+      {data.needsHumanError ? (
+        <InlineError retry={{ onRetry: data.reload, label: t("Try again") }}>
+          {t("Could not check whether accounts need your attention.")}
+        </InlineError>
+      ) : null}
+      {data.checkedAt ? (
+        <span>{t("Last checked: {p1}", { p1: dateTimeFormat().format(data.checkedAt) })}</span>
+      ) : null}
       {snapshot && !hostOnline ? (
         <InlineMessage tone="warning" live="off">
           {t("Scheduling is offline. Scheduled posts and replies wait until the Host is back.")}
@@ -83,8 +95,8 @@ export function AccountsScreen({
                 health={accountHealth({
                   account,
                   capabilities: snapshot?.capabilities[account.id] ?? [],
-                  needsHuman: data.needsHumanIds.has(account.id),
-                  now: openedAt,
+                  needsHuman: data.needsHumanKnown ? data.needsHumanIds.has(account.id) : undefined,
+                  now: data.now,
                 })}
                 onOpen={() => setSelectedId(account.id)}
               />
@@ -118,7 +130,8 @@ export function AccountsScreen({
             account={selected}
             snapshot={snapshot}
             projects={data.projects}
-            needsHuman={data.needsHumanIds.has(selected.id)}
+            needsHuman={data.needsHumanKnown ? data.needsHumanIds.has(selected.id) : undefined}
+            now={data.now}
             hostOnline={hostOnline}
             onChanged={data.reload}
           />

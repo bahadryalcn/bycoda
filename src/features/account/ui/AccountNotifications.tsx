@@ -214,6 +214,7 @@ export function AccountNotifications() {
             checked={settings.pushShowDetails}
             onCheckedChange={(on) => update((s) => setPushDetails(s, on))}
           />
+          {save.isPending ? <LoadingText delay={false}>{t("Saving…")}</LoadingText> : null}
           {save.isError ? (
             <InlineError>{t("Could not save. Your previous choice was kept.")}</InlineError>
           ) : null}

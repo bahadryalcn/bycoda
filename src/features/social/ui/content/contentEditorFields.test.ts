@@ -4,18 +4,23 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Capability, SocialAccount } from "../../model/social";
 import { ContentEditorFields, type ContentEditorFieldsProps } from "./ContentEditorFields";
+import { useContentDraft } from "./useContentDraft";
 import { emptyDraft, type ContentDraft } from "./contentDraft";
+import type { ContentMediaFieldProps } from "./ContentMediaField";
 
 // The AI box, the media picker and the autosizing textarea have their own tests; the picker is
 // replaced by a marker so this file can read the state the editor hands it.
 vi.mock("./ContentEditorAi", () => ({ ContentEditorAi: () => null }));
+const mediaField: { props?: ContentMediaFieldProps } = {};
 vi.mock("./ContentMediaField", () => ({
-  ContentMediaField: (props: { disabled: boolean; disabledReason?: string }) =>
-    createElement("div", {
+  ContentMediaField: (props: ContentMediaFieldProps) => {
+    mediaField.props = props;
+    return createElement("div", {
       "data-testid": "media",
       "data-disabled": String(props.disabled),
       "data-reason": props.disabledReason ?? "",
-    }),
+    });
+  },
 }));
 vi.mock("../../../../shared/ui/TextareaField", () => ({
   TextareaField: (props: { label: string; value: string; disabled?: boolean }) =>
@@ -224,4 +229,67 @@ describe("ContentEditorFields platform options", () => {
       }),
     );
   });
+});
+
+it("merges delayed media completion into the current text revision", () => {
+  render({ text: "Before upload" });
+  const completeUpload = mediaField.props!.onChange;
+  render({ text: "Typed during upload" });
+  act(() =>
+    completeUpload([
+      { localId: "upload", name: "photo.png", media: { kind: "image", uploadId: "upload" } },
+    ]),
+  );
+  const update = onDraft.mock.lastCall![0];
+  expect(update({ ...emptyDraft(), text: "Typed during upload" })).toMatchObject({
+    text: "Typed during upload",
+    media: [expect.objectContaining({ localId: "upload" })],
+  });
+});
+
+it("keeps delayed media in its original workspace without replacing edits after A/B/A remount", () => {
+  const client = {} as ContentEditorFieldsProps["client"];
+  let workspace!: ReturnType<typeof useContentDraft>;
+  function Harness({ projectId }: { projectId: string }) {
+    workspace = useContentDraft(client, projectId);
+    return createElement(ContentEditorFields, {
+      key: workspace.key,
+      client,
+      editor: {} as never,
+      projectId,
+      draft: workspace.draft,
+      onDraft: workspace.setDraft,
+      aiStopped: false,
+      creators: {},
+      onNavigate,
+    });
+  }
+  const show = (projectId: string) => act(() => root.render(createElement(Harness, { projectId })));
+  show("A");
+  act(() => workspace.setDraft((draft) => ({ ...draft, text: "Before upload" })));
+  const completeUpload = mediaField.props!.onChange;
+  show("B");
+  act(() => workspace.setDraft((draft) => ({ ...draft, text: "Project B" })));
+  show("A");
+  act(() =>
+    workspace.setDraft((draft) => ({
+      ...draft,
+      text: "New text after return",
+      link: "https://example.com/new",
+      platform: { tt1: { tiktok: { consent: true } } },
+    })),
+  );
+  const newer = workspace.draft;
+  act(() =>
+    completeUpload([
+      { localId: "upload", name: "photo.png", media: { kind: "image", uploadId: "upload" } },
+    ]),
+  );
+  expect(workspace.draft).toEqual({
+    ...newer,
+    media: [expect.objectContaining({ localId: "upload" })],
+  });
+  show("B");
+  expect(workspace.draft.text).toBe("Project B");
+  expect(workspace.draft.media).toEqual([]);
 });

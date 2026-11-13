@@ -1,5 +1,36 @@
 import { expect, it } from "vitest";
 import { mapDefaultsToProviders, type DefaultsProviderSupport } from "./providerDefaultsMapping";
+import { withAutoCompactSettings, withAutoCompactToggle } from "../../sessions/model/autoCompact";
+
+it("copies compaction only to providers that offer the exact control and threshold", () => {
+  const model = withAutoCompactSettings({
+    id: "codex:test",
+    name: "Test",
+    harness: "codex",
+    contextWindow: 200_000,
+  });
+  const omp = withAutoCompactToggle({ id: "omp:test", name: "Test", harness: "omp" });
+  const result = mapDefaultsToProviders(
+    {
+      accounts: {},
+      providers: { claude: { extras: { autoCompact: "off", autoCompactWindow: "500000" } } },
+    },
+    "claude",
+    [
+      { harness: "codex", effort: [], permissions: [], extras: model.settings! },
+      { harness: "omp", effort: [], permissions: [], extras: omp.settings! },
+    ],
+  );
+  expect(result.draft.providers.omp?.extras).toEqual({ autoCompact: "off" });
+  expect(result.draft.providers.codex).toBeUndefined();
+  expect(result.skipped).toEqual(
+    expect.arrayContaining([
+      { harness: "codex", field: "autoCompact", value: "off" },
+      { harness: "codex", field: "autoCompactWindow", value: "500000" },
+      { harness: "omp", field: "autoCompactWindow", value: "500000" },
+    ]),
+  );
+});
 
 const codex: DefaultsProviderSupport = {
   harness: "codex",

@@ -3,6 +3,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -56,10 +57,11 @@ export function MessageReplyComposer({
     setSending(true);
     setError("");
     const requestId = beginReplySend(key, body);
+    const attempted = readReplyDraft(key);
     try {
       const message = await replyToThread(thread.accountId, thread.id, body, requestId);
-      clearReplyDraft(key);
-      setDraft("");
+      if (clearReplyDraft(key, attempted))
+        setDraft((current) => (current === attempted.body ? "" : current));
       onSent(message);
       field.current?.focus();
     } catch (cause) {
@@ -71,7 +73,11 @@ export function MessageReplyComposer({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey) || event.nativeEvent.isComposing)
+    if (
+      event.key !== "Enter" ||
+      !(event.metaKey || event.ctrlKey) ||
+      isImeComposition(event.nativeEvent)
+    )
       return;
     event.preventDefault();
     send().catch((cause: unknown) => console.error("Reply send failed:", cause));

@@ -46,7 +46,13 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   into a side panel without dimming, so live backgrounds, the crew and glass can
   be judged on the real workspace; Escape returns to the full dialog.
   The image button in the theme generator opens a menu for None, Codex or Gemini;
-  its icon reflects the selected image provider. Selecting a suggested or saved
+  its icon reflects the selected image provider. Generate themes returns suggestions;
+  applying a suggestion or using Random never requests an image. Choose Generate image
+  on a result to request one, then Use image when it is ready. Failed images can be
+  retried, and a failed theme refresh keeps the previous suggestions. A saved look is
+  a snapshot of the current appearance, so it does not include a pending image.
+  Gradient generation uses the theme generator model and applies when ready unless a
+  newer look supersedes it. Selecting a suggested or saved
   theme pre-fills its editable name when saving the current look. Palette and
   saved-theme cards share one grid rhythm. Tone, interaction and scrollbar
   settings place previews beside their controls when space allows.
@@ -120,7 +126,7 @@ and **Decision models**. Settings search opens the relevant tab.
   Check or update one provider, or use **Check all** and **Update all**. Open a
   provider's path control to configure its executable; missing providers offer
   **Set up**. Custom ACP providers use **Add provider**.
-- **Settings > Models > Chat defaults** sets the provider, model, effort and permissions
+- **Settings > Models** sets the provider, model, effort and permissions
   for new conversations. **Subagents** holds advisor, subagent and image model defaults. Effort uses a stepped scale with the selected label beside it.
   Use the apply bar to choose provider scope and several save
   destinations, then save. See [provider defaults](agent-tools.md#cross-provider-advisor-and-subagents)

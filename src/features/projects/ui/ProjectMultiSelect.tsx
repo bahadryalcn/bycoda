@@ -71,6 +71,7 @@ export function ProjectMultiSelect({
   const [newGroupAnchor, setNewGroupAnchor] = useState<HTMLElement | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState(false);
+  const [groupPending, setGroupPending] = useState(false);
   const [deleting, setDeleting] = useState<string[] | null>(null);
   const latestPaths = useStableCallback(() => paths);
   const [deletionStarted, setDeletionStarted] = useState(false);
@@ -224,13 +225,15 @@ export function ProjectMultiSelect({
           className="p-2"
           role="dialog"
           aria-label={t("New group name")}
-          onDismiss={() => setNewGroupAnchor(null)}
+          onDismiss={() => {
+            if (!groupPending) setNewGroupAnchor(null);
+          }}
         >
           <form
             className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!chosen.length || !name.trim()) return;
+              if (groupPending || !chosen.length || !name.trim()) return;
               const existing = loadProjectGroups().find(
                 (group) => group.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase(),
               );
@@ -238,18 +241,22 @@ export function ProjectMultiSelect({
                 setError(true);
                 return;
               }
-              void withRoomPrivacyMutation(() => !!assignProjectsToNamedGroup(name, chosen)).then(
-                (saved) => {
-                  setError(!saved);
-                  if (saved) setNewGroupAnchor(null);
-                },
-                () => setError(true),
-              );
+              setGroupPending(true);
+              void withRoomPrivacyMutation(() => !!assignProjectsToNamedGroup(name, chosen))
+                .then(
+                  (saved) => {
+                    setError(!saved);
+                    if (saved) setNewGroupAnchor(null);
+                  },
+                  () => setError(true),
+                )
+                .finally(() => setGroupPending(false));
             }}
           >
             <TextField
               label={t("New group name")}
               id="project-selection-group-name"
+              disabled={groupPending}
               autoFocus
               className="min-w-0"
               value={name}
@@ -264,6 +271,7 @@ export function ProjectMultiSelect({
                 motion="none"
                 type="button"
                 onClick={() => setNewGroupAnchor(null)}
+                disabled={groupPending}
               >
                 {t("Cancel")}
               </Button>
@@ -271,7 +279,8 @@ export function ProjectMultiSelect({
                 variant="primary"
                 motion="none"
                 type="submit"
-                disabled={!chosen.length || !name.trim()}
+                disabled={groupPending || !chosen.length || !name.trim()}
+                loading={groupPending}
               >
                 {t("Group")}
               </Button>

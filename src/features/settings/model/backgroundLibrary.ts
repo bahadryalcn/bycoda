@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
 import { loadSavedThemes, referencedImageIds } from "./savedThemes";
 
@@ -97,24 +97,51 @@ export function useBackgroundLibrary(): {
   images: BackgroundLibraryImage[];
   currentId: string | null;
   loaded: boolean;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
 } {
   const [state, setState] = useState<{
     images: BackgroundLibraryImage[];
     loaded: boolean;
+    loading: boolean;
+    error: string | null;
   }>({
     images: [],
     loaded: false,
+    loading: true,
+    error: null,
   });
+  const request = useRef(0);
   const currentId = useSyncExternalStore(subscribeBackgroundLibrary, loadCurrentLibraryImageId);
   const refresh = useCallback(() => {
+    const currentRequest = ++request.current;
+    setState((current) => ({ ...current, loading: true }));
     listBackgroundLibrary().then(
-      (images) => setState({ images, loaded: true }),
-      () => setState((current) => ({ ...current, loaded: true })),
+      (images) => {
+        if (request.current === currentRequest)
+          setState({ images, loaded: true, loading: false, error: null });
+      },
+      (cause: unknown) => {
+        if (request.current === currentRequest)
+          setState((current) => ({
+            ...current,
+            loaded: true,
+            loading: false,
+            error: cause instanceof Error ? cause.message : String(cause),
+          }));
+      },
     );
   }, []);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Subscribe to native library changes while mounted; teardown fences pending reads.
   useEffect(() => {
     refresh();
-    return subscribeBackgroundLibrary(refresh);
+    const unsubscribe = subscribeBackgroundLibrary(refresh);
+    return () => {
+      // oxlint-disable-next-line react-hooks/exhaustive-deps -- This numeric request fence is not a DOM ref; teardown invalidates all reads.
+      ++request.current;
+      unsubscribe();
+    };
   }, [refresh]);
-  return { ...state, currentId };
+  return { ...state, currentId, retry: refresh };
 }

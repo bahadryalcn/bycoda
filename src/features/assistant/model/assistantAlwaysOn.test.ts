@@ -9,6 +9,7 @@ const ready: AlwaysOnInput = {
     execution: null,
     dailyTokenBudget: 20_000,
     keepAwakeWhileWorking: true,
+    keepAwakeWhileAway: true,
     observationTaskDone: true,
     observationTaskNeedsInput: true,
     notificationAway: "urgent",
@@ -45,7 +46,12 @@ it("flags each missing setting", () => {
   expect(state(withProfile({ autonomy: "chief" }), "autonomy")).toBe("done");
   expect(state(withProfile({ dailyTokenBudget: 0 }), "budget")).toBe("todo");
   expect(state(withProfile({ dailyTokenBudget: 19_999 }), "budget")).toBe("todo");
-  expect(state(withProfile({ keepAwakeWhileWorking: false }), "keepAwake")).toBe("todo");
+  expect(
+    state(withProfile({ keepAwakeWhileWorking: false, keepAwakeWhileAway: false }), "keepAwake"),
+  ).toBe("todo");
+  expect(
+    state(withProfile({ keepAwakeWhileWorking: false, keepAwakeWhileAway: true }), "keepAwake"),
+  ).toBe("done");
   expect(state(withProfile({ observationTaskDone: false }), "observation")).toBe("todo");
   expect(state(withProfile({ notificationAway: "none" }), "awayNotices")).toBe("todo");
   expect(state(withProfile({ notificationAway: "all" }), "awayNotices")).toBe("done");

@@ -35,10 +35,10 @@ export function GoalList({
       variant="row"
       size="sm"
       {...surfaceAttributes({ frame: "neutral", edge: "bottom" }, "task-goals-disclosure")}
-      summary={t("Goals")}
+      summary={t("Epics")}
       count={goals.goals.length}
     >
-      <ul aria-label={t("Goals")} className="goal-list">
+      <ul aria-label={t("Epics")} className="goal-list">
         {goals.goals
           .filter((goal) => filter === ALL_GOALS || goalKey(goal.machineId, goal.id) === filter)
           .map((goal) => {

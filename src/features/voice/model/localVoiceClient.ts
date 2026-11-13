@@ -6,6 +6,8 @@ export type LocalVoiceTranscript = { text: string; language: string; inferenceMs
 /** `turn`: the recognizer can judge from a pause whether the sentence is finished. */
 export type LocalVoiceInfo = { lease: string; model: string; device: string; turn?: boolean };
 export type VoiceRuntimeConfig = {
+  idleUnloadMinutes?: number;
+  whisperExact?: boolean;
   python?: string;
   whisperPath?: string;
   ttsPath?: string;
@@ -99,6 +101,7 @@ export const localVoiceBackend = {
     }),
   /** Whether a cloud voice key is stored on this computer's Host; never the key itself. */
   cloudStatus: () => cloudRequest<VoiceCloudStatus>("voice.cloud.status"),
+  transcriptionModels: () => cloudRequest<{ id: string; label: string }[]>("voice.cloud.models"),
   /** Verifies and stores a key in the Host's encrypted vault; `null` removes it. */
   setCloudKey: (provider: VoiceCloudProvider, key: string | null) =>
     cloudRequest<VoiceCloudStatus>("voice.cloud.setKey", { provider, key }),
@@ -115,6 +118,15 @@ export const localVoiceBackend = {
       ...(language ? { language } : {}),
       ...(model ? { model } : {}),
     }),
+  processDictation: (input: {
+    runId: string;
+    text: string;
+    model?: string;
+    instructions?: string;
+    correctionCue?: string;
+    translateToEnglish?: boolean;
+  }) => cloudRequest<{ text: string }>("voice.dictation.process", input),
+  cancelDictationCleanup: (runId: string) => cloudRequest("voice.dictation.cancel", { runId }),
   keepAlive: (lease: string) => request<{ ready: boolean }>("voice.local.keepAlive", { lease }),
   release: (lease: string) => request("voice.local.release", { lease }),
 };

@@ -71,6 +71,7 @@ export async function runAntigravityTextPrompt(input: TextPromptInput): Promise<
         await retirements.retire([child]);
         release?.();
       },
+      input,
     );
   });
 }

@@ -1,3 +1,12 @@
+import { crewTaskCanStart, crewTaskAdmitted } from "./crew-task-admission";
+import { reserveCrewRun } from "./crew-run-reservation";
+import {
+  launchCrewCoordinatorTurn,
+  crewCoordinatorLaunchPending,
+  matchesCrewLaunch,
+} from "./coordinator-work";
+import { bindSessionWork } from "../work/session-adapter";
+import { crewTaskPrompt } from "./crew-task-prompt";
 import { CrewRoutingWait, resolveCrewCandidate, retryCrewCoordinatorRouting } from "./crew-routing";
 export { CrewRoutingWait } from "./crew-routing";
 import { flatMapAsync, mapAsync } from "../async-collections";
@@ -12,8 +21,9 @@ import { RequestAuthorizationError } from "../store-db";
 import { prepareSavedAgent, withCrewTools } from "./crew-identity";
 import { crewToolCatalog } from "./crew-tools";
 import { listActiveCrewMembers } from "./crew-active";
-import { redactCrewTask } from "./crew-task-view";
+import { redactCrewTask, redactCrewProfiles } from "./crew-task-view";
 import * as ask from "./crew-member-ask";
+import { crewHistoryQuery } from "./crew-history-query";
 import { THREAD_CREW_WRITES } from "../conversation/conversation-thread-crew-tools";
 import { candidateObservations } from "./crew-observations";
 import * as membership from "./crew-membership";
@@ -44,7 +54,6 @@ import {
   parseCrewDefinition,
   parseCrewAgent,
   parseCrewScopes,
-  crewScopesOverlap,
   CREW_CAPABILITIES,
   crewWorkTitle,
   type CrewRun,
@@ -69,6 +78,14 @@ const message = (value: unknown, max = 12000): string => {
 /** Crew ownership extends the existing host task scheduler; it never launches workers itself. */
 
 export class HostCrews {
+  onAssistantTaskOrigin?: (origin: {
+    kind: "task";
+    id: string;
+    projectId: string;
+    threadId: string;
+    state: "pending" | "completed";
+    entityCreatedAt?: number;
+  }) => Promise<void>;
   private readonly reviewedThread = new AsyncLocalStorage<{
     projectId: string;
     threadId: string;
@@ -116,7 +133,8 @@ export class HostCrews {
   readonly ready: Promise<void>;
   constructor(
     private store: HostStore,
-    private engine: Pick<HostEngine, "command" | "updateSession">,
+    private engine: Pick<HostEngine, "command" | "updateSession"> &
+      Partial<Pick<HostEngine, "withCommandAdmission" | "waitForRun">>,
     private tasks: HostTasks,
     private models: (projectId: string) => Promise<HostModelCatalog>,
     private now = Date.now,
@@ -127,6 +145,7 @@ export class HostCrews {
     ) => Promise<boolean | undefined>,
     private readonly sessions?: CrewSessionPorts,
   ) {
+    if (engine.withCommandAdmission) bindSessionWork(store, engine, undefined, now);
     this.ready = Promise.all([store.ready, tasks.ready]).then(() =>
       initializeCrewSchedulerProjection(store),
     );
@@ -173,41 +192,7 @@ export class HostCrews {
           await this.call("crews.stop", { runId: run.id }, task.projectId);
       },
     };
-    tasks.crewCanStart = async (task) => {
-      if (task.crewDefinitionId) return true;
-      // A direct task outside a crew also shares the checkout. Respect active
-      // crew leases in both directions, without serializing ordinary tasks
-      // against one another or blocking isolated work.
-      if (!task.crewRunId)
-        return (
-          task.isolate !== false ||
-          !(await tasks.list(task.projectId)).some(
-            (other) =>
-              other.id !== task.id &&
-              !!other.crewRunId &&
-              !other.crewDefinitionId &&
-              other.isolate === false &&
-              (other.status === "running" || other.status === "verifying") &&
-              crewScopesOverlap(["."], other.crewScopes ?? ["."]),
-          )
-        );
-      const run = await readCrewRun(this.store, task.crewRunId);
-      return (
-        !!run &&
-        run.status === "active" &&
-        !(await tasks.list(run.projectId)).some(
-          (other) =>
-            other.id !== task.id &&
-            !other.crewDefinitionId &&
-            other.isolate === false &&
-            (other.status === "running" || other.status === "verifying") &&
-            crewScopesOverlap(task.crewScopes ?? ["."], other.crewScopes ?? ["."]),
-        ) &&
-        (await tasks.list(run.projectId)).filter(
-          (t) => t.crewRunId === run.id && (t.status === "running" || t.status === "verifying"),
-        ).length < run.definition.policy.maxParallel
-      );
-    };
+    tasks.crewCanStart = (task) => crewTaskCanStart(this.store, tasks, task);
   }
   start() {
     if (this.closing || this.timer) return;
@@ -267,7 +252,7 @@ export class HostCrews {
           ((target.type === "cancel" && current.status !== "finished") ||
             (current.status === "active" &&
               !!current.pendingDelivery &&
-              current.pendingDelivery.commandId === target.commandId &&
+              current.pendingDelivery.commandId === run.pendingDelivery?.commandId &&
               current.pendingDelivery.text === target.text))
         );
       },
@@ -448,14 +433,7 @@ export class HostCrews {
    * fabricating a coding-session coordinator. Callers must hold scoped authority. */
   async listForAssistantThread(projectId: string) {
     const view = await this.list(projectId);
-    return {
-      ...view,
-      definitions: view.definitions.map((definition) => ({
-        ...definition,
-        agents: definition.agents.map((agent) => ({ ...agent, instructions: "" })),
-      })),
-      agents: view.agents.map((agent) => ({ ...agent, instructions: "" })),
-    };
+    return redactCrewProfiles(view);
   }
   async readForAssistantThread(action: string, input: Record<string, unknown>, projectId: string) {
     await this.ready;
@@ -671,8 +649,27 @@ export class HostCrews {
             principal.sessionId)
       )
         throw new Error("Run ID already belongs to another conversation");
-      if (existing.requestFingerprint !== signature)
+      const schedulerReentry =
+        sourceTaskId !== undefined &&
+        existing.sourceTaskId === sourceTaskId &&
+        existing.definition.id === definitionId;
+      if (existing.requestFingerprint !== signature && !schedulerReentry)
         throw new Error("Run request ID was reused with different input");
+      if (!sourceTaskId && existing.sourceTaskId) {
+        const task = (await this.tasks.list(projectId)).find(
+          (entry) => entry.id === existing.sourceTaskId,
+        );
+        if (!task) throw new Error("Crew source task is missing; this request cannot be replayed.");
+        if (task.status === "queued") await this.tasks.startTask(task.id);
+        await this.tasks.tick();
+        const resolved = (await readCrewRun(this.store, existing.id)) ?? existing;
+        return principal && !newConversation
+          ? {
+              ...resolved,
+              instructions: `${this.instructions(resolved)}\n\n${ask.CREW_TOOL_INSTRUCTIONS}`,
+            }
+          : resolved;
+      }
       if (
         (!principal || newConversation) &&
         existing.launch &&
@@ -723,62 +720,55 @@ export class HostCrews {
         throw new Error("Coordinator changed during model discovery. Read it again.");
     }
     // Recheck after catalog discovery; no duplicate launch on concurrent retries.
-    const reserved = await this.store.db.scope(async () => {
-      const current = await this.read();
-      const duplicate = current.runs.find((r) => r.id === requestId);
-      if (duplicate) {
-        if (
-          duplicate.projectId !== projectId ||
-          (principal &&
-            (newConversation ? duplicate.requestedBySessionId : duplicate.coordinatorSessionId) !==
-              principal.sessionId)
-        )
-          throw new Error("Run ID already in use");
-        if (duplicate.requestFingerprint !== signature)
-          throw new Error("Run request ID was reused with different input");
-        return { run: duplicate, created: false };
-      }
-      if (
-        !current.definitions.some(
-          (item) => item.id === definition.id && item.updatedAt === definition.updatedAt,
-        )
-      )
-        throw new Error("Crew changed during model discovery. Reload before starting.");
-      const run: CrewRun = {
-        id: requestId,
-        projectId,
-        definition: structuredClone(definition),
-        status: "active",
-        coordinatorSessionId: newConversation ? undefined : principal?.sessionId,
-        ...(newConversation && principal ? { requestedBySessionId: principal.sessionId } : {}),
-        ...(sourceTaskId ? { sourceTaskId } : {}),
-        coordinatorCandidate: selected.candidate,
-        ...(routingWait ? { routingWait, error: selected.reason } : {}),
-        ...(crewWorkTitle(prompt) ? { title: crewWorkTitle(prompt) } : {}),
-        assignments: [],
-        messages: [],
-        notifications: {},
-        ...(!principal || newConversation
-          ? { launch: { candidate: selected.candidate, runtimeMode: mode ?? "supervised", prompt } }
-          : {}),
-        requestFingerprint: signature,
-        createdAt: this.now(),
-        updatedAt: this.now(),
-      };
-      if (principal && !newConversation) {
-        await this.checkOperationAuthority();
-        if (
-          current.runs.some(
-            (r) => r.status !== "finished" && r.coordinatorSessionId === principal.sessionId,
-          )
-        )
-          throw new Error("This conversation already coordinates a crew");
-      }
-      current.runs.push(run);
-      await this.write(current);
-      return { run, created: true };
+    const reserved = await reserveCrewRun({
+      store: this.store,
+      tasks: this.tasks,
+      read: () => this.read(),
+      write: (state) => this.write(state),
+      reviewedThread: () => this.reviewedThread.getStore(),
+      onAssistantTaskOrigin: this.onAssistantTaskOrigin,
+      checkOperationAuthority: () => this.checkOperationAuthority(),
+      now: this.now,
+      projectId,
+      definitionId,
+      prompt,
+      requestId,
+      principal,
+      newConversation,
+      sourceTaskId,
+      signature,
+      definition,
+      mode,
+      selected,
+      routingWait,
     });
     const run = reserved.run;
+    if (!sourceTaskId && run.sourceTaskId) {
+      const task = (await this.tasks.list(projectId)).find(
+        (entry) => entry.id === run.sourceTaskId,
+      );
+      if (!task) throw new Error("Crew source task is missing; this request cannot be replayed.");
+      if (task.status === "queued") await this.tasks.startTask(task.id);
+      await this.tasks.tick();
+      const resolved = await readCrewRun(this.store, run.id).catch(async (error: unknown) => {
+        if (!(error instanceof RequestAuthorizationError) || !run.launch) throw error;
+        return this.launchBookkeeping(async () => {
+          const current = await readCrewRun(this.store, run.id);
+          if (!current || !matchesCrewLaunch(current, run) || !current.coordinatorSessionId)
+            throw error;
+          // An owner pause is a newer decision, not this launch's revoked failure.
+          if (current.status === "paused" && current.error !== error.message) throw error;
+          return current;
+        });
+      });
+      const retained = resolved ?? run;
+      return principal && !newConversation
+        ? {
+            ...retained,
+            instructions: `${this.instructions(retained)}\n\n${ask.CREW_TOOL_INSTRUCTIONS}`,
+          }
+        : retained;
+    }
     if (!reserved.created) return run;
     if (run.routingWait) return run;
     if (!principal || newConversation) return await this.launchCoordinator(run);
@@ -812,17 +802,6 @@ export class HostCrews {
       // cannot restore permission to launch another provider effect.
       if (review) review.bookkeeping = previous;
     }
-  }
-  private matchesLaunch(current: CrewRun, owned: CrewRun) {
-    return (
-      current.id === owned.id &&
-      current.projectId === owned.projectId &&
-      current.createdAt === owned.createdAt &&
-      current.requestFingerprint === owned.requestFingerprint &&
-      current.launch !== undefined &&
-      owned.launch !== undefined &&
-      fingerprint(current.launch) === fingerprint(owned.launch)
-    );
   }
   private async launchCoordinatorOwned(run: CrewRun) {
     if (!run.launch) throw new Error("No retained coordinator launch");
@@ -869,7 +848,7 @@ export class HostCrews {
                 const current = state.runs.find((item) => item.id === run.id);
                 if (!current) throw new Error("Crew work was deleted during coordinator launch.");
                 if (
-                  !this.matchesLaunch(current, run) ||
+                  !matchesCrewLaunch(current, run) ||
                   (current.coordinatorSessionId &&
                     current.coordinatorSessionId !== result.sessionId)
                 )
@@ -887,15 +866,33 @@ export class HostCrews {
       {
         projectId: run.projectId,
         ...launch.candidate,
+        work: {
+          kind: "crew.coordinator",
+          id: run.id,
+          occurrence: String(launchGeneration(run) ?? run.id),
+        },
         runtimeMode: launch.runtimeMode,
         requestId: launchGeneration(run)
           ? `crew-${run.id}-${launchGeneration(run)}`
           : `crew-${run.id}`,
         title: `${run.definition.name} · Coordinator`.slice(0, 200),
-        prompt: `${this.instructions(run)}\n\n${ask.CREW_TOOL_INSTRUCTIONS}\n\nOwner request:\n${launch.prompt}`,
+        prompt: `Owner request:\n${launch.prompt}\n\n${this.instructions(run)}\n\n${ask.CREW_TOOL_INSTRUCTIONS}`,
       },
-      () => !this.closing && !this.tasks.admissionClosed,
-    );
+      async () => {
+        if (this.closing || this.tasks.admissionClosed) return false;
+        const current = await this.run(run.id, run.projectId);
+        return (
+          current.status === "active" &&
+          matchesCrewLaunch(current, run) &&
+          (await crewTaskAdmitted(this.tasks, current))
+        );
+      },
+    ).catch((error: unknown): { deferred?: boolean; sessionId?: string; error?: string } => {
+      // The accepted create is already recorded above. Revocation forbids any
+      // further engine effect, but must not hide that identity from recovery.
+      if (!(error instanceof RequestAuthorizationError) || !createdSessionId) throw error;
+      return { error: error.message };
+    });
     if (launched.deferred) return await this.run(run.id, run.projectId);
     const current = await this.launchBookkeeping(() =>
       this.store.db.scope(async () => {
@@ -903,7 +900,7 @@ export class HostCrews {
         const current = state.runs.find((item) => item.id === run.id);
         if (!current) return undefined;
         if (
-          !this.matchesLaunch(current, run) ||
+          !matchesCrewLaunch(current, run) ||
           (current.coordinatorSessionId &&
             current.coordinatorSessionId !== (createdSessionId ?? launched.sessionId))
         )
@@ -937,7 +934,7 @@ export class HostCrews {
     return current ?? { ...run, status: "paused" as const };
   }
   private instructions(run: CrewRun) {
-    return `You coordinate bycoda Crew ${run.definition.name}, runId=${run.id}. Use Conversation Tools crews.schema and crews.inspect for contracts/models/tools; crews.get, crews.assign, crews.request and crews.accept to manage work. Runtime approvals require an explicit owner grant and crews.respond. Direct owner messages in member sessions are directives to reconcile. Delegate implementation and ALL technical review. Host tasks automatically launch an independent reviewer. Do not review or claim worker completion is acceptance. Use crew member IDs from crews.get. Members request expertise through crews.request; resolve each request explicitly. Respect policy, owner instructions and shared dirty work. No commit, merge, push or publication is authorized by crew acceptance. For multiple component tasks, delegate a final integration assignment with integration=true and dependsOn containing ALL other task IDs before crews.finish. Declare project-relative files in each assignment; overlapping scopes are serialized. For generated assets, read images.status: it lists image models with access, formats and limits. Pass required ["image-generation"]; Antigravity members use Nano Banana (raster only), and Codex members also write SVG or animated GIF as code. Native subagents: ${run.definition.policy.allowSubagents ? "allowed within project rules; report their usage" : "disabled for this run"}.\n${run.definition.agents.find((a) => a.role === "coordinator")!.instructions}`;
+    return `You coordinate bycoda Crew ${run.definition.name}, runId=${run.id}. Use Conversation Tools crews.schema and crews.inspect for contracts/models/tools; crews.get, crews.assign, crews.request and crews.accept to manage work. For additional owner-requested work, inspect tasks and goals through the existing Conversation Tools before creating a task or epic. Select a crew through tasks.create crewDefinitionId when appropriate. Respect the current session permissions and owner approval gates; a plan is not approval to start, merge or publish. Runtime approvals require an explicit owner grant and crews.respond. Direct owner messages in member sessions are directives to reconcile. Delegate implementation and ALL technical review. Host tasks automatically launch an independent reviewer. Do not review or claim worker completion is acceptance. Use crew member IDs from crews.get. Members request expertise through crews.request; resolve each request explicitly. Respect policy, owner instructions and shared dirty work. No commit, merge, push or publication is authorized by crew acceptance. For multiple component tasks, delegate a final integration assignment with integration=true and dependsOn containing ALL other task IDs before crews.finish. Declare project-relative files in each assignment; overlapping scopes are serialized. For generated assets, read images.status: it lists image models with access, formats and limits. Pass required ["image-generation"]; Antigravity members use Nano Banana (raster only), and Codex members also write SVG or animated GIF as code. Native subagents: ${run.definition.policy.allowSubagents ? "allowed within project rules; report their usage" : "disabled for this run"}.\n${run.definition.agents.find((a) => a.role === "coordinator")!.instructions}`;
   }
   private async assignmentCandidates(
     projectId: string,
@@ -1089,7 +1086,12 @@ export class HostCrews {
           id: taskId,
           projectId,
           title,
-          prompt: `${agent.instructions}\n\n${ask.CREW_TOOL_INSTRUCTIONS}\n\n${prompt}\n\nCrew runId=${run.id}. Your exclusive write scopes: ${files.join(", ")}. Read outside them as needed, but request expanded scope before editing other files. For missing resources use crews.request; inspect crews.get for member/task IDs. ${run.definition.policy.allowSubagents ? "Report native subagent usage and follow project limits." : "Do not spawn subagents."} Preserve other sessions' work. Do not stage, commit, merge or push.`,
+          prompt: crewTaskPrompt({
+            request: prompt,
+            instructions: agent.instructions,
+            tools: ask.CREW_TOOL_INSTRUCTIONS,
+            scope: `Crew runId=${run.id}. Your exclusive write scopes: ${files.join(", ")}. Read outside them as needed, but request expanded scope before editing other files. For missing resources use crews.request; inspect crews.get for member/task IDs. ${run.definition.policy.allowSubagents ? "Report native subagent usage and follow project limits." : "Do not spawn subagents."} Preserve other sessions' work. Do not stage, commit, merge or push.`,
+          }),
           harness: selected.candidate.harness,
           providerAccountId: selected.candidate.providerAccountId,
           model: selected.candidate.model,
@@ -1173,30 +1175,8 @@ export class HostCrews {
     if (action === "crews.list") {
       // App-owned bootstrap only. Conversation reads cannot create global data.
       if (!principal) await this.ensureDefaults(projectId);
-      let history: { cursor?: string; limit: number } | undefined;
-      if (input.historyLimit !== undefined || input.historyCursor !== undefined) {
-        const limit = Number(input.historyLimit);
-        if (
-          !Number.isSafeInteger(limit) ||
-          limit < 1 ||
-          limit > 100 ||
-          (input.historyCursor !== undefined &&
-            (typeof input.historyCursor !== "string" || input.historyCursor.length > 1024))
-        )
-          throw new Error("Provide bounded Crew history pagination");
-        history = { cursor: input.historyCursor as string | undefined, limit };
-      }
-      const view = await this.list(projectId, history);
-      return principal
-        ? {
-            ...view,
-            definitions: view.definitions.map((d) => ({
-              ...d,
-              agents: d.agents.map((a) => ({ ...a, instructions: "" })),
-            })),
-            agents: view.agents.map((a) => ({ ...a, instructions: "" })),
-          }
-        : view;
+      const view = await this.list(projectId, crewHistoryQuery(input));
+      return principal ? redactCrewProfiles(view) : view;
     }
     if (action === "crews.schema")
       return {
@@ -1508,6 +1488,7 @@ export class HostCrews {
       });
     }
     if (action === "crews.pause" || action === "crews.resume") {
+      let pendingLaunch = false;
       const coordinatorId = run.coordinatorSessionId;
       const coordinator =
         action === "crews.resume" &&
@@ -1521,8 +1502,11 @@ export class HostCrews {
         if (current.status === "finished") throw new Error("Crew is finished");
         const resuming = action === "crews.resume" && current.status === "paused";
         const stoppedOutside = current.error === COORDINATOR_STOPPED;
+        if (resuming && current.launch)
+          pendingLaunch = await crewCoordinatorLaunchPending(this.store, current);
         const needsLaunch =
-          current.launch && (!current.coordinatorSessionId || (current.error && !stoppedOutside));
+          current.launch &&
+          (pendingLaunch || !current.coordinatorSessionId || (current.error && !stoppedOutside));
         // The same conversation continues through a durable delivery; no second coordinator.
         if (resuming && stoppedOutside && !needsLaunch) current.error = undefined;
         current.status = action === "crews.pause" ? "paused" : "active";
@@ -1542,7 +1526,7 @@ export class HostCrews {
       if (
         action === "crews.resume" &&
         current.launch &&
-        (!current.coordinatorSessionId || current.error)
+        (pendingLaunch || !current.coordinatorSessionId || current.error)
       )
         return await this.launchCoordinator(current);
       return current;
@@ -1847,15 +1831,29 @@ export class HostCrews {
         if (!(await this.updateDelivery(run, true))) continue;
         // Persisted command IDs reuse host receipts after uncertain delivery.
         if (this.closing) return;
-        await this.command(
+        const delivery = await launchCrewCoordinatorTurn(
+          this.store,
           {
-            type: "send",
-            commandId: run.pendingDelivery.commandId,
-            sessionId: run.coordinatorSessionId!,
-            text: run.pendingDelivery.text,
+            command: (command) => this.command(command, run),
+            // The existing coordinator owns its title; a native session may not yet be adopted.
+            updateSession: async (id) => {
+              const { session, ...host } = await this.coordinatorSession(id, run.projectId);
+              return { ...host, id: session.id, title: session.title, harness: session.harness };
+            },
           },
           run,
+          async () => {
+            const current = await this.run(run.id, run.projectId);
+            return (
+              !this.closing &&
+              current.status === "active" &&
+              (await crewTaskAdmitted(this.tasks, current))
+            );
+          },
+          (id, projectId) => this.coordinatorSession(id, projectId),
         );
+        if (delivery.deferred) continue;
+        if (delivery.error) throw new Error(delivery.error);
         const settledCommandId = run.pendingDelivery.commandId;
         run.notifications = run.pendingDelivery.notifications;
         run.pendingDelivery = undefined;

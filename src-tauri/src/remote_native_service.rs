@@ -55,6 +55,7 @@ fn legacy_method<'a>(method: &'a str, wire: &'a str) -> &'a str {
         "assistant.browser.",
         "assistant.workspace.",
         "assistant.notification.",
+        "assistant.background.",
     ]
     .iter()
     .any(|prefix| method.starts_with(prefix))
@@ -82,6 +83,7 @@ fn wire_method(method: &str) -> Option<String> {
             | "assistant.visibility.revoke"
             | "assistant.visibility.reopen"
             | "assistant.notification.authorize"
+            | "assistant.background.execute"
             | "assistant.workspace.authorize"
             | "assistant.browser.panel"
             | "assistant.observations.ingest"
@@ -416,6 +418,21 @@ impl NativeServiceChannel {
         self.selection
             .as_ref()
             .map_or("fixture-environment", |s| s.machine.environment_id.as_str())
+    }
+    /// Stable native credential fingerprint; never accept a principal supplied by Host payloads.
+    pub(crate) fn consent_principal(&self) -> String {
+        use sha2::{Digest, Sha256};
+        self.selection.as_ref().map_or_else(
+            || "fixture".into(),
+            |selection| {
+                format!(
+                    "{:x}",
+                    Sha256::digest(
+                        format!("{}\0{}", selection.machine.id, selection.machine.token).as_bytes()
+                    )
+                )
+            },
+        )
     }
     pub(crate) fn is_current(&self) -> bool {
         self.check().is_ok()

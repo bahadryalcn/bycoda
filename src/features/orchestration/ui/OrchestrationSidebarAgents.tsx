@@ -1,4 +1,3 @@
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -152,7 +151,8 @@ export function OrchestrationSidebarAgents({
                   size="caption"
                   tone="secondary"
                   leading="snug"
-                  truncate
+                  truncate={!open}
+                  wrap={open ? "anywhere" : undefined}
                   className="min-w-0 flex-1"
                 >
                   {task.title}
@@ -190,16 +190,17 @@ export function OrchestrationSidebarAgents({
               {/* Indented to the title's column: the icon slot and its gap. */}
               {open && (
                 <div className="space-y-2 pb-3 [padding-inline-start:calc(1rem+0.625rem)] pr-2">
-                  <Tooltip label={`${model} · ${HARNESS_TITLE[task.harness]}`} asChild>
-                    <Text
-                      as="p"
-                      size="micro"
-                      tone="secondary"
-                      className="flex min-w-0 items-center gap-1.5"
-                    >
-                      <ModelLabel model={task.model} harness={task.harness} name={model} />
+                  <Text
+                    as="p"
+                    size="micro"
+                    tone="secondary"
+                    className="flex min-w-0 flex-wrap items-start gap-1.5"
+                  >
+                    <ModelLabel model={task.model} harness={task.harness} name={model} wrap />
+                    <Text size="inherit" tone="inherit" wrap="anywhere">
+                      {HARNESS_TITLE[task.harness]}
                     </Text>
-                  </Tooltip>
+                  </Text>
                   {live?.error && (
                     <Text as="p" size="micro" tone="danger">
                       {live.error}
@@ -308,7 +309,7 @@ export function OrchestrationSidebarAgents({
                     ? t("Wait for the lead's interrupted turn to finish")
                     : resumeBlocker
                       ? t("Stop {p0} before resuming", {
-                          p0: resumeBlocker.title || "the other conversation",
+                          p0: resumeBlocker.title || t("Another conversation"),
                         })
                       : t("Continue interrupted and queued work")
               }

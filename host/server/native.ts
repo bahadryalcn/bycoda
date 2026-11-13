@@ -8,6 +8,7 @@ import {
 import { createRoomNativeSourceAdapter } from "../assistant/room/assistant-room-native-adapter";
 import { validateConversationTool } from "../conversation/conversation-tools";
 import { createHostAutomationsService } from "../domains/automations/service";
+import { createAutomationProposer } from "../automations/proposal";
 import { type HostDomainContext } from "../domains/context";
 import { createHostCrewsService } from "../domains/crews/service";
 import { createHostPersistenceService } from "../domains/environment/persistence-service";
@@ -61,6 +62,7 @@ export function createNativeRuntime(
     | "withRoomProjectScope"
     | "roomBrowser"
     | "assistantWorkspaceOwner"
+    | "assistantBackgroundEffect"
     | "nativeVoiceLeases"
     | "retireNativeVoiceGenerations"
     | "visibilityAdmission"
@@ -73,6 +75,11 @@ export function createNativeRuntime(
 ) {
   const automationsService = createHostAutomationsService({
     automations: dependencies.automations,
+    propose: createAutomationProposer({
+      store: dependencies.engine.store,
+      profile: () => dependencies.assistant.profile(),
+      preview: (schedule) => dependencies.automations.preview(schedule),
+    }),
   });
   const stewardsService = createHostStewardsService({ stewards: dependencies.stewards });
   const crewsService = createHostCrewsService({ crews: dependencies.crews });
@@ -301,6 +308,21 @@ export function createNativeRuntime(
             { ...input, environmentId: dependencies.engine.store.environmentId },
             createHash("sha256").update(token).digest("hex"),
           ),
+        executeAssistantBackground: (input, actor) => {
+          const authorized = async () =>
+            (await actor.authorized()) &&
+            (await dependencies.assistant.globalRoomBinding())?.id === input.threadId &&
+            (await dependencies.conversationDesktop.authorizeBackgroundCallback(
+              input.relayId,
+              actor.deviceHash,
+              input,
+            )) &&
+            (await actor.authorized());
+          return dependencies.assistantBackgroundEffect.execute(input, {
+            deviceHash: actor.deviceHash,
+            authorized,
+          });
+        },
         visibilityRevoke: async () => {
           const drained = dependencies.visibilityFence.revokeAll();
           const epoch = dependencies.visibilityFence.currentEpoch();

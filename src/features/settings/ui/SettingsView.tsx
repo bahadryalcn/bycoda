@@ -1,3 +1,4 @@
+import { PermissionsSettings } from "../../permissions";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -31,6 +32,7 @@ import {
   settingsSectionsByGroup,
   settingsSectionDescription,
   settingsSectionLabel,
+  settingsSectionForAnchor,
   type CollapsedProjectRailMode,
   type SettingsSectionId,
 } from "../model/settings";
@@ -50,6 +52,7 @@ import {
   Select,
 } from "./settingsControls";
 import { SettingsSearch } from "./SettingsSearch";
+import { settingsRevealControl } from "./settingsReveal";
 import { GeneralPage } from "./GeneralSettings";
 import { PoliciesSettings } from "./PoliciesSettings";
 import { NotificationAlerts } from "./NotificationsSettings";
@@ -65,15 +68,11 @@ import { AppearancePage } from "./AppearanceSettings";
 import { KeybindingsPage } from "./ShortcutSettings";
 import { TerminalPage } from "./TerminalSettings";
 import { ModelsPage } from "./models/ModelsPage";
-import { ProvidersPageGate } from "./ProvidersPageGate";
-import { lazySurface } from "../../../shared/ui/lazySurface";
+import { WorkPage } from "./work/WorkPage";
+import { ProvidersSection } from "./ProvidersSection";
 import { ArchivePage } from "./ArchiveSettings";
-import { SettingsPageLoading } from "./SettingsPageLoading";
-
-const UsagePage = lazySurface(
-  async () => ({ default: (await import("./UsageSettingsPage")).UsageSettingsPage }),
-  { fallback: <SettingsPageLoading lines={8} /> },
-);
+import { ToolSettingsPage } from "./ToolSettings";
+import { toolSettingsAnchorForSection } from "../model/toolSettingsSections";
 
 /**
  * The `data-setting-id` Settings should reveal when it opens: one of the ids in
@@ -124,8 +123,8 @@ type Props = {
 };
 
 export function SettingsView({
-  section,
-  anchor = null,
+  section: requestedSection,
+  anchor: requestedAnchor = null,
   notificationProjectPath = null,
   notificationSettingsRequest = 0,
   recents,
@@ -153,6 +152,8 @@ export function SettingsView({
   onCollapsedProjectRailModeChange,
 }: Props) {
   useLocale();
+  const section = settingsSectionForAnchor(requestedSection) ?? requestedSection;
+  const anchor = requestedAnchor ?? toolSettingsAnchorForSection(requestedSection);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const panelId = useId();
   const categoryRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
@@ -250,14 +251,7 @@ export function SettingsView({
         observer.disconnect();
         target.scrollIntoView?.({ block: "center" });
         // Search should land on the setting itself, not its optional help trigger.
-        const controlRoot =
-          target.querySelector<HTMLElement>(".settings-row-control, .settings-group-content") ??
-          target;
-        const control = [
-          ...controlRoot.querySelectorAll<HTMLElement>(
-            'input:not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled), [tabindex="0"]',
-          ),
-        ].find((element) => element.getClientRects().length > 0);
+        const control = settingsRevealControl(target);
         if (!control && !target.hasAttribute("tabindex")) target.tabIndex = -1;
         (control ?? target).focus({ preventScroll: true });
       });
@@ -426,7 +420,7 @@ export function SettingsView({
               </Text>
             </Button>
           }
-          title={section === "usage" ? t("Provider usage / This machine") : t("Settings")}
+          title={t("Settings")}
           titleAs="div"
           trailing={IS_MAC ? null : <WindowControls />}
         />
@@ -523,6 +517,9 @@ export function SettingsView({
                     <ScrollArea
                       axis="both"
                       gutter="stable"
+                      // Section DOM/effects end on navigation. Feature model owners retain non-secret
+                      // drafts, acknowledged baselines and pending/error ownership by Host/target identity.
+                      // Keep permission reads and secret-bearing dialogs out of hidden mounted pages.
                       key={section}
                       data-settings-scroller
                       ref={lockOverscroll}
@@ -535,6 +532,11 @@ export function SettingsView({
                       >
                         {section === "general" ? (
                           <GeneralPage onOpenWhatsNew={onOpenWhatsNew} />
+                        ) : null}
+                        {section === "tools" ? (
+                          <ToolSettingsPage
+                            revealRequest={revealRequest + notificationSettingsRequest}
+                          />
                         ) : null}
                         {section === "crews" ? (
                           <div className="settings-topics">
@@ -568,6 +570,7 @@ export function SettingsView({
                             <WorkspaceEditorSettings />
                           </WorkspacePage>
                         ) : null}
+                        {section === "permissions" ? <PermissionsSettings /> : null}
                         {section === "notifications" ? (
                           <div className="settings-topics">
                             <NotificationAlerts />
@@ -592,11 +595,10 @@ export function SettingsView({
                         {section === "terminal" ? <TerminalPage /> : null}
                         {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
                         {section === "providers" ? (
-                          <ProvidersPageGate cwd={cwd} recents={recents} />
+                          <ProvidersSection cwd={cwd} recents={recents} />
                         ) : null}
                         {section === "models" ? <ModelsPage cwd={cwd} recents={recents} /> : null}
-                        {section === "usage" ? <UsagePage /> : null}
-                        {section === "limits" ? <UsagePage limitsOnly /> : null}
+                        {section === "work" ? <WorkPage cwd={cwd} recents={recents} /> : null}
                         {section === "worktrees" ? (
                           <div className="settings-topics">
                             <SourceControlSettings />

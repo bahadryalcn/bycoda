@@ -110,7 +110,7 @@ export type TaskReviewNote = {
   resolvedAt?: number;
 };
 
-export const TASK_SOURCES = ["manual", "goal", "steward"] as const;
+export const TASK_SOURCES = ["manual", "goal", "steward", "automation"] as const;
 export type TaskSource = (typeof TASK_SOURCES)[number];
 
 export type HostTaskInput = {
@@ -145,6 +145,8 @@ export type HostTaskInput = {
   runtimeMode: RuntimeMode;
   /** Stop a run still going after this long; zero means off. */
   maxRunMinutes: number;
+  /** Use the Work default at first execution; keep the resolved value on retries. */
+  inheritMaxRunMinutes?: true;
   /** Run on a new branch in its own worktree when the project is a git
    * repository. A task saved before this existed counts as true. */
   isolate?: boolean;
@@ -167,12 +169,15 @@ export type HostTaskInput = {
   source?: TaskSource;
   /** The steward that proposed this task. */
   stewardId?: string;
+  automationId?: string;
+  automationRunId?: string;
   /** Tasks that must be done (merged) before this one starts. */
   dependsOn?: string[];
 };
 
 /** Wire-only clear sentinel; persisted tasks keep a normalized optional profile. */
-export type HostTaskWireInput = Omit<HostTaskInput, "reviewerConfig"> & {
+export type HostTaskWireInput = Omit<HostTaskInput, "reviewerConfig" | "maxRunMinutes"> & {
+  maxRunMinutes?: number;
   reviewerConfig?: HostTaskInput["reviewerConfig"] | null;
 };
 
@@ -188,6 +193,12 @@ export interface TaskDeliveryArtifactsPreview {
 export type TaskDeliveryReview = BranchDeliveryPlan & { artifacts?: TaskDeliveryArtifactsPreview };
 
 export type HostTask = HostTaskInput & {
+  /** Runtime admission hold; the owner configuration parser never accepts it. */
+  modelRoutingWait?: { reason: string; retryAt?: number };
+  /** Owner-only invocation identity; scheduler retries retain the same occurrence. */
+  workInvocationId?: string;
+  /** First execution freezes the inherited runtime across repairs and recovery. */
+  runtimeLimitResolvedAt?: number;
   /** Registry identity survives directory retirement; paths are only materialization hints. */
   workspaceId?: string;
   /** Durable attempt identity keeps prepare retries idempotent without reusing an already delivered workspace. */
@@ -239,6 +250,34 @@ export type HostTask = HostTaskInput & {
   retryFeedback?: string;
   /** Automatic correction runs used by a goal/steward task, persisted across restarts. */
   repairAttempts?: number;
+  /** Host-owned committed-conflict recovery identity; never accepted from task input. */
+  conflictRecovery?: {
+    childId: string;
+    sourceHead: string;
+    targetHead: string;
+    targetDirectory: string;
+    targetBranch: string;
+  };
+  conflictParent?: {
+    id: string;
+    createdAt: number;
+    workInvocationId?: string;
+    sourceHead: string;
+    targetHead: string;
+    targetDirectory: string;
+    targetBranch: string;
+  };
+  repairAdvisor?: {
+    requestId: string;
+    sessionId: string;
+    findings: string;
+    feedback: string;
+    error: string;
+    fingerprint: string;
+    runtimeRetryNotice?: { id: string; message: string; at: number };
+    takeover?: boolean;
+  };
+
   /** Failed reviews since the owner last changed the task instructions. */
   reviewFailureCount?: number;
   /** Saving instructions does not silently restart blocked work. */
@@ -479,6 +518,8 @@ export function parseHostTask(input: unknown): HostTaskInput {
   )
     throw new Error("Invalid model settings");
   const limit = v.maxRunMinutes ?? 0;
+  if (v.inheritMaxRunMinutes !== undefined && v.inheritMaxRunMinutes !== true)
+    throw new Error("Invalid task run limit");
   if (!Number.isInteger(limit) || Number(limit) < 0 || Number(limit) > 10_080)
     throw new Error("Invalid task run limit");
   if (
@@ -500,6 +541,9 @@ export function parseHostTask(input: unknown): HostTaskInput {
     throw new Error("Invalid task source");
   if (v.stewardId !== undefined && (typeof v.stewardId !== "string" || !ID.test(v.stewardId)))
     throw new Error("Invalid task steward");
+  for (const field of ["automationId", "automationRunId"])
+    if (v[field] !== undefined && (typeof v[field] !== "string" || !ID.test(v[field] as string)))
+      throw new Error("Invalid task automation origin");
   if (
     v.dependsOn !== undefined &&
     (!Array.isArray(v.dependsOn) ||
@@ -537,6 +581,8 @@ export function parseHostTask(input: unknown): HostTaskInput {
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,
     maxRunMinutes: Number(limit),
+    inheritMaxRunMinutes:
+      v.maxRunMinutes === undefined || v.inheritMaxRunMinutes === true ? true : undefined,
     ...(v.crewDefinitionId
       ? { isolate: false }
       : v.isolate === undefined
@@ -551,6 +597,8 @@ export function parseHostTask(input: unknown): HostTaskInput {
     ...(typeof v.goalId === "string" ? { goalId: v.goalId } : {}),
     ...(typeof v.source === "string" ? { source: v.source as TaskSource } : {}),
     ...(typeof v.stewardId === "string" ? { stewardId: v.stewardId } : {}),
+    ...(typeof v.automationId === "string" ? { automationId: v.automationId } : {}),
+    ...(typeof v.automationRunId === "string" ? { automationRunId: v.automationRunId } : {}),
     ...(Array.isArray(v.dependsOn) ? { dependsOn: [...new Set(v.dependsOn as string[])] } : {}),
   };
 }

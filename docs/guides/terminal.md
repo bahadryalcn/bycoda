@@ -18,6 +18,11 @@ active terminal. Closing asks first when a process is still running in that term
 or when it is the last one, because closing the last terminal also closes the panel.
 Holding the toggle chord switches the dock once, not on every key repeat.
 
+Switching projects dismisses the previous dock's menus so their actions cannot
+target the newly selected project. If a native terminal close request fails, a
+replacement using that terminal identity retries the old close request before
+starting; a close error is not treated as a successful shutdown.
+
 Host terminal history no longer consumes active-terminal slots after confirmed
 exit. Recent output remains bounded; do not treat it as permanent storage.
 If a mobile terminal close reports that exit is unconfirmed, keep its existing
@@ -30,6 +35,10 @@ move between matches. The result indicator shows the current match and count whe
 the search addon supplies them, or a bounded-results notice for large result sets.
 Searching does not send text to the shell. Selection and copying retain the original
 terminal text.
+
+IME candidate confirmation leaves Find and suggestion selection unchanged,
+including WebKit's final composition key event. Shell editing shortcuts also
+leave composition to the terminal input handler.
 
 Terminal colors follow the surrounding pane and shared appearance roles. Where the
 pane's effective solid background can be resolved, the renderer applies its normal

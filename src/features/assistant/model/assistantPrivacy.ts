@@ -56,6 +56,8 @@ function activityVisible(
   source: AssistantSnapshot,
   scope: AssistantPrivacyScope,
 ): boolean {
+  if (Array.isArray(item.projectIds))
+    return item.projectIds.every((id) => scope.projectIds.has(id));
   if (item.jobId)
     return source.jobs.some(
       (job) => job.id === item.jobId && assistantJobVisible(job, (id) => scope.projectIds.has(id)),

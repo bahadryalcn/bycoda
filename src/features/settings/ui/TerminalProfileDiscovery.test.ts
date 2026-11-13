@@ -175,3 +175,70 @@ it("does not save a connection receipt after its provider was changed", async ()
   expect(providerAccounts("claude").map((account) => account.id)).not.toContain(profile.id);
   expect(providerAccounts("codex").map((account) => account.id)).not.toContain(profile.id);
 });
+
+it("shows automatic discovery errors and clears them after a successful retry", async () => {
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("Automatic discovery failed"));
+  await act(async () =>
+    root.render(
+      createElement(TerminalProfileDiscovery, {
+        provider: "claude",
+        disabled: false,
+        autoDiscover: true,
+      }),
+    ),
+  );
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Automatic discovery failed");
+  vi.mocked(invoke).mockResolvedValueOnce([]);
+  await click("Find terminal profiles");
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+});
+
+it.each(["success", "failure"])(
+  "ignores stale automatic discovery %s after manual discovery",
+  async (outcome) => {
+    let settle!: (value: unknown) => void;
+    vi.mocked(invoke).mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          settle = outcome === "success" ? resolve : reject;
+        }),
+    );
+    await act(async () =>
+      root.render(
+        createElement(TerminalProfileDiscovery, {
+          provider: "claude",
+          disabled: false,
+          autoDiscover: true,
+        }),
+      ),
+    );
+    vi.mocked(invoke).mockResolvedValueOnce([
+      { id: "manual", provider: "claude", label: "Manual result", path: "C:/manual" },
+    ]);
+    await click("Find terminal profiles");
+    await act(async () => settle(outcome === "success" ? [] : new Error("Stale failure")));
+    expect(document.body.textContent).toContain("Manual result");
+    expect(document.body.textContent).not.toContain("Stale failure");
+  },
+);
+
+it("keeps Find label while connecting another profile", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce([
+    { id: "profile", provider: "claude", label: "Profile", path: "C:/profile" },
+  ]);
+  await click("Find terminal profiles");
+  let finish!: (value: unknown) => void;
+  vi.mocked(invoke).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await click("Connect");
+  expect(document.querySelector('button[aria-label="Find terminal profiles"]')?.textContent).toBe(
+    "Find terminal profiles",
+  );
+  await act(async () =>
+    finish({ id: "profile", provider: "claude", label: "Profile", path: "C:/profile" }),
+  );
+});

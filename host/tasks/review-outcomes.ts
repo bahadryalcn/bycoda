@@ -56,7 +56,7 @@ export function ownerNotice(
 
 /** A worker run succeeded and left a usable failed review or check result. */
 export function completableWithFindings(task: HostTask): boolean {
-  if (task.crewRunId || task.mergeRepair || task.reviewOnly || !task.sessionId) return false;
+  if (task.mergeRepair || task.reviewOnly || (!task.sessionId && !task.crewRunId)) return false;
   const { review, command } = task.verification ?? {};
   return Boolean(
     (review?.verdict === "fail" && review.note !== NO_VERDICT) ||

@@ -126,7 +126,11 @@ export function DesktopHelperSetup({
           ? t("Not installed")
           : t("Checking…");
   return (
-    <Row label={t("Helper")} feedback={message ? <InlineError>{message}</InlineError> : undefined}>
+    <Row
+      label={t("Helper")}
+      description={t("Helper readiness is separate from OS access and running computer use.")}
+      feedback={message ? <InlineError>{message}</InlineError> : undefined}
+    >
       <Badge
         role="status"
         appearance="subtle"

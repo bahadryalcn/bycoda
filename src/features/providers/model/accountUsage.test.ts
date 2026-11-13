@@ -106,7 +106,7 @@ describe("accountStatus", () => {
   it("reads Exhausted with the latest reset of the used-up windows", () => {
     expect(
       accountStatus(limits(window(100, now + 31 * 60_000), window(100, now + 2 * HOUR)), now),
-    ).toEqual({ tone: "exhausted", label: "Exhausted", detail: "back in 2h" });
+    ).toEqual({ tone: "exhausted", label: "Exhausted", detail: "Resets in 2h" });
   });
 
   it("reads Checking while the first snapshot loads", () => {

@@ -239,3 +239,5 @@ export function socialBrowserUrl(
     );
   return url;
 }
+/** Display-only tab metadata. Chrome endpoints and authentication remain on the Host. */
+export type SocialChromeTab = { id: string; title: string; site: string };

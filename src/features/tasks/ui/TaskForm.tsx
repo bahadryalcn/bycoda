@@ -3,6 +3,11 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { projectDisplayName } from "../../projects/public/projectNames";
 import { Button } from "../../../shared/ui/Button";
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import {
+  AUTOMATIC_SUBAGENTS,
+  CROSS_SUBAGENTS_KEY,
+} from "../../../shared/model/host-contracts/delegation";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
@@ -29,6 +34,7 @@ import { looksLikeProject, type RecentProject } from "../../projects/public/rece
 import {
   ProjectDiscoveryStatus,
   RUN_TIME_LIMIT_OPTIONS,
+  INHERITED_RUN_TIME_LIMIT_OPTION,
   TaskExecutionMode,
 } from "./TaskFormFields";
 
@@ -106,6 +112,7 @@ export function TaskForm({
       Boolean(draft.verifyCommand?.trim()) ||
       Boolean(draft.budget) ||
       Boolean(draft.preflightRequirements?.length) ||
+      draft.modelSettings[CROSS_SUBAGENTS_KEY] !== undefined ||
       Boolean(draft.workflowId),
   );
   const update = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) =>
@@ -280,9 +287,13 @@ export function TaskForm({
                   variant="pill"
                   searchable={false}
                   label={t("Time limit")}
-                  value={String(draft.maxRunMinutes)}
-                  options={RUN_TIME_LIMIT_OPTIONS}
-                  onChange={(value) => update("maxRunMinutes", Number(value))}
+                  value={
+                    draft.maxRunMinutes === undefined ? "inherit" : String(draft.maxRunMinutes)
+                  }
+                  options={[INHERITED_RUN_TIME_LIMIT_OPTION, ...RUN_TIME_LIMIT_OPTIONS]}
+                  onChange={(value) =>
+                    update("maxRunMinutes", value === "inherit" ? undefined : Number(value))
+                  }
                 />
               </Text>
             ) : null}
@@ -326,6 +337,21 @@ export function TaskForm({
                   monospace
                 />
               </Text>
+              {!draft.crewDefinitionId ? (
+                <Checkbox
+                  label={t("Allow subagents")}
+                  checked={draft.modelSettings[CROSS_SUBAGENTS_KEY] !== "[]"}
+                  disabled={saving}
+                  onChange={(event) =>
+                    update("modelSettings", {
+                      ...draft.modelSettings,
+                      [CROSS_SUBAGENTS_KEY]: event.currentTarget.checked
+                        ? AUTOMATIC_SUBAGENTS
+                        : "[]",
+                    })
+                  }
+                />
+              ) : null}
               {!draft.crewDefinitionId ? (
                 <Disclosure
                   className="task-advanced-options"

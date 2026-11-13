@@ -26,6 +26,6 @@ describe("chipImageAction", () => {
 
   it("draws when the chip has no image or the last one failed", () => {
     expect(chipImageAction(undefined)).toBe("draw");
-    expect(chipImageAction({ status: "error" })).toBe("draw");
+    expect(chipImageAction({ status: "error", detail: "failed" })).toBe("draw");
   });
 });

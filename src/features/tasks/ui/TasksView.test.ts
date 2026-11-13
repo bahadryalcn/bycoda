@@ -204,6 +204,8 @@ function host(
       return { ...limits, ...args.params.settings };
     if (args.method === "tasks.move") return { ...tasks[0], status: args.params.to };
     if (args.method === "tasks.review.recheck") return { ...tasks[0], status: "verifying" };
+    if (args.method === "tasks.finishWithFindings")
+      return { ...tasks[0], status: "review", completedWithFindings: true, error: undefined };
     if (args.method === "tasks.notes.read" || args.method === "tasks.notes.resolve") {
       const target = tasks.find((task) => task.id === args.params.taskId)!;
       target.reviewNotes = target.reviewNotes?.map((note) => {
@@ -359,12 +361,13 @@ it("defers hidden board reads, resumes on focus and pauses interval requests whi
 it("opens task and goal creation in dialogs with workspace and start choices", async () => {
   host([], ["tasks", "tasks.todo", "goals", "tasks.workspaces"]);
   await render();
-  await pickAction(container, "New goal");
+  await pickAction(container, "New epic");
+  expect(document.body.textContent).not.toContain("New goal");
   const dialog = document.querySelector('[role="dialog"]')!;
   expect(dialog).toBeTruthy();
   expect(dialog.textContent).toContain("Working branch and worktree");
   expect(dialog.textContent).toContain("Start planned tasks");
-  expect(dialog.textContent).toContain("Concurrent tasks in this goal");
+  expect(dialog.textContent).toContain("Concurrent tasks in this epic");
   await act(async () => button(dialog, "Cancel")!.click());
   await act(async () => button(container, "New task")!.click());
   expect(document.querySelector('[role="dialog"] form[aria-label="New task"]')).toBeTruthy();
@@ -401,7 +404,7 @@ it("starts in the open project's backlog and creates in the explicitly selected 
       .click(),
   );
   const choice = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
-    (option) => option.textContent?.includes("other ·"),
+    (option) => option.textContent?.includes("other Â·"),
   )!;
   await act(async () => choice.click());
   expect(list()?.textContent).not.toContain("Project A work");
@@ -522,7 +525,7 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   expect(actions("running")).toEqual(["Stop"]);
   expect(actions("review")).toEqual(["Approve", "More actions"]);
   expect(actions("done")).toEqual(["Run again", "More actions"]);
-  expect(actions("blocked")).toEqual(["Failed · Not signed in", "Retry", "More actions"]);
+  expect(actions("blocked")).toEqual(["Failed Â· Not signed in", "Retry", "More actions"]);
   await act(async () => button(column("blocked"), "More actions")!.click());
   expect(Array.from(document.body.querySelectorAll('[role="menu"] button'), buttonName)).toEqual([
     "Move to To do",
@@ -554,7 +557,7 @@ it("searches goal filters in the compact popover, marks active scope and resets 
   const trigger = button(container, "Filters")!;
   await act(async () => trigger.click());
   await act(async () =>
-    document.querySelector<HTMLButtonElement>('button[aria-label^="Show goal:"]')!.click(),
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Show epic:"]')!.click(),
   );
   const choice = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
     (option) => option.dataset.value !== "all",
@@ -585,7 +588,7 @@ it("keeps a goal filter when the task tool is reopened without retaining its ope
   await render();
   await act(async () => button(container, "Filters")!.click());
   await act(async () =>
-    document.querySelector<HTMLButtonElement>('button[aria-label^="Show goal:"]')!.click(),
+    document.querySelector<HTMLButtonElement>('button[aria-label^="Show epic:"]')!.click(),
   );
   const choice = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
     (option) => option.dataset.value !== "all",
@@ -880,7 +883,7 @@ it("offers to merge a reviewed branch and shows what was checked", async () => {
   await act(async () => statusLine(card).click());
   const details = document.body.querySelector('[role="dialog"]')!;
   expect(details.textContent).toContain("Check command passed");
-  expect(details.textContent).toContain("Reviewer passed · Covers the week.");
+  expect(details.textContent).toContain("Reviewer passed Â· Covers the week.");
   expect(details.querySelector("details")!.open).toBe(false);
   expect(details.querySelector("details pre")!.textContent).toBe("12 tests passed");
   expect(details.textContent).toContain("The project has uncommitted changes.");
@@ -932,8 +935,9 @@ it("offers the branch, check and review options on a new task", async () => {
   await render();
   await act(async () => button(container, "New task")!.click());
   const form = document.querySelector('form[aria-label="New task"]')!;
-  // The agent controls are tucked away until asked for.
-  expect(form.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
+  // Subagent permission stays visible; other agent controls are tucked away.
+  expect(form.querySelectorAll('input[type="checkbox"]')).toHaveLength(1);
+  expect(checkboxNamed(form, "Allow subagents").checked).toBe(true);
   expect(form.querySelector('button[aria-label="Execution mode: Automatic"]')).not.toBeNull();
   await openAgentSettings(form);
   const boxes = Array.from(form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
@@ -941,8 +945,9 @@ it("offers the branch, check and review options on a new task", async () => {
     "Review with a second agent",
     "Merge automaticallyAutomatic merge is suspended. Review changes to renew approval.",
     "Continue until completeKeeps correcting while progress is made; asks for input when needed.",
+    "Allow subagents",
   ]);
-  expect(boxes.map((box) => box.checked)).toEqual([false, false, true]);
+  expect(boxes.map((box) => box.checked)).toEqual([false, false, true, true]);
   expect(form.querySelector<HTMLInputElement>('input[placeholder="npm test"]')!.value).toBe("");
   await act(async () => boxes[0].click());
   const reviewerProfile = Array.from(
@@ -951,6 +956,32 @@ it("offers the branch, check and review options on a new task", async () => {
   expect(reviewerProfile.checked).toBe(false);
   await act(async () => reviewerProfile.click());
   expect(form.textContent).toContain("Reviewer instructions");
+});
+
+it("retains the subagent permission when saving and reopening task settings", async () => {
+  const tasks = [task({ status: "todo", modelSettings: { crossSubagents: "auto" } })];
+  host(tasks);
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (command: string, args?: any) => {
+    if (command === "remote_request" && args.method === "tasks.save") {
+      Object.assign(tasks[0], args.params.task);
+      return tasks[0];
+    }
+    return original(command, args);
+  });
+  await render();
+  for (const enabled of [false, true]) {
+    await pickAction(card("Ship the report"), "Edit");
+    const form = document.querySelector('form[aria-label="Edit task"]')!;
+    const permission = checkboxNamed(form, "Allow subagents");
+    expect(permission.checked).toBe(!enabled);
+    await act(async () => permission.click());
+    await act(async () => button(form, "Save")!.click());
+    expect(tasks[0].modelSettings.crossSubagents).toBe(enabled ? "auto" : "[]");
+  }
+  await pickAction(card("Ship the report"), "Edit");
+  const reopened = document.querySelector('form[aria-label="Edit task"]')!;
+  expect(checkboxNamed(reopened, "Allow subagents").checked).toBe(true);
 });
 
 it("shows one Working branch and worktree heading and keeps the machine limit out of the task", async () => {
@@ -1157,8 +1188,8 @@ it.each(["local", "remote"])(
     );
     await act(async () => {});
     await allProjects();
-    await pickAction(container, "New goal");
-    const form = document.querySelector('form[aria-label="New goal"]')!;
+    await pickAction(container, "New epic");
+    const form = document.querySelector('form[aria-label="New epic"]')!;
     expect(form.querySelector('[aria-label="Machine: This computer"]')).toBeTruthy();
     if (destination === "remote") {
       await act(async () =>
@@ -1182,7 +1213,7 @@ it.each(["local", "remote"])(
       await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
     }
     await act(async () => {
-      type(form.querySelector('input[aria-label="Goal title"]')!, "Complete here");
+      type(form.querySelector('input[aria-label="Epic title"]')!, "Complete here");
       type(
         form.querySelector('textarea[aria-label="Main job"]')!,
         "Work on the selected machine until finished",
@@ -1235,11 +1266,14 @@ it("does not label a continuous runtime failure as an exhausted correction budge
     }),
   ]);
   await render();
-  expect(statusLine(column("blocked")).textContent).toContain("Failed · Provider disconnected");
+  expect(statusLine(column("blocked")).textContent).toContain(
+    "Waiting for your instructions \u00b7 Provider disconnected",
+  );
   await act(async () => statusLine(column("blocked")).click());
   expect(document.body.textContent).toContain("Provider disconnected");
   expect(column("blocked").textContent).not.toContain("attempt limit reached");
-  expect(button(column("blocked"), "Retry")).toBeTruthy();
+  expect(button(column("blocked"), "Retry")).toBeUndefined();
+  expect(button(column("blocked"), "Update instructions")).toBeTruthy();
 });
 
 it("says so when the project's machine cannot take a task", async () => {
@@ -1249,7 +1283,7 @@ it("says so when the project's machine cannot take a task", async () => {
   await act(async () => button(container, "New task")!.click());
   const form = document.querySelector('form[aria-label="New task"]')!;
   expect(form.querySelector('[role="alert"]')?.textContent).toContain(
-    "isn’t connected, or its bycoda Host needs an update",
+    "isnâ€™t connected, or its bycoda Host needs an update",
   );
   expect(isDisabled(button(form, "Add to To do")!)).toBe(true);
   expect(isDisabled(button(form, "Add and start")!)).toBe(true);
@@ -1280,9 +1314,9 @@ it("edits an existing goal on its own host without replanning", async () => {
   );
   await render();
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Edit goal settings"]')!.click(),
+    container.querySelector<HTMLButtonElement>('button[aria-label="Edit epic settings"]')!.click(),
   );
-  const form = document.querySelector<HTMLFormElement>('form[aria-label="Edit goal settings"]')!;
+  const form = document.querySelector<HTMLFormElement>('form[aria-label="Edit epic settings"]')!;
   expect(form.textContent).toContain(
     "Delivery requires approval of the reviewed source and target.",
   );
@@ -1308,7 +1342,7 @@ it("edits an existing goal on its own host without replanning", async () => {
       (request) => request.method === "goals.create" || request.method === "goals.replan",
     ),
   ).toBe(false);
-  expect(document.querySelector('form[aria-label="Edit goal settings"]')).toBeNull();
+  expect(document.querySelector('form[aria-label="Edit epic settings"]')).toBeNull();
 });
 
 it("keeps goal settings and reports a failed save inline", async () => {
@@ -1320,14 +1354,14 @@ it("keeps goal settings and reports a failed save inline", async () => {
   const originalInvoke = invoke.getMockImplementation()!;
   invoke.mockImplementation(async (command, args: any) => {
     if (command === "remote_request" && args?.method === "goals.update")
-      throw new Error("This goal changed. Close and reopen settings before saving.");
+      throw new Error("This epic changed. Close and reopen settings before saving.");
     return originalInvoke(command, args);
   });
   await render();
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label="Edit goal settings"]')!.click(),
+    container.querySelector<HTMLButtonElement>('button[aria-label="Edit epic settings"]')!.click(),
   );
-  const form = document.querySelector<HTMLFormElement>('form[aria-label="Edit goal settings"]')!;
+  const form = document.querySelector<HTMLFormElement>('form[aria-label="Edit epic settings"]')!;
   await act(async () => checkboxNamed(form, "Merge automatically").click());
   await act(async () =>
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
@@ -1341,10 +1375,10 @@ it("disables goal settings on hosts without the update capability", async () => 
   host([], ["tasks", "goals"], [goal({ status: "running" })]);
   await render();
   const edit = container.querySelector<HTMLButtonElement>(
-    'button[aria-label="Edit goal settings"]',
+    'button[aria-label="Edit epic settings"]',
   )!;
   expect(edit.disabled).toBe(true);
-  expect(await tooltipText(edit)).toBe("Update the selected host to edit goal settings.");
+  expect(await tooltipText(edit)).toBe("Update the selected host to edit epic settings.");
 });
 
 it("reveals an explicitly requested goal without issuing an approval", async () => {
@@ -1370,7 +1404,7 @@ it("reveals an explicitly requested goal without issuing an approval", async () 
   await vi.waitFor(() => {
     const details = container.querySelector<HTMLDetailsElement>(".task-goals-disclosure");
     expect(details?.open).toBe(true);
-    const list = details!.querySelector('ul[aria-label="Goals"]')!;
+    const list = details!.querySelector('ul[aria-label="Epics"]')!;
     expect(list.textContent).toContain("Launch the beta");
     expect(list.textContent).not.toContain("Other goal");
   });
@@ -1411,14 +1445,14 @@ it("shows a plan waiting for approval and asks the goal's machine to approve it"
   const card = container.querySelector<HTMLElement>('article[aria-label="Launch the beta"]')!;
   expect(card.textContent).toContain("Plan ready");
   expect(card.querySelector('[aria-label="Plan"]')!.textContent).toContain(
-    "Call the endpointin project· after Add the endpoint",
+    "Call the endpointin projectÂ· after Add the endpoint",
   );
   // The project list keeps an inert measuring copy of its "+N" button.
   expect(
     Array.from(card.querySelectorAll("button"))
       .filter((control) => !control.closest("[inert]"))
       .map(buttonName),
-  ).toEqual(["Edit goal settings", "More actions", "Approve", "Replan"]);
+  ).toEqual(["Edit epic settings", "More actions", "Approve", "Replan"]);
   await act(async () => button(card, "More actions")!.click());
   expect(button(document.body.querySelector('[role="menu"]')!, "Cancel")).toBeTruthy();
   expect(button(document.body.querySelector('[role="menu"]')!, "Delete")).toBeTruthy();
@@ -1465,14 +1499,14 @@ it("labels a goal's tasks and says what a task waits for", async () => {
 it("defaults a new goal to direct work with final acceptance on and plan/task review off", async () => {
   host([], ["tasks", "goals"]);
   await render();
-  await pickAction(container, "New goal");
-  const form = document.querySelector('form[aria-label="New goal"]')!;
+  await pickAction(container, "New epic");
+  const form = document.querySelector('form[aria-label="New epic"]')!;
   const boxes = Array.from(form.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
   expect(boxes.map(checkLabel)).toEqual([
     "Continue until complete",
     "Review the plan before starting",
     "Review each task with a second agent",
-    "Verify the integrated result before completing this goal",
+    "Verify the integrated result before completing this epic",
     "Merge automaticallyAutomatic merge is suspended. Review changes to renew approval.",
   ]);
   expect(form.textContent).toContain(
@@ -1566,10 +1600,10 @@ it("rejects a goal's required final acceptance on an older host before creating 
     return original(command, args);
   });
   await render();
-  await pickAction(container, "New goal");
-  const form = document.querySelector('form[aria-label="New goal"]')!;
+  await pickAction(container, "New epic");
+  const form = document.querySelector('form[aria-label="New epic"]')!;
   await act(async () => {
-    type(form.querySelector('input[aria-label="Goal title"]')!, "Integrate checkout");
+    type(form.querySelector('input[aria-label="Epic title"]')!, "Integrate checkout");
     type(
       form.querySelector('textarea[aria-label="Main job"]')!,
       "Verify the complete checkout flow",
@@ -1781,7 +1815,7 @@ it("opens a task's details from its card, and closes them with Escape", async ()
   expect(details.textContent).toContain("Review");
   expect(details.textContent).toContain("mc/abcd1234");
   expect(details.textContent).toContain("12 tests passed");
-  expect(details.textContent).toContain("Reviewer passed · Covers the week.");
+  expect(details.textContent).toContain("Reviewer passed Â· Covers the week.");
   expect(details.textContent).toContain("report.md | 1 +");
   // The board stays visible beside it.
   expect(column("review")).toBeTruthy();
@@ -2103,7 +2137,7 @@ it("lists stewards in a panel with their schedule and last run", async () => {
       steward({
         lastRunAt: Date.now() - 5 * 60_000,
         lastRunStatus: "failed",
-        lastRunError: "The steward’s reply has no json block.",
+        lastRunError: "The stewardâ€™s reply has no json block.",
       }),
     ],
   );
@@ -2115,7 +2149,7 @@ it("lists stewards in a panel with their schedule and last run", async () => {
   expect(card.textContent).toContain("on this computer");
   expect(card.textContent).toContain("Daily at");
   expect(card.textContent).toContain("Last run: Failed 5m ago");
-  expect(card.textContent).toContain("The steward’s reply has no json block.");
+  expect(card.textContent).toContain("The stewardâ€™s reply has no json block.");
   expect(card.textContent).toContain("Next run");
   expect(Array.from(card.querySelectorAll("button"), buttonName)).toEqual([
     "Enabled",
@@ -2249,8 +2283,8 @@ it("does not enable automatic delivery from a new task preference", async () => 
 it("sends direct goal execution and disables merge for the selected checkout", async () => {
   const requests = host([], ["tasks", "goals", "goals.direct-checkout"]);
   await render();
-  await pickAction(container, "New goal");
-  const form = document.querySelector('form[aria-label="New goal"]')!;
+  await pickAction(container, "New epic");
+  const form = document.querySelector('form[aria-label="New epic"]')!;
   expect(form.querySelector('button[aria-label="Execution mode: Automatic"]')).not.toBeNull();
   await chooseExecutionMode(form, "Shared checkout");
   expect(form.textContent).toContain("Tasks work directly in the selected checkout");
@@ -2259,7 +2293,7 @@ it("sends direct goal execution and disables merge for the selected checkout", a
     ?.querySelector<HTMLInputElement>("input");
   expect(merge?.disabled).toBe(true);
   await act(async () =>
-    type(form.querySelector<HTMLInputElement>('input[aria-label="Goal title"]')!, "Direct"),
+    type(form.querySelector<HTMLInputElement>('input[aria-label="Epic title"]')!, "Direct"),
   );
   await act(async () =>
     type(form.querySelector<HTMLTextAreaElement>('textarea[aria-label="Main job"]')!, "Work here"),
@@ -2273,8 +2307,8 @@ it("sends direct goal execution and disables merge for the selected checkout", a
 it("does not enable automatic delivery from goal or steward preferences", async () => {
   const requests = host([], ["tasks", "goals", "stewards"]);
   await render();
-  await pickAction(container, "New goal");
-  const goalForm = document.querySelector('form[aria-label="New goal"]')!;
+  await pickAction(container, "New epic");
+  const goalForm = document.querySelector('form[aria-label="New epic"]')!;
   const goalBoxes = Array.from(
     goalForm.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
   );
@@ -2285,7 +2319,7 @@ it("does not enable automatic delivery from goal or steward preferences", async 
   expect(merge.disabled).toBe(true);
   await act(async () => merge.click());
   await act(async () =>
-    type(goalForm.querySelector<HTMLInputElement>('input[aria-label="Goal title"]')!, "Launch"),
+    type(goalForm.querySelector<HTMLInputElement>('input[aria-label="Epic title"]')!, "Launch"),
   );
   await act(async () =>
     type(
@@ -2343,7 +2377,7 @@ it("routes task work limits to the Models order page", async () => {
   const open = vi.fn();
   window.addEventListener("bycoda:open-models-settings", open);
   try {
-    await act(async () => button(container, "Manage in Models")!.click());
+    await act(async () => button(container, "Manage models")!.click());
     expect(open).toHaveBeenCalledWith(expect.objectContaining({ detail: "order" }));
     expect(requests.some((request) => request.method === "host.settings.save")).toBe(false);
   } finally {
@@ -2355,10 +2389,10 @@ it("toggles the Models limits notice without changing tasks or Host settings", a
   const requests = host([task({ status: "todo" })], LIMIT_CAPABILITIES, [], [], LIMITS);
   await render(undefined, "backlog");
   await pickAction(container, "Limits");
-  expect(button(container, "Manage in Models")).toBeDefined();
+  expect(button(container, "Manage models")).toBeDefined();
   expect(container.textContent).toContain("Ship the report");
   await pickAction(container, "Limits");
-  expect(button(container, "Manage in Models")).toBeUndefined();
+  expect(button(container, "Manage models")).toBeUndefined();
   expect(container.textContent).toContain("Ship the report");
   expect(requests.some((request) => request.method === "host.settings.save")).toBe(false);
 });
@@ -2373,9 +2407,9 @@ it.each([
     method: "tasks.save",
   },
   {
-    action: "New goal",
-    form: "New goal",
-    title: "Goal title",
+    action: "New epic",
+    form: "New epic",
+    title: "Epic title",
     body: "Main job",
     submit: "Plan it",
     method: "goals.create",
@@ -2457,7 +2491,7 @@ it("keeps the Models limits link usable when Host limit reads fail", async () =>
   await render();
   await pickAction(container, "Limits");
   expect(container.textContent).toContain("Unattended work limits are managed in Models.");
-  expect(isDisabled(button(container, "Manage in Models")!)).toBe(false);
+  expect(isDisabled(button(container, "Manage models")!)).toBe(false);
   expect(
     document.querySelector('form[aria-label="Custom daily agent time on this computer"]'),
   ).toBeNull();
@@ -2766,4 +2800,27 @@ it("retains task rows and disables duplicate refresh while the network read is p
   expect(attempts).toBe(1);
   await act(async () => release([task({ title: "Retained task", status: "todo" })]));
   expect(isDisabled(button(container, "Refresh")!)).toBe(false);
+});
+
+it("finishes the owner's exact failed result through the findings action", async () => {
+  const requests = host(
+    [
+      task({
+        status: "blocked",
+        sessionId: "worker",
+        repairAttempts: 1,
+        error: "Review failed: Defect remains",
+        verification: {
+          review: { verdict: "fail", note: "Defect remains", sessionId: "reviewer" },
+        },
+      }),
+    ],
+    ["tasks", "tasks.todo", "tasks.finish-with-findings"],
+  );
+  await render();
+  await pickAction(card("Ship the report"), "Finish with findings");
+  expect(requests.find((request) => request.method === "tasks.finishWithFindings")?.params).toEqual(
+    { taskId: "main", expectedUpdatedAt: 1 },
+  );
+  expect(requests.some((request) => request.method === "tasks.move")).toBe(false);
 });

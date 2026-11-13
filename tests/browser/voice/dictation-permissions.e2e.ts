@@ -3,6 +3,160 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
 const captures = join(process.cwd(), "temp/verification/2026-11-04-dictation-permissions");
+
+for (const theme of ["light", "dark"]) {
+  test(`dictation zoom 200 percent ${theme}`, async ({ page }) => {
+    const output = join(process.cwd(), "temp/verification/voice-dictation-parity");
+    await mkdir(output, { recursive: true });
+    await page.setViewportSize({ width: 1280, height: 1000 });
+    await page.goto(
+      `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&data=worst&surface=settings`,
+    );
+    await page.evaluate(() => {
+      document.documentElement.style.zoom = "2";
+    });
+    await page.getByRole("button", { name: "Dictation dictionary", exact: true }).click();
+    await page.getByRole("button", { name: "Text cleanup options", exact: true }).click();
+    await page.getByRole("button", { name: "Dictation options", exact: true }).click();
+    await page.getByRole("button", { name: "Add term", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "Preferred spelling", exact: true })
+      .fill("Antineutrophil cytoplasmic antibody");
+    await expect(page.getByRole("button", { name: "Save term", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      ),
+    ).toBe(true);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({
+      path: join(output, `${theme}-1280-zoom200.png`),
+      fullPage: true,
+      animations: "disabled",
+    });
+  });
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [320, 800, 1280]) {
+    test(`dictation stress settings ${theme} ${width}`, async ({ page }) => {
+      const output = join(process.cwd(), "temp/verification/voice-dictation-parity");
+      await mkdir(output, { recursive: true });
+      await page.setViewportSize({ width, height: 1000 });
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.goto(
+        `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&data=worst&surface=settings`,
+      );
+      await expect(
+        page.getByRole("switch", { name: "Enable dictation", exact: true }),
+      ).toBeChecked();
+      await page.getByRole("button", { name: "Dictation dictionary", exact: true }).click();
+      await page.getByRole("button", { name: "Text cleanup options", exact: true }).click();
+      await page.getByRole("button", { name: "Dictation options", exact: true }).click();
+      await expect(
+        page.getByText("Krankenhausinformationssystem-Schnittstellenkompatibilität", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        ),
+      ).toBe(true);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({
+        path: join(output, `${theme}-${width}-worst.png`),
+        fullPage: true,
+        animations: "disabled",
+      });
+      await page.getByRole("radio", { name: "Empty", exact: true }).click();
+      await expect(page.getByText("No saved terms", { exact: true })).toBeVisible();
+      await page.getByRole("radio", { name: "One", exact: true }).click();
+      await expect(page.getByText("Jo", { exact: true })).toBeVisible();
+      expect(await page.getByRole("button", { name: /^Edit / }).count()).toBe(1);
+      await expect(
+        page.getByRole("switch", { name: "Clean up dictated text", exact: true }),
+      ).toBeChecked();
+      expect(errors).toEqual([]);
+    });
+  }
+}
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [800, 1280]) {
+    test(`dictation stress local models and microphone ${theme} ${width}`, async ({ page }) => {
+      const output = join(process.cwd(), "temp/verification/voice-dictation-parity");
+      await mkdir(output, { recursive: true });
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(
+        `/tests/browser/voice/dictation-permissions.html?theme=${theme}&stress=1&surface=settings&engine=local&recording-fixture=1`,
+      );
+      await expect(page.getByText("Whisper Small", { exact: true })).toBeVisible();
+      await expect(page.getByText("Whisper large-v3-turbo", { exact: true })).toBeVisible();
+      await expect(page.getByText("Dictation is ready", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Dictation options", exact: true }).click();
+      await expect(page.getByText("Unload idle model", { exact: true }).first()).toBeVisible();
+      await page.getByRole("button", { name: "Record test", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Stop recording", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Stop recording", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Play recording", exact: true })).toBeVisible();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({
+        path: join(output, `${theme}-${width}-local-ready-recording.png`),
+        fullPage: true,
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: "Play recording", exact: true }).click();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await page.screenshot({
+        path: join(output, `${theme}-${width}-local-recording.png`),
+        fullPage: true,
+        animations: "disabled",
+      });
+      await page.getByRole("button", { name: "Discard recording", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Play recording", exact: true })).toHaveCount(
+        0,
+      );
+    });
+  }
+}
+
+for (const state of ["error", "loading", "working"]) {
+  test(`dictation stress local models ${state}`, async ({ page }) => {
+    await page.goto(
+      `/tests/browser/voice/dictation-permissions.html?stress=1&surface=settings&engine=local&models=${state}`,
+    );
+    await expect(
+      page.getByText(
+        state === "error"
+          ? "Could not load local models."
+          : state === "loading"
+            ? "Loading models…"
+            : "Working…",
+        { exact: true },
+      ),
+    ).toBeVisible();
+  });
+}
+
+for (const state of ["error", "loading"]) {
+  test(`dictation stress catalog ${state}`, async ({ page }) => {
+    await page.goto(
+      `/tests/browser/voice/dictation-permissions.html?stress=1&surface=settings&catalog=${state}`,
+    );
+    if (state === "error") {
+      await expect(
+        page.getByText("Could not load transcription models. Retry to refresh the catalog."),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByText("Loading transcription models…")).toBeVisible();
+    }
+    expect(await page.evaluate(() => (window as any).fixtureDictation.microphoneRequests)).toBe(0);
+  });
+}
 test.beforeAll(async () => {
   await mkdir(captures, { recursive: true });
   await writeFile(

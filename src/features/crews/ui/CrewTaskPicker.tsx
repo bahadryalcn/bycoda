@@ -65,12 +65,11 @@ export function CrewTaskPicker({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <SearchableSelect
-        hideLabel
-        label={t("Run with")}
+        label={t("Worker")}
         value={value ?? ""}
         disabled={disabled}
         options={[
-          { value: "", label: t("Single agent") },
+          { value: "", label: t("Agent") },
           ...definitions.map((definition) => ({
             value: definition.id,
             label: definition.name,

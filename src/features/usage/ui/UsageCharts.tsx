@@ -31,11 +31,13 @@ export function formatMetric(value: number, metric: UsageMetric): string {
     });
   if (metric === "duration") {
     const minutes = Math.floor(value / 60_000);
+    const integer = (count: number) =>
+      formatNumber(count, { maximumFractionDigits: 0, useGrouping: false });
     return minutes >= 60
-      ? `${Math.floor(minutes / 60)}h ${minutes % 60}m`
+      ? t("{p0}h {p1}m", { p0: integer(Math.floor(minutes / 60)), p1: integer(minutes % 60) })
       : minutes > 0
-        ? `${minutes}m`
-        : `${Math.round(value / 1000)}s`;
+        ? t("{p0}m", { p0: integer(minutes) })
+        : t("{p0}s", { p0: integer(Math.round(value / 1000)) });
   }
   return formatNumber(value, {
     notation: "compact",

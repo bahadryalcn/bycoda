@@ -30,7 +30,7 @@ export type AssistantApprovalTarget = AssistantGoalApprovalTarget | AssistantSes
 
 async function goals(owner: AssistantHostRead) {
   const result = await owner.goals();
-  if (!Array.isArray(result)) throw new Error("The Host returned no goal list.");
+  if (!Array.isArray(result)) throw new Error("The Host returned no epic list.");
   return result;
 }
 function goalTarget(

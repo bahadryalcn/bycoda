@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   additionalDirCandidates,
   additionalDirsForSession,
@@ -18,6 +18,18 @@ import { rememberProject } from "./recents";
 beforeEach(() => localStorage.clear());
 
 describe("additional project folders", () => {
+  it("reports a rejected permission write and retains the last persisted folders", () => {
+    expect(saveAdditionalDirs("/work/web", ["/work/api"])).toBe(true);
+    const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("Storage quota exceeded");
+    });
+    try {
+      expect(saveAdditionalDirs("/work/web", [])).toBe(false);
+      expect(loadAdditionalDirs("/work/web")).toEqual(["/work/api"]);
+    } finally {
+      write.mockRestore();
+    }
+  });
   it("is empty by default", () => {
     expect(loadAdditionalDirs("/work/web")).toEqual([]);
   });

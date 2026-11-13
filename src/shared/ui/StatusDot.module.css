@@ -93,6 +93,12 @@
   }
 }
 
+:global(html[data-decorative-motion="off"]) .dot[data-appearance="attention"]::after,
+:global(html[data-window-focus="off"]) .dot[data-appearance="attention"]::after {
+  animation: none;
+  content: none;
+}
+
 .dot[data-appearance="presence"] {
   inline-size: 0.5625rem;
   block-size: 0.5625rem;

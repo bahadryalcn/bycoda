@@ -1,3 +1,4 @@
+import { useDecisionTarget } from "./DecisionTarget";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -7,6 +8,7 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { useAddAndTest } from "../hooks/useAddAndTest";
+import { useDecisionDialogClose } from "../hooks/useDecisionDialogClose";
 import type { DecisionSource, DecisionSourceInput, SourceTestResult } from "../model/decisionTypes";
 import {
   CONTRACT_ADAPTERS,
@@ -50,6 +52,7 @@ export function ManualPathDialog({
   onTest: (id: string) => Promise<SourceTestResult>;
   onClose: () => void;
 }) {
+  const target = useDecisionTarget();
   const [mode, setMode] = useState<Mode>(
     initialMode ?? (prefill?.endpoint ? "endpoint" : "model_file"),
   );
@@ -63,6 +66,18 @@ export function ManualPathDialog({
   const [browseFailure, setBrowseFailure] = useState<unknown>(null);
   const flow = useAddAndTest({ onAdd: (input) => onAdd(input), onTest });
   const locked = flow.busy || flow.done;
+  const close = useDecisionDialogClose(
+    !flow.done &&
+      (name !== (prefill?.name ?? "") ||
+        modelPath !== (prefill?.modelPath ?? "") ||
+        runtimePath !== (prefill?.runtimePath ?? "") ||
+        endpoint !== (prefill?.endpoint ?? "") ||
+        port !== "" ||
+        adapter !== "systemone" ||
+        mode !== (initialMode ?? (prefill?.endpoint ? "endpoint" : "model_file"))),
+    flow.busy,
+    onClose,
+  );
 
   const build = (): DecisionSourceInput | null => {
     const next: Errors = {};
@@ -134,14 +149,21 @@ export function ManualPathDialog({
   return (
     <Modal
       title={t("Add from a file or address")}
-      description={t(
-        "Use a model file on this computer, or the address of a service that is already running.",
-      )}
+      description={
+        target
+          ? t(
+              "Use a model file on Host {p1}, or the address of a service that is already running.",
+              { p1: target },
+            )
+          : t(
+              "Use a model file on this computer, or the address of a service that is already running.",
+            )
+      }
       size="md"
-      onClose={onClose}
+      onClose={close.requestClose}
       footer={
         <ModalActions>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={flow.busy} onClick={close.requestClose}>
             {flow.done ? t("Close") : t("Cancel")}
           </Button>
           {flow.done ? null : (
@@ -237,6 +259,7 @@ export function ManualPathDialog({
           <InlineMessage tone={flow.outcome.tone}>{flow.outcome.text}</InlineMessage>
         ) : null}
       </div>
+      {close.dialog}
     </Modal>
   );
 }

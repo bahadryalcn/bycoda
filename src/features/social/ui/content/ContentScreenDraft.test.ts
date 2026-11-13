@@ -268,3 +268,100 @@ it("discards only after confirmation and leaves a fresh post available", async (
   act(() => buttonWith("New post")!.click());
   expect(draft().text).toBe("");
 });
+
+it("preserves edited saved posts after closing, including non-text changes", () => {
+  render();
+  openSavedPost();
+  act(() => editor.props!.onDraft({ ...draft(), link: "https://example.com/changed" }));
+  act(() => editor.props!.onClose());
+  expect(buttonWith("Resume draft")).toBeDefined();
+  act(() => buttonWith("Resume draft")!.click());
+  expect(draft()).toMatchObject({ campaignId: "c1", link: "https://example.com/changed" });
+});
+
+it("retains separate project drafts and binds delayed completion to its original project", () => {
+  const client = {} as SocialScreenProps["client"];
+  render(props({ client }));
+  act(() => buttonWith("New post")!.click());
+  typeInEditor("Project one");
+  const original = editor.props!;
+  render(props({ client, projectId: "p2" }));
+  expect(editorOpen()).toBe(false);
+  act(() => buttonWith("New post")!.click());
+  typeInEditor("Project two");
+  act(() => original.onSaved({ campaignId: "saved-p1", revision: 1 }));
+  expect(draft().text).toBe("Project two");
+  act(() => original.onDone("draft"));
+  expect(editorOpen()).toBe(true);
+  expect(draft().text).toBe("Project two");
+  render(props({ client }));
+  act(() => buttonWith("New post")!.click());
+  expect(draft().text).toBe("");
+});
+
+it("restores local work when returning to its Host and project", () => {
+  const client = {} as SocialScreenProps["client"];
+  render(props({ client }));
+  act(() => buttonWith("New post")!.click());
+  typeInEditor("Project one");
+  render(props({ client, projectId: "p2" }));
+  act(() => buttonWith("New post")!.click());
+  typeInEditor("Project two");
+  render(props({ client }));
+  expect(draft().text).toBe("Project one");
+  expect(editor.props!.projectId).toBe("p1");
+  render(props({ client: {} as SocialScreenProps["client"] }));
+  expect(editorOpen()).toBe(false);
+});
+
+it("retains busy state and errors on their original project while its editor is unmounted", () => {
+  const client = {} as SocialScreenProps["client"];
+  render(props({ client }));
+  act(() => buttonWith("New post")!.click());
+  typeInEditor("Project one");
+  const original = editor.props!;
+  act(() => original.onBusyChange?.(true));
+  render(props({ client, projectId: "p2" }));
+  act(() => buttonWith("New post")!.click());
+  typeInEditor("Project two");
+  render(props({ client }));
+  expect(editor.props!.operationPending).toBe(true);
+  expect(draft().text).toBe("Project one");
+  render(props({ client, projectId: "p2" }));
+  act(() => original.onOperationError?.("Original project failed"));
+  act(() => original.onBusyChange?.(false));
+  expect(text()).not.toContain("Original project failed");
+  expect(draft().text).toBe("Project two");
+  render(props({ client }));
+  expect(editor.props!.operationPending).toBe(false);
+  expect(text()).toContain("Original project failed");
+});
+
+it("exposes bounded content continuation and warns that the calendar/list is partial", () => {
+  const loadMore = vi.fn();
+  state.data = {
+    snapshot: snapshot(),
+    programs: [],
+    loading: false,
+    refetch,
+    hasMore: true,
+    loadMore,
+  };
+  render();
+  expect(text()).toContain(
+    "More posts are available. Load more to include older posts in this view.",
+  );
+  act(() => buttonWith("Load more")!.click());
+  expect(loadMore).toHaveBeenCalledOnce();
+});
+
+it("treats a saved edit restored to its loaded values as clean", () => {
+  render();
+  openSavedPost();
+  typeInEditor("Changed");
+  typeInEditor("Hello");
+  act(() => editor.props!.onClose());
+  expect(buttonWith("Resume draft")).toBeUndefined();
+  act(() => buttonWith("New post")!.click());
+  expect(draft().text).toBe("");
+});

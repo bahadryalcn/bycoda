@@ -18,6 +18,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
   const [mode, setMode] = useState<FileAccessMode | null>(null);
   const [pending, setPending] = useState<"read" | "configure" | null>(null);
   const [error, setError] = useState("");
+  const [errorOperation, setErrorOperation] = useState<"read" | "configure">("read");
   const [statusUnavailable, setStatusUnavailable] = useState(false);
   const active = useRef(false);
   const operation = useRef(false);
@@ -35,6 +36,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
     } catch (reason) {
       if (active.current) {
         setError(String(reason));
+        setErrorOperation("read");
         setStatusUnavailable(true);
       }
     } finally {
@@ -42,6 +44,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
       if (active.current) setPending(null);
     }
   }, []);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- reads native access on mount and focus, and drops read results after this surface unmounts
   useEffect(() => {
     active.current = true;
     const onFocus = () => void refresh();
@@ -75,7 +78,10 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
       } catch {
         if (active.current) setStatusUnavailable(true);
       }
-      if (active.current) setError(String(reason));
+      if (active.current) {
+        setError(String(reason));
+        setErrorOperation("configure");
+      }
     } finally {
       operation.current = false;
       if (active.current) setPending(null);
@@ -137,9 +143,11 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
               }
             >
               <p>
-                {t(
-                  "Could not confirm the file access operation. Refresh the status before trying again.",
-                )}
+                {errorOperation === "read"
+                  ? t("Could not read file access status. Retry to check current access.")
+                  : t(
+                      "Could not confirm the file access operation. Refresh the status before trying again.",
+                    )}
               </p>
               {error}
             </SettingsFeedback>

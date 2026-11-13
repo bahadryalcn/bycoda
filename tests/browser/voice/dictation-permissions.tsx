@@ -13,17 +13,55 @@ import {
 import { SettingsFeedback } from "../../../src/features/settings/ui/settingsControls";
 import { TextareaField } from "../../../src/shared/ui/TextareaField";
 import { setLanguagePreference } from "../../../src/shared/i18n";
+import { Segmented } from "../../../src/features/settings/public/settingsControls";
+import { dictationDataOptions, dictationSettingsData } from "./dictation-settings-data";
 import { fixtureDictation } from "./dictation-permissions-mocks";
 import "../../../src/styles/index.css";
 
 const params = new URLSearchParams(location.search);
 document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
+// The app shell fixes these roots; this standalone fixture uses ordinary document scrolling.
+for (const element of [document.documentElement, document.body, document.getElementById("root")!]) {
+  element.style.position = "static";
+  element.style.height = "auto";
+  element.style.overflow = "visible";
+}
+document.documentElement.dataset.canvasBackground = "pure";
 await setLanguagePreference(params.get("lang") === "tr" ? "tr" : "en");
 saveVoiceSettings({
   ...loadVoiceSettings(),
   enabled: params.get("companion") === "1",
   dictationEnabled: params.get("dictation") !== "0",
+  ...(params.has("stress") ? dictationSettingsData(params.get("data") ?? "demo") : {}),
+  ...(params.get("engine") === "local" ? { dictationEngine: "local" } : {}),
+  ...(params.has("missing-device") ? { microphoneId: "disconnected-fixture-device" } : {}),
 });
+if (params.has("recording-fixture")) {
+  fixtureDictation.microphoneResult = "allowed";
+  class FixtureRecorder {
+    state = "inactive";
+    mimeType = "audio/webm";
+    ondataavailable?: (event: { data: Blob }) => void;
+    onstop?: () => void;
+    start() {
+      this.state = "recording";
+    }
+    stop() {
+      this.state = "inactive";
+      this.ondataavailable?.({
+        data: new Blob(["Synthetic fixture audio"], { type: this.mimeType }),
+      });
+      this.onstop?.();
+    }
+  }
+  class FixtureAudio {
+    play() {
+      return Promise.resolve();
+    }
+    pause() {}
+  }
+  Object.assign(window, { MediaRecorder: FixtureRecorder, Audio: FixtureAudio });
+}
 Object.defineProperty(navigator, "mediaDevices", {
   configurable: true,
   value: {
@@ -49,7 +87,16 @@ Object.defineProperty(navigator, "mediaDevices", {
         ],
       } as unknown as MediaStream;
     },
-    enumerateDevices: async () => [],
+    enumerateDevices: async () =>
+      params.has("recording-fixture")
+        ? [
+            {
+              deviceId: "fixture-microphone",
+              kind: "audioinput",
+              label: "International clinical research conference microphone",
+            },
+          ]
+        : [],
   },
 });
 const fixturePermissionStatus = Object.assign(new EventTarget(), {
@@ -79,11 +126,32 @@ const session = {
 } as unknown as Session;
 
 function Fixture() {
+  const [data, setData] = useState(params.get("data") ?? "demo");
   const [draft, setDraft] = useState("Unsent draft remains here.");
   const [error, setError] = useState("");
   return (
     <main style={{ padding: 24, maxInlineSize: 960, marginInline: "auto" }}>
       <p>Fixture evidence · synthetic microphone and Host transport</p>
+      {params.has("stress") ? (
+        <div className="flex flex-wrap gap-2">
+          {[dictationDataOptions.slice(0, 3), dictationDataOptions.slice(3)].map(
+            (options, index) => (
+              <Segmented
+                key={index}
+                label="Fixture data"
+                value={data}
+                options={options}
+                onChange={(next) => {
+                  setData(next);
+                  params.set("data", next);
+                  history.replaceState(null, "", `${location.pathname}?${params}`);
+                  saveVoiceSettings({ ...loadVoiceSettings(), ...dictationSettingsData(next) });
+                }}
+              />
+            ),
+          )}
+        </div>
+      ) : null}
       {params.get("surface") === "setup" ? (
         <VoiceSetupSteps step="microphone" onValidChange={() => {}} />
       ) : params.get("surface") === "companion" ? (

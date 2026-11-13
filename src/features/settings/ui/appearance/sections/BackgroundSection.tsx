@@ -51,6 +51,7 @@ import { SceneStrip } from "../controls/SceneStrip";
 import { BackgroundPreview } from "../controls/BackgroundPreview";
 import { BackgroundLibrary } from "../controls/BackgroundLibrary";
 import { ImageDropZone } from "../controls/ImageDropZone";
+import { generatorSession } from "../controls/themeGeneratorSession";
 import { LiveBackgroundCanvas } from "../../LiveBackgroundCanvas";
 import layerStyles from "../controls/LayerStack.module.css";
 import imageStyles from "../controls/BackgroundImage.module.css";
@@ -264,8 +265,16 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
     appearance.chatBackgroundScope !== CHAT_BACKGROUND_SCOPE_DEFAULT ||
     appearance.chatBackgroundBlur !== CHAT_BACKGROUND_BLUR_DEFAULT ||
     appearance.newThreadBackgroundEffect !== NEW_THREAD_BACKGROUND_EFFECT_DEFAULT;
-  const choose = (droppedPath?: string) =>
+  const choose = (droppedPath?: string) => {
+    if (busy) return;
+    generatorSession.invalidateImageIntent();
     void appearance.onChooseChatBackground(droppedPath).catch(console.error);
+  };
+  const remove = () => {
+    if (busy) return;
+    generatorSession.invalidateImageIntent();
+    void appearance.onClearChatBackground().catch(console.error);
+  };
 
   return (
     <Group
@@ -275,6 +284,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
       modified={modified}
       resetLabel={t("Reset background settings")}
       onReset={() => {
+        generatorSession.invalidateImageIntent();
         appearance.onChatBackgroundEmptyOpacity(
           Math.round(CHAT_BACKGROUND_EMPTY_OPACITY_DEFAULT * 100),
         );
@@ -349,7 +359,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                 </Button>
                 <Button
                   className="shrink-0"
-                  onClick={() => void appearance.onClearChatBackground().catch(console.error)}
+                  onClick={remove}
                   disabled={busy}
                   variant="danger"
                   loading={appearance.chatBackgroundOperation === "remove"}

@@ -83,6 +83,29 @@ describe("BrowserScreencast", () => {
     await cast.stop();
   });
 
+  it("discards an earlier start after the same page is stopped and restarted", async () => {
+    const old = fakePage();
+    const fresh = fakePage();
+    let release!: (session: typeof old.session) => void;
+    const pending = new Promise<typeof old.session>((resolve) => {
+      release = resolve;
+    });
+    const newCDPSession = vi.fn().mockReturnValueOnce(pending).mockResolvedValueOnce(fresh.session);
+    const page = { context: () => ({ newCDPSession }) };
+    const cast = new BrowserScreencast(() => ({ stamp: "doc", width: 1, height: 1 }));
+    const first = cast.next(page, 0, 0);
+    await vi.advanceTimersByTimeAsync(0);
+    await cast.stop();
+    const second = cast.next(page, 0, 1000);
+    await vi.advanceTimersByTimeAsync(0);
+    release(old.session);
+    await first;
+    fresh.paint("AAAA");
+    expect((await second)?.data).toBe("AAAA");
+    expect(old.session.detach).toHaveBeenCalledTimes(1);
+    await cast.stop();
+  });
+
   it("bounds the cursor and wait", () => {
     expect(browserFrameCursor(0, undefined)).toEqual({ after: 0, waitMs: 1000 });
     expect(() => browserFrameCursor(-1, 0)).toThrow("Invalid browser frame cursor");

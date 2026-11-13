@@ -28,14 +28,14 @@ const SECURITY_OPTIONS = [
   { value: "starttls", label: "STARTTLS" },
 ];
 
-export function EmailAccountForm({ account, onSaved, onCancel }: AccountFormProps) {
+export function EmailAccountForm({ account, onSaved, onCancel, onSavingChange }: AccountFormProps) {
   useLocale();
   const [initial] = useState(() => emailDraftFromAccount(account));
   const [draft, setDraft] = useState(initial);
   const [authHandle, setAuthHandle] = useState<string | null>(null);
   /** Google client secret for a custom app registration: sent when sign-in starts, never saved. */
   const [clientSecret, setClientSecret] = useState("");
-  const { saving, error, save } = useAccountSave(onSaved);
+  const { saving, error, save } = useAccountSave(onSaved, onSavingChange);
   const set = <K extends keyof EmailDraft>(key: K, value: EmailDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const microsoft = draft.auth === "microsoft";

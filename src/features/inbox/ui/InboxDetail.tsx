@@ -13,7 +13,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { t, useLocale } from "../../../shared/i18n";
+import { t, useLocale, useT, useFormat } from "../../../shared/i18n";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
 import { useJiraWorkingProject } from "../hooks/useJiraWorkingProject";
 import { summarizePrChecks } from "../model/githubPrChecks";
@@ -107,7 +107,8 @@ export function InboxDetail({
   onOpenSession?: (sessionId: string) => void | Promise<void>;
   onItemChange?: (item: InboxItem) => void;
 }) {
-  useLocale();
+  const t = useT();
+  const { formatNumber } = useFormat();
   const detailLock = useLockOverscroll<HTMLDivElement>();
   const panel = mode === "panel";
   const tabsId = useId();
@@ -137,7 +138,7 @@ export function InboxDetail({
     threadLoading,
     threadError,
   } = useInboxDetailData(item, revision, tab, fullFile, panel);
-  const externalActionLabel =
+  const externalActionLabel = t(
     item.kind === "pr"
       ? gitlab
         ? "Review on GitLab"
@@ -152,7 +153,8 @@ export function InboxDetail({
             ? "Open on GitLab"
             : azuredevops
               ? "Open on ADO"
-              : "Open on GitHub";
+              : "Open on GitHub",
+  );
   const commentScope = `${cwd}:${item.projectPath}:${inboxItemKey(item)}`;
   const [replyTo, setReplyTo] = useRetainedState<InboxReplyTarget | null>(
     `inbox:reply:${commentScope}`,
@@ -209,11 +211,15 @@ export function InboxDetail({
     revision,
   });
   const prChecksOverall = prChecksEnabled
-    ? summarizePrChecks({
-        loading: prChecksView.loading,
-        error: prChecksView.error,
-        checks: prChecksView.checks?.checks ?? null,
-      })
+    ? summarizePrChecks(
+        {
+          loading: prChecksView.loading,
+          error: prChecksView.error,
+          checks: prChecksView.checks?.checks ?? null,
+        },
+        t,
+        formatNumber,
+      )
     : null;
 
   const refreshPostedThread = async () => {
@@ -437,7 +443,7 @@ export function InboxDetail({
                               : "neutral"
                       }
                     >
-                      {reviewLabel}
+                      {t(reviewLabel)}
                     </Badge>
                   ) : null}
                   <BadgeList

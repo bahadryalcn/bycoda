@@ -136,6 +136,7 @@ it("Escape leaves suggestion mode and composing Enter never accepts", async () =
   const context = await setup();
   try {
     await context.key("Enter", { isComposing: true });
+    await context.key("Enter", { keyCode: 229 });
     expect(context.shell.accept).not.toHaveBeenCalled();
     await context.key("Escape");
     expect(context.shell.dismiss).toHaveBeenCalled();

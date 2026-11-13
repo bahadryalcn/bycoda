@@ -29,6 +29,7 @@ import {
 } from "../../projects/model/projectGroups";
 import { inboxItemStatus, type GithubLabel, type InboxItem } from "../model/githubTasks";
 import { projectKey, projectName } from "../../../shared/lib/paths";
+import { graphemes } from "../../../shared/lib/text/truncate";
 import { sameProjectPath, type RecentProject } from "../../projects/model/recents";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import {
@@ -202,7 +203,7 @@ function InboxAvatarImage({
       ? loaded.url
       : undefined
     : avatarUrl;
-  const initial = name.trim().charAt(0).toUpperCase() || "?";
+  const initial = graphemes(name.trim())[0]?.toUpperCase() || "?";
 
   return imageUrl && failedUrl !== avatarUrl ? (
     <img
@@ -291,24 +292,28 @@ export function InboxProjectPicker({
     (sections.get(groupId) ?? sections.get(undefined))!.push(project);
   }
   const groupNames = new Map(groups.map((group) => [group.id, group.name]));
-  const selected =
-    projects.find((project) => sameProjectPath(project.path, value)) ?? projects[0] ?? null;
+  const selected = projects.find((project) => sameProjectPath(project.path, value)) ?? null;
   return (
     <div className="flex min-w-0 items-center gap-1">
       <SearchableSelect
         hideLabel
         label={t("Choose project")}
         disabled={!projects.length}
-        value={selected?.path ?? ""}
-        options={Array.from(sections, ([groupId, members]) =>
-          members.map((project) => ({
-            value: project.path,
-            label: project.name,
-            description: project.path,
-            icon: <InboxProjectMark project={project} />,
-            group: groupId ? groupNames.get(groupId) : t("Ungrouped"),
-          })),
-        ).flat()}
+        value={selected?.path ?? value}
+        options={[
+          ...(value && !selected
+            ? [{ value, label: projectName(value), description: value, group: t("Ungrouped") }]
+            : []),
+          ...Array.from(sections, ([groupId, members]) =>
+            members.map((project) => ({
+              value: project.path,
+              label: project.name,
+              description: project.path,
+              icon: <InboxProjectMark project={project} />,
+              group: groupId ? groupNames.get(groupId) : t("Ungrouped"),
+            })),
+          ).flat(),
+        ]}
         onChange={onChange}
       />
     </div>

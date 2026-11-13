@@ -8,6 +8,15 @@ import { ACCOUNT_CONTEXT } from "../model/testFixtures";
 const mocks = vi.hoisted(() => ({ openExternal: vi.fn() }));
 vi.mock("../../../platform/tauri/openExternal", () => ({ openExternal: mocks.openExternal }));
 import { AccountMenu, type AccountMenuPresence } from "./AccountMenu";
+import { accountInitial } from "./AccountAvatar";
+
+it.each([
+  ["  👩🏽‍💻 Ada", "👩🏽‍💻"],
+  ["e\u0301lodie", "E\u0301"],
+  ["🇹🇷 Deniz", "🇹🇷"],
+])("keeps the first whole account grapheme in %s", (displayName, initial) => {
+  expect(accountInitial({ displayName })).toBe(initial);
+});
 
 const signedIn: AccountState = {
   phase: "signed-in",

@@ -1,6 +1,9 @@
 import { parseHostTask } from "./routing-input";
 import { forEachAsync, mapAsync } from "../async-collections";
 import { assertExpectedConfiguration } from "../configurationConflict";
+import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { assertTaskWorkRetired, cancelSessionWorkRun } from "../work/session-adapter";
 
 import {
   canEditTask,
@@ -22,6 +25,11 @@ import {
 } from "../sessions/sessionRuns";
 import { hasShellPhysicalOwner } from "../execution/shell-ownership";
 import type { TaskContext } from "./context";
+import {
+  conflictStopGeneration,
+  fenceConflictChildren,
+  releaseConflictStop,
+} from "./conflict-recovery";
 export function taskMessage<T>(
   context: TaskContext,
   task: HostTask,
@@ -80,11 +88,13 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
         "Create a separate crew task; this task already belongs to a crew or has retained branch work.",
       );
     if (!previous) {
+      await assertTaskWorkRetired(context.store, input.id);
       const status = requested ?? "queued";
       if (status === "queued" && !input.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
       await context.store.project(input.projectId);
       return await context.write({
         ...input,
+        workInvocationId: randomUUID(),
         status,
         createdAt: now,
         updatedAt: now,
@@ -108,6 +118,9 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
     const updated = {
       ...kept,
       ...input,
+      ...(input.inheritMaxRunMinutes && previous.runtimeLimitResolvedAt !== undefined
+        ? { maxRunMinutes: previous.maxRunMinutes }
+        : {}),
       modelRoutingWait: undefined,
       projectId: previous.projectId,
       // Work already on a branch stays there.
@@ -137,6 +150,10 @@ export async function save(context: TaskContext, raw: unknown): Promise<HostTask
         : {}),
       updatedAt: now,
     };
+    if (!isDeepStrictEqual(parseHostTask(previous), parseHostTask(updated))) {
+      await assertTaskWorkRetired(context.store, previous.id);
+      updated.workInvocationId = randomUUID();
+    }
     return await context.write(updated);
   });
 }
@@ -148,9 +165,17 @@ export async function move(
   reviewed?: HostTask,
   expectedGeneration?: number,
 ): Promise<HostTask> {
+  if (to === "blocked") {
+    fenceConflictChildren(id);
+    context.automaticDeliveryControllers.get(id)?.abort();
+  }
   await context.ready;
 
-  if (context.delivering.has(id)) throw new Error("This task is being merged.");
+  if (
+    context.delivering.has(id) &&
+    (to !== "blocked" || !context.automaticDeliveryControllers.has(id))
+  )
+    throw new Error("This task is being merged.");
   const { task, generation } = await context.transaction(async () => ({
     task: await context.find(id),
     generation: Number(
@@ -181,6 +206,19 @@ export async function move(
     );
   if (!canMoveTask(task.status, to))
     throw new Error(`A ${task.status} task cannot be moved to ${to}.`);
+  if (to === "blocked" && task.conflictRecovery) {
+    const child = await context.find(task.conflictRecovery.childId);
+    if (
+      child?.conflictParent?.id === task.id &&
+      child.conflictParent.createdAt === task.createdAt &&
+      child.conflictParent.workInvocationId === task.workInvocationId &&
+      child.conflictParent.sourceHead === task.conflictRecovery.sourceHead &&
+      child.conflictParent.targetHead === task.conflictRecovery.targetHead &&
+      child.conflictParent.targetDirectory === task.conflictRecovery.targetDirectory &&
+      child.conflictParent.targetBranch === task.conflictRecovery.targetBranch
+    )
+      await cancel(context, child.id, "Conflict recovery parent was stopped.");
+  }
   const now = context.now();
   if ((to === "queued" || to === "todo") && context.jobs.has(id))
     throw new Error("The previous verification is still stopping. Retry after it finishes.");
@@ -193,8 +231,15 @@ export async function move(
     );
   if (to === "queued" && !task.prompt.trim()) throw new Error(EMPTY_PROMPT_ERROR);
   if (to === "queued") await context.resolveAssistantRecoveryForOwner(task);
-  if (to === "queued" && canTakeOverBlockedTask(task))
-    return await context.queueTakeover(task, now, task, generation);
+  if (to === "queued" && canTakeOverBlockedTask(task)) {
+    await assertTaskWorkRetired(context.store, task.id);
+    return await context.queueTakeover(
+      { ...task, workInvocationId: randomUUID() },
+      now,
+      task,
+      generation,
+    );
+  }
   if (to === "queued" && taskRequiresInstructions(task)) throw new Error(TASK_INPUT_REQUIRED);
   if (to === "todo" && task.status === "queued") {
     // Only a task nothing has run for can be pulled back.
@@ -217,6 +262,8 @@ export async function move(
     });
   }
   if (to === "queued" || to === "todo") {
+    await assertTaskWorkRetired(context.store, task.id);
+    const workInvocationId = randomUUID();
     // A task that runs again starts over in a fresh session. Unmerged work
     // stays on its branch, and the next run continues there. A task put
     // back to to-do is cleared the same way.
@@ -246,6 +293,7 @@ export async function move(
       return await context.write(
         {
           ...rest,
+          workInvocationId,
           ...(rest.mergeRepair ? { mergeRepair: { ...rest.mergeRepair, attempts: 0 } } : {}),
           retryFeedback: await context.retryFeedback(task),
           // An owner rerun of work finished with findings gets a fresh correction budget.
@@ -291,7 +339,7 @@ export async function move(
       ...fresh
     } = rest;
     return await context.write(
-      { ...fresh, status: to, updatedAt: now },
+      { ...fresh, workInvocationId, status: to, updatedAt: now },
       undefined,
       task,
       generation,
@@ -311,14 +359,26 @@ export async function move(
         task.reviewer &&
         (await sessionRunState(context.store, task.reviewer, 0, now)).state === "running"
       ) {
-        await cancelSessionRun(context.engine, task.reviewer);
+        if (
+          !(await cancelSessionWorkRun(context.store, {
+            sessionId: task.reviewer.sessionId!,
+            runId: task.reviewer.runId!,
+          }))
+        )
+          await cancelSessionRun(context.engine, task.reviewer);
         await context.limits.recordRun(task.reviewer, now);
       }
       return await context.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
     }
     const run = { ...task, startedAt: task.startedAt ?? task.createdAt };
     if ((await sessionRunState(context.store, run, 0, now)).state === "running") {
-      await cancelSessionRun(context.engine, run);
+      if (
+        !(await cancelSessionWorkRun(context.store, {
+          sessionId: run.sessionId!,
+          runId: run.runId!,
+        }))
+      )
+        await cancelSessionRun(context.engine, run);
       await context.limits.recordRun(run, now);
     }
     return await context.block({ ...task, deliveryRequested: undefined }, STOPPED_BY_USER, now);
@@ -340,6 +400,7 @@ export async function startTask(
   id: string,
   reviewed?: HostTask,
 ): Promise<HostTask> {
+  const conflictFence = conflictStopGeneration(id);
   await context.ready;
 
   let { task, generation } = await context.transaction(async () => ({
@@ -421,6 +482,7 @@ export async function startTask(
   // Schedule only after the enclosing commit, outside the caller's
   // short-lived Room or voice authorization.
   context.store.afterCommit(() => {
+    releaseConflictStop(id, conflictFence);
     void context.tick().catch(async (error) => {
       try {
         await context.transaction(async () => {
@@ -671,9 +733,24 @@ export async function resolveNote(
 }
 
 export async function cancel(context: TaskContext, id: string, reason: string): Promise<void> {
+  fenceConflictChildren(id);
+  context.automaticDeliveryControllers.get(id)?.abort();
   await context.ready;
 
   const task = await context.find(id);
+  if (task?.conflictRecovery) {
+    const child = await context.find(task.conflictRecovery.childId);
+    if (
+      child?.conflictParent?.id === task.id &&
+      child.conflictParent.createdAt === task.createdAt &&
+      child.conflictParent.workInvocationId === task.workInvocationId &&
+      child.conflictParent.sourceHead === task.conflictRecovery.sourceHead &&
+      child.conflictParent.targetHead === task.conflictRecovery.targetHead &&
+      child.conflictParent.targetDirectory === task.conflictRecovery.targetDirectory &&
+      child.conflictParent.targetBranch === task.conflictRecovery.targetBranch
+    )
+      await cancel(context, child.id, reason);
+  }
   // Active verification must reach Stop so its controller is aborted. The job
   // stays registered during process-tree cleanup, retaining retry/delete gates.
   if (context.jobs.has(id) && task?.status !== "running" && task?.status !== "verifying")

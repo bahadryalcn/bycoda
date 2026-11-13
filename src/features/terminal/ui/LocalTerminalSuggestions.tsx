@@ -10,6 +10,7 @@ import {
   safeHistoryCommand,
 } from "../model/localTerminalCompletion";
 import { isTerminalTextEdit } from "../model/terminalKeys";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { TerminalCursorPopover } from "./TerminalCursorPopover";
 import { TerminalGhostText } from "./TerminalGhostText";
 import styles from "./TerminalTools.module.css";
@@ -178,7 +179,7 @@ export function LocalTerminalSuggestions({
       terminal.onResize(refresh),
     ];
     const keydown = (event: KeyboardEvent) => {
-      if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (isImeComposition(event) || event.ctrlKey || event.metaKey || event.altKey) return;
       const values = stale.current ? undefined : current.current?.suggestions;
       if (
         values?.length &&

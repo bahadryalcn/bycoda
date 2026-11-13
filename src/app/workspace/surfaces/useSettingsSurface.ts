@@ -18,10 +18,12 @@ import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView"
 import {
   loadNotesEnabled,
   loadSettingsSection,
+  loadSettingsAliasAnchor,
   saveSettingsSection,
   settingsSectionForAnchor,
   type SettingsSectionId,
 } from "../../../features/settings/model/settings";
+import { toolSettingsAnchorForSection } from "../../../features/settings/model/toolSettingsSections";
 import { OPEN_CONNECTIONS_EVENT } from "../../../features/connections/model/connections";
 import { OPEN_DECISION_MODELS_SETTINGS_EVENT } from "../../../features/decision-models/model/decisionModelsSettings";
 import { OPEN_PROVIDER_SETTINGS_EVENT } from "../../../features/providers/public/providerSettingsLink";
@@ -43,7 +45,9 @@ export interface SettingsSurfaceState {
 export function useSettingsSurfaceState(): SettingsSurfaceState {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>(loadSettingsSection);
-  const [settingsAnchor, setSettingsAnchor] = useState<SettingsAnchor | null>(null);
+  const [settingsAnchor, setSettingsAnchor] = useState<SettingsAnchor | null>(
+    loadSettingsAliasAnchor,
+  );
   const settingsOpenRef = useRef(settingsOpen);
   settingsOpenRef.current = settingsOpen;
   return {
@@ -123,12 +127,16 @@ export function useSettingsSurfaceActions({
       setNotesViewOpen(false);
       setAutomationsViewOpen(false);
       setServersViewOpen?.(false);
-      const targetSection = settingsSectionForAnchor(section, anchor);
+      const targetAnchor = anchor ?? toolSettingsAnchorForSection(section);
+      const targetSection = settingsSectionForAnchor(section, targetAnchor);
       if (targetSection) {
         setSettingsSection(targetSection);
         saveSettingsSection(targetSection);
       }
-      setSettingsAnchor(anchor ?? null);
+      setSettingsAnchor(targetAnchor);
+      // The existing external reveal counter also replays explicit tool links to the same row.
+      if (targetSection === "tools" && targetAnchor)
+        setNotificationSettingsRequest((request) => request + 1);
       setNotificationProjectPath(null);
       setSettingsOpen(true);
     });
@@ -139,7 +147,8 @@ export function useSettingsSurfaceActions({
   useEffect(() => {
     const openModels = (event: Event) => {
       const tab = (event as CustomEvent<ModelsTab>).detail;
-      if (MODELS_TABS.includes(tab)) openSettings("models", modelsTabAnchor(tab));
+      if (MODELS_TABS.includes(tab))
+        openSettings(tab === "chat" ? "models" : "work", modelsTabAnchor(tab));
     };
     window.addEventListener(OPEN_MODELS_SETTINGS_EVENT, openModels);
     return () => window.removeEventListener(OPEN_MODELS_SETTINGS_EVENT, openModels);

@@ -165,10 +165,14 @@ export function createCommandsRuntime(
     },
     crews: {
       ownerDirective: (command) => dependencies.crews.ownerDirective(command),
-      managedSessionRefusal: async (id) =>
-        (await crewManagedSession(dependencies.engine.store, id))
-          ? CREW_MANAGED_SESSION_MESSAGE
-          : undefined,
+      managedSessionRefusal: async (id, commandType) => {
+        const managed = await crewManagedSession(dependencies.engine.store, id);
+        // Owner chat uses normal command admission and native approval. Members,
+        // destructive controls and configuration remain owned by the Crew service.
+        if (managed?.role === "coordinator" && (commandType === "send" || commandType === "steer"))
+          return undefined;
+        return managed ? CREW_MANAGED_SESSION_MESSAGE : undefined;
+      },
     },
   });
   return { commandService };

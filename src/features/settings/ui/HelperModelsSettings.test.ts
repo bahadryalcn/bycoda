@@ -34,9 +34,9 @@ function button(label: string) {
   )!;
 }
 
-it("links all helper models to Models roles once without a feature picker", async () => {
-  expect(container.textContent).toContain("Chosen in Models > Assignments.");
+it("links all helper models to Work assignments once without a feature picker", async () => {
+  expect(container.textContent).toContain("Model set in Work > Assignments.");
   expect(container.textContent).not.toContain("Model picker");
-  await act(async () => button("Manage in Models").click());
+  await act(async () => button("Manage models").click());
   expect(links.open).toHaveBeenCalledWith("roles");
 });

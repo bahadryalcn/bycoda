@@ -19,6 +19,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { TelegramChannelConnect } from "./platform/TelegramChannelConnect";
 import { XProfileEditor } from "./platform/XProfileEditor";
 import { useAccountWrite } from "./useAccountWrite";
+import { ChromeSessionConnect } from "./ChromeSessionConnect";
 import "./accounts.css";
 
 export type AccountConnectionProps = {
@@ -31,7 +32,7 @@ export type AccountConnectionProps = {
   onChanged(): void;
 };
 
-type BrowserState = { status: string; error?: string };
+type BrowserState = { status: string; error?: string; source?: "existing-chrome" | "dedicated" };
 type OAuthState = { status: string; candidates: { id: string; name: string }[]; error?: string };
 
 function browserStatusText(status: string): string {
@@ -40,6 +41,10 @@ function browserStatusText(status: string): string {
       return t("Connected");
     case "waiting":
       return t("Waiting for you");
+    case "checking":
+      return t("Checking…");
+    case "idle":
+      return t("Not checked");
     case "failed":
       return t("Connection needs a retry");
     default:
@@ -77,6 +82,7 @@ export function AccountConnection({
   const isTelegram = account.platform === "telegram";
   const isToken = TOKEN_PLATFORMS.includes(account.platform) && !usesBrowser;
   const isOrganization = account.accountType === "organization";
+  const needsPageTarget = account.platform === "linkedin" && isOrganization && !account.platformId;
   const locked = disabled || is("connect:browser") || is("connect:oauth");
 
   const startBrowser = () =>
@@ -90,6 +96,10 @@ export function AccountConnection({
       const result = await client.browserStatus(account.id);
       setBrowser(result);
       if (result.status === "connected") onChanged();
+    });
+  const cancelBrowser = () =>
+    write("cancel:browser", async () => {
+      setBrowser(await client.browserCancelLogin(account.id));
     });
   const startOAuth = () =>
     write("connect:oauth", async () => {
@@ -135,11 +145,19 @@ export function AccountConnection({
       <CapabilityList capabilities={capabilities} grouped />
       {usesBrowser ? (
         <div className="social-field-row">
+          {account.platform === "linkedin" && isOrganization ? (
+            <TextField
+              label={t("LinkedIn Page ID or URL")}
+              value={resourceId}
+              disabled={locked}
+              onChange={(event) => setResourceId(event.currentTarget.value)}
+            />
+          ) : null}
           <Button
             variant="primary"
             size="sm"
             loading={is("connect:browser")}
-            disabled={locked}
+            disabled={locked || (needsPageTarget && !resourceId.trim())}
             onClick={() => void startBrowser().catch(() => undefined)}
           >
             {account.connected ? t("Sign in again in the browser") : t("Sign in in the browser")}
@@ -153,12 +171,44 @@ export function AccountConnection({
           >
             {t("Check connection")}
           </Button>
+          {browser?.status === "waiting" ? (
+            <Text as="p" tone="muted">
+              {t(
+                "Close the dedicated sign-in window after signing in so the connection can be verified.",
+              )}
+            </Text>
+          ) : null}
+          {browser?.status === "waiting" || browser?.status === "checking" ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              loading={is("cancel:browser")}
+              disabled={disabled}
+              onClick={() => void cancelBrowser().catch(() => undefined)}
+            >
+              {t("Cancel sign-in")}
+            </Button>
+          ) : null}
+          {browser?.source === "existing-chrome" ? (
+            <Text as="p" tone="muted">
+              {t("Uses your existing Chrome session.")}
+            </Text>
+          ) : null}
           {browser ? (
             <Text as="span" tone="muted" leading="snug" className="social-muted">
               {browserStatusText(browser.status)}
             </Text>
           ) : null}
         </div>
+      ) : null}
+      {usesBrowser ? (
+        <ChromeSessionConnect
+          client={client}
+          accountId={account.id}
+          resourceId={resourceId || undefined}
+          disabled={locked || !onThisComputer || (needsPageTarget && !resourceId.trim())}
+          onChanged={onChanged}
+        />
       ) : null}
       {!usesBrowser && !isToken && !isTelegram ? (
         <>

@@ -261,6 +261,13 @@ export interface ServerBindings {
   roomDevServers: ReturnType<typeof createAssistantNativeRuntime>["roomDevServers"];
   roomSessions: ConversationManagementTools<string>;
   assistantWorkspaceOwner: AssistantWorkspaceOwner;
+  assistantBackgroundEffect: ReturnType<
+    typeof createAssistantNativeRuntime
+  >["assistantBackgroundEffect"];
+  executeBackgroundEffect: ReturnType<
+    typeof createAssistantNativeRuntime
+  >["executeBackgroundEffect"];
+  backgroundEffectStatus: ReturnType<typeof createAssistantNativeRuntime>["backgroundEffectStatus"];
   roomWorkspace: ConversationManagementTools<string>;
   workspaceTransferSource: AsyncLocalStorage<{
     valid: () => boolean;

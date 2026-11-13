@@ -46,6 +46,47 @@ it("retains cumulative provider metrics on the root turn without changing a clar
   expect(next.blocks[1].author).toEqual(reply.author);
 });
 
+it("accepts native goals only for the selected provider conversation and clears on native receipt", () => {
+  const session = { ...newSession("codex", "/repo"), providerSessionId: "thread" };
+  const goal = {
+    provider: "codex" as const,
+    providerSessionId: "thread",
+    objective: "Ship",
+    status: "active" as const,
+  };
+  const updated = applyHarnessEvent(session, {
+    type: "session.goalChanged",
+    providerSessionId: "thread",
+    goal,
+  });
+  expect(updated.providerGoal).toEqual(goal);
+  expect(
+    applyHarnessEvent(updated, {
+      type: "session.goalChanged",
+      providerSessionId: "other",
+      goal: null,
+    }),
+  ).toBe(updated);
+  expect(
+    applyHarnessEvent(updated, {
+      type: "session.goalChanged",
+      providerSessionId: "thread",
+      goal: { ...goal, providerSessionId: "other" },
+    }),
+  ).toBe(updated);
+  expect(
+    applyHarnessEvent(updated, {
+      type: "session.goalChanged",
+      providerSessionId: "thread",
+      goal: null,
+    }).providerGoal,
+  ).toBeUndefined();
+  const foreign = { ...updated, harness: "claude" as const };
+  expect(
+    applyHarnessEvent(foreign, { type: "session.goalChanged", providerSessionId: "thread", goal }),
+  ).toBe(foreign);
+});
+
 it("keeps a late outgoing Codex thread identity out of the newly selected Gemini provider", () => {
   const source = {
     ...newSession("codex", "/repo"),

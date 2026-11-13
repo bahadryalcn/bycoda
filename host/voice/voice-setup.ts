@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { ensureVoicePython } from "./voice-python-install";
 import { cudaTorchIndexes, detectNvidiaGpu, type NvidiaGpu } from "./voice-gpu";
+import { VoiceModelsService } from "./voice-models";
 import {
   inspectVoiceRuntime,
   voiceRuntimeConfig,
@@ -211,6 +212,7 @@ const run: Run = (program, args, signal) =>
 
 /** One host-owned job survives settings navigation and deduplicates repeated clicks. */
 export class VoiceSetupService {
+  readonly models: VoiceModelsService;
   private value: VoiceSetupStatus = { state: "idle" };
   private controller?: AbortController;
   private closed = false;
@@ -227,6 +229,7 @@ export class VoiceSetupService {
       gpu: detectNvidiaGpu,
       ...dependencies,
     };
+    this.models = new VoiceModelsService(this.dependencies.home);
   }
 
   status(): VoiceSetupStatus {
@@ -259,6 +262,7 @@ export class VoiceSetupService {
   close() {
     this.closed = true;
     this.controller?.abort();
+    this.models.close();
   }
 
   private async install(config: VoiceRuntimeConfig, controller: AbortController) {

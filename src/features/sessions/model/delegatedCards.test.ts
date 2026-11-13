@@ -135,6 +135,41 @@ describe("placeDelegatedCards for Host agents.delegate calls", () => {
     expect(ids(placed)).toEqual(["u1", delegatedBlockId("c1"), delegatedBlockId("c2"), "a1"]);
   });
 
+  it("hides a reply call to a run that has a card", () => {
+    const replyCall = (id: string, sessionId: string) =>
+      call(
+        id,
+        "bycoda-conversation:conversation_agents_reply",
+        JSON.stringify({ runId: "r", sessionId, status: "running" }),
+      );
+    const blocks = [
+      user("u1", "audit", 1_000),
+      delegate("d1", "c1"),
+      replyCall("r1", "c1"),
+      replyCall("r2", "x"),
+    ];
+    const placed = placeDelegatedCards(blocks, [plain("c1")]);
+    expect(ids(placed)).toEqual(["u1", delegatedBlockId("c1"), "r2"]);
+  });
+
+  it("recognizes a delegate call the preview relabeled as a read", () => {
+    const relabeled: Block = {
+      ...delegate("d1", "c1"),
+      text: "Read grok:grok-4.6",
+      tool: {
+        ...delegate("d1", "c1").tool!,
+        title: "Read grok:grok-4.6",
+        preview: {
+          kind: "read",
+          path: "grok:grok-4.6",
+          title: "bycoda-conversation:conversation_agents_delegate",
+        },
+      },
+    };
+    const placed = placeDelegatedCards([user("u1", "audit", 1_000), relabeled], [plain("c1")]);
+    expect(ids(placed)).toEqual(["u1", delegatedBlockId("c1")]);
+  });
+
   it("keeps a failed delegate call and a wait that names an unknown run", () => {
     const failed = call("d1", "agents.delegate", JSON.stringify({ error: "no model" }));
     const blocks = [

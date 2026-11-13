@@ -1,4 +1,4 @@
-const home = "C:/Users/kraba";
+const home = "C:/Users/alice";
 export const homeDir = async () => home;
 export const statFiles = async () =>
   ["C:/", "D:/", "E:/", "F:/", "G:/", "H:/"].map((path) => ({ path, isDir: true }));

@@ -7,6 +7,7 @@ import { assistantStyleInstructions } from "../core/assistant-style";
 import { assistantTextLimits } from "../core/assistant-text-budget";
 import { chiefBriefingCycle, chiefContextLimits } from "./assistant-chief-policy";
 import { modelContextWindow } from "../../../src/features/sessions/model/models";
+import { assistantHelperQueuedBeforeSend } from "../../work/helper-adapter";
 
 type Wake = Parameters<NonNullable<AssistantPorts["chiefWake"]>>[0];
 type Result = Awaited<ReturnType<NonNullable<AssistantPorts["chiefWake"]>>>;
@@ -44,6 +45,7 @@ type Operation = {
   status: "started" | "complete" | "unknown";
   result?: Result;
   compaction?: { threadId: string; completedAt: number };
+  dispatch?: { context: Context; prompt: string; compactBefore: boolean };
 };
 type Runtime<T> = RecordValue & { value: T };
 const CONTEXT = "chiefContext:v1";
@@ -240,9 +242,26 @@ export function createAssistantChiefContext(
     let previous: Operation | undefined;
     let dispatchPrompt = "";
     let compactBefore = false;
+    const queuedBeforeSend = await assistantHelperQueuedBeforeSend(
+      store,
+      input.operationId,
+      "chief",
+    ).catch(() => false);
     await store.transaction(async () => {
       previous = await read<Operation>(key);
       if (previous) {
+        if (
+          previous.fingerprint === fingerprint &&
+          previous.status === "started" &&
+          previous.dispatch &&
+          queuedBeforeSend
+        ) {
+          current = previous.dispatch.context;
+          dispatchPrompt = previous.dispatch.prompt;
+          compactBefore = previous.dispatch.compactBefore;
+          previous = undefined;
+          return;
+        }
         if (previous.status !== "complete")
           throw new AssistantChiefContextUnknownError(input.operationId);
         if (previous.fingerprint !== fingerprint)
@@ -331,7 +350,11 @@ export function createAssistantChiefContext(
           estimateSource: "text-estimate",
         };
       await put(CONTEXT, current);
-      await put<Operation>(key, { fingerprint, status: "started" });
+      await put<Operation>(key, {
+        fingerprint,
+        status: "started",
+        dispatch: { context: current, prompt: dispatchPrompt, compactBefore },
+      });
     }, "critical");
     if (previous) {
       if (previous.status === "complete" && previous.result)
@@ -416,6 +439,7 @@ export function createAssistantChiefContext(
               }
             : undefined,
           assistantTextLimits(dispatchPrompt, input.tokenCap, compactBefore ? 2 : 1),
+          { operationId: input.operationId, role: "chief" },
         ),
       );
       input.signal.throwIfAborted();
@@ -486,6 +510,12 @@ export function createAssistantChiefContext(
       }, "critical");
       return result;
     } catch {
+      if (
+        await assistantHelperQueuedBeforeSend(store, input.operationId, "chief").catch(() => false)
+      )
+        throw Object.assign(new Error("Supervisor work is queued before provider dispatch."), {
+          code: "ASSISTANT_CHIEF_WORK_WAITING",
+        });
       try {
         await store.transaction(async () => {
           const latest = (await read<Context>(CONTEXT)) ?? current;

@@ -51,7 +51,7 @@ function GoalSettingsForm({
       as="form"
       size="secondary"
       tone="inherit"
-      aria-label={t("Edit goal settings")}
+      aria-label={t("Edit epic settings")}
       className="task-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -152,7 +152,7 @@ export function GoalSettingsDialog({
   return (
     <Modal
       padding="none"
-      title={t("Edit goal settings")}
+      title={t("Edit epic settings")}
       scroll="none"
       onClose={() => {
         if (!saving) goals.stopEditing();

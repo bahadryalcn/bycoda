@@ -54,23 +54,15 @@ export function knownAppVersionState(): string | undefined {
 
 export async function isUpdaterEnabled(): Promise<boolean> {
   if (!PRODUCT_IDENTITY.updaterEnabled) return false;
-  try {
-    const identifier = await getIdentifier();
-    return (knownUpdaterEnabled = identifier === PRODUCT_IDENTIFIER);
-  } catch {
-    return false;
-  }
+  const identifier = await getIdentifier();
+  return (knownUpdaterEnabled = identifier === PRODUCT_IDENTIFIER);
 }
 
 export const UPDATES_DISABLED_MESSAGE =
   "Automatic updates are disabled in this build. Rebuild from source to update (see docs/reference/fork.md).";
 
 export async function readAppVersion(): Promise<string> {
-  try {
-    return (knownAppVersion = await getVersion());
-  } catch {
-    return "0.0.0";
-  }
+  return (knownAppVersion = await getVersion());
 }
 
 /** One feed check. Its outcome sets the cadence of the background probes. */

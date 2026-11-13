@@ -88,7 +88,7 @@ export function AutoGroupDialog({ cwd, skills }: { cwd: string; skills: Grouping
         variant="ghost"
         size="sm"
         iconOnly
-        label={t("Manage in Models")}
+        label={t("Manage models")}
         onClick={() => openModelsSettings("roles")}
       >
         <Settings className="icon-sm" aria-hidden="true" />

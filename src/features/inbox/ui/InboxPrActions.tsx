@@ -58,15 +58,18 @@ export function githubPrActionCopy(
   baseRef: string,
   headRef: string,
 ): { title: string; detail: string; confirm: string; progress: string } {
-  const source = headRef ? `“${headRef}”` : "this branch";
-  const destination = baseRef ? `“${baseRef}”` : "the base branch";
+  const source = headRef ? `“${headRef}”` : t("this branch");
+  const destination = baseRef ? `“${baseRef}”` : t("the base branch");
   switch (action) {
     case "merge":
       return {
         get title() {
           return t("Merge this pull request?");
         },
-        detail: `Every commit from ${source} will be added to ${destination} with a merge commit.`,
+        detail: t("Every commit from {p0} will be added to {p1} with a merge commit.", {
+          p0: source,
+          p1: destination,
+        }),
         confirm: "Merge pull request",
         progress: "Merging…",
       };
@@ -75,7 +78,10 @@ export function githubPrActionCopy(
         get title() {
           return t("Squash and merge?");
         },
-        detail: `The commits from ${source} will be combined into one commit on ${destination}.`,
+        detail: t("The commits from {p0} will be combined into one commit on {p1}.", {
+          p0: source,
+          p1: destination,
+        }),
         confirm: "Squash and merge",
         progress: "Merging…",
       };
@@ -84,7 +90,10 @@ export function githubPrActionCopy(
         get title() {
           return t("Rebase and merge?");
         },
-        detail: `The commits from ${source} will be rebased individually onto ${destination}.`,
+        detail: t("The commits from {p0} will be rebased individually onto {p1}.", {
+          p0: source,
+          p1: destination,
+        }),
         confirm: "Rebase and merge",
         progress: "Merging…",
       };
@@ -93,7 +102,7 @@ export function githubPrActionCopy(
         get title() {
           return t("Convert to draft?");
         },
-        detail: "Reviewers will see that this pull request is not ready to merge.",
+        detail: t("Reviewers will see that this pull request is not ready to merge."),
         confirm: "Convert to draft",
         progress: "Converting…",
       };
@@ -102,7 +111,7 @@ export function githubPrActionCopy(
         get title() {
           return t("Mark as ready for review?");
         },
-        detail: "Reviewers will see that this pull request is ready for feedback.",
+        detail: t("Reviewers will see that this pull request is ready for feedback."),
         confirm: "Ready for review",
         progress: "Updating…",
       };
@@ -111,7 +120,7 @@ export function githubPrActionCopy(
         get title() {
           return t("Close this pull request?");
         },
-        detail: "The pull request will close without merging. You can reopen it later.",
+        detail: t("The pull request will close without merging. You can reopen it later."),
         confirm: "Close pull request",
         progress: "Closing…",
       };
@@ -120,7 +129,7 @@ export function githubPrActionCopy(
         get title() {
           return t("Reopen this pull request?");
         },
-        detail: "The pull request will return to the open state.",
+        detail: t("The pull request will return to the open state."),
         confirm: "Reopen pull request",
         progress: "Reopening…",
       };
@@ -335,7 +344,7 @@ export function GithubPrActions({
       ) : null}
       {notice ? (
         <Alert tone="info" inline className="w-full">
-          {notice}
+          {t(notice)}
         </Alert>
       ) : null}
       {refreshError ? <InlineError>{refreshError}</InlineError> : null}
@@ -359,7 +368,7 @@ export function GithubPrActions({
             <Text as="p" size="caption" tone="secondary">
               {confirmCopy.detail}
               {confirmation.expectedHeadOid
-                ? ` Reviewed head: ${confirmation.expectedHeadOid}`
+                ? ` ${t("Reviewed head: {p0}", { p0: confirmation.expectedHeadOid })}`
                 : ""}
             </Text>
           </div>

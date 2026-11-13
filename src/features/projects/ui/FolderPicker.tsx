@@ -69,14 +69,15 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   const [newName, setNewName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [homeRevision, setHomeRevision] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const request = useRef(0);
   const mounted = useRef(true);
   const managerLabel = IS_MAC
-    ? "Open in Finder"
+    ? t("Open in Finder")
     : IS_WIN
-      ? "Open in File Explorer"
-      : "Open in File Manager";
+      ? t("Open in File Explorer")
+      : t("Open in File Manager");
   const parent = directory ? parentPath(directory) : "";
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Initializes the mounted picker's OS home/drive snapshot and cancels late native replies on unmount.
@@ -90,6 +91,8 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
         },
         () => {},
       );
+    setLoading(true);
+    setError(undefined);
     void homeDir().then(
       (path) => {
         if (!mounted.current) return;
@@ -109,7 +112,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
       mounted.current = false;
       request.current++;
     };
-  }, []);
+  }, [homeRevision]);
 
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps the open directory's filesystem snapshot and list focus synchronized with native navigation and refresh.
   useEffect(() => {
@@ -165,7 +168,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
   async function createFolder() {
     const name = newName?.trim();
     if (!name || /[/\\]/.test(name) || name === "." || name === "..") {
-      setError("Enter a folder name without path separators.");
+      setError(t("Enter a folder name without path separators."));
       return;
     }
     await run(async () => {
@@ -429,15 +432,21 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
               <Alert tone="danger" className="min-w-0 flex-[1_1_12rem]">
                 {error}
               </Alert>
-              <Button
-                variant="secondary"
-                motion="none"
-                type="button"
-                disabled={busy}
-                onClick={() => setRevision((value) => value + 1)}
-              >
-                {t("Retry")}
-              </Button>
+              {loadFailed ? (
+                <Button
+                  variant="secondary"
+                  motion="none"
+                  type="button"
+                  disabled={busy || loading}
+                  onClick={() =>
+                    directory
+                      ? setRevision((value) => value + 1)
+                      : setHomeRevision((value) => value + 1)
+                  }
+                >
+                  {t("Retry")}
+                </Button>
+              ) : null}
             </div>
           ) : null}
           <div

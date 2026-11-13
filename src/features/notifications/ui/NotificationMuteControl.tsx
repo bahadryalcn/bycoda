@@ -26,7 +26,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<"menu" | "custom" | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
-  const { preferences, muted: mutedIds } = useNotificationPreferencesView();
+  const { preferences, muted: mutedIds, unavailable } = useNotificationPreferencesView();
   const muted = projectIds.filter((id) => mutedIds.has(id));
   const status =
     muted.length === 0
@@ -40,7 +40,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
     if (restoreFocus) trigger.current?.focus();
   };
   const change = (mutedUntil: number | null | undefined) => {
-    if (!projectIds.length) return;
+    if (!projectIds.length || unavailable) return;
     try {
       updateNotificationPreferences(projectIds, { mutedUntil });
       setError(null);
@@ -63,6 +63,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
           type="button"
           aria-label={t("Resume notifications")}
           variant="ghost"
+          disabled={unavailable}
           onClick={() => change(undefined)}
         >
           {t("Resume notifications")}
@@ -77,8 +78,8 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
         tooltip={compact && status ? status : undefined}
         aria-label={muted.length ? t("Change mute duration") : t("Mute notifications")}
         aria-haspopup={open === "custom" ? "dialog" : "menu"}
-        aria-expanded={open !== null}
-        disabled={!projectIds.length}
+        aria-expanded={open === "custom" || (open === "menu" && !unavailable)}
+        disabled={!projectIds.length || unavailable}
         onClick={() => setOpen(open ? null : "menu")}
       >
         <BellOff className="icon-sm" aria-hidden="true" />
@@ -94,7 +95,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
           {error}
         </Alert>
       ) : null}
-      {open === "menu" && trigger.current ? (
+      {open === "menu" && !unavailable && trigger.current ? (
         <ExplorerMenu
           x={trigger.current.getBoundingClientRect().right - 244}
           y={trigger.current.getBoundingClientRect().bottom + 4}

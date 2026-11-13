@@ -134,7 +134,7 @@ export function TaskDeliveryDialog({
       <div className="task-delivery">
         <Text as="p" size="secondary" leading="inherit">
           {t(
-            "The completed task stays on its branch. Pending tasks in this goal and project will use the selected integration worktree.",
+            "The completed task stays on its branch. Pending tasks in this epic and project will use the selected integration worktree.",
           )}
         </Text>
         {error ? <Alert tone="danger">{error}</Alert> : null}

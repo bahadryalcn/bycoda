@@ -12,7 +12,10 @@ export const DESKTOP_RELAY_STALE_MS = 45_000;
 
 /** Owner-authenticated desktop relay. Requests expire without replaying mutations. */
 export class ConversationDesktopRelay {
-  constructor(private readonly environmentId?: string) {}
+  constructor(
+    private readonly environmentId?: string,
+    private readonly requireAssistantApproval?: (operation: unknown) => Promise<boolean>,
+  ) {}
   private lastSeen = 0;
   private pending = new Map<
     string,
@@ -66,6 +69,17 @@ export class ConversationDesktopRelay {
     },
     authorized: () => boolean | Promise<boolean>,
   ): Promise<unknown> {
+    if (action === "assistant.background.effect") {
+      if (
+        source.environmentId !== this.environmentId ||
+        !source.threadId ||
+        source.projectId ||
+        source.targetProjectCwd ||
+        source.targetDeviceHash
+      )
+        throw new Error("Invalid background Room source.");
+      return this.enqueue(action, input, { threadId: source.threadId }, authorized);
+    }
     if (
       action === "ui.tools.open" ||
       action === "ui.tools.status" ||
@@ -196,10 +210,14 @@ export class ConversationDesktopRelay {
           "servers.ssh.save",
           "servers.ssh.remove",
           "management.write.authorize",
+          "desktop.act.authorize",
         ].includes(action)
       )
     )
       throw new Error("Unsupported global assistant desktop operation.");
+    // A project thread's desktop approval names its project folder through `call`.
+    if (action === "desktop.act.authorize" && (source.projectId || source.targetProjectCwd))
+      throw new Error("Invalid global desktop approval source.");
     if (
       source.targetProjectCwd &&
       (!source.projectId || !(action.startsWith("organization.") || isRoomWorkspaceAction(action)))
@@ -214,6 +232,7 @@ export class ConversationDesktopRelay {
         ...(source.targetProjectCwd ? { targetProjectCwd: source.targetProjectCwd } : {}),
       },
       authorized,
+      source.targetDeviceHash,
     );
   }
   private enqueue(
@@ -223,12 +242,33 @@ export class ConversationDesktopRelay {
     authorized: () => boolean | Promise<boolean>,
     expectedOwner?: string,
     fullAccess?: () => boolean | Promise<boolean>,
+    policyPrepared = false,
   ): Promise<unknown> {
     if (Date.now() - this.lastSeen > DESKTOP_RELAY_STALE_MS)
       throw new Error(
         "Desktop relay is offline. Open the updated bycoda desktop connected to this host.",
       );
     if (this.pending.size >= 64) throw new Error("Desktop relay is busy.");
+    if (
+      !policyPrepared &&
+      source.threadId &&
+      action === "management.write.authorize" &&
+      this.requireAssistantApproval
+    ) {
+      const requireApproval = this.requireAssistantApproval;
+      return requireApproval(input.operation).then((required) =>
+        this.enqueue(
+          action,
+          { ...input, requireOwnerApproval: required },
+          source,
+          async () =>
+            (await authorized()) && (required || !(await requireApproval(input.operation))),
+          expectedOwner,
+          fullAccess,
+          true,
+        ),
+      );
+    }
     const id = randomUUID();
     return new Promise((resolve, reject) => {
       const deadline = Date.now() + 240000;
@@ -324,6 +364,59 @@ export class ConversationDesktopRelay {
     const fullAccess = entry.fullAccess ? (await entry.fullAccess()) === true : false;
     if (!current() || !(await entry.authorized()) || !current()) return { authorized: false };
     return { authorized: true, fullAccess };
+  }
+  async authorizeBackgroundCallback(
+    id: string,
+    owner: string,
+    input: {
+      environmentId: string;
+      threadId: string;
+      operationId: string;
+      operationHash: string;
+      challenge: string;
+    },
+  ) {
+    const entry = this.pending.get(id);
+    const matches = () => {
+      if (
+        !entry ||
+        this.pending.get(id) !== entry ||
+        entry.request.threadId !== input.threadId ||
+        input.environmentId !== this.environmentId
+      )
+        return false;
+      const payload = entry.request.input as {
+        sourceJson?: unknown;
+        operationHash?: unknown;
+        challenge?: unknown;
+      };
+      if (
+        !payload ||
+        typeof payload.sourceJson !== "string" ||
+        payload.operationHash !== input.operationHash ||
+        payload.challenge !== input.challenge
+      )
+        return false;
+      try {
+        const source = JSON.parse(payload.sourceJson) as {
+          operationId?: unknown;
+          threadId?: unknown;
+          environmentId?: unknown;
+        };
+        return (
+          source.operationId === input.operationId &&
+          source.threadId === input.threadId &&
+          source.environmentId === input.environmentId
+        );
+      } catch {
+        return false;
+      }
+    };
+    return (
+      matches() &&
+      (await this.authorize(id, "assistant.background.effect", owner)).authorized &&
+      matches()
+    );
   }
   async finish(id: string, value: unknown, error?: string, owner = "desktop") {
     const entry = this.pending.get(id);

@@ -3,6 +3,7 @@ import { useLocale, useT } from "../i18n";
 import { formatRelativeTime } from "../i18n/format";
 import { dateTimeFormat } from "../lib/intl";
 import { useToday } from "./arc/lib/use-today";
+import { parseTimestamp } from "../lib/time/timestamps";
 import { optionalTextAttributes, type TextRoles, type TextSize, type TextTone } from "./Text";
 
 export type TimestampFormat =
@@ -53,8 +54,8 @@ export function Timestamp({
   const t = useT();
   const locale = useLocale();
   const today = useToday();
-  if (!Number.isFinite(value)) return null;
-  const date = new Date(value);
+  const date = parseTimestamp(value);
+  if (!date) return null;
   const yesterday = today ? new Date(today) : undefined;
   yesterday?.setDate(yesterday.getDate() - 1);
   const sameDay = (other: Date | undefined) =>

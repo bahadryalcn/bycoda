@@ -1,4 +1,5 @@
 /** Public connections contract; exports stay explicit to preserve load isolation. */
+export { classifyCommandFailure } from "../model/remoteCommandRetry";
 export {
   loadRemoteBlock,
   loadRemoteHistoryPage,

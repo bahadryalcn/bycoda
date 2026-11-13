@@ -25,6 +25,7 @@ export type AccountFormProps = {
   /** The account being edited; null adds a new one. */
   account: MessagingAccount | null;
   onSaved: (account: MessagingAccount) => void;
+  onSavingChange?: (saving: boolean) => void;
   /** Absent while the form is the only way to add the first account. */
   onCancel?: () => void;
 };
@@ -49,13 +50,24 @@ export function MessagingAccountsCard({
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [saved, setSaved] = useState<MessagingAccount | null>(null);
+  const [drafts, setDrafts] = useState<string[]>([]);
+  const [saving, setSaving] = useState<string[]>([]);
   const empty = accounts !== null && accounts.length === 0;
   const target = accounts === null ? null : (editing ?? (empty ? "new" : null));
   const editAccount = accounts?.find((account) => account.id === target) ?? null;
   const formOpen = target === "new" || editAccount !== null;
+  const open = (id: string) => {
+    if (saving.length || removing) return;
+    setDrafts((current) => (current.includes(id) ? current : [...current, id]));
+    setEditing(id);
+  };
+  const close = (id: string) => {
+    setDrafts((current) => current.filter((value) => value !== id));
+    setEditing((current) => (current === id ? null : current));
+  };
 
   const remove = async (account: MessagingAccount) => {
-    if (removing) return;
+    if (removing || saving.length) return;
     setRemoving(account.id);
     setRemoveError(null);
     try {
@@ -151,18 +163,18 @@ export function MessagingAccountsCard({
                     <Badge
                       size="sm"
                       appearance="subtle"
-                      tone={account.connected ? "success" : "warning"}
+                      tone={account.connected ? "neutral" : "warning"}
                     >
-                      {account.connected ? t("Connected") : t("Credentials missing")}
+                      {account.connected ? t("Configured") : t("Credentials missing")}
                     </Badge>
                     <Button
-                      disabled={removing !== null || target === account.id}
-                      onClick={() => setEditing(account.id)}
+                      disabled={saving.length > 0 || removing !== null || target === account.id}
+                      onClick={() => open(account.id)}
                     >
                       {t("Edit")}
                     </Button>
                     <InboxAccountActions
-                      disabled={removing !== null}
+                      disabled={saving.length > 0 || removing !== null}
                       loading={removing === account.id}
                       onDisconnect={() => {
                         remove(account).catch(() => undefined);
@@ -176,7 +188,11 @@ export function MessagingAccountsCard({
         )}
         {accounts !== null && !empty && target !== "new" ? (
           <div className="integration-actions">
-            <Button startIcon={<Plus className="icon-sm" />} onClick={() => setEditing("new")}>
+            <Button
+              disabled={saving.length > 0 || removing !== null}
+              startIcon={<Plus className="icon-sm" />}
+              onClick={() => open("new")}
+            >
               {addLabel}
             </Button>
           </div>
@@ -188,23 +204,38 @@ export function MessagingAccountsCard({
           {t("Connected as {p0}.", { p0: saved.identity || saved.label })}
         </SettingsFeedback>
       ) : null}
-      {formOpen ? (
-        <Form
-          key={target}
-          account={editAccount}
-          onSaved={(account) => {
-            setSaved(account);
-            setEditing(null);
-          }}
-          onCancel={empty ? undefined : () => setEditing(null)}
-        />
-      ) : null}
+      {[...new Set([...drafts, ...(formOpen && target ? [target] : [])])].map((id) => {
+        const account = accounts?.find((item) => item.id === id) ?? null;
+        if (id !== "new" && !account) return null;
+        return (
+          <div key={id} hidden={target !== id}>
+            <Form
+              account={account}
+              onSavingChange={(pending) =>
+                setSaving((current) =>
+                  pending
+                    ? [...new Set([...current, id])]
+                    : current.filter((owner) => owner !== id),
+                )
+              }
+              onSaved={(value) => {
+                setSaved(value);
+                close(id);
+              }}
+              onCancel={empty ? undefined : () => close(id)}
+            />
+          </div>
+        );
+      })}
     </>
   );
 }
 
 /** One in-flight save per form; a rejected draft stays for correction. */
-export function useAccountSave(onSaved: (account: MessagingAccount) => void) {
+export function useAccountSave(
+  onSaved: (account: MessagingAccount) => void,
+  onSavingChange?: (saving: boolean) => void,
+) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
@@ -216,6 +247,7 @@ export function useAccountSave(onSaved: (account: MessagingAccount) => void) {
     }
     pending.current = true;
     setSaving(true);
+    onSavingChange?.(true);
     setError(null);
     try {
       onSaved(await saveMessagingAccount(result.input));
@@ -224,6 +256,7 @@ export function useAccountSave(onSaved: (account: MessagingAccount) => void) {
     } finally {
       pending.current = false;
       setSaving(false);
+      onSavingChange?.(false);
     }
   };
   return { saving, error, save };

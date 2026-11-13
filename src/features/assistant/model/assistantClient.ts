@@ -109,6 +109,7 @@ export async function assistantRequest(
       "snapshot",
       "profile.get",
       "projects.list",
+      "notifications.targets",
       "manual.list",
       "memory.search",
       "threads.messages",

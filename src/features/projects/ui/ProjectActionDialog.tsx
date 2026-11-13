@@ -113,7 +113,7 @@ export function ProjectActionDialog({
   const applyPreset = ({ name, command, icon, url, devServer }: (typeof chips)[number]) =>
     setDraft({
       ...draft,
-      name,
+      name: detected.length ? name : t(name),
       command,
       icon,
       url,
@@ -123,15 +123,15 @@ export function ProjectActionDialog({
   const formId = useId();
   const shortcutError = projectActionShortcutError(draft.shortcut, actions, draft.id);
   const missing = !draft.name.trim()
-    ? "Enter a name for this action."
+    ? t("Enter a name for this action.")
     : draft.devServer && !draft.command.trim()
       ? t("Enter a command to start the development server.")
       : !draft.command.trim() && !draft.url.trim()
-        ? "Enter a command or a web address to continue."
+        ? t("Enter a command or a web address to continue.")
         : !validActionUrl(draft.url)
-          ? "Use an HTTP or HTTPS address."
+          ? t("Use an HTTP or HTTPS address.")
           : !draft.command.trim() && !draft.openUrlOnRun
-            ? "Enable the web address option so this action has something to run."
+            ? t("Enable the web address option so this action has something to run.")
             : shortcutError;
   return (
     <Modal
@@ -199,7 +199,9 @@ export function ProjectActionDialog({
                   variant="secondary"
                   disabled={added.has(preset.command.trim())}
                   aria-label={
-                    added.has(preset.command.trim()) ? `${preset.name}: ${t("Added")}` : undefined
+                    added.has(preset.command.trim())
+                      ? `${detected.length ? preset.name : t(preset.name)}: ${t("Added")}`
+                      : undefined
                   }
                   tooltip={detected.length ? preset.command : undefined}
                   onClick={() => applyPreset(preset)}
@@ -207,7 +209,7 @@ export function ProjectActionDialog({
                   {added.has(preset.command.trim()) ? (
                     <Check className="icon-sm" aria-hidden="true" />
                   ) : null}
-                  {preset.name}
+                  {detected.length ? preset.name : t(preset.name)}
                 </Button>
               ))}
               {more.length ? (
@@ -324,7 +326,7 @@ export function ProjectActionDialog({
                     setDraft({ ...draft, shortcut: value });
                     setShortcutHint("");
                   } else if (!["Control", "Meta", "Alt", "Shift"].includes(event.key))
-                    setShortcutHint("Include Ctrl, Alt or Command with another key.");
+                    setShortcutHint(t("Include Ctrl, Alt or Command with another key."));
                 }}
               />
             </Tooltip>

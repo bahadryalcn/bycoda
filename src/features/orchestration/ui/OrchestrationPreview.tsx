@@ -334,7 +334,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           )}
         </Text>
         <div className="min-w-0 flex-1">
-          <Text as="div" size="secondary" tone="neutral" weight="medium" truncate>
+          <Text as="div" size="secondary" tone="neutral" weight="medium" wrap="anywhere">
             {planning ? t("Planning assignments…") : proposal.title}
           </Text>
           <Text
@@ -456,12 +456,17 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                       <ChevronRight className="icon-sm shrink-0" />
                     )}
                     <OverflowTooltip label={task.title}>
-                      <Text size="caption" tone="inherit" truncate>
+                      <Text
+                        size="caption"
+                        tone="inherit"
+                        truncate={!open}
+                        wrap={open ? "anywhere" : undefined}
+                      >
                         {task.title}
                       </Text>
                     </OverflowTooltip>
                   </Button>
-                  <div className="max-w-[60%] min-w-0">
+                  <div className={editable ? "max-w-[60%] min-w-0" : "min-w-0 w-full ps-6"}>
                     {editable ? (
                       <AssignmentModel
                         task={task}
@@ -475,19 +480,20 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                         }
                       />
                     ) : (
-                      <Tooltip label={HARNESS_TITLE[task.harness]} asChild>
-                        <Text
-                          size="micro"
-                          tone="secondary"
-                          className="flex min-w-0 items-center gap-1.5"
-                        >
-                          <HarnessIcon harness={task.harness} className="icon-xs shrink-0" />
-                          <Text size="inherit" tone="inherit" truncate>
-                            {taskChoice?.name ?? modelDisplayName(task.model, task.harness)}
-                            {taskEffort ? ` · ${taskEffort}` : ""}
-                          </Text>
+                      <Text
+                        size="micro"
+                        tone="secondary"
+                        className="flex min-w-0 flex-wrap items-start gap-1.5"
+                      >
+                        <HarnessIcon harness={task.harness} className="icon-xs shrink-0" />
+                        <Text size="inherit" tone="inherit" wrap="anywhere">
+                          {taskChoice?.name ?? modelDisplayName(task.model, task.harness)}
+                          {taskEffort ? ` · ${taskEffort}` : ""}
                         </Text>
-                      </Tooltip>
+                        <Text size="inherit" tone="inherit" wrap="anywhere">
+                          {HARNESS_TITLE[task.harness]}
+                        </Text>
+                      </Text>
                     )}
                   </div>
                 </ActionHost>

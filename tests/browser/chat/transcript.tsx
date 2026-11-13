@@ -223,7 +223,7 @@ function ChatLayoutFixture() {
       id: `layout-command-${index}`,
       role: "tool",
       text: backgroundWork
-        ? `cd G:/Projects/my_projects/upstream && pnpm exec vitest run ${"src/features/sessions/very-long-unbroken-command-path/".repeat(5)}task-${index}.test.ts > temp/verification/background-work/task-${index}.log 2>&1`
+        ? `cd G:/Projects/work/upstream && pnpm exec vitest run ${"src/features/sessions/very-long-unbroken-command-path/".repeat(5)}task-${index}.test.ts > temp/verification/background-work/task-${index}.log 2>&1`
         : `Run pnpm exec check src/features/sessions/ui/very-long-command-path-${index}.tsx`,
       tool: {
         kind: "shell",

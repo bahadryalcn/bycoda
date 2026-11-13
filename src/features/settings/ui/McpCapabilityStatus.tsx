@@ -26,8 +26,8 @@ export function mcpState(
 ): McpState {
   if (server.enabled === false) return "off";
   if (checking) return "checking";
-  if (needsMcpSignIn(server)) return "sign-in";
   if (failed || ambiguous) return "unknown";
+  if (needsMcpSignIn(server)) return "sign-in";
   if (isMcpConnected(server.status)) return "connected";
   if (/failed|error|disconnected|needs authentication/i.test(server.status)) return "unavailable";
   return "unknown";

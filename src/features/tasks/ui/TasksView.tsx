@@ -1,3 +1,4 @@
+import { findRevealedTask } from "../model/taskReveal";
 import { Button } from "../../../shared/ui/Button";
 import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
 import { Text } from "../../../shared/ui/Text";
@@ -30,6 +31,7 @@ import {
   newTaskDraft,
   readTaskNotes,
   recheckTaskReview,
+  finishTaskWithFindings,
   recordTaskEvaluation,
   resolveTaskNote,
   retargetTask,
@@ -102,6 +104,7 @@ import { StewardsSection, useTaskStewards } from "./TaskStewards";
 import { SummaryPanel, useDailySummaryPanel } from "./TaskSummaryPanel";
 
 type Props = {
+  taskReveal?: import("../model/taskReveal").TaskRevealTarget & { token: number };
   goalReveal?: { machineId: string; goalId: string; token: number };
   besideRail?: boolean;
   compactRail?: boolean;
@@ -122,6 +125,7 @@ export function TasksView({
   onToggleSidebar,
   onOpenBackgroundSession,
   goalReveal,
+  taskReveal,
 }: Props) {
   "use memo";
   const t = useT();
@@ -155,6 +159,7 @@ export function TasksView({
         recents={recents}
         onOpenBackgroundSession={onOpenBackgroundSession}
         goalReveal={goalReveal}
+        taskReveal={taskReveal}
       />
     </Text>
   );
@@ -165,7 +170,8 @@ function TasksContent({
   recents,
   onOpenBackgroundSession,
   goalReveal,
-}: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession" | "goalReveal">) {
+  taskReveal,
+}: Pick<Props, "cwd" | "recents" | "onOpenBackgroundSession" | "goalReveal" | "taskReveal">) {
   useLocale();
   // Tasks for a project in a locked group are not shown.
   const viewStateKey = `tasks:${cwd ? projectKey(cwd) : "global"}`;
@@ -366,6 +372,34 @@ function TasksContent({
     setGoalFilter(goalKey(goalReveal.machineId, goalReveal.goalId));
     setSection("backlog");
   }, [goalReveal]);
+  const [handledTaskReveal, setHandledTaskReveal] = useState<number>();
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Resolves an external automation-history navigation request when its exact Host task arrives, once per request token.
+  useEffect(() => {
+    if (!taskReveal || handledTaskReveal === taskReveal.token) return;
+    setProjectFilter("all");
+    setGoalFilter(ALL_GOALS);
+    setSearchQuery("");
+    setStatusFilter("all");
+    setMachineFilter("all");
+    setSprintFilter("");
+    setSection("backlog");
+    const task = findRevealedTask(taskReveal, machines, storedTasks);
+    if (!task || isProjectLockedIn(lock, task.cwd)) return;
+    setHandledTaskReveal(taskReveal.token);
+    setSelectedKey(`${task.machineId}:${task.id}`);
+  }, [
+    taskReveal,
+    machines,
+    storedTasks,
+    lock,
+    handledTaskReveal,
+    setSearchQuery,
+    setSection,
+    setSprintFilter,
+    setGoalFilter,
+    setStatusFilter,
+    setMachineFilter,
+  ]);
   const stewards = useTaskStewards({
     ops,
     scope: { cwd, recents, projectFilter, lock, machines, selectedProject },
@@ -542,6 +576,7 @@ function TasksContent({
               putTask(saved);
             },
       onRecheckReview: () => void actOnTask(task, () => recheckTaskReview(task)),
+      onFinishWithFindings: () => void actOnTask(task, () => finishTaskWithFindings(task)),
       onMove: (to: TaskStatus) => onMove(task, to),
       onReviewWorkspace: async () => {
         const workspaceId = taskWorkspaceState(task).workspaceId;
@@ -686,6 +721,15 @@ function TasksContent({
       size="inherit"
       className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col"
     >
+      {taskReveal && handledTaskReveal !== taskReveal.token ? (
+        <Alert tone={board.pending ? "info" : "warning"}>
+          {t(
+            board.pending
+              ? "Loading task…"
+              : "This task is unavailable on its original machine and project.",
+          )}
+        </Alert>
+      ) : null}
       <TaskToolbar
         section={section}
         showReports={accessibleSprints.length > 0 || section === "reports"}
@@ -849,7 +893,7 @@ function TasksContent({
         <Text as="p" size="caption" tone="secondary">
           {t("Unattended work limits are managed in Models.")}{" "}
           <Button variant="link" onClick={() => openModelsSettings("order")}>
-            {t("Manage in Models")}
+            {t("Manage models")}
           </Button>
         </Text>
       ) : null}

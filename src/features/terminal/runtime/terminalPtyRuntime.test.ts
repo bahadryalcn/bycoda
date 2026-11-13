@@ -54,10 +54,71 @@ function runtime(id: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  pty.killPty.mockReset().mockResolvedValue(undefined);
+  pty.subscribePty.mockReset().mockReturnValue(() => {});
 });
 
 afterEach(async () => {
   await flush();
+});
+
+it("retries failed native retirement instead of retaining its rejected attempt", async () => {
+  const { instance, lifecycle, unsubscribe } = runtime("retirement-retry");
+  instance.start();
+  await flush();
+  pty.killPty.mockRejectedValueOnce(new Error("kill unavailable"));
+  await expect(instance.retire()).rejects.toThrow("kill unavailable");
+  expect(lifecycle).not.toHaveBeenCalledWith("closed");
+  await expect(instance.retire()).resolves.toBeUndefined();
+  expect(pty.killPty).toHaveBeenCalledTimes(2);
+  expect(unsubscribe).toHaveBeenCalledOnce();
+  expect(lifecycle).toHaveBeenLastCalledWith("closed");
+});
+
+it("a replacement retries the old failed retirement and waits for its acknowledgment", async () => {
+  const first = runtime("retirement-replacement");
+  first.instance.start();
+  await flush();
+  pty.killPty.mockRejectedValueOnce(new Error("kill unavailable"));
+  await expect(first.instance.retire()).rejects.toThrow("kill unavailable");
+  const kill = deferred();
+  pty.killPty.mockReturnValueOnce(kill.promise);
+  const second = runtime("retirement-replacement");
+  second.instance.start();
+  await flush();
+  expect(pty.killPty).toHaveBeenCalledTimes(2);
+  expect(pty.spawnPty).toHaveBeenCalledTimes(1);
+  expect(second.instance.spawned).toBe(false);
+  kill.resolve();
+  await flush();
+  expect(pty.spawnPty).toHaveBeenCalledTimes(2);
+  expect(second.instance.spawned).toBe(true);
+  await second.instance.retire();
+});
+
+it("a replacement that never spawned cannot erase the failed owner's retirement fence", async () => {
+  const first = runtime("retirement-fence");
+  first.instance.start();
+  await flush();
+  pty.killPty.mockRejectedValueOnce(new Error("kill unavailable"));
+  await expect(first.instance.retire()).rejects.toThrow("kill unavailable");
+  pty.killPty.mockRejectedValueOnce(new Error("still unavailable"));
+  const second = runtime("retirement-fence");
+  second.instance.start();
+  await flush();
+  expect(second.onStartFailed).toHaveBeenCalled();
+  await second.instance.retire();
+  const kill = deferred();
+  pty.killPty.mockReturnValueOnce(kill.promise);
+  const third = runtime("retirement-fence");
+  third.instance.start();
+  await flush();
+  expect(pty.spawnPty).toHaveBeenCalledTimes(1);
+  expect(pty.killPty).toHaveBeenCalledTimes(3);
+  kill.resolve();
+  await flush();
+  expect(third.instance.spawned).toBe(true);
+  await third.instance.retire();
 });
 
 it("retire during a pending start waits for the start, then kills exactly that PTY once", async () => {

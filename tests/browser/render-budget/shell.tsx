@@ -7,6 +7,7 @@ import { TitleBar } from "../../../src/app/shell/TitleBar";
 import { SessionPane, type SessionPaneProps } from "../../../src/features/sessions/ui/SessionPane";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
 import { newSession, type Block, type Session } from "../../../src/features/sessions/model/session";
+import type { SessionGoal } from "../../../src/features/sessions/model/providerGoal";
 import {
   modelsFor,
   resolveModel,
@@ -25,8 +26,10 @@ import {
 import { HarnessEventQueue } from "../../../src/app/model/harnessFlush";
 import type { HarnessEvent } from "../../../src/integrations/harness/core/types";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
-import { languageReady } from "../../../src/shared/i18n";
+import { languageReady, setLanguagePreference } from "../../../src/shared/i18n";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
+import { captureParentInputs } from "../../../src/features/sessions/data/parentInputClosure";
+import { getComposerDraft } from "../../../src/features/sessions/model/draftCache";
 import "../../../src/styles/index.css";
 
 // Real Sidebar + TitleBar + SessionPane (Composer + transcript). Only the native
@@ -35,8 +38,10 @@ import "../../../src/styles/index.css";
 const unavailable = async () => {
   throw new Error("No live provider in render-measure fixture");
 };
+const fixtureHarness =
+  new URLSearchParams(location.search).get("provider") === "codex" ? "codex" : "claude";
 registerHarness({
-  id: "claude",
+  id: fixtureHarness,
   live: true,
   canSteer: true,
   sendTurn: unavailable,
@@ -47,9 +52,14 @@ registerHarness({
   respondApproval: () => {},
   bindSession: () => {},
 });
-const modelId = "claude:render-measure";
-setHarnessModels("claude", [
-  { id: modelId, nativeId: "render-measure", harness: "claude", name: "Claude fixture model" },
+const modelId = `${fixtureHarness}:render-measure`;
+setHarnessModels(fixtureHarness, [
+  {
+    id: modelId,
+    nativeId: "render-measure",
+    harness: fixtureHarness,
+    name: fixtureHarness === "codex" ? "Codex fixture model" : "Claude fixture model",
+  },
 ]);
 const modelSource = {
   modelsFor,
@@ -85,7 +95,7 @@ const blocks: Block[] = Array.from({ length: TURNS }, (_, index): Block[] => [
 ]).flat();
 const sessionId = "render-measure-session";
 const initial: Session = {
-  ...newSession("claude", "/fixture/bycoda", modelId),
+  ...newSession(fixtureHarness, "/fixture/bycoda", modelId),
   id: sessionId,
   title: "Render measurement conversation",
   blocks,
@@ -95,7 +105,7 @@ const projects = ["/fixture/bycoda", "/fixture/mobile", "/fixture/service"];
 const history = Array.from({ length: 12 }, (_, index) => ({
   id: index === 0 ? sessionId : `discussion-${index}`,
   cwd: projects[0],
-  harness: "claude" as const,
+  harness: fixtureHarness,
   model: modelId,
   runtimeMode: "supervised" as const,
   title: index === 0 ? "Render measurement conversation" : `Product discussion ${index + 1}`,
@@ -113,6 +123,16 @@ declare global {
       }) => Promise<number>;
       blocks: () => number;
       liveText: () => number;
+      remountPane: () => void;
+      providerGoal: (goal: SessionGoal | undefined, ownerId: string | undefined) => void;
+      appearance: (theme: "light" | "dark", language: "en" | "tr", rtl: boolean) => Promise<void>;
+      draftAuthority: () => Promise<{
+        draft: unknown;
+        committedDraft: unknown;
+        composerText: unknown;
+        cachedDraft: string | undefined;
+        current: boolean;
+      }>;
     };
   }
 }
@@ -180,6 +200,7 @@ function Fixture() {
   const busy = !!sessions.find((item) => item.id === sessionId)?.busy;
   const [cwd, setCwd] = useState(projects[0]);
   const [tab, setTab] = useState<"sessions" | "files" | "changes">("sessions");
+  const [paneRevision, setPaneRevision] = useState(0);
   const queue = useRef<HarnessEventQueue | null>(null);
   useEffect(() => {
     // Mount-only fixture control surface; Playwright drives it through window.__shell.
@@ -199,6 +220,34 @@ function Fixture() {
       },
     );
     window.__shell = {
+      remountPane: () => setPaneRevision((previous) => previous + 1),
+      providerGoal: (providerGoal, providerSessionId) =>
+        updateSession((previous) => ({ ...previous, providerGoal, providerSessionId })),
+      appearance: async (theme, language, rtl) => {
+        applyThemePreference(theme);
+        await setLanguagePreference(language);
+        document.documentElement.dir = rtl ? "rtl" : "ltr";
+      },
+      draftAuthority: async () => {
+        const capture = await captureParentInputs(sessionId);
+        try {
+          const parent = capture.snapshots.find(
+            (entry) => entry.kind === "session-parent",
+          )?.snapshot;
+          const composer = capture.snapshots.find(
+            (entry) => entry.kind === "composer-parent",
+          )?.snapshot;
+          return {
+            draft: parent?.draft,
+            committedDraft: parent?.committedDraft,
+            composerText: composer?.text,
+            cachedDraft: getComposerDraft(sessionId),
+            current: capture.current(),
+          };
+        } finally {
+          capture.release();
+        }
+      },
       blocks: () => sessionsRef.current[0].blocks.length,
       liveText: () => {
         const last = sessionsRef.current[0].blocks.at(-1);
@@ -244,8 +293,8 @@ function Fixture() {
             project: "bycoda",
             more: [],
             sessionCount: 1,
-            harnesses: ["claude"],
-            busyHarnesses: busy ? ["claude"] : [],
+            harnesses: [fixtureHarness],
+            busyHarnesses: busy ? [fixtureHarness] : [],
             files: [],
             multiPane: false,
           },
@@ -305,7 +354,7 @@ function Fixture() {
         />
         <main className="relative min-h-0 min-w-0 flex-1 bg-(--ui-surface)">
           <ModelSourceContext.Provider value={modelSource}>
-            <Pane sessions={sessions} />
+            <Pane key={paneRevision} sessions={sessions} />
           </ModelSourceContext.Provider>
         </main>
       </div>

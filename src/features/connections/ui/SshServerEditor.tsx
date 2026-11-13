@@ -19,7 +19,11 @@ import {
 } from "../model/sshJumpPolicies";
 import { SshJumpChainEditor } from "./SshJumpChainEditor";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { sshEndpointPreview, validSshEndpointPreview } from "../model/sshEndpointReview";
+import {
+  sshEndpointPreview,
+  validSshEndpointPreview,
+  sameSshEndpoint,
+} from "../model/sshEndpointReview";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -27,6 +31,7 @@ import { ModalActions } from "../../../shared/ui/Modal";
 import { TextField } from "../../../shared/ui/TextField";
 import { saveSshConnection, type ServerRecord, type SshEndpoint } from "../model/serverInventory";
 import { errorText } from "./serverActionFeedback";
+import type { SshTerminalOpenResult } from "./serversTerminalContext";
 
 /** Stores endpoint references only. Password and private key material never enter this form. */
 export function SshServerEditor({
@@ -38,7 +43,11 @@ export function SshServerEditor({
   server?: ServerRecord;
   onClose: () => void;
   onSaved?: (server: ServerRecord) => void;
-  onConnect?: (endpoint: SshEndpoint, name: string, saved?: ServerRecord) => void;
+  onConnect?: (
+    endpoint: SshEndpoint,
+    name: string,
+    saved?: ServerRecord,
+  ) => SshTerminalOpenResult | Promise<SshTerminalOpenResult>;
 }) {
   // Retain unfinished drafts, while a later canonical edit starts from its new
   // endpoint/name instead of silently reviving an older editor snapshot.
@@ -94,6 +103,10 @@ export function SshServerEditor({
   const chain = jumpHosts.map((hop) => hop.trim());
   const hasChain = chain.length > 0 && !(chain.length === 1 && !chain[0]);
   const [saveConnection, setSaveConnection] = useRetainedState(`${scope}:save`, false);
+  const [savedConnection, setSavedConnection] = useRetainedState<ServerRecord | undefined>(
+    `${scope}:saved-handoff`,
+    undefined,
+  );
   const endpoint: SshEndpoint = {
     host: host.trim(),
     user: user.trim() || undefined,
@@ -142,6 +155,7 @@ export function SshServerEditor({
     setProxyScheme("http");
     setProxyPort("8080");
     setSaveConnection(false);
+    setSavedConnection(undefined);
   };
   return (
     <Sheet
@@ -181,17 +195,32 @@ export function SshServerEditor({
               return;
             }
             let saved: ServerRecord | undefined;
-            if (!onConnect || saveConnection)
-              saved = await saveSshConnection({
-                id: server?.id,
-                name: name.trim() || sshEndpointPreview(endpoint),
-                endpoint,
-              });
+            if (!onConnect || saveConnection) {
+              const savedName = name.trim() || sshEndpointPreview(endpoint);
+              if (
+                onConnect &&
+                savedConnection?.name === savedName &&
+                savedConnection.sshEndpoint &&
+                sameSshEndpoint(savedConnection.sshEndpoint, endpoint)
+              ) {
+                saved = savedConnection;
+              } else {
+                saved = await saveSshConnection({ id: server?.id, name: savedName, endpoint });
+                if (onConnect) setSavedConnection(saved);
+              }
+            }
             if (onConnect) {
               phase = "connect";
-              onConnect(endpoint, name.trim() || sshEndpointPreview(endpoint), saved);
+              const result = await onConnect(
+                endpoint,
+                name.trim() || sshEndpointPreview(endpoint),
+                saved,
+              );
+              if (result !== "accepted") return;
+              clearDraft();
+              onClose();
             } else if (saved) onSaved?.(saved);
-            clearDraft();
+            if (!onConnect) clearDraft();
           } catch (reason) {
             setError(
               `${phase === "connect" ? t("Couldn’t open this SSH connection.") : t("Couldn’t save the SSH server.")} ${errorText(reason)}`,

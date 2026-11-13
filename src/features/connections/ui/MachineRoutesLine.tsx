@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { Button } from "../../../shared/ui/Button";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
 import type { RemoteMachine } from "../model/protocol";
@@ -33,40 +35,81 @@ const sourceLabel = (source: Route["source"]) =>
  * owner's own entries and are always tried (Edit changes them); an address the
  * host found can be turned off. The order never moves when a switch changes. */
 export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
+  return (
+    <MachineRouteDetails key={`${machine.id}:${JSON.stringify(machine.ssh)}`} machine={machine} />
+  );
+}
+
+function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
   useLocale();
   const ssh = machine.ssh;
   const [routes, setRoutes] = useState<MachineRoutes>();
   const [checks, setChecks] = useState<Record<string, boolean | null>>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState(false);
+  const [probeError, setProbeError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
   const key = ssh ? JSON.stringify(ssh) : "";
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Keeps this mounted machine's native route snapshot current across retries and cancels obsolete reads on cleanup.
   useEffect(() => {
     if (!key) return;
     let current = true;
     const target = JSON.parse(key);
+    setLoading(true);
+    setReadError(false);
+    setProbeError(false);
     invoke<MachineRoutes>("remote_machine_routes", { machineId: machine.id, target })
       .then((value) => current && setRoutes(value))
-      .catch(() => current && setRoutes(undefined));
+      .catch((reason: unknown) => {
+        if (current)
+          setReadError(
+            !/unknown command|command.*not found|not supported|no desktop/i.test(String(reason)),
+          );
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
     invoke<RouteCheck[]>("remote_machine_route_check", { target })
       .then(
         (value) =>
           current &&
           setChecks(Object.fromEntries(value.map((check) => [check.address, check.reachable]))),
       )
-      .catch(() => current && setChecks({}));
+      .catch(() => {
+        if (current) {
+          setChecks({});
+          setProbeError(true);
+        }
+      });
     return () => {
       current = false;
     };
-  }, [machine.id, key]);
+  }, [machine.id, key, retry]);
   if (!ssh) return null;
   // Without the desktop's route store only the saved other address is known.
   if (!routes)
-    return ssh.alternate ? (
-      <Text wrap="anywhere" as="div" tone="muted" className="mt-1">
-        {t("Other address · ")}
-        {ssh.alternate}
-      </Text>
-    ) : null;
+    return (
+      <div>
+        {loading ? (
+          <LoadingText />
+        ) : readError ? (
+          <InlineError>{t("Addresses could not be loaded.")}</InlineError>
+        ) : null}
+        {readError ? (
+          <Button loading={loading} onClick={() => setRetry((value) => value + 1)}>
+            {t("Retry")}
+          </Button>
+        ) : null}
+        {ssh.alternate ? (
+          <Text wrap="anywhere" as="div" tone="muted" className="mt-1">
+            {t("Other address · ")}
+            {ssh.alternate}
+          </Text>
+        ) : null}
+      </div>
+    );
   const save = (disabled: string[], prefer: RoutePreference) => {
     setSaving(true);
     setError("");
@@ -103,6 +146,7 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
               label={t("Try first")}
               fieldSize="sm"
               value={routes.prefer}
+              disabled={saving}
               onValueChange={(value) => {
                 if (!saving) save(disabled, value as RoutePreference);
               }}
@@ -169,6 +213,11 @@ export function MachineRoutesLine({ machine }: { machine: RemoteMachine }) {
         {t("Change the SSH and other address with Edit name and address.")}
       </Text>
       {error ? <InlineError>{error}</InlineError> : null}
+      {readError ? <InlineError>{t("Addresses could not be loaded.")}</InlineError> : null}
+      {probeError ? <InlineError>{t("Address check unavailable.")}</InlineError> : null}
+      <Button disabled={saving} loading={loading} onClick={() => setRetry((value) => value + 1)}>
+        {readError || probeError ? t("Retry") : t("Check again")}
+      </Button>
     </section>
   );
 }

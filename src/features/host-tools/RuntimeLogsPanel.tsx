@@ -60,6 +60,7 @@ import {
 } from "./toolsDraftTransfer";
 import { runtimeLogDisplayLevel, type RuntimeLogDisplayLevel } from "./runtimeLogPresentation";
 import { ErrorDetails } from "../../shared/ui/ErrorDetails";
+import { toolPreferences } from "./model/toolPreferences";
 import "./runtime-logs.css";
 
 type Props = {
@@ -75,7 +76,6 @@ type Props = {
 };
 
 const PROJECT_TARGET: HostToolTarget = { kind: "project" };
-const POLL_INTERVAL = 1_500;
 const LEVEL_FILTERS: Record<string, RuntimeLogDisplayLevel[] | undefined> = {
   all: undefined,
   problems: ["error", "warn"],
@@ -157,8 +157,15 @@ function ScopedRuntimeLogsPanel({
   const moreTrigger = useRef<HTMLButtonElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [level, setLevel] = useRetainedState(`${stateKey}:level`, saved?.level ?? "all");
-  const [grouped, setGrouped] = useRetainedState(`${stateKey}:grouped`, saved?.grouped ?? true);
-  const [follow, setFollow] = useRetainedState(`${stateKey}:follow`, saved?.follow ?? true);
+  const [grouped, setGrouped] = useRetainedState(
+    `${stateKey}:grouped`,
+    saved?.grouped ?? toolPreferences.logsGrouped.load(),
+  );
+  const [follow, setFollow] = useRetainedState(
+    `${stateKey}:follow`,
+    saved?.follow ?? toolPreferences.logsFollow.load(),
+  );
+  const [pollInterval] = useState(toolPreferences.logsRefreshInterval.load);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(saved?.selected));
   const restoreScroll = useRef<number | undefined>(saved?.scrollTop);
   useLayoutEffect(() => {
@@ -289,11 +296,11 @@ function ScopedRuntimeLogsPanel({
         if (alive.current) {
           if (showBusy) setBusy(false);
           if (visible.current && !pausedRef.current && !document.hidden)
-            timer.current = setTimeout(() => void read(false), POLL_INTERVAL);
+            timer.current = setTimeout(() => void read(false), pollInterval);
         }
       }
     },
-    [cwd, sessionId, terminalMonitorId],
+    [cwd, sessionId, terminalMonitorId, pollInterval],
   );
 
   useEffect(() => {

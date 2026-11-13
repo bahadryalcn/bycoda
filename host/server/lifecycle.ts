@@ -1,6 +1,11 @@
 import { installAssistantObservationProducers } from "../assistant/observations/assistant-observation-producers";
 import { perfMetrics } from "../diagnostics/perf-metrics";
 import type { ServerBindings } from "./bindings";
+import {
+  markSessionWorkCoverage,
+  startSessionWork,
+  stopSessionWork,
+} from "../work/session-adapter";
 import { guardUnhandledRejections } from "./support";
 /** Total time a stopping Host may spend draining before it force-exits. */
 export const HOST_SHUTDOWN_DEADLINE_MS = 45_000;
@@ -167,6 +172,10 @@ export async function createLifecycleRuntime(
         }
       };
       await Promise.all([
+        step("work", async () => {
+          await markSessionWorkCoverage(dependencies.engine.store);
+          startSessionWork(dependencies.engine.store);
+        }),
         step("retention", () => dependencies.managed.retention.start()),
         step("queue-drainer", () => dependencies.queueDrainer.start()),
         step("crews", () => dependencies.crews.start()),
@@ -188,6 +197,7 @@ export async function createLifecycleRuntime(
   const closeResources = (): ClosePromise => {
     if (resourceClose) return resourceClose;
     dependencies.closing = true;
+    stopSessionWork(dependencies.engine.store);
     releaseRejectionGuard();
     const closing = dependencies.engine.store.db.outsideScope(async () => {
       const pending: Promise<unknown>[] = [];

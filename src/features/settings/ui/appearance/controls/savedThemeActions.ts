@@ -24,6 +24,7 @@ import {
 import { saveWorkingIndicator } from "../../../model/workingIndicator";
 import { saveWorkspaceBackground } from "../../../model/workspaceBackground";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
+import { generatorSession } from "./themeGeneratorSession";
 
 const percent = (fraction: number) => Math.round(fraction * 100);
 
@@ -134,6 +135,7 @@ export async function applySavedTheme(
   appearance: AppearanceSettings,
   theme: SavedTheme,
 ): Promise<"applied" | "image-missing"> {
+  generatorSession.invalidateImageIntent();
   applyAppearanceSnapshot(appearance, theme.look);
   if (!theme.imageId) {
     if (appearance.chatBackgroundPath) await appearance.onClearChatBackground();

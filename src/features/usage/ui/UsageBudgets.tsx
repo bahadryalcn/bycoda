@@ -15,7 +15,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { t } from "../../../shared/i18n";
+import { t, useFormat } from "../../../shared/i18n";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
@@ -65,6 +65,7 @@ export function UsageBudgets({ refresh = 0 }: { refresh?: number }) {
 }
 
 function UsageBudgetsContent({ refresh }: { refresh: number }) {
+  const format = useFormat();
   const sessions = useShellSessions();
   const lock = useLockSnapshot();
   const [version, setVersion] = useState(0);
@@ -233,8 +234,14 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
             ? undefined
             : readings[budget.id];
         const known = reading?.used != null;
-        const format = (n: number) =>
-          budget.metric === "tokens" ? formatUsageTokens(n) : `${n.toFixed(1)}%`;
+        const formatReading = (n: number) =>
+          budget.metric === "tokens"
+            ? formatUsageTokens(n)
+            : format.formatNumber(n / 100, {
+                style: "percent",
+                minimumFractionDigits: 1,
+                maximumFractionDigits: 1,
+              });
         return (
           <Surface key={budget.id} variant="outline" padding="md" className="space-y-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -287,7 +294,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   showRemaining={false}
                 />
                 <Text as="p" tone="inherit">
-                  {format(reading.used!)} / {format(reading.limit)} ·{" "}
+                  {formatReading(reading.used!)} / {formatReading(reading.limit)} ·{" "}
                   {t(
                     reading.state === "exceeded"
                       ? "Budget reached"
@@ -322,9 +329,12 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 {providerAccounts(budget.provider).find((a) => a.id === budget.accountId)?.label ??
                   t("Account unavailable")}{" "}
                 · {t("Account-wide threshold, not attributed scope consumption.")}
-                {reading?.resetsAt != null
-                  ? ` · ${formatResetCountdown(reading.resetsAt - now)}`
-                  : null}
+                {reading?.resetsAt != null ? (
+                  <>
+                    {` · ${formatResetCountdown(reading.resetsAt - now)} · `}
+                    <Timestamp value={reading.resetsAt} format="datetime-seconds" tooltip={false} />
+                  </>
+                ) : null}
               </Text>
             ) : null}
             {budget.scope === "workspace" &&

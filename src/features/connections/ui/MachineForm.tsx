@@ -254,6 +254,7 @@ export function MachineForm({
             <RadioGroup
               variant="inline"
               label={t("Connection method")}
+              disabled={busy}
               value={method}
               onValueChange={(next) => onMethodChange(next === "url" ? "url" : "ssh")}
               options={[
@@ -265,7 +266,9 @@ export function MachineForm({
         ) : null}
         <Text as="p" tone="muted">
           {editing
-            ? t("Saving reconnects this machine with the updated address.")
+            ? saveLabel === "Save"
+              ? t("Saving changes the machine name without reconnecting.")
+              : t("Saving reconnects this machine with the updated address.")
             : ssh
               ? t("Installs bycoda Host over SSH so you can run agents on this machine.")
               : t("Enter the host URL and a device token issued by that host.")}

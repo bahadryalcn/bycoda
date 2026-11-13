@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProjectMultiSelect, useProjectMultiSelect } from "./ProjectMultiSelect";
+import * as privacy from "../../group-lock/model/roomPrivacyProjection";
 import {
   loadProjectGroupAssignments,
   loadProjectGroups,
@@ -42,6 +43,59 @@ let root: Root;
 let container: HTMLDivElement;
 const remove = vi.fn();
 const move = vi.fn();
+
+it("owns the submitted new-group draft until the privacy mutation finishes", async () => {
+  const original = privacy.withRoomPrivacyMutation;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const mutation = vi
+    .spyOn(privacy, "withRoomPrivacyMutation")
+    .mockImplementationOnce(async (mutate, id) => {
+      await pending;
+      return original(mutate, id);
+    });
+  try {
+    render();
+    click("/a");
+    action("Move to group");
+    click("New group…");
+    const input = document.querySelector<HTMLInputElement>("#project-selection-group-name")!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "Owned draft",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      input
+        .closest("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(input.disabled).toBe(true);
+    expect(button("Cancel").disabled).toBe(true);
+    await act(async () => {
+      input
+        .closest("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    expect(mutation).toHaveBeenCalledTimes(1);
+    expect(input.value).toBe("Owned draft");
+    await act(async () => {
+      release();
+      await pending;
+    });
+    await vi.waitFor(() =>
+      expect(document.querySelector("#project-selection-group-name")).toBeNull(),
+    );
+    expect(loadProjectGroups().filter((group) => group.name === "Owned draft")).toHaveLength(1);
+  } finally {
+    release();
+    mutation.mockRestore();
+  }
+});
 function Rows() {
   const selection = useProjectMultiSelect()!;
   return createElement(

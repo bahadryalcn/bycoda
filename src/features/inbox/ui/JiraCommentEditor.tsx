@@ -3,6 +3,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { attachmentsFromPaths } from "../../sessions/public/attachments";
 import { nativeDropPointer } from "../../../shared/lib/externalDrop";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import {
   NoteMarkdownEditor,
   runMarkdownCommand,
@@ -189,7 +190,7 @@ export function JiraCommentEditor({
         if (
           event.key === "Enter" &&
           (event.ctrlKey || event.metaKey) &&
-          !event.nativeEvent.isComposing
+          !isImeComposition(event.nativeEvent)
         ) {
           event.preventDefault();
           if (!locked) void onSubmit().catch(() => {});

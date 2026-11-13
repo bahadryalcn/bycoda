@@ -39,7 +39,13 @@ function flagStore(key: string, fallback: boolean, event: string) {
     };
   };
   const useFlag = () => useSyncExternalStore(subscribe, load, () => fallback);
-  return { load, save, subscribe, useFlag };
+  const useSaved = () =>
+    useSyncExternalStore(
+      subscribe,
+      () => unsaved === null,
+      () => true,
+    );
+  return { load, save, subscribe, useFlag, useSaved };
 }
 
 const showRemainingUsage = flagStore(
@@ -60,3 +66,4 @@ export const loadMaskEmails = maskEmails.load;
 export const saveMaskEmails = maskEmails.save;
 export const subscribeMaskEmails = maskEmails.subscribe;
 export const useMaskEmails = maskEmails.useFlag;
+export const useMaskEmailsSaved = maskEmails.useSaved;

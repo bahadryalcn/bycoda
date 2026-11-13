@@ -23,6 +23,7 @@ import {
   type PreparedJobReview,
 } from "./assistantRoomHelpers";
 import type { AssistantRoomCore } from "./useAssistantRoomState";
+import { matchesAssistantJobFilter } from "./todayGlanceData";
 
 export function useAssistantRoomJobs(core: AssistantRoomCore) {
   const {
@@ -165,7 +166,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
             ...(state.acknowledged
               ? [
                   t(
-                    "Restoring keeps the goal and tasks stopped. Review them in the task board before restarting.",
+                    "Restoring keeps the epic and tasks stopped. Review them in the task board before restarting.",
                   ),
                 ]
               : []),
@@ -366,7 +367,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
       jobReviewEnvironment.current = undefined;
       setJobReviewFrozen(false);
       setJobReview(null);
-      setJobText("");
+      setJobText((current) => (current === jobText ? "" : current));
     }
   }
   function bulk(action: "stop" | "delete") {
@@ -409,7 +410,7 @@ export function useAssistantRoomJobs(core: AssistantRoomCore) {
   const allJobs = (view === "Today" ? active : (snapshot?.jobs ?? [])).filter(
     (job) =>
       matches(query, job.title, job.request, job.summary) &&
-      (!filter || job.status === filter) &&
+      matchesAssistantJobFilter(job, filter, new Date().setHours(0, 0, 0, 0)) &&
       (view !== "Jobs" ||
         ((!jobProjectFilter || assistantJobProjectIds(job).includes(jobProjectFilter)) &&
           (jobDateFilter === "all" ||

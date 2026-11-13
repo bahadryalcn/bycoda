@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import type { AccountContext } from "@bycoda/account-contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, createElement } from "react";
+import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountState } from "../model/accountState";
@@ -26,7 +26,26 @@ vi.mock("../hooks/useAccountData", async (importOriginal) => ({
 }));
 
 vi.mock("../../../platform/tauri/openExternal", () => ({ openExternal: mocks.openExternal }));
-vi.mock("../../today", () => ({ TodayView: () => null }));
+vi.mock("../../today", () => ({
+  TodayView: () => {
+    const [text, setText] = useState("");
+    return createElement("input", {
+      "aria-label": "Summary fixture",
+      value: text,
+      onChange: (event: { target: { value: string } }) => setText(event.target.value),
+    });
+  },
+}));
+vi.mock("./AccountData", () => ({
+  AccountData: () => {
+    const [text, setText] = useState("");
+    return createElement("input", {
+      "aria-label": "Diagnostics fixture",
+      value: text,
+      onChange: (event: { target: { value: string } }) => setText(event.target.value),
+    });
+  },
+}));
 vi.mock("../hooks/useAccount", () => ({
   useAccountState: () => mocks.state,
   useAccount: () => ({
@@ -93,6 +112,27 @@ afterEach(() => {
 });
 
 describe("account center", () => {
+  it("lazily retains privacy and summary panel instances across tab changes", async () => {
+    mocks.state = signedIn();
+    await render(AccountScreen);
+    const select = async (name: string) =>
+      click(
+        [...container.querySelectorAll('[role="tab"]')].find((node) => node.textContent === name),
+      );
+    expect(container.querySelector('[aria-label="Summary fixture"]')).toBeNull();
+    for (const [tab, label] of [
+      ["Active time", "Summary fixture"],
+      ["Privacy & data", "Diagnostics fixture"],
+    ]) {
+      await select(tab!);
+      const original = container.querySelector(`[aria-label="${label}"]`);
+      expect(original).not.toBeNull();
+      await select("Profile");
+      expect(original?.isConnected).toBe(true);
+      await select(tab!);
+      expect(container.querySelector(`[aria-label="${label}"]`)).toBe(original);
+    }
+  });
   it("shows one sign-in panel and no tabs to a guest", async () => {
     mocks.state = { phase: "signed-out", notice: null, message: null };
     await render(AccountScreen);

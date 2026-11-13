@@ -1,7 +1,10 @@
 import { HostStewards } from "../stewards/stewards";
 import type { ServerBindings } from "./bindings";
 export async function createStewardsRuntime(
-  dependencies: Pick<ServerBindings, "stewardsOverride" | "engine" | "tasks" | "managed">,
+  dependencies: Pick<
+    ServerBindings,
+    "stewardsOverride" | "engine" | "tasks" | "managed" | "automations"
+  >,
   publish: (runtime: Awaited<ReturnType<typeof createStewardsRuntime>>) => void,
 ) {
   publish({
@@ -23,5 +26,6 @@ export async function createStewardsRuntime(
       },
     );
   await stewards.ready;
+  await stewards.bindAutomations(dependencies.automations);
   return { stewards };
 }

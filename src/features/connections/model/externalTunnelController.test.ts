@@ -39,6 +39,18 @@ function deferred<T>() {
 }
 
 describe("external tunnel status routing", () => {
+  it("acknowledges credentials only for a successful current controller generation", async () => {
+    const { controller, api } = setup();
+    vi.mocked(api.credential).mockRejectedValueOnce(new Error("locked"));
+    expect(await controller.credential("fixture")).toBe(false);
+    expect(await controller.credential("fixture")).toBe(true);
+    const pending = deferred<unknown>();
+    vi.mocked(api.credential).mockReturnValueOnce(pending.promise);
+    const saving = controller.credential("fixture");
+    controller.close();
+    pending.resolve({});
+    expect(await saving).toBe(false);
+  });
   it("discards status reads completed after a mutation", async () => {
     const { controller, api } = setup();
     const pending = deferred<TunnelOverview>();

@@ -5,7 +5,8 @@ it("moves the complete HTTP and JSON response behind its readable provider messa
   const raw =
     'API Error: HTTP 429 {"error":{"type":"rate_limit_error","message":"Weekly usage limit reached. Choose another account."},"request_id":"req_weekly_42"}';
   expect(sessionErrorPresentation(raw)).toEqual({
-    summary: "Weekly usage limit reached. Choose another account.",
+    usageLimit: true,
+    summary: "Choose another account.",
     detail: raw,
   });
 });
@@ -38,4 +39,34 @@ it("does not hide ordinary text containing braces or an HTTP reference", () => {
 it("keeps a human explanation with a valid inline JSON example visible", () => {
   const raw = 'Workspace policy requires {"permission":"read"}';
   expect(sessionErrorPresentation(raw)).toEqual({ summary: raw });
+});
+
+it.each(["", " (HTTP 429)"])(
+  "presents a weekly limit as a warning with its reset time: %s",
+  (suffix) => {
+    const raw = `You've hit your weekly limit · resets 8am (Europe/Istanbul)${suffix}`;
+    expect(sessionErrorPresentation(raw)).toEqual({
+      usageLimit: true,
+      summary: "resets 8am (Europe/Istanbul)",
+      detail: raw,
+    });
+  },
+);
+
+it("keeps recovery instructions when a structured response reports a limit", () => {
+  const raw = JSON.stringify({
+    error: { message: "You've hit your usage limit. Choose another account." },
+  });
+  expect(sessionErrorPresentation(raw)).toEqual({
+    usageLimit: true,
+    summary: "Choose another account.",
+    detail: raw,
+  });
+});
+
+it("does not turn an ordinary HTTP 429 into an account usage limit", () => {
+  expect(sessionErrorPresentation("Too many requests (HTTP 429)")).toEqual({
+    summary: "Too many requests",
+    detail: "Too many requests (HTTP 429)",
+  });
 });

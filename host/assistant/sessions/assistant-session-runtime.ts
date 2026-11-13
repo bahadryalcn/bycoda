@@ -11,6 +11,12 @@ import { assistantJobSessionBelongs } from "../work/assistant-job-scope";
 import type { AssistantJob } from "../../../src/shared/model/host-contracts/assistant";
 import { HostAssistantWorkerRecovery } from "../work/assistant-worker-recovery";
 import { validateAssistantQuestionReply } from "../core/assistant-questions";
+import {
+  assistantSessionWorkTarget,
+  enrollAssistantSteerUsage,
+  runAssistantSessionWork,
+} from "../../work/assistant-session-work";
+import { assistantProjectMutationAllowed } from "../management/assistant-permissions";
 
 /** Immutable-source checks stay at the actual engine effect, after all awaits. */
 export function assistantSessionRuntime(
@@ -25,6 +31,18 @@ export function assistantSessionRuntime(
         allowed: (id) => assistant.workerRecoveryAllowed(id),
         reserve: (input) => assistant.reserveSessionTokens(input),
         onState: (record) => assistant.recordWorkerRecovery(record),
+        effect: (record, effect) =>
+          assistant.actionJournal.runAutonomous(
+            {
+              operationId: record.operationId,
+              action: "tasks.workerRecovery",
+              target: record.source.taskId,
+              jobId: record.source.jobId,
+              projectIds: [record.source.projectId],
+              payload: record.source.identity,
+            },
+            effect,
+          ),
       })
     : undefined;
   const sameSource = async (
@@ -54,45 +72,72 @@ export function assistantSessionRuntime(
   ) => {
     if (input.scope !== "manual" || !manual)
       throw new Error("Explicit manual supervision is unavailable.");
-    return engine.withCommandAdmission(
-      {
-        check: async (stage) => {
-          input.signal.throwIfAborted();
-          await input.recheck();
-          const current = await store.session(input.sessionId);
-          if (
-            stage.sessionId !== input.sessionId ||
-            current.projectId !== input.source.projectId ||
-            (current.session.worktreeCwd ?? current.session.cwd) !== input.source.executionCwd ||
-            current.authorityGeneration !== input.source.authorityGeneration ||
-            current.runId !== (stage.phase === "command" ? input.source.runId : stage.runId)
-          )
-            throw new Error("The enrolled manual turn changed before dispatch.");
-          const ownAuthor = "author" in input ? input.author : undefined;
-          if (
-            current.session.pendingQuestion ||
-            current.session.pendingSwitch ||
-            current.session.queuedMessages?.length ||
-            current.session.blocks.some(
-              (block) =>
-                (block.approval && !block.approval.decided) ||
-                (block.draft &&
-                  !(
-                    ownAuthor &&
-                    block.author?.kind === "assistant-manual" &&
-                    block.author.operationId === ownAuthor.operationId
-                  )),
+    const dispatch = () =>
+      engine.withCommandAdmission(
+        {
+          check: async (stage) => {
+            input.signal.throwIfAborted();
+            await input.recheck();
+            const current = await store.session(input.sessionId);
+            if (!assistantProjectMutationAllowed(await assistant.profile(), [current.projectId]))
+              throw new Error("Assistant permission no longer allows this session project.");
+            if (
+              stage.sessionId !== input.sessionId ||
+              current.projectId !== input.source.projectId ||
+              (current.session.worktreeCwd ?? current.session.cwd) !== input.source.executionCwd ||
+              current.authorityGeneration !== input.source.authorityGeneration ||
+              current.runId !== (stage.phase === "command" ? input.source.runId : stage.runId)
             )
-          )
-            throw new Error(
-              "Preserve the owner's pending question, approval, queue or draft before supervision.",
-            );
-          await manual.resolveStatus(input.supervisionId, input.sessionId, input.grantVersion);
-          input.signal.throwIfAborted();
+              throw new Error("The enrolled manual turn changed before dispatch.");
+            const ownAuthor = "author" in input ? input.author : undefined;
+            if (
+              current.session.pendingQuestion ||
+              current.session.pendingSwitch ||
+              current.session.queuedMessages?.length ||
+              current.session.blocks.some(
+                (block) =>
+                  (block.approval && !block.approval.decided) ||
+                  (block.draft &&
+                    !(
+                      ownAuthor &&
+                      block.author?.kind === "assistant-manual" &&
+                      block.author.operationId === ownAuthor.operationId
+                    )),
+              )
+            )
+              throw new Error(
+                "Preserve the owner's pending question, approval, queue or draft before supervision.",
+              );
+            await manual.resolveStatus(input.supervisionId, input.sessionId, input.grantVersion);
+            input.signal.throwIfAborted();
+          },
         },
+        () => engine.command(command),
+      );
+    const current = await sameSource(input.sessionId, input.source);
+    const typed = command as { type: string; commandId: string };
+    if (typed.type === "steer") {
+      await enrollAssistantSteerUsage(store, current, input.supervisionId);
+      return dispatch();
+    }
+    return runAssistantSessionWork(store, engine, {
+      source: {
+        kind: "assistant",
+        id: `manual:${input.supervisionId}`,
+        occurrence: typed.commandId,
       },
-      () => engine.command(command),
-    );
+      projectId: current.projectId,
+      target: assistantSessionWorkTarget(current, input.requestId),
+      commandId: typed.commandId,
+      promptHash: createHash("sha256").update(JSON.stringify(command)).digest("hex"),
+      signal: input.signal,
+      admitted: async () => {
+        input.signal.throwIfAborted();
+        await input.recheck();
+      },
+      run: () =>
+        "author" in input ? engine.withMessageAuthor(input.author, dispatch) : dispatch(),
+    });
   };
   return new HostAssistantSessions(store, {
     ready: recovery?.ready,
@@ -204,19 +249,36 @@ export function assistantSessionRuntime(
                 );
                 input.signal.throwIfAborted();
               };
-              receipt = await engine.continueSessionHistory({
-                ...input,
-                requestId,
-                brief: JSON.stringify({
-                  kind: "bycoda.manual-continuation.v1",
-                  supervisionId: input.supervisionId,
-                  ownerSessionId: input.sessionId,
-                  retained: buildDeterministicHandoff(record.session),
-                }).slice(0, 32000),
-                admitted,
-                onAccepted: async () => {
-                  await admitted();
+              const continueHistory = () =>
+                engine.continueSessionHistory({
+                  ...input,
+                  requestId,
+                  brief: JSON.stringify({
+                    kind: "bycoda.manual-continuation.v1",
+                    supervisionId: input.supervisionId,
+                    ownerSessionId: input.sessionId,
+                    retained: buildDeterministicHandoff(record.session),
+                  }).slice(0, 32000),
+                  admitted,
+                  onAccepted: async () => {
+                    await admitted();
+                  },
+                });
+              receipt = await runAssistantSessionWork(store, engine, {
+                source: {
+                  kind: "assistant",
+                  id: `manual:${input.supervisionId}`,
+                  occurrence: requestId,
                 },
+                projectId: record.projectId,
+                target: assistantSessionWorkTarget(record, input.requestId),
+                commandId: requestId,
+                promptHash: createHash("sha256")
+                  .update(JSON.stringify({ text: input.text, source: input.source }))
+                  .digest("hex"),
+                signal: input.signal,
+                admitted,
+                run: continueHistory,
               });
             } else {
               if (!tasks) throw new Error("Canonical worker continuation is unavailable.");

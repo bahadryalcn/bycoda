@@ -367,6 +367,7 @@ export function hostBulkDependencies(
     case "tasks.start":
     case "tasks.retarget":
     case "tasks.review.recheck":
+    case "tasks.finishWithFindings":
     case "tasks.notes.read":
     case "tasks.notes.resolve":
     case "tasks.evaluation.save":

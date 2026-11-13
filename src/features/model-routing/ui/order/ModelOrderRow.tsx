@@ -37,6 +37,7 @@ export function ModelOrderRow({
   percent,
   status,
   statusLoading,
+  statusError = false,
   sortable,
   onChange,
   onPercent,
@@ -49,6 +50,7 @@ export function ModelOrderRow({
   percent: string;
   status?: ModelRoutingEntryStatus;
   statusLoading: boolean;
+  statusError?: boolean;
   sortable: ReturnType<typeof useAnimatedReorder<string>>;
   onChange: (entry: ModelRoutingEntry) => void;
   onPercent: (text: string) => void;
@@ -67,7 +69,7 @@ export function ModelOrderRow({
     entry.providerAccountId ?? (accountProvider ? defaultProviderAccountId(accountProvider) : "");
   const left =
     status?.leftPercent == null
-      ? t(statusLoading ? "Reading limit…" : "Limit unknown")
+      ? t(statusLoading ? "Reading limit…" : statusError ? "Limit unavailable" : "Limit unknown")
       : t("{p0}% left", { p0: format.formatNumber(status.leftPercent) });
   return (
     <div

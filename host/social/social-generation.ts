@@ -1,9 +1,17 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { SocialAgent, SocialPolicy, PublicFact } from "../../src/features/social/model/social";
 import { socialLimit } from "../../src/features/social/model/socialPolicy";
+export type SocialTextInvocation = { operationId: string; actorScope: string };
+const socialTextInvocation = new AsyncLocalStorage<SocialTextInvocation>();
+/** Transport identity follows async dispatch without entering model-controlled JSON. */
+export const withSocialTextInvocation = <T>(invocation: SocialTextInvocation, run: () => T): T =>
+  socialTextInvocation.run(invocation, run);
+export const currentSocialTextInvocation = () => socialTextInvocation.getStore();
 export type SocialTextGenerator = (
   agent: SocialAgent,
   prompt: string,
   signal: AbortSignal,
+  invocation?: SocialTextInvocation,
 ) => Promise<string>;
 export function socialGenerationPrompt(input: {
   policy: SocialPolicy;

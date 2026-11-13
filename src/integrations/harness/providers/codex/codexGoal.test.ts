@@ -1,7 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { parseCodexGoalCommand, codexGoalRequest, codexGoalSummary } from "./codexGoal";
+import {
+  parseCodexGoalCommand,
+  codexGoalRequest,
+  codexGoalSummary,
+  codexGoalState,
+} from "./codexGoal";
 
 describe("Codex goal commands", () => {
+  it.each(["active", "paused", "blocked", "usageLimited", "budgetLimited", "complete"])(
+    "projects native %s status without inferring a reason",
+    (status) => {
+      expect(codexGoalState({ goal: { threadId: "t", objective: "Ship", status } })).toEqual({
+        provider: "codex",
+        providerSessionId: "t",
+        objective: "Ship",
+        status,
+      });
+    },
+  );
+  it("distinguishes cleared goals from unsupported or incomplete state", () => {
+    expect(codexGoalState({ goal: null })).toBeNull();
+    expect(codexGoalState({})).toBeUndefined();
+    expect(codexGoalState({ goal: { objective: "Ship", status: "active" } })).toBeUndefined();
+    expect(
+      codexGoalState({ goal: { threadId: "t", objective: "Ship", status: "achieved" } }),
+    ).toBeUndefined();
+  });
   it("uses persisted goal RPCs for objectives and lifecycle actions", () => {
     expect(codexGoalRequest(parseCodexGoalCommand("/goal keep tests green")!, "t")).toEqual({
       method: "thread/goal/set",

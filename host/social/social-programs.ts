@@ -31,7 +31,7 @@ import {
 } from "./social-program-schedule";
 import { socialCharacterCount, socialLimit } from "../../src/features/social/model/socialPolicy";
 import { sanitizeSocialError } from "./core/social-helpers";
-import type { SocialTextGenerator } from "./social-generation";
+import { currentSocialTextInvocation, type SocialTextGenerator } from "./social-generation";
 import {
   generateSocialImage,
   ImageGenerationError,
@@ -646,7 +646,12 @@ export class SocialPrograms {
         JSON.stringify(input.instructions),
       ].join("\n");
       const raw = JSON.parse(
-        await this.generateText(policy.agent, prompt, AbortSignal.timeout(90000)),
+        await this.generateText(
+          policy.agent,
+          prompt,
+          AbortSignal.timeout(90000),
+          currentSocialTextInvocation(),
+        ),
       );
       const proposed = parseProgramConfig({
         ...raw.config,
@@ -1250,6 +1255,10 @@ export class SocialPrograms {
             policy.agent,
             prompt,
             AbortSignal.any([deadline, AbortSignal.timeout(90000)]),
+            {
+              operationId: `occurrence:${o.id}:${t.accountId}:text`,
+              actorScope: JSON.stringify(["program", p.id, p.projectId, t.accountId]),
+            },
           ).catch(() => {
             throw new Error(
               "AI generation failed or timed out. Check the selected model on this executor.",

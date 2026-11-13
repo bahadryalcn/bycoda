@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
 import { sameProjectPath } from "../../projects/model/recents";
 import {
@@ -32,6 +32,8 @@ type SeenStore = {
 type Listener = () => void;
 
 const listeners = createStore();
+let seenTick = 0;
+const seenTickSnapshot = () => seenTick;
 let cachedRaw: string | null | undefined;
 let cachedStore: SeenStore | undefined;
 const knownItems = new Map<string, InboxSeenEntry & { projectPaths: string[] }>();
@@ -45,7 +47,6 @@ let coldGeneration = 0;
 const hot = new Map<string, number | undefined>();
 const pendingKeys = new Set<string>();
 let readScheduled = false;
-let inflightReads = 0;
 const aggregates = new Map<string, { generation: number; value?: boolean; pending: boolean }>();
 let channel: BroadcastChannel | undefined;
 
@@ -122,7 +123,9 @@ async function ensureCold(): Promise<void> {
     return;
   }
   if (coldReady) return coldReady;
-  coldState = "loading";
+  // An initialized store stays usable while another window's changes are reconciled.
+  const starting = coldState !== "ready" && coldState !== "loading";
+  if (starting) coldState = "loading";
   const initialization = ++coldInitGeneration;
   coldReady = (async () => {
     let stable = false;
@@ -159,6 +162,7 @@ async function ensureCold(): Promise<void> {
     notifyInboxSeen();
     throw error;
   });
+  if (starting) notifyInboxSeen();
   return coldReady;
 }
 function scheduleColdRead(key: string) {
@@ -172,8 +176,6 @@ function scheduleColdRead(key: string) {
     const keys = [...pendingKeys];
     pendingKeys.clear();
     const generation = coldGeneration;
-    inflightReads++;
-    notifyInboxSeen();
     void ensureCold()
       .then(async () => {
         const items = new Map<string, number | undefined>();
@@ -196,14 +198,12 @@ function scheduleColdRead(key: string) {
           hot.set(key, value);
         }
         trimHot();
-        notifyInboxSeen();
       })
       .catch((error) => {
         coldState = "error";
         coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
       })
       .finally(() => {
-        inflightReads--;
         notifyInboxSeen();
       });
   });
@@ -279,6 +279,7 @@ export function inboxUpdatedAt(item: { updatedAt: string }): number {
 }
 
 function notifyInboxSeen() {
+  seenTick++;
   listeners.notify();
 }
 
@@ -486,8 +487,6 @@ export function inboxHasUnseenItems(items: readonly InboxSeenEntry[]): boolean {
     aggregates.set(key, current);
     while (aggregates.size > 32) aggregates.delete(aggregates.keys().next().value!);
     queueMicrotask(() => {
-      inflightReads++;
-      notifyInboxSeen();
       void (async () => {
         await ensureCold();
         let unseen = false;
@@ -512,7 +511,6 @@ export function inboxHasUnseenItems(items: readonly InboxSeenEntry[]): boolean {
           coldError = error instanceof Error ? error.message : "Inbox history is unavailable.";
         })
         .finally(() => {
-          inflightReads--;
           notifyInboxSeen();
         });
     });
@@ -558,11 +556,10 @@ function onStorage(event: StorageEvent) {
 }
 
 export function useInboxSeenTick(): number {
-  const [tick, setTick] = useState(0);
+  const tick = useSyncExternalStore(subscribeInboxSeen, seenTickSnapshot, seenTickSnapshot);
+  // Initialize history after subscribing; the snapshot also catches changes between render and subscription.
   useEffect(() => {
-    const unsubscribe = subscribeInboxSeen(() => setTick((value) => value + 1));
     if (coldAvailable() || coldRequired()) void ensureCold().catch(() => {});
-    return unsubscribe;
   }, []);
   return tick;
 }
@@ -588,7 +585,7 @@ export function useInboxItemUnseen(entry: InboxSeenEntry, visible: boolean): boo
 
 export function inboxSeenStatus(): { state: ColdState; error?: string } {
   return {
-    state: coldState === "ready" && (readScheduled || inflightReads > 0) ? "loading" : coldState,
+    state: coldState,
     ...(coldError ? { error: coldError } : {}),
   };
 }

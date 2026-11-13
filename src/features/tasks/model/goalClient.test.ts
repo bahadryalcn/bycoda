@@ -258,6 +258,113 @@ describe("merging automatically in the goal draft", () => {
 });
 
 describe("confirmed goal mutation results", () => {
+  it("recovers an accepted epic after its acknowledgement is lost without another write", async () => {
+    vi.mocked(machineProjects).mockResolvedValue([{ id: "p-app", cwd: "G:/app", name: "app" }]);
+    const draft = { ...newGoalDraft("G:/app", "claude", "claude:test"), title: "Original" };
+    let accepted: HostGoal | undefined;
+    vi.mocked(remoteRequest).mockImplementation(async (_machine, method, params) => {
+      if (method === "goals.list") return [accepted];
+      accepted = { ...stored, ...(params as { goal: HostGoalInput }).goal };
+      throw new Error("Acknowledgement lost");
+    });
+    await expect(createGoal([local], draft)).rejects.toThrow("Acknowledgement lost");
+    const recovered = await createGoal([local], { ...draft, title: "Edited while waiting" });
+    expect(recovered.title).toBe("Original");
+    expect(recovered.id).toBe(draft.creation!.id);
+    expect(
+      vi.mocked(remoteRequest).mock.calls.filter((call) => call[1] === "goals.create"),
+    ).toHaveLength(1);
+  });
+
+  it("pins unknown creation to its original Host and refuses changed payload after absence", async () => {
+    vi.mocked(machineProjects).mockResolvedValue([{ id: "p-app", cwd: "G:/app", name: "app" }]);
+    const draft = newGoalDraft("G:/app", "claude", "claude:test");
+    vi.mocked(remoteRequest).mockRejectedValueOnce(new Error("Acknowledgement lost"));
+    await expect(createGoal([local], draft)).rejects.toThrow("Acknowledgement lost");
+    await expect(createGoal([mac], { ...draft, machineId: mac.id })).rejects.toThrow(
+      "original host",
+    );
+    vi.mocked(remoteRequest).mockResolvedValueOnce([]);
+    await expect(createGoal([local, mac], { ...draft, title: "Changed" })).rejects.toThrow(
+      "original draft",
+    );
+    expect(vi.mocked(remoteRequest).mock.calls.at(-1)?.slice(0, 2)).toEqual([
+      local.id,
+      "goals.list",
+    ]);
+    expect(
+      vi.mocked(remoteRequest).mock.calls.filter((call) => call[1] === "goals.create"),
+    ).toHaveLength(1);
+  });
+
+  it("retains unknown identity when reconciliation fails and retries only original payload", async () => {
+    vi.mocked(machineProjects).mockResolvedValue([{ id: "p-app", cwd: "G:/app", name: "app" }]);
+    const draft = newGoalDraft("G:/app", "claude", "claude:test");
+    vi.mocked(remoteRequest).mockRejectedValueOnce(new Error("Acknowledgement lost"));
+    await expect(createGoal([local], draft)).rejects.toThrow();
+    const id = draft.creation!.id;
+    vi.mocked(remoteRequest).mockRejectedValueOnce(
+      Object.assign(new Error("List unavailable"), { code: "RPC_WS_VALIDATION", uncertain: false }),
+    );
+    await expect(createGoal([local], draft)).rejects.toThrow("List unavailable");
+    expect(draft.creation!.pending).toBeDefined();
+    vi.mocked(remoteRequest)
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(async (_machine, _method, params) => ({
+        ...stored,
+        ...(params as { goal: HostGoalInput }).goal,
+      }));
+    await expect(createGoal([local], draft)).resolves.toMatchObject({ id });
+    expect(vi.mocked(remoteRequest).mock.calls.at(-1)?.[2]).toMatchObject({
+      goal: { id, expectedAbsent: true },
+    });
+  });
+
+  it("allows editing after a deterministic initial refusal with the same creation identity", async () => {
+    vi.mocked(machineProjects).mockResolvedValue([{ id: "p-app", cwd: "G:/app", name: "app" }]);
+    const draft = newGoalDraft("G:/app", "claude", "claude:test");
+    vi.mocked(remoteRequest).mockRejectedValueOnce(
+      Object.assign(new Error("Host rejected request: invalid title"), {
+        code: "RPC_WS_VALIDATION",
+        uncertain: false,
+      }),
+    );
+    await expect(createGoal([local], draft)).rejects.toThrow("invalid title");
+    expect(draft.creation!.pending).toBeUndefined();
+    vi.mocked(remoteRequest).mockImplementationOnce(async (_machine, _method, params) => ({
+      ...stored,
+      ...(params as { goal: HostGoalInput }).goal,
+    }));
+    await expect(createGoal([local], { ...draft, title: "Corrected" })).resolves.toMatchObject({
+      title: "Corrected",
+      id: draft.creation!.id,
+    });
+    expect(vi.mocked(remoteRequest).mock.calls.map((call) => call[1])).toEqual([
+      "goals.create",
+      "goals.create",
+    ]);
+  });
+
+  it("freezes original values before asynchronous preflight and coalesces no concurrent writes", async () => {
+    let release!: (projects: { id: string; cwd: string; name: string }[]) => void;
+    vi.mocked(machineProjects).mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const draft = { ...newGoalDraft("G:/app", "claude", "claude:test"), title: "Original" };
+    vi.mocked(remoteRequest).mockImplementation(async (_machine, _method, params) => ({
+      ...stored,
+      ...(params as { goal: HostGoalInput }).goal,
+    }));
+    const pending = createGoal([local], draft);
+    draft.title = "Edited";
+    await expect(createGoal([local], draft)).rejects.toThrow("already being checked");
+    release([{ id: "p-app", cwd: "G:/app", name: "app" }]);
+    await expect(pending).resolves.toMatchObject({ title: "Original" });
+    expect(remoteRequest).toHaveBeenCalledOnce();
+  });
+
   it("returns a created remote goal with the resolved project and lead bindings without refreshing", async () => {
     vi.mocked(machineProjects).mockResolvedValue([
       { id: "p-api", cwd: "/Users/me/api", name: "api" },

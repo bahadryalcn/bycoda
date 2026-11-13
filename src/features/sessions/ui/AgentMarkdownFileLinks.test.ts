@@ -19,7 +19,7 @@ const existingPaths = new Set([
   "G:/My Project/Türkçe/özet.md",
   ...["html", "pdf", "docx"].map(
     (extension) =>
-      `G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests/investor-deck/Firisbe-Observer-Yatirimci-Sunumu.${extension}`,
+      `G:/Projects/Acme/UI DEVELOPMENTS/ui-tests/investor-deck/Acme-Observer-Yatirimci-Sunumu.${extension}`,
   ),
 ]);
 vi.mock("../../../platform/tauri/fs", async (importOriginal) => ({
@@ -82,8 +82,8 @@ describe("markdown file navigation", () => {
   it.each(["html", "pdf", "docx"])(
     "opens a generated %s under the folder named in the reply",
     async (extension) => {
-      const cwd = "G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests";
-      const name = `Firisbe-Observer-Yatirimci-Sunumu.${extension}`;
+      const cwd = "G:/Projects/Acme/UI DEVELOPMENTS/ui-tests";
+      const name = `Acme-Observer-Yatirimci-Sunumu.${extension}`;
       await render(
         `Sunumu hazırladım; hepsi \`ui-tests/investor-deck/\` klasöründe:\n\n- \`${name}\``,
         cwd,
@@ -100,8 +100,8 @@ describe("markdown file navigation", () => {
   it.each(["html", "pdf", "docx"])(
     "opens an explicit generated %s link under the folder named in the reply",
     async (extension) => {
-      const cwd = "G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests";
-      const name = `Firisbe-Observer-Yatirimci-Sunumu.${extension}`;
+      const cwd = "G:/Projects/Acme/UI DEVELOPMENTS/ui-tests";
+      const name = `Acme-Observer-Yatirimci-Sunumu.${extension}`;
       await render(`Hepsi \`ui-tests/investor-deck/\` klasöründe:\n\n[${name}](${name})`, cwd);
       await act(async () => container.querySelector<HTMLAnchorElement>("a")!.click());
       expect(onOpenFile).toHaveBeenCalledWith(`${cwd}/investor-deck/${name}`, undefined);

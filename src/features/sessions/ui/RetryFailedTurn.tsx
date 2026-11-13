@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { lastTurnRecall, lastUserTurnStartIndex } from "../model/editLastTurn";
 import { lastHandoffBlock } from "../model/handoff";
 import { isSessionErrorBlock } from "../model/sessionIssue";
+import { sessionErrorPresentation } from "../model/sessionErrorPresentation";
 import type { Attachment, ComposerTurnOptions, Session } from "../model/session";
 
 /** Retry only the latest submitted user turn with a provider error. */
@@ -35,6 +35,7 @@ export function failedTurnRetry(session: Session) {
   const error = [...output].reverse().find(isSessionErrorBlock);
   if (
     !error ||
+    sessionErrorPresentation(error.text).usageLimit ||
     output.some(
       (block) => block.streaming || block.internal || (block.approval && !block.approval.decided),
     )
@@ -105,28 +106,21 @@ export function RetryFailedTurn({
   };
   return (
     <div className="px-4 py-1" data-retry-failed-turn>
-      <Alert
-        inline
-        tone="danger"
-        title={t("The last turn failed")}
-        action={
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            motion="none"
-            loading={submitted === key}
-            onClick={() => {
-              if (submitting.current === key) return;
-              submitting.current = key;
-              setSubmitted(key);
-              submitRetry(onSubmit, retry, release);
-            }}
-          >
-            {t("Retry")}
-          </Button>
-        }
-      />
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        motion="none"
+        loading={submitted === key}
+        onClick={() => {
+          if (submitting.current === key) return;
+          submitting.current = key;
+          setSubmitted(key);
+          submitRetry(onSubmit, retry, release);
+        }}
+      >
+        {t("Retry")}
+      </Button>
     </div>
   );
 }

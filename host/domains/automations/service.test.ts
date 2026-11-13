@@ -9,6 +9,21 @@ import * as dto from "../../../src/shared/model/host-contracts/automations";
 import { createHostAutomationsService } from "./service";
 
 const cleanups: Array<() => Promise<void>> = [];
+
+it("fails closed when proposal support is unavailable or an owner supplies extra authority", async () => {
+  const f = await fixture();
+  const input = {
+    operationId: "proposal",
+    request: "Review daily at 09:00",
+    projectId: "project",
+    currentExecution: { harness: "codex", model: "model", modelSettings: {} },
+  };
+  await expect(f.service.propose(input, f.context)).rejects.toThrow("unavailable");
+  await expect(
+    f.service.propose({ ...input, confirmationRequired: false }, f.context),
+  ).rejects.toThrow();
+  expect(await f.automations.list()).toEqual([]);
+});
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });

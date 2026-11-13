@@ -69,7 +69,11 @@ export function InlineMessage({
       {...props}
       role={mode === "assertive" ? "alert" : mode === "polite" ? "status" : undefined}
       data-tone={tone}
-      className={["flex min-w-0 items-start gap-1.5 text-ui-caption", INK[tone], className]
+      className={[
+        "flex min-w-0 items-start gap-1.5 font-sans text-ui-caption",
+        INK[tone],
+        className,
+      ]
         .filter(Boolean)
         .join(" ")}
     >

@@ -12,6 +12,9 @@ import {
 } from "./assistant-chief-context";
 import type { AssistantTextRunner } from "../core/assistant-text";
 import { assistantTextLimits } from "../core/assistant-text-budget";
+import { bindSessionWork } from "../../work/session-adapter";
+import type { SessionRunEngine } from "../../sessions/sessionRuns";
+import { createHash } from "node:crypto";
 
 type Wake = Parameters<NonNullable<AssistantPorts["chiefWake"]>>[0];
 const cleanups: (() => Promise<void>)[] = [];
@@ -64,6 +67,26 @@ async function fixture() {
     now: () => at,
   };
 }
+
+it("resumes the exact retained Chief input when Work proves the previous operation was never sent", async () => {
+  const f = await fixture();
+  const runtime = bindSessionWork(f.store, {} as SessionRunEngine);
+  const input = f.input("queued-chief");
+  f.text.mockImplementationOnce(async () => {
+    await runtime.work.submit({
+      source: { kind: "assistant", id: "chief", occurrence: "queued-once" },
+      rootWorkId: `assistant:${createHash("sha256").update(input.operationId).digest("hex")}`,
+      payload: { executor: "assistant-text" },
+    });
+    throw new Error("Process interrupted before dispatch");
+  });
+  await expect(f.context.wake(input)).rejects.toMatchObject({
+    code: "ASSISTANT_CHIEF_WORK_WAITING",
+  });
+  const resumed = createAssistantChiefContext(f.store, f.text, { now: f.now });
+  await expect(resumed.wake(input)).resolves.toMatchObject({ actions: [], tokens: 123 });
+  expect(f.text.mock.calls[1]![1]).toBe(f.text.mock.calls[0]![1]);
+});
 
 describe("durable Chief reasoning context", () => {
   it("renews before exceeding a provider-reported model window and keeps unresolved pins", async () => {

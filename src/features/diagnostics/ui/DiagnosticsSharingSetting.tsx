@@ -34,7 +34,7 @@ export function DiagnosticsSharingSetting() {
     try {
       const status = await sendDiagnosticLogs({ trigger: "manual", note });
       setResult(status);
-      if (status === "sent") setNote("");
+      if (status === "sent") setNote((current) => (current === note ? "" : current));
     } catch {
       setResult("failed");
     } finally {

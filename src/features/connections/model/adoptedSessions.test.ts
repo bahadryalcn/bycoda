@@ -449,6 +449,71 @@ describe("mergeAdoptedSession", () => {
     });
     expect(merged.providerAccountId).toBeUndefined();
   });
+
+  it("refreshes and clears provider-authored goal state on an existing desktop mirror", () => {
+    const goal: NonNullable<Session["providerGoal"]> = {
+      provider: "codex",
+      providerSessionId: "thread",
+      objective: "Finish the work",
+      status: "active",
+    };
+    const current = local({ harness: "codex", providerSessionId: "thread" });
+    const active = mergeAdoptedSession(
+      current,
+      host({ harness: "codex", providerSessionId: "thread", providerGoal: goal }),
+    )!;
+    expect(active.providerGoal).toEqual(goal);
+    const paused = mergeAdoptedSession(
+      active,
+      host({
+        harness: "codex",
+        providerSessionId: "thread",
+        providerGoal: { ...goal, status: "paused" },
+      }),
+    )!;
+    expect(paused.providerGoal?.status).toBe("paused");
+    const cleared = mergeAdoptedSession(
+      paused,
+      host({ harness: "codex", providerSessionId: "thread" }),
+    )!;
+    expect(cleared.providerGoal).toBeUndefined();
+  });
+
+  it("rejects foreign and malformed goal JSON during initial copy and mirror updates", () => {
+    const goal: NonNullable<Session["providerGoal"]> = {
+      provider: "codex",
+      providerSessionId: "thread",
+      objective: "Finish",
+      status: "active",
+    };
+    const invalid = [
+      { ...goal, providerSessionId: "foreign" },
+      { ...goal, provider: "claude" },
+      { ...goal, status: "invented" },
+      { ...goal, objective: { text: "not a string" } },
+    ];
+    for (const providerGoal of invalid) {
+      const incoming = host({ harness: "codex", providerSessionId: "thread" });
+      Object.assign(incoming.session, { providerGoal });
+      expect(
+        desktopCopyOf(incoming, "C:/proj", (left, right) => left === right).providerGoal,
+      ).toBeUndefined();
+      expect(
+        mergeAdoptedSession(local({ harness: "codex", providerSessionId: "thread" }), incoming)!
+          .providerGoal,
+      ).toBeUndefined();
+    }
+    expect(
+      mergeAdoptedSession(
+        local({
+          harness: "codex",
+          providerSessionId: "old",
+          providerGoal: { ...goal, status: "active" },
+        }),
+        host({ harness: "claude", providerSessionId: "replacement" }),
+      )!.providerGoal,
+    ).toBeUndefined();
+  });
   it("clears the old provider thread when the incoming provider has no thread yet", () => {
     expect(
       mergeAdoptedSession(

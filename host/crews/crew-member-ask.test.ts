@@ -113,7 +113,8 @@ describe("askCrewMember", () => {
       expectedAbsent: true,
     });
     expect(task).not.toHaveProperty("crewRunId");
-    expect(String(task.prompt)).toContain("INSTRUCTIONS dev");
+    expect(String(task.prompt).startsWith("Fix the login bug\nand add a test\n\n")).toBe(true);
+    expect(String(task.prompt)).toContain("Role context and instructions:\nINSTRUCTIONS dev");
     expect(String(task.prompt)).toContain("Fix the login bug\nand add a test");
     expect(f.ports.tasks.tick).toHaveBeenCalled();
   });

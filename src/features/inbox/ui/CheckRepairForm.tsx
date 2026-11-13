@@ -67,7 +67,7 @@ export function CheckRepairForm({
     },
     ...repair.sessions
       .filter((session) =>
-        (session.title || "Untitled chat")
+        (session.title || t("Untitled chat"))
           .toLocaleLowerCase()
           .includes(query.trim().toLocaleLowerCase()),
       )
@@ -86,8 +86,8 @@ export function CheckRepairForm({
     resetKey: query,
   });
   const selectedTitle = sessionId
-    ? repair.sessions.find((session) => session.id === sessionId)?.title || "Untitled chat"
-    : "New project chat";
+    ? repair.sessions.find((session) => session.id === sessionId)?.title || t("Untitled chat")
+    : t("New project chat");
   useEffect(() => {
     searchRef.current?.focus();
   }, []);

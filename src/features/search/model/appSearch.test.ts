@@ -258,6 +258,18 @@ describe("hitsFromContentMatches", () => {
 });
 
 describe("conversationRowsFrom", () => {
+  it("excludes archived history even when the conversation is still loaded", () => {
+    const archived = { ...summary("archived", "/repo", "needle archived"), archived: true };
+    const live = newSession("cursor", "/repo");
+    live.id = archived.id;
+    live.title = "needle live title";
+    const visible = summary("visible", "/repo", "needle visible");
+
+    expect(conversationRowsFrom([archived, visible], [live]).map((row) => row.id)).toEqual([
+      "visible",
+    ]);
+  });
+
   it("prefers live session titles over history", () => {
     const live = newSession("cursor", "/tmp/a");
     live.id = "s1";

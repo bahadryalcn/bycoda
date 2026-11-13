@@ -517,7 +517,7 @@ it("a newer emergency Stop fences already accepted configure, resume and snapsho
   const stopped = await f.request({ op: "status" });
   expect(stopped.status?.stopped).toBe(true);
   expect(stopped.configuration?.enabled).toBe(false);
-  expect(f.calls).toHaveLength(0);
+  expect(f.calls).toEqual([["permissions"]]);
   await f.request({ op: "resume" });
   expect((await f.request({ op: "status" })).configuration?.enabled).toBe(true);
 });
@@ -525,6 +525,71 @@ const envelope = (command: string, data: unknown, ok = true) => ({
   stdout: JSON.stringify({ version: "2.5", ok, command, ...(ok ? { data } : { error: data }) }),
   exitCode: ok ? 0 : 1,
 });
+it("reports helper permissions while disabled without activating desktop control", async () => {
+  const run = vi.fn(async () =>
+    envelope("permissions", {
+      accessibility: { state: "denied" },
+      screen_recording: { state: "not_determined" },
+    }),
+  );
+  const f = await setup({ run });
+  const configured = await f.configure();
+  const { version, ...configuration } = configured.configuration!;
+  await f.request({
+    op: "configure",
+    expectedVersion: version,
+    configuration: { ...configuration, enabled: false },
+  });
+  const status = (await f.request({ op: "status" })).status!;
+  expect(status).toMatchObject({
+    enabled: false,
+    active: false,
+    verified: true,
+    permissions: {
+      accessibility: "denied",
+      screenRecording: "not-determined",
+      source: "agent-desktop",
+    },
+  });
+  await f.request({ op: "status" });
+  expect(run).toHaveBeenCalledTimes(1);
+  writeFileSync(f.binary, "changed");
+  expect((await f.request({ op: "status" })).status?.permissions).toMatchObject({
+    source: "unavailable",
+    accessibility: "unknown",
+    screenRecording: "unknown",
+  });
+});
+
+it("preserves elevated-target error messages and disposition in durable operation receipts", async () => {
+  if (process.platform !== "win32") return;
+  const f = await setup({
+    run: async (_binary, args) =>
+      envelope(
+        args[2],
+        {
+          code: "PERM_DENIED",
+          platform_detail: "COM HRESULT 0x80070005 (E_ACCESSDENIED: Access is denied)",
+          disposition: { delivery: "not_delivered", retry: "safe" },
+        },
+        false,
+      ),
+  });
+  await f.configure();
+  const input = { op: "launch", requestId: "elevated", app: "Notepad" };
+  const result = await f.request(input);
+  expect(result.operation).toMatchObject({
+    errorCode: "target-elevated",
+    ok: false,
+    delivery: "not_delivered",
+    retry: "safe",
+    errorMessage:
+      "This window runs as administrator. Windows blocks other apps from controlling it unless bycoda also runs as administrator.",
+  });
+  await f.restart();
+  expect(await f.request(input)).toEqual(result);
+});
+
 async function setup(options: DesktopControlPorts = {}) {
   const dir = mkdtempSync(join(tmpdir(), "bycoda-desktop-adapter-"));
   const path = join(dir, "host.db");

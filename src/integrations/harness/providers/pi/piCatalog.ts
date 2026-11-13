@@ -5,11 +5,16 @@ import {
   preserveProviderFailure,
 } from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
-import { setHarnessModels, type AgentModel } from "../../../../features/sessions/model/models";
+import {
+  setHarnessModels,
+  withAutoCompactToggle,
+  type AgentModel,
+} from "../../../../features/sessions/model/models";
 import { createChildProcessHandle, spawnChild, watchChild } from "../../core/child";
 import { PiRpc } from "./piClient";
 import { OMP_FLAVOR, PI_FLAVOR, type PiFlavor } from "./piFlavor";
 import { buildPiSpawnArgs, modelsFromRpcData } from "./piProtocol";
+import { ompSessionCompactionAvailable } from "../omp/ompCompaction";
 
 const retirements = createProviderRetirementLedger("pi.catalog", killChild);
 
@@ -53,6 +58,7 @@ function refreshCatalog(flavor: PiFlavor): Promise<void> {
  */
 async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
   const { path } = await flavor.resolveBinary();
+  const compactionAvailable = flavor.id === "omp" && (await ompSessionCompactionAvailable());
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${flavor.probeChildId}-${crypto.randomUUID()}`;
   const probeProcess = retirements.admit(
@@ -62,7 +68,9 @@ async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
   const rpc = new PiRpc(probeProcess, () => undefined, flavor.label);
   const models = new Map<string, AgentModel>();
   const collectedModels = () =>
-    [...models.values()].sort((left, right) => left.name.localeCompare(right.name));
+    [...models.values()]
+      .map((model) => (compactionAvailable ? withAutoCompactToggle(model) : model))
+      .sort((left, right) => left.name.localeCompare(right.name));
   let stopped = false;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
   let wakePoll: (() => void) | undefined;

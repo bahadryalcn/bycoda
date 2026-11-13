@@ -8,6 +8,28 @@ const invoke = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 
+it("propagates failed native retirement and retains its live bridge until a successful retry", async () => {
+  const callbacks = new Map<string, (event: { payload: unknown }) => void>();
+  listen.mockImplementation(async (name, callback) => {
+    callbacks.set(name, callback);
+    return vi.fn();
+  });
+  invoke.mockResolvedValue(undefined);
+  const { killPty, subscribePty, readyPtyBridge } = await import("./pty");
+  const data = vi.fn();
+  const stop = subscribePty("kill-retry", data, vi.fn());
+  await readyPtyBridge();
+  invoke.mockRejectedValueOnce(new Error("Native retirement unavailable"));
+  await expect(killPty("kill-retry")).rejects.toThrow("Native retirement unavailable");
+  callbacks.get("pty-data")!({ payload: { id: "kill-retry", data: btoa("still running") } });
+  expect(data).toHaveBeenCalledExactlyOnceWith(new TextEncoder().encode("still running"));
+  await expect(killPty("kill-retry")).resolves.toBeUndefined();
+  callbacks.get("pty-data")!({ payload: { id: "kill-retry", data: btoa("late") } });
+  expect(data).toHaveBeenCalledOnce();
+  expect(invoke.mock.calls.filter(([command]) => command === "pty_kill")).toHaveLength(2);
+  stop();
+});
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();

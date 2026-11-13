@@ -166,6 +166,7 @@
 }
 .optionText {
   display: grid;
+  flex: 1;
   min-inline-size: 0;
 }
 .optionTitle,
@@ -181,7 +182,7 @@
   color: var(--foreground);
   font-size: var(--text-sm);
 }
-/* Secondary text never sets the popup width: it fills the width the title chose and wraps there. */
+/* Secondary text never sets the popup width; it uses the available result width. */
 .optionMeta {
   contain: inline-size;
   color: var(--text-muted);

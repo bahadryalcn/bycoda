@@ -30,6 +30,7 @@ import {
 } from "../conversation/conversation-workspace-management";
 import { assistantModelPoolSource } from "../conversation/conversation-model-pool-source";
 import { setQuickAutomationModelPool } from "../assistant/work/assistant-quick-automations";
+import { recordAssistantCrewTaskOrigin } from "../assistant/work/assistant-owned-work";
 import { type HostDomainContext } from "../domains/context";
 import type { ServerBindings } from "./bindings";
 export function createManagementRuntime(
@@ -87,6 +88,8 @@ export function createManagementRuntime(
     return decision;
   };
   const modelPool = assistantModelPoolSource(dependencies.assistant);
+  dependencies.crews.onAssistantTaskOrigin = (origin) =>
+    recordAssistantCrewTaskOrigin(dependencies.engine.store, origin);
   setQuickAutomationModelPool(modelPool);
   const conversationThreadWork = new ConversationThreadWorkTools(
     dependencies.engine.store,

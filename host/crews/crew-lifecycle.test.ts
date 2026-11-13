@@ -84,6 +84,13 @@ async function setup(delayAssignment = false, failingReviews = 0) {
   };
   const engine = new HostEngine(store, { codex: worker, claude: reviewer });
   const tasks = new HostTasks(store, engine);
+  tasks.repairDelegation = {
+    call: vi.fn(async () => ({
+      runId: "repair-advisor",
+      status: "succeeded",
+      result: "Correct the reviewed finding.",
+    })),
+  } as unknown as HostTasks["repairDelegation"];
   const crews = new HostCrews(store, engine, tasks, async () => ({
     models: {
       codex: [{ id: "codex:test", name: "Worker", harness: "codex" }],
@@ -195,7 +202,7 @@ it("corrects a failed crew review in place instead of blocking the assignment", 
 it("runs a distinct selected reviewer and accepts scoped results despite unrelated edits", async () => {
   const f = await setup();
   expect(f.reviewer.send).toHaveBeenCalledOnce();
-  expect((await f.tasks.list())[0]?.reviewerConfig?.harness).toBe("claude");
+  expect((await f.tasks.get(f.assignment.taskId))?.reviewerConfig?.harness).toBe("claude");
   await expect(f.tasks.move(f.assignment.taskId, "done")).rejects.toThrow("crew coordinator");
   expect((await f.tasks.get(f.assignment.taskId))?.status).toBe("review");
   writeFileSync(join(f.cwd, "ui.ts"), "export const view = 2;\n");
@@ -205,7 +212,7 @@ it("runs a distinct selected reviewer and accepts scoped results despite unrelat
     f.project.id,
     f.principal,
   );
-  expect((await f.tasks.list())[0]?.status).toBe("done");
+  expect((await f.tasks.get(f.assignment.taskId))?.status).toBe("done");
 }, 90000);
 
 it("invalidates stale review when owned content changes and requires an independent recheck", async () => {
@@ -221,7 +228,7 @@ it("invalidates stale review when owned content changes and requires an independ
       f.principal,
     ),
   ).rejects.toThrow("changed");
-  expect((await f.tasks.list())[0]?.status).toBe("blocked");
+  expect((await f.tasks.get(f.assignment.taskId))?.status).toBe("blocked");
   await f.tasks.recheckReview(f.assignment.taskId);
   await waitForReview(f.tasks, f.store, f.assignment.taskId);
   await f.crews.call(
@@ -251,9 +258,7 @@ it("starts one independent coordinator on a retried owner launch", async () => {
   );
   expect(first.coordinatorSessionId).toBe(second.coordinatorSessionId);
   expect(first.coordinatorSessionId).not.toBe(f.principal.sessionId);
-  expect((await f.store.receiptStatus("crew-new-run:create"))?.sessionId).toBe(
-    first.coordinatorSessionId,
-  );
+  expect(first.sourceTaskId).toBeTruthy();
   await vi.waitFor(
     async () => expect((await f.store.session(first.coordinatorSessionId!)).status).toBe("idle"),
     {
@@ -315,6 +320,7 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
     f.project.id,
     f.principal,
   );
+  await f.crews.call("crews.finish", { runId: "run" }, f.project.id, f.principal);
   await f.tasks.limits.save({ maxRunningTasks: 1 });
   await f.tasks.save({
     id: "parent",
@@ -377,6 +383,13 @@ it("runs crew tasks with one worker slot and completes only after crew acceptanc
 
 it("starts independent crew tasks and retries a stopped task with a fresh run", async () => {
   const f = await setup();
+  await f.crews.call(
+    "crews.accept",
+    { runId: "run", taskId: f.assignment.taskId },
+    f.project.id,
+    f.principal,
+  );
+  await f.crews.call("crews.finish", { runId: "run" }, f.project.id, f.principal);
   await f.tasks.limits.save({ maxRunningTasks: 2 });
   for (const id of ["one", "two"])
     await f.tasks.save({

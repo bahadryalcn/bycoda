@@ -1,5 +1,6 @@
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { testedSources } from "../model/routingEditor";
 import { automaticSources, sameSource } from "../model/presentation";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n";
@@ -16,6 +17,7 @@ type Actions = DecisionModelsState["actions"];
 export function SourcesList({
   sources,
   testResults = {},
+  removing = {},
   sourcesError,
   onRetry,
   actions,
@@ -26,6 +28,7 @@ export function SourcesList({
 }: {
   sources: DecisionSource[] | null;
   testResults?: Record<string, SourceTestResult>;
+  removing?: Record<string, "source" | "local">;
   sourcesError: unknown;
   onRetry: () => void;
   actions: Actions;
@@ -34,7 +37,7 @@ export function SourcesList({
   onEdit: (source: DecisionSource) => void;
   onRemove: (source: DecisionSource, mode: "source" | "local") => void;
 }) {
-  if (sourcesError !== null && sources === null) {
+  if (sourcesError !== null && (sources === null || sources.length === 0)) {
     return (
       <div className="px-4 py-2.5">
         <ErrorNotice error={sourcesError} onRetry={onRetry} />
@@ -67,25 +70,47 @@ export function SourcesList({
     );
   }
   return (
-    <ul
-      className="decision-sources flex min-w-0 flex-col"
-      aria-label={t("Connected decision models")}
-    >
-      {automaticSources(sources).map((source, index) => (
-        <SourceRow
-          key={source.id}
-          source={source}
-          testResult={testResults[source.id]}
-          usedFirst={index === 0}
-          duplicate={
-            sources.find((other) => other.id !== source.id && sameSource(source, other))?.name
-          }
-          actions={actions}
-          isPending={isPending}
-          onEdit={onEdit}
-          onRemove={onRemove}
-        />
-      ))}
-    </ul>
+    <>
+      {sourcesError !== null ? (
+        <div className="px-4 py-2.5">
+          <ErrorNotice error={sourcesError} onRetry={onRetry} />
+        </div>
+      ) : null}
+      <ul
+        className="decision-sources flex min-w-0 flex-col"
+        aria-label={t("Connected decision models")}
+      >
+        {automaticSources(
+          testedSources(
+            sources,
+            Object.fromEntries(
+              sources.flatMap((source) =>
+                testResults[source.id]
+                  ? [[source.id, { source, result: testResults[source.id]! }]]
+                  : [],
+              ),
+            ),
+          ) ?? sources,
+        ).map((effective, index) => {
+          const source = sources.find((item) => item.id === effective.id)!;
+          return (
+            <SourceRow
+              key={source.id}
+              source={source}
+              testResult={testResults[source.id]}
+              removing={removing[source.id]}
+              usedFirst={index === 0}
+              duplicate={
+                sources.find((other) => other.id !== source.id && sameSource(source, other))?.name
+              }
+              actions={actions}
+              isPending={isPending}
+              onEdit={onEdit}
+              onRemove={onRemove}
+            />
+          );
+        })}
+      </ul>
+    </>
   );
 }

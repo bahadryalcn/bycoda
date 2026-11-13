@@ -1,3 +1,4 @@
+import { composeCommandAdmission } from "./execution/command-admission";
 import { EngineOperations } from "./engine-operations";
 import { hostCompactionEvents } from "./sessions/compaction-events";
 import { admitRunDuration, finishRunDuration } from "./execution/run-duration";
@@ -600,7 +601,10 @@ export class HostEngine {
   private readonly commandAdmissions = new AsyncLocalStorage<EngineCommandAdmission | undefined>();
   /** Internal captured execution authority; this is never part of a client command. */
   withCommandAdmission<T>(admission: EngineCommandAdmission, work: () => Promise<T>): Promise<T> {
-    return this.commandAdmissions.run(admission, work);
+    return this.commandAdmissions.run(
+      composeCommandAdmission(this.commandAdmissions.getStore(), admission),
+      work,
+    );
   }
   private readonly messageAuthors = new AsyncLocalStorage<SessionMessageAuthor>();
   withMessageAuthor<T>(author: SessionMessageAuthor, work: () => Promise<T>): Promise<T> {
@@ -2430,7 +2434,7 @@ export class HostEngine {
         : this.store.db.scope(work);
     return admittedScope(() =>
       this.operations.run(operationKey, async () => {
-        if (admission)
+        if (admission && !stopping)
           await admission.check({
             phase: "command",
             sessionId:
@@ -3514,13 +3518,13 @@ export class HostEngine {
           const dispatch = async () => {
             try {
               await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
-              if (admission)
+              if (admission && !stopping)
                 await admission.check({
                   phase: "provider",
                   sessionId: saved.session.id,
                   runId: saved.runId,
                 });
-              await this.checkProviderSchedule(saved.session.id, saved.runId);
+              if (!stopping) await this.checkProviderSchedule(saved.session.id, saved.runId);
               await this.commandAdmissions.run(admission, () => effect!(saved));
             } catch (error) {
               await this.settleUnstarted(saved.session.id, saved.runId);

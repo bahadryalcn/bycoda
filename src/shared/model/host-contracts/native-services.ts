@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { IdentifierSchema, JsonObjectSchema, JsonValueSchema, SafeCounterSchema } from "./schemas";
+import {
+  IdentifierSchema,
+  JsonObjectSchema,
+  JsonValueSchema,
+  SafeCounterSchema,
+  WIRE_SHA256_PATTERN,
+} from "./schemas";
 
 // Serialized UTF-8 output limit of the bounded formatter worker. Legacy delivery reads retain32MiB.
 export const NATIVE_FORMAT_MAX_RESULT_BYTES = 4 * 1024 * 1024;
@@ -130,6 +136,19 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
     }),
     result: z.strictObject({ authorized: z.boolean() }),
   },
+  "native.services.assistant.background.execute": {
+    params: z.strictObject({
+      input: z.strictObject({
+        environmentId: z.string().min(1).max(200),
+        threadId: z.string().min(1).max(200),
+        operationId: z.string().min(1).max(200),
+        operationHash: z.string().regex(WIRE_SHA256_PATTERN),
+        challenge: z.string().regex(WIRE_SHA256_PATTERN),
+        relayId: z.string().min(1).max(200),
+      }),
+    }),
+    result: JsonValueSchema,
+  },
   "native.services.assistant.browser.panel": {
     // Filesystem paths are bounded by the owner in UTF-16, as with FilesReadParamsSchema.
     params: z.strictObject({
@@ -251,6 +270,7 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
         "ui.tools.status",
         "assistant.notification.deliver",
         "assistant.notification.status",
+        "assistant.background.effect",
         "desktop.act.authorize",
         "management.write.authorize",
         "secrets.input.authorize",

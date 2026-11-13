@@ -1,4 +1,5 @@
 import { createRuntimeSlot } from "./server/runtime-slot";
+import { bindSessionWork } from "./work/session-adapter";
 import { type RemoteProvider } from "../src/features/connections/model/protocol";
 import { HostAutomations } from "./automations/automations";
 import { DesktopSessions } from "./desktop/desktopSessions";
@@ -69,6 +70,7 @@ export async function createHostServer(
     typeof privateControl === "function" ? { lifecycle: privateControl } : privateControl;
   const lifecycle = controls?.lifecycle;
   await engine.ready;
+  bindSessionWork(engine.store, engine);
   const terminals = terminalsOverride ?? new HostTerminals();
   const mcpHub =
     mcpHubOverride ??
@@ -199,6 +201,9 @@ export async function createHostServer(
       roomDevServers: () => assistantNativeRuntime.roomDevServers,
       roomSessions: () => assistantNativeRuntime.roomSessions,
       assistantWorkspaceOwner: () => assistantNativeRuntime.assistantWorkspaceOwner,
+      assistantBackgroundEffect: () => assistantNativeRuntime.assistantBackgroundEffect,
+      executeBackgroundEffect: () => assistantNativeRuntime.executeBackgroundEffect,
+      backgroundEffectStatus: () => assistantNativeRuntime.backgroundEffectStatus,
       roomWorkspace: () => assistantNativeRuntime.roomWorkspace,
       workspaceTransferSource: () => assistantNativeRuntime.workspaceTransferSource,
       conversationThreadCrews: () => managementRuntime.conversationThreadCrews,

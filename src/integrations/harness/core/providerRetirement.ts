@@ -521,9 +521,10 @@ export function assertOptionalProviderProbeError(error: unknown): void {
 export async function preserveProviderFailure(
   error: unknown,
   cleanup: Promise<unknown>,
+  observer?: ProviderRetirementObserver,
 ): Promise<never> {
   try {
-    await cleanup;
+    await retireProviderOperation(() => cleanup, observer);
   } catch (retirement) {
     console.warn("[providerRetirement] cleanup after failure also failed", retirement);
     if (error instanceof Error && !("cause" in error)) {
@@ -537,18 +538,43 @@ export async function preserveProviderFailure(
   throw error;
 }
 
+/** Exact invocation identity; completion alone never establishes physical retirement. */
+export type ProviderRetirementReceipt = { original: symbol } & (
+  | { dispatch: "not-entered"; cleanupSuccess: true }
+  | { dispatch?: "entered"; cleanupSuccess: boolean }
+);
+export type ProviderRetirementObserver = {
+  retirementIdentity?: symbol;
+  onRetired?: (receipt: ProviderRetirementReceipt) => void | Promise<void>;
+};
+
+async function retireProviderOperation(
+  cleanup: () => Promise<unknown>,
+  observer?: ProviderRetirementObserver,
+): Promise<void> {
+  let cleanupSuccess = false;
+  try {
+    await cleanup();
+    cleanupSuccess = true;
+  } finally {
+    if (observer?.retirementIdentity && observer.onRetired)
+      await observer.onRetired({ original: observer.retirementIdentity, cleanupSuccess });
+  }
+}
+
 export async function withProviderRetirement<T>(
   work: () => Promise<T>,
   cleanup: () => Promise<unknown>,
+  observer?: ProviderRetirementObserver,
 ): Promise<T> {
   let value: T;
   try {
     value = await work();
   } catch (error) {
-    return preserveProviderFailure(error, Promise.resolve().then(cleanup));
+    return preserveProviderFailure(error, retireProviderOperation(cleanup, observer));
   }
   try {
-    await cleanup();
+    await retireProviderOperation(cleanup, observer);
   } catch (error) {
     console.warn("[providerRetirement] cleanup failed after completed work", error);
   }

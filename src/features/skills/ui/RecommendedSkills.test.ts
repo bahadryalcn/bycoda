@@ -138,6 +138,29 @@ it("reconciles uncertain installation using original request identity", async ()
   expect(onInstalled).toHaveBeenCalledOnce();
 });
 
+it("names status checks accurately while reconciliation is pending", async () => {
+  vi.mocked(installRecommendedSkill).mockRejectedValueOnce(new Error("Connection lost"));
+  await act(async () => installButton().click());
+  let finish!: (value: Awaited<ReturnType<typeof recommendedSkillInstallStatus>>) => void;
+  vi.mocked(recommendedSkillInstallStatus).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const check = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Check installation of impeccable"]',
+  )!;
+  await act(async () => check.click());
+  expect(check.textContent).toContain("Checking…");
+  expect(check.getAttribute("aria-label")).toBe("Checking…");
+  expect(check.textContent).not.toContain("Installing…");
+  await act(async () =>
+    finish({ requestId: "request", skillId: "impeccable", status: "installed" }),
+  );
+  expect(installRecommendedSkill).toHaveBeenCalledOnce();
+});
+
 it("blocks duplicate install while first operation is pending", async () => {
   let finish!: (value: { requestId: string; skillId: string; status: "installed" }) => void;
   vi.mocked(installRecommendedSkill).mockImplementation(
@@ -150,6 +173,9 @@ it("blocks duplicate install while first operation is pending", async () => {
     installButton().click();
     installButton().click();
   });
+  expect(container.querySelector('button[aria-label="Installing…"]')!.textContent).toContain(
+    "Installing…",
+  );
   expect(installRecommendedSkill).toHaveBeenCalledOnce();
   await act(async () =>
     finish({ requestId: "request", skillId: "impeccable", status: "installed" }),

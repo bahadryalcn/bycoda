@@ -420,7 +420,7 @@ it("shows the permission picker only once a worker execution exists", async () =
 
 it("links to Models roles without a pool editor or writable pool request", async () => {
   await render();
-  await press("Manage in Models");
+  await press("Manage models");
   expect(openModelsSettings).toHaveBeenCalledWith("roles");
   expect(mock.request.mock.calls.some(([input]) => input.op === "models.pool.set")).toBe(false);
   expect(control("Add model")).toBeUndefined();

@@ -6,7 +6,7 @@ import { resolveVoiceProjects, voiceProjectNames } from "./voiceProjectNames";
 
 afterEach(() => localStorage.clear());
 it("uses the saved displayed name with the original folder alias and exact identity", () => {
-  const path = "G:/Projects/my_projects/upstream";
+  const path = "G:/Projects/work/upstream";
   saveTabGroupLabel(projectKey(path), "bycoda");
   const projects = voiceProjectNames([{ path }]);
   expect(projects).toEqual([
@@ -38,22 +38,22 @@ it("keeps duplicate aliases ambiguous and does not import a hidden label or anot
 
 it("normalizes spoken Turkish names and returns partial candidates without choosing a project", () => {
   const projects = voiceProjectNames([
-    { path: "/portal", name: "FİRİSBE Portal" },
-    { path: "/admin", name: "Firisbe Admin" },
+    { path: "/portal", name: "DİRİM Portal" },
+    { path: "/admin", name: "Dirim Admin" },
     { path: "/other", name: "Unrelated" },
   ]);
-  expect(resolveVoiceProjects(projects, "firisbe   portal")).toMatchObject({
+  expect(resolveVoiceProjects(projects, "dirim   portal")).toMatchObject({
     match: "exact",
     requiresConfirmation: false,
     projects: [{ path: "/portal" }],
   });
-  expect(resolveVoiceProjects(projects, "firisbe")).toMatchObject({
+  expect(resolveVoiceProjects(projects, "dirim")).toMatchObject({
     match: "partial",
     requiresConfirmation: true,
     ambiguous: true,
     total: 2,
   });
-  expect(resolveVoiceProjects(projects, "İSBE Portal")).toMatchObject({
+  expect(resolveVoiceProjects(projects, "İM Portal")).toMatchObject({
     match: "partial",
     requiresConfirmation: true,
     ambiguous: false,

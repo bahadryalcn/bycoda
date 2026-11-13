@@ -9,6 +9,11 @@ const base = {
   policy: { activeStart: 9, activeEnd: 17 },
 };
 
+it("holds idle away mode independently of scheduled or running work", () => {
+  expect(keepAwakeDemand({ ...base, away: true, now: at(3) })).toBe(true);
+  expect(keepAwakeDemand({ ...base, away: false, now: at(3) })).toBe(false);
+});
+
 it("holds for running work only by default", () => {
   expect(keepAwakeDemand({ ...base, now: at(3) })).toBe(false);
   expect(keepAwakeDemand({ ...base, running: true, now: at(3) })).toBe(true);

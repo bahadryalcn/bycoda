@@ -20,6 +20,12 @@ import type { WorkspaceOwnerAuthorization } from "../workspaces/workspace-servic
 import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts";
 import type { BranchMergeReceipt } from "../workspaces/workspace-contracts";
 import type { TaskContext } from "./context";
+import {
+  conflictChildAdmitted,
+  conflictStopGeneration,
+  conflictStopHeld,
+  recoverCommittedConflict,
+} from "./conflict-recovery";
 export async function retarget(
   context: TaskContext,
   id: string,
@@ -40,6 +46,7 @@ export async function retarget(
     return await context.write({
       ...task,
       autoMerge,
+      deliveryApprovalRequired: autoMerge ? undefined : task.deliveryApprovalRequired,
       mergeRetry: undefined,
       updatedAt: context.now(),
     });
@@ -120,6 +127,7 @@ export async function retarget(
       ...(autoMerge !== undefined
         ? {
             autoMerge: autoMerge as boolean,
+            ...(autoMerge ? { deliveryApprovalRequired: undefined } : {}),
             ...(!autoMerge ? { deliveryRequested: undefined } : {}),
           }
         : {}),
@@ -168,8 +176,108 @@ export async function recoverMerge(
   _now: number,
   _auto = true,
 ): Promise<void> {
-  if (task.autoMerge || task.deliveryRequested)
-    await context.write({ ...suspendedTaskDelivery(task), mergeRetry: undefined });
+  if (!task.autoMerge && !task.deliveryRequested) return;
+  const parentId = task.conflictParent?.id;
+  const parentFence = parentId ? conflictStopGeneration(parentId) : undefined;
+  if (
+    !context.managed?.automaticDelivery ||
+    !task.workspaceId ||
+    task.completedWithFindings ||
+    task.reviewNotes?.some((note) => note.kind === "finding" && note.resolvedAt === undefined) ||
+    task.verification?.review?.verdict !== "pass" ||
+    autoMergeBlocker(task)
+  ) {
+    const current = await context.get(task.id);
+    if (current?.status === "review" && current.updatedAt === task.updatedAt)
+      await context.write({ ...suspendedTaskDelivery(current), mergeRetry: undefined });
+    return;
+  }
+  try {
+    const plan = await reviewDelivery(context, task.id);
+    const current = await context.get(task.id);
+    if (current && (current.conflictRecovery || plan.committedConflict)) {
+      await recoverCommittedConflict(context, current, plan);
+      return;
+    }
+    if (
+      !current ||
+      !(await conflictChildAdmitted(context, current)) ||
+      current.status !== "review" ||
+      current.workspaceId !== plan.workspaceId ||
+      current.completedWithFindings ||
+      current.reviewNotes?.some(
+        (note) => note.kind === "finding" && note.resolvedAt === undefined,
+      ) ||
+      current.verification?.review?.verdict !== "pass" ||
+      autoMergeBlocker(current) ||
+      plan.action !== "merge" ||
+      plan.blockers.length
+    )
+      throw new Error(
+        "Automatic delivery requires a current passing review and an unblocked plan.",
+      );
+    // Persist the fallback before handing off. An interrupted or unknown receipt is never replayed.
+    const pending = await context.write({
+      ...suspendedTaskDelivery(current),
+      mergeRetry: undefined,
+      updatedAt: context.now(),
+    });
+    const expected = await context.taskValue(task.id);
+    const controller = new AbortController();
+    context.automaticDeliveryControllers.get(task.id)?.abort();
+    context.automaticDeliveryControllers.set(task.id, controller);
+    const valid = () =>
+      !controller.signal.aborted &&
+      !context.closing &&
+      (!parentId ||
+        (!conflictStopHeld(parentId) && conflictStopGeneration(parentId) === parentFence)) &&
+      !(pending.goalId && context.pausedGoals.has(pending.goalId));
+    try {
+      await context.managed.automaticDelivery(
+        pending,
+        plan,
+        async (owner) => {
+          const latest = await context.unchangedTask(task.id, expected);
+          if (
+            !valid() ||
+            !latest ||
+            !(await conflictChildAdmitted(context, latest)) ||
+            latest.updatedAt !== pending.updatedAt ||
+            latest.status !== "review" ||
+            (latest.goalId && context.pausedGoals.has(latest.goalId)) ||
+            (context.assistantTaskAdmission && !(await context.assistantTaskAdmission(latest))) ||
+            latest.workspaceId !== plan.workspaceId ||
+            latest.completedWithFindings ||
+            latest.reviewNotes?.some(
+              (note) => note.kind === "finding" && note.resolvedAt === undefined,
+            ) ||
+            latest.verification?.review?.verdict !== "pass" ||
+            autoMergeBlocker(latest)
+          )
+            throw new Error("Task changed after automatic delivery review.");
+          return mergeDelivery(
+            context,
+            task.id,
+            {
+              workspaceId: plan.workspaceId,
+              expectedRevision: plan.expectedRevision,
+              idempotencyKey: `task-auto-delivery:${task.id}:${plan.token}`,
+              planToken: plan.token,
+            },
+            owner,
+          );
+        },
+        { signal: controller.signal, valid },
+      );
+    } finally {
+      if (context.automaticDeliveryControllers.get(task.id) === controller)
+        context.automaticDeliveryControllers.delete(task.id);
+    }
+  } catch (error) {
+    const latest = await context.get(task.id);
+    if (latest && latest.status === "review" && !latest.merged && !latest.deliveryApprovalRequired)
+      await context.write({ ...suspendedTaskDelivery(latest), mergeError: errorMessage(error) });
+  }
 }
 
 export async function reviewDelivery(
@@ -248,7 +356,12 @@ export async function mergeDelivery(
     }
     const receipt = await context.managed.delivery.merge(request, owner);
     const latest = await context.get(id);
-    if (!latest || latest.workspaceId !== task.workspaceId)
+    if (
+      !latest ||
+      latest.workspaceId !== task.workspaceId ||
+      latest.status !== task.status ||
+      context.automaticDeliveryControllers.get(id)?.signal.aborted
+    )
       throw new Error("Task changed during delivery; the workspace receipt is retained.");
     return await context.finishDeliveryReceipt(latest, receipt, request.planToken);
   } finally {
@@ -262,6 +375,17 @@ export async function finishDeliveryReceipt(
   receipt: BranchMergeReceipt,
   planToken: string,
 ): Promise<HostTask> {
+  const controller = context.automaticDeliveryControllers.get(task.id);
+  const write = (value: HostTask) => {
+    if (
+      controller &&
+      (controller.signal.aborted ||
+        context.closing ||
+        (task.goalId && context.pausedGoals.has(task.goalId)))
+    )
+      throw new Error("Task stopped during delivery; the workspace receipt is retained.");
+    return context.write(value);
+  };
   const delivered: HostTask = {
     ...task,
     status: "review",
@@ -274,13 +398,13 @@ export async function finishDeliveryReceipt(
     mergeError: undefined,
     updatedAt: context.now(),
   };
-  await context.write(delivered);
+  await write(delivered);
   const target =
     task.deliveryArtifacts?.targetDirectory ??
     task.deliveryCwd ??
     (await context.store.project(task.projectId)).cwd;
   if (!task.worktreeCwd)
-    return context.write(
+    return write(
       task.artifactDeliveryPending
         ? {
             ...delivered,
@@ -298,7 +422,7 @@ export async function finishDeliveryReceipt(
         ownerId: `task-artifacts:${receipt.operationId}`,
       })
     ).id;
-    await context.write({
+    await write({
       ...delivered,
       artifactDeliveryPending: true,
       artifactDeliveryActivityId: activityId,
@@ -313,7 +437,7 @@ export async function finishDeliveryReceipt(
         approved.planToken !== planToken ||
         approved.sourceHead !== receipt.sourceHead
       ) {
-        return context.write({
+        return write({
           ...delivered,
           artifactDeliveryPending: true,
           artifactDeliveryActivityId: activityId,
@@ -335,7 +459,7 @@ export async function finishDeliveryReceipt(
         "Reviewed artifact sources disappeared. The Git receipt and directory reservation are retained.",
       );
     }
-    const completed = await context.write({
+    const completed = await write({
       ...delivered,
       status: "done",
       artifactDeliveryPending: undefined,
@@ -345,9 +469,9 @@ export async function finishDeliveryReceipt(
       ...(artifactPaths.length ? { artifactPaths, artifactHashes: approved!.hashes } : {}),
     });
     await context.managed!.activity.stop(activityId);
-    return await context.write({ ...completed, artifactDeliveryActivityId: undefined });
+    return await write({ ...completed, artifactDeliveryActivityId: undefined });
   } catch (error) {
-    await context.write({
+    await write({
       ...delivered,
       artifactDeliveryPending: true,
       artifactDeliveryActivityId: activityId,

@@ -68,16 +68,18 @@ export function warmupGrokText(cwd: string): Promise<void> {
   return observeProviderProbeCleanup(run);
 }
 
-export async function runGrokTextPrompt(input: {
-  cwd: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-  operationContext?: HarnessOperationContext;
-}): Promise<string> {
+export async function runGrokTextPrompt(
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
+  },
+): Promise<string> {
   input = captureTextInput(input);
   const run = turns
     .catch(() => undefined)
@@ -86,22 +88,25 @@ export async function runGrokTextPrompt(input: {
   return run;
 }
 
-async function promptOnLive(input: {
-  cwd: string;
-  model?: string;
-  modelSettings?: Record<string, string>;
-  prompt: string;
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  onEvent?: (event: HarnessEvent) => void;
-  operationContext?: HarnessOperationContext;
-}): Promise<string> {
+async function promptOnLive(
+  input: import("../../core/providerRetirement").ProviderRetirementObserver & {
+    cwd: string;
+    model?: string;
+    modelSettings?: Record<string, string>;
+    prompt: string;
+    timeoutMs?: number;
+    signal?: AbortSignal;
+    onEvent?: (event: HarnessEvent) => void;
+    operationContext?: HarnessOperationContext;
+  },
+): Promise<string> {
   input.signal?.throwIfAborted();
   const session = await ensureLive(
     input.cwd,
     input.model ? nativeModelIdWithSettings(input.model, input.modelSettings) : undefined,
     input.modelSettings,
     input.operationContext,
+    input,
   );
   let writer: Awaited<ReturnType<typeof acpTurnWriter>>;
   try {
@@ -114,7 +119,7 @@ async function promptOnLive(input: {
     );
     input.signal?.throwIfAborted();
   } catch (error) {
-    return preserveProviderFailure(error, dropLive(session));
+    return preserveProviderFailure(error, dropLive(session), input);
   }
   const acpSessionId = session.acpSessionId;
   const cancel = async () => {
@@ -157,6 +162,7 @@ async function promptOnLive(input: {
       session.onEvent = undefined;
       await dropLive(session);
     },
+    input,
   );
 }
 
@@ -165,6 +171,7 @@ async function ensureLive(
   requestedModel?: string,
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   const model = requestedModel?.trim() || TEXT_MODEL;
   const settingsKey = modelSettingsKey(modelSettings);
@@ -190,7 +197,7 @@ async function ensureLive(
     return current;
   // Retire the previous throwaway session before replacing its id, including
   // when a warmed-up process needs a different model or working directory.
-  return startLive(cwd, model, modelSettings, operationContext);
+  return startLive(cwd, model, modelSettings, operationContext, retirement);
 }
 
 async function startLive(
@@ -198,6 +205,7 @@ async function startLive(
   model = TEXT_MODEL,
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
+  retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
@@ -302,6 +310,7 @@ async function startLive(
         ]);
         await finishTextSessionCleanup(cleanup);
       })(),
+      retirement,
     );
   } finally {
     if (starting === textProcess) starting = null;

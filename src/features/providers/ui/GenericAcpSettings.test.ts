@@ -18,6 +18,7 @@ vi.mock("../../../integrations/harness/core/availability", () => ({
   probeHarnessAvailability: mock.probe,
 }));
 import { GenericAcpSettings } from "./GenericAcpSettings";
+import { setLanguagePreference } from "../../../shared/i18n";
 
 const config = {
   id: "test-agent",
@@ -194,3 +195,51 @@ it.each([false, true])(
     }
   },
 );
+
+it("retains install cancellation across a language change for the original operation", async () => {
+  let finish!: () => void;
+  mock.invoke.mockImplementation((command) => {
+    if (command === "generic_acp_registry")
+      return Promise.resolve([
+        {
+          id: "test-install",
+          name: "Fixture agent",
+          version: "1.2.3",
+          description: "Fixture only",
+          package: "fixture-agent@1.2.3",
+          args: [],
+          supported: true,
+        },
+      ]);
+    if (command === "generic_acp_install")
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    if (command === "generic_acp_cancel_install") return Promise.resolve();
+    return Promise.resolve([config]);
+  });
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLElement>("#setting-acp-registry summary")!.click(),
+  );
+  await vi.waitFor(() => expect(button("Install fixture-agent@1.2.3")).toBeDefined());
+  await act(async () => button("Install fixture-agent@1.2.3").click());
+  expect(button("Cancel installation")).toBeDefined();
+  try {
+    await act(async () => {
+      await setLanguagePreference("tr");
+    });
+    const cancel = button("Kurulumu iptal et");
+    expect(cancel).toBeDefined();
+    await act(async () => cancel.click());
+    expect(mock.invoke).toHaveBeenCalledWith("generic_acp_cancel_install", { id: "test-install" });
+    expect(
+      mock.invoke.mock.calls.filter(([command]) => command === "generic_acp_install"),
+    ).toHaveLength(1);
+  } finally {
+    await act(async () => {
+      finish();
+      await setLanguagePreference("en");
+    });
+  }
+});

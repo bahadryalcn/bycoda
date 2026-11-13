@@ -1,5 +1,6 @@
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
+import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
@@ -74,6 +75,14 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
             "command-frame-body command-report-body",
           )}
         >
+          <Text size="secondary" tone="secondary">
+            {report?.period === "week" ? t("Week report") : t("Day report")}
+          </Text>
+          {report?.period !== period ? (
+            <InlineMessage tone="info">
+              {t("Create a new report for the selected period.")}
+            </InlineMessage>
+          ) : null}
           <ReportList title={t("Done")} lines={data.done} />
           <ReportList title={t("Results")} lines={data.results} />
           <ReportList title={t("Suggestions")} lines={data.suggestions} />

@@ -519,7 +519,9 @@ export async function write(
   generation?: number,
 ): Promise<HostTask> {
   const sourceGeneration = task.workspaceGenerationId;
-  task = suspendedTaskDelivery(task);
+  // Hosts without Native delivery retain the explicit owner-approval fallback.
+  // A live port must preserve fresh opt-in eligibility and any existing fallback.
+  if (!context.managed?.automaticDelivery) task = suspendedTaskDelivery(task);
   // An old attempt's diagnostic must never label a new worker/reviewer.
   if (
     task.runStall &&

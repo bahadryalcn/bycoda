@@ -43,6 +43,7 @@ import {
   validateRoomWorkspaceAction,
 } from "../assistant/room/assistant-room-workspace";
 import { isGlobalRuntimeRead } from "../conversation/conversation-management-runtime";
+import { isDesktopControlConversationTool } from "../conversation/conversation-desktop-control-tools";
 import {
   isManagementAction,
   managementPage,
@@ -57,6 +58,7 @@ import { hostInbox } from "../notes/host-notes";
 import { prepareVoiceToolDispatch } from "../voice/voice-tools";
 import type { createAssistantRoomRuntime } from "./assistant-room";
 import type { ServerBindings } from "./bindings";
+import { assistantRoomMutationAllowed } from "../assistant/management/assistant-permissions";
 type Ports = Pick<
   ReturnType<typeof createAssistantRoomRuntime>,
   "roomRemote" | "executeRoomSocialSend" | "executeRoomObservation" | "roomInbox"
@@ -66,6 +68,7 @@ export function registerRoomManagement(
     ServerBindings,
     | "engine"
     | "conversationDesktop"
+    | "conversationDesktopControl"
     | "roomResourceReceipts"
     | "social"
     | "assistantPorts"
@@ -119,13 +122,15 @@ export function registerRoomManagement(
   >,
   ports: Ports,
 ) {
-  dependencies.assistantPorts.roomManagement = createRoomManagementDispatcher({
+  const dispatch = createRoomManagementDispatcher({
     environmentId: dependencies.engine.store.environmentId,
     thread: (id) => dependencies.assistant.threadBinding(id),
     visibleProject: dependencies.roomVisibleProject,
     execute: async (call, admission) => {
       const authorized = async () => {
         if (admission.signal?.aborted || !(await admission.authorized())) return false;
+        if (!assistantRoomMutationAllowed(await dependencies.assistant.profile(), call))
+          return false;
         const thread = await dependencies.assistant.threadBinding(call.threadId);
         return (
           !!thread &&
@@ -272,6 +277,14 @@ export function registerRoomManagement(
             );
           if (call.action === "devices.list")
             return listHostDevices(dependencies.deviceHost, call.input, authorized);
+          if (isDesktopControlConversationTool(call.action))
+            return dependencies.conversationDesktopControl.call(
+              call.action,
+              call.input,
+              principal,
+              undefined,
+              authorized,
+            );
           if (isGlobalRuntimeRead(call.action))
             return dependencies.conversationManagementRuntime.call(
               call.action as import("../conversation/conversation-management-runtime").RuntimeManagementAction,
@@ -786,4 +799,14 @@ export function registerRoomManagement(
       return value;
     },
   });
+  dependencies.assistantPorts.roomManagement = async (call, admission) => {
+    if (!(await dependencies.assistant.roomActions.allowed(call)))
+      throw new Error("Assistant permission does not allow this operation or project.");
+    const ownedAdmission = dependencies.assistant.roomActions.capture(call, admission);
+    return dependencies.assistant.actionJournal.run(
+      call,
+      dependencies.engine.store.environmentId,
+      () => dispatch(call, ownedAdmission),
+    );
+  };
 }

@@ -94,6 +94,10 @@ export function useTaskGoals({
   );
 
   const begin = () => {
+    if (draft?.creation?.pending || draft?.creation?.busy) {
+      setError("Check the previous epic creation before opening another draft.");
+      return;
+    }
     if (projectFilter !== "all" && (!scopedCwd || isProjectLockedIn(lock, scopedCwd))) {
       setError(TASK_MACHINE_ERROR);
       return;
@@ -149,7 +153,7 @@ export function useTaskGoals({
             goal: { environmentId: machine?.environmentId ?? "", goalId: saved.id },
           });
           setError(
-            t("Goal created. Sprint assignment failed: {p0}", {
+            t("Epic created. Sprint assignment failed: {p0}", {
               p0: reason instanceof Error ? reason.message : String(reason),
             }),
           );
@@ -172,8 +176,8 @@ export function useTaskGoals({
   const remove = async (goal: BoardGoal) => {
     if (
       !(await confirm({
-        title: t("Delete goal"),
-        message: t("Delete the goal “{p0}”? Its tasks stay on the board.", { p0: goal.title }),
+        title: t("Delete epic"),
+        message: t("Delete the epic “{p0}”? Its tasks stay on the board.", { p0: goal.title }),
         confirmLabel: t("Delete"),
       }))
     )
@@ -188,11 +192,11 @@ export function useTaskGoals({
 
   const cancel = (goal: BoardGoal) => {
     confirm({
-      title: t("Cancel goal"),
-      message: t("Cancel the goal “{p0}”? Its running tasks are stopped; their branches stay.", {
+      title: t("Cancel epic"),
+      message: t("Cancel the epic “{p0}”? Its running tasks are stopped; their branches stay.", {
         p0: goal.title,
       }),
-      confirmLabel: t("Cancel goal"),
+      confirmLabel: t("Cancel epic"),
     })
       .then((ok) => (ok ? actOn(goal, () => cancelGoal(goal)) : undefined))
       .catch(report);
@@ -240,7 +244,13 @@ export function useTaskGoals({
     goals,
     report,
     draft,
-    setDraft,
+    setDraft: (next: GoalDraft | null) => {
+      if (saving || draft?.creation?.pending || draft?.creation?.busy) {
+        setError("Check the previous epic creation before changing or closing its draft.");
+        return;
+      }
+      setDraft(next);
+    },
     editing,
     settingsError,
     sessionsFor,

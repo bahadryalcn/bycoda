@@ -60,7 +60,7 @@ export function RoomNavigation({
           items={[
             { value: "Notes", label: t("Notes"), icon: <File /> },
             { value: "Memory", label: t("Memory"), icon: <Brain /> },
-            { value: "History", label: t("History"), icon: <Clock /> },
+            { value: "History", label: t("What I did"), icon: <Clock /> },
           ]}
         />
       )}

@@ -103,7 +103,7 @@ export function GoalCard({
               <span className="goal-card-progress">
                 <Progress
                   compact
-                  aria-label={t("Goal progress")}
+                  aria-label={t("Epic progress")}
                   value={progress.done}
                   max={progress.total}
                   tone={
@@ -152,12 +152,12 @@ export function GoalCard({
           {!finished ? (
             <InlineAction
               reveal="always"
-              label={t("Edit goal settings")}
+              label={t("Edit epic settings")}
               disabled={busy || Boolean(goal.stale) || !goal.settingsSupported}
               tooltip={
                 goal.settingsSupported
                   ? undefined
-                  : t("Update the selected host to edit goal settings.")
+                  : t("Update the selected host to edit epic settings.")
               }
               onClick={onEdit}
             >

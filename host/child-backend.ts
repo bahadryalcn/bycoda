@@ -39,7 +39,12 @@ import {
 } from "../src/shared/model/harnessProcess";
 import { isRemoteProvider, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { providerLaunch, resolveProvider } from "./process";
-import { isOpencodeAcpLaunch, opencodeLaunchEnv } from "./providers/opencode-launch-env";
+import {
+  isOpencodeAcpLaunch,
+  opencodeLaunchEnv,
+  opencodeSessionCompaction,
+  opencodeCompactionEnv,
+} from "./providers/opencode-launch-env";
 import { bridgeToolGroup } from "./mcp/hub/bridge";
 import { mcpReady } from "./mcp/mcp-readiness";
 import { providerAccountEnvironment } from "./providers/provider-accounts";
@@ -712,6 +717,7 @@ export class HostChildBackend implements ChildBackend {
     id: string,
     args: Record<string, unknown>,
   ): Promise<HarnessProcessReceipt> {
+    const autoCompact = opencodeSessionCompaction(args);
     if (this.closing) throw new Error("Host is stopping");
     if (this.pendingStarts.get(id)?.size)
       throw new Error("A provider is already starting for this session. Retry after it finishes.");
@@ -863,6 +869,7 @@ export class HostChildBackend implements ChildBackend {
           Object.assign(env, opencodeLaunchEnv(launch.command, launch.args, published));
         }
       }
+      Object.assign(env, opencodeCompactionEnv(env.OPENCODE_CONFIG_CONTENT, autoCompact));
       const conversationGranted = !!env.BYCODA_CONVERSATION_TOKEN;
       console.warn(
         `[session tools] provider=${String(args.binaryProvider ?? "generic")} session=${id} conversation grant=${conversationGranted ? "ok" : "failed"} reason=${conversationGranted ? "issued" : sessionless ? "sessionless child" : "grant unavailable"}`,

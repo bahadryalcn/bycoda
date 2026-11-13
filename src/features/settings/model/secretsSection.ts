@@ -4,7 +4,7 @@ import type { SettingsSection } from "./settings";
 /** Credentials agents asked for in chat, saved per project until the owner removes them. */
 export const SECRETS_SECTION: SettingsSection = {
   id: "secrets",
-  group: "agents",
+  group: "tools",
   get label() {
     return t("Secrets");
   },

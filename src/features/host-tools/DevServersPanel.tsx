@@ -61,15 +61,13 @@ import type {
 } from "./devServerTypes";
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import "./dev-servers.css";
+import { toolPreferences } from "./model/toolPreferences";
 
 type Intent = "details" | "stop" | "kill" | "restart";
 type Launch = { input: DevServerStart; result?: DevServerStartResult; pending?: boolean };
-const POLL_MS = 15_000;
 const MAX_FAILURES = 3;
 /** Each scan starts PowerShell on Windows, so a list that stopped changing is read less often. */
 const QUIET_SCANS = 3;
-const QUIET_POLL_MS = 30_000;
-const VERY_QUIET_POLL_MS = 60_000;
 const stateLabels = {
   starting: "Starting",
   running: "Running",
@@ -104,13 +102,13 @@ const canControl = (server: DevServer) => (server.process ? hasIdentity(server) 
 const endpointKey = (endpoint: DevServerEndpoint) => `${endpoint.address}:${endpoint.port}`;
 
 /** Mounted only for the visible tool; a changed host owns a fresh request scope. */
-function pollDelay(failures: number, quietScans: number): number {
+function pollDelay(interval: number, failures: number, quietScans: number): number {
   const base =
     quietScans >= QUIET_SCANS * 2
-      ? VERY_QUIET_POLL_MS
+      ? interval * 4
       : quietScans >= QUIET_SCANS
-        ? QUIET_POLL_MS
-        : POLL_MS;
+        ? interval * 2
+        : interval;
   return base * Math.min(4, 2 ** failures);
 }
 
@@ -153,9 +151,10 @@ function ProjectDevServersPanel({
   const [scan, setScan] = useState<DevServerScan>();
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<string>();
-  const [scanning, setScanning] = useState(true);
+  const [scanning, setScanning] = useState(toolPreferences.serversAutoRefresh.load);
   const [scanError, setScanError] = useState("");
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(toolPreferences.serversAutoRefresh.load);
+  const [pollInterval] = useState(toolPreferences.serversRefreshInterval.load);
   const [search, setSearch] = useRetainedState(`dev-servers:${pathKey(cwd)}:search`, "");
   const [error, setError] = useState(saved?.error ?? "");
   const [notice, setNotice] = useState(saved?.notice ?? "");
@@ -356,13 +355,16 @@ function ProjectDevServersPanel({
         polling = false;
       }
       if (!stopped && !isHidden() && failures.current < MAX_FAILURES)
-        timer = setTimeout(() => void poll(), pollDelay(failures.current, quiet.current.scans));
+        timer = setTimeout(
+          () => void poll(),
+          pollDelay(pollInterval, failures.current, quiet.current.scans),
+        );
     };
     const visibilityChanged = () => {
       clearTimeout(timer);
       if (document.visibilityState !== "hidden") void poll();
     };
-    if (scan) timer = setTimeout(() => void poll(), POLL_MS);
+    if (scan) timer = setTimeout(() => void poll(), pollInterval);
     else void poll();
     document.addEventListener("visibilitychange", visibilityChanged);
     return () => {
@@ -373,7 +375,7 @@ function ProjectDevServersPanel({
     // The wrapper remounts for a new project. Polls share one flight and wait
     // until the previous scan completes; hidden windows do no discovery work.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefresh, active]);
+  }, [autoRefresh, active, pollInterval]);
   useEffect(() => {
     // A finished launch started a server outside this panel's own requests; rescan for it.
     if (launch?.result?.server) void action("refresh", () => refresh(true));
@@ -938,7 +940,8 @@ function ProjectDevServersPanel({
               disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
               onClick={() =>
                 void action("refresh", async () => {
-                  if (await refresh(true)) setAutoRefresh(true);
+                  const recovering = failures.current >= MAX_FAILURES;
+                  if ((await refresh(true)) && recovering) setAutoRefresh(true);
                 })
               }
             >
@@ -953,7 +956,7 @@ function ProjectDevServersPanel({
               disabled={unavailable("refresh") || (scanning && operation !== "refresh")}
               onClick={() =>
                 void action("refresh", async () => {
-                  if (await refresh(true)) setAutoRefresh(true);
+                  await refresh(true);
                 })
               }
             >
@@ -1007,7 +1010,9 @@ function ProjectDevServersPanel({
             ? t("Scanning servers…")
             : scanError
               ? t("Scan failed")
-              : t("{p0} servers", { p0: visibleServers.length })}
+              : !scan
+                ? t("Refresh to discover servers.")
+                : t("{p0} servers", { p0: visibleServers.length })}
         </span>
         {autoRefresh ? null : (
           <Text size="inherit" tone="primary" weight="medium" className="dev-servers-paused">

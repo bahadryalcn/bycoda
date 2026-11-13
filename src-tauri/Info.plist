@@ -4,6 +4,8 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
         <string>bycoda uses the microphone when you start dictation, a microphone test, or a voice conversation.</string>
+        <key>NSScreenCaptureUsageDescription</key>
+        <string>bycoda captures the screen area you choose when you take a screenshot in the quick composer, and desktop control reads the screen when you allow it.</string>
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>NSDesktopFolderUsageDescription</key>

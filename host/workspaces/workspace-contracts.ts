@@ -262,6 +262,8 @@ export type BranchDeliveryPlan = {
   commits: string[];
   changedPaths: string[];
   overlappingPaths: string[];
+  /** Committed merge-tree conflict at these immutable heads; absent on older Hosts. */
+  committedConflict?: { sourceHead: string; targetHead: string };
   checks: { name: string; status: "passed" | "failed" | "unknown" }[];
   visualEvidence: string[];
   blockers: string[];

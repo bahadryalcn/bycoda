@@ -62,6 +62,7 @@ const inputFields = {
   runtimeMode: SessionRuntimeModeSchema,
   modelSettings: textMap.optional(),
   maxRunMinutes: z.number().optional(),
+  inheritMaxRunMinutes: z.literal(true).optional(),
   providerAccountId: z.string().optional(),
   budget: TaskBudgetSchema.optional(),
   preflightRequirements: z.array(TaskPreflightRequirementSchema).optional(),
@@ -80,8 +81,10 @@ const inputFields = {
   autoMerge: z.boolean().optional(),
   continueUntilDone: z.boolean().optional(),
   goalId: z.string().optional(),
-  source: z.enum(["manual", "goal", "steward"]).optional(),
+  source: z.enum(["manual", "goal", "steward", "automation"]).optional(),
   stewardId: z.string().optional(),
+  automationId: z.string().optional(),
+  automationRunId: z.string().optional(),
   dependsOn: z.array(z.string()).optional(),
 };
 export const TaskReviewNoteSchema = z.strictObject({
@@ -168,6 +171,20 @@ const metadataFields = {
   error: z.string().optional(),
   retryFeedback: z.string().optional(),
   repairAttempts: z.number().optional(),
+  repairAdvisor: z
+    .strictObject({
+      requestId: z.string(),
+      sessionId: z.string(),
+      findings: z.string(),
+      feedback: z.string(),
+      error: z.string(),
+      fingerprint: z.string(),
+      takeover: z.boolean().optional(),
+      runtimeRetryNotice: z
+        .strictObject({ id: z.string(), message: z.string(), at: z.number() })
+        .optional(),
+    })
+    .optional(),
   reviewFailureCount: z.number().optional(),
   awaitingOwnerRestart: z.boolean().optional(),
   blockedTakeover: z
@@ -267,12 +284,20 @@ const metadataFields = {
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),
 };
-export const TaskConfigurationSchema = z.strictObject({ ...inputFields, ...metadataFields });
+export const TaskConfigurationSchema = z.strictObject({
+  ...inputFields,
+  ...metadataFields,
+  // Response snapshots may round-trip this Host-owned value. parseHostTask
+  // deliberately excludes it from writable input.
+  workInvocationId: z.string().optional(),
+});
 export const TaskPayloadSchema = TaskConfigurationSchema.extend({
   expectedConfiguration: TaskConfigurationSchema.optional(),
   expectedUpdatedAt: z.number().optional(),
 });
 export const HostTaskSchema = TaskConfigurationSchema.extend({
+  workInvocationId: z.string().optional(),
+  runtimeLimitResolvedAt: z.number().optional(),
   assistantFollowups: z
     .strictObject({ delivered: SafeCounterSchema, unconfirmed: SafeCounterSchema })
     .optional(),
@@ -292,6 +317,9 @@ export const TasksEventsParamsSchema = z.strictObject({
 });
 export const TasksSaveParamsSchema = z.strictObject({ task: TaskPayloadSchema });
 export const TasksIdParamsSchema = z.strictObject({ taskId: z.string() });
+export const TasksFinishWithFindingsParamsSchema = TasksIdParamsSchema.extend({
+  expectedUpdatedAt: z.number().finite(),
+});
 export const TasksMoveParamsSchema = TasksIdParamsSchema.extend({ to: TaskStatusSchema });
 export const TasksReorderParamsSchema = z.strictObject({ taskIds: z.array(z.string()) });
 export const TasksRetargetParamsSchema = TasksIdParamsSchema.extend({

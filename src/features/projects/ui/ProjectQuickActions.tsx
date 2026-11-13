@@ -212,7 +212,7 @@ function ProjectQuickActionsFor({
     try {
       saveProjectActions(actionsCwd, values);
     } catch (reason) {
-      setError(`Could not save actions: ${String(reason)}`);
+      setError(t("Could not save actions: {p0}", { p0: String(reason) }));
       return false;
     }
     setActions(values);
@@ -358,7 +358,7 @@ function ProjectQuickActionsFor({
       {menu ? (
         <ExplorerMenu
           anchor={menu.anchor}
-          ariaLabel={menu.kind === "open" ? "Open project in" : "Project actions"}
+          ariaLabel={menu.kind === "open" ? t("Open project in") : t("Project actions")}
           items={menu.kind === "open" ? openItems : actionItems}
           onClose={() => setMenu(null)}
           onPick={(id) => {

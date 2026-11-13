@@ -105,7 +105,10 @@ describe("background automations", () => {
     );
     expect(draft.runInBackground).toBe(true);
     const { nextRunAt, lastRunStatus, createdAt, updatedAt, ...input } = stored;
-    expect(hostAutomationFromDraft(draft, "nightly", "project-1")).toEqual(input);
+    expect(hostAutomationFromDraft(draft, "nightly", "project-1")).toEqual({
+      ...input,
+      missedRunGraceMinutes: 720,
+    });
   });
 
   it("refuses event triggers and more than one schedule", () => {
@@ -158,5 +161,25 @@ it("preserves routing choice and account through Host cards, editing and save pa
   expect(hostAutomationFromDraft(draft, original.id, original.projectId)).toMatchObject({
     modelChoice: original.modelChoice,
     providerAccountId: "account",
+  });
+});
+
+it("preserves projectless continuous and Project scan contracts through editing", () => {
+  const source: HostAutomation = {
+    ...stored,
+    projectId: "",
+    trigger: { kind: "continuous", minimumGapMinutes: 45 },
+    template: { kind: "project-scan", sourceStewardId: "legacy" },
+    missedRunGraceMinutes: 15,
+  };
+  const draft = draftFromAutomation(automationFromHost(local, "", source));
+  expect(draft.cwd).toBe("");
+  expect(draft.hostMachineId).toBe(local.id);
+  expect(hostAutomationFromDraft({ ...draft, name: "Updated" }, source.id, "")).toMatchObject({
+    projectId: "",
+    name: "Updated",
+    trigger: source.trigger,
+    template: source.template,
+    missedRunGraceMinutes: 15,
   });
 });

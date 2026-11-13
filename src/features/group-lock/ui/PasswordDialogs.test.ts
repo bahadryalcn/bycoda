@@ -31,6 +31,51 @@ const submit = () =>
     .querySelector("form")!
     .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
+it.each([
+  ["", "valid-new", "valid-new", 0],
+  ["current", "x", "x", 1],
+  ["current", "valid-new", "different", 2],
+] as const)(
+  "targets password validation at field %s / %s / %s",
+  async (old, next, confirm, index) => {
+    await act(async () =>
+      root.render(createElement(SetLockPasswordDialog, { mode: "change", onClose: vi.fn() })),
+    );
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="password"]');
+    [old, next, confirm].forEach((value, i) => {
+      inputs[i].value = value;
+    });
+    await act(async () => {
+      submit();
+    });
+    expect(document.activeElement).toBe(inputs[index]);
+    expect(inputs[index].getAttribute("aria-invalid")).toBe("true");
+    expect(inputs[index].getAttribute("aria-describedby")).toContain("set-lock-password-error");
+    expect(changeLockPassword).not.toHaveBeenCalled();
+  },
+);
+
+it("explains blank verification without calling the verifier", async () => {
+  const verify = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(PasswordPromptDialog, {
+        title: "Unlock",
+        description: "",
+        submitLabel: "Unlock",
+        verify,
+        onDone: vi.fn(),
+        onClose: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => {
+    submit();
+  });
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Enter your lock password.");
+  expect(verify).not.toHaveBeenCalled();
+});
+
 it("keeps an uncontrolled password and native ref through reveal before verification", async () => {
   const verify = vi.fn().mockResolvedValue({ ok: true });
   const onDone = vi.fn();
@@ -189,6 +234,8 @@ it("cannot be dismissed while the check runs and keeps an unsaved change open", 
   const cancel = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === "Cancel",
   )!;
+  const field = document.querySelector<HTMLInputElement>('input[type="password"]')!;
+  expect(field.disabled).toBe(true);
   expect(cancel.disabled).toBe(true);
   act(() => cancel.click());
   expect(onClose).not.toHaveBeenCalled();
@@ -198,4 +245,37 @@ it("cannot be dismissed while the check runs and keeps an unsaved change open", 
   expect(onDone).not.toHaveBeenCalled();
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("could not be saved");
   expect(cancel.disabled).toBe(false);
+  expect(field.disabled).toBe(false);
+  expect(field.value).toBe("");
+  expect(document.activeElement).toBe(field);
 });
+
+it.each(["set", "change"] as const)(
+  "locks %s password fields while storing and clears secrets before retry",
+  async (mode) => {
+    let reject!: (error: Error) => void;
+    const pending = new Promise<never>((_resolve, fail) => {
+      reject = fail;
+    });
+    if (mode === "set") vi.mocked(setLockPassword).mockReturnValueOnce(pending);
+    else vi.mocked(changeLockPassword).mockReturnValueOnce(pending);
+    const onClose = vi.fn();
+    await act(async () => root.render(createElement(SetLockPasswordDialog, { mode, onClose })));
+    const fields = [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')];
+    fields.forEach((field) => {
+      field.value = "valid-secret-value";
+    });
+    await act(async () => {
+      submit();
+    });
+    expect(fields.every((field) => field.disabled)).toBe(true);
+    const cancel = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Cancel",
+    )!;
+    expect(cancel.disabled).toBe(true);
+    await act(async () => reject(new Error("Password storage unavailable")));
+    expect(fields.every((field) => !field.disabled && field.value === "")).toBe(true);
+    expect(document.activeElement).toBe(fields[0]);
+    expect(onClose).not.toHaveBeenCalled();
+  },
+);

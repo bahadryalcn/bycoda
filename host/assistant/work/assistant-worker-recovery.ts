@@ -122,6 +122,7 @@ type RecoveryInput = {
   recheck: () => Promise<void>;
 };
 export interface AssistantWorkerRecoveryPorts {
+  effect?<T>(record: AssistantRecoveryRecord, effect: () => Promise<T>): Promise<T>;
   allowed(jobId?: string): Promise<boolean>;
   reserve?(input: {
     jobId: string;
@@ -239,24 +240,26 @@ export class HostAssistantWorkerRecovery {
         estimatedTokens: Math.max(1000, Math.ceil(task.prompt.length / 3) + 8000),
         phase: "handoff",
       });
-      const queued = await this.tasks.recoverAssistantWorker({
-        source,
-        operationId,
-        signal: input.signal,
-        recheck: async () => {
-          input.signal.throwIfAborted();
-          await input.recheck();
-          if (!(await this.ports.allowed(source.jobId)))
-            throw new Error("Chief recovery authority changed.");
-        },
-        phase: async () => {
-          record = await this.set({
-            ...record,
-            state: "retrying",
-            message: "The original worker retired. Queueing its retained task once.",
-          });
-        },
-      });
+      const recover = () =>
+        this.tasks.recoverAssistantWorker({
+          source,
+          operationId,
+          signal: input.signal,
+          recheck: async () => {
+            input.signal.throwIfAborted();
+            await input.recheck();
+            if (!(await this.ports.allowed(source.jobId)))
+              throw new Error("Chief recovery authority changed.");
+          },
+          phase: async () => {
+            record = await this.set({
+              ...record,
+              state: "retrying",
+              message: "The original worker retired. Queueing its retained task once.",
+            });
+          },
+        });
+      const queued = await (this.ports.effect ? this.ports.effect(record, recover) : recover());
       record = await this.set({
         ...record,
         state: "queued",

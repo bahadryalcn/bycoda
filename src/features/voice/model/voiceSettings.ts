@@ -1,4 +1,5 @@
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
+import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import type {
   CloudDictationProvider,
@@ -24,6 +25,15 @@ export const DICTATION_ENGINES: readonly DictationEngine[] = [
   "openrouter",
 ];
 
+export type DictationDictionaryEntry = { term: string; aliases: string[]; projectId?: string };
+export type DictationCleanup = {
+  enabled: boolean;
+  model: string;
+  instructions: string;
+  correctionCue: string;
+  translateToEnglish: boolean;
+};
+
 export type VoiceSettings = {
   /** Explicit opt-in: OpenAI receives continuous live audio for turn detection. */
   experimentalSemanticVad?: boolean;
@@ -46,6 +56,13 @@ export type VoiceSettings = {
   compact: boolean;
   enabled: boolean;
   dictationEnabled: boolean;
+  dictationShortcutMode: "auto" | "hold" | "toggle";
+  dictationIdleUnloadMinutes: number;
+  dictationLocalModelPath: string;
+  dictationDictionary: DictationDictionaryEntry[];
+  dictationRemoveFillers: boolean;
+  dictationSilenceFilter: boolean;
+  dictationCleanup: DictationCleanup;
   dictationEngine: DictationEngine;
   /** Chosen transcription model per cloud provider; missing uses the provider default. */
   dictationModels: Partial<Record<CloudDictationProvider, string>>;
@@ -73,6 +90,19 @@ const defaults: VoiceSettings = {
   compact: false,
   enabled: false,
   dictationEnabled: false,
+  dictationShortcutMode: "auto",
+  dictationIdleUnloadMinutes: 5,
+  dictationLocalModelPath: "",
+  dictationDictionary: [],
+  dictationRemoveFillers: false,
+  dictationSilenceFilter: true,
+  dictationCleanup: {
+    enabled: false,
+    model: "",
+    instructions: "",
+    correctionCue: "",
+    translateToEnglish: false,
+  },
   dictationEngine: "local",
   dictationModels: {},
   dictationLanguage: "auto",
@@ -93,93 +123,141 @@ function wakePhraseField(key: "wakePhrase" | "sleepPhrase", raw: unknown) {
     ? { [key]: text }
     : {};
 }
+function boundedText(value: unknown, max: number): string {
+  return typeof value === "string" ? truncateCodeUnits(value, max) : "";
+}
+function parseDictationDictionary(value: unknown): DictationDictionaryEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 500).flatMap((entry): DictationDictionaryEntry[] => {
+    if (!entry || typeof entry !== "object") return [];
+    const term = boundedText(entry.term, 200).trim();
+    if (!term) return [];
+    const aliases = Array.isArray(entry.aliases)
+      ? entry.aliases
+          .slice(0, 30)
+          .map((alias: unknown) => boundedText(alias, 200).trim())
+          .filter(Boolean)
+      : [];
+    const projectId = boundedText(entry.projectId, 300).trim();
+    return [{ term, aliases, ...(projectId ? { projectId } : {}) }];
+  });
+}
+export function normalizeVoiceSettings(value: VoiceSettings): VoiceSettings {
+  return {
+    visual: ["mark", "wave", "dots", "orb"].includes(value?.visual)
+      ? (value.visual as VoiceVisual)
+      : "mark",
+    compact: value?.compact === true,
+    experimentalSemanticVad: value?.experimentalSemanticVad === true,
+    enabled: value?.enabled === true,
+    // Preserve existing dictation visibility until its own switch is saved.
+    dictationEnabled:
+      typeof value?.dictationEnabled === "boolean"
+        ? value.dictationEnabled
+        : value?.enabled === true,
+    dictationShortcutMode:
+      value?.dictationShortcutMode === "hold" || value?.dictationShortcutMode === "toggle"
+        ? value.dictationShortcutMode
+        : "auto",
+    dictationIdleUnloadMinutes:
+      Number.isInteger(value?.dictationIdleUnloadMinutes) &&
+      value.dictationIdleUnloadMinutes >= 0 &&
+      value.dictationIdleUnloadMinutes <= 120
+        ? value.dictationIdleUnloadMinutes
+        : 5,
+    dictationLocalModelPath:
+      typeof value?.dictationLocalModelPath === "string" ? value.dictationLocalModelPath : "",
+    dictationDictionary: parseDictationDictionary(value?.dictationDictionary),
+    dictationRemoveFillers: value?.dictationRemoveFillers === true,
+    dictationSilenceFilter: value?.dictationSilenceFilter !== false,
+    dictationCleanup: {
+      enabled: value?.dictationCleanup?.enabled === true,
+      model: boundedText(value?.dictationCleanup?.model, 200),
+      instructions: boundedText(value?.dictationCleanup?.instructions, 4000),
+      correctionCue: boundedText(value?.dictationCleanup?.correctionCue, 100),
+      translateToEnglish: value?.dictationCleanup?.translateToEnglish === true,
+    },
+    dictationEngine: DICTATION_ENGINES.includes(value?.dictationEngine)
+      ? (value.dictationEngine as DictationEngine)
+      : "local",
+    dictationModels: Object.fromEntries(
+      CLOUD_DICTATION_PROVIDERS.flatMap((provider) => {
+        const chosen = value?.dictationModels?.[provider];
+        return (provider === "openrouter" &&
+          typeof chosen === "string" &&
+          /^[A-Za-z0-9._/-]{1,200}$/.test(chosen)) ||
+          DICTATION_MODELS[provider].some((model) => model.id === chosen)
+          ? [[provider, chosen as string]]
+          : [];
+      }),
+    ),
+    dictationLanguage: Object.prototype.hasOwnProperty.call(
+      SPOKEN_LANGUAGES,
+      value?.dictationLanguage,
+    )
+      ? (value.dictationLanguage as keyof typeof SPOKEN_LANGUAGES)
+      : "auto",
+    ...(typeof value?.manualTurnEnd === "boolean" ? { manualTurnEnd: value.manualTurnEnd } : {}),
+    ...(typeof value?.manualTurnEndRevision === "number" &&
+    Number.isSafeInteger(value.manualTurnEndRevision) &&
+    value.manualTurnEndRevision >= 0
+      ? { manualTurnEndRevision: value.manualTurnEndRevision }
+      : {}),
+    ...(typeof value?.microphoneId === "string" && value.microphoneId.length <= 300
+      ? { microphoneId: value.microphoneId }
+      : {}),
+    ...(typeof value?.turnEndSilence === "number" &&
+    Number.isFinite(value.turnEndSilence) &&
+    value.turnEndSilence >= 0.5 &&
+    value.turnEndSilence <= 5
+      ? { turnEndSilence: value.turnEndSilence }
+      : {}),
+    ...(typeof value?.holdAnnouncements === "boolean"
+      ? { holdAnnouncements: value.holdAnnouncements }
+      : {}),
+    ...(typeof value?.allowBargeIn === "boolean" ? { allowBargeIn: value.allowBargeIn } : {}),
+    ...(value?.returnCall === true ? { returnCall: true } : {}),
+    ...(value?.wakeEnabled === true ? { wakeEnabled: true } : {}),
+    ...wakePhraseField("wakePhrase", value?.wakePhrase),
+    ...wakePhraseField("sleepPhrase", value?.sleepPhrase),
+    ...(typeof value?.returnCallSeconds === "number" &&
+    Number.isInteger(value.returnCallSeconds) &&
+    value.returnCallSeconds >= 5 &&
+    value.returnCallSeconds <= 120
+      ? { returnCallSeconds: value.returnCallSeconds }
+      : {}),
+    idleSleepMinutes:
+      Number.isInteger(value?.idleSleepMinutes) &&
+      value.idleSleepMinutes >= 0 &&
+      value.idleSleepMinutes <= 120
+        ? value.idleSleepMinutes
+        : 10,
+    natural: value?.natural !== false,
+    mode: value?.mode === "grok" || value?.mode === "openai" ? value.mode : "local",
+    engine:
+      value?.engine === "voxcpm2" || value?.engine === "elevenlabs" ? value.engine : "supertonic",
+    elevenVoice:
+      typeof value?.elevenVoice === "string" && /^[A-Za-z0-9]{0,64}$/.test(value.elevenVoice)
+        ? value.elevenVoice
+        : "",
+    speakers: Object.fromEntries(
+      (Object.keys(DEFAULT_SPEAKERS) as SpeakerEngine[]).map((engine) => {
+        const chosen = value?.speakers?.[engine];
+        return [engine, SPEAKER_IDS[engine].includes(chosen) ? chosen : DEFAULT_SPEAKERS[engine]];
+      }),
+    ) as Record<SpeakerEngine, string>,
+    device: value?.device === "gpu" || value?.device === "cpu" ? value.device : "auto",
+    python: typeof value?.python === "string" ? value.python : "",
+    whisperPath: typeof value?.whisperPath === "string" ? value.whisperPath : "",
+    ttsPath: typeof value?.ttsPath === "string" ? value.ttsPath : "",
+  };
+}
 const preference = createStoredSetting<VoiceSettings>({
   key: "bycoda.voice",
   fallback: defaults,
   event: "bycoda:voice-settings",
   storageEvents: true,
-  parse: (raw) => {
-    const value = JSON.parse(raw);
-    return {
-      visual: ["mark", "wave", "dots", "orb"].includes(value?.visual)
-        ? (value.visual as VoiceVisual)
-        : "mark",
-      compact: value?.compact === true,
-      experimentalSemanticVad: value?.experimentalSemanticVad === true,
-      enabled: value?.enabled === true,
-      // Preserve existing dictation visibility until its own switch is saved.
-      dictationEnabled:
-        typeof value?.dictationEnabled === "boolean"
-          ? value.dictationEnabled
-          : value?.enabled === true,
-      dictationEngine: DICTATION_ENGINES.includes(value?.dictationEngine)
-        ? (value.dictationEngine as DictationEngine)
-        : "local",
-      dictationModels: Object.fromEntries(
-        CLOUD_DICTATION_PROVIDERS.flatMap((provider) => {
-          const chosen = value?.dictationModels?.[provider];
-          return DICTATION_MODELS[provider].some((model) => model.id === chosen)
-            ? [[provider, chosen as string]]
-            : [];
-        }),
-      ),
-      dictationLanguage: Object.prototype.hasOwnProperty.call(
-        SPOKEN_LANGUAGES,
-        value?.dictationLanguage,
-      )
-        ? (value.dictationLanguage as keyof typeof SPOKEN_LANGUAGES)
-        : "auto",
-      ...(typeof value?.manualTurnEnd === "boolean" ? { manualTurnEnd: value.manualTurnEnd } : {}),
-      ...(Number.isSafeInteger(value?.manualTurnEndRevision) && value.manualTurnEndRevision >= 0
-        ? { manualTurnEndRevision: value.manualTurnEndRevision }
-        : {}),
-      ...(typeof value?.microphoneId === "string" && value.microphoneId.length <= 300
-        ? { microphoneId: value.microphoneId }
-        : {}),
-      ...(Number.isFinite(value?.turnEndSilence) &&
-      value.turnEndSilence >= 0.5 &&
-      value.turnEndSilence <= 5
-        ? { turnEndSilence: value.turnEndSilence }
-        : {}),
-      ...(typeof value?.holdAnnouncements === "boolean"
-        ? { holdAnnouncements: value.holdAnnouncements }
-        : {}),
-      ...(typeof value?.allowBargeIn === "boolean" ? { allowBargeIn: value.allowBargeIn } : {}),
-      ...(value?.returnCall === true ? { returnCall: true } : {}),
-      ...(value?.wakeEnabled === true ? { wakeEnabled: true } : {}),
-      ...wakePhraseField("wakePhrase", value?.wakePhrase),
-      ...wakePhraseField("sleepPhrase", value?.sleepPhrase),
-      ...(Number.isInteger(value?.returnCallSeconds) &&
-      value.returnCallSeconds >= 5 &&
-      value.returnCallSeconds <= 120
-        ? { returnCallSeconds: value.returnCallSeconds }
-        : {}),
-      idleSleepMinutes:
-        Number.isInteger(value?.idleSleepMinutes) &&
-        value.idleSleepMinutes >= 0 &&
-        value.idleSleepMinutes <= 120
-          ? value.idleSleepMinutes
-          : 10,
-      natural: value?.natural !== false,
-      mode: value?.mode === "grok" || value?.mode === "openai" ? value.mode : "local",
-      engine:
-        value?.engine === "voxcpm2" || value?.engine === "elevenlabs" ? value.engine : "supertonic",
-      elevenVoice:
-        typeof value?.elevenVoice === "string" && /^[A-Za-z0-9]{0,64}$/.test(value.elevenVoice)
-          ? value.elevenVoice
-          : "",
-      speakers: Object.fromEntries(
-        (Object.keys(DEFAULT_SPEAKERS) as SpeakerEngine[]).map((engine) => {
-          const chosen = value?.speakers?.[engine];
-          return [engine, SPEAKER_IDS[engine].includes(chosen) ? chosen : DEFAULT_SPEAKERS[engine]];
-        }),
-      ) as Record<SpeakerEngine, string>,
-      device: value?.device === "gpu" || value?.device === "cpu" ? value.device : "auto",
-      python: typeof value?.python === "string" ? value.python : "",
-      whisperPath: typeof value?.whisperPath === "string" ? value.whisperPath : "",
-      ttsPath: typeof value?.ttsPath === "string" ? value.ttsPath : "",
-    };
-  },
+  parse: (raw) => normalizeVoiceSettings(JSON.parse(raw)),
   serialize: JSON.stringify,
 });
 export const loadVoiceSettings = preference.load;

@@ -86,7 +86,7 @@ describe("FolderModelDialog", () => {
     expect(verify).toHaveBeenCalledWith({ kind: "model_installation", path: vision.modelPath });
     expect(document.querySelector<HTMLInputElement>("input")?.value).toBe(folder.folder);
     expect(onAdd).not.toHaveBeenCalled();
-    clickButton("Test and add");
+    clickButton("Add and test");
     await settleDecisionUi();
     expect(onAdd).toHaveBeenCalledWith({
       name: vision.name,
@@ -109,7 +109,7 @@ describe("FolderModelDialog", () => {
     expect(bodyText()).toContain("Clef Flash");
     expect(onAdd).not.toHaveBeenCalled();
     expect(onTest).not.toHaveBeenCalled();
-    clickButton("Test and add");
+    clickButton("Add and test");
     await settleDecisionUi();
     expect(onAdd).toHaveBeenCalledWith({
       name: "Clef Flash",
@@ -145,7 +145,7 @@ describe("FolderModelDialog", () => {
     const { onAdd } = render(undefined, false);
     clickButton("Choose folder…");
     await settleDecisionUi();
-    clickButton("Test and add");
+    clickButton("Add and test");
     await settleDecisionUi();
     expect(onAdd).toHaveBeenCalledTimes(1);
     expect(bodyText()).toContain("Added. The connection test failed");
@@ -169,7 +169,7 @@ describe("FolderModelDialog", () => {
     await settleDecisionUi();
     clickButton("Clef Vision");
     await settleDecisionUi();
-    clickButton("Test and add");
+    clickButton("Add and test");
     await settleDecisionUi();
     expect(onAdd).toHaveBeenCalledWith({
       name: vision.name,
@@ -195,7 +195,7 @@ describe("FolderModelDialog", () => {
     clickButton("Choose folder…");
     await settleDecisionUi();
     expect(bodyText()).toContain("Model found, but no runtime was found.");
-    clickButton("Test and add");
+    clickButton("Add and test");
     expect(onAdd).not.toHaveBeenCalled();
     const runtime = Array.from(document.querySelectorAll<HTMLInputElement>("input")).find(
       (input) =>
@@ -205,7 +205,7 @@ describe("FolderModelDialog", () => {
     );
     if (!runtime) throw new Error("Runtime program field missing");
     setInputValue(runtime, folder.runtimePath!);
-    clickButton("Test and add");
+    clickButton("Add and test");
     await settleDecisionUi();
     expect(onAdd).toHaveBeenCalledTimes(1);
   });

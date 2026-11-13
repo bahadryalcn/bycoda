@@ -41,6 +41,7 @@ type Note =
 export function SourceRow({
   source,
   testResult,
+  removing,
   usedFirst = false,
   duplicate,
   actions,
@@ -50,6 +51,7 @@ export function SourceRow({
 }: {
   source: DecisionSource;
   testResult?: SourceTestResult;
+  removing?: "source" | "local";
   usedFirst?: boolean;
   duplicate?: string;
   actions: Actions;
@@ -57,6 +59,7 @@ export function SourceRow({
   onEdit: (source: DecisionSource) => void;
   onRemove: (source: DecisionSource, mode: "source" | "local") => void;
 }) {
+  const [localIntent, setLocalIntent] = useState<"start" | "stop" | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [testedAt, setTestedAt] = useState<number | null>(null);
   const [note, setNote] = useState<Note | null>(null);
@@ -65,6 +68,8 @@ export function SourceRow({
   const testing = isPending(`test:${source.id}`);
   const measuring = isPending(`evaluate:${source.id}`);
   const localBusy = isPending(`local:${source.id}`);
+  const busy =
+    testing || measuring || localBusy || Boolean(removing) || isPending(`remove:${source.id}`);
   const isLocal = source.kind === "local";
   const running = source.status === "ready";
   const attempt = (action: Promise<Note>) => {
@@ -78,13 +83,13 @@ export function SourceRow({
     );
   };
   const menuItems: DropdownMenuAction[] = [
-    { kind: "item", id: "edit", label: t("Edit") },
+    { kind: "item", id: "edit", label: t("Edit"), disabled: busy && !testing },
     { kind: "item", id: "details", label: t("Details") },
     {
       kind: "item",
       id: "measure",
       label: t("Measure accuracy"),
-      disabled: measuring || localBusy,
+      disabled: busy,
     },
     ...(isLocal
       ? [
@@ -92,17 +97,18 @@ export function SourceRow({
             kind: "item" as const,
             id: "toggle",
             label: running ? t("Stop") : t("Start"),
-            disabled: testing || measuring || localBusy,
+            disabled: busy,
           },
           {
             kind: "item" as const,
             id: "uninstall",
             label: t("Uninstall local model"),
             danger: true,
+            disabled: busy,
           },
         ]
       : []),
-    { kind: "item", id: "remove", label: t("Remove source"), danger: true },
+    { kind: "item", id: "remove", label: t("Remove source"), danger: true, disabled: busy },
   ];
   const onMenuPick = (id: string) => {
     setMenuAnchor(null);
@@ -114,9 +120,12 @@ export function SourceRow({
       );
     } else if (id === "toggle") {
       setFailure(null);
+      const intent = running ? "stop" : "start";
+      setLocalIntent(intent);
       void actions
-        .localAction(running ? "stop" : "start", source.id)
-        .catch((error: unknown) => setFailure(error));
+        .localAction(intent, source.id)
+        .catch((error: unknown) => setFailure(error))
+        .finally(() => setLocalIntent(null));
     } else if (id === "uninstall") onRemove(source, "local");
     else if (id === "remove") onRemove(source, "source");
   };
@@ -130,18 +139,28 @@ export function SourceRow({
       source.endpoint ??
       (source.model ? modelDisplayName(source.model) : undefined),
   ].filter(Boolean);
-  const tested = testResult ?? (note?.kind === "test" ? note.result : undefined);
-  const status = testing
-    ? t("Testing…")
-    : tested
-      ? tested.ok
-        ? t("Working")
-        : t("Failed")
-      : source.status === "ready"
-        ? t("Working")
-        : source.status === "error"
-          ? t("Failed")
-          : sourceStatusLabel(source.status);
+  const tested = testResult;
+  const status = removing
+    ? removing === "local"
+      ? t("Uninstalling…")
+      : t("Removing…")
+    : localBusy
+      ? localIntent === "start"
+        ? t("Starting…")
+        : t("Stopping…")
+      : measuring
+        ? t("Measuring…")
+        : testing
+          ? t("Testing…")
+          : tested
+            ? tested.ok
+              ? t("Working")
+              : t("Failed")
+            : source.status === "ready"
+              ? t("Working")
+              : source.status === "error"
+                ? t("Failed")
+                : sourceStatusLabel(source.status);
   const latency = formatLatency(tested?.durationMs ?? source.avgMs);
   const accuracy = formatAccuracy(source.lastAccuracy);
   const cost = formatCost(source.costPerMTokens);
@@ -173,7 +192,7 @@ export function SourceRow({
                   className="shrink-0"
                   tabIndex={failedReason ? 0 : undefined}
                   tone={
-                    testing
+                    busy
                       ? "neutral"
                       : tested
                         ? tested.ok
@@ -235,7 +254,7 @@ export function SourceRow({
             variant="secondary"
             size="sm"
             loading={testing}
-            disabled={testing || localBusy}
+            disabled={busy}
             onClick={() =>
               attempt(
                 actions.testSource(source.id).then((result) => ({ kind: "test" as const, result })),

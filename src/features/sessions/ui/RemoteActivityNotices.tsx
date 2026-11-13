@@ -66,9 +66,25 @@ function RemoteActivity({ notice }: { notice: RemoteActivityNotice }) {
       : t("{p0} changed {p1} worktrees in this project.", { p0: device, p1: n }),
     settingsChanged: t("{p0} changed this project's workspace settings.", { p0: device }),
   };
+  const actions: Record<RemoteActivityNotice["kind"], string> = {
+    deleted: t("Delete conversations"),
+    archived: t("Archive conversations"),
+    stopped: t("Stop conversations"),
+    takenOver: t("Take over conversations"),
+    approved: t("Answer approval requests"),
+    answered: t("Answer questions"),
+    inbox: t("Inbox changes"),
+    worktreeChanged: t("Worktree changes"),
+    settingsChanged: t("Workspace settings changes"),
+  };
+  const failure = t("{p0} could not be completed.", { p0: notice.failed });
   const text = [
     notice.done > 0 ? messages[notice.kind] : "",
-    notice.failed > 0 ? t("{p0} could not be completed.", { p0: notice.failed }) : "",
+    notice.failed > 0
+      ? notice.done > 0
+        ? failure
+        : `${device} · ${actions[notice.kind]}: ${failure}`
+      : "",
   ]
     .filter(Boolean)
     .join(" ");

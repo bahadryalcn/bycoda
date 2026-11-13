@@ -48,7 +48,7 @@ export function ServerForwards({
     targetHost: "127.0.0.1",
     targetPort: "",
   });
-  const { statuses, statusError, refresh } = useForwardStatuses(server.id, active);
+  const { statuses, statusError, verified, refresh } = useForwardStatuses(server.id, active);
   const [busyState, setBusyState] = useState({ source: server.id, value: "" });
   const [errorState, setErrorState] = useState({ source: server.id, value: "" });
   const busy = busyState.source === server.id ? busyState.value : "";
@@ -131,9 +131,9 @@ export function ServerForwards({
                 >
                   {rule.name}
                 </Text>
-                {stopping || unknown ? (
+                {!verified || stopping || unknown ? (
                   <Badge size="sm" tone="neutral">
-                    {t(stopping ? "Stopping" : "Status unknown")}
+                    {t(verified && stopping ? "Stopping" : "Status unknown")}
                   </Badge>
                 ) : running ? (
                   <StatusBadge status="running" />
@@ -154,7 +154,7 @@ export function ServerForwards({
               <div className="flex flex-wrap gap-2">
                 <Button
                   loading={busy === rule.id}
-                  disabled={Boolean(busy) || stopping}
+                  disabled={Boolean(busy) || stopping || !verified}
                   onClick={() =>
                     void run(rule.id, async () => {
                       if (running) return stopSshForward(runtimeId);
@@ -180,19 +180,21 @@ export function ServerForwards({
                     })
                   }
                 >
-                  {stopping
-                    ? t("Stopping")
-                    : unknown
-                      ? t("Retry stop")
-                      : running
-                        ? t("Stop")
-                        : t("Start")}
+                  {!verified
+                    ? t(statusError ? "Status unknown" : "Checking…")
+                    : stopping
+                      ? t("Stopping")
+                      : unknown
+                        ? t("Retry stop")
+                        : running
+                          ? t("Stop")
+                          : t("Start")}
                 </Button>
                 <span className="ms-auto">
                   <ConfirmMorph
                     label={t("Remove")}
                     tone="danger"
-                    disabled={Boolean(busy) || running}
+                    disabled={Boolean(busy) || running || !verified}
                     onConfirm={() =>
                       run(rule.id, () =>
                         updateServerMetadata(server.id, {

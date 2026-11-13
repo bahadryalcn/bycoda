@@ -1,3 +1,5 @@
+import type { HostAutomations } from "../automations/automations";
+import { migrateSteward } from "../automations/steward-migration";
 import {
   resolveRunModel,
   routingRun,
@@ -5,6 +7,7 @@ import {
   routingWaitDue,
   type RoutedRun,
 } from "../tasks/model-routing";
+import { bindSessionWork } from "../work/session-adapter";
 import { parseHostSteward } from "./routing-input";
 import { assertExpectedConfiguration } from "../configurationConflict";
 import { randomUUID } from "node:crypto";
@@ -16,10 +19,7 @@ import {
   type HostSteward as StoredHostSteward,
   type StewardRunStatus,
 } from "../../src/features/tasks/model/hostStewards";
-import {
-  DAILY_LIMIT_SKIP,
-  DAILY_LIMIT_UNCERTAIN_SKIP,
-} from "../../src/features/tasks/model/hostSettings";
+import {} from "../../src/features/tasks/model/hostSettings";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import type { HostEngine } from "../engine";
 import {
@@ -125,6 +125,66 @@ export class HostStewards {
   /** Stewards whose run is being started, so a second start does not overlap. */
   private readonly starting = new Set<string>();
 
+  private automations?: HostAutomations;
+  private readonly migrated = new Map<string, string>();
+  async bindAutomations(automations: HostAutomations): Promise<void> {
+    await Promise.all([this.ready, automations.ready]);
+    this.automations = automations;
+    automations.projectScan = {
+      create: async (input) => {
+        if (await this.find(input.id)) throw new Error("Project scan ID already exists.");
+        const steward = await this.save({
+          ...input,
+          focus: input.prompt,
+          time: input.time ?? "09:00",
+        });
+        const id = this.migrated.get(steward.id);
+        const automation = id && (await automations.list()).find((item) => item.id === id);
+        if (!automation) throw new Error("Project scan creation failed.");
+        return automation;
+      },
+      update: async (input, id) => {
+        const previous = await this.find(id);
+        if (!previous || previous.projectId !== input.projectId)
+          throw new Error("Project scan source is missing or belongs to another project.");
+        await this.save({
+          ...previous,
+          ...input,
+          id,
+          focus: input.prompt,
+          time: input.time ?? "09:00",
+          expectedConfiguration: previous,
+        });
+      },
+      prepare: async (id) => {
+        const steward = await this.find(id);
+        if (!steward) throw new Error("Project scan source is missing.");
+        if (steward.run) throw new Error("Previous steward occurrence is still active.");
+        const tasks = await this.tasks.list();
+        const open = tasks.filter(
+          (task) =>
+            task.source === "steward" &&
+            task.projectId === steward.projectId &&
+            (task.status === "todo" || task.status === "queued"),
+        ).length;
+        if (open >= steward.maxOpen) throw new Error(openLimitSkip(steward.maxOpen));
+        return stewardPrompt(
+          steward,
+          await this.store.project(steward.projectId),
+          tasks,
+          undefined,
+        );
+      },
+      completed: async (id, sessionId) => {
+        const steward = await this.find(id);
+        if (!steward) throw new Error("Project scan source is missing.");
+        const proposed = await this.propose(steward, await this.reply(sessionId));
+        await this.write({ ...steward, lastProposed: proposed, lastSessionId: sessionId });
+      },
+    };
+    for (const steward of await this.list())
+      this.migrated.set(steward.id, await migrateSteward(this.store, steward));
+  }
   readonly ready: Promise<void>;
   constructor(
     private readonly store: HostStore,
@@ -133,6 +193,7 @@ export class HostStewards {
     private readonly now: () => number = Date.now,
     private readonly workspaces?: StewardWorkspaceServices,
   ) {
+    if (engine.withCommandAdmission) bindSessionWork(store, engine, tasks.limits, now);
     // A manual request's grant follows preparation/effects, never the saved
     // steward or a future system-owned tick.
     this.engine = {
@@ -213,9 +274,28 @@ export class HostStewards {
   async list(): Promise<HostSteward[]> {
     await this.ready;
 
-    return (await this.store.db.prepare("SELECT value FROM stewards").all())
+    const definitions = (await this.store.db.prepare("SELECT value FROM stewards").all())
       .map((row) => JSON.parse(String(row.value)) as HostSteward)
       .sort((a, b) => a.createdAt - b.createdAt);
+    if (!this.automations || !this.migrated.size) return definitions;
+    const automations = new Map((await this.automations.list()).map((item) => [item.id, item]));
+    return definitions.map((steward) => {
+      const automation = automations.get(this.migrated.get(steward.id) ?? "");
+      return automation
+        ? {
+            ...steward,
+            enabled: automation.enabled,
+            nextRunAt: automation.nextRunAt,
+            lastRunAt: automation.lastRunAt ?? steward.lastRunAt,
+            lastRunStatus:
+              automation.lastRunStatus === "pending"
+                ? steward.lastRunStatus
+                : (automation.lastRunStatus ?? steward.lastRunStatus),
+            lastRunError: automation.lastRunError,
+            lastSessionId: automation.lastSessionId ?? steward.lastSessionId,
+          }
+        : steward;
+    });
   }
 
   withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T> {
@@ -246,7 +326,7 @@ export class HostStewards {
         (previous.run || this.starting.has(input.id))
       )
         throw new Error("Wait for the steward run to finish before changing its project.");
-      return await this.write({
+      const saved = await this.write({
         ...input,
         deliveryApprovalRequired: previous?.deliveryApprovalRequired,
         nextRunAt: nextAutomationRunAt(input, now),
@@ -260,6 +340,9 @@ export class HostStewards {
         createdAt: previous?.createdAt ?? now,
         updatedAt: Math.max(now, (previous?.updatedAt ?? -1) + 1),
       });
+      if (this.automations)
+        this.migrated.set(saved.id, await migrateSteward(this.store, saved, true));
+      return saved;
     });
   }
 
@@ -269,6 +352,9 @@ export class HostStewards {
 
     const steward = await this.find(id);
     if (!steward) return;
+    const automationId = this.migrated.get(id);
+    if (automationId && this.automations) await this.automations.delete(automationId);
+    this.migrated.delete(id);
     await this.store.db.checkAuthorization();
     const deleted = await this.store.db.prepare("DELETE FROM stewards WHERE id=?").run(id);
     if (Number(deleted.changes) > 0)
@@ -302,6 +388,11 @@ export class HostStewards {
 
     const steward = await this.find(id);
     if (!steward) throw new Error("Steward not found.");
+    const automationId = this.migrated.get(id);
+    if (automationId && this.automations) {
+      await this.automations.runNow(automationId);
+      return (await this.find(id)) ?? steward;
+    }
     await this.begin(steward, this.now());
     return (await this.find(id)) ?? steward;
   }
@@ -355,23 +446,28 @@ export class HostStewards {
 
   private async work(): Promise<void> {
     const now = this.now();
+    const resumed = new Set<string>();
     for (const steward of await this.list()) {
       if (this.closing) return;
       if (!steward.run) continue;
       try {
         await this.settle(steward, now);
+        if (!steward.run.runId && (await this.find(steward.id))?.run?.runId)
+          resumed.add(steward.id);
       } catch (error) {
         console.error("Could not settle a steward run:", errorMessage(error));
       }
     }
     for (const steward of await this.list()) {
       if (this.closing) return;
-      if (!steward.enabled || steward.nextRunAt > now) continue;
+      if (this.migrated.has(steward.id) || !steward.enabled || steward.nextRunAt > now) continue;
       try {
         const due = await this.write({
           ...steward,
           nextRunAt: nextAutomationRunAt(steward, now),
         });
+        // This due slot already resumed its durable queued occurrence above.
+        if (resumed.has(steward.id)) continue;
         await this.begin(due, now);
       } catch (error) {
         console.error("Could not start a steward:", errorMessage(error));
@@ -443,19 +539,10 @@ export class HostStewards {
     }
     this.starting.add(steward.id);
     let owned: ManagedStewardRun | undefined;
-    let accepted: { sessionId: string; runId?: string } | undefined;
+    let accepted = false;
     try {
       if ((await this.find(steward.id))?.run) {
         await this.skip(steward, PREVIOUS_RUN_SKIP, now);
-        return;
-      }
-      const limitState = await this.tasks.limits.state();
-      if (limitState.limitReached) {
-        await this.skip(
-          steward,
-          limitState.usageUncertain ? DAILY_LIMIT_UNCERTAIN_SKIP : DAILY_LIMIT_SKIP,
-          now,
-        );
         return;
       }
       const open = (await this.tasks.list()).filter(
@@ -576,69 +663,9 @@ export class HostStewards {
         await this.finish(steward, "cancelled", "Host is stopping.", now);
         return;
       }
-      const started = await launchSessionRun(
-        this.store,
-        {
-          command: async (command) => {
-            await this.assertOwnedRun(steward, owned!);
-            const receipt = await this.engine.command(command);
-            const type = (command as { type?: unknown }).type;
-            if (type === "create")
-              owned = await this.retainOwnedRun(steward, owned!, { sessionId: receipt.sessionId });
-            if (type === "send") accepted = { sessionId: receipt.sessionId, runId: receipt.runId };
-            return receipt;
-          },
-          updateSession: async (...args) => {
-            await this.assertOwnedRun(steward, owned!);
-            return this.engine.updateSession(...args);
-          },
-          withMessageAuthor: this.engine.withMessageAuthor?.bind(this.engine),
-        },
-        {
-          projectId: steward.projectId,
-          harness: steward.harness,
-          providerAccountId: steward.providerAccountId,
-          author: { kind: "steward", id: steward.id, name: project.name, reason: "kickoff" },
-          model: steward.model,
-          modelSettings: steward.modelSettings,
-          runtimeMode: steward.runtimeMode,
-          title: `Steward: ${project.name}`.slice(0, 200),
-          prompt,
-          ...(worktree.workspaceId
-            ? { worktreeCwd: worktree.path, workspaceId: worktree.workspaceId }
-            : { workspaceMode: "current" as const }),
-        },
-        () => !this.closing,
-      );
-      if (accepted) {
-        // Only the actual durable send receipt owns this run now. Preserve it
-        // despite a lost creator grant/waiter; do not cancel or send it again.
-        owned = await this.retainOwnedRun(steward, owned, accepted, true);
-        return;
-      }
-      await this.store.db.checkAuthorization();
-      if (started.deferred) {
-        await this.removeWorktree(steward.projectId, prepared);
-        await this.finish(steward, "cancelled", "Host is stopping.", now);
-        return;
-      }
-      const run: ManagedStewardRun = {
-        ...prepared,
-        sessionId: started.sessionId,
-        runId: started.runId,
-      };
-      if (started.error !== undefined) {
-        await this.removeWorktree(steward.projectId, run);
-        await this.finish(
-          { ...steward, run },
-          "failed",
-          `Could not start the steward: ${started.error}`,
-          now,
-        );
-        return;
-      }
-      // No receipt means no successful provider admission may be fabricated.
-      throw new Error("The steward launch returned no send receipt.");
+      await this.launchPrepared(steward, owned, prompt, () => {
+        accepted = true;
+      });
     } catch (error) {
       if (owned && !accepted) {
         // SQL bookkeeping only: retain already allocated identities for a later
@@ -653,6 +680,85 @@ export class HostStewards {
     } finally {
       this.starting.delete(steward.id);
     }
+  }
+
+  private async launchPrepared(
+    steward: HostSteward,
+    initial: ManagedStewardRun,
+    prompt: string,
+    onAccepted?: () => void,
+  ): Promise<void> {
+    let owned = initial;
+    let accepted: { sessionId: string; runId?: string } | undefined;
+    const prepared = initial;
+    const worktree = { path: initial.worktreeCwd, workspaceId: initial.workspaceId };
+    const project = await this.store.project(steward.projectId);
+    const now = initial.startedAt;
+    const started = await launchSessionRun(
+      this.store,
+      {
+        command: async (command) => {
+          await this.assertOwnedRun(steward, owned!);
+          const receipt = await this.engine.command(command);
+          const type = (command as { type?: unknown }).type;
+          if (type === "create")
+            owned = await this.retainOwnedRun(steward, owned!, { sessionId: receipt.sessionId });
+          if (type === "send") {
+            accepted = { sessionId: receipt.sessionId, runId: receipt.runId };
+            onAccepted?.();
+          }
+          return receipt;
+        },
+        updateSession: async (...args) => {
+          await this.assertOwnedRun(steward, owned!);
+          return this.engine.updateSession(...args);
+        },
+        withMessageAuthor: this.engine.withMessageAuthor?.bind(this.engine),
+      },
+      {
+        projectId: steward.projectId,
+        harness: steward.harness,
+        work: { kind: "steward", id: steward.id, occurrence: String(owned.startedAt) },
+        providerAccountId: steward.providerAccountId,
+        author: { kind: "steward", id: steward.id, name: project.name, reason: "kickoff" },
+        model: steward.model,
+        modelSettings: steward.modelSettings,
+        runtimeMode: steward.runtimeMode,
+        title: `Steward: ${project.name}`.slice(0, 200),
+        prompt,
+        ...(worktree.workspaceId
+          ? { worktreeCwd: worktree.path, workspaceId: worktree.workspaceId }
+          : { workspaceMode: "current" as const }),
+      },
+      () => !this.closing,
+    );
+    if (accepted) {
+      // Only the actual durable send receipt owns this run now. Preserve it
+      // despite a lost creator grant/waiter; do not cancel or send it again.
+      owned = await this.retainOwnedRun(steward, owned, accepted, true);
+      return;
+    }
+    await this.store.db.checkAuthorization();
+    if (started.deferred) {
+      return;
+    }
+    const run: ManagedStewardRun = {
+      ...prepared,
+      sessionId: started.sessionId,
+      runId: started.runId,
+    };
+    if (started.error !== undefined) {
+      await this.removeWorktree(steward.projectId, run);
+      await this.finish(
+        { ...steward, run },
+        "failed",
+        `Could not start the steward: ${started.error}`,
+        now,
+      );
+      return;
+    }
+    // No receipt means no successful provider admission may be fabricated.
+    throw new Error("The steward launch returned no send receipt.");
   }
 
   private reserveOwnedRun(
@@ -751,8 +857,22 @@ export class HostStewards {
   }
 
   private async settle(steward: HostSteward, now: number): Promise<void> {
-    const run = steward.run!;
+    const run = steward.run! as ManagedStewardRun;
     if (this.starting.has(steward.id)) return;
+    if (!run.runId) {
+      const project = await this.store.project(steward.projectId);
+      await this.launchPrepared(
+        steward,
+        run,
+        stewardPrompt(
+          steward,
+          project,
+          await this.tasks.list(),
+          run.workspaceId ? run.worktreeCwd : undefined,
+        ),
+      );
+      return;
+    }
     const outcome = await sessionRunState(this.store, run, STEWARD_RUN_MINUTES, now);
     if (outcome.state === "running") return;
     if (outcome.state === "overLimit") {

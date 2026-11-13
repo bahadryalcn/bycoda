@@ -10,6 +10,7 @@ import { NotesView as RawNotesView } from "./NotesView";
 import { SessionNotesPanel } from "./SessionNotesPanel";
 import { NoteDraftRecoveryNotice } from "./NoteDraftRecoveryNotice";
 import { NoteMarkdownEditor } from "./NoteMarkdownEditor";
+import { setLanguagePreference, t } from "../../../shared/i18n";
 import {
   beginNotesInputClosure,
   captureNotesInputs,
@@ -55,6 +56,65 @@ vi.mock("@tauri-apps/api/window", () => ({
 const NotesView = withQueryClient(RawNotesView);
 let root: Root, host: HTMLDivElement, stored: Note;
 const closures: NotesInputClosure[] = [];
+
+it("updates mounted editor language and accessible name without replacing its draft or selection", async () => {
+  await setLanguagePreference("en");
+  const viewRef = { current: null as EditorView | null };
+  const props = { value: "", onChange: vi.fn(), onSave: vi.fn(), viewRef };
+  try {
+    await act(async () => root.render(createElement(NoteMarkdownEditor, props)));
+    const view = viewRef.current!;
+    const previousLabel = view.contentDOM.getAttribute("aria-label");
+    act(() =>
+      view.dispatch({
+        changes: { from: 0, insert: "Retained draft 漢🦀" },
+        selection: { anchor: 5 },
+      }),
+    );
+    await act(async () => {
+      await setLanguagePreference("tr");
+    });
+    expect(viewRef.current).toBe(view);
+    expect(view.state.doc.toString()).toBe("Retained draft 漢🦀");
+    expect(view.state.selection.main.anchor).toBe(5);
+    expect(view.contentDOM.getAttribute("aria-label")).toBe(t("Note body"));
+    expect(view.contentDOM.getAttribute("aria-label")).not.toBe(previousLabel);
+  } finally {
+    await act(async () => {
+      await setLanguagePreference("en");
+    });
+  }
+});
+
+it("keeps note title focus and library open while IME consumes Enter or Escape", async () => {
+  const onClose = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(NotesView, {
+        cwd: "/repo/project",
+        recents: [{ path: "/repo/project", openedAt: 1 }],
+        onClose,
+      }),
+    ),
+  );
+  await vi.waitFor(() => expect(host.querySelector('[aria-label="Note title"]')).not.toBeNull());
+  const title = host.querySelector<HTMLInputElement>('[aria-label="Note title"]')!;
+  title.focus();
+  act(() =>
+    title.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }),
+    ),
+  );
+  expect(document.activeElement).toBe(title);
+  act(() =>
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", isComposing: true, bubbles: true }),
+    ),
+  );
+  expect(onClose).not.toHaveBeenCalled();
+  act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
 beforeEach(() => {
   resetNoteInputWindowForTest();
   resetRetainedState();

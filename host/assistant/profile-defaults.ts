@@ -5,6 +5,16 @@ import type { AssistantRepository } from "./repository";
 
 /** Profile values used until the owner saves a profile. */
 export const assistantProfileDefaults: AssistantProfile = {
+  permissionLevel: undefined,
+  permissionProjectIds: [],
+  criticalExclusions: [
+    "pushMain",
+    "deleteProject",
+    "deleteSession",
+    "sendMessages",
+    "computerUse",
+    "spend",
+  ],
   name: "",
   showTitle: true,
   avatar: "",
@@ -22,6 +32,10 @@ export const assistantProfileDefaults: AssistantProfile = {
   perWakeTokenCap: 8000,
   enabled: false,
   keepAwakeWhileWorking: false,
+  keepAwakeWhileAway: true,
+  urgentNotificationRepeats: 2,
+  urgentNotificationIntervalMinutes: 30,
+  notificationTelegram: null,
   setupComplete: false,
   voiceSetupComplete: false,
   voiceNarration: false,

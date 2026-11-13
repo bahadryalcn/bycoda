@@ -141,7 +141,7 @@ export function ServersView({
     clearTimeout(detailOpenTimer.current);
     setDetailReady(true);
     setSelectedId(server.id);
-    openTerminal?.(server);
+    void openTerminal?.(server).catch((reason) => setActionError(errorText(reason)));
   };
   const [quickConnect, setQuickConnect] = useState(false);
   const [sshSettings, setSshSettings] = useState(false);

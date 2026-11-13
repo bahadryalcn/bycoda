@@ -81,6 +81,8 @@ function inTextField(event: KeyboardEvent) {
 type Props = {
   languageDomain?: LanguageDomain;
   onClose: () => void;
+  /** Holds Close, Escape and backdrop dismissal while a bounded operation owns the dialog. */
+  closeDisabled?: boolean;
   /** Override Escape without changing the close button. */
   onEscape?: () => void;
   /** Keep the modal focus boundary while showing the workspace without a scrim. */
@@ -159,6 +161,7 @@ export type ModalProps = Props;
 export function ModalPanel({
   languageDomain,
   onClose,
+  closeDisabled = false,
   onEscape,
   title,
   description,
@@ -197,7 +200,9 @@ export function ModalPanel({
   const overlayId = useOverlay(
     dialogRef,
     true,
-    onEscape ?? onClose,
+    () => {
+      if (!closeDisabled) (onEscape ?? onClose)();
+    },
     true,
     initialFocus ?? PRIMARY_ACTION,
     true,
@@ -317,6 +322,7 @@ export function ModalPanel({
                   closeRef={closeRef}
                   closeLabel={t("Close")}
                   onClose={onClose}
+                  closeDisabled={closeDisabled}
                   actions={minimalHeader ? undefined : headerActions}
                 />
                 <div
@@ -394,7 +400,7 @@ export function Modal(props: Props) {
         // Do not let the browser's default mouse focus overwrite the trigger
         // focus restored when the dialog unmounts.
         event.preventDefault();
-        if (props.backdrop !== false) props.onClose();
+        if (props.backdrop !== false && !props.closeDisabled) props.onClose();
       }}
     >
       {props.backdrop !== false ? (

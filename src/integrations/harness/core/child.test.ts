@@ -114,6 +114,31 @@ describe("isCurrentChildExit", () => {
 });
 
 describe("child bridge", () => {
+  it("carries isolated OpenCode compaction through both Native env and the Host primitive", async () => {
+    installResolvedListeners();
+    const child = await loadChild();
+    const handle = processHandle(child, "opencode-compact-wire");
+    await child.spawnChild(
+      handle,
+      "opencode",
+      ["serve"],
+      "/repo",
+      undefined,
+      "opencode",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "off",
+    );
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "harness_spawn",
+      expect.objectContaining({
+        autoCompact: "off",
+        launchEnv: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ compaction: { auto: false } }) },
+      }),
+    );
+  });
   it("updates the resolved binary to the checked release with its configured identity", async () => {
     vi.stubGlobal("localStorage", {
       getItem: (key: string) =>

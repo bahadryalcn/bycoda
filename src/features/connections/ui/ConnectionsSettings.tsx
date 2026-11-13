@@ -3,7 +3,10 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
-import { RemoteReconnectGroup } from "../../settings/public/ConnectionRecoverySettings";
+import {
+  RemoteReconnectGroup,
+  RevealedSetting,
+} from "../../settings/public/ConnectionRecoverySettings";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -23,7 +26,7 @@ import { RemoteDataStatus } from "./RemoteDataStatus";
 import { EMPTY_SSH_DRAFT, MachineForm, type MachineMethod, type SshDraft } from "./MachineForm";
 import { MachineRow } from "./MachineRow";
 import { RemoveMachineDialog } from "./RemoveMachineDialog";
-import { useRef, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import { Internet, Plus, RefreshCw } from "../../../shared/ui/icons";
 import {
   connectMachine,
@@ -46,15 +49,35 @@ import type { RemoteMachine } from "../model/protocol";
 
 export function ConnectionsSettings() {
   useLocale();
+  const revealed = useContext(RevealedSetting);
+  const [lastReveal, setLastReveal] = useState<string | null>(null);
   const [view, setView] = useState("machines");
   const [visited, setVisited] = useState<string[]>(["machines"]);
+  if (lastReveal !== revealed) {
+    setLastReveal(revealed);
+    const next =
+      revealed === "connections-phone"
+        ? "phone"
+        : revealed === "connections-sharing"
+          ? "tunnels"
+          : revealed === "remote-machines" || revealed === "remote-auto-reconnect"
+            ? "machines"
+            : null;
+    if (next) {
+      setView(next);
+      setVisited((current) => (current.includes(next) ? current : [...current, next]));
+    }
+  }
   const { machines, loaded, loading, error: loadError, refresh } = useRemoteMachines();
   const [adding, setAdding] = useState(false);
   // The machine whose definition the form edits; none when it adds one.
   const [editing, setEditing] = useState<RemoteMachine>();
-  const [draft, setDraft] = useState<SshDraft>(EMPTY_SSH_DRAFT);
+  const [addDraft, setAddDraft] = useState<SshDraft>(EMPTY_SSH_DRAFT);
+  const [editDraft, setEditDraft] = useState<SshDraft>(EMPTY_SSH_DRAFT);
+  const draft = editing ? editDraft : addDraft;
+  const submittedAddDraft = useRef<SshDraft | undefined>(undefined);
   const patchDraft = (patch: Partial<SshDraft>) =>
-    setDraft((current) => ({ ...current, ...patch }));
+    (editing ? setEditDraft : setAddDraft)((current) => ({ ...current, ...patch }));
   const [connectionName, setConnectionName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -92,7 +115,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       else if (next.machine) {
         setAdding(false);
         setEditing(undefined);
-        setDraft((current) => ({ ...current, target: "", name: "", port: "", alternate: "" }));
+        const submitted = submittedAddDraft.current;
+        if (submitted)
+          setAddDraft((current) => (current === submitted ? EMPTY_SSH_DRAFT : current));
         setNotice(
           afterEdit.current
             ? t("{p0} is connected through its new address.", { p0: next.machine.name })
@@ -113,11 +138,13 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         notifyRemoteRecovered(next.machine.environmentId);
       }
       afterEdit.current = false;
+      submittedAddDraft.current = undefined;
     },
     onFailed: (reason) => {
       setError(String(reason));
       submitting.current = false;
       setBusy(false);
+      submittedAddDraft.current = undefined;
     },
     onError: setError,
   });
@@ -135,6 +162,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     const parsed = machine ? undefined : parseMachineDraft(sshFields(false));
     if (parsed && !parsed.ok) return setError(t(parsed.error));
     submitting.current = true;
+    submittedAddDraft.current = machine ? undefined : addDraft;
     afterEdit.current = edited;
     setBusy(true);
     setError("");
@@ -192,7 +220,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
   const startEdit = (machine: RemoteMachine) => {
     setView("machines");
     setEditing(machine);
-    setDraft({ remotePort: "", alternate: "", ...draftFromMachine(machine) });
+    setEditDraft({ remotePort: "", alternate: "", ...draftFromMachine(machine) });
     setAdding(true);
     setError("");
     setNotice("");
@@ -202,7 +230,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
   const closeForm = () => {
     setAdding(false);
     setEditing(undefined);
-    setDraft(EMPTY_SSH_DRAFT);
+    setEditDraft(EMPTY_SSH_DRAFT);
   };
   const startAdd = () => {
     closeForm();
@@ -516,7 +544,14 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           <RemoteReconnectGroup />
         </TabPanel>
         {visited.includes("phone") ? (
-          <TabPanel value="phone" keepMounted tabIndex={-1} className="connections-view">
+          <TabPanel
+            id="setting-connections-phone"
+            data-setting-id="connections-phone"
+            value="phone"
+            keepMounted
+            tabIndex={-1}
+            className="connections-view"
+          >
             <PhoneConnectionPanel
               active={view === "phone"}
               machines={machines}
@@ -527,7 +562,14 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           </TabPanel>
         ) : null}
         {visited.includes("tunnels") ? (
-          <TabPanel value="tunnels" keepMounted tabIndex={-1} className="connections-view">
+          <TabPanel
+            id="setting-connections-sharing"
+            data-setting-id="connections-sharing"
+            value="tunnels"
+            keepMounted
+            tabIndex={-1}
+            className="connections-view"
+          >
             <ExternalTunnelsPanel machines={machines} loaded={loaded} loading={loading} />
           </TabPanel>
         ) : null}

@@ -104,6 +104,16 @@ describe("task prompts", () => {
     expect(prompt.length).toBeLessThan(FEEDBACK_LIMIT + 4000);
   });
 
+  it("limits review failures and release expectations to the task", () => {
+    const prompt = reviewPrompt(task({ title: "Publishable snake game" }));
+    expect(prompt).toContain("A failed configured check is a reason to FAIL only");
+    expect(prompt).toContain(
+      "Apply release-tier expectations only when the task explicitly requests a release",
+    );
+    expect(prompt).toContain("a title such as publishable alone does not request one");
+    expect(prompt).toContain('suggestions (kind "suggestion"), never a reason to FAIL');
+    expect(prompt).toContain("security, data loss, permission/approval gates");
+  });
   it("gives the reviewer the brief and verdict rules without runtime or continuation text", () => {
     const prompt = reviewPrompt(
       repair({ verification: { command: { exitCode: 0, output: "", timedOut: false } } }),

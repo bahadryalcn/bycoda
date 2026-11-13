@@ -21,6 +21,7 @@ import { SavedThemes } from "../controls/SavedThemes";
 import { StateLadder } from "../controls/StateLadder";
 import { ToneSliders } from "../controls/ToneSliders";
 import { AppearanceSection } from "./AppearanceSection";
+import { generatorSession } from "../controls/themeGeneratorSession";
 import "./ThemeSection.css";
 
 /**
@@ -38,6 +39,7 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
     appearance.preferences.surfaceContrast !== APPEARANCE_DEFAULTS.surfaceContrast ||
     appearance.preferences.canvasBackground !== CANVAS_BACKGROUND_DEFAULT;
   const resetColors = () => {
+    generatorSession.invalidateImageIntent();
     appearance.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
     appearance.onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
     appearance.onAccentColor(ACCENT_COLOR_DEFAULT);
@@ -91,6 +93,7 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         }
         resetLabel={t("Reset tone")}
         onReset={() => {
+          generatorSession.invalidateImageIntent();
           appearance.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
           appearance.onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
           appearance.onPreferences({
@@ -105,7 +108,10 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
         title={t("Accent")}
         modified={!isDefaultAccent(appearance.accentColor)}
         resetLabel={t("Reset accent")}
-        onReset={() => appearance.onAccentColor(ACCENT_COLOR_DEFAULT)}
+        onReset={() => {
+          generatorSession.invalidateImageIntent();
+          appearance.onAccentColor(ACCENT_COLOR_DEFAULT);
+        }}
       >
         <Row id="accent-color" label={t("Accent color")}>
           <AccentRing appearance={appearance} />

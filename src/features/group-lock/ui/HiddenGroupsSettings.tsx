@@ -7,7 +7,8 @@ import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { PrivacyStorageError } from "./PrivacyStorageError";
 import { useGroupLock } from "../hooks/useGroupLock";
 import {
   authorizeHiddenGroups,
@@ -31,8 +32,12 @@ export function HiddenGroupsSettings({
   const [pendingGroup, setPendingGroup] = useState<string | null>(null);
   const [canCheckVisibility, setCanCheckVisibility] = useState(false);
   const [query, setQuery] = useState("");
+  const recoveryInFlight = useRef(false);
+  const [checking, setChecking] = useState(false);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- releases the model's hidden-name authorization when its owning manager unmounts
   useEffect(() => closeHiddenGroups, []);
-  const authorized = !privacy.hasPassword || privacy.hiddenGroupsAuthorized;
+  const authorized =
+    privacy.storageAvailable !== false && (!privacy.hasPassword || privacy.hiddenGroupsAuthorized);
   const groups = authorized
     ? privacy.groups.filter((group) => privacy.savedHiddenGroupIds.has(group.id))
     : [];
@@ -42,7 +47,7 @@ export function HiddenGroupsSettings({
     : groups;
   const searchable = groups.length >= 6;
   const changeVisibility = (id: string, write: () => Promise<boolean>) => {
-    if (pendingGroup) return;
+    if (pendingGroup || recoveryInFlight.current) return;
     setPendingGroup(id);
     void write()
       .then(
@@ -64,6 +69,7 @@ export function HiddenGroupsSettings({
   };
   const restore = (id: string, temporary: boolean) =>
     changeVisibility(id, () => restoreHiddenGroup(id, temporary));
+  if (privacy.storageAvailable === false) return <PrivacyStorageError />;
   return (
     <Group
       id="hidden-project-groups"
@@ -142,7 +148,7 @@ export function HiddenGroupsSettings({
                     tone="primary"
                     weight="medium"
                     leading="normal"
-                    truncate
+                    wrap="anywhere"
                     className="settings-collection-title"
                   >
                     {group.name}
@@ -159,7 +165,7 @@ export function HiddenGroupsSettings({
                   {privacy.hiddenGroupIds.has(group.id) ? (
                     <Button
                       className="shrink-0"
-                      disabled={pendingGroup !== null}
+                      disabled={pendingGroup !== null || checking}
                       onClick={() => restore(group.id, true)}
                     >
                       {t("Show temporarily")}
@@ -167,7 +173,7 @@ export function HiddenGroupsSettings({
                   ) : (
                     <Button
                       className="shrink-0"
-                      disabled={pendingGroup !== null}
+                      disabled={pendingGroup !== null || checking}
                       onClick={() => changeVisibility(group.id, () => hideGroup(group.id))}
                     >
                       {t("Hide again")}
@@ -175,7 +181,7 @@ export function HiddenGroupsSettings({
                   )}
                   <Button
                     className="shrink-0"
-                    disabled={pendingGroup !== null}
+                    disabled={pendingGroup !== null || checking}
                     onClick={() => restore(group.id, false)}
                   >
                     {t("Make visible")}
@@ -193,13 +199,27 @@ export function HiddenGroupsSettings({
             <Button
               size="sm"
               variant="ghost"
+              loading={checking}
+              disabled={checking}
+              loadingLabel={t("Checking…")}
               onClick={() => {
+                if (recoveryInFlight.current) return;
+                recoveryInFlight.current = true;
+                setChecking(true);
                 void recoverRoomPrivacyProjection()
                   .then(() => {
                     setError(null);
                     setCanCheckVisibility(false);
                   })
-                  .catch(() => {});
+                  .catch(() =>
+                    setError(
+                      t("Visibility could not be confirmed. Check the group before trying again."),
+                    ),
+                  )
+                  .finally(() => {
+                    recoveryInFlight.current = false;
+                    setChecking(false);
+                  });
               }}
             >
               {t("Check status")}

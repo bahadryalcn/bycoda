@@ -1,5 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { TaskConcurrencyField } from "./TaskConcurrencyField";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { Badge } from "../../../shared/ui/Badge";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
@@ -13,12 +14,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { RemoteMachine } from "../../connections";
-import {
-  DAILY_LIMIT_CHOICES,
-  formatAgentMinutes,
-  type HostSettings,
-  MAX_RUNNING_TASKS_LIMIT,
-} from "../model/hostSettings";
+import { DAILY_LIMIT_CHOICES, formatAgentMinutes, type HostSettings } from "../model/hostSettings";
 import { type MachineLimits, saveMachineLimits } from "../model/settingsClient";
 
 const DAILY_LIMIT_LABELS: Record<number, string> = {
@@ -144,13 +140,13 @@ export function MachineConcurrency({
 }: {
   machineId: string;
   limits: readonly MachineLimits[];
-  onChange: (machineId: string, settings: Partial<HostSettings>) => void;
+  onChange: SaveLimits;
 }) {
   const [saving, setSaving] = useState(false);
   const pending = useRef(false);
   const limit = limits.find((entry) => entry.machineId === machineId);
   if (!limit) return null;
-  // A machine setting, not part of the task: it saves as soon as it changes.
+  // A machine setting, not part of the task: commit the number on blur or Enter.
   return (
     <Text
       as="section"
@@ -164,21 +160,17 @@ export function MachineConcurrency({
       aria-busy={saving}
     >
       <Text as="div" size="inherit" tone="neutral" className="task-form-limit-row">
-        <SearchableSelect
+        <TaskConcurrencyField
+          key={machineId}
           label={t("Machine task limit")}
-          value={String(limit.maxRunningTasks)}
-          searchable={false}
-          options={Array.from({ length: MAX_RUNNING_TASKS_LIMIT }, (_, index) => ({
-            value: String(index + 1),
-            label: String(index + 1),
-          }))}
+          value={limit.maxRunningTasks}
           disabled={saving || limit.stale}
-          onChange={async (value) => {
-            if (pending.current) return;
+          onSave={async (value) => {
+            if (pending.current) return false;
             pending.current = true;
             setSaving(true);
             try {
-              await onChange(machineId, { maxRunningTasks: Number(value) });
+              return await onChange(machineId, { maxRunningTasks: value });
             } finally {
               pending.current = false;
               setSaving(false);
@@ -188,7 +180,7 @@ export function MachineConcurrency({
         {saving ? <Spinner /> : null}
       </Text>
       <p>
-        {t("Applies to all goals and tasks on this machine.")}{" "}
+        {t("Applies to all epics and tasks on this machine.")}{" "}
         {t("Saved immediately for {p0}; it is not part of this task.", {
           p0: limit.machineName,
         })}
@@ -216,11 +208,11 @@ export function LimitsPanel({
   const [savingMachine, setSavingMachine] = useState<string | null>(null);
   const pending = useRef(false);
   const save = async (machineId: string, settings: Partial<HostSettings>) => {
-    if (pending.current) return;
+    if (pending.current) return false;
     pending.current = true;
     setSavingMachine(machineId);
     try {
-      await onChange(machineId, settings);
+      return await onChange(machineId, settings);
     } finally {
       pending.current = false;
       setSavingMachine(null);
@@ -291,7 +283,7 @@ export function LimitsPanel({
                 leading="inherit"
                 className="task-ops-caption task-ops-num"
               >
-                {entry.stale ? `${t("Out of date")} · ` : t("Used today: ")}
+                {entry.stale ? `${t("Out of date")} Â· ` : t("Used today: ")}
                 {formatAgentMinutes(entry.usedMinutes)}
                 {limited ? t(" of {p0}", { p0: formatAgentMinutes(entry.dailyAgentMinutes) }) : ""}
               </Text>
@@ -329,20 +321,14 @@ export function LimitsPanel({
             <SettingFrame>
               <SettingRow
                 title={t("Max concurrent tasks")}
-                description={t("Applies to all goals and tasks on this machine.")}
+                description={t("Applies to all epics and tasks on this machine.")}
               >
-                <SearchableSelect
+                <TaskConcurrencyField
                   hideLabel
-                  variant="pill"
-                  searchable={false}
                   label={t("Max concurrent tasks on {p0}", { p0: entry.machineName })}
-                  value={String(entry.maxRunningTasks)}
-                  options={Array.from({ length: MAX_RUNNING_TASKS_LIMIT }, (_, i) => ({
-                    value: String(i + 1),
-                    label: String(i + 1),
-                  }))}
+                  value={entry.maxRunningTasks}
                   disabled={savingMachine !== null || entry.stale}
-                  onChange={(value) => save(entry.machineId, { maxRunningTasks: Number(value) })}
+                  onSave={(value) => save(entry.machineId, { maxRunningTasks: value })}
                 />
               </SettingRow>
               <SettingRow title={t("Daily agent time")}>

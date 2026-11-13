@@ -370,9 +370,9 @@ it("keeps the turn clock in Sessions while Working summarizes this project", asy
     const card = () =>
       container.querySelector('[data-session-card="timed"] [data-session-working-status]');
     expect(rail()).toBeNull();
-    expect(container.querySelector("[data-live-agents-project-summary]")?.textContent).toBe(
-      "1 working in this project",
-    );
+    expect(
+      container.querySelector("[data-live-agents-project-summary]")?.getAttribute("aria-label"),
+    ).toBe("1 working in this project");
     expect(card()?.textContent).toContain("3m");
     act(() => vi.advanceTimersByTime(1000));
     expect(rail()).toBeNull();

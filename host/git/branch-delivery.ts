@@ -67,6 +67,8 @@ export interface BranchDeliveryOptions {
   targetDirectory(workspace: ManagedWorkspace): Promise<string>;
   /** Required trusted owner-transport verifier. Strings/renderer booleans alone confer no authority. */
   authorize(owner: WorkspaceOwnerAuthorization, plan: BranchDeliveryPlan): Promise<void>;
+  /** Trusted synchronous fence; no asynchronous gap may precede the physical Git write. */
+  physicalFence?(owner: WorkspaceOwnerAuthorization): void;
   evidence?(workspace: ManagedWorkspace): Promise<{
     checks: BranchDeliveryPlan["checks"];
     visualEvidence: string[];
@@ -250,10 +252,13 @@ export class HostBranchDeliveryService implements BranchDeliveryService {
       );
       if (overlappingPaths.length) blockers.push("Delivery overlaps dirty target paths");
       // Preflight the committed merge without touching either checkout or index.
+      let committedConflict: BranchDeliveryPlan["committedConflict"];
       if (request.action === "merge") {
         try {
           await git(target, ["merge-tree", "--write-tree", targetHead, sourceHead]);
-        } catch {
+        } catch (error) {
+          if ((error as { code?: unknown }).code !== 1) throw error;
+          committedConflict = { sourceHead, targetHead };
           blockers.push("Committed branches conflict; resolve in the source and review again");
         }
       } else validatePublication(request.publication, workspace);
@@ -280,6 +285,7 @@ export class HostBranchDeliveryService implements BranchDeliveryService {
         ),
         changedPaths,
         overlappingPaths,
+        ...(committedConflict ? { committedConflict } : {}),
         ...evidence,
         blockers,
         diff: await git(target, [
@@ -480,6 +486,8 @@ export class HostBranchDeliveryService implements BranchDeliveryService {
           plan,
           await this.workspace(request.workspaceId, request.expectedRevision),
         );
+        await this.dependencies.authorize(owner, plan);
+        this.dependencies.physicalFence?.(owner);
         await git(plan.targetDirectory, ["read-tree", "-m", "-u", plan.targetHead, commit]);
         await git(plan.targetDirectory, [
           "update-ref",

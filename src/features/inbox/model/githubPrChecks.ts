@@ -1,4 +1,9 @@
 import { githubRead } from "./githubReadGate";
+import { translateAt, type t } from "../../../shared/i18n/core";
+import { numberFormat } from "../../../shared/i18n/numberFormat";
+
+const english: typeof t = (message, values) => translateAt("en", message, values);
+const englishNumber = (value: number) => numberFormat("en").format(value);
 
 export type GithubPrCheckState = "pass" | "fail" | "pending" | "skipping" | "cancel" | "unknown";
 
@@ -99,9 +104,9 @@ const CHECK_STATE_LABELS: Record<GithubPrCheckState, string> = {
   skipping: "skipped",
 };
 
-export function checkStateLabel(state: GithubPrCheckState): string {
+export function checkStateLabel(state: GithubPrCheckState, translate: typeof t = english): string {
   const label = CHECK_STATE_LABELS[state];
-  return label.charAt(0).toUpperCase() + label.slice(1);
+  return translate(label.charAt(0).toUpperCase() + label.slice(1));
 }
 
 /** Group checks by outcome; the sort is stable so each group keeps its arrival order. */
@@ -125,9 +130,21 @@ export function countChecks(
 }
 
 /** One clause per non-zero state, so color never carries the counts alone. */
-export function describeCheckCounts(counts: Record<GithubPrCheckState, number>): string | null {
-  const parts = CHECK_STATES.filter((state) => counts[state] > 0).map(
-    (state) => `${counts[state]} ${CHECK_STATE_LABELS[state]}`,
+export function describeCheckCounts(
+  counts: Record<GithubPrCheckState, number>,
+  translate: typeof t = english,
+  formatNumber = englishNumber,
+): string | null {
+  const messages: Record<GithubPrCheckState, string> = {
+    pass: "{p0} passed",
+    fail: "{p0} failed",
+    pending: "{p0} in progress",
+    cancel: "{p0} cancelled",
+    unknown: "{p0} unknown",
+    skipping: "{p0} skipped",
+  };
+  const parts = CHECK_STATES.filter((state) => counts[state] > 0).map((state) =>
+    translate(messages[state], { p0: formatNumber(counts[state]) }),
   );
   return parts.length > 0 ? parts.join(", ") : null;
 }
@@ -146,22 +163,28 @@ export type GithubPrChecksOverall =
  * or skipping-only list stays neutral, and initial loading never reads as
  * "no checks".
  */
-export function summarizePrChecks(input: {
-  loading: boolean;
-  error: string | null;
-  checks: readonly GithubPrCheck[] | null;
-}): GithubPrChecksOverall {
+export function summarizePrChecks(
+  input: {
+    loading: boolean;
+    error: string | null;
+    checks: readonly GithubPrCheck[] | null;
+  },
+  translate: typeof t = english,
+  formatNumber = englishNumber,
+): GithubPrChecksOverall {
   if (input.loading) {
-    return { kind: "loading", description: "Loading checks" };
+    return { kind: "loading", description: translate("Loading checks") };
   }
   if (input.error) {
     const counts = input.checks ? countChecks(input.checks) : null;
-    const saved = counts ? describeCheckCounts(counts) : null;
+    const saved = counts ? describeCheckCounts(counts, translate, formatNumber) : null;
     return {
       kind: "error",
       description: saved
-        ? `Checks failed to load, showing saved results that may be out of date: ${saved}`
-        : "Checks failed to load",
+        ? translate("Checks failed to load, showing saved results that may be out of date: {p0}", {
+            p0: saved,
+          })
+        : translate("Checks failed to load"),
     };
   }
   const checks = input.checks ?? [];
@@ -170,31 +193,36 @@ export function summarizePrChecks(input: {
     return {
       kind: "fail",
       failed: counts.fail,
-      description: describeCheckCounts(counts) ?? "No checks reported",
+      description:
+        describeCheckCounts(counts, translate, formatNumber) ?? translate("No checks reported"),
     };
   }
   if (counts.pending > 0) {
     return {
       kind: "pending",
-      description: describeCheckCounts(counts) ?? "No checks reported",
+      description:
+        describeCheckCounts(counts, translate, formatNumber) ?? translate("No checks reported"),
     };
   }
   if (counts.cancel > 0 || counts.unknown > 0) {
     return {
       kind: "neutral",
-      description: describeCheckCounts(counts) ?? "No checks reported",
+      description:
+        describeCheckCounts(counts, translate, formatNumber) ?? translate("No checks reported"),
     };
   }
   if (counts.pass > 0) {
     return {
       kind: "pass",
-      description: describeCheckCounts(counts) ?? "No checks reported",
+      description:
+        describeCheckCounts(counts, translate, formatNumber) ?? translate("No checks reported"),
     };
   }
   // Empty or skipping-only: neutral, but the skipped count still gets said.
   return {
     kind: "neutral",
-    description: describeCheckCounts(counts) ?? "No checks reported",
+    description:
+      describeCheckCounts(counts, translate, formatNumber) ?? translate("No checks reported"),
   };
 }
 

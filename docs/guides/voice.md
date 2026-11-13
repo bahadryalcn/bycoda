@@ -1,9 +1,9 @@
 # Voice companion
 
 In **Settings > Voice assistant**, voice and dictation have separate groups.
-Core voice controls and speaker selection stay visible. **Dictation options** holds
-the recognition provider, model and credentials; its language remains beside the
-dictation switch. **Sleep and wake** holds idle sleep, return calls and wake phrases.
+Core voice controls and speaker selection stay visible. The dictation group shows
+language, recognition provider, model and shortcut mode. Dictionary, text cleanup
+and processing options open separately. **Sleep and wake** holds idle sleep, return calls and wake phrases.
 **Advanced turn detection** contains the optional OpenAI detector. **Appearance and
 voice style** contains visual previews and the style editor. These sections retain
 their drafts and settings while closed. Opening them never starts capture.
@@ -12,7 +12,52 @@ The identity link opens the shared **Assistant settings**; name and personality 
 managed there. Microphone status, pending prompts, blocked access and errors remain
 visible; optional explanations are under the information buttons.
 
-Voice reply models are configured in **Settings > Models > Where models are
+## Dictation controls
+
+Choose **Microphone** independently of assistant setup. **Record test** records up
+to ten seconds locally; **Play recording** lets you hear the input. Audio is never
+transcribed or uploaded by this test. Discarding, changing microphones or leaving
+the screen releases capture and removes the recording.
+
+With the message composer focused, use **Voice: Dictate**, initially Ctrl+Shift+M
+on Windows/Linux or Command+Shift+M on macOS. Rebind or disable it in Keybindings.
+**Automatic** toggles on a quick press and records while held on a longer press.
+**Hold to talk** ends capture when released; **Press to toggle** ends on the next
+press. These shortcuts do not send the message or control the voice companion.
+
+The **Dictionary** stores preferred spellings and spoken aliases on this device.
+Shared entries apply across projects; a project entry applies only to that project
+and takes precedence for the same alias. These entries are not a team-synced
+dictionary. Existing drafts are not rewritten when a dictionary entry changes.
+
+Dictionary edits and invalid wake/sleep phrase drafts survive navigation and closing Settings
+for this window. Save or Cancel clears the dictionary draft. A failed dictionary or voice-style
+save keeps the editor open; retry the same action. Automatic preferences retain their saved
+value and show Retry beside the failed setting. Search results for disabled dictation controls
+explain the prerequisite and focus its switch without enabling dictation or starting capture.
+
+**Clean up dictated text** is off by default. When enabled, it sends the recognized
+phrase and your cleanup instructions to a separate Codex utility turn. Surrounding
+drafts are not sent. Choose its model, optional correction phrase and whether to
+translate to English under **Text cleanup options**. Failed cleanup keeps the
+recognized text, and cancelled dictation cannot insert a late result. This uses
+the existing isolated utility runner and its provider restrictions.
+
+Processing options include removing filler words and silence filtering. Filtering
+is on by default. Turning it off transcribes bounded audio chunks, including quiet
+audio, and does not provide live previews while recording.
+
+The local model list manages the supported Small and Turbo Whisper models owned
+by voice setup. Download, select, load-test or delete those copies; custom model
+paths are not deleted. Deletion requires a named confirmation and the model can be
+downloaded again. Starting and running operations show the model and action; cancellation
+stays requested until the Host reports a terminal state. Stop active voice/dictation before managing models. The
+load test checks whether the recognizer can open the model, not microphone accuracy.
+The idle unload preference releases unused model memory after its chosen interval.
+OpenRouter transcription choices come from its current catalog; discovery failures
+remain visible, and a removed model requires an explicit replacement.
+
+Voice reply models are configured in **Settings > Background work > Where models are
 used**, under the voice reply role. The assistant uses the same Host-wide order,
 pools and limits; Room no longer has a separate model pool editor. Selection is
 resolved when execution starts and never switches a running session. See
@@ -405,6 +450,11 @@ settings:
 five male and five female voices, Grok Voice has Eve, Ara, Leo, Rex and Sal, and
 OpenAI Realtime has Marin, Cedar, Alloy, Ash, Ballad, Coral, Echo, Sage, Shimmer
 and Verse. ElevenLabs uses the voice ID field. VoxCPM2 has one built-in voice.
+
+A cloud-key status read failure means the key status is unknown. Use **Retry status**
+before replacing or removing it; an unreadable status never means no key is saved.
+Typed keys remain only in the open editor and are cleared after a successful credential action.
+
 Changing the speaker ends a live connection; select **Start voice** to continue.
 
 Local listening ignores breaths, clicks and steady background noise: a turn
@@ -563,9 +613,22 @@ system permission prompt before starting another check.
 - Browser: allow microphone access for the current site and check system input
   access. A secure context is required.
 
-Native macOS and Windows denial messages offer **Open Privacy Settings** in
-settings, the message box, companion and setup test. Opening that pane does not
-grant permission; allow access there, return and retry explicitly. Missing input
+**Settings → Permissions** lists every OS permission bycoda uses (microphone,
+camera, screen recording, accessibility, notifications, Full Disk Access) with
+the system's current answer. A permission that is already allowed shows only its
+badge. **Allow** shows the system prompt in place when one exists; if access is
+still missing afterwards, or when the system has no prompt, **Open Settings**
+opens a short guide that launches the right settings pane, names the toggle and
+closes itself once the system reports access. On macOS a small card docks to
+System Settings and shows where to add bycoda. Permissions the system does not
+ask for collapse into one line.
+
+Native macOS and Windows denial messages offer **Review access** in settings,
+the message box, companion and setup test, which opens the same guide. Opening a
+settings pane does not grant permission; the guide only reports access after the
+system does. If the system already allows the microphone but the app's web view
+still refuses it, the message says so and offers **Check again** instead of
+sending you to settings that are already on. Missing input
 devices, unavailable selected devices and capture failures have separate recovery
 messages. Permission errors do not automatically retry or submit text.
 
@@ -876,3 +939,27 @@ the individual runtime paths. They do not prove physical microphone acoustics,
 native WebView permissions, speaker echo cancellation or installed-app acceptance.
 Build and installation use the normal local update coordinator. EmbeddingGemma
 recognition and hosted Grok speech are not required by the default path.
+
+## OS permissions
+
+Open **Settings > App > Permissions** to check microphone, screen recording,
+accessibility, notifications, camera and Full Disk Access. Each row lists its uses.
+Opening this page reads status without asking for access. Unknown means bycoda could
+not read the OS answer, not that access is allowed.
+
+Choose **Allow** or **Open Settings** to open the setup guide. Follow the exact OS
+path in the guide; it checks access while open and confirms the OS change. On macOS,
+the helper reveals bycoda in Finder so you can add the running app to the list. A
+screen recording change may still require restarting bycoda if capture fails.
+Unsigned macOS builds can lose grants after updates.
+
+Windows microphone access requires both **Microphone access** and **Let desktop apps
+access your microphone**. Desktop control cannot reach an app running as administrator
+from a process without elevation. Linux uses desktop portal dialogs and may also need
+sandbox permissions. Camera and protected-folder access for terminal tools can belong
+to the tool process rather than bycoda.
+
+Voice settings keep OS access separate from a microphone capture check. If the OS
+allows the microphone but the app webview refuses capture, retry the capture check;
+changing an already enabled OS toggle does not establish webview access. Feature enable,
+OS/helper readiness and running activity remain separate facts.

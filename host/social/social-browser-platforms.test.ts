@@ -274,3 +274,16 @@ describe("platform browser sessions", () => {
     await expect(f.manager.begin(f.service, owner, f.account)).rejects.toThrow("stopping");
   });
 });
+
+it("rechecks a saved identity under the profile lock and rejects a different identity", async () => {
+  const f = await fixture();
+  expect(await f.manager.check(f.service, owner, f.account)).toEqual({ status: "connected" });
+  expect(f.recipe.identity).toHaveBeenCalled();
+  vi.mocked(f.recipe.identity).mockResolvedValue({
+    platformId: "another",
+    name: "Other",
+    accountType: "member",
+  });
+  expect((await f.manager.check(f.service, owner, f.account)).status).toBe("failed");
+  expect(f.close).toHaveBeenCalledTimes(2);
+});

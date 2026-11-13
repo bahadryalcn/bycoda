@@ -28,7 +28,7 @@ try:
     # Large-v3-turbo recognizes far better (notably Turkish) and runs in about
     # 0.2 s on a GPU, but is too slow on a CPU. Setup downloads it next to the
     # GPU runtime; it replaces only a stock small/base/tiny model.
-    stock = model_name != 'custom' or re.search(r'whisper-(small|base|tiny)', model_path.replace(os.sep, '/'))
+    stock = not config.get('whisperExact') and (model_name != 'custom' or re.search(r'whisper-(small|base|tiny)', model_path.replace(os.sep, '/')))
     owned_turbo = os.path.join(os.path.expanduser('~'), '.bycoda', 'voice', 'models', 'whisper-large-v3-turbo')
     turbo = (cached(None, owned_turbo) or cached('mobiuslabsgmbh/faster-whisper-large-v3-turbo')) if stock else None
     try:

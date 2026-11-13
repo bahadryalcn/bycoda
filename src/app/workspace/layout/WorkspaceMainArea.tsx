@@ -260,6 +260,7 @@ function WorkspaceMainAreaComponent({
                 >
                   <ProjectTerminalDock
                     dock={dock}
+                    visible={show}
                     focused={show && projectTerminalFocused}
                     onFocus={focusProjectTerminal}
                     onHide={onHideProjectTerminal}

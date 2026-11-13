@@ -8,7 +8,6 @@ import { parseProviderAccountId } from "../../providers/model/providerAccountId"
 import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 import type { HostTask } from "./hostTasks";
 import { parseTaskWorkspace, type TaskWorkspace } from "./taskWorkspace";
-import { MAX_RUNNING_TASKS_LIMIT } from "./hostSettings";
 import { readTaskInstructions } from "./taskInstructions";
 import type { TaskAcceptanceReport } from "./taskAcceptance";
 import { parseTaskRunBudget, type TaskRunBudget, type TaskRunBudgetUsage } from "./taskBudget";
@@ -71,6 +70,7 @@ export type HostGoalInput = {
   projectIds: string[];
   /** The project the planner runs in; one of `projectIds`. */
   leadProjectId: string;
+  crewDefinitionId?: string;
   harness: RemoteProvider;
   /** Local profile inherited by the planner and planned tasks. */
   providerAccountId?: string;
@@ -212,6 +212,8 @@ export type HostGoal = HostGoalInput & {
   plannerSessionId?: string;
   plannerRunId?: string;
   plannerStartedAt?: number;
+  /** Durable planning occurrence, retained while capacity waits. */
+  plannerRequestId?: string;
   /** Bounded format-repair turns, independent of trusted host interruptions. */
   plannerRepairAttempts?: number;
   /** A retained planner awaits recovery, possibly held by the daily limit. */
@@ -229,7 +231,7 @@ export function isGoalStatus(value: unknown): value is GoalStatus {
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 function parseGoalPlannerExecution(value: unknown): GoalPlannerExecution {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid goal planner execution.");
+    throw new Error("Invalid epic planner execution.");
   const selected = value as Record<string, unknown>;
   if (
     Object.keys(selected).some(
@@ -240,7 +242,7 @@ function parseGoalPlannerExecution(value: unknown): GoalPlannerExecution {
     !selected.model.trim() ||
     selected.model.length > 200
   )
-    throw new Error("Invalid goal planner execution.");
+    throw new Error("Invalid epic planner execution.");
   const settings = selected.modelSettings ?? {};
   if (
     !settings ||
@@ -248,7 +250,7 @@ function parseGoalPlannerExecution(value: unknown): GoalPlannerExecution {
     Array.isArray(settings) ||
     Object.values(settings).some((value) => typeof value !== "string")
   )
-    throw new Error("Invalid goal planner execution.");
+    throw new Error("Invalid epic planner execution.");
   return {
     harness: selected.harness,
     model: selected.model,
@@ -286,6 +288,13 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     throw new Error(`A goal can span at most ${MAX_GOAL_PROJECTS} projects.`);
   if (typeof v.leadProjectId !== "string" || !projectIds.includes(v.leadProjectId))
     throw new Error("The lead project must be one of the goal’s projects.");
+  if (
+    v.crewDefinitionId !== undefined &&
+    (typeof v.crewDefinitionId !== "string" ||
+      !ID.test(v.crewDefinitionId) ||
+      projectIds.length !== 1)
+  )
+    throw new Error("A crew epic must use one project and a valid crew.");
   if (!isRemoteProvider(v.harness)) throw new Error("Invalid goal agent");
   if (typeof v.model !== "string" || !v.model.trim() || v.model.length > 200)
     throw new Error("Invalid goal model");
@@ -300,9 +309,7 @@ export function parseHostGoal(input: unknown): HostGoalInput {
   const limit = v.maxRunMinutes ?? 0;
   if (
     v.maxRunningTasks !== undefined &&
-    (!Number.isInteger(v.maxRunningTasks) ||
-      Number(v.maxRunningTasks) < 1 ||
-      Number(v.maxRunningTasks) > MAX_RUNNING_TASKS_LIMIT)
+    (!Number.isSafeInteger(v.maxRunningTasks) || Number(v.maxRunningTasks) < 1)
   )
     throw new Error("Invalid goal concurrency");
   if (v.manualStart !== undefined && typeof v.manualStart !== "boolean")
@@ -359,6 +366,7 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     prompt: v.prompt,
     projectIds,
     leadProjectId: v.leadProjectId,
+    ...(typeof v.crewDefinitionId === "string" ? { crewDefinitionId: v.crewDefinitionId } : {}),
     harness: v.harness,
     ...(v.providerAccountId === undefined
       ? {}

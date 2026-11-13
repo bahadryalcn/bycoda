@@ -14,9 +14,30 @@ import { groupSecretsByProject } from "../model/secretsGroups";
 /** Settings > Secrets: credentials agents asked for in chat, per project, removable here. */
 export function SecretsSettings() {
   const t = useT();
-  const { machines } = useRemoteMachines();
-  const hostId = (machines.find(isLocalSyncMachine) ?? machines[0])?.id;
-  const client = useMemo(() => (hostId ? secretsClient(hostId) : null), [hostId]);
+  const { machines, loading, refresh } = useRemoteMachines();
+  const hostId = machines.find(isLocalSyncMachine)?.id;
+  if (!hostId)
+    return loading ? (
+      <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+    ) : (
+      <SettingsFeedback
+        state="error"
+        action={
+          <Button size="sm" variant="ghost" onClick={refresh}>
+            {t("Retry")}
+          </Button>
+        }
+      >
+        {t("Could not load saved secrets.")}
+      </SettingsFeedback>
+    );
+  return <OwnerSecretsInventory key={hostId} hostId={hostId} />;
+}
+
+/** Host identity owns both inventory and any open removal confirmation. */
+function OwnerSecretsInventory({ hostId }: { hostId: string }) {
+  const t = useT();
+  const client = useMemo(() => secretsClient(hostId), [hostId]);
   const { state, reload } = useOwnerSecrets(client);
   const { confirm, dialog } = useConfirm();
   const [failed, setFailed] = useState(false);
@@ -38,10 +59,11 @@ export function SecretsSettings() {
       onConfirm: async () => {
         setFailed(false);
         try {
-          await client?.revoke(secret.secretRef);
-        } catch (error) {
+          await client.revoke(secret.secretRef);
+        } catch {
           setFailed(true);
-          throw error;
+          // Confirmation errors are visible; never render a credential RPC payload.
+          throw new Error(t("Could not remove the secret."));
         }
       },
     });

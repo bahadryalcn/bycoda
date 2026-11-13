@@ -1,3 +1,4 @@
+import { useDecisionTarget } from "./DecisionTarget";
 import { useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -21,6 +22,7 @@ export function AddMenu({
   onPick: (path: AddPath) => void;
   disabled?: boolean;
 }) {
+  const target = useDecisionTarget();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const items: DropdownMenuAction[] = [
     {
@@ -41,7 +43,7 @@ export function AddMenu({
       kind: "item",
       id: "local",
       icon: <Download aria-hidden="true" />,
-      label: t("Install on this computer"),
+      label: target ? t("Install on Host {p1}", { p1: target }) : t("Install on this computer"),
       description: t("Download a model that runs locally."),
     },
     {
@@ -49,7 +51,9 @@ export function AddMenu({
       id: "service",
       icon: <Server aria-hidden="true" />,
       label: t("Local service"),
-      description: t("Connect a running service on this computer."),
+      description: target
+        ? t("Connect a running service on Host {p1}.", { p1: target })
+        : t("Connect a running service on this computer."),
     },
     {
       kind: "item",

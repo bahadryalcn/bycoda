@@ -14,6 +14,8 @@ import {
 } from "./providerAccounts";
 import { identityKey } from "./providerAccountIdentity";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
+import { t } from "../../../shared/i18n";
+import type { BoundFormat } from "../../../shared/i18n/boundFormat";
 
 /** At or below this much headroom an account reads as "Running low". */
 export const LOW_HEADROOM_PERCENT = 20;
@@ -53,6 +55,16 @@ export function accountHeadroom(
 
 /** Ready / Running low / Exhausted for an account, shared by every surface. */
 export function accountStatus(limits: ProviderRateLimits | undefined, now: number): AccountStatus {
+  return accountStatusWith(limits, now, t, { formatResetDuration });
+}
+
+/** Locale-bound status derivation for render callers; no mutable module locale reads. */
+export function accountStatusWith(
+  limits: ProviderRateLimits | undefined,
+  now: number,
+  translate: typeof t,
+  format: Pick<BoundFormat, "formatResetDuration">,
+): AccountStatus {
   if (limits?.status === "fetching" || limits?.status === "idle") {
     return { tone: "checking", label: "Checking…", detail: null };
   }
@@ -79,14 +91,14 @@ export function accountStatus(limits: ProviderRateLimits | undefined, now: numbe
     return {
       tone: "exhausted",
       label: "Exhausted",
-      detail: backIn(limits, now),
+      detail: backIn(limits, now, translate, format),
     };
   }
   if (headroom <= LOW_HEADROOM_PERCENT) {
     return {
       tone: "low",
       label: "Running low",
-      detail: `${Math.round(headroom)}% left`,
+      detail: translate("{p0}% left", { p0: Math.round(headroom) }),
     };
   }
   return { tone: "ready", label: "Ready", detail: null };
@@ -112,10 +124,15 @@ export function providerAccountSignedOut(limits: ProviderRateLimits): boolean {
 }
 
 /** "back in 31m" for the used-up window that stays blocked longest. */
-function backIn(limits: ProviderRateLimits, now: number): string | null {
+function backIn(
+  limits: ProviderRateLimits,
+  now: number,
+  translate: typeof t,
+  format: Pick<BoundFormat, "formatResetDuration">,
+): string | null {
   const resetAt = exhaustedWindowResetAt(limits);
   if (resetAt == null || resetAt <= now) return null;
-  return `back in ${formatResetDuration(resetAt - now)}`;
+  return translate("Resets in {p0}", { p0: format.formatResetDuration(resetAt - now) });
 }
 
 /** The account with the most headroom, if it is comfortably above "low". */

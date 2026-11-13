@@ -46,6 +46,7 @@ import type {
   PlanBuildTarget,
 } from "../../sessions";
 import { t, useLocale } from "../../../shared/i18n";
+import { remoteQueueReadNotice } from "../model/remoteSessionNotice";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
@@ -3044,27 +3045,25 @@ function ConnectedRemoteSession({
     window.addEventListener("focus", focus);
     return () => window.removeEventListener("focus", focus);
   }, []);
+  const retryStopped =
+    pending &&
+    commandRetry.current?.commandId === pending.commandId &&
+    commandRetry.current.stopped;
+  const pendingNeedsConfirmation =
+    pending && ["shell", "cancel", "approve", "answer"].includes(pending.type);
   const notice = queue.error
-    ? {
-        text: t(
-          "Could not load queued messages. Sending is held until the saved queue can be read.",
-        ),
-        detail: queue.error,
-        action: {
-          get label() {
-            return t("Retry");
-          },
-          run: queue.retry,
-        },
-      }
+    ? remoteQueueReadNotice(queue.error, queue.retry)
     : pending && !sending
       ? {
           // Saved and not yet confirmed: it goes out again by itself once the machine answers.
-          text: online
-            ? t("Waiting for the host to confirm your request.")
-            : t("Reconnecting. Your message will be sent automatically."),
+          text: retryStopped
+            ? t("Saved requests need review before continuing.")
+            : online || pendingNeedsConfirmation
+              ? t("Waiting for the host to confirm your request.")
+              : t("Reconnecting. Your message will be sent automatically."),
           detail: error,
           action: {
+            kind: "retry",
             get label() {
               return t("Retry");
             },
@@ -3078,6 +3077,7 @@ function ConnectedRemoteSession({
               : t("Couldn’t send the message on {p0}.", { p0: hostLabel }),
             detail: error,
             action: {
+              kind: "retry",
               get label() {
                 return t("Try again");
               },
@@ -3122,6 +3122,7 @@ function ConnectedRemoteSession({
           ? {
               text: refusal,
               action: {
+                kind: "dismiss",
                 get label() {
                   return t("Dismiss");
                 },
@@ -3132,6 +3133,7 @@ function ConnectedRemoteSession({
             ? {
                 text: error,
                 action: {
+                  kind: "dismiss",
                   get label() {
                     return t("Dismiss");
                   },
@@ -3143,6 +3145,7 @@ function ConnectedRemoteSession({
                   text: t("Couldn’t load models from {p0}.", { p0: hostLabel }),
                   detail: catalogProblem,
                   action: {
+                    kind: "retry",
                     get label() {
                       return t("Retry");
                     },
@@ -4123,7 +4126,7 @@ function ConnectedRemoteSession({
                 notice.action ? (
                   <Button
                     type="button"
-                    disabled={!online && !queue.error && notice.action.label !== "Dismiss"}
+                    disabled={!online && !queue.error && notice.action.kind !== "dismiss"}
                     onClick={notice.action.run}
                     variant="secondary"
                   >

@@ -13,7 +13,7 @@ import { Tooltip } from "../../shared/ui/Tooltip";
 import { Sash } from "../../shared/ui/Sash";
 import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
-import { useLocale, useT } from "../../shared/i18n";
+import { useFormat, useLocale, useT } from "../../shared/i18n";
 import { SOCIAL_PANEL_EVENT } from "../../features/social/ui/SocialShortcut";
 import {
   ProjectMultiSelect,
@@ -2207,6 +2207,7 @@ function ProjectCard({
 }) {
   const t = useT();
   const multi = useProjectMultiSelect();
+  const format = useFormat();
   const multiSelected = multi?.selected.has(pathKey(item.path)) ?? false;
   const fallbackName = basename(item.path);
   const key = projectKey(item.path);
@@ -2218,7 +2219,7 @@ function ProjectCard({
   const diffEnabled = statsEnabled && Boolean(item.path) && item.path !== "~";
   const stats = useProjectDiffStats(item.path, diffEnabled, selected);
   // No read (or a failed one) is `null`, never "clean"; a clean tree shows nothing either.
-  const change = projectGitChange(stats);
+  const change = projectGitChange(stats, format.formatNumber);
   const remote = useRemoteProject(item.path);
   const { machines } = useRemoteMachines(!!remote);
   const machine = remote
@@ -2242,7 +2243,7 @@ function ProjectCard({
   // A remote project never prints the host inline: the right-hand globe carries it in its tooltip and label.
   const context =
     !remote && isDuplicateProjectName(nameCollisions, name) ? parentFolderLabel(item.path) : "";
-  const changeSummary = change ? projectGitChangeSummary(change, t) : "";
+  const changeSummary = change ? projectGitChangeSummary(change, t, format.formatNumber) : "";
   // The tooltip shows on hover and on keyboard focus: the name, then the path and state as muted lines.
   const rowTipDetails = [
     remote ? `${remote.cwd} on ${hostLabel || "another machine"} (${connection})` : item.path,
@@ -2253,7 +2254,7 @@ function ProjectCard({
   const cardAriaLabel = [
     machine ? `${name} on ${hostLabel}` : context ? `${name} (${context})` : name,
     busy ? "working" : "",
-    change ? projectGitChangeSpoken(change, t) : "",
+    change ? projectGitChangeSpoken(change, t, format.formatNumber) : "",
     muteStatus,
   ]
     .filter(Boolean)

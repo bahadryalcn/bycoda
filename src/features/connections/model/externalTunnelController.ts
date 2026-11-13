@@ -222,16 +222,17 @@ export class ExternalTunnelController {
     return work;
   };
 
-  private async mutate(work: () => Promise<unknown>): Promise<void> {
-    if (this.closed || this.state.pending) return;
+  private async mutate(work: () => Promise<unknown>): Promise<boolean> {
+    if (this.closed || this.state.pending) return false;
     const generation = ++this.generation;
     this.publish({ ...this.state, pending: true, issue: undefined });
     try {
       await work();
-      if (this.closed || generation !== this.generation) return;
+      if (this.closed || generation !== this.generation) return false;
       const overview = readTunnelOverview(await this.api.status(true), this.environmentId);
-      if (this.closed || generation !== this.generation) return;
+      if (this.closed || generation !== this.generation) return false;
       this.publish({ phase: "ready", pending: false, overview });
+      return true;
     } catch (error) {
       if (!this.closed && generation === this.generation)
         this.publish({
@@ -241,6 +242,7 @@ export class ExternalTunnelController {
           issue: tunnelUiIssue(error),
         });
     }
+    return false;
   }
   start = (input: TunnelStart) =>
     this.mutate(() =>

@@ -54,8 +54,8 @@ describe("message path context", () => {
   it.each(["html", "pdf", "docx"])(
     "finds a generated %s in a project-prefixed folder",
     async (extension) => {
-      const cwd = "G:/Projects/Firisbe/UI DEVELOPMENTS/ui-tests";
-      const name = `Firisbe-Observer-Yatirimci-Sunumu.${extension}`;
+      const cwd = "G:/Projects/Acme/UI DEVELOPMENTS/ui-tests";
+      const name = `Acme-Observer-Yatirimci-Sunumu.${extension}`;
       const expected = `${cwd}/investor-deck/${name}`;
       const text = `Sunumu hazırladım; hepsi \`ui-tests/investor-deck/\` klasöründe:\n- \`${name}\``;
       statFiles.mockImplementation(async (paths: string[]) =>

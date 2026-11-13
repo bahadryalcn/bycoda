@@ -112,7 +112,29 @@ export const ModelRoutingDelegationSchema = z.strictObject({
 });
 export type ModelRoutingDelegation = z.infer<typeof ModelRoutingDelegationSchema>;
 
+/** Calendar thresholds for unattended Work; omitted or zero means unlimited. */
+export const WorkCalendarCapsSchema = z.strictObject({
+  daily: z
+    .strictObject({
+      tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+      costUsd: z.number().finite().nonnegative().optional(),
+    })
+    .optional(),
+  monthly: z
+    .strictObject({
+      tokens: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+      costUsd: z.number().finite().nonnegative().optional(),
+    })
+    .optional(),
+});
+export type WorkCalendarCaps = z.infer<typeof WorkCalendarCapsSchema>;
+export const WorkCapsSchema = z.strictObject({
+  total: WorkCalendarCapsSchema.optional(),
+  providers: z.partialRecord(SessionProviderSchema, WorkCalendarCapsSchema).optional(),
+});
+
 const routingFields = {
+  workCaps: WorkCapsSchema.optional(),
   entries: z.array(ModelRoutingEntrySchema).max(MODEL_ROUTING_MAX_ENTRIES),
   pools: z.array(ModelRoutingPoolSchema).max(MODEL_ROUTING_MAX_POOLS),
   roles: z.partialRecord(ModelRoutingRoleSchema, ModelRoutingChoiceSchema),

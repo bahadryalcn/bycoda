@@ -2,6 +2,7 @@ import type { ReactNode, Ref } from "react";
 import { Button } from "./Button";
 import { X } from "./icons";
 import { Heading } from "./Heading";
+import { useT } from "../i18n";
 
 export type PanelHeaderProps = {
   title: string;
@@ -15,6 +16,8 @@ export type PanelHeaderProps = {
   descriptionId?: string;
   /** Renders the 28px ghost close action when provided. */
   onClose?: () => void;
+  /** Keeps the close target visible but unavailable during a bounded operation. */
+  closeDisabled?: boolean;
   closeLabel?: string;
   closeRef?: Ref<HTMLButtonElement>;
   /** Extra trailing actions placed before the close action (28px ghost icon Buttons). */
@@ -40,12 +43,14 @@ export function PanelHeader({
   description,
   descriptionId,
   onClose,
-  closeLabel = "Close",
+  closeDisabled,
+  closeLabel,
   closeRef,
   actions,
   textOnlyForAssistiveTech = false,
   className,
 }: PanelHeaderProps) {
+  const t = useT();
   return (
     <header className={["flex shrink-0 items-start gap-2", className].filter(Boolean).join(" ")}>
       <div className={textOnlyForAssistiveTech ? "sr-only" : "min-w-0 flex-1 pt-0.5"}>
@@ -68,10 +73,11 @@ export function PanelHeader({
           type="button"
           iconOnly
           size="sm"
-          label={closeLabel}
-          tooltip={closeLabel}
+          label={closeLabel ?? t("Close")}
+          tooltip={closeLabel ?? t("Close")}
           variant="ghost"
           onClick={onClose}
+          disabled={closeDisabled}
         >
           <X className="size-3.5" strokeWidth={1.75} />
         </Button>

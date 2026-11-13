@@ -1,4 +1,12 @@
 import { AssistantRepository } from "../assistant/repository";
+import { stopAssistantOwnedWork } from "../assistant/work/assistant-owned-work";
+import { journalAssistantSessionPorts } from "../assistant/management/assistant-session-action-journal";
+import { registerAssistantHelperExecutor } from "../work/helper-adapter";
+import { registerAssistantSessionExecutor } from "../work/assistant-session-work";
+import { registerRoomAutomations } from "../automations/room-execution";
+import { roomAutomationTools } from "../automations/room-tools";
+import { RoomAutomationChildren } from "../automations/room-children";
+import { listAssistantTelegramTargets } from "../social/notifications/assistant-telegram-targets";
 import { dirname } from "node:path";
 import { HostAssistantKeepAwake } from "../assistant/core/assistant-keep-awake";
 import {
@@ -31,6 +39,10 @@ export async function createAssistantRuntime(
     | "desktop"
     | "models"
     | "pushDevices"
+    | "conversationDesktop"
+    | "visibilityAdmission"
+    | "social"
+    | "terminals"
   >,
   publish: (runtime: Awaited<ReturnType<typeof createAssistantRuntime>>) => void,
 ) {
@@ -105,22 +117,116 @@ export async function createAssistantRuntime(
   assistantPorts.readPushPhones = () => dependencies.pushDevices.recipients();
   assistantPorts.readPresence = readDesktopPresenceWithVoice;
   const assistant = new HostAssistant(dependencies.engine.store, assistantPorts);
+  const roomChildren = new RoomAutomationChildren(dependencies.engine.store, () => ({
+    engine: dependencies.engine,
+    tasks: dependencies.tasks,
+    goals: dependencies.goals,
+    automations: dependencies.automations,
+    get terminals() {
+      return dependencies.terminals;
+    },
+    get conversationDesktop() {
+      return dependencies.conversationDesktop;
+    },
+    assistant,
+    assistantPorts,
+  }));
+  assistantPorts.notificationTargets = async () =>
+    listAssistantTelegramTargets(dependencies.social, (await assistant.globalRoomBinding())?.id);
+  registerAssistantHelperExecutor(dependencies.engine.store);
+  registerAssistantSessionExecutor(dependencies.engine.store, dependencies.engine);
+  registerRoomAutomations(
+    dependencies.engine.store,
+    dirname(dependencies.engine.store.attachmentDir),
+    () => assistant.globalRoomBinding(),
+    roomAutomationTools(
+      assistantPorts,
+      () => dependencies,
+      dependencies.engine.store.environmentId,
+      roomChildren,
+    ),
+  );
   const roomAttestationSigner = new RoomAttestationSigner(
     roomAttestationKeyPath(dirname(dependencies.engine.store.attachmentDir)),
     dependencies.engine.store.environmentId,
     (id) => assistant.threadBinding(id),
   );
   await assistant.ready;
-  dependencies.tasks.assistantGoalAdmission = (goalId) => assistant.autonomousJobAllowed(goalId);
+  dependencies.tasks.assistantGoalAdmission = async (goalId) =>
+    (await roomChildren.goalAllowed(goalId)) && (await assistant.autonomousJobAllowed(goalId));
+  dependencies.tasks.assistantTaskAdmission = async (task) =>
+    (await roomChildren.taskAllowed(task)) && (await assistant.ownedTaskAllowed(task));
+  dependencies.automations.roomParentAdmission = (automation, run) =>
+    roomChildren.automationAllowed(automation, run);
+  await roomChildren
+    .recover()
+    .catch((error) => console.error("Room child recovery remains held:", error));
+  assistantPorts.stopOwnedWork = async () => {
+    const errors: unknown[] = [];
+    try {
+      await roomChildren.stopAll();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      await stopAssistantOwnedWork(
+        dependencies.engine.store,
+        dependencies.tasks,
+        dependencies.goals,
+        dependencies.automations,
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+    if (errors.length)
+      throw new Error("Assistant Stop retains unproven original work; inspect its receipts.");
+  };
   const previousProviderSchedule = dependencies.engine.beforeProviderTurn;
   dependencies.engine.beforeProviderTurn = async (input) => {
     await previousProviderSchedule?.(input);
+    if (
+      input.author?.kind === "assistant-room" &&
+      !(await roomChildren.sessionAllowed(input.sessionId, input.runId, input.author.operationId))
+    )
+      throw new AssistantTurnPolicyDeferredError();
+    const crew = await dependencies.engine.store.db
+      .prepare(
+        "SELECT payload FROM crew_runs_v2 WHERE coordinator_session_id=? AND status<>'finished'",
+      )
+      .get(input.sessionId);
+    if (crew) {
+      const run = JSON.parse(String(crew.payload)) as {
+        id: string;
+        projectId: string;
+        sourceTaskId?: string;
+      };
+      if (run.sourceTaskId) {
+        const root = await dependencies.tasks.get(run.sourceTaskId);
+        if (
+          !root ||
+          root.projectId !== run.projectId ||
+          root.crewExecutionId !== run.id ||
+          !(await roomChildren.taskAllowed(root))
+        )
+          throw new AssistantTurnPolicyDeferredError();
+      }
+    }
+    if (!(await assistant.ownedSessionAllowed(input.sessionId)))
+      throw new AssistantTurnPolicyDeferredError();
     if (input.author?.kind !== "task") return;
     const authorId = input.author.id;
     const task = await dependencies.tasks.get(authorId);
+    if (
+      task &&
+      (!(await roomChildren.taskAllowed(task)) || !(await assistant.ownedTaskAllowed(task)))
+    )
+      throw new AssistantTurnPolicyDeferredError();
     const goalId =
       task?.goalId ?? (await dependencies.goals.list()).find((goal) => goal.id === authorId)?.id;
-    if (goalId && !(await assistant.autonomousJobAllowed(goalId)))
+    if (
+      goalId &&
+      (!(await roomChildren.goalAllowed(goalId)) || !(await assistant.autonomousJobAllowed(goalId)))
+    )
       throw new AssistantTurnPolicyDeferredError();
   };
   assistantPorts.manualProjectVisible = async (id) => {
@@ -198,6 +304,7 @@ export async function createAssistantRuntime(
       );
   };
   assistantPorts.onPause = () => managedAssistantSessions.stop();
+  journalAssistantSessionPorts(dependencies.engine.store, assistant.actionJournal, assistantPorts);
   assistantPorts.onResume = () => managedAssistantSessions.resume();
   assistantPorts.onJobPause = (id) => managedAssistantSessions.pauseJob(id);
   assistantPorts.onJobResume = (id) => managedAssistantSessions.resumeJob(id);

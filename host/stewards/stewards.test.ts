@@ -11,7 +11,7 @@ import { finishedRunProgress } from "../execution/run-duration";
 import { HostTasks } from "../tasks/tasks";
 import { HostStewards, PREVIOUS_RUN_SKIP, openLimitSkip } from "./stewards";
 import { writerWorkspaces } from "../workspaces/writer-workspaces.test-support";
-import { DAILY_LIMIT_SKIP } from "../../src/features/tasks/model/hostSettings";
+import { bindSessionWork } from "../work/session-adapter";
 // Managed runs use real Git worktrees; exact turn captures are explicitly opt-in.
 if (process.platform === "win32") vi.setConfig({ testTimeout: 120000 });
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -42,10 +42,33 @@ it("drains a held steward launch on close without dispatching its prepared sessi
   expect(closed).toBe(false);
   released.resolve();
   await Promise.all([running, closing]);
-  expect((await f.steward()).run).toBeUndefined();
+  const pending = (await f.steward()).run!;
+  expect(pending.sessionId).toBeTruthy();
+  expect(pending.runId).toBeUndefined();
+  const queued = await bindSessionWork(f.store, f.engine).work.list();
+  expect(queued).toMatchObject([{ state: "waiting" }]);
+  expect(queued[0].receipt).toBeUndefined();
   expect(f.turns).toHaveLength(0);
-  expect(f.worktrees()).toBe(1);
+  expect(f.worktrees()).toBe(2);
   await expect(f.stewards.runNow("steward")).rejects.toThrow("closing");
+  await f.stewards.tick();
+  expect((await f.steward()).run).toEqual(pending);
+  expect(f.turns).toHaveLength(0);
+  const restarted = new HostStewards(f.store, f.engine, f.tasks, () => f.clock.now, f.workspaces);
+  try {
+    await restarted.ready;
+    await restarted.tick();
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+    expect((await f.steward()).run).toMatchObject({
+      sessionId: pending.sessionId,
+      startedAt: pending.startedAt,
+    });
+    expect((await f.steward()).run?.runId).toBeTruthy();
+    expect(await bindSessionWork(f.store, f.engine).work.list()).toHaveLength(1);
+    expect(f.worktrees()).toBe(2);
+  } finally {
+    await restarted.close();
+  }
 });
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, encoding: "utf8", stdio: "pipe" }).trim();
@@ -680,44 +703,63 @@ describe("steward work limits and merging", () => {
     expect((await tasks.list())[0].autoMerge).toBeUndefined();
   });
   it("retains the owned steward completion checkpoint", async () => {
-    const { stewards, store, input, startDue, finish } = await setup();
-    await stewards.save(input());
-    const turn = await startDue();
-    const session = await store.session(turn.input.sessionId);
-    await finish(reply([]));
-    await vi.waitFor(async () =>
-      expect(await finishedRunProgress(store, session.session.id, session.runId!)).toMatchObject({
-        uncertain: false,
-      }),
-    );
+    const { stewards, store, input, startDue, finish, clock } = await setup();
+    const wall = vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+    try {
+      await stewards.save(input());
+      const turn = await startDue();
+      const session = await store.session(turn.input.sessionId);
+      await finish(reply([]));
+      await vi.waitFor(async () =>
+        expect(await finishedRunProgress(store, session.session.id, session.runId!)).toMatchObject({
+          uncertain: false,
+        }),
+      );
+    } finally {
+      wall.mockRestore();
+    }
   });
-  it("records a skipped run once the day is used up, and runs again tomorrow", async () => {
-    const { stewards, tasks, input, startDue, steward, turns, clock } = await setup();
+  it("retains the same queued run once the day is used up, and starts it tomorrow", async () => {
+    const { store, engine, stewards, tasks, input, startDue, steward, turns, clock } =
+      await setup();
     await stewards.save(input());
     await tasks.limits.save({ dailyAgentMinutes: 1 });
     clock.now = (await steward()).nextRunAt + MINUTE;
     await tasks.limits.record(clock.now - 2 * MINUTE, clock.now);
     await stewards.tick();
     await stewards.idle();
-    expect(await steward()).toMatchObject({
-      lastRunStatus: "skipped",
-      lastRunError: DAILY_LIMIT_SKIP,
-    });
+    const pending = (await steward()).run!;
+    expect(pending.sessionId).toBeUndefined();
+    const work = bindSessionWork(store, engine).work;
+    expect(await work.list()).toMatchObject([
+      {
+        state: "waiting",
+        source: { kind: "steward", id: "steward", occurrence: String(pending.startedAt) },
+        wait: { code: "dailyLimit" },
+      },
+    ]);
     expect(turns).toHaveLength(0);
     await startDue();
     expect((await steward()).lastRunStatus).toBe("running");
+    expect((await steward()).run?.startedAt).toBe(pending.startedAt);
+    expect(await work.list()).toHaveLength(1);
     expect(turns).toHaveLength(1);
   });
-  it("skips runNow too while the day is used up", async () => {
-    const { stewards, tasks, input, steward, turns, clock } = await setup();
+  it("queues runNow too while the day is used up and resumes when the limit is raised", async () => {
+    const { store, engine, stewards, tasks, input, steward, turns, clock } = await setup();
     await stewards.save(input());
     await tasks.limits.save({ dailyAgentMinutes: 1 });
     await tasks.limits.record(clock.now - 2 * MINUTE, clock.now);
     await stewards.runNow("steward");
-    expect(await steward()).toMatchObject({
-      lastRunStatus: "skipped",
-      lastRunError: DAILY_LIMIT_SKIP,
-    });
+    const pending = (await steward()).run!;
+    expect(pending.sessionId).toBeUndefined();
+    const work = bindSessionWork(store, engine).work;
+    expect(await work.list()).toMatchObject([{ state: "waiting", wait: { code: "dailyLimit" } }]);
     expect(turns).toHaveLength(0);
+    await tasks.limits.save({ dailyAgentMinutes: 0 });
+    await stewards.tick();
+    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    expect((await steward()).run?.startedAt).toBe(pending.startedAt);
+    expect(await work.list()).toHaveLength(1);
   });
 });

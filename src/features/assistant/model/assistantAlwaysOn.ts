@@ -37,6 +37,7 @@ export type AlwaysOnInput = {
     | "execution"
     | "dailyTokenBudget"
     | "keepAwakeWhileWorking"
+    | "keepAwakeWhileAway"
     | "observationTaskDone"
     | "observationTaskNeedsInput"
     | "notificationAway"
@@ -94,11 +95,11 @@ export function deriveAlwaysOnItems(input: AlwaysOnInput): AlwaysOnItem[] {
   });
   add({
     id: "keepAwake",
-    label: t("Keep this computer awake while working"),
+    label: t("Keep this computer awake for unattended work"),
     state:
       keepAwake?.supported === false
         ? "unsupported"
-        : profile.keepAwakeWhileWorking
+        : profile.keepAwakeWhileWorking || profile.keepAwakeWhileAway !== false
           ? "done"
           : "todo",
     detail:

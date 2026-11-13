@@ -1,4 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { carryCrossDelegation } from "../../../shared/model/host-contracts/delegation";
 import type { RemoteMachine } from "../../connections/public/protocol";
 import { TaskModelChoiceField } from "./TaskModelChoiceField";
 import {
@@ -24,6 +25,7 @@ import {
   AutoMergeField,
   ContinueUntilDoneField,
   RUN_TIME_LIMIT_OPTIONS,
+  INHERITED_RUN_TIME_LIMIT_OPTION,
   TaskFormRow,
 } from "./TaskFormFields";
 
@@ -115,7 +117,10 @@ export function TaskFormAgent({
                       modelSettings:
                         harness === draft.harness && model === draft.model
                           ? draft.modelSettings
-                          : defaultModelSettings(resolveTaskModel(harness, model)),
+                          : carryCrossDelegation(
+                              draft.modelSettings,
+                              defaultModelSettings(resolveTaskModel(harness, model)),
+                            ),
                       providerAccountId: localAccounts
                         ? (accountId ?? defaultAccountFor(harness))
                         : harness === draft.harness
@@ -149,9 +154,11 @@ export function TaskFormAgent({
                 searchable={false}
                 align="end"
                 label={t("Time limit")}
-                value={String(draft.maxRunMinutes)}
-                options={RUN_TIME_LIMIT_OPTIONS}
-                onChange={(value) => update("maxRunMinutes", Number(value))}
+                value={draft.maxRunMinutes === undefined ? "inherit" : String(draft.maxRunMinutes)}
+                options={[INHERITED_RUN_TIME_LIMIT_OPTION, ...RUN_TIME_LIMIT_OPTIONS]}
+                onChange={(value) =>
+                  update("maxRunMinutes", value === "inherit" ? undefined : Number(value))
+                }
               />
             </TaskFormRow>
             <Checkbox

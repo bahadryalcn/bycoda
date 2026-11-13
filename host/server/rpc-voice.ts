@@ -1,12 +1,17 @@
 import { createRealtimeSecret, createVoiceClientSecret } from "../voice/voice";
+import { DictationCleanupRuns } from "../voice/voice-dictation-runs";
+import { processVoiceTranscript } from "../voice/voice-dictation-process";
 import { inspectVoiceRuntime } from "../voice/voice-runtime";
 import { cloudDictationCredential, transcribeCloudDictation } from "../voice/voice-cloud-dictation";
+import { openRouterTranscriptionModels } from "../voice/voice-transcription-catalog";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
+const dictationCleanupRuns = new DictationCleanupRuns();
 export async function handleVoiceRpc(
   dependencies: Pick<ServerBindings, "engine" | "voiceCloud" | "localVoice" | "voiceSetup">,
   request: OwnerRpcRequest,
 ): Promise<void> {
+  const voiceModels = dependencies.voiceSetup.models;
   switch (request.input.method) {
     case "voice.clientSecret":
       await dependencies.engine.store.project(String(request.params.projectId ?? ""));
@@ -25,7 +30,10 @@ export async function handleVoiceRpc(
 
     case "voice.cloud.setKey":
 
+    case "voice.dictation.cancel":
+    case "voice.dictation.process":
     case "voice.cloud.transcribe":
+    case "voice.cloud.models":
       // Sign-ins and keys stay on this computer: no browser or remote caller.
       if (
         request.request.headers.origin ||
@@ -34,6 +42,24 @@ export async function handleVoiceRpc(
         )
       )
         throw new Error("Cloud voice is available only on this computer.");
+      if (request.input.method === "voice.cloud.models") {
+        request.result = await openRouterTranscriptionModels();
+        break;
+      }
+      if (request.input.method === "voice.dictation.cancel") {
+        dictationCleanupRuns.cancel(request.tokenHash, request.params.runId);
+        request.result = { cancelled: true };
+        break;
+      }
+      if (request.input.method === "voice.dictation.process") {
+        request.result = await dictationCleanupRuns.process(
+          request.tokenHash,
+          request.params.runId,
+          request.params,
+          (input, signal) => processVoiceTranscript(input, undefined, signal),
+        );
+        break;
+      }
       if (request.input.method === "voice.cloud.transcribe") {
         request.result = await transcribeCloudDictation(
           request.params.provider,
@@ -68,6 +94,8 @@ export async function handleVoiceRpc(
       )
         throw new Error("Voice installation is available only on this computer.");
       if (request.input.method === "voice.local.setup") {
+        if (voiceModels.status().state === "working")
+          throw new Error("A voice model action is running.");
         if (dependencies.localVoice.isActive)
           throw new Error("Disconnect voice before installing.");
         // Unload a recognizer kept warm after dictation before replacing it.
@@ -77,6 +105,37 @@ export async function handleVoiceRpc(
         request.input.method === "voice.local.setup"
           ? dependencies.voiceSetup.start(request.params.config)
           : dependencies.voiceSetup.status();
+      break;
+
+    case "voice.local.models":
+    case "voice.local.modelAction":
+    case "voice.local.modelStatus":
+    case "voice.local.modelCancel":
+      if (
+        request.request.headers.origin ||
+        !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
+          request.request.socket.remoteAddress ?? "",
+        )
+      )
+        throw new Error("Voice model management is available only on this computer.");
+      if (request.input.method === "voice.local.models") request.result = await voiceModels.list();
+      else if (request.input.method === "voice.local.modelStatus")
+        request.result = voiceModels.status();
+      else if (request.input.method === "voice.local.modelCancel")
+        request.result = voiceModels.cancel();
+      else {
+        if (dependencies.voiceSetup.status().state === "installing")
+          throw new Error("Voice setup is still running.");
+        if (dependencies.localVoice.isActive)
+          throw new Error("Disconnect voice before managing models.");
+        dependencies.localVoice.close();
+        request.result = voiceModels.start(
+          request.params.action,
+          request.params.id,
+          false,
+          request.params.config,
+        );
+      }
       break;
 
     case "voice.local.speak":
@@ -102,6 +161,8 @@ export async function handleVoiceRpc(
       break;
 
     case "voice.local.start":
+      if (voiceModels.status().state === "working")
+        throw new Error("A voice model action is running.");
       if (dependencies.voiceSetup.status().state === "installing")
         throw new Error("Voice setup is still running.");
       request.result = await dependencies.localVoice.start(

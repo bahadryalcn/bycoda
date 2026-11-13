@@ -16,6 +16,13 @@ import { isLocalSyncMachine } from "../../connections/public/localSync";
 import type { RemoteMachine } from "../../connections";
 import type { RecentProject } from "../../projects/public/recents";
 
+export const INHERITED_RUN_TIME_LIMIT_OPTION = {
+  value: "inherit",
+  get label() {
+    return t("Default");
+  },
+};
+
 // The same choices as an automation's run time limit.
 export const RUN_TIME_LIMIT_OPTIONS = [
   {

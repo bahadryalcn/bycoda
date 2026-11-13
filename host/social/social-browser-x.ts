@@ -1,6 +1,7 @@
+import { challengeError, detectChallenge } from "./browser/challenge";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
 import { writeFileAtomic } from "../storage/atomic-write";
@@ -17,6 +18,8 @@ import {
   parseLinkedInProfilePatch,
 } from "./social-browser-linkedin-profile";
 import { BrowserSendLimiter } from "./browser/limiter";
+import { ExistingChromeBindings } from "./browser/existing-chrome-bindings";
+import { connectExistingChrome } from "./browser/existing-chrome-connect";
 import { runLayered, visibilityOf, type BrowserWiring } from "./browser-layers/wiring";
 import { PlatformBrowserSessions } from "./social-browser-platforms";
 import { SOCIAL_BROWSER_RECIPES } from "./social-browser-recipes";
@@ -52,7 +55,7 @@ type ReadSession = {
   usable: boolean;
 };
 type LoginFlow = {
-  status: "waiting" | "connected" | "failed";
+  status: "waiting" | "checking" | "connected" | "failed";
   error?: string;
   expiresAt: number;
   cancelled?: boolean;
@@ -70,6 +73,7 @@ export class XBrowserSessions {
   readonly workflows: SocialBrowserWorkflows;
   private readonly platforms: PlatformBrowserSessions;
   private locks = new Map<string, Promise<unknown>>();
+  private chromeReviews = new Map<string, symbol>();
   private logins = new Map<string, LoginFlow>();
   private reads = new Map<string, ReadSession>();
   constructor(
@@ -83,7 +87,10 @@ export class XBrowserSessions {
     private readonly readNow = monotonicNow,
     private readonly limiter: BrowserSendLimiter = new BrowserSendLimiter({ now }),
     private readonly wiring: BrowserWiring = {},
+    private readonly chrome = new ExistingChromeBindings(directory),
   ) {
+    wiring.openSession = async (accountId, fallback) =>
+      (await this.chrome.open(accountId)) ?? fallback();
     this.platforms = new PlatformBrowserSessions(
       directory,
       recipes,
@@ -107,7 +114,9 @@ export class XBrowserSessions {
       now,
       wait,
       launcher,
-      (id) => this.logins.get(id)?.status === "waiting" || this.platforms.waiting(id),
+      (id) =>
+        ["waiting", "checking"].includes(this.logins.get(id)?.status ?? "") ||
+        this.platforms.waiting(id),
     );
   }
   async workflowBegin(
@@ -119,7 +128,14 @@ export class XBrowserSessions {
     acknowledgeRisk: unknown,
     registration?: unknown,
   ) {
-    if (this.logins.get(accountId)?.status === "waiting" || this.platforms.waiting(accountId))
+    if (await this.chrome.get(accountId))
+      throw new Error(
+        "This account uses an existing Chrome session. Use its platform tab for owner sign-in steps.",
+      );
+    if (
+      ["waiting", "checking"].includes(this.logins.get(accountId)?.status ?? "") ||
+      this.platforms.waiting(accountId)
+    )
       throw new Error("Finish or cancel the account's current login first.");
     return await this.workflows.begin(service, p, {
       accountId,
@@ -137,6 +153,31 @@ export class XBrowserSessions {
           reason:
             "Install Microsoft Edge or Google Chrome on this host, or set BYCODA_SOCIAL_BROWSER.",
         };
+  }
+  async chromeTabs(
+    service: SocialService,
+    principal: SocialPrincipal,
+    accountId: string,
+    acknowledgeAccess: unknown,
+  ) {
+    if (acknowledgeAccess !== true)
+      throw new Error("Confirm access to your Chrome profile before connecting.");
+    const account = await service.accountForOAuth(principal, accountId);
+    if (account.executorId !== service.store.environmentId)
+      throw new Error("Connect Chrome on the account's executor host.");
+    return { tabs: await this.chrome.list(account.platform) };
+  }
+  async cancelLogin(service: SocialService, principal: SocialPrincipal, accountId: string) {
+    await service.accountForOAuth(principal, accountId);
+    this.chromeReviews.delete(accountId);
+    const flow = this.logins.get(accountId);
+    if (flow) {
+      flow.cancelled = true;
+      this.logins.delete(accountId);
+      await flow.session?.close();
+    }
+    await this.platforms.forget(accountId);
+    return { status: "idle" as const };
   }
   async profileAction(
     service: SocialService,
@@ -170,7 +211,10 @@ export class XBrowserSessions {
         current.executorId !== service.store.environmentId
       )
         throw new SocialPlatformError("denied");
-      if (this.workflows.hasActive(accountId) || this.logins.get(accountId)?.status === "waiting")
+      if (
+        this.workflows.hasActive(accountId) ||
+        ["waiting", "checking"].includes(this.logins.get(accountId)?.status ?? "")
+      )
         throw new Error("Finish the account's active browser operation first.");
     };
     await check();
@@ -297,7 +341,8 @@ export class XBrowserSessions {
     background: boolean,
   ): Promise<BrowserSession> {
     const visibility = await visibilityOf(this.wiring, accountId);
-    const session = await this.launcher!(profile, background, visibility);
+    const fallback = () => this.launcher!(profile, background, visibility);
+    const session = await (this.wiring.openSession?.(accountId, fallback) ?? fallback());
     const release = this.wiring.tracker?.track(accountId, session);
     return {
       ...session,
@@ -415,7 +460,8 @@ export class XBrowserSessions {
     accountId: string,
     acknowledgeRisk: unknown,
     target?: string,
-  ): Promise<{ status: LoginFlow["status"]; expiresAt: number }> {
+    chromeSelection?: { targetId: string; acknowledgeAccess: unknown },
+  ): Promise<{ status: LoginFlow["status"]; expiresAt: number; source?: "existing-chrome" }> {
     if (this.stopped) throw new Error("The browser executor is stopping.");
     if (acknowledgeRisk !== true)
       throw new Error(
@@ -426,6 +472,50 @@ export class XBrowserSessions {
       throw new Error(
         "Close or cancel the account's browser workflow before verifying its connection.",
       );
+    if (chromeSelection) {
+      if (chromeSelection.acknowledgeAccess !== true)
+        throw new Error("Confirm access to your Chrome profile before connecting.");
+      if (account.executorId !== service.store.environmentId)
+        throw new Error("Connect Chrome on the account's executor host.");
+      if (
+        ["waiting", "checking"].includes(this.logins.get(accountId)?.status ?? "") ||
+        this.platforms.waiting(accountId)
+      )
+        throw new Error("Finish the account's current login before connecting Chrome.");
+      const token = Symbol();
+      this.chromeReviews.set(accountId, token);
+      const epoch = await service.connectionReviewEpoch(p, accountId);
+      const current = () => !this.stopped && this.chromeReviews.get(accountId) === token;
+      return this.exclusive(accountId, async () => {
+        if (!current()) throw new Error("The account connection was cancelled.");
+        if (
+          this.workflows.hasActive(accountId) ||
+          this.platforms.waiting(accountId) ||
+          ["waiting", "checking"].includes(this.logins.get(accountId)?.status ?? "")
+        )
+          throw new Error("Finish the account's current login before connecting Chrome.");
+        return await connectExistingChrome({
+          service,
+          principal: p,
+          account,
+          review: { epoch, current },
+          targetId: chromeSelection.targetId,
+          resourceId: target,
+          bindings: this.chrome,
+          recipes: this.recipes,
+          directory: this.directory,
+          wait: this.wait,
+        });
+      }).finally(() => {
+        if (this.chromeReviews.get(accountId) === token) this.chromeReviews.delete(accountId);
+      });
+    }
+    const activeLogin = this.logins.get(accountId);
+    if (activeLogin?.status === "waiting" || activeLogin?.status === "checking")
+      return { status: activeLogin.status, expiresAt: activeLogin.expiresAt };
+    if (account.platform !== "x" && this.platforms.waiting(accountId))
+      return this.platforms.begin(service, p, account, target);
+    await this.exclusive(accountId, () => this.chrome.set(accountId, undefined));
     if (account.platform !== "x") return this.platforms.begin(service, p, account, target);
     // The profile must live on the host that executes this account's sends.
     if (account.executorId !== service.store.environmentId)
@@ -434,7 +524,7 @@ export class XBrowserSessions {
       );
     if (!this.launcher) throw new Error(this.availability().reason);
     const current = this.logins.get(accountId);
-    if (current?.status === "waiting")
+    if (current && (current.status === "waiting" || current.status === "checking"))
       return { status: current.status, expiresAt: current.expiresAt };
     const flow: LoginFlow = { status: "waiting", expiresAt: this.now() + LOGIN_TIMEOUT };
     this.logins.set(accountId, flow);
@@ -448,9 +538,51 @@ export class XBrowserSessions {
   }
   async status(service: SocialService, p: SocialPrincipal, accountId: string) {
     const account = await service.accountForOAuth(p, accountId);
-    if (account.platform !== "x") return this.platforms.status(accountId);
+    const source = (await this.chrome.get(accountId))
+      ? ("existing-chrome" as const)
+      : ("dedicated" as const);
+    if (account.platform !== "x")
+      return { ...(await this.platforms.check(service, p, account)), source };
     const flow = this.logins.get(accountId);
-    return flow ? { status: flow.status, error: flow.error } : { status: "idle" as const };
+    if (flow?.status === "waiting" || flow?.status === "checking")
+      return { status: flow.status, error: flow.error };
+    if (!account.connected || !account.platformId)
+      return flow?.status === "failed"
+        ? { status: flow.status, error: flow.error }
+        : { status: "idle" as const };
+    try {
+      if (
+        !this.launcher ||
+        account.executorId !== service.store.environmentId ||
+        this.workflows.hasActive(accountId)
+      )
+        throw new Error(
+          "Check this account on its executor host after closing its browser workflow.",
+        );
+      return await this.exclusive(accountId, async () => {
+        const current = await service.accountForOAuth(p, accountId);
+        if (
+          !current.connected ||
+          current.platformId !== account.platformId ||
+          current.executorId !== account.executorId
+        )
+          throw new Error("The account changed. Try again.");
+        const session = await this.launchAt(accountId, this.profile(accountId), true);
+        try {
+          await session.page.goto("https://x.com/home");
+          const challenge = await challengeError(session.page, this.directory);
+          if (challenge) throw challenge;
+          if (await detectChallenge(session.page)) throw new SocialPlatformError("expired");
+          await this.identity(session.page, current);
+          return { status: "connected" as const, error: undefined, source };
+        } finally {
+          await session.close();
+          await session.profileReleased?.();
+        }
+      });
+    } catch (error) {
+      return { status: "failed" as const, error: message(error) };
+    }
   }
   private async login(service: SocialService, account: SocialAccount, flow: LoginFlow) {
     if (flow.cancelled) throw new Error("X login was cancelled.");
@@ -474,6 +606,7 @@ export class XBrowserSessions {
       if (!closed) await window.close().catch(() => undefined);
     }
     if (flow.cancelled) throw new Error("X login was cancelled.");
+    flow.status = "checking";
     // The owner closed the window; verify the saved session without showing a window.
     const session = await this.launchAt(account.id, profile, true);
     try {
@@ -485,6 +618,9 @@ export class XBrowserSessions {
           "A different X account is logged in. Log in with the account connected earlier.",
         );
       await session.page.goto("https://x.com/home");
+      const challenge = await challengeError(session.page, this.directory);
+      if (challenge) throw challenge;
+      if (await detectChallenge(session.page)) throw new SocialPlatformError("expired");
       const href = await this.until(
         session.page,
         `document.querySelector('[data-testid="AppTabBar_Profile_Link"]')?.getAttribute("href") ?? ""`,
@@ -510,6 +646,7 @@ export class XBrowserSessions {
   }
   /** Cancels an open login and removes the logged-in profile, which logs this host out of X. */
   async forget(accountId: string): Promise<void> {
+    this.chromeReviews.delete(accountId);
     await this.platforms.forget(accountId);
     const flow = this.logins.get(accountId);
     this.logins.delete(accountId);
@@ -519,6 +656,7 @@ export class XBrowserSessions {
     }
     // Browser helper processes can hold profile files briefly after closing.
     return this.exclusive(accountId, async () => {
+      await this.chrome.set(accountId, undefined);
       for (const folder of ["x-browser", "browser-profiles"])
         await rm(this.profile(accountId, folder), {
           recursive: true,
@@ -531,6 +669,8 @@ export class XBrowserSessions {
   /** Stop owner login/workflow windows without deleting persistent signed-in profiles. */
   async stop(service: SocialService): Promise<void> {
     this.stopped = true;
+    this.chromeReviews.clear();
+    await this.chrome.stop();
     for (const flow of this.logins.values()) {
       flow.cancelled = true;
       await flow.session?.close().catch(() => undefined);
@@ -586,7 +726,9 @@ export class XBrowserSessions {
     return {
       directory: this.directory,
       background: this.background,
-      launcher: this.launcher,
+      launcher: this.launcher
+        ? (profile, background) => this.launchAt(basename(profile), profile, background)
+        : undefined,
       limiter: this.limiter,
       now: this.now,
       profile: (accountId) => this.profile(accountId),

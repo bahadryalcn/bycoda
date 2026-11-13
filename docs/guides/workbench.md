@@ -1,5 +1,18 @@
 # Workbench navigation
 
+Settings search opens the matching page and focuses an available control. When a
+setting is unavailable, search focuses its row so its label and disabled reason
+remain accessible. Restore default stays disabled while its row is unavailable
+or waiting for an operation; the current custom value is kept.
+Search Phone or Sharing to open those Connections tabs; automatic reconnect
+continues to open its Machines setting.
+
+General's Restore defaults restores Application language to System and the independent
+Git and Technical languages to English. If a reset step fails, completed steps remain
+applied and the confirmation offers retry. Folder rows refresh after a successful reset;
+their path can be read in full by hovering or focusing clipped text. Choosing a folder
+shows pending feedback and accepts one picker at a time.
+
 Folder picker rows open folders on click without hover tooltips. Scrolling under
 the pointer keeps the keyboard target unchanged; arrow keys move that target and
 keep it visible. Enter opens it, and checkboxes select folders independently.
@@ -53,14 +66,26 @@ while Account and Settings remain at the bottom. Recovered work uses a restore
 arrow; Last sessions uses a clock. Rail section headings share one icon and label grid;
 hover or keyboard focus replaces a collapsible section's icon with its disclosure arrow.
 Pinned also collapses and remembers that choice.
-Working shows attention as an icon and count: one failure is red, warnings and multiple
-attention items are yellow. Last sessions rows in the rail and combined list only open conversations; they have
+Activity groups attention separately: failures are red, retries and input requests use
+the warning tone. Its collapsed header retains the attention icon and count. Last sessions rows in the rail and combined list only open conversations; they have
 no pin, settle, archive, delete controls or action menu. Crew Start stays at the right edge, with options to its left.
 Project Git totals occupy the right edge until hover or focus reveals options; opening
 those options keeps the Git summary in the menu. Narrow group and workspace rows keep secondary
 shortcuts in that menu: **Changes** opens the existing Git overview, and **Lock group**
 retains the same lock action. Appearance exposes background controls
 directly below the compact icon picker.
+
+In Settings > Appearance > Background > Image, the Library keeps previously used
+images. A failed library read shows Retry instead of an empty library; any loaded
+images remain visible. Image apply and delete controls wait while a background
+change is pending. Saved-look name dialogs retain the name after a failed save,
+and Enter confirms only after text composition finishes.
+Saving a look while an image is generating captures the current applied appearance;
+the name dialog explains that the pending image is excluded. Applying a saved look,
+choosing or removing an image, and restoring Appearance defaults revoke older
+generator image application without deleting its reusable library result.
+Manual gradient edits also take precedence over an earlier gradient generation
+request. A superseded image copy cannot replace the current background.
 
 GitHub Inbox discovers repositories from local remembered projects. Its **Local
 repositories** filter shows each `owner/repo` once, even when several checkouts
@@ -115,10 +140,15 @@ model from the conversation provider, preferring Haiku, Terra or Flash. If no
 lightweight model is available, choose one explicitly. Failed generation keeps the
 current title and offers Retry; a concurrent manual rename is preserved.
 
-While a project is open, Working summarizes its running conversations in one compact
-line and lists conversations from other projects. Its header still counts all running
-conversations. Conversations needing attention and finished conversations remain
-available as individual rows. Last Sessions keeps the complete Working list.
+The Activity panel separates conversations that need attention from working, waiting
+and finished conversations. All failures, retries, questions and approvals appear
+in the attention group before ordinary work, without the ordinary preview limit.
+Select a conversation to inspect its error, answer its question or review its approval
+in the existing conversation view. Opening a row never retries work or grants approval.
+While a project is open, its running conversations are summarized in a disclosure
+row. Expand it to select a conversation directly. Waiting conversations keep their
+own group and do not count as running. The panel header counts all conversations;
+when collapsed, it retains an attention count. Last Sessions keeps the complete list.
 
 Above the composer, expanded background work shows the reported model and provider
 icon above each subagent's title. Hover or focus the information icon to see status
@@ -276,8 +306,8 @@ in the owning project view. Deleting several remote conversations at once
 sends them together; the result appears on both computers.
 
 The sessions filter menu can show only conversations managed by your named
-assistant. It uses the Host's management record and combines with provider,
-time, archive and status filters. Clear filters restores the full list.
+assistant. It uses the Host's management record for local and remote projects and
+combines with provider, time, archive and status filters. Clear filters restores the full list.
 
 **Settle** (the check mark in a conversation's header, or on its sidebar row
 when you hover it) moves a finished conversation to the collapsed **Settled**
@@ -395,6 +425,19 @@ the saved **Settings > Notifications > Sounds** preference; desktop banners and
 request popups keep their own settings. If saving fails, the previous state stays
 active and the error offers **Retry**.
 
+In **Settings > Notifications**, delivery time names the first setting to enable:
+**Desktop notifications**, then **Daily summary**. Turning either off preserves
+the saved time and event choices. If project notification preferences cannot be
+read, category, mute and resume changes pause until the read succeeds. An open
+custom mute form keeps its date and time draft through that pause.
+
+In **Settings > Keybindings**, click a binding to record keys. Tab and Shift+Tab
+cancel capture and move focus in their usual direction. Escape cancels capture;
+switching away from the window also cancels it. Conflicts keep the previous
+binding. Reset restores the default; Delete or Backspace alone disables a binding.
+Save and conflict feedback appears beside the affected row, with the recorder
+and Reset available for recovery once saving finishes.
+
 The project menu groups remote machine reconnection and editing under Machine.
 Recovery lists retain their open and clear actions, including local pending and
 retry feedback. In compact navigation, open the recovery panel to use its full
@@ -466,9 +509,9 @@ project without moving or relinking the note. The message remains unsent.
 
 ## Models and providers
 
-**Settings > Models** contains **Model order**, **Assignments**,
-**Chat defaults** and **Subagents**. Configure shared priority, automation limits,
-pools, role bindings and delegation there. **Settings > Providers** contains
+**Settings > Background work** contains **Model order**, **Assignments** and **Subagents**.
+Configure shared priority, automation limits, pools, role bindings and delegation
+there. **Settings > Models** keeps **Chat defaults**. **Settings > Providers** contains
 **Accounts**, **CLI**, **Catalog** and **Decision models**. The Grok account row
 reports the local Grok Build CLI sign-in. See [Models](models.md) for selection,
 inheritance and running-session behavior.

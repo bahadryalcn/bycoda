@@ -1,3 +1,4 @@
+import { PermissionRow } from "../permissions";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
 import { useEffect, useRef, useState } from "react";
@@ -289,6 +290,9 @@ export function DesktopControlSettings({
   const embedded = !!refreshRef;
   const rows = (
     <>
+      <PermissionRow id="accessibility" helperState={status?.permissions?.accessibility} />
+      <PermissionRow id="screen-recording" helperState={status?.permissions?.screenRecording} />
+
       <DesktopHelperSetup
         disabled={pending || stopping}
         autoPrepare={!!draft?.enabled}
@@ -434,7 +438,13 @@ export function DesktopControlSettings({
         embedded ? styles.embeddedError : undefined,
       )}
     >
-      <InlineError>{error}</InlineError>
+      <InlineError>
+        {error.includes("target-elevated")
+          ? t(
+              "bycoda cannot control apps running as administrator. Run the target app without elevation.",
+            )
+          : error}
+      </InlineError>
     </div>
   );
   const custom = draft && (

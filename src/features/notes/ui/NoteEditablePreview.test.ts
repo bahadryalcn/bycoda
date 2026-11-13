@@ -5,11 +5,48 @@ import { expect, it, vi } from "vitest";
 import { NotePreviewParser } from "../previewBlocks";
 import { NoteEditablePreview } from "./NoteEditablePreview";
 
+const language = vi.hoisted(() => ({ prefix: "" }));
 vi.mock("../../../shared/i18n", () => ({
   t: (text: string) => text,
-  useT: () => (text: string) => text,
+  useT: () => {
+    const prefix = language.prefix;
+    return (text: string) => prefix + text;
+  },
   useLocale: () => "en",
 }));
+
+it("updates memoized preview actions on a language change without changing note text", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const onChange = vi.fn();
+  const props = {
+    value: "Retained source 漢🦀",
+    viewRef: { current: null },
+    rangeRef: { current: null },
+    onChange,
+    onSave: vi.fn(),
+    onEditingChange: vi.fn(),
+    onFocus: vi.fn(),
+  };
+  try {
+    await act(async () => root.render(createElement(NoteEditablePreview, props)));
+    expect(host.querySelector("[data-action-primary]")?.getAttribute("aria-label")).toBe(
+      "Edit note block",
+    );
+    language.prefix = "Türkçe: ";
+    await act(async () => root.render(createElement(NoteEditablePreview, props)));
+    expect(host.querySelector("[data-action-primary]")?.getAttribute("aria-label")).toBe(
+      "Türkçe: Edit note block",
+    );
+    expect(host.textContent).toContain(props.value);
+    expect(onChange).not.toHaveBeenCalled();
+  } finally {
+    language.prefix = "";
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
 vi.mock("../../sessions/ui/AgentMarkdown", async () => {
   const { createElement } = await import("react");
   return { AgentMarkdown: ({ text }: { text: string }) => createElement("p", {}, text) };

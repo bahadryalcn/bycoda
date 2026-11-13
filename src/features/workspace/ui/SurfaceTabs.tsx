@@ -172,7 +172,7 @@ export function surfaceTabMenuItems(
               return translate("Open in New Window");
             },
             disabled: newWindow.dirty,
-            description: newWindow.dirty ? "Save the file first" : undefined,
+            description: newWindow.dirty ? translate("Save the file first") : undefined,
           },
           { kind: "sep" as const },
         ]
@@ -191,7 +191,7 @@ export function surfaceTabMenuItems(
     ...(isRemoteProjectPath(file.path)
       ? [{ kind: "item" as const, id: "open-copy", label: translate("Open local copy") }]
       : []),
-    { kind: "item" as const, id: "reveal", label: REVEAL_LABEL },
+    { kind: "item" as const, id: "reveal", label: translate(REVEAL_LABEL) },
     { kind: "sep" as const },
     {
       kind: "item",
@@ -237,10 +237,10 @@ export function surfaceTabPresentation(
   if (isChangesTab(file)) {
     const staged = file.changeKind === "staged";
     return {
-      name: staged ? "Staged Changes" : "Changes",
-      label: staged ? "Staged Changes" : "Changes",
+      name: translate(staged ? "Staged Changes" : "Changes"),
+      label: translate(staged ? "Staged Changes" : "Changes"),
       iconName: "CHANGES",
-      tooltip: staged ? "Staged changes" : "Working tree changes",
+      tooltip: translate(staged ? "Staged changes" : "Working tree changes"),
     };
   }
 
@@ -258,7 +258,7 @@ export function surfaceTabPresentation(
   }
 
   if (isAgentTab(file)) {
-    const name = file.path.trim() || "Agent";
+    const name = file.path.trim() || translate("Agent");
     return {
       name,
       label: name,
@@ -282,28 +282,31 @@ export function surfaceTabPresentation(
   const review = isReviewTab(file);
   const terminal = isTerminalTab(file);
   const name = isPlanTab(file)
-    ? file.plan.title.trim() || "Plan"
+    ? file.plan.title.trim() || translate("Plan")
     : terminal
       ? terminalTabLabel(file)
       : basename(file.path);
   return {
     name,
-    label: review ? `${name} (Working Tree)` : name,
+    label: review ? translate("{p0} (Working Tree)", { p0: name }) : name,
     iconName: isPlanTab(file) ? "plan.md" : name,
     tooltip: isPlanTab(file)
       ? name
       : terminal
         ? `${name} — ${file.cwd}`
         : review
-          ? `${file.path} (Working Tree)`
+          ? translate("{p0} (Working Tree)", { p0: file.path })
           : file.path,
   };
 }
 
 /** Tab tooltip: the path, then what is wrong with it. */
-export function appendProblems(title: string, errors: number): string {
+export function appendProblems(translate: typeof t, title: string, errors: number): string {
   if (!errors) return title;
-  return `${title} — ${errors} ${errors === 1 ? "problem" : "problems"}`;
+  return translate(errors === 1 ? "{p0} \u2014 {p1} problem" : "{p0} \u2014 {p1} problems", {
+    p0: title,
+    p1: errors,
+  });
 }
 
 function fileTarget(event: PointerEvent) {
@@ -444,14 +447,14 @@ export function SurfaceTabs({
         invalid ? "blocked" : outside ? "window" : "move",
         event,
         dirtyFileIds.has(fileId)
-          ? "Save the file first"
+          ? t("Save the file first")
           : target?.edge === "center"
-            ? "Move to pane"
+            ? t("Move to pane")
             : undefined,
       );
       return true;
     },
-    [files, onOpenInNewWindow, dirtyFileIds, paneId, moveNativeFileDrag],
+    [files, onOpenInNewWindow, dirtyFileIds, paneId, moveNativeFileDrag, t],
   );
   const dropFile = useCallback(
     (fileId: string, event: PointerEvent) => {
@@ -553,7 +556,12 @@ export function SurfaceTabs({
     void action.catch((error) => {
       console.error(`Failed to run file-tab action ${id}:`, error);
       setFileActionError(
-        `Could not ${id === "open-default" ? "open the file in its default app" : "complete the file action"}: ${String(error)}`,
+        t(
+          id === "open-default"
+            ? "Could not open the file in its default app: {p0}"
+            : "Could not complete the file action: {p0}",
+          { p0: String(error) },
+        ),
       );
     });
   };
@@ -715,6 +723,7 @@ export function SurfaceTabs({
                     focusFileTab(next);
                   }}
                   tooltip={appendProblems(
+                    t,
                     dirty ? `${tooltip} (${t("Unsaved changes")})` : tooltip,
                     errors,
                   )}
@@ -814,7 +823,7 @@ export function SurfaceTabs({
             { left: menuFileIndex > 0, right: menuFileIndex < files.length - 1 },
             files.length > 1,
           )}
-          ariaLabel="File tab actions"
+          ariaLabel={t("File tab actions")}
           onPick={onMenuPick}
           onClose={() => setMenu(null)}
         />

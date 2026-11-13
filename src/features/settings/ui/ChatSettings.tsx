@@ -210,15 +210,6 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           description={t(
             "Enable spelling checks and automatic correction where supported by your platform.",
           )}
-          info={
-            <InfoPopover className="shrink-0">
-              <p>
-                {t(
-                  "Send steers the active turn; the queue button sends after it finishes, or when steering is unavailable.",
-                )}
-              </p>
-            </InfoPopover>
-          }
         >
           <Toggle
             label={t("Spelling and autocorrect")}

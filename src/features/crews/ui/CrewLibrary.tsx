@@ -1,6 +1,7 @@
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
+import { truncateCodeUnits } from "../../../shared/lib/text/truncate";
 import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { useRef, useState } from "react";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
@@ -516,7 +517,7 @@ function GroupDialog({
   const members = data.agents.filter((agent) => agent.groups?.includes(group));
   const apply = async () => {
     if (gate.current) return;
-    const next = name.trim().slice(0, 40);
+    const next = truncateCodeUnits(name.trim(), 40);
     if (kind === "rename" && (!next || next === group)) return onClose();
     gate.current = true;
     setPending(true);

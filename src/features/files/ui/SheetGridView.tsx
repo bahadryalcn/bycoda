@@ -6,7 +6,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { useId, useState, useRef, useEffect, useLayoutEffect } from "react";
 import type { SparseSheet } from "../model/spreadsheet";
-import { formatInteger } from "../../../shared/lib/numbers";
+import { useFormat } from "../../../shared/i18n";
 import { DocumentMessage } from "./DocumentMessage";
 import { useAnchoredZoom } from "./documentZoom";
 import { ZoomBadge } from "./ZoomBadge";
@@ -28,6 +28,7 @@ export function SheetGridView({
   fitContent?: boolean;
 }) {
   useLocale();
+  const format = useFormat();
   const name = grid.name;
   const id = useId();
   const [focused, setFocused] = useState({ row: 0, column: 0 });
@@ -89,10 +90,10 @@ export function SheetGridView({
           {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-1")}
         >
           {t("Showing the first ")}
-          {formatInteger(grid.rowCount)}
-          {t(" of")} {formatInteger(grid.totalRows)}
-          {t(" rows and")} {formatInteger(grid.columns.length)}
-          {t(" of")} {formatInteger(grid.totalColumns)}
+          {format.formatNumber(grid.rowCount, { maximumFractionDigits: 0 })}
+          {t(" of")} {format.formatNumber(grid.totalRows, { maximumFractionDigits: 0 })}
+          {t(" rows and")} {format.formatNumber(grid.columns.length, { maximumFractionDigits: 0 })}
+          {t(" of")} {format.formatNumber(grid.totalColumns, { maximumFractionDigits: 0 })}
           {t(" columns.")}
           {grid.budgetLimited
             ? t(
@@ -247,7 +248,7 @@ export function SheetGridView({
                         role="gridcell"
                         aria-colindex={column + 2}
                         id={`${id}-cell-${index}-${column}`}
-                        aria-label={`${grid.columns[column]}${index + 1}: ${cell || "empty"}`}
+                        aria-label={`${grid.columns[column]}${index + 1}: ${cell || t("Empty cell")}`}
                         aria-selected={focused.row === index && focused.column === column}
                         onClick={() => {
                           setFocused({ row: index, column });

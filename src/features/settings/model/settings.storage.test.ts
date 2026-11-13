@@ -8,12 +8,30 @@ import {
   saveDiffLayout,
   subscribeDiffLayout,
   DIFF_LAYOUT_CHANGE_EVENT,
+  loadSettingsSection,
+  loadSettingsAliasAnchor,
+  saveSettingsSection,
+  settingsSectionForAnchor,
 } from "./settings";
+import { TOOL_SETTINGS_TAB_ANCHORS, type ToolSettingsTab } from "./toolSettingsSections";
 
 afterEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
 });
+
+it.each(Object.entries(TOOL_SETTINGS_TAB_ANCHORS) as [ToolSettingsTab, string][])(
+  "migrates the %s section to its canonical page and destination",
+  (alias, anchor) => {
+    localStorage.setItem("bycoda.settingsSection", alias);
+    expect(loadSettingsSection()).toBe("tools");
+    expect(loadSettingsAliasAnchor()).toBe(anchor);
+    expect(settingsSectionForAnchor(alias)).toBe("tools");
+    expect(settingsSectionForAnchor("general", anchor)).toBe("tools");
+    saveSettingsSection(alias);
+    expect(localStorage.getItem("bycoda.settingsSection")).toBe("tools");
+  },
+);
 it("the cross-tab owner receives same-key and clear events but not sessionStorage events", () => {
   const callback = vi.fn();
   const unsubscribe = subscribeKeepAwakeEnabled(callback);

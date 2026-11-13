@@ -3461,6 +3461,10 @@ function Workspace({
                       sessionPaneProps={sessionPaneProps}
                     />
                     <WorkspaceToolPanels
+                      sessionPaneProps={sessionPaneProps}
+                      onLoadCrewCoordinator={(target) =>
+                        onOpenBackgroundSession(target, true, true)
+                      }
                       auxiliaryTool={auxiliaryTool}
                       setAuxiliaryTool={setAuxiliaryTool}
                       conversationTools={conversationTools}

@@ -1,7 +1,7 @@
 import { t } from "../../../shared/i18n";
 import type { HostTask, TaskOwnerNotice } from "./hostTasks";
 import {
-  MAX_TASK_REVIEW_FAILURES,
+  MAX_TASK_REPAIR_ATTEMPTS,
   canTakeOverBlockedTask,
   taskRequiresInstructions,
 } from "./taskRules";
@@ -14,6 +14,7 @@ const INTERRUPTED = /\binterrupted\b|^Host (?:stopped|restarted)\b|could not be 
 export type TaskStatusKind =
   | "todo"
   | "queued"
+  | "waiting"
   | "running"
   | "stalled"
   | "verifying"
@@ -88,12 +89,10 @@ export function finishedOwnerNotices(task: HostTask): readonly TaskOwnerNotice[]
 
 function correctionLabel(task: HostTask): string {
   const attempt = task.repairAttempts ?? 0;
-  return task.continueUntilDone
-    ? t("Auto-correcting · attempt {p0}", { p0: attempt })
-    : t("Auto-correcting {p0}/{p1}", {
-        p0: Math.min(attempt, MAX_TASK_REVIEW_FAILURES),
-        p1: MAX_TASK_REVIEW_FAILURES,
-      });
+  return t("Auto-correcting {p0}/{p1}", {
+    p0: Math.min(attempt, MAX_TASK_REPAIR_ATTEMPTS),
+    p1: MAX_TASK_REPAIR_ATTEMPTS,
+  });
 }
 
 /** One concise, owner-facing line for a task's current state. The board card,
@@ -110,6 +109,8 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
     task.status === "queued" || task.status === "running" || task.status === "verifying";
 
   if (active && task.needsInput) return line("needs_input", "warning", t("Needs input"));
+  if (task.status === "queued" && task.modelRoutingWait?.reason)
+    return line("waiting", "neutral", t("Waiting"), firstSentence(t(task.modelRoutingWait.reason)));
   if (task.status !== "blocked" && taskRequiresInstructions(task))
     return line(
       "needs_instructions",
@@ -136,6 +137,8 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
       return line("todo", "neutral", t("To do"));
     case "queued":
     case "running":
+      if (task.repairAdvisor)
+        return line("queued", "neutral", t("Queued"), t("Waiting for advisor"));
       if (task.blockedTakeover)
         return line(
           "takeover",

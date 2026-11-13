@@ -74,6 +74,7 @@ export type * as modelHandoffApi from "./public/handoff";
 export type * as modelInFlightApi from "./public/inFlight";
 export type * as modelMessageQueueApi from "./public/messageQueue";
 export type * as modelModelDisplayNameApi from "./public/modelDisplayName";
+export type * as modelModelHooksApi from "./public/modelHooks";
 export type * as modelModelPickerDataApi from "./public/modelPickerData";
 export type * as modelModelsApi from "./public/models";
 export type * as modelOperatorCommandApi from "./public/operatorCommand";

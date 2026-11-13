@@ -1,6 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
+const nativeStatus = vi.hoisted(() => vi.fn(async () => undefined as unknown));
+vi.mock("../../../platform/tauri/systemPermissions", () => ({
+  systemPermissionsStatus: nativeStatus,
+}));
+
 const platform = vi.hoisted(() => ({ mac: false, win: false, linux: false, native: true }));
 vi.mock("../../../platform/tauri/platform", () => ({
   get IS_MAC() {
@@ -26,6 +31,7 @@ import {
 
 afterEach(() => {
   Object.assign(platform, { mac: false, win: false, linux: false, native: true });
+  nativeStatus.mockResolvedValue(undefined);
   vi.unstubAllGlobals();
 });
 
@@ -111,4 +117,13 @@ it("preserves unclassified errors rather than labelling them as permission denia
   const cause = new Error("Unexpected capture failure");
   capture(Promise.reject(cause));
   await expect(openMicrophone({ audio: true })).rejects.toBe(cause);
+});
+
+it("distinguishes a webview refusal after an OS microphone grant", async () => {
+  nativeStatus.mockResolvedValue({ entries: [{ id: "microphone", state: "granted" }] });
+  capture(Promise.reject({ name: "NotAllowedError" }));
+  await expect(openMicrophone({ audio: true })).rejects.toMatchObject({
+    name: "NotAllowedError",
+    message: expect.stringContaining("app webview blocked it"),
+  });
 });

@@ -93,6 +93,8 @@ export function ModelRoleRow({
       : []),
     { value: "fixed", label: t("Fixed model") },
   ];
+  // Rows on the plain order would all repeat the same first model; they speak up only on a problem.
+  const problemsOnly = choice?.kind === "order";
   const preview =
     choice && choice.kind !== "fixed" && orderReady ? (
       helper ? (
@@ -101,6 +103,7 @@ export function ModelRoleRow({
           role={role as HelperModelRole}
           choice={choice}
           version={version}
+          problemsOnly={problemsOnly}
         />
       ) : (
         <ModelRoutingResolution
@@ -108,6 +111,7 @@ export function ModelRoleRow({
           role={role}
           choice={choice}
           revision={version}
+          problemsOnly={problemsOnly}
         />
       )
     ) : null;

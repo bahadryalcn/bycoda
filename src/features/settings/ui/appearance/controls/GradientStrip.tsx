@@ -15,6 +15,7 @@ import { backgroundGradientChange } from "../../../model/backgroundGradient";
 import { Row, Slider } from "../../settingsControls";
 import { AngleDial } from "./AngleDial";
 import { BackgroundGenerator } from "./BackgroundGenerator";
+import { generatorSession } from "./themeGeneratorSession";
 import styles from "./GradientStrip.module.css";
 
 function ColorStop({
@@ -92,6 +93,10 @@ export function GradientStrip({
       latestChange.current(next);
     });
   };
+  const edit = (change: Partial<WorkspaceBackground>) => {
+    generatorSession.invalidateImageIntent();
+    update(change);
+  };
   useEffect(
     () => () => {
       if (frame.current !== null) {
@@ -116,7 +121,7 @@ export function GradientStrip({
             onChange={(next) => {
               const colors: [string, string, string] = [...value.colors];
               colors[index] = next;
-              update({ colors });
+              edit({ colors });
             }}
           />
         ))}
@@ -134,7 +139,7 @@ export function GradientStrip({
               { value: "radial", label: t("Radial") },
               { value: "solid", label: t("Solid") },
             ]}
-            onValueChange={(style) => update({ style: style as WorkspaceBackground["style"] })}
+            onValueChange={(style) => edit({ style: style as WorkspaceBackground["style"] })}
           />
         </div>
         <div className={styles.angleGroup}>
@@ -145,7 +150,7 @@ export function GradientStrip({
             <AngleDial
               value={value.angle}
               disabled={angleLocked}
-              onChange={(angle) => update({ angle })}
+              onChange={(angle) => edit({ angle })}
             />
           </div>
           <Slider
@@ -154,7 +159,7 @@ export function GradientStrip({
             display={`${value.angle}°`}
             min={0}
             max={360}
-            onChange={(angle) => update({ angle })}
+            onChange={(angle) => edit({ angle })}
             disabled={angleLocked}
           />
         </div>
@@ -183,7 +188,7 @@ export function GradientStrip({
               }
               onClick={() => {
                 const { style, colors, angle, strength } = preset.value;
-                update({ enabled: true, style, colors, angle, strength });
+                edit({ enabled: true, style, colors, angle, strength });
               }}
             >
               {t(preset.label)}
@@ -201,7 +206,7 @@ export function GradientStrip({
           display={`${value.strength}%`}
           min={0}
           max={100}
-          onChange={(strength) => update({ strength })}
+          onChange={(strength) => edit({ strength })}
         />
       </Row>
     </div>

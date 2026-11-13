@@ -20,6 +20,14 @@ color menu and retry together. Failed refreshes keep the last known limits visib
 
 Claude weekly-limit rejections mark the affected conversation as usage-limited.
 Desktop alerts show **Usage limit reached** and retain the provider's error detail.
+Transcript limit notices use a warning icon and a short title. Reset times and
+recovery instructions remain visible; the complete provider response, including
+HTTP status codes, is available under **Technical details**. Other failures retain
+their error icon and readable message without coloring the whole message red.
+Repeated copies of the same failure appear once per submitted attempt, including
+older saved transcripts. Stored diagnostics remain unchanged. A quota rejection
+does not offer **Retry**, even if an older record has no structured limit metadata.
+Other failures keep the retry action without a second generic failure banner.
 
 Grok shows the signed-in Grok Build CLI's plan quota in this view and the workspace
 footer. The used/remaining preference applies to its provider-reported credit usage

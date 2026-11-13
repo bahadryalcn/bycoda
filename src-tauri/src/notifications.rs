@@ -905,16 +905,7 @@ mod platform {
 
     /// Opens Settings > System > Notifications, where the per-app toggle lives.
     pub(super) fn open_settings(_app: &AppHandle) -> Result<(), String> {
-        let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", "start", "", "ms-settings:notifications"]);
-        crate::hide_window_console(&mut cmd);
-        cmd.spawn()
-            .map(|mut child| {
-                std::thread::spawn(move || {
-                    let _ = child.wait();
-                });
-            })
-            .map_err(|err| err.to_string())
+        crate::privacy_settings::open_notifications()
     }
 
     #[cfg(test)]

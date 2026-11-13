@@ -29,6 +29,21 @@ it("renders only the icon for a select option", () => {
   expect(html).not.toContain("GPT-5.4");
 });
 
+it("exposes a full long identity in expanded details while keeping compact callers unchanged", () => {
+  const name = "Uzun model adı / مساحة العمل 👩🏽‍💻 " + "long-model-name".repeat(16);
+  const compact = renderToStaticMarkup(
+    createElement(ModelLabel, { model: "gpt-5.4", harness: "codex", name }),
+  );
+  const expanded = renderToStaticMarkup(
+    createElement(ModelLabel, { model: "gpt-5.4", harness: "codex", name, wrap: true }),
+  );
+  expect(compact).toContain('data-truncate="true"');
+  expect(expanded).not.toContain('data-truncate="true"');
+  expect(expanded).toContain('data-wrap="anywhere"');
+  expect(expanded).toContain(name);
+  expect(expanded).toContain("<img");
+});
+
 it("falls back to a generic icon when the provider is unknown", () => {
   const html = renderToStaticMarkup(createElement(ModelLabel, { model: "mystery-model-2" }));
   expect(html).not.toContain("<img");

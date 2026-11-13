@@ -8,6 +8,9 @@ import { createStore } from "../../../../../shared/lib/store";
  */
 const values = new Map<string, unknown>();
 const changes = createStore();
+let gradientCallback:
+  | ((suggestion: import("../../../model/backgroundGradient").BackgroundGradientSuggestion) => void)
+  | undefined;
 
 /** The first read seeds a missing key, so later reads return the same reference (stable snapshot). */
 export function readGeneratorValue<T>(key: string, initial: T | (() => T)): T {
@@ -45,8 +48,14 @@ export function useGeneratorState<T>(key: string, initial: T | (() => T)) {
   return [value, set] as const;
 }
 
-type SessionState = { epoch: number; batch: number; selected: number | null; appearance: unknown };
-const state: SessionState = { epoch: 0, batch: 0, selected: null, appearance: null };
+type SessionState = {
+  epoch: number;
+  batch: number;
+  selected: number | null;
+  appearance: unknown;
+  intent: number;
+};
+const state: SessionState = { epoch: 0, batch: 0, selected: null, appearance: null, intent: 0 };
 
 /**
  * Session counters and handles (the old `useRef`s) that background work reads after the generator
@@ -66,6 +75,18 @@ export const generatorSession = {
     state.selected = index;
   },
   selected: () => state.selected,
+  /** Revoke pending image application when the owner changes the look. */
+  invalidateImageIntent: () => {
+    state.selected = null;
+    state.intent += 1;
+  },
+  imageIntent: () => state.intent,
+  bindGradient: (callback: typeof gradientCallback) => {
+    gradientCallback = callback;
+  },
+  applyGradient: (
+    suggestion: import("../../../model/backgroundGradient").BackgroundGradientSuggestion,
+  ) => gradientCallback?.(suggestion),
   /** The newest mounted Appearance API, or the last one when Settings is closed. */
   bindAppearance: (appearance: unknown) => {
     state.appearance = appearance;
@@ -76,6 +97,7 @@ export const generatorSession = {
 /** Test helper: forget everything, as a fresh app start would. */
 export function resetGeneratorSession() {
   values.clear();
-  Object.assign(state, { epoch: 0, batch: 0, selected: null, appearance: null });
+  gradientCallback = undefined;
+  Object.assign(state, { epoch: 0, batch: 0, selected: null, appearance: null, intent: 0 });
   changes.notify();
 }

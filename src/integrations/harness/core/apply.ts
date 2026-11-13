@@ -391,6 +391,12 @@ export function applyHarnessEvent(
           : {}),
       };
     }
+    case "session.goalChanged": {
+      if (session.harness !== "codex" || session.providerSessionId !== event.providerSessionId)
+        return session;
+      if (event.goal && event.goal.providerSessionId !== event.providerSessionId) return session;
+      return { ...session, providerGoal: event.goal ?? undefined };
+    }
     case "session.providerBound": {
       const running = session.busy ? session.runningModelTarget : undefined;
       if (running && running.harness !== session.harness) {

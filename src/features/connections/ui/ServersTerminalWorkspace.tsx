@@ -28,7 +28,7 @@ import { SshRunbookQueue } from "./SshRunbookQueue";
 import { requestSshStartupReviews } from "../model/sshRunbookQueue";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { ServerTerminalSession } from "./ServerTerminalSession";
-import { TerminalContext } from "./serversTerminalContext";
+import { TerminalContext, type SshTerminalOpenResult } from "./serversTerminalContext";
 
 export {
   useGenerateSshKey,
@@ -50,12 +50,6 @@ export function ServersTerminalWorkspace({
   const proxyApproval = useSshHttpProxyApproval();
   const startupNotified = useRef(new Set<string>());
   const mounted = useRef(true);
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
   const [terminals, setTerminals] = useState<
     {
       id: string;
@@ -129,6 +123,10 @@ export function ServersTerminalWorkspace({
     shellIntegration?: "auto" | "bash" | "zsh" | "powershell";
     name?: string;
     startupEligible?: boolean;
+    handoff?: {
+      resolve: (result: SshTerminalOpenResult) => void;
+      reject: (reason: unknown) => void;
+    };
     mobile?: {
       resourceId: string;
       digest: string;
@@ -139,12 +137,23 @@ export function ServersTerminalWorkspace({
   }>();
   const configurationRef = useRef(configurationReview);
   configurationRef.current = configurationReview;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Synchronizes terminal handoff lifetime with this mounted workspace and cancels its pending review on unmount.
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      configurationRef.current?.handoff?.resolve("cancelled");
+    };
+  }, []);
   const mobileReviewBusy = useRef(false);
   // Never replace an open review: a mobile one owns the phone's resolve callback and busy lock.
   const requestConfigurationReview = (next: NonNullable<typeof configurationReview>) => {
-    if (configurationRef.current || mobileReviewBusy.current)
-      return setCloseError(t("Finish the open SSH review first."));
+    if (configurationRef.current || mobileReviewBusy.current) {
+      setCloseError(t("Finish the open SSH review first."));
+      return false;
+    }
     setConfigurationReview((configurationRef.current = next));
+    return true;
   };
   const mobileResources = useRef(
     new Map<
@@ -223,6 +232,7 @@ export function ServersTerminalWorkspace({
       await closed;
     },
   };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Registers this mounted terminal workspace as the mobile SSH UI owner and releases that registration on unmount.
   useLayoutEffect(
     () =>
       registerSshWorkspaceUi({
@@ -283,18 +293,21 @@ export function ServersTerminalWorkspace({
     setActive(id);
     return true;
   };
-  const open = async (server: ServerRecord, replacingPendingId?: string) => {
-    if (mobileReviewBusy.current) return;
-    if (server.metadata.sshInheritance) requestConfigurationReview({ server, replacingPendingId });
+  const open = async (
+    server: ServerRecord,
+    replacingPendingId?: string,
+  ): Promise<SshTerminalOpenResult> => {
+    if (mobileReviewBusy.current) return "cancelled";
+    if (server.metadata.sshInheritance)
+      return new Promise<SshTerminalOpenResult>((resolve, reject) => {
+        if (
+          !requestConfigurationReview({ server, replacingPendingId, handoff: { resolve, reject } })
+        )
+          resolve("cancelled");
+      });
     else {
       setCloseError("");
-      try {
-        await launch(server, replacingPendingId);
-      } catch (reason) {
-        setCloseError(String(reason));
-        // Restore owns its initiating Connect control and retains its row on failure.
-        if (replacingPendingId) throw reason;
-      }
+      return (await launch(server, replacingPendingId)) ? "accepted" : "cancelled";
     }
   };
   return (
@@ -327,7 +340,7 @@ export function ServersTerminalWorkspace({
           const id = `ssh-quick:${crypto.randomUUID()}`;
           const approval = authorizeProxy(id, undefined, endpoint, "auto");
           const httpProxyTicketId = approval ? await approval : undefined;
-          if (httpProxyTicketId === null) return;
+          if (httpProxyTicketId === null) return "cancelled";
           setTerminals((previous) => [
             ...previous,
             {
@@ -342,6 +355,7 @@ export function ServersTerminalWorkspace({
             },
           ]);
           setActive(id);
+          return "accepted";
         },
         generate: (path) => {
           const id = `ssh-keygen:${crypto.randomUUID()}`;
@@ -685,6 +699,7 @@ export function ServersTerminalWorkspace({
             server={configurationReview.server}
             onClose={() => {
               configurationReview.mobile?.resolve(false);
+              configurationReview.handoff?.resolve("cancelled");
               setConfigurationReview(undefined);
             }}
             onConnect={(digest) => {
@@ -703,8 +718,15 @@ export function ServersTerminalWorkspace({
                 configurationReview.startupEligible,
                 mobile,
               ).then(
-                (opened) => mobile?.resolve(opened === true),
-                () => mobile?.resolve(false),
+                (opened) => {
+                  mobile?.resolve(opened === true);
+                  configurationReview.handoff?.resolve(opened ? "accepted" : "cancelled");
+                },
+                (reason) => {
+                  mobile?.resolve(false);
+                  configurationReview.handoff?.reject(reason);
+                  if (!configurationReview.handoff) setCloseError(String(reason));
+                },
               );
               setConfigurationReview(undefined);
             }}
@@ -715,7 +737,9 @@ export function ServersTerminalWorkspace({
           openTabs={terminals.flatMap((terminal) =>
             terminal.server ? [{ tabId: terminal.restoreId, serverId: terminal.server.id }] : [],
           )}
-          onConnect={open}
+          onConnect={async (server, replacingPendingId) => {
+            await open(server, replacingPendingId);
+          }}
         />
       </div>
     </TerminalContext.Provider>

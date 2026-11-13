@@ -221,7 +221,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     )();
     input.signal?.throwIfAborted();
   } catch (error) {
-    return preserveProviderFailure(error, dropLive(session));
+    return preserveProviderFailure(error, dropLive(session), input);
   }
   session.output = "";
   session.outputLimit = input.maxOutputChars;
@@ -324,6 +324,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
       session.turnFailed = null;
       await dropLive(session);
     },
+    input,
   );
 }
 
@@ -333,7 +334,10 @@ async function ensureLive(
   requestedModel?: string,
   requestedSettings?: TextSettings,
   operationContext?: HarnessOperationContext,
-  context?: Pick<TextPromptInput, "ephemeral" | "threadId" | "onThreadId">,
+  context?: Pick<
+    TextPromptInput,
+    "ephemeral" | "threadId" | "onThreadId" | "retirementIdentity" | "onRetired"
+  >,
 ): Promise<LiveText> {
   const model = pickTextModel(requestedModel);
   const settings = requestedSettings ?? textSettings(model);
@@ -370,7 +374,10 @@ async function startLive(
   model = pickTextModel(),
   settings = textSettings(model),
   operationContext?: HarnessOperationContext,
-  context?: Pick<TextPromptInput, "ephemeral" | "threadId" | "onThreadId">,
+  context?: Pick<
+    TextPromptInput,
+    "ephemeral" | "threadId" | "onThreadId" | "retirementIdentity" | "onRetired"
+  >,
 ): Promise<LiveText> {
   const previous = captureDrop();
   const child = createChildProcessHandle(
@@ -454,7 +461,11 @@ async function startLive(
     // every cold prompt (and any prompt queued behind a warmup) by 8 s.
     return session;
   } catch (error) {
-    return preserveProviderFailure(error, settleProviderRetirements([stopping, dropLive(session)]));
+    return preserveProviderFailure(
+      error,
+      settleProviderRetirements([stopping, dropLive(session)]),
+      context,
+    );
   }
 }
 

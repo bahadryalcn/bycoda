@@ -1,9 +1,11 @@
+import { VoicePreferenceRow as Row } from "./VoicePreferenceRow";
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Pencil, Settings } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
-import { AdvancedSettings, Group, Row, Toggle } from "../../settings/public/settingsControls";
+import { AdvancedSettings, Group, Toggle } from "../../settings/public/settingsControls";
+import { saveVoicePreference } from "../model/voiceSettingsSave";
 import { VoiceVisualizer } from "./VoiceVisualizer";
 import { useVoicePersona } from "../model/voicePersona";
 import { VoicePersonaDialog, voicePersonaSummary } from "./VoicePersonaDialog";
@@ -61,7 +63,13 @@ export function VoiceCompanionSettings({
         <Toggle
           label={t("Memory")}
           on={memory.enabled}
-          onChange={(enabled) => saveVoiceMemory({ ...loadVoiceMemory(), enabled })}
+          onChange={(enabled) =>
+            saveVoicePreference(
+              "voice-memory",
+              () => saveVoiceMemory({ ...loadVoiceMemory(), enabled }),
+              () => loadVoiceMemory().enabled === enabled,
+            )
+          }
         />
       </Row>
       <AdvancedSettings

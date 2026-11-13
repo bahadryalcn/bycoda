@@ -28,13 +28,14 @@ function loadAll(): Record<string, string[]> {
   }
 }
 
-function saveAll(all: Record<string, string[]>): void {
+function saveAll(all: Record<string, string[]>): boolean {
   try {
     localStorage.setItem(KEY, JSON.stringify(all));
-    notifyProjectPathsChanged();
   } catch {
-    /* storage unavailable */
+    return false;
   }
+  notifyProjectPathsChanged();
+  return true;
 }
 
 /**
@@ -46,7 +47,7 @@ export function loadAdditionalDirs(project: string): string[] {
   return (loadAll()[own] ?? []).filter((dir) => pathKey(dir) !== own);
 }
 
-export function saveAdditionalDirs(project: string, dirs: readonly string[]): void {
+export function saveAdditionalDirs(project: string, dirs: readonly string[]): boolean {
   const all = loadAll();
   const own = pathKey(normalizeProjectPath(project));
   const seen = new Set<string>([own]);
@@ -58,7 +59,7 @@ export function saveAdditionalDirs(project: string, dirs: readonly string[]): vo
   });
   if (next.length > 0) all[own] = next;
   else delete all[own];
-  saveAll(all);
+  return saveAll(all);
 }
 
 export function removeAdditionalDirs(project: string): void {

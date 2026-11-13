@@ -137,12 +137,14 @@ export function PeopleTable({
     () => [
       {
         key: "name",
+        sizing: "flex",
         label: t("Name"),
         sortable: false,
         render: (_, row) => <PersonCell person={row.person} onOpen={onOpen} />,
       },
       {
         key: "accounts",
+        sizing: "content",
         label: t("Accounts"),
         sortable: false,
         hideBelow: "sm",
@@ -150,6 +152,7 @@ export function PeopleTable({
       },
       {
         key: "stage",
+        sizing: "content",
         label: t("Status"),
         sortable: false,
         render: (_, row) => (
@@ -160,6 +163,7 @@ export function PeopleTable({
       },
       {
         key: "score",
+        sizing: "content",
         label: t("Score"),
         sortable: false,
         numeric: true,
@@ -168,6 +172,7 @@ export function PeopleTable({
       },
       {
         key: "tags",
+        sizing: "flex",
         label: t("Tags"),
         sortable: false,
         hideBelow: "md",
@@ -175,6 +180,7 @@ export function PeopleTable({
       },
       {
         key: "updatedAt",
+        sizing: "content",
         label: t("Updated"),
         sortable: false,
         render: (_, row) => <UpdatedDate value={row.person.updatedAt} />,

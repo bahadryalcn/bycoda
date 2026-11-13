@@ -46,7 +46,7 @@ export function ProviderSignInDialog({
           error:
             reason instanceof Error
               ? reason.message
-              : `Could not sign in to ${HARNESS_TITLE[harness]}.`,
+              : t("Could not sign in to {p0}.", { p0: HARNESS_TITLE[harness] }),
         });
       },
     );
@@ -67,7 +67,7 @@ export function ProviderSignInDialog({
         error={error}
         onSignIn={signIn}
         onComplete={onClose}
-        completeActionLabel="Continue"
+        completeActionLabel={t("Continue")}
         completeDescription={completeDescription}
         autoFocus
       />

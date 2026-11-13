@@ -173,7 +173,8 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
       description={t("Choose a background image for {p0}", { p0: name })}
       size="sm"
       fitViewport
-      onClose={onClose}
+      closeDisabled={busy}
+      onClose={busy ? () => {} : onClose}
     >
       <div className="flex flex-col gap-5">
         <div>
@@ -240,6 +241,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               </div>
               <div className="w-36 shrink-0">
                 <SearchableSelect
+                  disabled={busy}
                   hideLabel
                   label={t("Project background effect")}
                   variant="transparent"
@@ -263,8 +265,8 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
             value={scope}
             onValueChange={(next) => updateScope(next as ChatBackgroundScope)}
             options={[
-              { value: "empty", label: t("Empty only") },
-              { value: "all", label: t("All sessions") },
+              { value: "empty", label: t("Empty only"), disabled: busy },
+              { value: "all", label: t("All sessions"), disabled: busy },
             ]}
           />
         </ProjectBackgroundRow>
@@ -272,6 +274,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         <ProjectBackgroundRow label={t("Empty chat visibility")}>
           <div className="flex w-56 items-center gap-3">
             <Slider
+              disabled={busy}
               hideLabel
               label={t("Project background visibility in empty chats")}
               min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}
@@ -289,6 +292,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         <ProjectBackgroundRow label={t("Session visibility")}>
           <div className="flex w-56 items-center gap-3">
             <Slider
+              disabled={busy}
               hideLabel
               label={t("Project background visibility in sessions")}
               min={Math.round(CHAT_BACKGROUND_OPACITY_MIN * 100)}

@@ -13,6 +13,7 @@ import {
   toLocalDateTime,
 } from "../../../shared/ui/DateTimePicker";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { useNotificationPreferencesView } from "../hooks/useProjectNotificationPreferences";
 
 type Props = {
   projectIds: readonly string[];
@@ -23,6 +24,7 @@ type Props = {
 /** Custom timing is a complete step, separate from the duration presets. */
 export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: Props) {
   const t = useT();
+  const { unavailable } = useNotificationPreferencesView();
   const [value, setValue] = useState(() => {
     const until =
       projectIds.length === 1
@@ -39,7 +41,7 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
       className="w-full"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!projectIds.length) return;
+        if (!projectIds.length || unavailable) return;
         const date = parseLocalDateTime(value);
         if (!date) {
           setError(t("Choose a valid date and time."));
@@ -89,7 +91,7 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
         <Button
           type="submit"
           aria-label={t("Mute until then")}
-          disabled={!projectIds.length}
+          disabled={!projectIds.length || unavailable}
           variant="primary"
         >
           {t("Mute until then")}

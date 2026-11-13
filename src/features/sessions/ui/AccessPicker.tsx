@@ -42,7 +42,7 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
         onClose={(restoreFocus) => {
           if (restoreFocus) onClose?.();
         }}
-        tooltip={`${RUNTIME_MODE_HINT[value]}${busy ? " Changes apply to the next turn." : ""}`}
+        tooltip={`${RUNTIME_MODE_HINT[value]}${busy ? ` ${t("Access changes apply to the next turn. Stop and resend to apply them now.")}` : ""}`}
         triggerProps={{
           "data-access-picker-trigger": "",
           "aria-label": RUNTIME_MODE_LABEL[value],

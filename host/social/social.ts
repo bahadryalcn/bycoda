@@ -125,7 +125,12 @@ import {
   socialCharacterCount,
   socialLimit,
 } from "../../src/features/social/model/socialPolicy";
-import { socialReplySuggestionPrompt, type SocialTextGenerator } from "./social-generation";
+import {
+  socialReplySuggestionPrompt,
+  withSocialTextInvocation,
+  currentSocialTextInvocation,
+  type SocialTextGenerator,
+} from "./social-generation";
 import {
   askSuggestionModel,
   factSuggestPrompt,
@@ -1720,7 +1725,15 @@ export class SocialService implements SocialServiceApi {
           }
         }
       }
-      const result = await this.dispatch(principal, action, input, operationId);
+      const result = await withSocialTextInvocation(
+        {
+          operationId: requestId
+            ? `${principal.actorId}:${str(requestId, "request ID", 200)}`
+            : operationId,
+          actorScope: JSON.stringify([principal.actorId, principal.sessionId, action]),
+        },
+        () => this.dispatch(principal, action, input, operationId),
+      );
       if (principal.assistantAccountId) await this.validate(principal);
       await this.audit(principal, action, operationId, accountId, "success", result);
       await recordAiWrite(this.audience, principal, action, accountId, input, this.now());
@@ -1974,8 +1987,10 @@ export class SocialService implements SocialServiceApi {
         await this.changeCredentials(account.id, async () => {
           await this.store.db.checkAuthorization();
           await this.credentials.delete(account.id);
-          await this.forgetBrowserSession?.(account.id);
         });
+        // Browser cleanup can await a connection holding the browser lock and waiting for credentials.
+        // Release the credential lock first; the connection epoch already revokes pending commits.
+        await this.forgetBrowserSession?.(account.id);
         return account;
       }
       case "accounts.executor": {
@@ -4035,7 +4050,12 @@ export class SocialService implements SocialServiceApi {
     });
     let output: string;
     try {
-      output = await this.generateText(policy.agent, prompt, AbortSignal.timeout(90000));
+      output = await this.generateText(
+        policy.agent,
+        prompt,
+        AbortSignal.timeout(90000),
+        currentSocialTextInvocation(),
+      );
     } catch {
       // Provider exceptions may contain credentials or private runtime details.
       throw new Error(

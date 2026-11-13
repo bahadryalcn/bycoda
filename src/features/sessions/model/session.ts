@@ -4,6 +4,7 @@ import type { InlineVisual } from "./inlineVisual";
 import type { ToolInspection } from "./toolInspection";
 import { dropContextWindow, type ContextUsage } from "./contextUsage";
 import type { SessionUsage } from "./sessionUsage";
+import type { SessionGoal } from "./providerGoal";
 import type { ShellRun } from "./shellRun";
 import type { UserQuestionPrompt } from "./userQuestion";
 import type { HandoffComposerCard } from "./handoff";
@@ -559,6 +560,8 @@ export type Session = {
   usageLimit?: UsageLimit;
   /** Provider-side conversation id (Cursor ACP session id). */
   providerSessionId?: string;
+  /** Last goal snapshot received from the provider's native protocol. */
+  providerGoal?: SessionGoal;
   /** Named local credential profile used by Claude or Codex. */
   providerAccountId?: string;
   /**
