@@ -5,7 +5,15 @@ import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
-import { createSkillGroup, renameSkillGroup, deleteSkillGroup, type SkillGroup } from "../index";
+import {
+  createSkillGroup,
+  renameSkillGroup,
+  deleteSkillGroup,
+  listSkillGroups,
+  skillGroupInvocation,
+  type SkillGroup,
+} from "../index";
+import { slugSkillName } from "../model/skills";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 
 export type GroupEdit =
@@ -14,6 +22,9 @@ export type GroupEdit =
 export function SkillGroupDialogs({ edit, onClose }: { edit: GroupEdit; onClose: () => void }) {
   useLocale();
   const [name, setName] = useState(edit.kind === "create" ? "" : edit.group.name);
+  const [command, setCommand] = useState(
+    edit.kind === "create" ? "" : (edit.group.invocation ?? ""),
+  );
   const [error, setError] = useState<string | null>(null);
   if (edit.kind === "delete")
     return (
@@ -29,8 +40,24 @@ export function SkillGroupDialogs({ edit, onClose }: { edit: GroupEdit; onClose:
     );
   const save = () => {
     try {
-      if (edit.kind === "create") createSkillGroup({ name, skillNames: edit.skillNames });
-      else renameSkillGroup(edit.group.id, name);
+      const invocation = slugSkillName(command);
+      if (command.replace(/^\/+/, "").trim() && !invocation)
+        throw new Error(t("Use lowercase letters, numbers, and hyphens."));
+      const id = edit.kind === "create" ? undefined : edit.group.id;
+      const effective = skillGroupInvocation({ name, invocation });
+      if (
+        listSkillGroups().some(
+          (group) => group.id !== id && skillGroupInvocation(group) === effective,
+        )
+      )
+        throw new Error(t("Another group already uses /{p0}", { p0: effective }));
+      if (edit.kind === "create")
+        createSkillGroup({
+          name,
+          skillNames: edit.skillNames,
+          ...(invocation ? { invocation } : {}),
+        });
+      else renameSkillGroup(edit.group.id, name, invocation);
       onClose();
     } catch (cause) {
       setError(String(cause));
@@ -55,6 +82,19 @@ export function SkillGroupDialogs({ edit, onClose }: { edit: GroupEdit; onClose:
         value={name}
         onChange={(event) => setName(event.currentTarget.value)}
         autoFocus
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !isImeComposition(event.nativeEvent) && name.trim()) {
+            event.preventDefault();
+            save();
+          }
+        }}
+      />
+      <TextField
+        label={t("Command")}
+        monospace
+        value={command}
+        placeholder={`/${skillGroupInvocation({ name })}`}
+        onChange={(event) => setCommand(event.currentTarget.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !isImeComposition(event.nativeEvent) && name.trim()) {
             event.preventDefault();

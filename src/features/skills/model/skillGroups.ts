@@ -6,16 +6,19 @@ import { truncateGraphemes } from "../../../shared/lib/text/truncate";
 export type SkillGroup = {
   id: string;
   name: string;
+  /** Owner-chosen slash command without the slash; unset derives `group-<name>`. */
+  invocation?: string;
   skillNames: string[];
   source: "ai" | "manual";
   updatedAt: number;
 };
-export type SkillGroupInput = Pick<SkillGroup, "name" | "skillNames"> & {
+export type SkillGroupInput = Pick<SkillGroup, "name" | "skillNames" | "invocation"> & {
   source?: SkillGroup["source"];
 };
 export const SKILL_GROUPS_KEY = "bycoda.skillGroups.v1";
 const event = "bycoda:skill-groups";
 const empty: SkillGroup[] = [];
+const INVOCATION_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 let lastRaw: string | null | undefined;
 let snapshot: SkillGroup[] = empty;
 
@@ -32,6 +35,10 @@ export function parseSkillGroups(raw: string | null): SkillGroup[] {
       ids.has(row.id) ||
       typeof row.name !== "string" ||
       !row.name.trim() ||
+      (row.invocation !== undefined &&
+        (typeof row.invocation !== "string" ||
+          row.invocation.length > 64 ||
+          !INVOCATION_RE.test(row.invocation))) ||
       !Array.isArray(row.skillNames) ||
       !row.skillNames.every((name: unknown) => typeof name === "string" && !!name.trim()) ||
       (row.source !== "ai" && row.source !== "manual") ||
@@ -43,6 +50,7 @@ export function parseSkillGroups(raw: string | null): SkillGroup[] {
     return {
       id: row.id,
       name: truncateGraphemes(row.name.trim(), 80),
+      ...(typeof row.invocation === "string" ? { invocation: row.invocation } : {}),
       skillNames: [...new Set(row.skillNames as string[])],
       source: row.source,
       updatedAt: row.updatedAt,
@@ -102,8 +110,12 @@ function update(id: string, change: (group: SkillGroup) => SkillGroup): void {
     groups.map((group) => (group.id === id ? { ...change(group), updatedAt: Date.now() } : group)),
   );
 }
-export function renameSkillGroup(id: string, name: string): void {
-  update(id, (group) => ({ ...group, name }));
+/** `invocation` "" restores the derived command; undefined keeps the current one. */
+export function renameSkillGroup(id: string, name: string, invocation?: string): void {
+  update(id, ({ invocation: current, ...group }) => {
+    const next = invocation === undefined ? current : invocation || undefined;
+    return { ...group, name, ...(next ? { invocation: next } : {}) };
+  });
 }
 export function deleteSkillGroup(id: string): void {
   write(read().filter((group) => group.id !== id));

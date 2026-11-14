@@ -1,4 +1,8 @@
-import { isSkillGroupPickerItem, skillGroupInsertion } from "../../skills/public/skillGroups";
+import {
+  expandSkillGroupTokens,
+  isSkillGroupPickerItem,
+  skillGroupInsertion,
+} from "../../skills/public/skillGroups";
 import { SessionSubagentsMenu } from "./SessionSubagentsMenu";
 import type { DockAgent } from "../model/activityDock";
 import { ComposerAction } from "./ComposerAction";
@@ -1022,7 +1026,7 @@ export const Composer = memo(function Composer({
     !handoffCard;
   const skillPickerOpen = creatingSkill || slash !== null;
   const pickerOpen = skillPickerOpen || sessionFolderOpen || mcpPickerOpen;
-  const { skillCatalog, promptTemplates, dollarSkills, rankedSkills, skillNames } =
+  const { skillCatalog, promptTemplates, dollarSkills, rankedSkills, skillNames, skillGroups } =
     useComposerSlashInventory({
       harness,
       executionCwd: localCwd,
@@ -1673,8 +1677,9 @@ export const Composer = memo(function Composer({
               slashRef.current !== token
             )
               return;
-            const edit = insertTemplateBody(el.value, token.start, token.end, body);
-            applyTextareaEdit(el, edit.text, edit.caret);
+            const spacer = el.value.slice(token.end).startsWith(" ") ? "" : " ";
+            const edit = insertTemplateBody(el.value, token.start, token.end, body + spacer);
+            applyTextareaEdit(el, edit.text, edit.caret + (spacer ? 0 : 1));
             setSlash(null);
             setCreatingSkill(false);
             el.focus();
@@ -2272,8 +2277,12 @@ export const Composer = memo(function Composer({
       return;
     }
 
+    // A group stays one chip in the draft; providers get its member invocations.
     const command = consumePlanCommand(
-      folderCommand.matched && sessionFolderSelected ? folderCommand.text : value,
+      expandSkillGroupTokens(
+        folderCommand.matched && sessionFolderSelected ? folderCommand.text : value,
+        skillGroups,
+      ),
     );
     // A typed /plan must behave like the disabled Plan button: say why, and
     // keep the draft instead of starting a turn the transport would refuse.
@@ -3505,6 +3514,7 @@ export const Composer = memo(function Composer({
                     mode={leadingMode}
                     names={skillNames}
                     skillParts={skillTextParts}
+                    skillGroups={skillGroups}
                     mentions={mentionIndex.labels}
                     mcpTags={selectedMcp}
                     attachments={attachments}

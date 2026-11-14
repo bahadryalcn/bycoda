@@ -220,6 +220,7 @@ function SkillGroupSection({
             { kind: "item", id: "collapse", label: expanded ? t("Collapse") : t("Expand") },
           ]}
           onPick={(action) => {
+            setMenu(null);
             if (action === "collapse") toggle();
             else onEdit({ kind: action === "rename" ? "rename" : "delete", group });
           }}

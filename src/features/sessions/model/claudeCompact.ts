@@ -24,7 +24,7 @@ export const CLAUDE_COMPACT_SETTINGS: ModelSetting[] = [
       "How many tokens the context may hold before auto-compacting. Overrides a window saved with /autocompact. Claude Code caps it at the model's context window.",
     options: [
       { value: "default", label: "Default" },
-      ...AUTO_COMPACT_WINDOWS.filter((tokens) => tokens >= 100_000).map((tokens) => ({
+      ...AUTO_COMPACT_WINDOWS.map((tokens) => ({
         value: String(tokens),
         label: tokens === 1_000_000 ? "1M" : `${tokens / 1000}K`,
       })),

@@ -14,6 +14,7 @@ const group: SkillGroupPickerItem = {
   templateId: "skill-group:1",
   groupId: "1",
   memberCount: 2,
+  members: ["alpha", "beta"],
   description: "alpha, beta",
   body: "",
 };

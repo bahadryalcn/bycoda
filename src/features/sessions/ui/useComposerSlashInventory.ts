@@ -202,12 +202,14 @@ export function useComposerSlashInventory(input: {
   );
   const skillNames = useMemo(
     () =>
-      new Set(
-        [OPERATOR_COMMAND, ...slashItems, ...dollarSkills]
+      new Set([
+        ...[OPERATOR_COMMAND, ...slashItems, ...dollarSkills]
           .filter((skill) => skill.kind !== "template")
           .map((skill) => skill.invocation),
-      ),
-    [slashItems, dollarSkills],
+        // Group tokens stay in the draft until send, so they paint and delete as one chip.
+        ...groupItems.map((group) => group.invocation),
+      ]),
+    [slashItems, dollarSkills, groupItems],
   );
   return {
     skillCatalog,
@@ -215,5 +217,6 @@ export function useComposerSlashInventory(input: {
     dollarSkills: dollarWithGroups,
     rankedSkills,
     skillNames,
+    skillGroups: groupItems,
   };
 }

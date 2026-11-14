@@ -21,6 +21,7 @@ export type { SkillGroupingModel } from "./model/skillGroupingModel";
 export {
   isSkillGroupPickerItem,
   skillGroupMembers,
+  skillGroupInvocation,
   skillGroupPickerItems,
   skillGroupInsertion,
 } from "./model/skillGroupPicker";

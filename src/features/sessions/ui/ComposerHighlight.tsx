@@ -16,6 +16,9 @@ import styles from "./ComposerHighlight.module.css";
 import { ModeCommandText, type ModeCommandToken } from "./modeCommands";
 import { workItemMentionParts } from "./ChatCitationText";
 import { ComposerWorkItemToken } from "./WorkItemMentionChip";
+import { ComposerSkillGroupHover, type ComposerSkillGroup } from "./ComposerSkillGroupHover";
+
+const NO_GROUPS: readonly { invocation: string; name: string; members: readonly string[] }[] = [];
 
 /** Overlay that paints skill, mention, MCP, attachment and quote tokens under the textarea. */
 export const ComposerHighlight = memo(function ComposerHighlight({
@@ -23,6 +26,7 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   mode,
   names,
   skillParts,
+  skillGroups = NO_GROUPS,
   mentions,
   mcpTags,
   attachments,
@@ -39,6 +43,8 @@ export const ComposerHighlight = memo(function ComposerHighlight({
     text: string,
     names: ReadonlySet<string>,
   ) => readonly { text: string; skill?: unknown }[];
+  /** Group tokens kept whole in the draft; painted with the group's name. */
+  skillGroups?: readonly { invocation: string; name: string; members: readonly string[] }[];
   mentions: ReadonlyMap<string, ProjectFile>;
   mcpTags: McpTag[];
   attachments: Attachment[];
@@ -52,8 +58,12 @@ export const ComposerHighlight = memo(function ComposerHighlight({
   useLocale();
   const edited = useEditedLink(text, field);
   const rest = mode ? text.slice(mode.end) : text;
+  const groups = new Map<string, ComposerSkillGroup>(
+    skillGroups.map((group) => [group.invocation, group]),
+  );
   return (
     <>
+      {groups.size ? <ComposerSkillGroupHover field={field} groups={groups} /> : null}
       {mode ? (
         <ModeCommandText
           text={text}
@@ -71,24 +81,28 @@ export const ComposerHighlight = memo(function ComposerHighlight({
             text={text}
             edited={edited}
             renderText={(plain) =>
-              skillParts(plain, names).map((part, index) =>
-                part.skill ? (
+              skillParts(plain, names).map((part, index) => {
+                const name = part.text.slice(1);
+                const group = part.skill ? groups.get(name) : undefined;
+                return part.skill ? (
                   <DraftToken
                     key={index}
                     prefix={part.text[0]}
                     icon={<Sparkles />}
-                    label={part.text.slice(1)}
+                    label={group ? `${group.name} · ${group.members.length}` : name}
                     className="text-skill"
                     data-composer-skill-token=""
+                    data-composer-skill-group={group ? name : undefined}
+                    data-composer-skill-group-prefix={group ? part.text[0] : undefined}
                   >
-                    {part.text.slice(1)}
+                    {name}
                   </DraftToken>
                 ) : (
                   // Skill tokens always end on whitespace, so each remaining run still
                   // starts on a boundary `@mention` matching can rely on.
                   <MentionRuns key={index} text={part.text} mentions={mentions} mcpTags={mcpTags} />
-                ),
-              )
+                );
+              })
             }
           />
         )}

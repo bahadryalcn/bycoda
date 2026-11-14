@@ -7,10 +7,20 @@ import {
   type SkillCatalogContext,
   type TemplateSkill,
 } from "./skills";
+import { skillInvocationTokens } from "./skillTokens";
 import { listSkillGroups, resolveSkillGroup, type SkillGroup } from "./skillGroups";
-export type SkillGroupPickerItem = TemplateSkill & { groupId: string; memberCount: number };
+export type SkillGroupPickerItem = TemplateSkill & {
+  groupId: string;
+  memberCount: number;
+  /** Member invocations, in group order. */
+  members: string[];
+};
 export function isSkillGroupPickerItem(skill: Skill): skill is SkillGroupPickerItem {
   return skill.kind === "template" && "groupId" in skill && typeof skill.groupId === "string";
+}
+/** Slash command of a group, without the slash. */
+export function skillGroupInvocation(group: Pick<SkillGroup, "name" | "invocation">): string {
+  return group.invocation || `group-${slugSkillName(group.name) || "skills"}`;
 }
 /** File skills and provider-reported invocations; exclude builtins and templates. */
 export function skillGroupMembers(
@@ -44,16 +54,20 @@ export function skillGroupPickerItems(
             templateId: `skill-group:${group.id}`,
             groupId: group.id,
             name: group.name,
-            invocation: `group-${slugSkillName(group.name) || "skills"}`,
+            invocation: skillGroupInvocation(group),
             description: members.map((skill) => skill.invocation).join(", "),
             memberCount: members.length,
+            members: members.map((skill) => skill.invocation),
             body: "",
           },
         ]
       : [];
   });
 }
-/** Selection-time discovery and authority refresh. Failed policy reads insert nothing. */
+/**
+ * Selection-time discovery and authority refresh. The draft keeps one group token
+ * (`/group-x`); it expands to member invocations at send. Failed policy reads insert nothing.
+ */
 export async function skillGroupInsertion(
   groupId: string,
   context: SkillCatalogContext,
@@ -63,7 +77,21 @@ export async function skillGroupInsertion(
   const policy = await loadSkillRestrictions(context.cwd, { refresh: true });
   const group = listSkillGroups().find((entry) => entry.id === groupId);
   if (!group) return "";
-  return skillGroupMembers(group, skills, policy)
-    .map((skill) => `${prefix}${skill.invocation}`)
-    .join(" ");
+  const [item] = skillGroupPickerItems([group], skills, policy);
+  return item ? `${prefix}${item.invocation}` : "";
+}
+
+/** Replaces each group token with its members' invocations, keeping the token's introducer. */
+export function expandSkillGroupTokens(text: string, groups: readonly SkillGroupPickerItem[]) {
+  const byInvocation = new Map(groups.map((group) => [group.invocation, group.members]));
+  let out = "";
+  let cursor = 0;
+  for (const token of skillInvocationTokens(text)) {
+    const members = byInvocation.get(token.name);
+    if (!members) continue;
+    const prefix = text[token.start];
+    out += text.slice(cursor, token.start) + members.map((name) => `${prefix}${name}`).join(" ");
+    cursor = token.end;
+  }
+  return out + text.slice(cursor);
 }

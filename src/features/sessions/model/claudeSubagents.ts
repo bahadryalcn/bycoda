@@ -22,10 +22,10 @@ export const CLAUDE_SUBAGENT_SETTINGS: ModelSetting[] = [
     kind: "select",
     value: "fallback",
     description:
-      "Force overrides agent model choices, including Explore and Plan. Requires Claude Code 2.1.257 or later. Forks and skills with model: inherit keep the main model. Account restrictions still apply.",
+      "Agent's choice uses your subagent model only for agents that set no model. Override all uses it for every agent, including Explore and Plan. Requires Claude Code 2.1.257 or later. Forks and skills with model: inherit keep the main model.",
     options: [
-      { value: "fallback", label: "Default" },
-      { value: "force", label: "Apply to all" },
+      { value: "fallback", label: "Agent's choice" },
+      { value: "force", label: "Override all" },
     ],
   },
 ];

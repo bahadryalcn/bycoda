@@ -34,6 +34,7 @@ import {
 } from "../model/modelPanelData";
 import { settingLabel, settingValue } from "../model/modelPickerData";
 import type { AgentModel, ModelSetting } from "../model/models";
+import { defaultAutoCompactWindow } from "../model/autoCompact";
 import { HARNESS_TITLE } from "../model/session";
 import { DelegationField, DelegationOptionIcon } from "./DelegationSettings";
 import { SubagentModeControl } from "./SubagentModeControl";
@@ -76,9 +77,9 @@ export function ModelSettingHelp({
 }) {
   const t = useT();
   const help = setting ? helpText(setting) : undefined;
-  const descriptions = (settings.length ? settings : setting ? [setting] : []).filter((item) =>
-    helpText(item),
-  );
+  const descriptions = (
+    settings.length ? settings : setting ? [setting] : []
+  ).filter((item) => helpText(item));
   return (
     <div
       data-model-setting-help
@@ -111,7 +112,9 @@ export function ModelSettingHelp({
           ))}
         </InfoPopover>
       ) : null}
-      {trailing ? <span className="ml-auto flex shrink-0">{trailing}</span> : null}
+      {trailing ? (
+        <span className="ml-auto flex shrink-0">{trailing}</span>
+      ) : null}
     </div>
   );
 }
@@ -154,10 +157,13 @@ export function ModelSettingsColumn({
     returnSetting.current = null;
     (
       row?.querySelector<HTMLElement>('[aria-checked="true"]') ??
-      row?.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled])")
+      row?.querySelector<HTMLElement>(
+        "button:not([disabled]), input:not([disabled])",
+      )
     )?.focus({ preventScroll: true });
   }, [pickingId]);
-  const shownTab: PanelTab = agents.length === 0 ? "settings" : model.length === 0 ? "agents" : tab;
+  const shownTab: PanelTab =
+    agents.length === 0 ? "settings" : model.length === 0 ? "agents" : tab;
   const shown = shownTab === "settings" ? model : agents;
   const setExplained = (next: ModelSetting | null) => {
     setExplainedId(next?.id ?? null);
@@ -165,7 +171,8 @@ export function ModelSettingsColumn({
   };
   const picking = shown.find((setting) => setting.id === pickingId);
   const pinned = shown.filter(
-    (setting) => shownTab === "settings" && settingControlKind(setting) === "effort",
+    (setting) =>
+      shownTab === "settings" && settingControlKind(setting) === "effort",
   );
   const scrolling = shown.filter((setting) => !pinned.includes(setting));
   const renderSetting = (setting: ModelSetting) => (
@@ -173,6 +180,7 @@ export function ModelSettingsColumn({
       key={setting.id}
       setting={setting}
       values={values}
+      defaultWindow={defaultAutoCompactWindow(current, values)}
       disabled={locked(setting)}
       onChoose={(value) => onChoose(setting, value)}
       onPick={() => {
@@ -182,10 +190,14 @@ export function ModelSettingsColumn({
     />
   );
   // Hover or focus names the setting whose help the strip shows.
-  const explain = (event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>) => {
-    const id = (event.target as HTMLElement).closest<HTMLElement>("[data-setting-id]")?.dataset
-      .settingId;
-    const next = shown.find((setting) => setting.id === (id ?? pickingId)) ?? null;
+  const explain = (
+    event: MouseEvent<HTMLElement> | FocusEvent<HTMLElement>,
+  ) => {
+    const id = (event.target as HTMLElement).closest<HTMLElement>(
+      "[data-setting-id]",
+    )?.dataset.settingId;
+    const next =
+      shown.find((setting) => setting.id === (id ?? pickingId)) ?? null;
     if (event.type === "focus") focusedSetting.current = next;
     const explained = focusedSetting.current ?? next;
     if ((explained?.id ?? null) !== explainedId) setExplained(explained);
@@ -250,7 +262,9 @@ export function ModelSettingsColumn({
           >
             {shown.length === 0 ? (
               <p className="px-1.5 py-2 ui-caption-text">
-                {t("{p0} has no extra options.", { p0: HARNESS_TITLE[current.harness] })}
+                {t("{p0} has no extra options.", {
+                  p0: HARNESS_TITLE[current.harness],
+                })}
               </p>
             ) : (
               scrolling.map(renderSetting)
@@ -265,12 +279,15 @@ export function ModelSettingsColumn({
 function SettingRow({
   setting,
   values,
+  defaultWindow,
   disabled,
   onChoose,
   onPick,
 }: {
   setting: ModelSetting;
   values: Record<string, string>;
+  /** Where the auto-compact slider sits while the window is left at Default. */
+  defaultWindow?: number;
   disabled: boolean;
   onChoose: (value: string) => void;
   /** Opens the column-wide picker for a long choice. */
@@ -285,7 +302,9 @@ function SettingRow({
   const isCeiling = setting.id === CROSS_SUBAGENT_MAX_EFFORT_KEY;
   const rawValue = settingValue(setting, values);
   const value = isCeiling ? subagentEffortCeiling(rawValue) : rawValue;
-  const valueLabel = labels[setting.options.findIndex((option) => option.value === value)] ?? value;
+  const valueLabel =
+    labels[setting.options.findIndex((option) => option.value === value)] ??
+    value;
   const help = helpText(setting);
   const describedBy = help ? `model-setting-help-${setting.id}` : undefined;
   const hiddenHelp = help ? (
@@ -296,13 +315,26 @@ function SettingRow({
   const row =
     "flex min-h-8 flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-md px-1.5";
   const name = (
-    <Text as="span" size="caption" tone="inherit" weight="medium" truncate className="min-w-0">
+    <Text
+      as="span"
+      size="caption"
+      tone="inherit"
+      weight="medium"
+      truncate
+      className="min-w-0"
+    >
       {label}
     </Text>
   );
   const heading = (trailing: ReactNode) => (
     <div className="flex items-center justify-between gap-2 px-1.5 pt-2 pb-1.5">
-      <Text as="span" size="caption" weight="medium" tone="secondary" className="min-w-0">
+      <Text
+        as="span"
+        size="caption"
+        weight="medium"
+        tone="secondary"
+        className="min-w-0"
+      >
         <span className="inline-flex items-center gap-1">
           {label}
           {help ? <InfoPopover label={label}>{t(help)}</InfoPopover> : null}
@@ -316,14 +348,21 @@ function SettingRow({
     const thresholds = setting.options
       .map((option) => Number(option.value))
       .filter((tokens) => tokens > 0);
-    const minimum = Math.min(...thresholds) - 50_000;
+    const minimum = Math.min(...thresholds);
     const maximum = Math.max(...thresholds);
-    const tokens = Number(value) || minimum;
+    const clamp = (next: number) =>
+      Math.min(maximum, Math.max(minimum, Math.round(next / 50_000) * 50_000));
+    // Default sits on the provider's own window, so the slider always shows a real value.
+    const fallback = clamp(defaultWindow ?? maximum);
+    const tokens =
+      value === "default" ? fallback : clamp(Number(value) || fallback);
+    const tokenLabel = (next: number) =>
+      setting.options.find((option) => Number(option.value) === next)?.label ??
+      formatNumber(next);
     const format = (next: number) =>
-      next === minimum
-        ? t("Default")
-        : (setting.options.find((option) => Number(option.value) === next)?.label ??
-          formatNumber(next));
+      next === fallback
+        ? t("Default: {p0}", { p0: tokenLabel(next) })
+        : tokenLabel(next);
     return (
       <div data-setting-id={setting.id} className="px-1.5 py-2">
         <Slider
@@ -335,7 +374,9 @@ function SettingRow({
           largeStep={50_000}
           format={format}
           disabled={disabled}
-          onValueChange={(next) => onChoose(next === minimum ? "default" : String(next))}
+          onValueChange={(next) =>
+            onChoose(next === fallback ? "default" : String(next))
+          }
         />
         {hiddenHelp}
       </div>
@@ -347,7 +388,12 @@ function SettingRow({
       <div data-setting-id={setting.id} className={row}>
         <span className="flex min-w-0 items-center gap-1.5">
           {setting.id === "fast" ? (
-            <Zap className="icon-xs shrink-0" tone="secondary" strokeWidth={1.75} aria-hidden />
+            <Zap
+              className="icon-xs shrink-0"
+              tone="secondary"
+              strokeWidth={1.75}
+              aria-hidden
+            />
           ) : null}
           {name}
         </span>
@@ -383,7 +429,11 @@ function SettingRow({
             <Text as="span" size="caption" tone="secondary">
               {value ? valueLabel : t("No limit")}
             </Text>
-            <SubagentEffortSwitch value={value} disabled={disabled} onChange={onChoose} />
+            <SubagentEffortSwitch
+              value={value}
+              disabled={disabled}
+              onChange={onChoose}
+            />
           </div>
         ) : null}
         <EffortBars
@@ -400,27 +450,37 @@ function SettingRow({
     );
   }
 
-  // A short delegation choice fits a segmented switch too. The subagent policy always does: one
-  // row of tabs right above the Subagents it governs, named by the help strip.
+  // A short delegation choice fits a segmented switch too. The subagent policy always does, under
+  // its own name and help so its two choices read as a policy rather than a bare toggle.
   const policy = setting.id === "subagentPolicy";
   const shortChoice =
     kind === "choices" &&
     !isMultiSetting(setting) &&
-    (policy || settingControlKind({ ...setting, id: "" }, labels) === "segmented");
+    (policy ||
+      settingControlKind({ ...setting, id: "" }, labels) === "segmented");
   if (kind === "segmented" || shortChoice) {
-    return (
+    const control = (
+      <SegmentedControl
+        label={label}
+        value={value}
+        onValueChange={onChoose}
+        options={setting.options.map((option, index) => ({
+          value: option.value,
+          label: labels[index],
+          disabled,
+        }))}
+      />
+    );
+    return policy ? (
+      <div data-setting-id={setting.id} className="pb-1">
+        {heading(null)}
+        <div className="px-1.5">{control}</div>
+        {hiddenHelp}
+      </div>
+    ) : (
       <div data-setting-id={setting.id} className={row}>
-        {policy ? null : name}
-        <SegmentedControl
-          label={label}
-          value={value}
-          onValueChange={onChoose}
-          options={setting.options.map((option, index) => ({
-            value: option.value,
-            label: labels[index],
-            disabled,
-          }))}
-        />
+        {name}
+        {control}
         {hiddenHelp}
       </div>
     );
@@ -440,7 +500,10 @@ function SettingRow({
       // Picked models share rows so identities and removal actions remain comparable.
       // The column owns scrolling so model lists and effort keep their reading order.
       return (
-        <div data-setting-id={setting.id} className="flex min-h-0 shrink-0 flex-col pb-1">
+        <div
+          data-setting-id={setting.id}
+          className="flex min-h-0 shrink-0 flex-col pb-1"
+        >
           {heading(
             picked.length || !subagents ? (
               <Text size="caption" tone="secondary">
@@ -459,7 +522,11 @@ function SettingRow({
               />
             </div>
           ) : null}
-          <div className="flex flex-col gap-1 px-1.5" role="group" aria-label={label}>
+          <div
+            className="flex flex-col gap-1 px-1.5"
+            role="group"
+            aria-label={label}
+          >
             {picked.map((option) => (
               <Text
                 as="span"
@@ -472,7 +539,12 @@ function SettingRow({
                 )}
               >
                 <DelegationOptionIcon setting={setting} value={option.value} />
-                <ClampText as="span" lines={2} expandable={false} className="min-w-0 flex-1">
+                <ClampText
+                  as="span"
+                  lines={2}
+                  expandable={false}
+                  className="min-w-0 flex-1"
+                >
                   {delegationShortLabel(setting, option.value, t(option.label))}
                 </ClampText>
                 <Button
@@ -512,7 +584,10 @@ function SettingRow({
         </div>
       );
     }
-    if (!isDelegationSetting(setting) && setting.options.length <= SHORT_LIST_MAX) {
+    if (
+      !isDelegationSetting(setting) &&
+      setting.options.length <= SHORT_LIST_MAX
+    ) {
       // Too long for a segmented switch: each choice stays readable on its own full-width row.
       return (
         <div data-setting-id={setting.id} className="pb-1">
@@ -556,7 +631,9 @@ function SettingRow({
           popup="dialog"
           onClick={onPick}
         >
-          {picked[0] ? <DelegationOptionIcon setting={setting} value={picked[0].value} /> : null}
+          {picked[0] ? (
+            <DelegationOptionIcon setting={setting} value={picked[0].value} />
+          ) : null}
           <Text size="inherit" tone="inherit" truncate className="min-w-0">
             {picked[0] ? t(picked[0].label) : labels[0]}
           </Text>
@@ -737,7 +814,10 @@ function EffortBars({
   const levels = ascendingEffortOptions(
     setting.options
       .map((option, index) => ({ value: option.value, label: labels[index] }))
-      .filter((option) => setting.id !== CROSS_SUBAGENT_MAX_EFFORT_KEY || Boolean(option.value)),
+      .filter(
+        (option) =>
+          setting.id !== CROSS_SUBAGENT_MAX_EFFORT_KEY || Boolean(option.value),
+      ),
   );
   return (
     <EffortScale

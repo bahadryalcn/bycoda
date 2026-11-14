@@ -18,15 +18,27 @@ import {
   modelDefault,
   type ModelDefault,
 } from "../model/modelDefaultMark";
-import { subscribeModels, type AgentModel, type ModelSetting } from "../model/models";
+import {
+  subscribeModels,
+  type AgentModel,
+  type ModelSetting,
+} from "../model/models";
 import {
   clearProjectDefault,
   pinProjectDefault,
   subscribeProjectProviders,
 } from "../model/projectProviders";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
-import { ModelAccountControl, ModelAccountList, usePanelAccounts } from "./ModelAccountSwitcher";
-import { ModelBrowser, type ModelBrowserProps, type ModelDefaultMark } from "./ModelBrowser";
+import {
+  ModelAccountControl,
+  ModelAccountList,
+  usePanelAccounts,
+} from "./ModelAccountSwitcher";
+import {
+  ModelBrowser,
+  type ModelBrowserProps,
+  type ModelDefaultMark,
+} from "./ModelBrowser";
 import { ModelSettingHelp, ModelSettingsColumn } from "./ModelSettingsColumn";
 import { useModelSource } from "./modelSource";
 
@@ -84,11 +96,14 @@ export function ModelPanel({
   );
   const shownAccounts = accountHarness ? accounts : [];
   const listOpen = accountListOpen && shownAccounts.length > 2;
+  // The rail already names the provider, so its tab header shows only its accounts.
   const title = browser.query.trim()
     ? t("Results")
     : browser.tab === "favorites"
       ? t("Favorites")
-      : HARNESS_TITLE[browser.tab];
+      : shownAccounts.length
+        ? null
+        : HARNESS_TITLE[browser.tab];
 
   const defaultMark = useDefaultMark(
     project,
@@ -120,7 +135,8 @@ export function ModelPanel({
       data-model-panel
       style={
         {
-          "--layout-height": PANEL_HEIGHT === undefined ? undefined : PANEL_HEIGHT + "px",
+          "--layout-height":
+            PANEL_HEIGHT === undefined ? undefined : PANEL_HEIGHT + "px",
         } as CSSProperties
       }
       className="flex min-h-0 flex-col overflow-hidden [height:var(--layout-height)]"
@@ -133,15 +149,17 @@ export function ModelPanel({
             defaultMark={defaultMark?.mark}
             header={
               <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
-                <Text
-                  as="span"
-                  size="caption"
-                  weight="medium"
-                  tone="secondary"
-                  className="shrink-0"
-                >
-                  {title}
-                </Text>
+                {title ? (
+                  <Text
+                    as="span"
+                    size="caption"
+                    weight="medium"
+                    tone="secondary"
+                    className="shrink-0"
+                  >
+                    {title}
+                  </Text>
+                ) : null}
                 {browser.query.trim() ? null : (
                   <ModelAccountControl
                     accounts={shownAccounts}
@@ -167,7 +185,9 @@ export function ModelPanel({
               ) : undefined
             }
           />
-          {settings ? <ModelSettingsColumn {...settings} onExplain={setExplained} /> : null}
+          {settings ? (
+            <ModelSettingsColumn {...settings} onExplain={setExplained} />
+          ) : null}
         </div>
       </div>
       {settings ? (
@@ -199,9 +219,11 @@ export function ModelPanel({
 }
 
 function subscribeDefaultMark(onChange: () => void): () => void {
-  const unsubscribe = [subscribeModels, subscribeProjectProviders, subscribeProviderAccounts].map(
-    (subscribe) => subscribe(onChange),
-  );
+  const unsubscribe = [
+    subscribeModels,
+    subscribeProjectProviders,
+    subscribeProviderAccounts,
+  ].map((subscribe) => subscribe(onChange));
   return () => unsubscribe.forEach((off) => off());
 }
 
@@ -212,7 +234,10 @@ function readDefaultMark(project: string | undefined, local: boolean): string {
   const { harness, accountId } = value;
   // The account joins the path only when the provider has more than one to choose from.
   const accountName =
-    local && accountId && supportsProviderAccounts(harness) && providerAccounts(harness).length > 1
+    local &&
+    accountId &&
+    supportsProviderAccounts(harness) &&
+    providerAccounts(harness).length > 1
       ? providerAccountLabel(harness, accountId)
       : undefined;
   return JSON.stringify({ value, accountName });
@@ -240,7 +265,11 @@ function useDefaultMark(
     accountName?: string;
   };
   const { harness } = value;
-  const path = [HARNESS_TITLE[harness], accountName, source.resolve(harness, value.model).name]
+  const path = [
+    HARNESS_TITLE[harness],
+    accountName,
+    source.resolve(harness, value.model).name,
+  ]
     .filter(Boolean)
     .join(" › ");
   const onPin = (item: AgentModel) => {
@@ -249,7 +278,12 @@ function useDefaultMark(
       clearProjectDefault(project);
       return;
     }
-    pinProjectDefault(project, item.harness, item.id, local ? viewed : undefined);
+    pinProjectDefault(
+      project,
+      item.harness,
+      item.id,
+      local ? viewed : undefined,
+    );
   };
   return {
     value,
@@ -258,7 +292,12 @@ function useDefaultMark(
       pinned: value.pinned,
       path,
       isDefault: (item) =>
-        isModelDefault(value, item.harness, item.id, tab === item.harness ? accountId : undefined),
+        isModelDefault(
+          value,
+          item.harness,
+          item.id,
+          tab === item.harness ? accountId : undefined,
+        ),
       onPin,
     },
   };

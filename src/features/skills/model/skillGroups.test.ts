@@ -59,3 +59,13 @@ it("retains source on invalid move and reports persistence failures", () => {
   spy.mockRestore();
   expect(listSkillGroups()[0].name).toBe("A");
 });
+it("keeps, sets and clears an owner-chosen command", () => {
+  const group = createSkillGroup({ name: "UI", skillNames: [], invocation: "ui-kit" });
+  renameSkillGroup(group.id, "Interface");
+  expect(listSkillGroups()[0]).toMatchObject({ name: "Interface", invocation: "ui-kit" });
+  renameSkillGroup(group.id, "Interface", "design");
+  expect(listSkillGroups()[0].invocation).toBe("design");
+  renameSkillGroup(group.id, "Interface", "");
+  expect(listSkillGroups()[0]).not.toHaveProperty("invocation");
+  expect(() => renameSkillGroup(group.id, "Interface", "Not Valid")).toThrow();
+});
