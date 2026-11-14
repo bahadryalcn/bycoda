@@ -51,6 +51,7 @@ export function createModelRoutingService(ports: ModelRoutingPorts): ModelRoutin
               available: () => true,
               signedIn: () => true,
               quota: () => ({ unknown: true as const }),
+              accountKind: () => undefined,
             }
           : await ports.signals(state);
       return selectModelRouting(state, input, signals);

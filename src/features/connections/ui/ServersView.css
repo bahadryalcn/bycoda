@@ -57,6 +57,10 @@
 .server-connection-tools {
   container-type: inline-size;
 }
+.servers-catalog {
+  container-name: server-catalog;
+  container-type: inline-size;
+}
 .servers-detail-pane {
   flex: 0 0 60%;
 }
@@ -73,10 +77,16 @@
     flex-basis: 100%;
     min-inline-size: 100%;
   }
+}
+@container server-catalog (max-width: 600px) {
   .server-list-row .server-identity {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
     gap: 4px 8px;
+  }
+  .server-list-row .server-row-status {
+    grid-column: 1 / -1;
+    flex-wrap: wrap;
   }
   .server-selection {
     flex-basis: 32px;

@@ -7,6 +7,7 @@ import {
   markHarnessAvailabilityProbed,
 } from "../../../src/integrations/harness/core/availabilityState";
 import { getHarnessUpdateSnapshot } from "../../../src/features/providers/model/harnessUpdateActions";
+import { setHarnessModels } from "../../../src/features/sessions/model/models";
 
 const enabled = new URLSearchParams(location.search).has("providersFixture");
 const worstIdentities = new URLSearchParams(location.search).has("providerIdentityStress");
@@ -68,6 +69,24 @@ export function seedProvidersFixture() {
     accounts.codex[0].label = "Personal account with a very long display name";
   }
   registerBuiltinHarnesses();
+  // Synthetic Host catalog for the supplied Providers screen, isolated to this fixture.
+  setHarnessModels(
+    "codex",
+    [
+      "GPT-6.1-Sol",
+      "GPT-6-Astra",
+      "GPT-6.1 Terra",
+      "GPT-6-Sol",
+      "GPT-6-Luna",
+      "GPT-5.6-Sol",
+      "GPT-5.6-Terra",
+      "GPT-5.6-Luna",
+    ].map((name) => ({
+      id: `codex:${name.toLowerCase().replaceAll(" ", "-")}`,
+      harness: "codex",
+      name,
+    })),
+  );
   configureChildBackend({
     invoke: async <T>(command: string, args: Record<string, unknown> = {}) => {
       const value = providersFixtureCommand(command, args);

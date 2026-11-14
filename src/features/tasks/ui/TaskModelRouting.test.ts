@@ -219,8 +219,6 @@ it.each(["task", "goal", "steward"])(
             onChange: changed,
             target: machine,
             routingSupported: true,
-            projectName: "Project",
-            hasProject: true,
             localAccounts: false,
             defaultAccountFor: () => undefined,
           }),

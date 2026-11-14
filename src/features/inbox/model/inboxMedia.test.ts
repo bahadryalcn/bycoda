@@ -215,4 +215,20 @@ describe("fetchInboxMedia", () => {
     await expect(fetchInboxMedia(url(200))).rejects.toThrow("offline");
     expect((await fetchInboxMedia(url(200))).byteLength).toBe(8);
   });
+
+  it("invalidates only the failed URL and fetches corrected bytes", async () => {
+    const { invalidateInboxMedia } = await import("./inboxMedia");
+    const bad = new Uint8Array([1]);
+    const good = new Uint8Array([2]);
+    invoke
+      .mockResolvedValueOnce(bad.buffer)
+      .mockResolvedValueOnce(good.buffer)
+      .mockResolvedValueOnce(good.buffer);
+    await fetchInboxMedia(url(1));
+    const other = await fetchInboxMedia(url(2));
+    invalidateInboxMedia(url(1));
+    expect(await fetchInboxMedia(url(1))).toEqual(good);
+    expect(await fetchInboxMedia(url(2))).toBe(other);
+    expect(invoke).toHaveBeenCalledTimes(3);
+  });
 });

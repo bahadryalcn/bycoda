@@ -202,6 +202,7 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
         <TimePicker
           label={t("Time")}
           hideLabel
+          required
           value={trigger.time}
           onChange={(value) => {
             if (value) onChange({ ...trigger, time: value });

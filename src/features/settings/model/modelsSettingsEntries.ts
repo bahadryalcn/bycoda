@@ -20,7 +20,7 @@ export const modelsSettingsEntries: SettingsEntry[] = [
   },
   {
     id: "models-chat",
-    section: "models",
+    section: "providers",
     get label() {
       return t("Chat defaults");
     },
@@ -28,7 +28,7 @@ export const modelsSettingsEntries: SettingsEntry[] = [
   },
   {
     id: "default-provider",
-    section: "models",
+    section: "providers",
     get label() {
       return t("Default provider");
     },

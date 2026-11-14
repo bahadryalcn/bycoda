@@ -1,3 +1,27 @@
+.workspace {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: start;
+  gap: var(--space-8);
+  min-inline-size: 0;
+}
+.work,
+.overview {
+  display: grid;
+  align-content: start;
+  gap: var(--space-6);
+  min-inline-size: 0;
+}
+.workspace:not(:has(.work)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 900px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+  }
+}
 .notes {
   display: grid;
   gap: 8px;
@@ -52,7 +76,7 @@
 
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   min-inline-size: 0;
 }

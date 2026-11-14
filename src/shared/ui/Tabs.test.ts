@@ -35,6 +35,7 @@ it("keeps icon-only view navigation labelled and keyboard selectable", async () 
     ),
   );
   const tabs = host.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+  const reveal = vi.spyOn(tabs[1], "scrollIntoView");
   expect(tabs[0].getAttribute("aria-label")).toBe("Preview");
   expect(tabs[0].querySelector("svg")).not.toBeNull();
   expect(tabs[0].textContent).toBe("");
@@ -44,6 +45,7 @@ it("keeps icon-only view navigation labelled and keyboard selectable", async () 
   );
   expect(onValueChange).toHaveBeenLastCalledWith("source");
   expect(document.activeElement).toBe(tabs[1]);
+  expect(reveal).toHaveBeenCalledWith({ block: "nearest", inline: "nearest", behavior: "instant" });
 });
 
 function rail(onValueChange: (v: string) => void, onKeyDown?: (e: unknown) => void) {

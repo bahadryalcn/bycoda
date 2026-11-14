@@ -1,8 +1,172 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { Activity, act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { Sheet } from "./Sheet";
+import { Modal } from "./Modal";
+
+it("leaves Escape in another pane alone and closes only the focused pane", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const first = vi.fn();
+  const second = vi.fn();
+  try {
+    act(() =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          ...[first, second].map((onClose, index) =>
+            createElement(
+              "div",
+              { key: index },
+              createElement("button", { id: `outside-${index}` }, "Catalog"),
+              createElement(Sheet, {
+                modal: false,
+                anchor: "container",
+                title: `Pane ${index}`,
+                initialFocus: false,
+                dismissOnOutside: false,
+                onClose,
+                children: createElement("input", { id: `inside-${index}` }),
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+    document.getElementById("inside-1")!.focus();
+    act(() =>
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledOnce();
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("leaves Escape to a nested modal before closing its container sheet", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const close = vi.fn();
+  const closeModal = vi.fn();
+  const draw = (nested: boolean) =>
+    act(() =>
+      root.render(
+        createElement(Sheet, {
+          modal: false,
+          anchor: "container",
+          title: "Details",
+          initialFocus: false,
+          onClose: close,
+          children: createElement(
+            "div",
+            null,
+            createElement("input", { id: "sheet-draft", defaultValue: "draft" }),
+            nested
+              ? createElement(Modal, {
+                  title: "Edit",
+                  onClose: closeModal,
+                  children: createElement("input"),
+                })
+              : null,
+          ),
+        }),
+      ),
+    );
+  try {
+    draw(true);
+    act(() =>
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(closeModal).toHaveBeenCalledOnce();
+    expect(close).not.toHaveBeenCalled();
+    draw(false);
+    document.getElementById("sheet-draft")!.focus();
+    act(() =>
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("releases Escape while Activity hides the sheet and preserves its draft", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const close = vi.fn();
+  const draw = (visible: boolean) =>
+    act(() =>
+      root.render(
+        createElement(Activity, {
+          mode: visible ? "visible" : "hidden",
+          children: createElement(Sheet, {
+            modal: false,
+            anchor: "container",
+            title: "Details",
+            initialFocus: false,
+            onClose: close,
+            children: createElement("input", { id: "retained-draft", defaultValue: "draft" }),
+          }),
+        }),
+      ),
+    );
+  try {
+    draw(true);
+    const field = document.getElementById("retained-draft") as HTMLInputElement;
+    field.value = "unfinished";
+    draw(false);
+    act(() =>
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(close).not.toHaveBeenCalled();
+    draw(true);
+    expect(document.getElementById("retained-draft")).toBe(field);
+    expect(field.value).toBe("unfinished");
+    field.focus();
+    act(() =>
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+          cancelable: true,
+          isComposing: true,
+        }),
+      ),
+    );
+    expect(close).not.toHaveBeenCalled();
+    act(() =>
+      field.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      ),
+    );
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    act(() => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
 
 it("keeps a persistent non-modal workspace named as a region with its custom header", () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

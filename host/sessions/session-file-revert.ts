@@ -16,6 +16,7 @@ import { dirname, join, relative } from "node:path";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 import { safeGitPath } from "../workspaces/workspace";
 import { writeFileAtomic } from "../storage/atomic-write";
+import { IdentifierSchema } from "../../src/shared/model/host-contracts/schemas";
 import type { HarnessFileChange } from "../../src/integrations/harness/core/types";
 
 type Image = { raw: string; mode: number } | null;
@@ -664,7 +665,8 @@ export class SessionFileRevert {
   }
   async begin(session: string, cwd: string, turnId: string, userBlockId = turnId) {
     validId(turnId);
-    validId(userBlockId);
+    // Transcript block IDs are opaque RPC identifiers, never path components.
+    IdentifierSchema.parse(userBlockId);
     cwd = await realpath(cwd);
     if (this.active.get(session)?.turn.id === turnId) return;
     if (this.active.has(session))
@@ -961,7 +963,7 @@ export class SessionFileRevert {
   ): Promise<FilesRevertPlan> {
     const generation = fileRevertGeneration(authorityGeneration);
     await assertFileRevertAuthority(this.authority, session, generation);
-    validId(userBlockId);
+    IdentifierSchema.parse(userBlockId);
     cwd = await realpath(cwd);
     if (this.active.has(session)) return { files: [], unavailable: "Session is still running" };
     let history: History;
@@ -993,7 +995,7 @@ export class SessionFileRevert {
   /** Call only after conversation rewind has persisted, for BOTH file choices.
    * Truncation changes bookkeeping; it never modifies checkout files. */
   async forgetFromMessage(session: string, cwd: string, userBlockId: string) {
-    validId(userBlockId);
+    IdentifierSchema.parse(userBlockId);
     cwd = await realpath(cwd);
     if (this.active.has(session)) throw new Error("Session is still running");
     const history = await this.load(session, cwd);
@@ -1012,7 +1014,7 @@ export class SessionFileRevert {
   ) {
     const generation = fileRevertGeneration(authorityGeneration);
     await assertFileRevertAuthority(this.authority, session, generation);
-    validId(userBlockId);
+    IdentifierSchema.parse(userBlockId);
     cwd = await realpath(cwd);
     if (this.active.has(session)) throw new Error("Session is still running");
     const history = await this.load(session, cwd);

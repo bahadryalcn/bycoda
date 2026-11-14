@@ -54,9 +54,11 @@ import { Popover } from "../../../shared/ui/Popover";
 import { AttachmentChip } from "../../sessions/ui/AttachmentChip";
 import { ComposerHighlight } from "../../sessions/ui/ComposerHighlight";
 import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
-import { skillTextParts } from "../../skills/model/skills";
+import { skillTextParts, skillInvocationTokens } from "../../skills/model/skills";
 import {
   attachmentTokens,
+  deleteTokenAtCaret,
+  attachmentsDroppedByEdit,
   insertAtSelection,
   removeAttachmentFromText,
   tokensForIncoming,
@@ -499,6 +501,40 @@ export function QuickComposer({
     if (!owner.canMutate()) {
       event.preventDefault();
       return;
+    }
+    const field = event.currentTarget;
+    if (
+      (event.key === "Backspace" || event.key === "Delete") &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      field.selectionStart === field.selectionEnd
+    ) {
+      const edit = deleteTokenAtCaret(
+        field.value,
+        field.selectionStart,
+        event.key === "Backspace" ? "back" : "forward",
+        attachments.files,
+        [],
+        skillInvocationTokens(field.value).filter((token) => skillNames.has(token.name)),
+      );
+      if (edit) {
+        event.preventDefault();
+        const previous = attachments.files;
+        const dropped = attachmentsDroppedByEdit(field.value, edit.text, previous);
+        let text = edit.text;
+        let caret = edit.caret;
+        for (const index of dropped.sort((a, b) => b - a)) {
+          caret = removeAttachmentFromText(text.slice(0, caret), previous, index).length;
+          text = removeAttachmentFromText(text, previous, index);
+          attachments.remove(previous[index].id);
+        }
+        field.value = text;
+        field.setSelectionRange(caret, caret);
+        setPrompt(text);
+        syncPromptCommand(field);
+        return;
+      }
     }
     if (picker === "commands") {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {

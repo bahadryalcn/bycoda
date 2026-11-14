@@ -61,6 +61,7 @@ export function ConversationHeader({
                   size="caption"
                   tone="secondary"
                   leading="inherit"
+                  truncate
                   className={styles.summaryText}
                 >
                   {t("Updating conversation summary")}

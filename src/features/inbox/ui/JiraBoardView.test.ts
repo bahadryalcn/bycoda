@@ -376,3 +376,107 @@ it("clears an open drag when the board unmounts", async () => {
   expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
   root = createRoot(container);
 });
+
+it("rejects a pending board read after board permission is revoked", async () => {
+  const loaded = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(JiraBoardView, {
+        revision: 0,
+        onSelect: vi.fn(),
+        onChanged: changed,
+        onIssuesLoaded: loaded,
+      }),
+    ),
+  );
+  const previous = invoke.getMockImplementation()!;
+  let resolvePage!: (value: unknown) => void;
+  invoke.mockImplementation((command, args) =>
+    command === "jira_board_issues"
+      ? new Promise((resolve) => {
+          resolvePage = resolve;
+        })
+      : previous(command, args),
+  );
+  await click("Refresh");
+  expect(resolvePage).toBeDefined();
+  await act(async () => saveAllowedJiraBoardIds([]));
+  loaded.mockClear();
+  await act(async () => resolvePage({ issues: [issue], nextPageToken: null }));
+  expect(container.textContent).not.toContain("ENG-1");
+  expect(loaded.mock.calls.flat().flat()).not.toContainEqual(issue);
+});
+
+it("offers continuation when an empty page still has a cursor", async () => {
+  const previous = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "jira_board_issues"
+      ? Promise.resolve(
+          args.nextPageToken
+            ? { issues: [issue], nextPageToken: null }
+            : { issues: [], nextPageToken: "next" },
+        )
+      : previous(command, args),
+  );
+  await click("Refresh");
+  await click("Load more issues");
+  expect(container.textContent).toContain("ENG-1");
+});
+
+it("opens an issue after a below-threshold pointer gesture", async () => {
+  const select = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(JiraBoardView, {
+        revision: 0,
+        onSelect: select,
+        onChanged: changed,
+      }),
+    ),
+  );
+  const open = container.querySelector<HTMLButtonElement>(".jira-board-card-open")!;
+  await pointer(open, "pointerdown", { button: 0, pointerType: "mouse", clientX: 5, clientY: 5 });
+  await pointer(open, "pointermove", { pointerType: "mouse", clientX: 7, clientY: 7 });
+  await pointer(open, "pointerup", { pointerType: "mouse", clientX: 7, clientY: 7 });
+  await act(async () => open.click());
+  expect(select).toHaveBeenCalledWith(
+    expect.objectContaining({ identifier: "ENG-1", jiraBoardId: 7 }),
+  );
+  expect(invoke).not.toHaveBeenCalledWith("jira_board_move", expect.anything());
+});
+
+it("keeps loaded issues and offers retry after a later page fails", async () => {
+  const previous = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command, args) =>
+    command === "jira_board_issues"
+      ? args.nextPageToken
+        ? Promise.reject("Page unavailable")
+        : Promise.resolve({ issues: [issue], nextPageToken: "next" })
+      : previous(command, args),
+  );
+  await click("Refresh");
+  await click("Load more issues");
+  expect(container.textContent).toContain("ENG-1");
+  expect(container.textContent).toContain("Page unavailable");
+  expect(container.textContent).toContain("Retry");
+});
+
+it("leaves touch gestures on the card to scrolling and still opens detail", async () => {
+  const select = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(JiraBoardView, {
+        revision: 0,
+        onSelect: select,
+        onChanged: changed,
+      }),
+    ),
+  );
+  const open = container.querySelector<HTMLButtonElement>(".jira-board-card-open")!;
+  await pointer(open, "pointerdown", { button: 0, pointerType: "touch", clientX: 5, clientY: 5 });
+  await pointer(open, "pointermove", { pointerType: "touch", clientX: 70, clientY: 70 });
+  await pointer(open, "pointerup", { pointerType: "touch", clientX: 70, clientY: 70 });
+  await act(async () => open.click());
+  expect(select).toHaveBeenCalledOnce();
+  expect(hint()).toBeNull();
+});

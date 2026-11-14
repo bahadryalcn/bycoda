@@ -19,11 +19,22 @@ import { Button } from "../../../src/shared/ui/Button";
 import type { JiraBoardIssue } from "../../../src/features/inbox/model/jiraBoard";
 import { setLanguagePreference } from "../../../src/shared/i18n";
 import "../../../src/styles/index.css";
+import { inboxAudit, inboxAuditResponse, InboxAuditFixture } from "./inbox-audit";
 
 // Offline fixture: no live Jira credentials, requests or mutations.
 localStorage.setItem("bycoda.jiraAllowedBoards", "[7]");
 localStorage.removeItem("bycoda.jiraHiddenProjects");
 const calls: { command: string; args: Record<string, unknown> }[] = [];
+const accountEmpty = new URLSearchParams(location.search).get("accountEmpty");
+const pendingProvider = new URLSearchParams(location.search).get("pendingProvider");
+const pendingProviderReads: (() => void)[] = [];
+let pendingProviderReleased = false;
+Object.assign(window, {
+  inboxFixtureFinishPending: () => {
+    pendingProviderReleased = true;
+    for (const finish of pendingProviderReads.splice(0)) finish();
+  },
+});
 let fail = false;
 const issue = (key: string, title: string, statusId: string): JiraBoardIssue => ({
   provider: "jira",
@@ -96,6 +107,8 @@ Object.assign(window, {
     convertFileSrc: (path: string) => path,
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       calls.push({ command, args });
+      const auditResponse = await inboxAuditResponse(command, args);
+      if (auditResponse !== undefined) return auditResponse;
       if (command === "git_commit_file_diff")
         return {
           current: "const first = 1;\nexpect(first).toBe(2);\nfinish();",
@@ -106,10 +119,24 @@ Object.assign(window, {
       if (command === "git_github_pr_action") return { ...pullRequest, state: "merged" };
       if (command.endsWith("_status"))
         return {
-          connected: command === "jira_status",
+          connected: accountEmpty
+            ? command === `${accountEmpty === "azuredevops" ? "azure_devops" : accountEmpty}_status`
+            : pendingProvider
+              ? command === "gitlab_status" || command === "linear_status"
+              : command === "jira_status",
           site: "https://example.atlassian.net",
           email: "fixture@example.test",
         };
+      if (command === "gitlab_list_todos" && pendingProvider)
+        return pendingProviderReleased
+          ? []
+          : new Promise((resolve) => {
+              pendingProviderReads.push(() => resolve([]));
+            });
+      if (command === "gitlab_list_todos" || command === "azure_devops_list_todos") return [];
+      if (command === "linear_list_teams") return [{ id: "1", key: "ENG", name: "Engineering" }];
+      if (command === "linear_list_issues")
+        return [{ ...issues[0], provider: "linear", kind: "linear" }];
       if (command === "jira_list_projects") return [{ id: "1", key: "ENG", name: "Engineering" }];
       if (command === "jira_issue_details")
         return {
@@ -216,7 +243,11 @@ Object.assign(window, {
     },
   },
 });
-await setLanguagePreference("en");
+await setLanguagePreference(
+  new URLSearchParams(location.search).get("lang") === "tr" ? "tr" : "en",
+);
+if (new URLSearchParams(location.search).get("theme") === "light")
+  document.documentElement.classList.add("theme-light");
 document.body.style.cssText =
   "height:100vh;margin:0;background:var(--color-background-base);color:var(--color-content)";
 function Fixture() {
@@ -281,11 +312,15 @@ function InboxFixture() {
     >
       <div className="flex h-dvh min-w-0 flex-col">
         <InboxView
-          cwd="/fixture/workspace"
-          recents={[
-            { path: "/fixture/workspace", openedAt: 1 },
-            { path: "/fixture/portal", openedAt: 1 },
-          ]}
+          cwd={accountEmpty || pendingProvider ? "" : "/fixture/workspace"}
+          recents={
+            accountEmpty || pendingProvider
+              ? []
+              : [
+                  { path: "/fixture/workspace", openedAt: 1 },
+                  { path: "/fixture/portal", openedAt: 1 },
+                ]
+          }
           onAsk={async () => ""}
           onAskRestart={async () => ""}
           onAskMount={() => {}}
@@ -298,11 +333,23 @@ function InboxFixture() {
 }
 const inbox = new URLSearchParams(location.search).has("inbox");
 if (inbox) {
-  localStorage.setItem("bycoda.inboxSource", "jira");
+  const selectedSource = accountEmpty ?? pendingProvider ?? "jira";
+  localStorage.setItem("bycoda.inboxSource", selectedSource);
+  if (accountEmpty || pendingProvider)
+    localStorage.setItem(
+      "bycoda.inboxFilters",
+      JSON.stringify({ ...DEFAULT_INBOX_FILTERS, assignedToMe: true }),
+    );
   localStorage.setItem("bycoda.inboxSeen", JSON.stringify({ seeded: true, items: {} }));
   localStorage.setItem(
     "bycoda.inboxConnections",
-    JSON.stringify({ github: false, linear: false, jira: true, gitlab: false, azuredevops: false }),
+    JSON.stringify({
+      github: false,
+      linear: !!pendingProvider,
+      jira: selectedSource === "jira",
+      gitlab: selectedSource === "gitlab",
+      azuredevops: selectedSource === "azuredevops",
+    }),
   );
 }
 function CommentEditorFixture() {
@@ -345,7 +392,9 @@ function CommentEditorFixture() {
 }
 
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("commentEditor") ? (
+  inboxAudit ? (
+    <InboxAuditFixture />
+  ) : new URLSearchParams(location.search).has("commentEditor") ? (
     <CommentEditorFixture />
   ) : new URLSearchParams(location.search).has("checks-fixture") ? (
     <main style={{ padding: 24, maxWidth: 720 }}>

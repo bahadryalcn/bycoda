@@ -3394,7 +3394,7 @@ describe("shared queued messages", () => {
     ).toEqual(["keep"]);
   });
 
-  it("dispatches an explicitly selected idle row while retaining a paused queue", async () => {
+  it("dispatches an explicitly selected desktop claim once while retaining a paused queue", async () => {
     const s = await setup();
     const created = await s.engine.command({
       type: "create",
@@ -3406,7 +3406,7 @@ describe("shared queued messages", () => {
       runtimeMode: "supervised",
     });
     const sessionId = created.sessionId;
-    const clientId = "remote:pc1";
+    const clientId = "desktop:pc1";
     const messages = [
       { id: "a", text: "retain a", attachments: [] },
       { id: "b", text: "selected b", attachments: [] },
@@ -3431,10 +3431,33 @@ describe("shared queued messages", () => {
       queued: { ...command.queued, selected: false },
     });
     expect(rejected.value.error).toMatch(/queue changed/i);
-    expect((await s.call("commands.dispatch", command)).value.error).toBeUndefined();
+    const claimed = await s.call("sessions.queue.claim", {
+      sessionId,
+      clientId,
+      id: "b",
+      revision: published.value.result.revision,
+      steer: true,
+    });
+    const claimedCommand = {
+      ...command,
+      queued: {
+        ...command.queued,
+        revision: claimed.value.result.revision,
+        claimToken: claimed.value.result.claim.token,
+      },
+    };
+    const accepted = await s.call("commands.dispatch", claimedCommand);
+    expect(accepted.value.error).toBeUndefined();
+    expect(
+      (await s.call("commands.dispatch", claimedCommand, s.second.token)).value.result,
+    ).toEqual(accepted.value.result);
     const queue = (await s.call("sessions.queue.get", { sessionId, clientId })).value.result;
     expect(queue.messages.map((row: { id: string }) => row.id)).toEqual(["a"]);
     expect(queue.status).toBe("paused");
+    expect(queue.settled).toMatchObject({
+      token: claimed.value.result.claim.token,
+      accepted: true,
+    });
     // The committed send also awaits its actual file-history checkpoint.
     await s.started;
     expect(s.send).toHaveBeenCalledOnce();
@@ -5805,7 +5828,6 @@ describe("remote host API", () => {
     expect((await s.call("goals.list")).value.result).toEqual([]);
   });
 });
-
 describe("host settings commands", () => {
   it("answers host.settings.get and save, advertised as a capability", async () => {
     const s = await setup();
@@ -5813,6 +5835,7 @@ describe("host settings commands", () => {
       "host.settings",
     );
     expect((await s.call("host.settings.get")).value.result).toEqual({
+      providerAccountStyles: {},
       maxRunningTasks: 2,
       dailyAgentMinutes: 0,
       usedMinutes: 0,

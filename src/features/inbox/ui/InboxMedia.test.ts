@@ -4,11 +4,13 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { InboxMedia } from "./InboxMedia";
 import { fetchInboxMedia } from "../model/inboxMedia";
+import { invalidateInboxMedia } from "../model/inboxMedia";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 
 vi.mock("../model/inboxMedia", async (original) => ({
   ...(await original<typeof import("../model/inboxMedia")>()),
   fetchInboxMedia: vi.fn(),
+  invalidateInboxMedia: vi.fn(),
 }));
 vi.mock("../../../shared/lib/openUrlSafely", () => ({ openUrlSafely: vi.fn() }));
 vi.mock("../../files/public/PdfViewer", () => ({
@@ -27,6 +29,24 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
+});
+
+it.each([
+  ["image", [137, 80, 78, 71, 13, 10, 26, 10]],
+  ["video", [0, 0, 0, 32, 102, 116, 121, 112, 105, 115, 111, 109]],
+])("invalidates failed %s bytes before retry", async (kind, signature) => {
+  vi.mocked(fetchInboxMedia).mockResolvedValue(new Uint8Array(signature as number[]));
+  await render();
+  await act(async () =>
+    container.querySelector(kind === "image" ? "img" : "video")!.dispatchEvent(new Event("error")),
+  );
+  await act(async () => container.querySelector("button")!.click());
+  const retry = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ).find((button) => button.textContent?.includes("Retry"))!;
+  await act(async () => retry.click());
+  expect(invalidateInboxMedia).toHaveBeenCalledExactlyOnceWith(source);
+  expect(fetchInboxMedia).toHaveBeenCalledTimes(2);
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -70,9 +90,9 @@ it("keeps failed downloads retryable inside the dialog", async () => {
     .mockResolvedValueOnce(new TextEncoder().encode("unknown"));
   await render();
   await act(async () => container.querySelector("button")!.click());
-  const retry = Array.from(document.querySelectorAll('[role="dialog"] button')).find((button) =>
-    button.textContent?.includes("Retry"),
-  ) as HTMLButtonElement;
+  const retry = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ).find((button) => button.textContent?.includes("Retry")) as HTMLButtonElement;
   expect(retry).toBeTruthy();
   await act(async () => retry.click());
   expect(fetchInboxMedia).toHaveBeenCalledTimes(2);
@@ -89,6 +109,26 @@ it("renders PDF bytes with the existing document viewer in a dialog", async () =
   expect(
     document.querySelector('[role="dialog"] [data-pdf-bytes]')?.getAttribute("data-pdf-bytes"),
   ).toBe(String(bytes.length));
+  const retry = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ).find((button) => button.textContent?.includes("Retry"))!;
+  await act(async () => retry.click());
+  expect(invalidateInboxMedia).toHaveBeenCalledWith(source);
+});
+
+it("offers recovery when the expanded image fails to decode", async () => {
+  vi.mocked(fetchInboxMedia).mockResolvedValue(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
+  await render();
+  await act(async () => container.querySelector("button")!.click());
+  await act(async () =>
+    document.querySelector('[role="dialog"] img')!.dispatchEvent(new Event("error")),
+  );
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Preview unavailable");
+  const retry = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+  ).find((button) => button.textContent?.includes("Retry"))!;
+  await act(async () => retry.click());
+  expect(invalidateInboxMedia).toHaveBeenCalledWith(source);
 });
 
 it("discards late responses when attachment identity changes", async () => {

@@ -56,7 +56,7 @@ type ModelTarget = {
   modelSettings: Record<string, string>;
 };
 export interface CommandQueueSnapshot {
-  claim?: { clientId: string };
+  claim?: { clientId: string; id?: string; token?: string };
   messages: {
     authorityGeneration?: number;
     id: string;
@@ -114,9 +114,9 @@ export interface CommandServicePorts<View> {
       clientId: string,
       revision: number,
       selected: boolean,
-      authority: { epoch?: number; legacy: boolean },
+      authority: { epoch?: number; legacy: boolean; claimToken?: string },
     ): Promise<CommandQueueSnapshot>;
-    consumed(sessionId: string, id: string): Promise<unknown>;
+    consumed(sessionId: string, id: string, claimToken?: string): Promise<unknown>;
     sameModelTarget(a: ModelTarget, b: ModelTarget): boolean;
     kick(sessionId: string): void;
     leaseHeld(holder: string, detail: string): Error;
@@ -224,9 +224,19 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           );
       }
 
+      const queued = "queued" in command ? command.queued : undefined;
+      const changesQueue = ["send", "steer", "compact", "configure", "plan", "rewind"].includes(
+        command.type,
+      );
+      const claim = changesQueue ? (await ports.queue.reapStale(sessionId)).claim : undefined;
       if (
-        ["send", "steer", "compact", "configure", "plan", "rewind"].includes(command.type) &&
-        (await ports.queue.reapStale(sessionId)).claim &&
+        claim &&
+        !(
+          queued?.claimToken &&
+          claim.token === queued.claimToken &&
+          claim.id === queued.id &&
+          claim.clientId === queued.clientId
+        ) &&
         !(await accepted())
       )
         throw refuseHost(
@@ -239,7 +249,11 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           true,
         );
 
-      const queued = "queued" in command ? command.queued : undefined;
+      const queueAuthority = queued && {
+        epoch: queued.epoch,
+        legacy: queued.leaseAware !== true,
+        ...(queued.claimToken ? { claimToken: queued.claimToken } : {}),
+      };
       if (queued && !(await accepted())) {
         if (command.type !== "send" && command.type !== "steer" && command.type !== "compact")
           throw new HostDomainRefusalError(
@@ -261,7 +275,7 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
           queued.clientId,
           queued.revision,
           command.type === "steer" || queued.selected === true,
-          { epoch: queued.epoch, legacy: !aware },
+          queueAuthority!,
         );
         const row = queue.messages.find((entry) => entry.id === queued.id);
         if (row && row.authorityGeneration !== command.authorityGeneration)
@@ -431,6 +445,17 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
       const dispatch = () =>
         ports.repository.transaction(async () => {
           await assertDomainAuthority(context);
+          // Admission can wait for writer retirement. Fence the exact row again
+          // inside the receipt transaction so concurrent edits cannot change it.
+          if (queued && !(await accepted()))
+            await ports.queue.assertSend(
+              sessionId,
+              queued.id,
+              queued.clientId,
+              queued.revision,
+              command.type === "steer" || queued.selected === true,
+              queueAuthority!,
+            );
           const receipt = await ports.execution.command(command, context);
           // These are one admission unit with the receipt; cancellation must not
           // strand a consumed message or skip its accepted owner directive.
@@ -438,7 +463,11 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
             queued &&
             (await ports.queue.get(sessionId)).messages.some((row) => row.id === queued.id)
           )
-            await ports.queue.consumed(sessionId, queued.id);
+            await ports.queue.consumed(
+              sessionId,
+              queued.id,
+              ...(queued.claimToken ? [queued.claimToken] : []),
+            );
           await ports.crews.ownerDirective(command);
           return receipt;
         });

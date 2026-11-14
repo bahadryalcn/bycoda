@@ -950,6 +950,7 @@ function Workspace({
     sessionsRef,
     tabs,
     tabsRef,
+    retainedSessionIds: socialSessionPanel.sessionIds,
     orchestrationRuns,
     liveAgentsEnabled,
     unseenFinishedIds,

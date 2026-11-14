@@ -247,7 +247,7 @@ function host(
 
 async function render(
   onOpenBackgroundSession = vi.fn(),
-  section: "backlog" | "sprints" = "sprints",
+  section: "backlog" | "board" | "sprints" = "board",
 ) {
   await act(async () =>
     root.render(
@@ -261,6 +261,7 @@ async function render(
   );
   await act(async () => {});
   if (section === "sprints") await act(async () => button(container, "Sprints")?.click());
+  if (section === "board") await act(async () => button(container, "Board view")?.click());
   const goals = container.querySelector<HTMLDetailsElement>(".task-goals-disclosure");
   if (goals) goals.open = true;
 }
@@ -271,6 +272,9 @@ const column = (status: string) =>
 const statusLine = (scope: ParentNode) =>
   scope.querySelector<HTMLButtonElement>("button[data-task-status-line]")!;
 async function allProjects() {
+  const previousSection = container.querySelector(
+    '[role="tab"][aria-selected="true"]',
+  )?.textContent;
   // The empty backlog hides collection filters; Sprints still exposes project scope.
   if (!container.querySelector('header.task-board-toolbar button[aria-label^="Project:"]'))
     await act(async () => button(container, "Sprints")!.click());
@@ -280,6 +284,7 @@ async function allProjects() {
       .click(),
   );
   await act(async () => button(document.body, "All projects")!.click());
+  if (previousSection) await act(async () => button(container, previousSection)?.click());
 }
 async function pickAction(scope: ParentNode, label: string) {
   const direct = button(scope, label);
@@ -1064,7 +1069,7 @@ it.each(["local", "remote"])(
     await act(async () => button(container, "New task")!.click());
     const form = document.querySelector('form[aria-label="New task"]')!;
     expect(form.querySelector('[aria-label="Machine: This computer"]')).toBeTruthy();
-    expect(form.textContent).toContain("Runs on this computer");
+    expect(form.textContent).not.toContain("Runs on this computer");
     if (destination === "remote") {
       await act(async () =>
         form.querySelector<HTMLButtonElement>('[aria-label="Machine: This computer"]')!.click(),
@@ -1084,7 +1089,7 @@ it.each(["local", "remote"])(
         ),
       ).toEqual(["mac-project"]);
       await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
-      expect(form.textContent).toContain("Runs on MacBook");
+      expect(form.textContent).not.toContain("Runs on MacBook");
     }
     await act(async () => {
       type(form.querySelector('input[aria-label="Task title"]')!, "Run here");
@@ -2573,7 +2578,8 @@ it("keeps a successfully saved task's identity when its separate start fails", a
   expect(startedIds).toEqual(savedIds);
   expect(form.isConnected).toBe(false);
   expect(container.textContent).toContain("Task action failed");
-  const existing = card("One saved task");
+  await act(async () => button(container, "One saved task")!.click());
+  const existing = panel()!;
   expect(existing).toBeTruthy();
   await act(async () => button(existing, "Start now")!.click());
   expect(savedIds).toHaveLength(1);
@@ -2622,7 +2628,6 @@ it("disables unrelated task, goal, steward and note mutations while a board acti
   });
   await render();
   await pickAction(container, "Stewards");
-  await act(async () => button(container, "Sprints")!.click());
   await act(async () => button(card("Running A"), "Stop")!.click());
   expect(stops).toEqual(["a"]);
   await act(async () => card("Running B").click());
@@ -2789,6 +2794,16 @@ it("keeps a successfully empty local board available when optional goals fail", 
   expect(document.body.textContent).toContain("Goals unavailable");
 });
 
+it("keeps the sprint collection separate from an unscoped backlog", async () => {
+  host([task({ title: "Backlog task", status: "todo" })]);
+  await render(undefined, "sprints");
+  const board = container.querySelector<HTMLElement>(".\\@container\\/task-area");
+  expect(board?.classList.contains("hidden")).toBe(true);
+  expect(button(container, "New task")).toBeUndefined();
+  await act(async () => button(container, "Backlog")!.click());
+  expect(button(container, "Backlog task")).toBeTruthy();
+});
+
 it("retains task rows and disables duplicate refresh while the network read is pending", async () => {
   host([task({ title: "Retained task", status: "todo" })]);
   await render();
@@ -2807,6 +2822,8 @@ it("retains task rows and disables duplicate refresh while the network read is p
   });
   await act(async () => button(container, "Refresh")!.click());
   expect(card("Retained task")).toBeTruthy();
+  expect(container.querySelectorAll('.task-board-status button[aria-busy="true"]')).toHaveLength(1);
+  expect(container.textContent).not.toContain("Refreshing…");
   expect(isDisabled(button(container, "Refresh")!)).toBe(true);
   await act(async () => button(container, "Refresh")!.click());
   expect(attempts).toBe(1);

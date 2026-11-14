@@ -10,6 +10,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { JiraCommentEditor } from "./JiraCommentEditor";
+import { InboxCommentPreview } from "./InboxCommentPreview";
 import type { JiraCommentImage } from "../model/jiraCommentDocument";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { providerLabel } from "../../../shared/lib/providerLabel";
@@ -373,23 +374,25 @@ export function InboxCommentForm({
             onSubmit={submit}
           />
         ) : (
-          <TextareaField
-            hideLabel
-            label={replyTo ? t("Reply") : t("Comment")}
-            ref={field}
-            rows={2}
-            value={draft}
-            disabled={busy}
-            placeholder={
-              replyTo
-                ? t("Write a reply ({p0}↩)", { p0: MOD })
-                : t("Leave a comment ({p0}↩)", { p0: MOD })
-            }
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            fieldClassName="w-full"
-            resize="none"
-          />
+          <InboxCommentPreview draftIdentity={draftIdentity} value={draft}>
+            <TextareaField
+              hideLabel
+              label={replyTo ? t("Reply") : t("Comment")}
+              ref={field}
+              rows={2}
+              value={draft}
+              disabled={busy}
+              placeholder={
+                replyTo
+                  ? t("Write a reply ({p0}↩)", { p0: MOD })
+                  : t("Leave a comment ({p0}↩)", { p0: MOD })
+              }
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={onKeyDown}
+              fieldClassName="w-full"
+              resize="none"
+            />
+          </InboxCommentPreview>
         )}
         <div className="flex items-center justify-end gap-2">
           {target ? (

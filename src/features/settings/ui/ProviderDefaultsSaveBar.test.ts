@@ -65,7 +65,9 @@ it("summarizes Global and multiple targets without losing project count", async 
     { value: "project:b", label: "B" },
   ];
   expect(defaultsTargetsSummary(["project:a", "project:b"], options)).toBe("All projects (2)");
-  expect(defaultsTargetsSummary(["global", "project:a"], options)).toBe("Global + 1 targets");
+  expect(defaultsTargetsSummary(["global", "project:a"], options)).toBe(
+    "Bycoda defaults + 1 overrides",
+  );
 });
 
 it("keeps group apply details available when the draft is clean", async () => {

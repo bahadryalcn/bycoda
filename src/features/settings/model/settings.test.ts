@@ -6,6 +6,9 @@ import {
   SETTINGS_INDEX,
   SETTINGS_SECTIONS,
   settingsSectionsByGroup,
+  settingsSectionForAnchor,
+  loadSettingsSection,
+  saveSettingsSection,
   MODEL_CONTROLS_DEFAULT,
   DIFF_LAYOUT_DEFAULT,
   DIFF_VIEWER_DEFAULT,
@@ -687,6 +690,30 @@ describe("settings navigation", () => {
     }
   });
 
+  it("routes usage search and older provider anchors to the independent Usage page", () => {
+    for (const anchor of [
+      "provider-usage",
+      "show-remaining-usage",
+      "account-limits",
+      "cost-overview",
+    ]) {
+      expect(settingsSectionForAnchor("providers", anchor)).toBe("usage");
+    }
+    expect(searchSettings("Show remaining usage")[0]?.section).toBe("usage");
+    saveSettingsSection("usage");
+    expect(loadSettingsSection()).toBe("usage");
+    expect(settingsSectionForAnchor("providers", "provider-accounts")).toBe("providers");
+  });
+
+  it("keeps the old Models destination as a Providers alias without a separate rail entry", () => {
+    expect(settingsSectionForAnchor("models")).toBe("providers");
+    expect(settingsSectionForAnchor("models", "models-chat")).toBe("providers");
+    expect(SETTINGS_SECTIONS.some((section) => section.id === "models")).toBe(false);
+    expect(
+      searchSettings("Default provider").some((result) => result.section === "providers"),
+    ).toBe(true);
+  });
+
   it("maps the sections into IDE-style groups", () => {
     const byGroup = Object.fromEntries(
       settingsSectionsByGroup().map((group) => [group.id, group.sections.map((s) => s.id)]),
@@ -702,7 +729,7 @@ describe("settings navigation", () => {
       "terminal",
       "groupLock",
     ]);
-    expect(byGroup.agents).toEqual(["providers", "models", "work", "crews"]);
+    expect(byGroup.agents).toEqual(["providers", "usage", "work", "crews"]);
     expect(byGroup.tools).toEqual(["skills", "mcp", "secrets", "tools"]);
     expect(byGroup.code).toEqual(["workspace", "worktrees"]);
     expect(byGroup.connections).toEqual(["connections", "integrations"]);

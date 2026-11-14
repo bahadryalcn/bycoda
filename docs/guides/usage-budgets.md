@@ -1,5 +1,9 @@
 # Usage budgets
 
+Open **Settings > Usage & limits** for usage reports, provider quotas and local
+budgets. This page sits beside Providers in the Agents group. The workspace usage
+footer and existing provider-usage links open it directly.
+
 Custom periods use the shared date/time range field. Select two calendar days or a
 preset, adjust the Start or End hour/minute columns, then Apply. The end instant is
 exclusive. Typing local `YYYY-MM-DDTHH:mm` endpoints remains available; invalid or

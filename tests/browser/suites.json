@@ -53,7 +53,7 @@
       "files": ["attachment-cards.spec.ts"],
       "fixture": {
         "config": "tests/browser/chat/vite.attachment-cards.config.ts",
-        "mode": "dev",
+        "mode": "preview",
         "path": "/tests/browser/chat/attachment-cards.html"
       },
       "projects": [

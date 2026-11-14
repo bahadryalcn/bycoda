@@ -16,6 +16,62 @@ const tailnetReady: MobileAccessStatus = {
 afterEach(() => vi.useRealTimers());
 
 describe("createMobileRoutes", () => {
+  it("retries a failed slow probe one minute after it settles", async () => {
+    vi.useFakeTimers();
+    let fail!: (reason: Error) => void;
+    const tailscale = vi
+      .fn<() => Promise<MobileAccessStatus>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            fail = reject;
+          }),
+      )
+      .mockResolvedValue(tailnetReady);
+    const routes = createMobileRoutes({ lan: async () => lanReady, tailscale });
+    const first = routes();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(await first).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(120_000);
+    fail(new Error("Tailscale status timed out"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await routes()).toHaveLength(1);
+    expect(tailscale).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(await routes()).toHaveLength(1);
+    expect(tailscale).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
+    expect(tailscale).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers discovery while Tailscale is stalled and reuses its late result", async () => {
+    vi.useFakeTimers();
+    let finish!: (value: MobileAccessStatus) => void;
+    const tailscale = vi.fn(
+      () =>
+        new Promise<MobileAccessStatus>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const routes = createMobileRoutes({ lan: async () => lanReady, tailscale });
+    const pending = routes();
+    await vi.advanceTimersByTimeAsync(250);
+    const observed = vi.fn();
+    void pending.then(observed);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(observed).toHaveBeenCalledWith([
+      { endpoint: lanReady.endpoint, lanKey: lanReady.lanKey },
+    ]);
+    const later = routes();
+    await vi.advanceTimersByTimeAsync(60_000);
+    const stillWaiting = routes();
+    await vi.advanceTimersByTimeAsync(250);
+    expect(tailscale).toHaveBeenCalledOnce();
+    finish(tailnetReady);
+    await Promise.all([later, stillWaiting]);
+    expect(await routes()).toContainEqual({ endpoint: tailnetReady.endpoint });
+  });
   it("advertises the local listener with its public key and the Tailscale endpoint", async () => {
     const routes = createMobileRoutes({
       lan: async () => lanReady,

@@ -72,7 +72,7 @@ impl<'a> Exchange<'a> {
     }
 
     /// Runs `attempt` with the time left before the original deadline. It runs
-    /// again only after an attempt that was refused before anything was sent.
+    /// again after a pre-send refusal, or once for an interrupted canonical query.
     pub(super) fn send(
         &self,
         attempt: impl FnMut(Duration) -> Result<ureq::Response, Box<ureq::Error>>,
@@ -247,10 +247,26 @@ impl TransportHealth {
         listening: impl Fn(Instant) -> bool,
         mut attempt: impl FnMut(Duration) -> Result<ureq::Response, Box<ureq::Error>>,
     ) -> Result<ureq::Response, Box<ureq::Transport>> {
-        let refusal = match self.attempt(exchange, exchange.timeout, &mut attempt) {
+        let mut refusal = match self.attempt(exchange, exchange.timeout, &mut attempt) {
             Ok(response) => return Ok(response),
             Err(error) => error,
         };
+        // RPC uses POST even for reads. A stale keep-alive connection may reset
+        // after sending it; only the canonical safe-query contract permits replay.
+        if super::HostWsBroker::method_is_safe_query(exchange.method)
+            && matches!(
+                class(&refusal).as_str(),
+                "ConnectionReset" | "ConnectionAborted" | "UnexpectedEof"
+            )
+        {
+            let remaining = exchange.timeout.saturating_sub(exchange.started.elapsed());
+            if !remaining.is_zero() {
+                match self.attempt(exchange, remaining, &mut attempt) {
+                    Ok(response) => return Ok(response),
+                    Err(error) => refusal = error,
+                }
+            }
+        }
         self.failed(exchange, &refusal);
         if !super::connection_refused(&refusal)
             || !self.may_be_restarting(exchange.endpoint)
@@ -428,6 +444,67 @@ mod tests {
     }
 
     #[test]
+    fn interrupted_query_retries_once_with_the_original_deadline() {
+        let health = TransportHealth::default();
+        let request = exchange("http://127.0.0.1:50123", Duration::from_secs(1));
+        let attempts = Cell::new(0);
+        assert!(health
+            .send(
+                &request,
+                || false,
+                |_| false,
+                |remaining| {
+                    attempts.set(attempts.get() + 1);
+                    if attempts.get() == 1 {
+                        std::thread::sleep(Duration::from_millis(10));
+                        Err(Box::new(ureq::Error::from(std::io::Error::new(
+                            std::io::ErrorKind::ConnectionReset,
+                            "interrupted read",
+                        ))))
+                    } else {
+                        assert!(remaining < request.timeout);
+                        answered()
+                    }
+                }
+            )
+            .is_ok());
+        assert_eq!(attempts.get(), 2);
+    }
+
+    #[test]
+    fn interrupted_query_is_bounded_and_unknown_methods_never_replay() {
+        for (method, expected) in [
+            ("environment.describe", 2),
+            ("workspace.run", 1),
+            ("future.method", 1),
+        ] {
+            let health = TransportHealth::default();
+            let attempts = Cell::new(0);
+            let request = Exchange::new(
+                "http://127.0.0.1:50123",
+                Some("host.1"),
+                method,
+                Duration::from_secs(1),
+            );
+            assert!(health
+                .send(
+                    &request,
+                    || false,
+                    |_| false,
+                    |_| {
+                        attempts.set(attempts.get() + 1);
+                        Err(Box::new(ureq::Error::from(std::io::Error::new(
+                            std::io::ErrorKind::ConnectionAborted,
+                            "interrupted",
+                        ))))
+                    }
+                )
+                .is_err());
+            assert_eq!(attempts.get(), expected, "{method}");
+        }
+    }
+
+    #[test]
     fn a_request_that_may_have_been_delivered_is_never_sent_again() {
         let health = TransportHealth::default();
         let endpoint = "http://127.0.0.1:3776";
@@ -440,7 +517,12 @@ mod tests {
             let attempts = Cell::new(0);
             let error = health
                 .send(
-                    &exchange(endpoint, Duration::from_secs(30)),
+                    &Exchange::new(
+                        endpoint,
+                        Some("host.1"),
+                        "commands.dispatch",
+                        Duration::from_secs(30),
+                    ),
                     || true,
                     |_| panic!("A sent request was waited out"),
                     |_| {

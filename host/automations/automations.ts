@@ -15,6 +15,7 @@ import {
   getSessionWork,
 } from "../work/session-adapter";
 import { resolveModelChoice } from "../model-routing/service";
+import { projectRoutingCwd } from "../tasks/model-routing";
 import { ownerDayBounds } from "../../src/shared/lib/time/ownerDay";
 import { randomUUID } from "node:crypto";
 import { QUICK_AUTOMATION_MAX_AHEAD_MS } from "../../src/shared/model/host-contracts/assistant-quick-automation";
@@ -649,6 +650,7 @@ export class HostAutomations {
         const resolution = await resolveModelChoice(routing, {
           role: "automation",
           choice: automation.modelChoice,
+          cwd: await projectRoutingCwd(this.store, automation.projectId),
           fixed: {
             harness: automation.harness,
             providerAccountId: automation.providerAccountId,

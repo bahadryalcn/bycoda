@@ -373,7 +373,21 @@ impl NativeWorkspaceTransport {
             }
             cursor = Some(original.ack_cursor());
             if original.method() == "native.buffers.update" {
-                let _held = remote_ack(channel, store, &original, None, deadline);
+                // A consumed local report can outlive its remote receipt. Probe
+                // before cleanup; absence/unknown is no proof of remote retirement.
+                let Ok(status) = call_until(channel, STATUS, binding(&original), None, deadline)
+                else {
+                    continue;
+                };
+                if matches(&status.reply.value, &original)
+                    && matches!(
+                        status.reply.value["state"].as_str(),
+                        Some("recorded" | "retired")
+                    )
+                {
+                    let _held =
+                        remote_ack(channel, store, &original, Some(&status.reply), deadline);
+                }
             }
         }
         if complete {

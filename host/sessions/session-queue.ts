@@ -24,6 +24,7 @@ export class QueueLeaseError extends HostDomainRefusalError {
 export type SendAuthority = {
   epoch?: number;
   legacy?: boolean;
+  claimToken?: string;
 };
 /**
  * A send in flight is never given up on at once: its sender may simply have no
@@ -566,7 +567,13 @@ export class SessionQueues {
       } else if (!steer && !authority.legacy) throw new QueueLeaseError();
       if (
         queue.revision !== revision ||
-        queue.claim ||
+        (authority.claimToken
+          ? !queue.claim ||
+            queue.claim.token !== authority.claimToken ||
+            queue.claim.id !== rowId ||
+            queue.claim.clientId !== clientId ||
+            (authority.epoch !== undefined && queue.claim.epoch !== authority.epoch)
+          : !!queue.claim) ||
         queue.editingId ||
         (!steer && queue.status !== "active") ||
         !queue.messages.some((row) => row.id === rowId && !row.deliveryUnknown) ||
@@ -658,10 +665,15 @@ export class SessionQueues {
       });
     });
   }
-  async consumed(id: string, rowId: string): Promise<SharedQueue> {
+  async consumed(id: string, rowId: string, claimToken?: string): Promise<SharedQueue> {
     return this.db.scope(async () => {
       await this.ready;
       const queue = await this.get(id);
+      if (claimToken) {
+        if (queue.claim?.id !== rowId || queue.claim.token !== claimToken)
+          throw new QueueLeaseError();
+        return this.finish(id, claimToken, true, queue.claim.epoch);
+      }
       const messages = queue.messages.filter((row) => row.id !== rowId);
       await this.removed(id, rowId);
       return await this.save(id, {

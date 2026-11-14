@@ -33,6 +33,8 @@ function NotesComponentFixture() {
         onSelect={() => {}}
         checked={checked}
         onCheck={(id, value) => setChecked(value ? new Set([id]) : new Set())}
+        onEdit={() => {}}
+        onDelete={() => {}}
       />
       <NotesReader note={note} onEdit={() => {}} onDelete={() => {}} />
     </main>

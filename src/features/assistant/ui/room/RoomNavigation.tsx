@@ -33,7 +33,6 @@ export function RoomNavigation({
           value={records ? "Notes" : work ? "Jobs" : view}
           onValueChange={onChange}
           controls="assistant-content"
-          responsive
           items={[
             { value: "Today", label: t("Today"), icon: <CalendarDays /> },
             { value: "Jobs", label: t("Work"), icon: <Briefcase />, count: activeJobs || null },

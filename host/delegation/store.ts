@@ -10,6 +10,8 @@ export type DelegationRecord = {
   runId: string;
   kind: DelegationKind;
   parentSessionId: string;
+  /** Original parent execution groups siblings; later chat work cannot discover old peers. */
+  groupId?: string;
   childSessionId: string;
   /** Latest child turn; an owner follow-up turn moves it forward. */
   childRunId?: string;
@@ -17,6 +19,10 @@ export type DelegationRecord = {
   rootWorkId?: string;
   budgetScope?: { taskId?: string; parentTaskId?: string; goalId?: string };
   ownerFollowUp?: boolean;
+  /** Opt-in asynchronous completion delivery to the original parent. */
+  notifyOnCompletion?: boolean;
+  /** Parent Stop revokes peer sends and queued wakes for this group member. */
+  communicationClosed?: boolean;
   pending?: { args: Record<string, unknown>; callerFingerprint: string };
   model: DelegateModelRef;
   title: string;

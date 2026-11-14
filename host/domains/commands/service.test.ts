@@ -7,6 +7,8 @@ import {
 } from "./service";
 import { DesktopLive } from "../../desktop/desktopLive";
 import { refuseHost } from "../context";
+import { StoreDatabase } from "../../store-db";
+import { SessionQueues } from "../../sessions/session-queue";
 
 const send: SessionCommand = { type: "send", commandId: "c", sessionId: "s", text: "hello" };
 const contextual: SessionCommand = {
@@ -321,6 +323,87 @@ describe("command domain admission", () => {
     });
     expect(ports.queue.reapStale).toHaveBeenCalledWith("s");
     expect(ports.execution.command).not.toHaveBeenCalled();
+  });
+
+  it("hands an exact desktop claim to the Host and consumes it with the command", async () => {
+    const { service, ports, queue, command, auth, receipt } = queuedSetup();
+    queue.claim = { id: "q", clientId: "desktop", token: "claim" };
+    await expect(
+      service.dispatch({ ...command, queued: { ...command.queued, claimToken: "claim" } }, auth),
+    ).resolves.toEqual(receipt);
+    expect(ports.queue.assertSend).toHaveBeenCalledWith("s", "q", "desktop", 4, true, {
+      epoch: 7,
+      legacy: false,
+      claimToken: "claim",
+    });
+    expect(ports.queue.consumed).toHaveBeenCalledWith("s", "q", "claim");
+    expect(ports.execution.command).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a different client's claim even with a copied token", async () => {
+    const { service, ports, queue, command, auth } = queuedSetup();
+    queue.claim = { id: "q", clientId: "other", token: "claim" };
+    await expect(
+      service.dispatch({ ...command, queued: { ...command.queued, claimToken: "claim" } }, auth),
+    ).rejects.toMatchObject({ code: "LEASE_HELD" });
+    expect(ports.execution.command).not.toHaveBeenCalled();
+  });
+
+  it("rechecks queued authority after waiting for writer retirement", async () => {
+    const { service, ports, command, auth } = queuedSetup();
+    // The first admission succeeds; the second must run inside the receipt transaction.
+    vi.mocked(ports.queue.assertSend).mockResolvedValueOnce({
+      messages: [{ id: "q", text: "hello", attachments: [] }],
+    });
+    vi.mocked(ports.queue.assertSend).mockRejectedValueOnce(new Error("queue changed"));
+    await expect(service.dispatch(command, auth)).rejects.toThrow("queue changed");
+    expect(ports.queue.assertSend).toHaveBeenCalledTimes(2);
+    expect(ports.execution.command).not.toHaveBeenCalled();
+    expect(ports.queue.consumed).not.toHaveBeenCalled();
+  });
+
+  it("settles a real SQLite desktop claim atomically with Host command admission", async () => {
+    const db = new StoreDatabase(":memory:");
+    try {
+      const queues = new SessionQueues(db);
+      const { service, ports, auth } = setup();
+      const before = await queues.change(
+        "s",
+        { messages: [] },
+        { messages: [{ id: "q", text: "hello", attachments: [] }], status: "active" },
+        "desktop",
+      );
+      const claimed = await queues.claim("s", "q", "desktop", before.revision, true, {
+        legacy: true,
+      });
+      ports.repository.transaction = (work) => db.scope(work);
+      ports.queue.get = (id) => queues.get(id);
+      ports.queue.reapStale = (id) => queues.reapStale(id);
+      ports.queue.renew = (id, clientId) => queues.renew(id, clientId);
+      ports.queue.assertSend = (...args) => queues.assertSend(...args);
+      ports.queue.consumed = (...args) => queues.consumed(...args);
+      await service.dispatch(
+        {
+          ...send,
+          queued: {
+            id: "q",
+            clientId: "desktop",
+            revision: claimed.revision,
+            selected: true,
+            claimToken: claimed.claim!.token,
+          },
+        },
+        auth,
+      );
+      const after = await queues.get("s");
+      expect(after.messages).toEqual([]);
+      expect(after.claim).toBeUndefined();
+      expect(after.settled).toMatchObject({ token: claimed.claim!.token, accepted: true });
+      expect(await queues.finish("s", claimed.claim!.token, true)).toEqual(after);
+      expect(ports.execution.command).toHaveBeenCalledOnce();
+    } finally {
+      await db.close();
+    }
   });
   it("refuses a run lease held elsewhere before execution with the message clients match", async () => {
     const { service, ports, auth } = setup();

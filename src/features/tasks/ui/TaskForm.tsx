@@ -1,4 +1,5 @@
 import { useTaskModelRouting } from "./TaskModelChoiceField";
+import "./task-form.css";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { projectDisplayName } from "../../projects/public/projectNames";
@@ -9,6 +10,7 @@ import {
   CROSS_SUBAGENTS_KEY,
 } from "../../../shared/model/host-contracts/delegation";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
+import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
 import { InlineMessage } from "../../../shared/ui/InlineError";
@@ -247,16 +249,19 @@ export function TaskForm({
                 ) : null}
               </Text>
             </div>
-            <SkillPromptField
-              value={draft.prompt}
-              harness={draft.harness}
-              cwd={draft.cwd}
-              onChange={(prompt) => update("prompt", prompt)}
-              label={t("Description")}
-              placeholder={t("Details, acceptance criteria, links…")}
-              surface="raised"
-              frameProps={{ "data-task-prompt": "" }}
-            />
+            <section className="task-form-description">
+              <SectionLabel>{t("Description")}</SectionLabel>
+              <SkillPromptField
+                value={draft.prompt}
+                harness={draft.harness}
+                cwd={draft.cwd}
+                onChange={(prompt) => update("prompt", prompt)}
+                label={t("Description")}
+                placeholder={t("Details, acceptance criteria, links…")}
+                surface="raised"
+                frameProps={{ "data-task-prompt": "" }}
+              />
+            </section>
             <CrewTaskPicker
               cwd={draft.cwd}
               machineId={targetId}

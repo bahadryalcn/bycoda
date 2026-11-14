@@ -175,3 +175,15 @@ it("references an attachment in the prompt and drops the token with the chip", a
   act(() => button("Remove image.png").click());
   expect(prompt.value).toBe("fix the");
 });
+
+it.each(["Backspace", "Delete"])("%s removes an attachment token and its card", async (key) => {
+  await attach();
+  const prompt = container.querySelector<HTMLTextAreaElement>("textarea")!;
+  const at = key === "Backspace" ? prompt.value.length : 0;
+  prompt.setSelectionRange(at, at);
+  const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+  act(() => prompt.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(prompt.value).toBe("");
+  expect(container.querySelector('[aria-label="Remove image.png"]')).toBeNull();
+});

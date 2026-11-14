@@ -16,11 +16,13 @@ type SourceCache = Map<string, Promise<string | null>>;
 /** Source previews share reads within a job and always use its checked commit. */
 export function CheckEvidence({
   annotations,
+  provider,
   cwd,
   repo,
   headOid,
 }: {
   annotations: Annotation[];
+  provider?: "github" | "gitlab" | "azuredevops";
   cwd: string;
   repo: string;
   headOid: string;
@@ -34,6 +36,7 @@ export function CheckEvidence({
         <CheckAnnotation
           key={`${headOid}:${annotation.path}:${annotation.line}:${index}`}
           annotation={annotation}
+          provider={provider}
           cwd={cwd}
           repo={repo}
           headOid={headOid}
@@ -53,12 +56,14 @@ export function CheckEvidence({
 
 function CheckAnnotation({
   annotation,
+  provider,
   cwd,
   repo,
   headOid,
   sources,
 }: {
   annotation: Annotation;
+  provider?: "github" | "gitlab" | "azuredevops";
   cwd: string;
   repo: string;
   headOid: string;
@@ -108,7 +113,7 @@ function CheckAnnotation({
     /^[\w.-]+\/[\w.-]+$/.test(repo) &&
     repo.split("/").every((part) => part !== "." && part !== "..");
   const fileUrl =
-    validRepo && validPath && validCommit
+    (!provider || provider === "github") && validRepo && validPath && validCommit
       ? `https://github.com/${repo}/blob/${headOid}/${relative.split("/").map(encodeURIComponent).join("/")}${validLine ? `#L${annotation.line}` : ""}`
       : null;
   const location = `${annotation.path}${validLine ? `:${annotation.line}` : ""}`;

@@ -419,6 +419,26 @@ it("keeps opt-in preview selection rings independent from toggle semantics and l
   }
 });
 
+it("reserves no icon slot at rest and fits the confirmed check inside the label reservation", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const render = (success: boolean) =>
+    createElement(Button, { success, successLabel: "Saved", motion: "none" }, "Save");
+  try {
+    await act(async () => root.render(render(false)));
+    const button = container.querySelector("button")!;
+    expect(button.querySelector("svg")).toBeNull();
+    expect(button.querySelector("[data-reserve-icon]")?.getAttribute("data-reserve")).toBe("Saved");
+    await act(async () => root.render(render(true)));
+    expect(button.querySelector("[data-confirm-icon] svg")).not.toBeNull();
+    expect(button.textContent).toBe("Saved");
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
 it("opts a ghost file action into hover underline without changing its native activation", async () => {
   const container = document.createElement("div"),
     root = createRoot(container),

@@ -548,6 +548,16 @@ describe("DecisionModelsSettings add paths", () => {
 });
 
 describe("DecisionModelsSettings privacy and routing", () => {
+  it("keeps the personal-data label connected to its switch inside a settings row", async () => {
+    await renderSettings();
+    const control = document.querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(control).not.toBeNull();
+    expect(control?.id).toBeTruthy();
+    const label = document.querySelector(`label[for="${control?.id}"]`);
+    expect(label?.textContent).toContain("Personal data stays on this computer");
+    expect(control?.closest('[data-settings-part="row"]')).not.toBeNull();
+  });
+
   it("saves the personal-data switch through the routing RPC", async () => {
     const { mocks } = await renderSettings({});
 

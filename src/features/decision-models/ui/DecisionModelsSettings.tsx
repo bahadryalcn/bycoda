@@ -4,15 +4,14 @@ import { matchingTest, testedSources, type SourceTestSnapshot } from "../model/r
 import { connectedCandidate } from "../model/presentation";
 import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { RefreshCw, Lock } from "../../../shared/ui/icons";
 import { Switch } from "../../../shared/ui/Switch";
-import { Group } from "../../settings/public/settingsControls";
+import { Group, Row } from "../../settings/public/settingsControls";
 import { useDecisionModels } from "../hooks/useDecisionModels";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import type { DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
@@ -53,6 +52,7 @@ export function DecisionModelsSettings({
   remote?: boolean;
 }) {
   const model = useDecisionModels(client);
+  const privacyControlId = useId();
   const [testResults, setTestResults] = useState<Record<string, SourceTestSnapshot>>({});
   const [testingAll, setTestingAll] = useState(false);
   const [removing, setRemoving] = useState<Record<string, "source" | "local">>({});
@@ -185,27 +185,25 @@ export function DecisionModelsSettings({
         className="decision-models-page"
         style={{ "--settings-group-gap": "var(--space-1)" } as React.CSSProperties}
       >
-        {hostName ? (
-          <Text size="caption" tone="secondary">
-            {t("Host: {p1}", { p1: hostName })}
-          </Text>
-        ) : null}
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 py-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <Lock className="icon-sm shrink-0" aria-hidden="true" />
-            <Tooltip
-              label={t(
-                "Messages, profiles and contacts are sent only to local sources when this is on.",
-              )}
-            >
-              <Text size="caption">
+        <Group title={null}>
+          <Row
+            label={
+              <span className="flex min-w-0 items-center gap-2">
+                <Lock className="icon-sm shrink-0" aria-hidden="true" />
                 {remote
                   ? t("Personal data stays on Host {p1}", { p1: hostName ?? "" })
                   : t("Personal data stays on this computer")}
-              </Text>
-            </Tooltip>
+              </span>
+            }
+            controlId={model.routingLoaded ? privacyControlId : undefined}
+            description={hostName ? t("Host: {p1}", { p1: hostName }) : undefined}
+            info={t(
+              "Messages, profiles and contacts are sent only to local sources when this is on.",
+            )}
+          >
             {model.routingLoaded ? (
               <Switch
+                id={privacyControlId}
                 aria-label={
                   remote
                     ? t("Personal data stays on Host {p1}", { p1: hostName ?? "" })
@@ -224,8 +222,8 @@ export function DecisionModelsSettings({
             ) : (
               <LoadingText>{t("Loading…")}</LoadingText>
             )}
-          </div>
-        </div>
+          </Row>
+        </Group>
         {topError !== null ? <ErrorNotice error={topError} /> : null}
         <Group
           title={t("Connected models")}

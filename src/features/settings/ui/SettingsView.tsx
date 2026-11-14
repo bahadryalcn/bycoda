@@ -67,7 +67,6 @@ import { AppearanceSaveFeedback, useAppearanceSettings } from "./useAppearanceSe
 import { AppearancePage } from "./AppearanceSettings";
 import { KeybindingsPage } from "./ShortcutSettings";
 import { TerminalPage } from "./TerminalSettings";
-import { ModelsPage } from "./models/ModelsPage";
 import { WorkPage } from "./work/WorkPage";
 import { ProvidersSection } from "./ProvidersSection";
 import { ArchivePage } from "./ArchiveSettings";
@@ -152,8 +151,12 @@ export function SettingsView({
   onCollapsedProjectRailModeChange,
 }: Props) {
   useLocale();
-  const section = settingsSectionForAnchor(requestedSection) ?? requestedSection;
-  const anchor = requestedAnchor ?? toolSettingsAnchorForSection(requestedSection);
+  const section = settingsSectionForAnchor(requestedSection, requestedAnchor) ?? requestedSection;
+  const anchor =
+    requestedAnchor ??
+    (requestedSection === "models"
+      ? "models-chat"
+      : toolSettingsAnchorForSection(requestedSection));
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const panelId = useId();
   const categoryRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
@@ -517,10 +520,11 @@ export function SettingsView({
                     <ScrollArea
                       axis="both"
                       gutter="stable"
-                      // Section DOM/effects end on navigation. Feature model owners retain non-secret
+                      // Providers and Usage share account operation owners across navigation.
+                      // Other section DOM/effects end on navigation. Feature model owners retain non-secret
                       // drafts, acknowledged baselines and pending/error ownership by Host/target identity.
                       // Keep permission reads and secret-bearing dialogs out of hidden mounted pages.
-                      key={section}
+                      key={section === "usage" ? "providers" : section}
                       data-settings-scroller
                       ref={lockOverscroll}
                       className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none"
@@ -594,10 +598,9 @@ export function SettingsView({
                         {section === "keybindings" ? <KeybindingsPage /> : null}
                         {section === "terminal" ? <TerminalPage /> : null}
                         {section === "mcp" ? <McpSettings cwd={cwd} recents={recents} /> : null}
-                        {section === "providers" ? (
-                          <ProvidersSection cwd={cwd} recents={recents} />
+                        {section === "providers" || section === "usage" ? (
+                          <ProvidersSection activePage={section} cwd={cwd} recents={recents} />
                         ) : null}
-                        {section === "models" ? <ModelsPage cwd={cwd} recents={recents} /> : null}
                         {section === "work" ? <WorkPage cwd={cwd} recents={recents} /> : null}
                         {section === "worktrees" ? (
                           <div className="settings-topics">

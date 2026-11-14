@@ -906,7 +906,7 @@ describe("settings pages", () => {
     expect(revealButtons()).toHaveLength(1);
   });
 
-  it("keeps usage controls and quotas on the provider usage tab", async () => {
+  it("keeps usage controls and quotas on their own page and redirects old provider links", async () => {
     setCachedRateLimits("claude", "default", {
       provider: "claude",
       session: { usedPercent: 23, windowMinutes: 300, resetsAt: null },
@@ -953,7 +953,7 @@ describe("settings pages", () => {
     await render("providers");
     expect(container.querySelector('[aria-label="Reveal email"]')).toBeNull();
     for (const id of ["show-remaining-usage", "provider-usage"]) {
-      expect(SETTINGS_INDEX.find((entry) => entry.id === id)?.section).toBe("providers");
+      expect(SETTINGS_INDEX.find((entry) => entry.id === id)?.section).toBe("usage");
     }
     expect(SETTINGS_INDEX.find((entry) => entry.id === "mask-emails")?.section).toBe("groupLock");
   });
@@ -1630,6 +1630,12 @@ describe("settings pages", () => {
     );
     for (const id of expected) {
       if (!renderedSettingIds().includes(id)) await render(section, { anchor: id });
+      if (
+        section === "providers" &&
+        ["models-chat", "default-provider", "agent-clis"].includes(id)
+      ) {
+        await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+      }
       expect(renderedSettingIds(), id).toContain(id);
     }
   });

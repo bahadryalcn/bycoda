@@ -11,6 +11,8 @@ use tauri::{AppHandle, Manager};
 
 const DEFAULT_LIMIT: u32 = 40;
 const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
+#[cfg(test)]
+mod comment_tests;
 mod mention_search;
 const MAX_DIFF_BYTES: usize = 2 * 1024 * 1024;
 /// Per-file content cap for hunk generation; larger files stay listed.
@@ -429,7 +431,7 @@ fn azure_devops_work_item_comment_for(
     }
     let project = wit_project(repo)?;
     let path = format!(
-        "/{}/_apis/wit/workitems/{}/comments?api-version={}",
+        "/{}/_apis/wit/workitems/{}/comments?format=markdown&api-version={}",
         encode_segment(&project),
         number,
         WIT_COMMENTS_API_VERSION

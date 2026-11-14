@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 const captures = "temp/verification/2026-11-04-chat-thumbnails";
 
 test("reference token icons preserve editable text in both themes and widths", async ({ page }) => {
-  const evidence = "temp/verification/2026-11-13-reference-tokens";
+  const evidence = "temp/verification/composer-reference-fix";
   await mkdir(evidence, { recursive: true });
   for (const theme of ["light", "dark"]) {
     for (const width of [1280, 800]) {
@@ -40,8 +40,12 @@ test("reference token icons preserve editable text in both themes and widths", a
       expect(skillBox).not.toBeNull();
       expect(attachmentBox).not.toBeNull();
       expect(attachmentBox!.x - (skillBox!.x + skillBox!.width)).toBeGreaterThan(2);
+      const iconBox = await attachment.locator("svg").boundingBox();
+      expect(iconBox).not.toBeNull();
+      expect(iconBox!.x).toBeGreaterThanOrEqual(attachmentBox!.x + 1);
+      expect(iconBox!.x + iconBox!.width).toBeLessThan(attachmentBox!.x + attachmentBox!.width - 1);
       await page.screenshot({
-        path: `temp/verification/token-spacing/${theme}-${width}.png`,
+        path: `${evidence}/tokens-${theme}-${width}.png`,
         fullPage: true,
       });
       await field.fill(raw);

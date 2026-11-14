@@ -148,7 +148,7 @@ export function useSettingsSurfaceActions({
     const openModels = (event: Event) => {
       const tab = (event as CustomEvent<ModelsTab>).detail;
       if (MODELS_TABS.includes(tab))
-        openSettings(tab === "chat" ? "models" : "work", modelsTabAnchor(tab));
+        openSettings(tab === "chat" ? "providers" : "work", modelsTabAnchor(tab));
     };
     window.addEventListener(OPEN_MODELS_SETTINGS_EVENT, openModels);
     return () => window.removeEventListener(OPEN_MODELS_SETTINGS_EVENT, openModels);

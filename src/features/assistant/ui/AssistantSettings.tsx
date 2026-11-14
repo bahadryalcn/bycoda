@@ -544,6 +544,8 @@ export function AssistantSettings({
                     <AssistantPresenceStatus snapshot={snapshot} details />
                     <AssistantKeepAwakeStatus state={snapshot.keepAwake} />
                   </div>
+                </Group>
+                <Group title={null}>
                   <AdvancedSettings
                     title={
                       <>

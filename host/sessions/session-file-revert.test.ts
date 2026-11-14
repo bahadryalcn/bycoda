@@ -58,6 +58,25 @@ async function fixture(gitRepo = true) {
   };
 }
 describe("session message file revert", () => {
+  it("retains and reverts queued-message history using its opaque RPC block ID", async () => {
+    const f = await fixture();
+    const messageId = "queue-drain:session:row";
+    await f.checkpoints.beginFilesTurn("s", f.cwd, "run-one", messageId);
+    await f.write("new.txt", "queued change\n");
+    await f.checkpoints.claimFilesProof("s", f.cwd, "run-one", "add", [
+      { path: "new.txt", kind: "add", contents: "queued change\n" },
+    ]);
+    await f.checkpoints.finishFilesTurn("s", f.cwd, "run-one");
+    expect((await f.checkpoints.filesRevertPlan("s", f.cwd, messageId)).files).toEqual([
+      { path: "new.txt", action: "delete", conflict: undefined },
+    ]);
+    expect((await f.checkpoints.filesRevert("s", f.cwd, messageId)).reverted).toEqual(["new.txt"]);
+    await expect(f.read("new.txt")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      f.checkpoints.forgetFilesFromMessage("s", f.cwd, messageId),
+    ).resolves.toBeUndefined();
+  });
+
   it.each([false, true])(
     "protects ignored first-Add overwrites and permits proven ignored Delete/Add (prior delete: %s)",
     async (priorDelete) => {

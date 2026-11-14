@@ -3,6 +3,7 @@ import { readDisabledModels } from "../providers/disabled-models";
 import { hostProviderAccounts } from "../providers/provider-accounts";
 import { providerAuthStatus } from "../providers/provider-auth";
 import type { UsageLimitsReport } from "../usage/limits-report";
+import { providerAccountKind } from "./account-kind";
 import { createModelRoutingService, type ModelRoutingService } from "./service";
 import type { ModelRoutingStore } from "./storage";
 import type { ModelRoutingCatalog } from "./validation";
@@ -26,6 +27,7 @@ export function hostModelRoutingService(store: ModelRoutingStore): ModelRoutingS
         available: () => true,
         signedIn: () => true,
         quota: () => ({ unknown: true }),
+        accountKind: () => undefined,
       }),
     });
     services.set(store, service);
@@ -89,6 +91,8 @@ export function createHostModelRoutingService(ports: {
         signedIn: (entry) =>
           auth.get(`${entry.harness}\n${entry.providerAccountId ?? "default"}`) ?? true,
         quota: (entry) => quota.reading(entry.harness, entry.providerAccountId, entry.model),
+        accountKind: (entry) =>
+          providerAccountKind(accounts, entry.harness, entry.providerAccountId),
       };
     },
   });

@@ -19,20 +19,22 @@ it("routes work tabs and provider defaults to their settings sections", () => {
   for (const tab of MODELS_TABS) {
     const anchor = modelsTabAnchor(tab);
     expect(modelsTabForSetting(anchor)).toBe(tab);
-    expect(settingsSectionForAnchor("providers", anchor)).toBe(tab === "chat" ? "models" : "work");
+    expect(settingsSectionForAnchor("providers", anchor)).toBe(
+      tab === "chat" ? "providers" : "work",
+    );
   }
-  expect(settingsSectionForAnchor("providers", "agent-clis")).toBe("models");
+  expect(settingsSectionForAnchor("providers", "agent-clis")).toBe("providers");
   expect(modelsTabForSetting("agent-clis")).toBe("chat");
-  expect(providersTabForSetting("agent-clis")).toBeUndefined();
+  expect(providersTabForSetting("agent-clis")).toBe("defaults");
   expect(modelsTabForSetting(null)).toBeUndefined();
   expect(modelsTabForSetting("enabled-models")).toBeUndefined();
   expect(settingsSectionPresentation("models")).toBe("wide");
 });
 
 it.each(["Default provider", "Model", "Effort", "Permissions", "Fast"])(
-  "keeps %s searchable in Models",
+  "keeps %s searchable in Providers",
   (label) => {
-    expect(searchSettings(label).some((result) => result.section === "models")).toBe(true);
+    expect(searchSettings(label).some((result) => result.section === "providers")).toBe(true);
   },
 );
 

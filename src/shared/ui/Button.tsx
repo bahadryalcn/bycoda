@@ -217,7 +217,7 @@ const isTrue = (value: unknown) => value === true || value === "true";
 /**
  * The one action control: variants `primary`, `secondary` (default), `ghost`, `link`, `item` and `tab`, with tone, size, icons, `loading` and `pressed` toggle state. It owns focus ring, hit area, tooltip (`tooltip`, `shortcut`, `disabledReason`), stable width across label changes and long-press.
  * Icon-only buttons need `iconOnly` and a `label`.
- * For confirmed async results, set `success` and translated `successLabel`; the action owns its check, label and announcement. Clear success when its draft or target changes.
+ * For confirmed async results, set `success` and translated `successLabel`; the action owns its check, label and announcement. At rest the button shows only its label (no reserved icon slot); the confirmed width, check included, is reserved inside the label. Clear success when its draft or target changes.
  * @group actions
  * @use Any click that runs an action, opens something or navigates. Use padding roles and reserveEndAction for row geometry; controlHeight and controlMinHeight preserve content and density.
  * @avoid Choosing between modes: SegmentedControl or RadioGroup. Navigation to an external page: Button variant="link" with openExternal. Icon action inside a row/tab host: InlineAction. Joined related actions: ButtonGroup.
@@ -293,12 +293,11 @@ export function Button({
   const loading = loadingProp ?? false;
   const confirmed = success && !!successLabel && !loading;
   const contentLabel = confirmed ? successLabel : children;
-  // Reserve the result icon from idle too, so completion never shifts neighbouring actions.
-  const leadingIcon = confirmed ? (
-    <Check className="icon-sm" />
-  ) : (
-    (startIcon ?? (successLabel ? <Check className="icon-sm invisible" /> : undefined))
-  );
+  // With a start icon the check replaces it in the same slot. Without one nothing is reserved
+  // at rest: the check overlays the start of the label, inside the width the success ghost
+  // reserves (icon included), so completion never shifts neighbouring actions.
+  const overlayCheck = confirmed && startIcon == null;
+  const leadingIcon = confirmed && startIcon != null ? <Check className="icon-sm" /> : startIcon;
   const [announcerMounted, setAnnouncerMounted] = useState(false);
   if (confirmed && !announcerMounted) setAnnouncerMounted(true);
   const reservedLabels = successLabel ? [...(reserveLabels ?? []), successLabel] : reserveLabels;
@@ -647,7 +646,16 @@ export function Button({
           data-label-ghosts={reservedLabels?.length ? "" : undefined}
           style={reserveLabel ? { minInlineSize: labelWidth } : undefined}
         >
-          <span ref={labelMeasure} className={styles.stableLabel}>
+          <span
+            ref={labelMeasure}
+            className={styles.stableLabel}
+            data-confirm-icon={overlayCheck || undefined}
+          >
+            {overlayCheck ? (
+              <span className={styles.confirmIcon} aria-hidden="true">
+                <Check className="icon-sm" />
+              </span>
+            ) : null}
             {contentLabel}
           </span>
           {reservedLabels?.map((text, index) => (
@@ -655,6 +663,7 @@ export function Button({
               key={index}
               className={styles.labelGhost}
               data-reserve={text}
+              data-reserve-icon={startIcon == null && text === successLabel ? "" : undefined}
               aria-hidden="true"
             />
           ))}

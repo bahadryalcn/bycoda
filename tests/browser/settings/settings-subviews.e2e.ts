@@ -3,6 +3,201 @@ import { mkdirSync } from "node:fs";
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800])
+    test(`provider defaults scope ${theme} ${width}`, async ({ page }) => {
+      mkdirSync("temp/verification/providers-1114/defaults", { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?providersFixture&section=models&theme=${theme}&lang=en`,
+      );
+      await expect(page.locator(".settings-page-title")).toHaveText("Providers");
+      const tabs = page.locator(".provider-tabs");
+      await expect(tabs.getByRole("tab", { name: "Defaults", exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await expect(
+        page
+          .getByRole("tablist", { name: "Settings categories", exact: true })
+          .getByRole("tab", { name: "Models", exact: true }),
+      ).toHaveCount(0);
+      const saveBar = page.locator(".provider-defaults-save-bar:visible");
+      const scope = saveBar.getByRole("button", { name: "Save in", exact: true });
+      await expect(scope).toHaveText("Bycoda defaults");
+      await expect(scope).toBeInViewport();
+      await expect(saveBar.getByText(/targets|Everything|Global/)).toHaveCount(0);
+      const capture = async (state: string) => {
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await page.screenshot({
+          path: `temp/verification/providers-1114/defaults/${state}-${theme}-${width}.png`,
+        });
+      };
+      await capture("defaults");
+      await scope.click();
+      const dialog = page.getByRole("dialog", { name: "Apply defaults to", exact: true });
+      await expect(
+        dialog.getByText(
+          "New conversations use these defaults unless a project has its own settings.",
+        ),
+      ).toBeVisible();
+      await expect(
+        dialog.getByRole("combobox", { name: "Search projects, groups and workspaces" }),
+      ).toHaveCount(0);
+      await capture("default-scope");
+      await dialog.getByRole("radio", { name: "Project overrides", exact: true }).click();
+      await expect(
+        dialog.getByRole("combobox", { name: "Search projects, groups and workspaces" }),
+      ).toBeVisible();
+      await dialog.getByRole("option").filter({ hasNotText: "Select all:" }).first().click();
+      await expect(scope).not.toHaveText(/Bycoda defaults/);
+      await capture("project-scope");
+      await dialog.getByRole("radio", { name: "Bycoda defaults", exact: true }).click();
+      await dialog.getByRole("button", { name: "Done", exact: true }).click();
+      await expect(scope).toHaveText("Bycoda defaults");
+      await tabs.getByRole("tab", { name: "Accounts", exact: true }).click();
+      await expect(saveBar).toHaveCount(0);
+      await tabs.getByRole("tab", { name: "Defaults", exact: true }).click();
+      await expect(scope).toHaveText("Bycoda defaults");
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`provider settings repair ${theme} ${width}`, async ({ page }) => {
+      mkdirSync("temp/verification/providers-1114", { recursive: true });
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/settings/settings.html?providersFixture&section=providers&theme=${theme}&lang=en`,
+      );
+      const categories = page.getByRole("tablist", { name: "Settings categories", exact: true });
+      const providerTabs = page.locator(".provider-tabs");
+      await expect(providerTabs.getByRole("tab")).toHaveCount(5);
+      await expect(
+        categories.getByRole("tab", { name: "Usage & limits", exact: true }),
+      ).toHaveCount(1);
+      const chooseCodex = async () => {
+        const picker = page.locator(".provider-cli-select").getByRole("button");
+        if (await picker.isVisible()) {
+          await picker.click();
+          await page.getByRole("option", { name: /^Codex/ }).click();
+        } else {
+          await page
+            .locator(".provider-cli-selector")
+            .getByRole("button", { name: /^Codex,/ })
+            .click();
+        }
+      };
+      await chooseCodex();
+      const accounts = page.locator('[data-setting-id="provider-accounts"]');
+      await expect(accounts.locator(".provider-account-name:visible").first()).toHaveText(
+        "Personal",
+      );
+      const rail = page.locator(".provider-cli-selector");
+      if (await rail.isVisible()) {
+        expect(
+          (await page.locator(".provider-cli-detail").boundingBox())!.height,
+        ).toBeGreaterThanOrEqual((await rail.boundingBox())!.height);
+        const row = rail
+          .locator(".provider-cli-item")
+          .filter({ has: page.getByRole("button", { name: /^Claude Code,/ }) });
+        const toggle = row.getByRole("switch");
+        const initial = await toggle.isChecked();
+        await toggle.hover();
+        await expect
+          .poll(() => row.evaluate((node) => getComputedStyle(node).backgroundImage))
+          .not.toBe("none");
+        const outer = await row.boundingBox();
+        const control = await toggle.boundingBox();
+        expect(control!.x + control!.width).toBeLessThanOrEqual(outer!.x + outer!.width);
+        await toggle.click();
+        await expect(toggle).toBeChecked({ checked: !initial });
+        await expect(rail.getByRole("button", { name: /^Codex,/ })).toHaveAttribute(
+          "aria-current",
+          "true",
+        );
+        await toggle.click();
+        await expect(toggle).toBeChecked({ checked: initial });
+      }
+      const capture = async (surface: string) => {
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+        await page.screenshot({
+          path: `temp/verification/providers-1114/${surface}-${theme}-${width}.png`,
+        });
+      };
+      await capture("accounts");
+      await accounts.getByRole("button", { name: "Add account", exact: true }).click();
+      const draft = accounts.locator("form input").first();
+      await draft.fill("Retained provider draft");
+      await categories.getByRole("tab", { name: "Usage & limits", exact: true }).click();
+      await expect(page.locator(".settings-page-title")).toHaveText("Usage & limits");
+      await expect(providerTabs).toBeHidden();
+      await expect(page.getByRole("heading", { name: "Active time", exact: true })).toBeVisible();
+      await capture("usage");
+      await page
+        .getByRole("tablist", { name: "Usage views", exact: true })
+        .getByRole("tab", { name: "Limits", exact: true })
+        .click();
+      await expect(
+        page.getByRole("heading", { name: "Provider account limit", exact: true }),
+      ).toBeVisible();
+      await capture("usage-limits");
+      await page.locator("[data-settings-scroller]").evaluate((node) => {
+        node.scrollTop = node.scrollHeight;
+      });
+      await capture("usage-bottom");
+      await categories.getByRole("tab", { name: "Providers", exact: true }).click();
+      await expect(draft).toHaveValue("Retained provider draft");
+      await accounts.locator("form").getByRole("button", { name: "Cancel", exact: true }).click();
+      for (const [tab, surface] of [
+        ["CLI", "cli"],
+        ["Catalog", "catalog"],
+        ["Decision models", "decision-empty"],
+      ]) {
+        await providerTabs.getByRole("tab", { name: tab, exact: true }).click();
+        if (tab === "CLI" && width === 800) {
+          const columns = await page.locator(".provider-inventory table").evaluate((table) => ({
+            headers: [...table.querySelectorAll("thead th")].map(
+              (cell) => cell.getBoundingClientRect().x,
+            ),
+            cells: [...table.querySelectorAll("tbody tr:first-child td")].map(
+              (cell) => cell.getBoundingClientRect().x,
+            ),
+          }));
+          expect(columns.cells).toHaveLength(columns.headers.length);
+          columns.cells.forEach((position, index) =>
+            expect(Math.abs(position - columns.headers[index])).toBeLessThan(1),
+          );
+        }
+        if (tab === "Catalog") {
+          await expect(page.getByRole("textbox", { name: "Search models…" })).toBeVisible();
+          await expect(page.getByText("GPT-6.1-Sol", { exact: true })).toBeVisible();
+          const tailGap = await page.locator(".provider-models-list").evaluate((node) => {
+            return (
+              node.getBoundingClientRect().bottom -
+              node.lastElementChild!.getBoundingClientRect().bottom
+            );
+          });
+          expect(tailGap).toBeLessThanOrEqual(24);
+        }
+        await capture(surface);
+        if (tab === "CLI" && width === 800) {
+          await page.locator("[data-settings-scroller]").evaluate((node) => {
+            node.scrollTop = node.scrollHeight;
+          });
+          await capture("cli-bottom");
+          await page.locator("[data-settings-scroller]").evaluate((node) => {
+            node.scrollTop = 0;
+          });
+        }
+      }
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
     test(`Models work limit usage feedback ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });

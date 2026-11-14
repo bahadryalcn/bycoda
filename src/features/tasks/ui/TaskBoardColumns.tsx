@@ -133,7 +133,10 @@ export function TaskBoardColumns({
       ) : null}
       {tasks.length === 0 ? empty : null}
       {tasks.length > 0 ? (
-        <div className="task-board-columns">
+        <div
+          className="task-board-columns"
+          data-single-column={compactColumn !== "all" || undefined}
+        >
           {TASK_COLUMNS.map((status) => {
             const column = columns.get(status)!;
             const frame = surfaceAttributes(

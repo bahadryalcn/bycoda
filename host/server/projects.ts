@@ -9,6 +9,7 @@ import { dirname, join } from "node:path";
 import { setHarnessModels } from "../../src/features/sessions/model/models";
 import { readHarnessAuthStatus } from "../../src/integrations/harness/core/authStatus";
 import { ConversationDelegation } from "../delegation/service";
+import { enqueueAgentParentMessage } from "../delegation/message-delivery";
 import { ConversationGoalTools } from "../conversation/conversation-goal-tools";
 import { ConversationSecretTools } from "../secrets/conversation-secret-tools";
 import { SecretStore, osSecretValues } from "../secrets/secret-store";
@@ -48,6 +49,7 @@ export function createProjectsRuntime(
     | "inHost"
     | "conversationDesktop"
     | "assistant"
+    | "sessionQueues"
   >,
 ) {
   const catalogs = new ModelCatalogCache(
@@ -182,6 +184,8 @@ export function createProjectsRuntime(
     engine: dependencies.engine,
     directory: dirname(dependencies.engine.store.attachmentDir),
     featureSession: dependencies.featureSession,
+    enqueueParent: (sessionId, id, text) =>
+      enqueueAgentParentMessage(dependencies.sessionQueues, sessionId, id, text),
     models: async (projectId) =>
       applyDisabledModels(
         await models(projectId),

@@ -95,7 +95,9 @@ it("opens Settings at Providers when Decision models asks for it", () => {
     expect(deps.setSettingsSection).toHaveBeenLastCalledWith("providers");
     for (const tab of ["order", "roles", "chat", "delegation"] as const) {
       act(() => openModelsSettings(tab));
-      expect(deps.setSettingsSection).toHaveBeenLastCalledWith(tab === "chat" ? "models" : "work");
+      expect(deps.setSettingsSection).toHaveBeenLastCalledWith(
+        tab === "chat" ? "providers" : "work",
+      );
       expect(deps.setSettingsAnchor).toHaveBeenLastCalledWith(`models-${tab}`);
     }
 

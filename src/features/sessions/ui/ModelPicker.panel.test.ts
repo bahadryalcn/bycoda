@@ -65,6 +65,8 @@ import { ModelSettingHelp, ModelSettingsColumn } from "./ModelSettingsColumn";
 import type { ModelSetting } from "../model/models";
 import { delegationNextValue } from "../model/crossDelegation";
 import { encodeAdvisor } from "../../../shared/model/host-contracts/delegation";
+import { withAutoCompactSettings } from "../model/autoCompact";
+import { CLAUDE_COMPACT_SETTINGS } from "../model/claudeCompact";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -746,7 +748,9 @@ describe("model panel settings column", () => {
     // Reasoning leads; a dependent setting follows its parent.
     expect(columnLabels()).toEqual(["Reasoning", "Fast", "Auto-compact", "Auto-compact window"]);
     await click(tabs[1]);
-    expect(columnLabels()).toEqual(["Subagent max effort", "Advisor", "Image models", "Subagents"]);
+    expect(columnLabels()).toEqual(["Advisor", "Image models", "Subagents", "Subagent max effort"]);
+    const rows = [...container.querySelectorAll("[data-model-settings] [data-setting-id]")];
+    expect(new Set(rows.map((row) => row.parentElement)).size).toBe(1);
   });
 
   it("toggles Fast with its switch and shows it in the trigger", async () => {
@@ -771,6 +775,50 @@ describe("model panel settings column", () => {
     expect(container.querySelector("[data-model-fast]")).not.toBeNull();
     expect(trigger().getAttribute("aria-label")).toContain("Fast");
   });
+
+  it.each(["codex", "claude"] as const)(
+    "adjusts %s compaction in 50K steps and restores Default",
+    async (harness) => {
+      const model = withAutoCompactSettings({
+        id: `${harness}:compact`,
+        name: "Compact",
+        harness,
+        contextWindow: 400_000,
+        settings: harness === "claude" ? CLAUDE_COMPACT_SETTINGS : [],
+      });
+      const change = vi.fn();
+      function Controls() {
+        const [values, setValues] = useState<Record<string, string>>({
+          autoCompactWindow: "200000",
+        });
+        return createElement(ModelSettingsColumn, {
+          current: model,
+          settings: model.settings!,
+          values,
+          locked: () => false,
+          onExplain: () => undefined,
+          onChoose: (setting, value) => {
+            change(value);
+            setValues((previous) => ({ ...previous, [setting.id]: value }));
+          },
+        });
+      }
+      await act(async () => root.render(createElement(Controls)));
+      const slider = container.querySelector<HTMLElement>('[role="slider"]')!;
+      await key(slider, "ArrowRight");
+      expect(change).toHaveBeenLastCalledWith("250000");
+      expect(slider.getAttribute("aria-valuetext")).toBe("250K");
+      await key(slider, "ArrowLeft");
+      expect(change).toHaveBeenLastCalledWith("200000");
+      await key(slider, "Home");
+      expect(change).toHaveBeenLastCalledWith("default");
+      expect(slider.getAttribute("aria-valuetext")).toBe("Default");
+      await key(slider, "ArrowRight");
+      expect(change).toHaveBeenLastCalledWith(harness === "codex" ? "50000" : "100000");
+      await key(slider, "End");
+      expect(change).toHaveBeenLastCalledWith(harness === "codex" ? "400000" : "1000000");
+    },
+  );
 
   it("marks the selected reasoning level and names it above the bars", async () => {
     await openOrdered({ effort: "high" });

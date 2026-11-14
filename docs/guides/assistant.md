@@ -13,6 +13,15 @@ Memory and History. Existing links to those destinations still open the right vi
 Background privacy checks appear in **Assistant status** without moving the page;
 failures that need attention remain visible. Actions show progress where they start.
 
+In **Records > Notes**, the note list and reading pane scroll separately. Open a
+note to read it, then choose **Edit** to use the same document and Markdown editor
+as Notes. Right-click a note, or press **Shift+F10** on its row, to open its actions.
+Select several notes for bulk deletion. **Select all** applies to the current
+search results; notes selected before changing the search remain selected. The
+confirmation shows the total selected count. If deletion stops after a failure,
+confirmed deletions leave the selection and the remaining notes stay selected.
+Restore confirmed deletions with **Undo** or **Recently deleted**.
+
 The Room's **Conversations** starts in **Global** scope. Its management history
 and draft belong to the Assistant, even when no project or coding session is
 open. Name the target project in requests about project work; the global
@@ -71,7 +80,7 @@ the public installation identity; it does not enroll it or grant access. Headles
 access needs a separate owner decision.
 
 Task observation has separate, default-off completion and needs-input settings
-under **Settings > Background work > Presence and hours > Notifications**. They apply only to explicitly supervised projects.
+under **Settings > Work > Notifications**. They apply only to explicitly supervised projects.
 Preferences can be saved while the source is unavailable; notifications wait
 until this Host can verify the source and transfer an exact notification to its
 native owner. Native acceptance and actual notification display are separate.
@@ -180,6 +189,14 @@ and notifications. **Access** holds everything the assistant may touch: job
 execution permissions, folders and commands, computer use, manual session
 supervision and the 24/7 readiness list. **Advanced** holds cost and context
 limits and conversation retention.
+
+The readiness list shows unresolved checks and their explanations immediately,
+including phone notifications and Host availability after sign-out. **All checks**
+also shows the ready items. Unknown status remains unknown; opening settings does
+not grant permissions or make a check ready.
+
+Manual supervision shows the selected project names. Saving this project scope
+does not enroll conversations; choose each conversation in **Sessions**.
 
 **Access > Permission** applies one choice to jobs, commands and computer use.
 **Full access** also permits changes without another confirmation in the configured

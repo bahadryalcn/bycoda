@@ -2,17 +2,19 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { sendAdoptedFollowUp, cancelAdoptedTurn } from "./adoptedSessionCommands";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
+import { QueueDeferredError } from "./sharedQueue";
 
 const io = vi.hoisted(() => ({
   invoke: vi.fn(),
   request: vi.fn(),
   upload: vi.fn(),
   wake: vi.fn(),
+  capabilities: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: io.invoke }));
 vi.mock("./connections", () => ({
   remoteRequest: io.request,
-  loadRemoteCapabilities: async () => ["sessions.steer", "commands.status"],
+  loadRemoteCapabilities: io.capabilities,
 }));
 vi.mock("./remoteAttachments", () => ({ uploadRemoteAttachments: io.upload }));
 vi.mock("./sharedQueueClient", () => ({ desktopQueueClientId: "desktop:this-window" }));
@@ -33,6 +35,11 @@ beforeEach(() => {
     { id: "local", localHost: true, endpoint: "http://127.0.0.1:3776", environmentId: "home" },
   ]);
   io.upload.mockResolvedValue([]);
+  io.capabilities.mockResolvedValue([
+    "sessions.steer",
+    "commands.status",
+    "sessions.queue.claimDispatch",
+  ]);
   io.request.mockImplementation(async (_machine, method) => {
     if (method === "sessions.get") return snapshot;
     if (method === "sessions.queue.get") return { revision: 7, messages: [] };
@@ -41,6 +48,61 @@ beforeEach(() => {
   });
 });
 const input = () => ({ sessionId: "s", text: "follow-up", attachments: [], isCurrent: () => true });
+
+it("retains a claimed row on an older Host without attempting an incompatible command", async () => {
+  io.capabilities.mockResolvedValue(["sessions.steer", "commands.status"]);
+  io.request.mockImplementation(async (_machine, method) =>
+    method === "sessions.get"
+      ? snapshot
+      : { revision: 7, claim: { id: "q", clientId: "desktop:this-window", token: "claim" } },
+  );
+  await expect(sendAdoptedFollowUp({ ...input(), queuedMessageId: "q" })).rejects.toBeInstanceOf(
+    QueueDeferredError,
+  );
+  expect(io.request.mock.calls.some(([, method]) => method === "commands.dispatch")).toBe(false);
+});
+
+it("keeps a definitive validation refusal distinct from a coordination wait", async () => {
+  const refusal = Object.assign(new Error("RPC_WS_VALIDATION: Invalid attachment"), {
+    code: "RPC_WS_VALIDATION",
+  });
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    throw refusal;
+  });
+  await expect(sendAdoptedFollowUp(input())).rejects.toBe(refusal);
+});
+
+it("passes the existing desktop claim and drain epoch to the Host", async () => {
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    if (method === "sessions.queue.get")
+      return {
+        revision: 7,
+        messages: [],
+        leased: true,
+        drain: { holder: "desktop:this-window", epoch: 3 },
+        claim: { id: "q", clientId: "desktop:this-window", token: "claim" },
+      };
+    return { commandId: "accepted" };
+  });
+  expect(await sendAdoptedFollowUp({ ...input(), queuedMessageId: "q" })).toBe(true);
+  expect(io.request).toHaveBeenCalledWith(
+    "local",
+    "commands.dispatch",
+    expect.objectContaining({
+      queued: {
+        id: "q",
+        clientId: "desktop:this-window",
+        revision: 7,
+        selected: true,
+        leaseAware: true,
+        epoch: 3,
+        claimToken: "claim",
+      },
+    }),
+  );
+});
 
 it("retains creation-time generation through upload and final live-run lookup", async () => {
   snapshot = { ...running, authorityGeneration: 2 };
@@ -125,8 +187,31 @@ it("holds ambiguous delivery for review when no receipt can be recovered", async
 });
 it("does not steer a desktop-owned turn even when its synchronization marker looks the same", async () => {
   snapshot = { ...running, executionOwner: "desktop", runId: "desktop" };
-  await expect(sendAdoptedFollowUp(input())).rejects.toThrow("desktop app");
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
   expect(io.request.mock.calls.some(([, method]) => method === "commands.dispatch")).toBe(false);
+});
+
+it("defers a command proven not sent without marking its delivery unknown", async () => {
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    if (method === "commands.dispatch")
+      throw Object.assign(new Error("RPC_WS_OVERLOAD: busy"), { code: "RPC_WS_OVERLOAD" });
+    return null;
+  });
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
+  expect(io.request.mock.calls.some(([, method]) => method === "commands.status")).toBe(false);
+});
+
+it("defers a host run race without pausing the follow-up queue", async () => {
+  io.request.mockImplementation(async (_machine, method) => {
+    if (method === "sessions.get") return snapshot;
+    if (method === "commands.dispatch")
+      throw new Error(
+        "Host rejected request: This desktop-owned turn cannot be redirected through the host. Queue the message or stop it first.",
+      );
+    return null;
+  });
+  await expect(sendAdoptedFollowUp(input())).rejects.toBeInstanceOf(QueueDeferredError);
 });
 it("fences Stop to the host run rather than stopping a local provider", async () => {
   await cancelAdoptedTurn("s");

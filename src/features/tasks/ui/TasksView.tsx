@@ -206,7 +206,14 @@ function TasksContent({
   const retryBoard = () => {
     if (board.pending || manualRefresh) return;
     setManualRefresh(true);
-    void refreshQueries(true).finally(() => setManualRefresh(false));
+    void Promise.all([
+      refreshQueries(true),
+      ...(section === "sprints" || section === "reports" ? [sprintBoard.refresh()] : []),
+    ])
+      .catch((reason: unknown) =>
+        setError(reason instanceof Error ? reason.message : String(reason)),
+      )
+      .finally(() => setManualRefresh(false));
   };
   const { boardDataState, now } = useBoardDataState(board);
   // Machines whose host keeps a task board, this computer's included.
@@ -230,7 +237,7 @@ function TasksContent({
   const [selectMode, setSelectMode] = useState(false);
   const [bulkSelection, setBulkSelection] = useState(new Set<string>());
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [listView, setListView] = useRetainedState(`${viewStateKey}:list`, false);
+  const [listView, setListView] = useRetainedState(`${viewStateKey}:list`, true);
   const [searchQuery, setSearchQuery] = useRetainedState(`${viewStateKey}:search`, "");
   const [statusFilter, setStatusFilter] = useRetainedState(`${viewStateKey}:status`, "all");
   const [machineFilter, setMachineFilter] = useRetainedState(`${viewStateKey}:machine`, "all");
@@ -626,7 +633,7 @@ function TasksContent({
     };
   };
   const cardActions = useStableCallback(actionsFor);
-  const openCard = useCallback((key: string) => setSelectedKey(key), []);
+  const openCard = useStableCallback((key: string) => setSelectedKey(key));
   const selected = selectedKey
     ? tasks.find((task) => `${task.machineId}:${task.id}` === selectedKey)
     : undefined;
@@ -711,6 +718,18 @@ function TasksContent({
       onRetry={retryBoard}
       onReset={resetTaskFilters}
       onCreate={beginCreate}
+      emptySprint={
+        section === "sprints" &&
+        Boolean(currentSprint) &&
+        !searchQuery.trim() &&
+        statusFilter === "all" &&
+        machineFilter === "all" &&
+        goalFilter === ALL_GOALS
+      }
+      onBacklog={() => {
+        setSection("backlog");
+        setSprintFilter("");
+      }}
     />
   );
 
@@ -752,7 +771,11 @@ function TasksContent({
         machineNotice={
           machines.length === 0 ? (loading ? t("Looking for machines…") : noMachineNotice) : null
         }
-        view={{ visible: section === "sprints" && Boolean(currentSprint), list: listView, onList: setListView }}
+        view={{
+          visible: !showOnboarding && (section === "backlog" || Boolean(currentSprint)),
+          list: listView,
+          onList: setListView,
+        }}
         newReviewNotes={newReviewNotes}
         filters={{
           visible:
@@ -774,7 +797,10 @@ function TasksContent({
           onReset: resetPopoverFilters,
         }}
         select={{
-          visible: (section === "backlog" || Boolean(currentSprint)) && visibleTasks.length > 0 && !selectMode,
+          visible:
+            (section === "backlog" || Boolean(currentSprint)) &&
+            visibleTasks.length > 0 &&
+            !selectMode,
           active: selectMode,
           disabled: bulkBusy,
           onToggle: toggleSelectMode,
@@ -804,7 +830,11 @@ function TasksContent({
           onDetails: () => setStatusDetails(true),
           onRefresh: retryBoard,
         }}
-        create={{ visible: !showOnboarding && (section === "backlog" || Boolean(currentSprint)), disabled: createDisabled, onCreate: beginCreate }}
+        create={{
+          visible: !showOnboarding && (section === "backlog" || Boolean(currentSprint)),
+          disabled: createDisabled,
+          onCreate: beginCreate,
+        }}
       />
       <TasksViewRecovery
         items={planningRecovery}
@@ -967,7 +997,8 @@ function TasksContent({
           now={now}
         />
       ) : null}
-      {(section === "backlog" || (section === "sprints" && currentSprint)) && goalList.length > 0 ? (
+      {(section === "backlog" || (section === "sprints" && currentSprint)) &&
+      goalList.length > 0 ? (
         <GoalList
           goals={goals}
           filter={goalFilter}
@@ -980,7 +1011,9 @@ function TasksContent({
           }
         />
       ) : null}
-      {(section === "backlog" || (section === "sprints" && currentSprint)) && hasTasks && !loading ? (
+      {(section === "backlog" || (section === "sprints" && currentSprint)) &&
+      hasTasks &&
+      !loading ? (
         <p className="task-board-summary">
           <Text size="caption" tone="secondary" leading="inherit" className="task-scope-summary">
             {summaryLine}
@@ -996,11 +1029,11 @@ function TasksContent({
           axis="both"
           scrollbar="always"
           gutter="stable"
-          className="min-h-0 min-w-0 flex-1 overscroll-none p-3 @max-[640px]/task-area:has-[+aside]:hidden"
+          className="min-h-0 min-w-0 flex-1 overscroll-none p-4 @max-[640px]/task-area:has-[+aside]:hidden"
         >
           {loading ? (
             <SurfaceLoading />
-          ) : listView || selectMode || section === "backlog" ? (
+          ) : listView || selectMode ? (
             tasks.length ? (
               <TaskList
                 stateKey={`${viewStateKey}:list:${projectFilter}:${sprintFilter}:${section}:${statusFilter}`}

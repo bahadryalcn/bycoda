@@ -133,9 +133,7 @@ function RolesEditor({
             ) : undefined
           }
         >
-          {t(
-            "The model order is empty, so everything below uses its own model for now. Add models to the order to turn this on.",
-          )}
+          {t("Model order is empty")}
         </InlineMessage>
       ) : null}
       {MODEL_ROLE_GROUPS.map((group) => (
@@ -145,7 +143,6 @@ function RolesEditor({
               key={item.role}
               role={item.role}
               label={item.labelKey}
-              description={item.descriptionKey}
               machineId={machineId}
               version={base.version}
               pools={base.pools}

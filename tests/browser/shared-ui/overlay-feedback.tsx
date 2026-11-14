@@ -537,6 +537,31 @@ function LoadingSection() {
 
 function Fixture() {
   const params = new URLSearchParams(location.search);
+  if (params.get("view") === "dismiss-layout")
+    return (
+      <main className="min-h-screen bg-(--ui-surface) p-3 text-(--color-content)">
+        <div className="grid max-w-sm gap-3" data-testid="dismiss-layout">
+          {(["info", "warning", "danger", "success"] as const).map((tone) => (
+            <Alert
+              key={tone}
+              inline
+              tone={tone}
+              onDismiss={() => count(`dismiss-${tone}`)}
+              action={
+                tone === "warning" ? (
+                  <Button onClick={() => count("retry-layout")}>Retry</Button>
+                ) : undefined
+              }
+            >
+              <span>
+                bahadryalcn-macbook-pro (desktop) stopped 1 conversation.{" "}
+                {tone === "danger" ? "VeryLongRemoteMachineName".repeat(8) : ""}
+              </span>
+            </Alert>
+          ))}
+        </div>
+      </main>
+    );
   if (params.get("view") === "boot")
     return <BootFailure error={new Error(FULL_DIAGNOSTIC)} onRetry={() => count("boot-retry")} />;
   return (

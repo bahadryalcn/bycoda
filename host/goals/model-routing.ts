@@ -15,6 +15,7 @@ export async function resolveGoalRunModel(
     role,
     input,
     explicit || isFixedRouting(goal) ? { kind: "fixed" } : { kind: "default" },
+    goal.leadProjectId ?? goal.projectIds[0],
   );
   return { resolution, target: resolution.ok ? resolution.target : modelTarget(input) };
 }

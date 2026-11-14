@@ -112,6 +112,9 @@ export function reportRemoteLoad(cwd: string, source: string, error?: unknown): 
  * reach the machine (or an outdated host) is recorded; any other error means
  * the machine answered. */
 export function reportRemoteConnection(cwd: string, source: string, error?: unknown): void {
+  // A timed-out/overloaded request proves neither failure nor recovery. Keep
+  // the previous outage and backoff until an actual answer arrives.
+  if (error !== undefined && classifyRemoteError(error).kind === "temporary") return;
   reportRemoteLoad(
     cwd,
     source,

@@ -20,6 +20,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("reopens saved Models settings in Providers Defaults", () => {
+  localStorage.setItem("bycoda.settingsSection", "models");
+  expect(loadSettingsSection()).toBe("providers");
+  expect(loadSettingsAliasAnchor()).toBe("models-chat");
+});
+
 it.each(Object.entries(TOOL_SETTINGS_TAB_ANCHORS) as [ToolSettingsTab, string][])(
   "migrates the %s section to its canonical page and destination",
   (alias, anchor) => {

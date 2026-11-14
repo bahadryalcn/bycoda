@@ -6,6 +6,11 @@
   gap: 0.25rem;
   min-inline-size: 0;
 }
+.task-form-description {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
 .task-form-targets-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
@@ -90,4 +95,94 @@
 }
 .task-form-advanced > div > :last-child {
   padding-block-end: 0;
+}
+
+/* One form language for the new/edit task and new goal dialogs: the dialog
+   owns one scroll region (.task-form-body), the footer stays in view. */
+.task-form {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
+.task-form-body {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  padding: 0.75rem 1rem;
+}
+.task-form-fields {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+}
+.task-form-context {
+  display: flex;
+  min-inline-size: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* No filled panel: the group is a hairline-framed block, rows split by hairlines. */
+.task-form-options,
+.task-form-options:empty {
+  display: none;
+}
+.task-workflow-pick {
+  display: flex;
+  min-inline-size: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+.task-form-section {
+  min-inline-size: 0;
+  padding-block: 0.375rem;
+}
+.task-form-section-body {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+  padding-block-end: 0.5rem;
+}
+.task-form-hint {
+  overflow-wrap: anywhere;
+}
+.task-form-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 0.75rem 1rem;
+}
+.task-form-limit {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+  padding: 0.5rem 0.75rem;
+}
+.task-form-limit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.task-form-footer {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+.task-form-footer-hint {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+}
+
+/* Long descriptions scroll inside a viewport-relative cap so the form actions stay in reach. */
+[data-task-prompt] textarea {
+  max-block-size: clamp(10rem, 28dvh, 20rem);
 }

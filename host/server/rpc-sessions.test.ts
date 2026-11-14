@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { handleSessionsRpc } from "./rpc-sessions";
 
 type Gate = { promise: Promise<unknown>; resolve: (value: unknown) => void };
@@ -95,4 +95,39 @@ it("refuses to delete or archive a crew-managed session with the crew message", 
       } as never,
     ),
   ).rejects.toMatchObject({ code: "crew_managed_session" });
+});
+
+it("bounds optional push ownership lookup while answering the desktop heartbeat", async () => {
+  const hostPush = gate();
+  const bounded = vi.fn((work: () => Promise<unknown>, fallback: unknown) => {
+    const pending = work();
+    return Promise.race([pending, Promise.resolve(fallback)]);
+  });
+  const dependencies = {
+    desktop: { live: { beat: () => ({ commands: [] }) } },
+    pushNotifications: { desktopPresence: () => undefined, ownedEvents: () => hostPush.promise },
+    desktopCommandDelivery: { poll: async () => [] },
+    renewRunLeases: async () => undefined,
+    heartbeatEffects: Promise.resolve(),
+    withinBeat: bounded,
+    desktopDelete: { beat: async () => ({ jobs: [], acked: [] }) },
+    providerInbox: { beat: async () => ({ jobs: [], acked: [] }) },
+    adoptedChanges: { changesSince: async () => undefined },
+    renewQueueLeases: async () => undefined,
+    hostNotes: { revision: 0 },
+    sessionQueues: { changesSince: () => ({ seq: 0 }) },
+    remoteActivity: { since: () => ({ seq: 0, events: [] }) },
+  };
+  const request = {
+    input: { method: "sessions.desktopLive" },
+    params: {},
+    domainContext: {},
+    result: undefined as unknown,
+  };
+  const done = handleSessionsRpc(dependencies as never, request as never);
+  await new Promise((resolve) => setImmediate(resolve));
+  const result = request.result;
+  hostPush.resolve([]);
+  await done;
+  expect(result).toMatchObject({ commands: [] });
 });

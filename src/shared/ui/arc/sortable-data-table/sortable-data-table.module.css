@@ -374,23 +374,23 @@
 }
 
 @container (max-width: 38.75rem) {
-  .scroller {
+  .scroller:not(:has(> .staticTable)) {
     overflow: visible;
   }
   .band {
     display: none;
   }
-  .table {
+  .table:not(.staticTable) {
     display: block;
     width: 100%;
     min-width: 0;
     max-width: 100%;
   }
-  .table thead {
+  .table:not(.staticTable) thead {
     display: block;
   }
   /* The header becomes a strip of sort controls, so sorting stays one tap away on a phone. */
-  .table thead tr {
+  .table:not(.staticTable) thead tr {
     display: flex;
     align-items: center;
     gap: var(--space-1);
@@ -399,10 +399,10 @@
     border-bottom: 1px solid var(--border);
     scrollbar-width: none;
   }
-  .table thead tr::-webkit-scrollbar {
+  .table:not(.staticTable) thead tr::-webkit-scrollbar {
     display: none;
   }
-  .table th {
+  .table:not(.staticTable) th {
     display: block;
     flex: none;
     height: auto;
@@ -411,7 +411,7 @@
     background: transparent;
   }
   /* Select all stays pinned while the sort controls scroll beneath it. */
-  .table th.selectCell {
+  .table:not(.staticTable) th.selectCell {
     position: sticky;
     left: calc(-1 * var(--space-2));
     z-index: 1;
@@ -420,11 +420,11 @@
     padding: 0 0 0 var(--space-3);
     background: var(--surface);
   }
-  .table th.selectCell .selectHit {
+  .table:not(.staticTable) th.selectCell .selectHit {
     height: 32px;
   }
   /* Once the strip scrolls, a fade off the pinned cell hides the word sliding under it. */
-  .table th.selectCell::after {
+  .table:not(.staticTable) th.selectCell::after {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -437,14 +437,14 @@
   }
   /* Browsers without scroll-driven animations would play the fade once, at zero duration, and leave it on; they keep it off. */
   @supports (animation-timeline: scroll()) {
-    .table th.selectCell::after {
+    .table:not(.staticTable) th.selectCell::after {
       animation: stripFade linear both;
       animation-timeline: scroll(nearest inline);
       animation-range: 0 24px;
     }
   }
-  .table th .sortButton,
-  .table[data-selectable] th[data-primary] .sortButton {
+  .table:not(.staticTable) th .sortButton,
+  .table:not(.staticTable)[data-selectable] th[data-primary] .sortButton {
     width: auto;
     height: 32px;
     border-radius: var(--radius-control);
@@ -453,21 +453,21 @@
       background-color var(--duration-standard) var(--ease-standard),
       color var(--duration-standard) var(--ease-standard);
   }
-  .table th[data-sorted] .sortButton {
+  .table:not(.staticTable) th[data-sorted] .sortButton {
     background: var(--surface-muted);
   }
-  .table th[data-numeric] .sortInner {
+  .table:not(.staticTable) th[data-numeric] .sortInner {
     flex-direction: row;
   }
   .sortButton:focus-visible {
     --focus-outline-offset: 1px;
   }
-  .table tbody {
+  .table:not(.staticTable) tbody {
     display: block;
     width: 100%;
   }
   /* Rows fold into two lines: the first column with its number, then the remaining details. */
-  .table tbody tr {
+  .table:not(.staticTable) tbody tr {
     --row-fill: var(--surface);
     position: relative;
     display: flex;
@@ -483,22 +483,22 @@
     background-color: var(--row-fill);
     transition: background-color var(--duration-standard) var(--ease-standard);
   }
-  .table tbody tr::after {
+  .table:not(.staticTable) tbody tr::after {
     order: 1;
     flex-basis: 100%;
     content: "";
   }
-  .table[data-selectable] tbody tr {
+  .table:not(.staticTable)[data-selectable] tbody tr {
     padding-left: 44px;
   }
-  .table[data-selectable] tbody tr[data-selected],
-  .table tbody tr[data-active] {
+  .table:not(.staticTable)[data-selectable] tbody tr[data-selected],
+  .table:not(.staticTable) tbody tr[data-active] {
     --row-fill: var(--ui-surface-selected);
   }
-  .table tbody tr:last-child {
+  .table:not(.staticTable) tbody tr:last-child {
     border-bottom: 0;
   }
-  .table td {
+  .table:not(.staticTable) td {
     order: 2;
     display: block;
     min-width: 0;
@@ -510,25 +510,25 @@
     font-size: var(--text-xs);
     text-align: left;
   }
-  .table[data-selectable] td[data-primary]:not([data-sortable]) {
+  .table:not(.staticTable)[data-selectable] td[data-primary]:not([data-sortable]) {
     padding-left: 0;
   }
-  .table[data-intrinsic] [data-sizing="flex"] {
+  .table:not(.staticTable)[data-intrinsic] [data-sizing="flex"] {
     width: auto;
     max-width: none;
   }
-  .table [data-sizing="content"] {
+  .table:not(.staticTable) [data-sizing="content"] {
     width: auto;
     flex: none;
   }
-  .table td[data-primary] {
+  .table:not(.staticTable) td[data-primary] {
     order: 0;
     flex: 1 1 0;
     color: var(--foreground);
     font-size: var(--text-sm);
     font-weight: 500;
   }
-  .table td[data-numeric]:not([data-primary]) {
+  .table:not(.staticTable) td[data-numeric]:not([data-primary]) {
     order: 0;
     flex: none;
     margin-left: auto;
@@ -536,7 +536,7 @@
     color: var(--foreground);
     font-size: var(--text-sm);
   }
-  .table td[data-numeric] ~ td[data-numeric] {
+  .table:not(.staticTable) td[data-numeric] ~ td[data-numeric] {
     order: 2;
     margin-left: 0;
     padding-left: 0;
@@ -544,10 +544,10 @@
     font-size: var(--text-xs);
   }
   /* The sorted value lifts to full contrast, echoing the tinted column on wider screens. */
-  .table td[data-sorted]:not([data-primary]) {
+  .table:not(.staticTable) td[data-sorted]:not([data-primary]) {
     color: var(--foreground);
   }
-  .table td.selectCell {
+  .table:not(.staticTable) td.selectCell {
     position: absolute;
     top: 0;
     bottom: 0;
@@ -557,42 +557,42 @@
     align-items: center;
     padding: 0;
   }
-  .table td.selectCell .selectHit {
+  .table:not(.staticTable) td.selectCell .selectHit {
     justify-content: center;
   }
-  .table .empty {
+  .table:not(.staticTable) .empty {
     flex: 1 0 100%;
     height: auto !important;
     padding: var(--space-6) 0;
   }
-  .table[data-selectable] tbody tr:has(.empty) {
+  .table:not(.staticTable)[data-selectable] tbody tr:has(.empty) {
     padding-left: var(--space-4);
   }
 }
 @media (hover: hover) and (pointer: fine) {
   @container (max-width: 38.75rem) {
-    .table tbody tr:hover {
+    .table:not(.staticTable) tbody tr:hover {
       --row-fill: var(--ui-surface-hover);
     }
-    .table[data-selectable] tbody tr[data-selected]:hover {
+    .table:not(.staticTable)[data-selectable] tbody tr[data-selected]:hover {
       --row-fill: var(--ui-surface-selected);
     }
-    .table tbody tr:hover td {
+    .table:not(.staticTable) tbody tr:hover td {
       background: transparent;
     }
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .table th,
-  .table td,
-  .table tbody tr,
+  .table:not(.staticTable) th,
+  .table:not(.staticTable) td,
+  .table:not(.staticTable) tbody tr,
   .sortInner,
   .sortHint,
   .selectBox,
   .count,
   .clear,
-  .table th .sortButton {
+  .table:not(.staticTable) th .sortButton {
     transition: none !important;
   }
   .selectInput:active + .selectBox {

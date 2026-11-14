@@ -3,7 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { FieldGroup } from "../../../shared/ui/FieldGroup";
 import { Disclosure } from "../../../shared/ui/Disclosure";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { SshCertificateInspection } from "./SshCertificateInspection";
 import { SshIdentityField } from "./SshIdentityField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -132,6 +132,7 @@ export function SshServerEditor({
     !proxyConflict &&
     validSshEndpointPreview(endpoint);
   const [saving, setSaving] = useState(false);
+  const savingLock = useRef(false);
   const [error, setError] = useState("");
   const formId = useId();
   // A saved new server or quick connection must not reopen pre-filled. Edits keep their draft.
@@ -161,7 +162,7 @@ export function SshServerEditor({
     <Sheet
       title={onConnect ? t("Quick connect") : server ? t("Edit SSH server") : t("Add SSH server")}
       onClose={() => {
-        if (!saving) onClose();
+        if (!savingLock.current) onClose();
       }}
       size="40rem"
       footer={
@@ -180,12 +181,13 @@ export function SshServerEditor({
         className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (saving) return;
+          if (savingLock.current) return;
           const sshPort = Number(port);
           if (!Number.isInteger(sshPort) || sshPort < 1 || sshPort > 65535) {
             setError(t("Enter a port between 1 and 65535."));
             return;
           }
+          savingLock.current = true;
           setSaving(true);
           setError("");
           let phase: "save" | "connect" = "save";
@@ -226,6 +228,7 @@ export function SshServerEditor({
               `${phase === "connect" ? t("Couldn’t open this SSH connection.") : t("Couldn’t save the SSH server.")} ${errorText(reason)}`,
             );
           } finally {
+            savingLock.current = false;
             setSaving(false);
           }
         }}
@@ -267,19 +270,10 @@ export function SshServerEditor({
         <TextField
           label={t("Name")}
           value={name}
-          required={!onConnect || saveConnection}
           maxLength={200}
           onChange={(event) => setName(event.target.value)}
           disabled={saving}
         />
-        <Text as="div" tone="muted">
-          <p>
-            {t(
-              "Enter the server address and SSH user. Connect opens a terminal; Save adds it to your servers.",
-            )}
-          </p>
-          <p className="mbs-2">{t("Leave empty to use your SSH agent and default identities.")}</p>
-        </Text>
         {!onConnect && valid && endpoint.httpProxy ? (
           <Text wrap="anywhere" as="p" tone="muted">
             {endpoint.httpProxy.scheme === "https" ? "HTTPS CONNECT" : "HTTP CONNECT"}:{" "}

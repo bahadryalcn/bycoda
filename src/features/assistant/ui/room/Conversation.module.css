@@ -145,9 +145,7 @@
 }
 .summaryText {
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-inline-size: 0;
 }
 .actions {
   display: flex;

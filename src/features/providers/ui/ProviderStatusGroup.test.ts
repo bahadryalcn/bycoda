@@ -3,7 +3,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { ProviderStatusGroup } from "./ProviderStatusGroup";
-const updateState = vi.hoisted(() => ({ catalogRefresh: "unchanged", failed: false }));
+const updateState = vi.hoisted(() => ({
+  catalogRefresh: "unchanged",
+  failed: false,
+  updating: false,
+}));
 vi.mock("../../../integrations/harness/core/availability", () => ({
   hasProbedHarnessAvailability: () => true,
 }));
@@ -12,9 +16,11 @@ vi.mock("../model/harnessUpdateActions", () => ({
   getHarnessUpdateSnapshot: () => ({
     checking: false,
     runs: {
-      codex: updateState.failed
-        ? { status: "failed", error: "Version verification failed" }
-        : { status: "updated", version: "0.95.0", catalogRefresh: updateState.catalogRefresh },
+      codex: updateState.updating
+        ? { status: "updating" }
+        : updateState.failed
+          ? { status: "failed", error: "Version verification failed" }
+          : { status: "updated", version: "0.95.0", catalogRefresh: updateState.catalogRefresh },
     },
     checks: [
       {
@@ -118,4 +124,40 @@ it("uses failure glyph with a retained successful version check", () => {
   } finally {
     updateState.failed = false;
   }
+});
+
+it("disables version checks while the same CLI is updating", () => {
+  updateState.updating = true;
+  try {
+    const html = renderToStaticMarkup(
+      createElement(ProviderStatusGroup, {
+        harness: "codex",
+        available: true,
+        checkedAt: null,
+        onCheck: vi.fn(),
+        onSetup: vi.fn(),
+      }),
+    );
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const check = document.querySelector('button[aria-label="Check for updates: Codex"]');
+    expect(check).not.toBeNull();
+    expect(check?.hasAttribute("disabled")).toBe(true);
+  } finally {
+    updateState.updating = false;
+  }
+});
+
+it("does not present a stale installed version for a missing CLI", () => {
+  updateState.catalogRefresh = "unchanged";
+  const html = renderToStaticMarkup(
+    createElement(ProviderStatusGroup, {
+      harness: "codex",
+      available: false,
+      checkedAt: null,
+      onCheck: vi.fn(),
+      onSetup: vi.fn(),
+    }),
+  );
+  expect(html).toContain("Not installed");
+  expect(html).not.toContain("0.94.0");
 });

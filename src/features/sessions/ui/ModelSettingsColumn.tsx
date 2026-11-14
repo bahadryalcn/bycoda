@@ -16,6 +16,7 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Switch } from "../../../shared/ui/Switch";
+import { Slider } from "../../../shared/ui/Slider";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ChevronDown, Plus, X, Zap } from "../../../shared/ui/icons";
 import {
@@ -163,8 +164,10 @@ export function ModelSettingsColumn({
     onExplain(next);
   };
   const picking = shown.find((setting) => setting.id === pickingId);
-  const pinned = shown.filter((setting) => settingControlKind(setting) === "effort");
-  const scrolling = shown.filter((setting) => settingControlKind(setting) !== "effort");
+  const pinned = shown.filter(
+    (setting) => shownTab === "settings" && settingControlKind(setting) === "effort",
+  );
+  const scrolling = shown.filter((setting) => !pinned.includes(setting));
   const renderSetting = (setting: ModelSetting) => (
     <SettingRow
       key={setting.id}
@@ -241,7 +244,7 @@ export function ModelSettingsColumn({
             </div>
           ) : null}
           <div
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none px-1.5 pt-1 pb-2"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-none px-1.5 pt-1 pb-2"
             onMouseOver={explain}
             onMouseLeave={() => setExplained(focusedSetting.current)}
           >
@@ -308,6 +311,36 @@ function SettingRow({
       {trailing}
     </div>
   );
+
+  if (kind === "slider") {
+    const thresholds = setting.options
+      .map((option) => Number(option.value))
+      .filter((tokens) => tokens > 0);
+    const minimum = Math.min(...thresholds) - 50_000;
+    const maximum = Math.max(...thresholds);
+    const tokens = Number(value) || minimum;
+    const format = (next: number) =>
+      next === minimum
+        ? t("Default")
+        : (setting.options.find((option) => Number(option.value) === next)?.label ??
+          formatNumber(next));
+    return (
+      <div data-setting-id={setting.id} className="px-1.5 py-2">
+        <Slider
+          label={label}
+          value={tokens}
+          min={minimum}
+          max={maximum}
+          step={50_000}
+          largeStep={50_000}
+          format={format}
+          disabled={disabled}
+          onValueChange={(next) => onChoose(next === minimum ? "default" : String(next))}
+        />
+        {hiddenHelp}
+      </div>
+    );
+  }
 
   if (kind === "toggle") {
     return (
@@ -405,7 +438,7 @@ function SettingRow({
       const subagents = isSubagentSetting(setting);
       const mode = subagentMode(value);
       // Picked models share rows so identities and removal actions remain comparable.
-      // Last in the column, the list shrinks and scrolls on its own so the rows above stay put.
+      // The column owns scrolling so model lists and effort keep their reading order.
       return (
         <div data-setting-id={setting.id} className="flex min-h-0 shrink-0 flex-col pb-1">
           {heading(
@@ -426,24 +459,20 @@ function SettingRow({
               />
             </div>
           ) : null}
-          <div
-            className="flex min-h-0 flex-col gap-1 overflow-y-auto overscroll-none px-1.5"
-            role="group"
-            aria-label={label}
-          >
+          <div className="flex flex-col gap-1 px-1.5" role="group" aria-label={label}>
             {picked.map((option) => (
               <Text
                 as="span"
                 key={option.value}
                 size="caption"
-                tone="inherit"
+                tone="neutral"
                 {...surfaceAttributes(
                   { frame: "neutral", edge: "bottom" },
                   "flex min-w-0 items-center gap-2 py-0.5 ps-1 pe-0.5",
                 )}
               >
                 <DelegationOptionIcon setting={setting} value={option.value} />
-                <ClampText as="span" lines={2} className="min-w-0 flex-1">
+                <ClampText as="span" lines={2} expandable={false} className="min-w-0 flex-1">
                   {delegationShortLabel(setting, option.value, t(option.label))}
                 </ClampText>
                 <Button

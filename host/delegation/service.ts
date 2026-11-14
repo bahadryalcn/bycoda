@@ -15,6 +15,7 @@ import {
   type LocalSessionLocator,
 } from "../../src/features/sessions/model/localSessionReference";
 import type { Session } from "../../src/features/sessions/model/session";
+import { executionUserIndex } from "../../src/features/sessions/model/executionTurn";
 import type { AgentModel } from "../../src/features/sessions/model/models";
 import { CLAUDE_SUBAGENT_SETTINGS } from "../../src/features/sessions/model/claudeSubagents";
 import {
@@ -52,12 +53,16 @@ import { childModelSettings } from "./child-settings";
 import { delegationBudgetScope, delegationWorkRoot } from "./work-root";
 import { cancelSessionWorkOccurrence } from "../work/session-adapter";
 import { refuseSingleSlotChild } from "./capacity";
+import { AgentCommunication } from "./communication";
+import { agentMessageDelivery, inspectAgentSession } from "./message-delivery";
 
 export type DelegationDependencies = {
   engine: SessionRunEngine & { store: HostStore };
   /** Folder that holds Host feature state. */
   directory: string;
-  featureSession: (sessionId: string) => Promise<Pick<HostSession, "projectId" | "session">>;
+  featureSession: (
+    sessionId: string,
+  ) => Promise<Pick<HostSession, "projectId" | "session" | "runId">>;
   models: (projectId: string) => Promise<HostModelCatalog>;
   providers: readonly RemoteProvider[];
   defaultAccounts?: () => Promise<Partial<Record<RemoteProvider, string>>>;
@@ -65,6 +70,7 @@ export type DelegationDependencies = {
     provider: RemoteProvider,
     accountId?: string,
   ) => Promise<"signedIn" | "signedOut" | "unknown">;
+  enqueueParent?: (sessionId: string, id: string, text: string) => Promise<void>;
 };
 
 export type AgentsCaller = { sessionId: string; projectId: string };
@@ -79,11 +85,31 @@ const KIND_LABEL: Record<DelegationKind, string> = { subagent: "Subagent", advis
  */
 export class ConversationDelegation {
   readonly store: DelegationStore;
+  readonly communication: AgentCommunication;
   private chain: Promise<unknown> = Promise.resolve();
   private readonly continuations = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: DelegationDependencies) {
     this.store = new DelegationStore(deps.directory);
+    this.communication = new AgentCommunication({
+      directory: deps.directory,
+      records: this.store,
+      inspect: (id) => inspectAgentSession(deps, id),
+      result: (record) => this.describe(record, async () => undefined),
+      deliver: agentMessageDelivery(deps, async (message) => {
+        const target = message.target!;
+        const result = await this.reply(
+          { requestId: message.commandId, runId: target.runId, message: message.text },
+          {
+            sessionId: target.parentSessionId,
+            projectId: (await deps.featureSession(target.parentSessionId)).projectId,
+          },
+          async () => undefined,
+          message.text,
+        );
+        return "waiting" in result ? "waiting" : "started";
+      }),
+    });
   }
 
   async call(
@@ -92,6 +118,8 @@ export class ConversationDelegation {
     caller: AgentsCaller,
     locate: Locate,
   ): Promise<unknown> {
+    if (action === "agents.list") return this.communication.list(caller);
+    if (action === "agents.send") return this.communication.send(args, caller);
     if (action === "agents.options") return await this.options(caller);
     if (action === "agents.delegate") return await this.start("subagent", args, caller, locate);
     if (action === "agents.consult") return await this.start("advisor", args, caller, locate);
@@ -99,6 +127,26 @@ export class ConversationDelegation {
     if (action === "agents.wait") return await this.wait(args, caller, locate);
     if (action === "agents.cancel") return await this.cancel(args, caller, locate);
     throw new Error("Unsupported agents tool.");
+  }
+
+  async resumePending(): Promise<void> {
+    for (const record of await this.store.list())
+      if (
+        record.notifyOnCompletion &&
+        record.pending &&
+        !record.childSessionId &&
+        !record.communicationClosed &&
+        record.finishedAt === undefined
+      )
+        await this.start(
+          record.kind,
+          record.pending.args,
+          {
+            sessionId: record.parentSessionId,
+            projectId: (await this.deps.featureSession(record.parentSessionId)).projectId,
+          },
+          async () => undefined,
+        );
   }
 
   /** Internal task recovery entry. A model-facing agents call cannot invoke this path. */
@@ -125,6 +173,9 @@ export class ConversationDelegation {
 
   /** Stops every running child of a parent that was cancelled or deleted. */
   async cancelChildren(parentSessionId: string): Promise<void> {
+    for (const record of await this.store.list())
+      if (record.parentSessionId === parentSessionId)
+        await this.store.patch(record.runId, { communicationClosed: true });
     const records = (await this.refresh(await this.store.list())).filter(
       (record) => record.parentSessionId === parentSessionId && record.finishedAt === undefined,
     );
@@ -243,6 +294,11 @@ export class ConversationDelegation {
         : {}),
       ...(advisor ? { advisor: describe(advisor) } : {}),
       running: { subagents: running.subagent, advisors: running.advisor },
+      notifyOnCompletionAvailable: !(await delegationWorkRoot(
+        this.deps.engine.store,
+        caller.sessionId,
+        own.runId,
+      )),
       limits: {
         runningSubagents: DELEGATION_LIMITS.runningSubagents,
         runningAdvisors: DELEGATION_LIMITS.runningAdvisors,
@@ -258,6 +314,8 @@ export class ConversationDelegation {
     taskRepair = false,
   ) {
     const own = await this.caller(caller, taskRepair);
+    if (args.notifyOnCompletion !== undefined && typeof args.notifyOnCompletion !== "boolean")
+      throw new Error("notifyOnCompletion must be a boolean.");
     if (
       args.effort !== undefined &&
       (typeof args.effort !== "string" || !EFFORT_LEVELS.includes(args.effort))
@@ -274,6 +332,7 @@ export class ConversationDelegation {
           args.question,
           args.context,
           ...(args.effort === undefined ? [] : [args.effort]),
+          ...(args.notifyOnCompletion === undefined ? [] : [args.notifyOnCompletion]),
         ]),
       )
       .digest("hex");
@@ -286,7 +345,7 @@ export class ConversationDelegation {
           return await this.describe(existing, locate);
       }
       const callerFingerprint = JSON.stringify([
-        (await this.deps.engine.store.session(caller.sessionId)).runId,
+        own.runId ?? own.session.blocks[executionUserIndex(own.session.blocks)]?.id,
         own.session.cwd,
         own.session.harness,
         own.session.model,
@@ -329,17 +388,22 @@ export class ConversationDelegation {
       const runId = existing?.runId ?? randomUUID();
       const rootWorkId =
         existing?.rootWorkId ??
-        (await delegationWorkRoot(this.deps.engine.store, caller.sessionId));
+        (await delegationWorkRoot(this.deps.engine.store, caller.sessionId, own.runId));
+      if (rootWorkId && args.notifyOnCompletion === true)
+        throw new Error(
+          "Unattended Work parents must wait for child results; background completion is for interactive conversations.",
+        );
       if (
         existing?.pending &&
-        existing.rootWorkId !== (await delegationWorkRoot(this.deps.engine.store, caller.sessionId))
+        existing.rootWorkId !==
+          (await delegationWorkRoot(this.deps.engine.store, caller.sessionId, own.runId))
       ) {
         await this.cancelPending(existing);
         throw new Error("Queued delegation caller work root changed. Submit a new request.");
       }
       const budgetScope =
         existing?.budgetScope ??
-        (await delegationBudgetScope(this.deps.engine.store, caller.sessionId));
+        (await delegationBudgetScope(this.deps.engine.store, caller.sessionId, own.runId));
       const label = `${KIND_LABEL[kind]} · ${model.name}`;
       const title = String(args.title ?? args.question ?? "").slice(
         0,
@@ -368,6 +432,7 @@ export class ConversationDelegation {
           kind,
           parentSessionId: caller.sessionId,
           childSessionId: "",
+          groupId: own.runId ?? own.session.blocks[executionUserIndex(own.session.blocks)]?.id,
           model: ref,
           title,
           requestKey,
@@ -375,6 +440,7 @@ export class ConversationDelegation {
           modelSettings,
           pending: { args: structuredClone(args), callerFingerprint },
           startedAt: parent.startedAt,
+          ...(args.notifyOnCompletion === true ? { notifyOnCompletion: true } : {}),
           ...(rootWorkId ? { rootWorkId } : {}),
           ...(budgetScope ? { budgetScope } : {}),
         });
@@ -458,14 +524,19 @@ export class ConversationDelegation {
     }
   }
 
-  private async reply(args: Record<string, unknown>, caller: AgentsCaller, locate: Locate) {
+  private async reply(
+    args: Record<string, unknown>,
+    caller: AgentsCaller,
+    locate: Locate,
+    brief?: string,
+  ) {
     const own = await this.caller(caller);
     if (typeof args.requestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(args.requestId))
       throw new Error("Invalid requestId.");
     if (
       typeof args.message !== "string" ||
       args.message.length < 1 ||
-      args.message.length > DELEGATION_LIMITS.promptChars
+      args.message.length > (brief ? 20_000 : DELEGATION_LIMITS.promptChars)
     )
       throw new Error("Invalid message length.");
     if (typeof args.runId !== "string" || args.runId.length < 1 || args.runId.length > 200)
@@ -484,6 +555,8 @@ export class ConversationDelegation {
         return await this.describe(existing, locate);
       }
       const status = await this.statusOf(record);
+      if (brief && (status.status === "running" || status.status === "needsInput"))
+        return { waiting: true };
       if (status.status === "running") throw new Error("Run is running. Wait or cancel it first.");
       if (status.status === "needsInput")
         throw new Error("Answer the approval in the child's own session first.");
@@ -493,6 +566,7 @@ export class ConversationDelegation {
         record.kind === "subagent"
           ? DELEGATION_LIMITS.runningSubagents
           : DELEGATION_LIMITS.runningAdvisors;
+      if (brief && running[record.kind] >= limit) return { waiting: true };
       if (running[record.kind] >= limit)
         throw new Error("Running " + record.kind + " limit reached. Wait or cancel first.");
       // Concurrent waits must not mistake this assistant's send for an owner follow-up.
@@ -536,7 +610,8 @@ export class ConversationDelegation {
           runtimeMode: child.session.runtimeMode,
         });
         const rootWorkId =
-          record.rootWorkId ?? (await delegationWorkRoot(this.deps.engine.store, caller.sessionId));
+          record.rootWorkId ??
+          (await delegationWorkRoot(this.deps.engine.store, caller.sessionId, own.runId));
         if (rootWorkId) {
           const started = await launchSessionRun(this.deps.engine.store, this.deps.engine, {
             work: {
@@ -562,9 +637,10 @@ export class ConversationDelegation {
             },
             runtimeMode: child.session.runtimeMode,
             title: record.title,
-            prompt: replyBrief(args.message as string),
+            prompt: brief ?? replyBrief(args.message as string),
             ...(record.kind === "advisor" ? { intent: "plan" as const } : {}),
           });
+          if (brief && started.deferred) return { waiting: true };
           if (started.deferred || !started.runId)
             throw new Error(
               started.error ??
@@ -575,7 +651,7 @@ export class ConversationDelegation {
             type: "send",
             commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:send`,
             sessionId: record.childSessionId,
-            text: replyBrief(args.message as string),
+            text: brief ?? replyBrief(args.message as string),
             ...(record.kind === "advisor" ? { intent: "plan" as const } : {}),
           });
         }
@@ -586,6 +662,7 @@ export class ConversationDelegation {
           status: undefined,
           error: undefined,
           ownerFollowUp: undefined,
+          communicationClosed: undefined,
           replies: [...(record.replies ?? []), { requestKey, payloadHash }],
         });
       } finally {

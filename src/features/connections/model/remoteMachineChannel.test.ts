@@ -725,6 +725,32 @@ it("bounds logical resnapshot recovery before HTTP fallback without a physical r
   stop();
 });
 
+it("keeps a transient WebSocket refusal quiet when HTTP can serve the same read", async () => {
+  vi.useFakeTimers();
+  const { port } = nativeFixture("ws-overload");
+  vi.mocked(port.request).mockRejectedValue(
+    Object.assign(new Error("RPC_WS_OVERLOAD: busy"), { code: "RPC_WS_OVERLOAD" }),
+  );
+  vi.mocked(remoteRequest)
+    .mockResolvedValueOnce({ instanceId: "http", sessions: [], projects: [], reset: false })
+    .mockImplementation(() => new Promise(() => {}));
+  const errors = vi.fn();
+  const listener = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "ws-overload",
+    { projects: [{ projectId: "p" }] },
+    listener,
+    errors,
+  );
+  await flushNative();
+  await vi.advanceTimersByTimeAsync(0);
+  await flushNative();
+  expect(remoteRequest).toHaveBeenCalled();
+  expect(listener).toHaveBeenCalled();
+  expect(errors).not.toHaveBeenCalled();
+  stop();
+});
+
 it.each([false, true])(
   "falls back from a stuck WebSocket and reports only HTTP failure (%s)",
   async (httpFails) => {

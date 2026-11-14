@@ -18,6 +18,41 @@ const server: ServerRecord = {
   metadata: { tags: [], favorite: false },
 };
 const key = { identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:public" };
+
+it("explains an empty known-host search and restores results when reset", async () => {
+  const previous = native.invoke.getMockImplementation()!;
+  native.invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "ssh_known_hosts_list"
+      ? Promise.resolve([
+          {
+            hostPatterns: "production.invalid",
+            keyType: "ssh-ed25519",
+            fingerprint: "SHA256:host",
+          },
+        ])
+      : previous(command, ...args),
+  );
+  await act(async () => root.render(createElement(SshSettings, { servers: [], onClose: vi.fn() })));
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[role="tab"][id$="-hosts"]')!.click(),
+  );
+  const search = document.querySelector<HTMLInputElement>('[aria-label="Search known hosts"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "missing",
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(document.body.textContent).toContain("No results");
+  const reset = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Reset filters",
+  )!;
+  expect(reset).toBeTruthy();
+  await act(async () => reset.click());
+  expect(search.value).toBe("");
+  expect(document.body.textContent).toContain("production.invalid");
+});
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

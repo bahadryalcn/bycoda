@@ -430,7 +430,8 @@ it("registers one shell save that applies the draft switch and scope, and hides 
   await render({ settings: true, saveRef });
   expect(typeof saveRef.current).toBe("function");
   expect(container.textContent).not.toContain("Save project scope");
-  expect(container.textContent).not.toContain("Saving project scope does not enroll");
+  expect(container.textContent).toContain("Saving project scope does not enroll");
+  expect(container.textContent).toContain("Choose each conversation in Sessions.");
   await act(() => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
   expect(mocks.request.mock.calls.some(([request]) => request.op === "manual.policy")).toBe(false);
   // The Host applies the saved policy and returns it; the default mock would echo the old state.

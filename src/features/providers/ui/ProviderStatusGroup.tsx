@@ -1,7 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { useState, useSyncExternalStore } from "react";
 import { DataTableRow } from "../../../shared/ui/SortableDataTable";
-import { Tooltip } from "../../../shared/ui/Tooltip";
+import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { formatRelativeTime } from "../../../shared/i18n/format";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -125,7 +125,7 @@ export function ProviderStatusGroup({
       : checks?.find((entry) => entry.harness === harness);
   const lastChecked = local && local.checks === checks ? local.at : checkedAt;
   const onCheck = () => {
-    if (rowChecking || checking) return;
+    if (rowChecking || checking || run.status === "updating") return;
     setRowChecking(true);
     void checkHarnessVersions({
       harnesses: [harness],
@@ -152,7 +152,8 @@ export function ProviderStatusGroup({
   const notFound = hasProbedHarnessAvailability() && !available;
   const canCheck = UPDATABLE_HARNESSES.has(harness);
   const busy = canCheck && (checking || rowChecking);
-  const version = check && check.status !== "unknown" ? check.installed : "—";
+  const version = !notFound && check && check.status !== "unknown" ? check.installed : "—";
+  const checkLabel = t("{p0}: {p1}", { p0: t("Check for updates"), p1: title });
   const status =
     run.status === "updating"
       ? t("Updating…")
@@ -199,9 +200,11 @@ export function ProviderStatusGroup({
           ) : (
             <HarnessIcon harness={harness} className="icon-md shrink-0" />
           )}
-          <Text size="secondary" tone={notFound ? "secondary" : "primary"} truncate>
-            {title}
-          </Text>
+          <OverflowTooltip label={title}>
+            <Text size="secondary" tone={notFound ? "secondary" : "primary"} truncate>
+              {title}
+            </Text>
+          </OverflowTooltip>
         </span>,
         <Code key="version" size="caption" tone="secondary" className="tabular-nums">
           {version}
@@ -229,7 +232,7 @@ export function ProviderStatusGroup({
           </span>
         </Tooltip>,
         <div key="actions" className="provider-inventory-actions">
-          {check?.status === "behind" ? (
+          {!notFound && check?.status === "behind" ? (
             <Button
               size="sm"
               variant="primary"
@@ -248,10 +251,10 @@ export function ProviderStatusGroup({
               size="sm"
               variant="ghost"
               iconOnly
-              label={t("Check for updates")}
-              tooltip={t("Check for updates")}
+              label={checkLabel}
+              tooltip={checkLabel}
               loading={busy}
-              disabled={busy}
+              disabled={busy || run.status === "updating"}
               onClick={onCheck}
             >
               <RefreshCw className="icon-sm" aria-hidden />

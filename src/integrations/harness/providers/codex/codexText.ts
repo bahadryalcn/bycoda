@@ -11,7 +11,7 @@ import {
   preserveProviderFailure,
 } from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
-import { modelsFor } from "../../../../features/sessions/model/models";
+import { modelsFor, nativeModelId } from "../../../../features/sessions/model/models";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import {
   createChildProcessHandle,
@@ -94,7 +94,7 @@ let turns: Promise<void> = Promise.resolve();
 
 function pickTextModel(requested?: string): string {
   const selected = requested?.trim();
-  if (selected) return selected;
+  if (selected) return nativeModelId(selected);
   const models = modelsFor("codex");
   const luna = models.find((model) =>
     /5\.6-luna/i.test(`${model.nativeId ?? ""} ${model.name} ${model.id}`),

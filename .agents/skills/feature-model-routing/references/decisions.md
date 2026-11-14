@@ -1,5 +1,13 @@
 # Model routing decisions
 
+## Explicit catalog setup
+
+Owner decision, 2026-11-14:
+
+> BU BACKGROUND WORKS EKRANINDAKİ POOLARI MODELLERİ FİLAN TEK SEFER DE VAR OLAN PROVIDER HESAP VE MODEL LİSTESİNDEN OTOMATİK OLUŞTURABİLMEM GEREKİYOR
+
+Recorded decision: offer one explicit Background work action to populate the model order and account-specific reference pools from the existing available provider catalog. Append to the editable draft without replacing existing priorities, settings or assignments; reuse normal owner-authorized Save. This is user-requested setup, not discovery-triggered migration.
+
 ## One Host-wide order and limit definition
 
 Owner decision, 2026-11-12, source: owner model-routing request, quoted in the implementation brief:

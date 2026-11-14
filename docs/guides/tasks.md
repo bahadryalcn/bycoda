@@ -4,6 +4,24 @@ List view scrolls through all loaded tasks without numbered pages. Bulk selectio
 and the open task remain selected while offscreen rows are recycled. Search and
 project, sprint and status filters retain their own list position.
 
+Backlog and a selected sprint both offer List and Board views. The first visit uses
+the list; the chosen view is retained. Empty board lanes stay compact, and narrower
+work areas stack lanes with a status picker. Crew role instructions remain in the
+task detail and editor rather than repeating as list and card previews.
+
+Sprints shows sprint collections until a sprint is selected. Selecting a sprint opens
+its scoped tasks. The toolbar refresh updates both task data and sprint planning on
+the Sprints and Reports tabs. Sprint capacity and project budgets are optional;
+expand Capacity in the sprint editor to change them.
+
+Bulk actions show the number of eligible selected tasks before execution. An action
+with no eligible tasks is disabled with a reason. Inactive crew assignments can be
+deleted. Crew start, stop and retry actions follow the same Host rules as individual
+task actions; accepting a Crew assignment still belongs to its coordinator. Active work, dependencies,
+revisions and unmerged branches retain their Host protections. Successful deletions
+leave the selection; failures remain available for Retry failed tasks. Identical
+failure reasons share one explanation with the affected task names.
+
 Tasks opens on the current project's Host. Select All projects to include other machines. A remote machine being unavailable does not mean a successfully read local task list failed. Connection details and optional data warnings describe the affected source; Retry refreshes the selected scope.
 
 Local project options can appear while other sources are still loading. Sprint data appears as soon as its planning Host answers; source history synchronization can continue afterward. Actions that require current history still wait for that synchronization. Repeated refresh ticks do not accumulate an unlimited queue.

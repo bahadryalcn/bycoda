@@ -127,9 +127,9 @@ export function ServersConnectionTools({
               </Button>
             ) : null}
           </div>
-          <TabList label={t("Server tools")}>
+          <TabList label={t("Server tools")} className="overflow-x-auto">
             {panels.map((item) => (
-              <Tab key={item.value} value={item.value}>
+              <Tab key={item.value} value={item.value} className="shrink-0">
                 {item.label}
               </Tab>
             ))}

@@ -7,8 +7,10 @@ const state = vi.hoisted(() => ({
   streamed: false,
   chunks: [] as string[],
   starts: [] as Record<string, unknown>[],
+  threads: [] as Record<string, unknown>[],
 }));
-vi.mock("../../../../features/sessions/model/models", () => ({
+vi.mock("../../../../features/sessions/model/models", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../../features/sessions/model/models")>()),
   modelsFor: () => [{ nativeId: "available-model" }],
 }));
 beforeEach(() => processConstructions.reset());
@@ -57,7 +59,10 @@ vi.mock("../../core/jsonRpc", () => ({
           },
         };
       if (method === "mcpServerStatus/list") return { data: [], nextCursor: null };
-      if (method === "thread/start") return { thread: { id: "text-thread" } };
+      if (method === "thread/start") {
+        state.threads.push(params);
+        return { thread: { id: "text-thread" } };
+      }
       if (method === "turn/start") {
         state.starts.push(params);
         const text = state.chunks.length
@@ -85,7 +90,17 @@ afterEach(() => {
   state.streamed = false;
   state.chunks.length = 0;
   state.starts.length = 0;
+  state.threads.length = 0;
 });
+
+it.each(["codex:gpt-6.1-terra", "gpt-6.1-terra"])(
+  "uses the native Codex model for utility threads and turns: %s",
+  async (model) => {
+    await runCodexTextPrompt({ cwd: "/repo", prompt: "Group skills", model, timeoutMs: 1000 });
+    expect(state.threads[0]?.model).toBe("gpt-6.1-terra");
+    expect(state.starts[0]?.model).toBe("gpt-6.1-terra");
+  },
+);
 
 it.each([{ chunks: ["ha", "ha"] }, { chunks: ["-", "--"] }, { chunks: ["\n", "\n"] }])(
   "preserves exact Codex utility delta chunks $chunks and emits no repeated completion snapshot",

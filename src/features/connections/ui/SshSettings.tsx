@@ -119,6 +119,11 @@ export function SshSettings({
       .toLocaleLowerCase()
       .includes(keySearch.trim().toLocaleLowerCase()),
   );
+  const matchingHosts = hosts.filter((host) =>
+    `${host.hostPatterns} ${host.keyType} ${host.fingerprint}`
+      .toLocaleLowerCase()
+      .includes(hostSearch.trim().toLocaleLowerCase()),
+  );
   const assignIdentity = async (path?: string) => {
     if (!server) return;
     const saved = await setServerSshIdentity(server.id, path);
@@ -344,28 +349,30 @@ export function SshSettings({
             {!hosts.length && !hostInventory.loading && !hostsError ? (
               <EmptyState size="inline" description={t("No known hosts yet.")} />
             ) : null}
-            {hosts
-              .filter((host) =>
-                `${host.hostPatterns} ${host.keyType} ${host.fingerprint}`
-                  .toLocaleLowerCase()
-                  .includes(hostSearch.trim().toLocaleLowerCase()),
-              )
-              .map((host, index) => (
-                <div
-                  key={index}
-                  {...surfaceAttributes({ separator: "block" }, "flex min-w-0 flex-col gap-2 py-3")}
-                >
-                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                    <Text wrap="anywhere" weight="medium">
-                      {host.hostPatterns}
-                    </Text>
-                    <Badge size="xs">{host.keyType}</Badge>
-                  </div>
-                  <Text wrap="anywhere" size="caption" tone="muted">
-                    {host.fingerprint}
+            {hosts.length > 0 && matchingHosts.length === 0 ? (
+              <EmptyState
+                size="inline"
+                kind="filtered"
+                description={t("No results")}
+                onReset={() => setHostSearch("")}
+              />
+            ) : null}
+            {matchingHosts.map((host, index) => (
+              <div
+                key={index}
+                {...surfaceAttributes({ separator: "block" }, "flex min-w-0 flex-col gap-2 py-3")}
+              >
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                  <Text wrap="anywhere" weight="medium">
+                    {host.hostPatterns}
                   </Text>
+                  <Badge size="xs">{host.keyType}</Badge>
                 </div>
-              ))}
+                <Text wrap="anywhere" size="caption" tone="muted">
+                  {host.fingerprint}
+                </Text>
+              </div>
+            ))}
           </TabPanel>
           <TabPanel value="import" keepMounted className="flex flex-col gap-3">
             <Heading size="section" level={3}>

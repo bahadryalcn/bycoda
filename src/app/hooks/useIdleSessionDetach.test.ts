@@ -108,6 +108,7 @@ type WorkspaceState = {
   busySessionIds: ReadonlySet<string>;
   activeSessionId: string;
   liveAgentsEnabled: boolean;
+  retainedSessionIds?: readonly string[];
 };
 
 function mountWorkspace(initial: Partial<WorkspaceState> = {}) {
@@ -203,6 +204,135 @@ async function advance(milliseconds = 250) {
 }
 
 describe("orchestration worker detachment", () => {
+  it("retains delegated children of an idle worker retained by its open lead", async () => {
+    const lead = chat("lead");
+    const worker = chat("worker", { orchestrationLeadId: lead.id });
+    const child = chat("worker-child", {
+      modelSettings: {
+        delegationParent: JSON.stringify({
+          parentSessionId: worker.id,
+          runId: "worker-run",
+          kind: "subagent",
+          model: "claude:haiku",
+          startedAt: 1,
+        }),
+      },
+    });
+    const workspace = mountWorkspace({
+      sessions: [lead, worker, child],
+      tabs: [newTab(lead.id)],
+      orchestrationRuns: [],
+      busySessionIds: new Set(),
+      liveAgentsEnabled: false,
+    });
+    await advance(5_250);
+    expect(workspace.snapshot().sessions.map((session) => session.id)).toEqual([
+      lead.id,
+      worker.id,
+      child.id,
+    ]);
+  });
+
+  it.each(["native", "host", "background", "opening", "protected"])(
+    "retains completed delegated children with their %s parent across discovery polls",
+    async (owner) => {
+      const binding = {
+        kind: "local-host" as const,
+        machineId: "machine",
+        environmentId: "environment",
+        projectId: "project",
+        sessionId: "host-parent",
+        authorityGeneration: null,
+        created: true,
+      };
+      const parent = chat("parent", {
+        ...(owner === "host" ? { hostBinding: binding } : {}),
+        ...(owner === "background" ? { continuingElsewhere: true } : {}),
+      });
+      const child = chat("delegated-child", {
+        modelSettings: {
+          delegationParent: JSON.stringify({
+            parentSessionId: owner === "host" ? binding.sessionId : parent.id,
+            runId: "delegated-run",
+            kind: "subagent",
+            model: "claude:haiku",
+            startedAt: 1,
+          }),
+        },
+        ...(owner === "host" ? { hostBinding: { ...binding, sessionId: "host-child" } } : {}),
+      });
+      const unrelated = chat("unrelated-child", {
+        ...child,
+        id: "unrelated-child",
+        cwd: "/another-project",
+        ...(owner === "host"
+          ? { hostBinding: { ...binding, environmentId: "other", sessionId: "other-child" } }
+          : {}),
+      });
+      const workspace = mountWorkspace({
+        sessions: [parent, child, unrelated],
+        tabs: ["background", "opening", "protected"].includes(owner) ? [] : [newTab(parent.id)],
+        orchestrationRuns: [],
+        busySessionIds: new Set(),
+        liveAgentsEnabled: false,
+      });
+      if (owner === "opening") workspace.openingSessionIds.add(parent.id);
+      if (owner === "protected") workspace.skipForgetSessionIds.add(parent.id);
+      await advance(5_250);
+      expect(workspace.snapshot().sessions.map((session) => session.id)).toEqual([
+        parent.id,
+        child.id,
+      ]);
+      expect(workspace.persistSession).toHaveBeenCalledExactlyOnceWith(unrelated);
+      workspace.openingSessionIds.delete(parent.id);
+      workspace.skipForgetSessionIds.delete(parent.id);
+      workspace.update({
+        tabs: [],
+        sessions: [{ ...parent, continuingElsewhere: undefined }, child],
+      });
+      await advance();
+      expect(workspace.snapshot().sessions).toEqual([]);
+      expect(workspace.persistSession).toHaveBeenCalledWith(child);
+    },
+  );
+
+  it("keeps a Social panel conversation and its unsent draft without a workspace tab", async () => {
+    const social = chat("social-panel", { blocks: [] });
+    setComposerDraft(social.id, "Keep this social draft");
+    const workspace = mountWorkspace({
+      sessions: [social],
+      tabs: [],
+      orchestrationRuns: [],
+      busySessionIds: new Set(),
+      liveAgentsEnabled: false,
+      retainedSessionIds: [social.id],
+    });
+    await advance();
+    expect(workspace.snapshot().sessions.map((session) => session.id)).toEqual([social.id]);
+    expect(getComposerDraft(social.id)).toBe("Keep this social draft");
+    expect(workspace.persistSession).not.toHaveBeenCalled();
+    expect(mocks.forgetHarnessSession).not.toHaveBeenCalled();
+    clearComposerDraft(social.id);
+  });
+
+  it("uses the latest panel ownership when cleanup was scheduled before the panel opened", async () => {
+    const social = chat("late-social-panel", { blocks: [] });
+    const workspace = mountWorkspace({
+      sessions: [social],
+      tabs: [],
+      orchestrationRuns: [],
+      busySessionIds: new Set(),
+      liveAgentsEnabled: false,
+    });
+    await advance(100);
+    workspace.update({ retainedSessionIds: [social.id] });
+    await advance(150);
+    expect(workspace.snapshot().sessions.map((session) => session.id)).toEqual([social.id]);
+    workspace.update({ retainedSessionIds: [] });
+    await advance();
+    expect(workspace.snapshot().sessions).toEqual([]);
+  });
+
   it("keeps a host-owned turn attached after its tab closes until the host finishes", async () => {
     const adopted = chat("adopted", {
       continuingElsewhere: true,

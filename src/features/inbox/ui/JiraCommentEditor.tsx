@@ -14,9 +14,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { FileField } from "../../../shared/ui/FileField";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { TabStrip } from "../../../shared/ui/Tabs";
-import { Text } from "../../../shared/ui/Text";
-import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
+import { InboxCommentPreview } from "./InboxCommentPreview";
 import {
   Bold,
   Italic,
@@ -64,10 +62,6 @@ export function JiraCommentEditor({
   const viewRef: NoteEditorViewRef = useRef(null);
   const dropZone = useRef<HTMLDivElement>(null);
   const readPending = useRef(false);
-  const [mode, setMode] = useRetainedState<"source" | "split" | "preview">(
-    `${draftIdentity}:view`,
-    "split",
-  );
   const [imageError, setImageError] = useRetainedState(`${draftIdentity}:image-error`, "");
   const [reading, setReading] = useRetainedState(`${draftIdentity}:image-reading`, false);
   const locked = disabled || reading;
@@ -192,6 +186,7 @@ export function JiraCommentEditor({
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Drop zone wrapper; Ctrl+Enter bubbles from the editor textbox, this wrapper is not a focus target.
     <div
       ref={dropZone}
+      data-inbox-comment-editor
       className="flex flex-col gap-2"
       onKeyDown={(event) => {
         if (
@@ -215,45 +210,34 @@ export function JiraCommentEditor({
         );
       }}
     >
-      <TabStrip
-        label={t("Comment")}
-        value={mode}
-        onValueChange={setMode}
-        items={[
-          { value: "source", label: t("Source") },
-          { value: "split", label: t("Split") },
-          { value: "preview", label: t("Preview") },
-        ]}
-      />
-      <ButtonGroup
-        surface="transparent"
-        className="self-start flex-wrap"
-        aria-label={t("Markdown formatting")}
-      >
-        {commands.map(([command, label, Icon]) => (
-          <Button
-            key={command}
-            type="button"
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t(label)}
-            disabled={locked || mode === "preview"}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => run(command)}
+      <InboxCommentPreview
+        draftIdentity={draftIdentity}
+        value={value}
+        toolbar={(mode) => (
+          <ButtonGroup
+            surface="transparent"
+            className="self-start flex-wrap"
+            aria-label={t("Markdown formatting")}
           >
-            <Icon className="icon-sm" />
-          </Button>
-        ))}
-      </ButtonGroup>
-      <div
-        className={
-          mode === "split"
-            ? "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-4"
-            : "min-w-0"
-        }
+            {commands.map(([command, label, Icon]) => (
+              <Button
+                key={command}
+                type="button"
+                variant="ghost"
+                size="sm"
+                iconOnly
+                label={t(label)}
+                disabled={locked || mode === "preview"}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => run(command)}
+              >
+                <Icon className="icon-sm" />
+              </Button>
+            ))}
+          </ButtonGroup>
+        )}
       >
-        <div className="min-w-0" hidden={mode === "preview"} inert={locked}>
+        <div className="min-w-0" inert={locked}>
           <NoteMarkdownEditor
             value={value}
             onChange={onChange}
@@ -268,16 +252,7 @@ export function JiraCommentEditor({
             label={t("Comment")}
           />
         </div>
-        {mode !== "source" ? (
-          <section aria-label={t("Preview")} className="min-w-0 wrap-anywhere">
-            {value.trim() ? (
-              <AgentMarkdown text={value} hardBreaks />
-            ) : (
-              <Text tone="secondary">{t("No preview")}</Text>
-            )}
-          </section>
-        ) : null}
-      </div>
+      </InboxCommentPreview>
       <FileField
         label={t("Images")}
         hideLabel

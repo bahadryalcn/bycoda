@@ -137,6 +137,7 @@ export function createEnvironmentRuntime(
         "sessions.harnessSwitch",
         "sessions.steer",
         "sessions.executionOwner",
+        "sessions.queue.claimDispatch",
         "sessions.rewind",
         "sessions.checkpoint-review",
         "sessions.edit-from-here.v1",

@@ -73,7 +73,7 @@ export function delegationGuidance(
       : "Consulting is optional: ask when a second opinion is worth its cost.",
   );
   lines.push(
-    "agents.delegate and agents.consult start runs and agents.wait reads them; agents.options lists availability and limits. Each run spends its own account's quota. Answer a child's question with agents.reply in the same session instead of starting a new child.",
+    "agents.delegate and agents.consult start runs and agents.wait reads them; agents.options lists availability and limits. In interactive conversations, when agents.options reports notifyOnCompletionAvailable, set notifyOnCompletion:true for background work and end your turn: completion queues a result and wakes this parent when available. Work-owned task/goal/automation parents must keep waiting for results instead. Use agents.list and agents.send for useful messages while agents work; siblings can contact one another directly within their group. Answer a finished child's question with agents.reply in the same session instead of starting a new child. Each run spends its own account's quota.",
   );
   // Mirrors providerTurnInput: Claude's native Agent tool exists only when it is
   // forced onto the one same-account Claude selection; every other provider's

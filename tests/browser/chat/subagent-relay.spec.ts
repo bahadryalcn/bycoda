@@ -2,6 +2,46 @@ import { expect, test } from "@playwright/test";
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
+    test(`delegated retention after completion ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?retention&theme=${theme}`);
+      const history = page.locator("[data-composer-subagents-trigger]");
+      await expect(history).toHaveAccessibleName("Session subagents: 10 running of 10");
+      await history.click();
+      await page.getByRole("menuitem", { name: /^Physics table 2,/ }).click();
+      const panel = page.getByRole("dialog");
+      await expect(panel).toContainText("Low initial entropy");
+      // Finish while reading a child, then observe longer than one discovery interval.
+      await page.evaluate(() => {
+        const finish = Array.from(document.querySelectorAll("button")).find(
+          (button) => button.textContent === "Finish discussion",
+        );
+        finish?.click();
+      });
+      await expect(history).toHaveAccessibleName("Session subagents: 10");
+      await expect(panel).toContainText("Done");
+      await page.waitForTimeout(5_500);
+      await expect(panel).toBeVisible();
+      await expect(panel).toContainText("Low initial entropy");
+      await expect(
+        page.getByTestId("retained-cards").getByRole("button", { name: /Open Physics table/ }),
+      ).toHaveCount(10);
+      await page.screenshot({
+        path: `temp/verification/subagent-retention/sheet-${theme}-${width}.png`,
+      });
+      await panel.getByRole("button", { name: "Close agent panel", exact: true }).click();
+      await history.click();
+      await expect(page.getByRole("menuitem")).toHaveCount(10);
+      await page.screenshot({
+        path: `temp/verification/subagent-retention/history-${theme}-${width}.png`,
+      });
+      await page.getByRole("menuitem", { name: /^Physics table 2,/ }).click();
+      await expect(panel).toContainText("Low initial entropy");
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
     test(`command scroll keyboard focus ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`/tests/browser/chat/subagent-relay.html?theme=${theme}`);

@@ -572,6 +572,7 @@ export async function verify(context: TaskContext, task: HostTask): Promise<void
       "task.reviewer",
       reviewInput.target,
       reviewInput.choice,
+      latest.projectId,
     );
     if (!(await current()) || !(await context.unchangedTask(id, routingExpected))) return;
     if (!resolution.ok && resolution.reason === "noEligibleEntry") {

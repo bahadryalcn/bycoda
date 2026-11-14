@@ -457,6 +457,42 @@ it("retains an unconfirmed adopted steer once, with a visible held delivery stat
   expect(transport.steer).not.toHaveBeenCalled();
 });
 
+it.each([undefined, "active", "paused", "restored"] as const)(
+  "keeps a deferred adopted follow-up in its %s queue without a rejection",
+  async (queueStatus) => {
+    const session = {
+      ...newSession("codex", "/fake"),
+      id: "steer-test",
+      continuingElsewhere: true,
+      queueStatus,
+    };
+    resetSessionsStore([session]);
+    transport.adopted.mockRejectedValue(new QueueDeferredError("Host is busy"));
+    const ctx = {
+      dismissNoticesForContinuedSession: vi.fn(),
+      refs: { turnGen: { current: new Map([[session.id, 1]]) } },
+    } as unknown as SubmitDeps;
+    const input: SubmitInput = {
+      sessionId: session.id,
+      text: "wait for me",
+      attachments: [],
+      options: undefined,
+    };
+    const pre = {
+      storedCurrent: session,
+      current: session,
+      intent: "default",
+      operatorCommand: { matched: false },
+    } as unknown as SubmitPreflight;
+    expect(await steerBusySubmit(ctx, input, pre)).toBe(true);
+    expect(getSessions()[0].queuedMessages).toEqual([
+      expect.objectContaining({ text: input.text }),
+    ]);
+    expect(getSessions()[0].queueStatus).toBe(queueStatus ?? "active");
+    expect(readDeliveryProgress(session.id)).toBeUndefined();
+  },
+);
+
 it("removes an adopted queued steer only after the host confirms its atomic consumption", async () => {
   const row = { id: "queued", text: "selected", attachments: [] };
   const session = {
@@ -487,6 +523,35 @@ it("removes an adopted queued steer only after the host confirms its atomic cons
     expect.objectContaining({ queuedMessageId: row.id }),
   );
   expect(getSessions()[0].queuedMessages ?? []).toEqual([]);
+});
+
+it("keeps Stop authoritative when an adopted send is deferred after preparation", async () => {
+  const session = { ...newSession("codex", "/fake"), id: "steer-test", continuingElsewhere: true };
+  resetSessionsStore([session]);
+  const generation = new Map([[session.id, 1]]);
+  transport.adopted.mockImplementation(async () => {
+    generation.set(session.id, 2);
+    throw new QueueDeferredError("not sent");
+  });
+  const ctx = {
+    dismissNoticesForContinuedSession: vi.fn(),
+    refs: { turnGen: { current: generation } },
+  } as unknown as SubmitDeps;
+  const input: SubmitInput = {
+    sessionId: session.id,
+    text: "keep after stop",
+    attachments: [],
+    options: undefined,
+  };
+  const pre = {
+    storedCurrent: session,
+    current: session,
+    intent: "default",
+    operatorCommand: { matched: false },
+  } as unknown as SubmitPreflight;
+  expect(await steerBusySubmit(ctx, input, pre)).toBe(true);
+  expect(getSessions()[0].queuedMessages?.[0].text).toBe(input.text);
+  expect(getSessions()[0].queueStatus).toBe("paused");
 });
 
 it.each(["rejected", "stopped"])(

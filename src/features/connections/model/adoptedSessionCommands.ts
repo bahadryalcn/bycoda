@@ -10,13 +10,17 @@ import type { SharedQueue } from "./sharedQueue";
 import { noteAdoptedBeat } from "./hostWake";
 import { remoteIntentAuthority } from "./remoteOutbox";
 import { newRequestId } from "../../../shared/lib/id/requestId";
+import { QueueDeferredError } from "./sharedQueue";
+import { classifyCommandFailure } from "./remoteCommandRetry";
+import { followUpRefusalEvent } from "./queueState";
 
 const submitting = new Set<string>();
 export const adoptedFollowUpPending = (sessionId: string): boolean => submitting.has(sessionId);
 async function localMachine() {
   const machines = await invoke<RemoteMachine[]>("remote_machines");
   const machine = machines.find(isLocalSyncMachine);
-  if (!machine) throw new Error("Host unavailable. Check the connection and try again.");
+  if (!machine)
+    throw new QueueDeferredError("Host unavailable. Check the connection and try again.");
   return machine;
 }
 
@@ -58,22 +62,34 @@ export async function sendAdoptedFollowUp(input: {
         clientId: desktopQueueClientId,
       });
       if (!input.isCurrent()) return false;
+      if (
+        queue.claim &&
+        (queue.claim.id !== input.queuedMessageId ||
+          queue.claim.clientId !== desktopQueueClientId ||
+          !capabilities?.includes("sessions.queue.claimDispatch"))
+      )
+        throw new QueueDeferredError("Another send owns this queue. Wait for its confirmation.");
       queued = {
         id: input.queuedMessageId,
         clientId: desktopQueueClientId,
         revision: queue.revision,
         selected: true,
+        ...(queue.leased ? { leaseAware: true } : {}),
+        ...(queue.drain?.holder === desktopQueueClientId ? { epoch: queue.drain.epoch } : {}),
+        ...(queue.claim ? { claimToken: queue.claim.token } : {}),
       };
     }
     if (
       snapshot.status === "running" &&
       (snapshot.executionOwner === "desktop" || !snapshot.runId || snapshot.runId === "desktop")
     )
-      throw new Error(
+      throw new QueueDeferredError(
         "This turn is running in the desktop app. New messages are queued until it finishes.",
       );
     if (snapshot.status === "running" && !capabilities?.includes("sessions.steer"))
-      throw new Error("This host cannot steer the active turn. The message remains queued.");
+      throw new QueueDeferredError(
+        "This host cannot steer the active turn. The message remains queued.",
+      );
     const command: HostCommand = {
       ...(snapshot.status === "running"
         ? { type: "steer" as const, runId: snapshot.runId! }
@@ -89,7 +105,16 @@ export async function sendAdoptedFollowUp(input: {
     try {
       await remoteRequest<CommandReceipt>(machine.id, "commands.dispatch", command);
     } catch (error) {
-      if (String(error).includes("Host rejected request:")) throw error;
+      const failure = classifyCommandFailure(error);
+      if (failure === "not-sent") throw new QueueDeferredError(String(error));
+      if (failure === "definitive") {
+        if (
+          String(error).includes("Host rejected request:") &&
+          followUpRefusalEvent(String(error)) === "coordination"
+        )
+          throw new QueueDeferredError(String(error));
+        throw error;
+      }
       const receipt = capabilities?.includes("commands.status")
         ? await remoteRequest<CommandReceipt | null>(machine.id, "commands.status", {
             commandId: command.commandId,

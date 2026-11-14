@@ -14,7 +14,15 @@ for (const theme of ["light", "dark"])
       await first.click();
       const details = page.getByRole("region", { name: "Server details", exact: true });
       await expect(details).toBeVisible();
-      const folder = "temp/verification/2026-11-14-servers-sheet";
+      const toolTabs = details.getByRole("tablist", { name: "Server tools", exact: true });
+      await toolTabs.getByRole("tab", { name: "Connection", exact: true }).focus();
+      await page.keyboard.press("End");
+      await expect(toolTabs.getByRole("tab", { name: "Activity", exact: true })).toBeFocused();
+      if (width === 800)
+        expect(await toolTabs.evaluate((strip) => strip.scrollLeft)).toBeGreaterThan(0);
+      await page.keyboard.press("Home");
+      await expect(toolTabs.getByRole("tab", { name: "Connection", exact: true })).toBeFocused();
+      const folder = "temp/verification/2026-11-14-servers-six";
       await mkdir(folder, { recursive: true });
       await page.screenshot({ path: `${folder}/${theme}-${width}.png` });
       const catalog = page.getByRole("list", { name: "Servers", exact: true });
@@ -36,6 +44,10 @@ for (const theme of ["light", "dark"])
       await expect(details).toHaveCount(0);
       await page.getByRole("radio", { name: "List view", exact: true }).click();
       await first.click();
+      await expect(details).toBeVisible();
+      await page.screenshot({ path: `${folder}/list-${theme}-${width}.png` });
+      if (width === 800)
+        expect(await first.evaluate((row) => getComputedStyle(row).display)).toBe("grid");
       await second.click();
       await expect(details.getByRole("heading", { name: "Server 01", exact: true })).toBeVisible();
       await details.getByRole("button", { name: "Close server details", exact: true }).click();

@@ -817,3 +817,51 @@ it("an allowed failure stays failed and the synthetic pipeline SHA shows separat
   expect(markup.textContent).not.toContain("Checks passed");
   expect(markup.querySelector('[aria-label="Open ci/build check"]')).not.toBeNull();
 });
+
+it.each(["gitlab", "azuredevops"] as const)(
+  "does not offer a GitHub source link for %s annotations",
+  async (provider) => {
+    const { CheckEvidence } = await import("./CheckEvidence");
+    render(
+      createElement(CheckEvidence, {
+        provider,
+        cwd: "",
+        repo: "acme/web",
+        headOid: "a".repeat(40),
+        annotations: [{ path: "src/file.ts", line: 1, level: "failure", message: "failed" }],
+      }),
+    );
+    expect(buttonByLabel("View src/file.ts:1 on GitHub")).toBeNull();
+  },
+);
+
+it("keeps the provider identity when rendering external check evidence", async () => {
+  invoke.mockResolvedValue({
+    steps: [],
+    annotations: [{ path: "src/file.ts", line: 1, level: "failure", message: "failed" }],
+  });
+  render(
+    createElement(InboxPrChecks, {
+      cwd: "/repo",
+      repo: "acme/web",
+      onRefresh: () => {},
+      view: view({
+        provider: "gitlab",
+        checks: {
+          headOid: "a".repeat(40),
+          checks: [
+            check({
+              provider: "gitlab",
+              instance: "https://gitlab.example",
+              detailsRef: { project: "1", jobId: "2" },
+              state: "fail",
+            }),
+          ],
+        },
+      }),
+    }),
+  );
+  await act(async () => {});
+  expect(container.textContent).toContain("failed");
+  expect(buttonByLabel("View src/file.ts:1 on GitHub")).toBeNull();
+});

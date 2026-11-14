@@ -45,6 +45,15 @@ const mediaCache = new Map<string, Uint8Array<ArrayBuffer>>();
 const mediaRequests = new Map<string, Promise<Uint8Array<ArrayBuffer>>>();
 let mediaCacheBytes = 0;
 
+/** Discard one failed preview without disturbing other cached or in-flight media. */
+export function invalidateInboxMedia(url: string): void {
+  const key = url.trim();
+  const cached = mediaCache.get(key);
+  if (!cached) return;
+  mediaCache.delete(key);
+  mediaCacheBytes -= cached.byteLength;
+}
+
 /** Remote image/video URLs GitHub and Linear actually put in issue bodies. */
 export function isInboxMediaUrl(value: string): boolean {
   let url: URL;

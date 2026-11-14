@@ -178,7 +178,7 @@ it("reports unsaved when storage refuses the write", () => {
 });
 
 it("maps searched settings to their Providers tab", () => {
-  expect(providersTabForSetting("agent-clis")).toBeUndefined();
+  expect(providersTabForSetting("agent-clis")).toBe("defaults");
   expect(providersTabForSetting("enabled-models")).toBe("models");
   expect(providersTabForSetting("cli-path-codex")).toBe("cli");
   expect(providersTabForSetting("terminal-account-profiles-codex")).toBe("providers");

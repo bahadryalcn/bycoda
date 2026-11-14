@@ -96,6 +96,7 @@ export function CheckRepairForm({
     if (restoreFocus && anchor instanceof HTMLElement && anchor.isConnected) anchor.focus();
   }
   const [error, setError] = useState<string | null>(null);
+  const [accountChanged, setAccountChanged] = useState(false);
   const starting = useRef(false);
   const mounted = useRef(true);
   const generation = useRef(0);
@@ -108,6 +109,7 @@ export function CheckRepairForm({
       repair.provider === "gitlab" ? "bycoda:gitlab-change" : "bycoda:azuredevops-change";
     const changed = () => {
       generation.current += 1;
+      setAccountChanged(true);
       setError(t("Account changed; reload checks before repairing."));
     };
     window.addEventListener(event, changed);
@@ -120,7 +122,7 @@ export function CheckRepairForm({
     };
   }, []);
   async function start() {
-    if (starting.current || blocked) return;
+    if (starting.current || blocked || accountChanged) return;
     const ticket = generation.current;
     const current = () => mounted.current && generation.current === ticket;
     starting.current = true;
@@ -160,9 +162,9 @@ export function CheckRepairForm({
         }),
         sessionId || undefined,
       );
-      if (mounted.current) onClose();
+      if (current()) onClose();
     } catch (reason) {
-      if (mounted.current) setError(reason instanceof Error ? reason.message : String(reason));
+      if (current()) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       starting.current = false;
       if (mounted.current) setBusy(false);
@@ -252,7 +254,7 @@ export function CheckRepairForm({
             <Button
               variant="ghost"
               type="button"
-              disabled={blocked}
+              disabled={blocked || accountChanged}
               loading={busy}
               loadingLabel={t("Preparing...")}
               onClick={() => void start()}

@@ -100,6 +100,33 @@ async function mount(node: ReturnType<typeof createElement>) {
   };
 }
 
+it("keeps inline dismissal outside wrapped copy and recovery actions", async () => {
+  const onDismiss = vi.fn();
+  const onRetry = vi.fn();
+  const { container, done } = await mount(
+    createElement(Alert, {
+      inline: true,
+      open: true,
+      onDismiss,
+      children: createElement("span", null, "Remote machine stopped 1 conversation."),
+      action: createElement("button", { onClick: onRetry }, "Retry"),
+    }),
+  );
+  try {
+    const surface = container.querySelector('[role="status"]')!;
+    const dismiss = surface.querySelector<HTMLButtonElement>('[aria-label="Dismiss"]')!;
+    const retry = surface.querySelector<HTMLButtonElement>("button:not([aria-label])")!;
+    expect(dismiss.parentElement).toBe(surface);
+    expect(retry.parentElement?.contains(dismiss)).toBe(false);
+    act(() => retry.click());
+    act(() => dismiss.click());
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onDismiss).toHaveBeenCalledOnce();
+  } finally {
+    done();
+  }
+});
+
 it("gives every tone its own glyph, announces danger assertively and others politely", async () => {
   const glyphs = new Set<string>();
   for (const tone of ["info", "success", "warning", "danger"] as const) {

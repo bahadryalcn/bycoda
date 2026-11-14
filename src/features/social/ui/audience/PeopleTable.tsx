@@ -172,7 +172,7 @@ export function PeopleTable({
       },
       {
         key: "tags",
-        sizing: "flex",
+        sizing: "content",
         label: t("Tags"),
         sortable: false,
         hideBelow: "md",

@@ -11,6 +11,8 @@ export type ModelRoutingResolveInput = {
   role: ModelRoutingRole;
   choice?: ModelRoutingItemChoice;
   fixed?: ModelRoutingTarget;
+  /** The run's project folder; selects its scope so other-scope accounts are skipped. */
+  cwd?: string;
   /** In-process feature capability/identity filter; never accepted over RPC. */
   eligible?: (target: ModelRoutingTarget) => boolean;
 };

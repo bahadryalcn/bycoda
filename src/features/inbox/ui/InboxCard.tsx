@@ -187,7 +187,7 @@ export const InboxCard = memo(function InboxCard({
                   />
                   <Text size="micro" tone="secondary" truncate className="min-w-0">
                     {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
-                    {attentionLabel ? ` · ${attentionLabel}` : ""}
+                    {attentionLabel ? ` · ${t(attentionLabel)}` : ""}
                   </Text>
                 </>
               )}

@@ -653,7 +653,7 @@ export function ServersView({
         <div
           ref={list}
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          className="min-h-0 min-w-0 flex-1 overflow-y-auto p-2 @min-[44rem]/servers:p-3"
+          className="servers-catalog min-h-0 min-w-0 flex-1 overflow-y-auto p-2 @min-[44rem]/servers:p-3"
         >
           {loaded && servers.length === 0 ? (
             <EmptyState
@@ -710,7 +710,7 @@ export function ServersView({
                   }}
                 />
               ) : null}
-              <Heading size="section" className="min-w-0">
+              <Heading level={1} size="section" className="min-w-0">
                 {t("Servers")}{" "}
                 <Text size="inherit" tone="muted" className="tabular-nums">
                   {loaded

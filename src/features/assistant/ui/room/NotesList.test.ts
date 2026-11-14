@@ -7,7 +7,14 @@ import { NotesList } from "./NotesList";
 
 it("opens the targeted note's context menu and edits it", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const note = { id: "a", title: "First", body: "Body", tags: [], updatedAt: 1 } as AssistantNote;
+  const note = {
+    id: "a",
+    title: "First",
+    body: "Body",
+    tags: [],
+    createdAt: 1,
+    updatedAt: 1,
+  } satisfies AssistantNote;
   const edit = vi.fn();
   const host = document.createElement("div");
   document.body.append(host);

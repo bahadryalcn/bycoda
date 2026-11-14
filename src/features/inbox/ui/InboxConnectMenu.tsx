@@ -32,7 +32,7 @@ export function InboxConnectMenu({
         ...sources.map((source) => ({
           kind: "item" as const,
           id: source,
-          label: t("Connect ") + INBOX_SOURCE_LABELS[source],
+          label: t("Connect {p0}", { p0: INBOX_SOURCE_LABELS[source] }),
           icon: <InboxProviderMark provider={source} className="block icon-sm shrink-0" />,
         })),
         ...(onConnectMessages

@@ -7,6 +7,7 @@ import { AssistantOwnerQuestions } from "../AssistantOwnerQuestions";
 import { useAssistantRoom } from "./assistantRoomContext";
 import { TodayGlance } from "./TodayGlance";
 import { TodayNotes } from "./TodayNotes";
+import styles from "./TodayTab.module.css";
 
 /** Today's top: owner questions, the briefing, the glance charts and today's notes. Jobs follow in JobsTab. */
 export function TodayTab({ snapshot, jobs }: { snapshot: AssistantSnapshot; jobs?: ReactNode }) {
@@ -64,22 +65,26 @@ export function TodayTab({ snapshot, jobs }: { snapshot: AssistantSnapshot; jobs
           onChooseLanguage={() => setSettings(true)}
         />
       )}
-      {jobs}
-      <TodayGlance
-        jobs={visibleJobs}
-        activity={snapshot.activity.filter(
-          (entry) => !entry.jobId || !hiddenJobIds.has(entry.jobId),
-        )}
-        onOpenJobs={(status) => {
-          room.setQuery("");
-          room.setJobProjectFilter("");
-          room.setJobDateFilter("all");
-          setFilter(status);
-          setView("Jobs");
-        }}
-        onOpenHistory={() => setView("History")}
-      />
-      <TodayNotes snapshot={snapshot} onOpenNotes={() => setView("Notes")} />
+      <div className={styles.workspace}>
+        {jobs && <div className={styles.work}>{jobs}</div>}
+        <div className={styles.overview}>
+          <TodayGlance
+            jobs={visibleJobs}
+            activity={snapshot.activity.filter(
+              (entry) => !entry.jobId || !hiddenJobIds.has(entry.jobId),
+            )}
+            onOpenJobs={(status) => {
+              room.setQuery("");
+              room.setJobProjectFilter("");
+              room.setJobDateFilter("all");
+              setFilter(status);
+              setView("Jobs");
+            }}
+            onOpenHistory={() => setView("History")}
+          />
+          <TodayNotes snapshot={snapshot} onOpenNotes={() => setView("Notes")} />
+        </div>
+      </div>
     </>
   );
 }

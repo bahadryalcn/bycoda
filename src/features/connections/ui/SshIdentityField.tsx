@@ -59,6 +59,7 @@ export function SshIdentityField({
       },
       () => {
         if (current) {
+          setKeys([]);
           setFailed(true);
           setLoading(false);
         }
@@ -121,7 +122,7 @@ export function SshIdentityField({
           setPickerError(false);
           onChange(next);
         }}
-        disabled={disabled || selecting}
+        disabled={disabled || selecting || loading}
         loading={loading}
         placeholder={loading ? t("Loading…") : t("SSH agent and default keys")}
         options={[{ value: "", label: t("SSH agent and default keys") }, ...options]}

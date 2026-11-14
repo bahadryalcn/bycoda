@@ -86,6 +86,18 @@ it("only reads on mount and shows unknown when the reads fail", async () => {
   expect(container.textContent).toContain("Unknown");
 });
 
+it("shows every unresolved check and its explanation before opening all checks", async () => {
+  await mount(async () => {
+    throw new Error("offline");
+  });
+  const visibleSummary = container.cloneNode(true) as HTMLElement;
+  visibleSummary.querySelector("details")?.remove();
+  expect(visibleSummary.textContent).toContain("Stalled jobs reach your phone");
+  expect(visibleSummary.textContent).toContain("Phone notification status could not be read.");
+  expect(visibleSummary.textContent).toContain("The Host keeps running after you sign out");
+  expect(visibleSummary.textContent).toContain("Cannot be detected.");
+});
+
 it("offers a fix button only through onOpen and never changes settings itself", async () => {
   const onOpen = vi.fn();
   const request = await mount(

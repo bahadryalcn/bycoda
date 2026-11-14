@@ -66,7 +66,7 @@ export function InboxScopeCollection({
       if (on) next.add(id);
       else next.delete(id);
     }
-    onChange(items.filter((item) => next.has(item.id)).map((item) => item.id));
+    onChange([...next]);
   };
 
   return (

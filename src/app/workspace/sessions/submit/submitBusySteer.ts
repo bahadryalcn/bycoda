@@ -269,6 +269,16 @@ export function steerBusySubmit(
         updateDeliveryProgress(sessionId, progress, "accepted");
         return true;
       } catch (error) {
+        if (
+          error instanceof QueueDeferredError &&
+          turnGen.current.get(sessionId) === generation &&
+          !sessionsRef.current.find((entry) => entry.id === sessionId)?.adoptedSyncConflict
+        ) {
+          clearDeliveryProgress(sessionId, progress);
+          // A proven pre-write wait retains the owner's queue status. A queued
+          // action releases its claim through the shared dispatcher's typed wait.
+          return queueFollowUp();
+        }
         const unknown = error instanceof DeliveryUnknownError;
         const detail = error instanceof Error ? error.message : String(error);
         retain(unknown);

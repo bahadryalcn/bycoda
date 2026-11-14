@@ -221,7 +221,8 @@ export function TabList({
     if (!target) return;
     event.preventDefault();
     event.stopPropagation();
-    target.focus();
+    target.focus({ preventScroll: true });
+    target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
     const next = target.dataset.tabValue;
     if (tabs.activation === "automatic" && next !== undefined) tabs.select(next);
   };

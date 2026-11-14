@@ -6,6 +6,28 @@ import { Composer } from "./Composer";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
+vi.mock("../../skills/model/skills", async (original) => ({
+  ...(await original<typeof import("../../skills/model/skills")>()),
+  peekSkills: () => [
+    {
+      name: "break-ui",
+      invocation: "break-ui",
+      kind: "file",
+      description: "UI checks",
+      path: "/skills/break-ui/SKILL.md",
+    },
+  ],
+  loadSkills: async () => [
+    {
+      name: "break-ui",
+      invocation: "break-ui",
+      kind: "file",
+      description: "UI checks",
+      path: "/skills/break-ui/SKILL.md",
+    },
+  ],
+}));
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({
@@ -200,6 +222,50 @@ it("Backspace after a token removes the whole token and its attachment", async (
 
   expect(field.value).toBe("hi ");
   expect(chipCount()).toBe(0);
+});
+
+it.each(["/break-ui", "$break-ui"])(
+  "deletes recognized skill %s as one reference",
+  async (token) => {
+    const field = render(`use ${token}`);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    field.setSelectionRange(field.value.length, field.value.length);
+    userType(field, field.value.slice(0, -1), "deleteContentBackward");
+    expect(field.value).toBe("use ");
+  },
+);
+
+it("Delete before a skill removes the reference and collapses doubled spacing", () => {
+  const field = render("use /break-ui now");
+  field.setSelectionRange(4, 4);
+  userType(field, "use break-ui now", "deleteContentForward");
+  expect(field.value).toBe("use now");
+  expect(field.selectionStart).toBe(4);
+});
+
+it.each(["/unknown", "`/break-ui`", "/break-ui-extra"])(
+  "leaves ordinary text %s editable",
+  (text) => {
+    const field = render(text);
+    field.setSelectionRange(text.length, text.length);
+    userType(field, text.slice(0, -1), "deleteContentBackward");
+    expect(field.value).toBe(text.slice(0, -1));
+  },
+);
+
+it("keeps selected skill text and IME deletion under native editing", () => {
+  const field = render("/break-ui");
+  field.setSelectionRange(7, 9);
+  userType(field, "/break-", "deleteContentBackward");
+  expect(field.value).toBe("/break-");
+  type(field, "/break-ui");
+  field.setSelectionRange(9, 9);
+  const event = new Event("beforeinput", { bubbles: true, cancelable: true });
+  Object.assign(event, { inputType: "deleteContentBackward", isComposing: true });
+  act(() => field.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(false);
 });
 
 it("keeps the attachment when text changes elsewhere or programmatically", async () => {

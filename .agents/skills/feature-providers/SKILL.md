@@ -12,7 +12,7 @@ Order, pools, roles and delegation belong to [model routing](../feature-model-ro
 ## Source starts
 
 - `src/features/providers/`
-- `src/features/settings/ui/ProviderSettings.tsx`
+- `src/features/settings/ui/ProviderSettings.tsx`: Providers tabs, embedding `models/ModelsPage.tsx` for conversation defaults.
 - `src/features/settings/ui/ProviderCliTab.tsx`: CLI inventory, path and setup entry point.
 - `src/features/settings/model/providerDefaultsMapping.ts` and `providerDefaultsSave.ts`: portable provider scope and multi-target saves.
 - `src/integrations/harness/providers/`

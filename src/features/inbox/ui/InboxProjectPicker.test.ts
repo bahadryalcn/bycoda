@@ -84,6 +84,16 @@ it("shows the actual saved working folder when it is absent from recent projects
   expect(onChange).not.toHaveBeenCalled();
 });
 
+it("retains a long saved selection when the recent project list is empty", async () => {
+  const value = `G:/saved/${"long-project-".repeat(12)}日本語`;
+  const onChange = vi.fn();
+  await act(async () =>
+    root.render(createElement(InboxProjectPicker, { projects: [], value, onChange })),
+  );
+  expect(container.querySelector("button")?.textContent).toContain("日本語");
+  expect(onChange).not.toHaveBeenCalled();
+});
+
 it("groups sidebar projects, searches paths and names, and preserves selection callbacks", async () => {
   const onChange = vi.fn();
   await act(async () =>

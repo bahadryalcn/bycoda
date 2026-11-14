@@ -18,6 +18,7 @@ import {
 
 const NO_ITEMS: InboxItem[] = [];
 const NO_ERRORS: InboxProviderErrors = {};
+const NO_PENDING_PROVIDERS: readonly InboxProvider[] = [];
 
 /** Shares fetched activity with the rail menu and background poll as reads settle. */
 function rememberItems(items: readonly InboxItem[]) {
@@ -178,6 +179,7 @@ export function useInboxCollection({
     jiraContinuation,
     items: data?.items ?? NO_ITEMS,
     providerErrors: data?.errors ?? NO_ERRORS,
+    pendingProviders: data?.pendingProviders ?? NO_PENDING_PROVIDERS,
     limited: (data?.limited ?? null) as readonly InboxProvider[] | null,
     loading: query.isPending,
     updateItem,

@@ -146,6 +146,8 @@ it.each(["parent", "store child", "settings child"])(
     const expected =
       kind === "parent"
         ? [
+            "agents.list",
+            "agents.send",
             "agents.options",
             "agents.delegate",
             "agents.consult",
@@ -153,7 +155,7 @@ it.each(["parent", "store child", "settings child"])(
             "agents.wait",
             "agents.cancel",
           ].sort()
-        : [];
+        : ["agents.list", "agents.send"].sort();
     const catalog = await call("tools.list");
     expect(
       catalog.tools

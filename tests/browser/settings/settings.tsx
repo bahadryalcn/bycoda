@@ -23,6 +23,7 @@ import { FeedbackDialog } from "../../../src/features/account";
 import { WorkspaceSettingsSurface } from "../../../src/app/workspace/layout/WorkspaceSettingsSurface";
 import {
   SETTINGS_SECTIONS,
+  isSettingsSectionId,
   type SettingsSectionId,
 } from "../../../src/features/settings/model/settings";
 import {
@@ -637,7 +638,7 @@ function ModelLimitsFixture() {
 }
 function Fixture() {
   const [section, setSection] = useState<SettingsSectionId>(
-    SETTINGS_SECTIONS.find((entry) => entry.id === initial)?.id ?? "general",
+    isSettingsSectionId(initial) ? initial : "general",
   );
   const [open, setOpen] = useState(true);
   const [deletions, setDeletions] = useState(0);

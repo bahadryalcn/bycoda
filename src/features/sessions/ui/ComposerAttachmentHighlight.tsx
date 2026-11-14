@@ -9,8 +9,8 @@ import { splitCitationTokens } from "../model/citationTokens";
 import styles from "./ComposerAttachmentHighlight.module.css";
 
 /**
- * Decoration only: every character retains its native textarea width. The hidden brackets
- * reserve the icon's position without changing the draft or its caret offsets.
+ * Decoration only: every character retains its native textarea width. The hidden
+ * source text reserves a padded icon slot; the ordinal identifies the attachment.
  */
 export function ComposerAttachmentHighlight({
   text,
@@ -44,10 +44,12 @@ export function ComposerAttachmentHighlight({
   return splitAttachmentTokens(text, attachments).map((part, index) => {
     if (!("token" in part)) return <Fragment key={index}>{renderPlain(part.text)}</Fragment>;
     const presentation = attachmentPresentation(part.attachment);
+    const prefix = part.token.startsWith("[image") ? "[image" : "[file";
     return (
       <DraftToken
         key={index}
         prefix="["
+        ordinal={part.token.slice(prefix.length, -1)}
         icon={<AttachmentIdentity attachment={part.attachment} size="pill" />}
         className={styles.token}
         data-composer-attachment-kind={presentation.kind}

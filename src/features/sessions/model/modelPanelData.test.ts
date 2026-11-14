@@ -53,7 +53,7 @@ describe("settingControlKind", () => {
     expect(settingControlKind(select("effort", 6))).toBe("effort");
     expect(settingControlKind(select("crossAdvisor", 4))).toBe("choices");
     expect(settingControlKind(select("autoCompact", 3))).toBe("segmented");
-    expect(settingControlKind(select("autoCompactWindow", 6))).toBe("grid");
+    expect(settingControlKind(select("autoCompactWindow", 6))).toBe("slider");
     expect(settingControlKind(select("agentProfile", 12))).toBe("list");
   });
 

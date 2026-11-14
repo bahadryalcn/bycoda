@@ -67,6 +67,8 @@ vi.mock("../../sessions/ui/ModelPicker", () => ({
     ),
 }));
 vi.mock("../../../shared/i18n", () => ({
+  dateTimeFormat: (locale: string, options?: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat(locale, options),
   formatNumber: (value: number) => value.toLocaleString(),
   formatDate: (value: number | Date, options?: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat("en-US", options).format(value),

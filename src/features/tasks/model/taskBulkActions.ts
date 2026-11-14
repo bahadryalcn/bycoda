@@ -13,7 +13,10 @@ export const bulkTaskKey = (task: Pick<BoardTask, "machineId" | "projectId" | "i
 
 /** Identical failures share one explanation; every affected task remains inspectable. */
 export function groupTaskBulkResults(results: readonly TaskBulkResult[]) {
-  const groups = new Map<string, { status: "skipped" | "failed"; reason?: string; tasks: BoardTask[] }>();
+  const groups = new Map<
+    string,
+    { status: "skipped" | "failed"; reason?: string; tasks: BoardTask[] }
+  >();
   for (const result of results) {
     if (result.status === "succeeded") continue;
     const key = JSON.stringify([result.status, result.reason]);
@@ -27,7 +30,6 @@ export function groupTaskBulkResults(results: readonly TaskBulkResult[]) {
 /** The host revalidates state; a stale board never grants permission to mutate. */
 export function taskBulkUnavailable(task: BoardTask, action: TaskBulkAction): string | undefined {
   if (task.stale) return "Reconnect this machine before changing its tasks.";
-  if (task.crewRunId && action !== "delete") return "Manage this assignment from its crew.";
   const active = task.status === "running" || task.status === "verifying";
   if (action === "delete") {
     if (active || (task.deliveryRequested && task.status !== "done"))

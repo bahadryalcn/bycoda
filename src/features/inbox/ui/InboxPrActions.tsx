@@ -13,7 +13,7 @@ import {
   GitPullRequestDraft,
   MoreHorizontal,
 } from "../../../shared/ui/icons";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import { githubPrAction, type GithubPrAction, type InboxItem } from "../model/githubTasks";
 
@@ -136,20 +136,40 @@ export function githubPrActionCopy(
   }
 }
 
-export function GithubPrActions({
-  item,
-  baseRef,
-  headRef,
-  reviewedHeadOid,
-  onChange,
-}: {
+type GithubPrActionsProps = {
   item: InboxItem;
   baseRef: string;
   headRef: string;
   reviewedHeadOid?: string;
   onChange?: (item: InboxItem) => void;
-}) {
+};
+
+export function GithubPrActions(props: GithubPrActionsProps) {
+  const { item } = props;
+  return (
+    <GithubPrActionsForItem
+      key={JSON.stringify([item.provider, item.projectPath, item.repo, item.number])}
+      {...props}
+    />
+  );
+}
+
+function GithubPrActionsForItem({
+  item,
+  baseRef,
+  headRef,
+  reviewedHeadOid,
+  onChange,
+}: GithubPrActionsProps) {
   useLocale();
+  const active = useRef(true);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own in-flight provider completions while this PR action view is mounted.
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const mergeGroup = useRef<HTMLDivElement>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -203,6 +223,7 @@ export function GithubPrActions({
         action,
         confirmation.expectedHeadOid,
       );
+      if (!active.current) return;
       setConfirmation(null);
       setNotice(
         (action === "merge" || action === "squash" || action === "rebase") &&
@@ -230,10 +251,11 @@ export function GithubPrActions({
             },
       );
     } catch (error: unknown) {
+      if (!active.current) return;
       setConfirmation(null);
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(false);
+      if (active.current) setBusy(false);
     }
   };
 

@@ -377,7 +377,7 @@ export function SshGroupSettings({
               onChange={(event) => editDraft({ name: event.target.value })}
               maxLength={200}
             />
-            <div className="grid min-w-0 grid-cols-2 gap-2">
+            <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-2">
               <TextField
                 label={t("Default SSH user")}
                 value={draft.value.user}
@@ -429,7 +429,10 @@ export function SshGroupSettings({
                   />
                 </FieldGroup>
                 {draft.value.environment.map((entry, index) => (
-                  <div key={environmentIds[index]} className="mbs-2 flex min-w-0 items-end gap-1">
+                  <div
+                    key={environmentIds[index]}
+                    className="mbs-2 flex min-w-0 flex-wrap items-end gap-1"
+                  >
                     <TextField
                       fieldClassName="min-w-0 flex-1"
                       label={`${t("Variable name")} ${index + 1}`}

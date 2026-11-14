@@ -95,6 +95,7 @@ export const QueuedCommandReferenceSchema = z.strictObject({
   selected: z.boolean().optional(),
   leaseAware: z.boolean().optional(),
   epoch: SafeCounterSchema.optional(),
+  claimToken: IdentifierSchema.optional(),
 });
 const queued = { queued: QueuedCommandReferenceSchema.optional() };
 const prompt = { text, attachments: z.array(RemoteAttachmentSchema).max(20).optional() };

@@ -9,6 +9,7 @@ import {
   type CrewCapability,
 } from "../../src/features/crews/model/crew";
 import { hostModelRoutingService } from "../model-routing/runtime";
+import { projectRoutingCwd } from "../tasks/model-routing";
 import { createModelRoutingService, resolveModelChoice } from "../model-routing/service";
 import { readModelRouting } from "../model-routing/storage";
 import type { ModelRoutingTarget } from "../../src/shared/model/host-contracts/model-routing";
@@ -107,6 +108,7 @@ export async function resolveCrewCandidate(
             available: () => false,
             signedIn: () => false,
             quota: () => ({ unknown: true }),
+            accountKind: () => undefined,
           }),
         })
       : hostModelRoutingService(store);
@@ -115,6 +117,7 @@ export async function resolveCrewCandidate(
     choice,
     fixed,
     eligible,
+    cwd: await projectRoutingCwd(store, projectId),
   });
   if (!resolution.ok && resolution.reason === "noEligibleEntry")
     throw new CrewRoutingWait(resolution.nextResetAt);

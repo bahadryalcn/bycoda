@@ -12,6 +12,7 @@ import { shouldPersistSession } from "../../features/sessions/data/sessionStore"
 import { sessionWithClosedDraft } from "../../features/sessions/model/closedChatDraft";
 import { clearComposerDraft, composerDraftOf } from "../../features/sessions/model/draftCache";
 import { sessionChildHarnesses } from "../../features/sessions/model/handoff";
+import { isDelegatedChildOf } from "../../features/sessions/model/delegatedAgents";
 import type { Session } from "../../features/sessions/model/session";
 import { leafIds, type WorkspaceTab } from "../../features/workspace/model/layout";
 import { forgetHarnessSession } from "../../integrations/harness/core/registry";
@@ -37,6 +38,7 @@ export function useIdleSessionDetach({
   sessionsRef,
   tabs,
   tabsRef,
+  retainedSessionIds,
   orchestrationRuns,
   liveAgentsEnabled,
   unseenFinishedIds,
@@ -50,6 +52,8 @@ export function useIdleSessionDetach({
   sessionsRef: RefObject<Session[]>;
   tabs: WorkspaceTab[];
   tabsRef: RefObject<WorkspaceTab[]>;
+  /** Feature-owned panes retain their conversations independently of workspace tabs. */
+  retainedSessionIds?: readonly string[];
   orchestrationRuns: OrchestrationRun[];
   liveAgentsEnabled: boolean;
   unseenFinishedIds: ReadonlySet<string>;
@@ -61,16 +65,17 @@ export function useIdleSessionDetach({
 }) {
   // Dropping a session re-renders the whole app, so it waits until a switch
   // has painted, and a burst of switches pays for it once.
-  const detachInputs = useRef({ orchestrationRuns, liveAgentsEnabled });
-  detachInputs.current = { orchestrationRuns, liveAgentsEnabled };
+  const detachInputs = useRef({ orchestrationRuns, liveAgentsEnabled, retainedSessionIds });
+  detachInputs.current = { orchestrationRuns, liveAgentsEnabled, retainedSessionIds };
   const unseenFinishedRef = useRef(unseenFinishedIds);
   unseenFinishedRef.current = unseenFinishedIds;
   const detachTimer = useRef<number | null>(null);
   const detachIdleSessions = useCallback(() => {
     detachTimer.current = null;
     const sessions = sessionsRef.current;
-    const { orchestrationRuns, liveAgentsEnabled } = detachInputs.current;
+    const { orchestrationRuns, liveAgentsEnabled, retainedSessionIds } = detachInputs.current;
     const visibleIds = new Set(tabsRef.current.flatMap((tab) => leafIds(tab.layout)));
+    for (const sessionId of retainedSessionIds ?? []) visibleIds.add(sessionId);
     // Inbox owns these panes independently of project tabs. Keep their drafts
     // and attachments mounted when the panel closes or switches items.
     for (const session of sessions) {
@@ -90,19 +95,26 @@ export function useIdleSessionDetach({
       )
         visibleIds.add(session.id);
     }
+    const keepUnseen = liveAgentsEnabled;
+    const isAttached = (session: Session) =>
+      visibleIds.has(session.id) ||
+      session.busy ||
+      session.continuingElsewhere ||
+      openingSessionIds.current.has(session.id) ||
+      (keepUnseen && unseenFinishedRef.current.has(session.id)) ||
+      skipForgetSessionIds.current.has(session.id);
+    // Resolve worker retention first: an idle worker can itself own delegated
+    // children. Their cards and open sheets must survive between discovery polls.
+    const attachedParents = sessions.filter(isAttached);
+    for (const session of sessions) {
+      if (attachedParents.some((parent) => isDelegatedChildOf(session, parent)))
+        visibleIds.add(session.id);
+    }
     for (const sessionId of visibleIds) {
       openingSessionIds.current.delete(sessionId);
       loadedSessionCache.current.delete(sessionId);
     }
-    const keepUnseen = liveAgentsEnabled;
-    const idleDetached = sessions.filter(
-      (session) =>
-        !visibleIds.has(session.id) &&
-        !session.busy &&
-        !session.continuingElsewhere &&
-        !openingSessionIds.current.has(session.id) &&
-        !(keepUnseen && unseenFinishedRef.current.has(session.id)),
-    );
+    const idleDetached = sessions.filter((session) => !isAttached(session));
     if (idleDetached.length === 0) return;
     for (const detached of idleDetached) {
       if (skipForgetSessionIds.current.has(detached.id)) continue;
@@ -115,17 +127,7 @@ export function useIdleSessionDetach({
         void forgetHarnessSession(harness, session.id);
       }
     }
-    setSessions((prev) =>
-      prev.filter(
-        (session) =>
-          visibleIds.has(session.id) ||
-          session.busy ||
-          session.continuingElsewhere ||
-          openingSessionIds.current.has(session.id) ||
-          (keepUnseen && unseenFinishedRef.current.has(session.id)) ||
-          skipForgetSessionIds.current.has(session.id),
-      ),
-    );
+    setSessions((prev) => prev.filter(isAttached));
   }, [
     sessionsRef,
     tabsRef,
@@ -139,7 +141,14 @@ export function useIdleSessionDetach({
   useEffect(() => {
     if (detachTimer.current != null) return;
     detachTimer.current = window.setTimeout(detachIdleSessions, SESSION_DETACH_DELAY_MS);
-  }, [sessions, tabs, liveAgentsEnabled, orchestrationRuns, detachIdleSessions]);
+  }, [
+    sessions,
+    tabs,
+    liveAgentsEnabled,
+    orchestrationRuns,
+    retainedSessionIds,
+    detachIdleSessions,
+  ]);
 
   useEffect(
     () => () => {

@@ -13,7 +13,9 @@ import {
   removeOrderPool,
   replaceOrderEntry,
   sameOrderDraft,
+  includablePools,
   setPoolEntries,
+  setPoolMembers,
 } from "./modelRoutingDraft";
 
 const entry = (id: string): ModelRoutingEntry => ({
@@ -37,7 +39,10 @@ describe("model routing order draft", () => {
     const original = state();
     original.roles["task.worker"] = { kind: "pool", poolId: "p" };
     original.delegation.global = { crossAdvisor: "test" };
-    const edit = orderDraft(original, { maxRunningTasks: 3, dailyAgentMinutes: 120 });
+    const edit = orderDraft(original, {
+      maxRunningTasks: 3,
+      dailyAgentMinutes: 120,
+    });
     edit.routing.entries.reverse();
     const input = prepareOrderSave(edit);
     expect(original.entries.map((row) => row.id)).toEqual(["a", "b"]);
@@ -45,7 +50,10 @@ describe("model routing order draft", () => {
     expect(input.routing.roles).toEqual(original.roles);
     expect(input.routing.delegation).toEqual(original.delegation);
     expect(input.routing).not.toHaveProperty("version");
-    expect(input.limits).toEqual({ maxRunningTasks: 3, dailyAgentMinutes: 120 });
+    expect(input.limits).toEqual({
+      maxRunningTasks: 3,
+      dailyAgentMinutes: 120,
+    });
   });
 
   it("filters every delegation key on defaults, edits and save", () => {
@@ -54,15 +62,24 @@ describe("model routing order draft", () => {
       ...Object.fromEntries(MODEL_ROUTING_DELEGATION_KEYS.map((key) => [key, "value"])),
     };
     expect(entrySettings(settings)).toEqual({ effort: "high" });
-    const edit = replaceOrderEntry(draft(), { ...entry("a"), modelSettings: settings });
+    const edit = replaceOrderEntry(draft(), {
+      ...entry("a"),
+      modelSettings: settings,
+    });
     expect(edit.routing.entries[0]!.modelSettings).toEqual({ effort: "high" });
     edit.routing.entries[0]!.modelSettings = settings;
-    expect(prepareOrderSave(edit).routing.entries[0]!.modelSettings).toEqual({ effort: "high" });
+    expect(prepareOrderSave(edit).routing.entries[0]!.modelSettings).toEqual({
+      effort: "high",
+    });
   });
 
   it("removes a main entry from every pool without mutating original", () => {
     const edit = draft();
-    edit.routing.pools.push({ id: "second", name: "Second", entryIds: ["a", "b"] });
+    edit.routing.pools.push({
+      id: "second",
+      name: "Second",
+      entryIds: ["a", "b"],
+    });
     const removed = removeOrderEntry(edit, "a");
     expect(removed.routing.entries.map((row) => row.id)).toEqual(["b"]);
     expect(removed.routing.pools.map((pool) => pool.entryIds)).toEqual([["b"], ["b"]]);
@@ -179,5 +196,78 @@ describe("Work calendar cap drafts", () => {
     edit.workCaps.total.daily.tokens = "";
     edit.workCaps.total.daily.costUsd = "Infinity";
     expect(() => prepareOrderSave(edit)).toThrow("Cost limits");
+  });
+
+  describe("nested pools", () => {
+    const nested = () => {
+      const edit = draft();
+      edit.routing.pools.push({
+        id: "outer",
+        name: "Outer",
+        entryIds: [],
+        poolIds: ["p"],
+      });
+      return edit;
+    };
+
+    it("sets members and refuses an empty or cyclic pool", () => {
+      const edit = nested();
+      const next = setPoolMembers(edit, "outer", {
+        entryIds: ["a"],
+        poolIds: ["p"],
+      });
+      expect(next.routing.pools[1]).toEqual({
+        id: "outer",
+        name: "Outer",
+        entryIds: ["a"],
+        poolIds: ["p"],
+      });
+      expect(
+        setPoolMembers(edit, "outer", { entryIds: ["a"], poolIds: [] }).routing.pools[1],
+      ).not.toHaveProperty("poolIds");
+      expect(() => setPoolMembers(edit, "outer", { entryIds: [], poolIds: [] })).toThrow(
+        "at least one",
+      );
+      expect(() => setPoolMembers(edit, "p", { entryIds: [], poolIds: ["outer"] })).toThrow("loop");
+      expect(() => setPoolMembers(edit, "p", { entryIds: [], poolIds: ["p"] })).toThrow("loop");
+    });
+
+    it("lists only pools that cannot form a loop", () => {
+      const edit = nested();
+      expect(includablePools(edit, "outer").map((pool) => pool.id)).toEqual(["p"]);
+      expect(includablePools(edit, "p")).toEqual([]);
+    });
+
+    it("validates included pools at save", () => {
+      const edit = nested();
+      expect(prepareOrderSave(edit).routing.pools[1]!.poolIds).toEqual(["p"]);
+      edit.routing.pools[1]!.poolIds = ["missing"];
+      expect(() => prepareOrderSave(edit)).toThrow("only pools that exist");
+      edit.routing.pools[1]!.poolIds = ["outer"];
+      expect(() => prepareOrderSave(edit)).toThrow("only pools that exist");
+      edit.routing.pools[1]!.poolIds = ["p", "p"];
+      expect(() => prepareOrderSave(edit)).toThrow("only pools that exist");
+      edit.routing.pools[1]!.poolIds = ["p"];
+      edit.routing.pools[0]!.poolIds = ["outer"];
+      expect(() => prepareOrderSave(edit)).toThrow("loop");
+    });
+
+    it("blocks removing a pool's last member only when it includes no pools", () => {
+      const edit = nested();
+      edit.routing.pools[1]!.entryIds = ["a"];
+      const removed = removeOrderEntry(edit, "a");
+      expect(removed.routing.pools[1]).toMatchObject({
+        entryIds: [],
+        poolIds: ["p"],
+      });
+      edit.routing.pools[1]!.poolIds = [];
+      expect(() => removeOrderEntry(edit, "a")).toThrow("last model in a pool");
+    });
+
+    it("blocks deleting a pool another pool includes", () => {
+      const edit = nested();
+      expect(() => removeOrderPool(edit, "p")).toThrow("Another pool includes");
+      expect(removeOrderPool(edit, "outer").routing.pools.map((pool) => pool.id)).toEqual(["p"]);
+    });
   });
 });

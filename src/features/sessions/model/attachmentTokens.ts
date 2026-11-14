@@ -199,9 +199,11 @@ export function deleteTokenAtCaret(
   files: Pick<Attachment, "kind">[],
   /** Further tokens deleted whole, such as citation `[quote1]` tokens. */
   extra: readonly string[] = [],
+  /** Recognized non-bracket references, already parsed by their owning feature. */
+  ranges: readonly { start: number; end: number }[] = [],
 ): { text: string; caret: number } | null {
-  const hit = [...findTokens(text, files), ...findTokenMatches(text, extra)].find((match) =>
-    direction === "back" ? match.end === caret : match.start === caret,
+  const hit = [...findTokens(text, files), ...findTokenMatches(text, extra), ...ranges].find(
+    (match) => (direction === "back" ? match.end === caret : match.start === caret),
   );
   if (!hit) return null;
   const doubled = text[hit.start - 1] === " " && text[hit.end] === " ";

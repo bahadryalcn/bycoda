@@ -556,7 +556,13 @@ export class HostStewards {
         return;
       }
       if (!routingWaitDue(steward, now)) return;
-      const resolution = await resolveRunModel(this.store, "steward", steward);
+      const resolution = await resolveRunModel(
+        this.store,
+        "steward",
+        steward,
+        undefined,
+        steward.projectId,
+      );
       const current = await this.find(steward.id);
       if (!current || current.updatedAt !== steward.updatedAt || current.run) return;
       if (!resolution.ok && resolution.reason === "noEligibleEntry") {

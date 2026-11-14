@@ -17,6 +17,7 @@ export async function createSessionQueueRuntime(
     | "adopt"
     | "touchSessionWorkspace"
     | "withRetiredDesktopWriters"
+    | "inHost"
   >,
   publish: (runtime: Awaited<ReturnType<typeof createSessionQueueRuntime>>) => void,
 ) {
@@ -148,6 +149,11 @@ export async function createSessionQueueRuntime(
       outsideScope: (action) => dependencies.engine.store.db.outsideScope(action),
       ready: async (id) => {
         try {
+          // Agent input does not authorize migrating a Native conversation.
+          // Its existing desktop queue consumer retains delivery ownership.
+          const head = (await dependencies.sessionQueues.get(id)).messages[0];
+          if (head?.id.startsWith("agent_message_") && !(await dependencies.inHost(id)))
+            return false;
           return (
             !(await dependencies.engine.busyReason(id)) &&
             // The host's own turn, including one in an adopted session the desktop

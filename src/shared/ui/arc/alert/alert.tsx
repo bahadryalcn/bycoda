@@ -172,30 +172,17 @@ function AlertBox({
   // Inline feedback has one presentation owner; Alert only retains its presence/dismiss API.
   if (inline) {
     return (
-      <div {...props} className={className} role={role ?? (tone === "danger" ? "alert" : "status")}>
+      <div
+        {...props}
+        className={[onDismiss ? styles.inlineRow : undefined, className].filter(Boolean).join(" ")}
+        role={role ?? (tone === "danger" ? "alert" : "status")}
+      >
         <InlineMessage
+          className={onDismiss ? styles.inlineCopy : undefined}
           tone={tone}
           icon={icon}
           live="off"
-          action={
-            action || onDismiss ? (
-              <>
-                {action}
-                {onDismiss ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    iconOnly
-                    label={dismissLabel ?? (title ? `Dismiss: ${title}` : "Dismiss")}
-                    onClick={onDismiss}
-                  >
-                    <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />
-                  </Button>
-                ) : null}
-              </>
-            ) : undefined
-          }
+          action={action}
         >
           {title ? (
             <strong>
@@ -211,6 +198,19 @@ function AlertBox({
             ) : null}
           </AnimatePresence>
         </InlineMessage>
+        {onDismiss ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            iconOnly
+            className={styles.dismiss}
+            label={dismissLabel ?? (title ? `Dismiss: ${title}` : "Dismiss")}
+            onClick={onDismiss}
+          >
+            <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />
+          </Button>
+        ) : null}
       </div>
     );
   }

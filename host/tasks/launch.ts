@@ -301,7 +301,13 @@ export async function launch(
   if (!task.sessionId) {
     if (!routingWaitDue(task, now)) return task;
     const expected = await context.taskValue(task.id);
-    const resolution = await resolveRunModel(context.store, "task.worker", task);
+    const resolution = await resolveRunModel(
+      context.store,
+      "task.worker",
+      task,
+      undefined,
+      task.projectId,
+    );
     const routed = await context.transaction(async () => {
       const current = await context.unchangedTask(task.id, expected);
       if (!current) return undefined;

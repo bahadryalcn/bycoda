@@ -7,7 +7,7 @@ import { githubPrAction, type InboxItem } from "../model/githubTasks";
 
 vi.mock("../model/githubTasks", () => ({ githubPrAction: vi.fn() }));
 
-const item: InboxItem = {
+const item: InboxItem & { kind: "pr" } = {
   kind: "pr",
   provider: "github",
   projectPath: "/fixture",
@@ -105,4 +105,55 @@ it("requires a reviewed head and permits cancelling without running an action", 
   await act(async () => button(document.querySelector('[role="dialog"]')!, "Cancel").click());
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(githubPrAction).not.toHaveBeenCalled();
+});
+
+it("dismisses confirmation when the pull request changes", async () => {
+  const render = (value: InboxItem) =>
+    act(async () =>
+      root.render(
+        createElement(GithubPrActions, {
+          item: value,
+          baseRef: "main",
+          headRef: "branch",
+          reviewedHeadOid: "a".repeat(40),
+        }),
+      ),
+    );
+  await render(item);
+  await act(async () => button(container, "Merge pull request").click());
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  await render({ ...item, number: 13 });
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(githubPrAction).not.toHaveBeenCalled();
+});
+
+it("ignores a late result after changing pull requests", async () => {
+  let finish!: (value: Awaited<ReturnType<typeof githubPrAction>>) => void;
+  vi.mocked(githubPrAction).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const onChange = vi.fn();
+  const render = (value: InboxItem) =>
+    act(async () =>
+      root.render(
+        createElement(GithubPrActions, {
+          item: value,
+          baseRef: "main",
+          headRef: "branch",
+          reviewedHeadOid: "a".repeat(40),
+          onChange,
+        }),
+      ),
+    );
+  await render(item);
+  await act(async () => button(container, "Merge pull request").click());
+  await act(async () =>
+    button(document.querySelector('[role="dialog"]')!, "Merge pull request").click(),
+  );
+  await render({ ...item, number: 13 });
+  await act(async () => finish({ ...item, kind: "pr", state: "merged" }));
+  expect(onChange).not.toHaveBeenCalled();
+  expect(button(container, "Merge pull request").disabled).toBe(false);
 });

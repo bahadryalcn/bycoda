@@ -6,6 +6,7 @@ import { TASK_INPUT_REQUIRED, type HostTask } from "../model/hostTasks";
 import { taskRequiresInstructions, taskReviewFailureCount } from "../model/taskRules";
 import type { TaskStatusLine, TaskStatusTone } from "../model/taskStatusLine";
 import { TaskStatusText } from "./TaskStatusLine";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 
 const ALERT_TONE: Record<TaskStatusTone, AlertTone> = {
   neutral: "info",
@@ -77,7 +78,7 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
       {status.detail ? <p>{status.detail}</p> : null}
       {nextStep ? <p className="mt-1">{nextStep}</p> : null}
       {facts.length > 0 || task.status === "blocked" ? (
-        <div className="mt-1.5">
+        <Disclosure summary={t("Error details")} className="mt-1.5">
           <div className="space-y-1.5">
             {facts}
             {task.status === "blocked" ? (
@@ -88,7 +89,7 @@ export function TaskStatusReason({ task, status }: { task: HostTask; status: Tas
               </Text>
             ) : null}
           </div>
-        </div>
+        </Disclosure>
       ) : null}
     </Alert>
   );

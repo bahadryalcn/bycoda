@@ -302,6 +302,9 @@ export function ManualSessionSupervision({
         </div>
         <Row
           label={t("Selected projects")}
+          description={t(
+            "Saving project scope does not enroll conversations. Choose each conversation in Sessions.",
+          )}
           stacked
           feedback={
             scopeChanged ? (
@@ -332,7 +335,7 @@ export function ManualSessionSupervision({
                 description: project.path,
                 keywords: project.id,
               }))}
-              showSelectedValues={false}
+              showSelectedValues
               disabled={!!pending || stopping || !chief || !data || !shownEnabled}
               onChange={(projectIds) => {
                 markDirty();

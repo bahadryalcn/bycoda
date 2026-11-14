@@ -251,7 +251,7 @@ export function ModelsPage({
   return (
     <div className="settings-topics grid min-w-0 gap-4">
       <Tabs value={tab} onValueChange={setTab} panels="shared" size="md">
-        {/* Models keeps only Chat defaults; a lone tab would just repeat the page title. */}
+        {/* Providers embeds only conversation defaults; Background work owns the other tabs. */}
         <TabList label={t(work ? "Background work" : "Chat models")} hidden={!work}>
           {MODELS_TABS.filter((id) => (work ? id !== "chat" : id === "chat")).map((id) => (
             <Tab

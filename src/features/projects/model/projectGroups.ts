@@ -4,6 +4,7 @@ import { moveIdByStep, orderByIds, type MoveStep } from "../../../shared/lib/reo
 import { normalizeProjectMascotName } from "./projectMascots";
 import { TAB_GROUP_COLORS, tabGroupColor } from "../../workspace/model/tabGroups";
 import { useSyncExternalStore } from "react";
+import type { ModelRoutingScope } from "../../../shared/model/host-contracts/model-routing";
 import {
   notifyProjectPathsChanged,
   subscribeProjectPathsChanged,
@@ -21,6 +22,8 @@ export type ProjectGroup = {
   colorIndex?: number;
   customColor?: string;
   mascot?: string;
+  /** Personal or work scope for model routing; its projects inherit it unless tagged themselves. */
+  kind?: ModelRoutingScope;
   /** The `.code-workspace` file this group mirrors, when it was created from one. */
   workspaceFile?: string;
   /**
@@ -196,6 +199,7 @@ function normalizeGroup(value: unknown): ProjectGroup | null {
     collapsed: candidate.collapsed === true,
     ...(customColor ? { customColor } : colorIndex == null ? {} : { colorIndex }),
     ...(mascot ? { mascot } : {}),
+    ...(candidate.kind === "personal" || candidate.kind === "work" ? { kind: candidate.kind } : {}),
     ...(workspaceFile ? { workspaceFile, workspaceFolders } : {}),
     ...(candidate.lockable === true ? { lockable: true } : {}),
     ...(Array.isArray(candidate.memberOrder)

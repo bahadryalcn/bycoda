@@ -100,7 +100,8 @@ export function createCommandsRuntime(
       get: (id) => dependencies.sessionQueues.get(id),
       renew: (id, client) => dependencies.sessionQueues.renew(id, client),
       assertSend: (...args) => dependencies.sessionQueues.assertSend(...args),
-      consumed: (id, message) => dependencies.sessionQueues.consumed(id, message),
+      consumed: (id, message, claimToken) =>
+        dependencies.sessionQueues.consumed(id, message, claimToken),
       sameModelTarget: sameQueuedModelTarget,
       kick: (id) => dependencies.queueDrainer.kick(id),
       leaseHeld: (holder, detail) => new LeaseHeldError(holder, detail),

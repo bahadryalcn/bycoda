@@ -48,6 +48,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
     `${model.name} ${model.id}`.toLocaleLowerCase().includes(needle),
   );
   const defaultId = defaultModelId(harness);
+  const keptModel = models.find((model) => model.id === defaultId) ?? models[0];
   const guard = t("Keep one model enabled. Hide the provider to remove it from the picker.");
 
   // Bulk actions keep at least one model on, the same guard each switch applies.
@@ -55,11 +56,10 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
     for (const model of models) if (!isModelEnabled(model.id)) saveModelEnabled(model.id, true);
   };
   const onlyDefault = () => {
-    const keep = models.find((model) => model.id === defaultId) ?? models[0];
-    if (!keep) return;
-    saveModelEnabled(keep.id, true);
+    if (!keptModel) return;
+    saveModelEnabled(keptModel.id, true);
     for (const model of models) {
-      if (model.id !== keep.id && isModelEnabled(model.id)) saveModelEnabled(model.id, false);
+      if (model.id !== keptModel.id && isModelEnabled(model.id)) saveModelEnabled(model.id, false);
     }
   };
 
@@ -82,10 +82,20 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
           <CatalogRefreshButton harness={harness} />
           {models.length > 1 ? (
             <>
-              <Button size="sm" variant="ghost" onClick={enableAll}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={enableAll}
+                disabled={enabledCount === models.length}
+              >
                 {t("Enable all")}
               </Button>
-              <Button size="sm" variant="ghost" onClick={onlyDefault}>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onlyDefault}
+                disabled={enabledCount === 1 && Boolean(keptModel && isModelEnabled(keptModel.id))}
+              >
                 {t("Only default")}
               </Button>
             </>
@@ -93,7 +103,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
         </div>
       }
     >
-      {models.length > 5 ? (
+      {models.length > 5 || query.length > 0 ? (
         <div
           {...surfaceAttributes(
             { variant: "base", frame: "settings", edge: "block-end" },

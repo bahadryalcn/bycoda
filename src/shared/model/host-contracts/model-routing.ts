@@ -33,9 +33,18 @@ export const MODEL_ROUTING_ROLES = [
   "text.git",
   "text.skillGrouping",
   "text.themeGenerator",
+  "text.routingSetup",
 ] as const;
 export const ModelRoutingRoleSchema = z.enum(MODEL_ROUTING_ROLES);
 export type ModelRoutingRole = z.infer<typeof ModelRoutingRoleSchema>;
+
+/**
+ * The owner's account and project scopes. A project tagged with one scope never runs on an
+ * account tagged with the other; untagged accounts are shared by both.
+ */
+export const MODEL_ROUTING_SCOPES = ["personal", "work"] as const;
+export const ModelRoutingScopeSchema = z.enum(MODEL_ROUTING_SCOPES);
+export type ModelRoutingScope = z.infer<typeof ModelRoutingScopeSchema>;
 
 /** `modelSettings` keys that configure delegation. They live in `delegation`, never in an entry. */
 export const MODEL_ROUTING_DELEGATION_KEYS = [
@@ -55,7 +64,8 @@ export const ModelRoutingTargetSchema = z.strictObject({
 });
 export type ModelRoutingTarget = z.infer<typeof ModelRoutingTargetSchema>;
 
-export const MODEL_ROUTING_MAX_ENTRIES = 40;
+/** Account-expanded provider catalogs need more room than a hand-built shortlist. */
+export const MODEL_ROUTING_MAX_ENTRIES = 500;
 /** A row of the main order. The limit is defined here once and applies in every pool. */
 export const ModelRoutingEntrySchema = ModelRoutingTargetSchema.extend({
   id,
@@ -67,12 +77,21 @@ export const ModelRoutingEntrySchema = ModelRoutingTargetSchema.extend({
 export type ModelRoutingEntry = z.infer<typeof ModelRoutingEntrySchema>;
 
 export const MODEL_ROUTING_MAX_POOLS = 50;
-/** A named, ordered subset of the main order. `entryIds` order is the pool's own priority. */
-export const ModelRoutingPoolSchema = z.strictObject({
-  id,
-  name: z.string().min(1).max(80),
-  entryIds: z.array(id).min(1).max(MODEL_ROUTING_MAX_ENTRIES),
-});
+/**
+ * A named, ordered subset of the main order. `entryIds` order is the pool's own priority;
+ * the pools in `poolIds` follow, each flattened in order (see `modelRoutingPoolEntryIds`).
+ */
+export const ModelRoutingPoolSchema = z
+  .strictObject({
+    id,
+    name: z.string().min(1).max(80),
+    entryIds: z.array(id).max(MODEL_ROUTING_MAX_ENTRIES),
+    /** Other pools included by reference after this pool's own entries. Cycles are rejected. */
+    poolIds: z.array(id).max(MODEL_ROUTING_MAX_POOLS).optional(),
+  })
+  .refine((pool) => pool.entryIds.length + (pool.poolIds?.length ?? 0) > 0, {
+    message: "A pool needs at least one model or pool.",
+  });
 export type ModelRoutingPool = z.infer<typeof ModelRoutingPoolSchema>;
 
 /**
@@ -139,6 +158,11 @@ const routingFields = {
   pools: z.array(ModelRoutingPoolSchema).max(MODEL_ROUTING_MAX_POOLS),
   roles: z.partialRecord(ModelRoutingRoleSchema, ModelRoutingChoiceSchema),
   delegation: ModelRoutingDelegationSchema,
+  /**
+   * Scope of each tagged project, keyed by `modelRoutingProjectKey(cwd)`. The renderer derives
+   * it from project and group tags; a run started for that project skips other-scope accounts.
+   */
+  projectKinds: z.record(z.string().min(1).max(1024), ModelRoutingScopeSchema).optional(),
   /** Longest single unattended run in minutes when the item sets none. Omitted means no default. */
   defaultMaxRunMinutes: z.number().int().min(1).max(10080).optional(),
 };
@@ -166,6 +190,8 @@ export const MODEL_ROUTING_SKIP_REASONS = [
   "belowLimit",
   "unknownLimit",
   "missingCapability",
+  /** The entry's account is tagged for the other scope than the run's project. */
+  "otherScope",
 ] as const;
 export const ModelRoutingSkipSchema = z.strictObject({
   entryId: id,
@@ -226,6 +252,8 @@ export const ModelRoutingResolveParamsSchema = z.strictObject({
   choice: ModelRoutingItemChoiceSchema.optional(),
   /** The item's own model, required when the effective choice is `fixed`. */
   fixed: ModelRoutingTargetSchema.optional(),
+  /** The project the run belongs to; selects its scope from `projectKinds`. */
+  cwd: z.string().min(1).max(4096).optional(),
 });
 export const ModelRoutingResolveResultSchema = z.strictObject({
   resolution: ModelRoutingResolutionSchema,

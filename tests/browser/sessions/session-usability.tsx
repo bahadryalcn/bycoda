@@ -1,4 +1,5 @@
 import { AccountUsageMeters } from "../../../src/features/providers/ui/ProviderAccountUsage";
+import { SessionDiscussionFixture } from "./session-discussion-fixture";
 import { ProjectBackgroundDialog } from "../../../src/features/projects/ui/ProjectBackgroundDialog";
 import { RailBackgroundControls } from "../../../src/features/projects/ui/RailBackgroundControls";
 import { saveProjectChatBackgroundSettings } from "../../../src/features/projects/model/projectChatBackground";
@@ -202,7 +203,7 @@ const initial: Session = {
   ...newSession("claude", "/fixture", modelId),
   id: sessionId,
   title: "Integrated usability conversation with a long project title",
-  blocks: baseBlocks,
+  blocks: new URLSearchParams(location.search).has("socialDiscussion") ? [] : baseBlocks,
   rewindHistory: new URLSearchParams(location.search).has("rewindFixture")
     ? [
         {
@@ -402,7 +403,11 @@ function Fixture() {
       data-integrated-session
     >
       <ModelSourceContext.Provider value={modelSource}>
-        <SessionPane key={revision} {...props} />
+        {new URLSearchParams(location.search).has("socialDiscussion") ? (
+          <SessionDiscussionFixture {...props} />
+        ) : (
+          <SessionPane key={revision} {...props} />
+        )}
       </ModelSourceContext.Provider>
     </main>
   );

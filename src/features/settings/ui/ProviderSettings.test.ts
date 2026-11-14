@@ -5,6 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ProvidersPage, resetRetainedProvidersPage } from "./ProviderSettings";
+import * as harnessUpdates from "../../providers/model/harnessUpdateActions";
+import {
+  DEFAULT_PROVIDER_ACCOUNT_ID,
+  editProviderAccount,
+} from "../../providers/model/providerAccounts";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => undefined),
@@ -58,6 +63,14 @@ async function render() {
 }
 
 describe("providers scope inheritance", () => {
+  it("does not repeat the default designation beside an account named Default", async () => {
+    editProviderAccount("claude", DEFAULT_PROVIDER_ACCOUNT_ID, { label: "Default" });
+    await render();
+    const row = container.querySelector(".provider-account-row")!;
+    expect(row.querySelector(".provider-account-name")?.textContent).toBe("Default");
+    expect(row.textContent).not.toContain("Default account");
+  });
+
   it("keeps ACP management inside its provider panel without duplicate sections", async () => {
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "generic_acp_list" ? [] : undefined,
@@ -87,6 +100,7 @@ it("separates Accounts from CLI and keeps setup rows mounted across tabs", async
   const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
   expect(tabs.map((node) => node.textContent?.trim())).toEqual([
     "Accounts",
+    "Defaults",
     "CLI",
     "Catalog",
     "Decision models",
@@ -127,4 +141,32 @@ it("validates new account names against the selected provider before sign-in", a
   )!;
   await act(async () => cancel.click());
   expect(document.activeElement).toBe(add);
+});
+
+it("does not claim every installed CLI is current from a checked subset", async () => {
+  const snapshot = {
+    checking: false,
+    runs: {},
+    checks: [
+      {
+        harness: "claude" as const,
+        installed: "2.1.0",
+        latest: "2.1.0",
+        status: "current" as const,
+      },
+    ],
+  };
+  const spy = vi.spyOn(harnessUpdates, "getHarnessUpdateSnapshot").mockReturnValue(snapshot);
+  try {
+    await render();
+    const cli = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+      (node) => node.textContent === "CLI",
+    )!;
+    await act(async () => cli.click());
+    const summary = container.querySelector("#setting-harness-updates")!;
+    expect(summary.textContent).toContain("Up to date");
+    expect(summary.textContent).not.toContain("All CLIs are up to date");
+  } finally {
+    spy.mockRestore();
+  }
 });

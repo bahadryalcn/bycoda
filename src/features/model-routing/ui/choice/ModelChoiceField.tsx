@@ -49,7 +49,13 @@ function RoutingChoice({
   const kind = value?.kind ?? "fixed";
   const segment = kind === "order" || kind === "pool" ? "pool" : kind;
   return (
-    <div className="flex min-w-0 flex-col gap-2">
+    <div
+      className={
+        kind === "fixed"
+          ? "flex min-w-0 flex-wrap items-center gap-2"
+          : "flex min-w-0 flex-col gap-2"
+      }
+    >
       <SegmentedControl
         label={t("Model choice")}
         value={segment}

@@ -1140,6 +1140,13 @@ impl HostWsBroker {
         })
     }
 
+    pub(crate) fn method_is_safe_query(method: &str) -> bool {
+        Contracts::get().is_ok_and(|contracts| {
+            let entry = &contracts.manifest["methods"][contracts.wire_method(method)];
+            entry["kind"] == "query" && entry["retry"] == "safe-query"
+        })
+    }
+
     /// Resolves a stream event's data reference. It does not commit or ACK a cursor.
     pub fn fetch_bulk(
         &self,

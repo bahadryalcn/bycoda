@@ -5,6 +5,7 @@ import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { NumberField } from "../../../../shared/ui/NumberField";
 import { Text } from "../../../../shared/ui/Text";
 import { Badge } from "../../../../shared/ui/Badge";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../../shared/ui/UsageMeter";
 import { Group, Row } from "../../../settings/public/settingsControls";
@@ -30,7 +31,7 @@ export function ModelOrderLimits({
     <Group
       title={t("Work limits")}
       layout="full"
-      description={t("Caps for all unattended work on this computer.")}
+      info={t("Caps for all unattended work on this computer.")}
     >
       <Row label={t("Used today")}>
         <div className="flex min-w-0 items-center gap-2">
@@ -88,7 +89,7 @@ export function ModelOrderLimits({
           }
         />
       </Row>
-      <Row label={t("Daily agent minutes")} description={t("0 means no limit.")}>
+      <Row label={t("Daily agent minutes")} info={t("0 means no limit.")}>
         <NumberField
           label={t("Daily agent minutes")}
           hideLabel
@@ -105,7 +106,7 @@ export function ModelOrderLimits({
       </Row>
       <Row
         label={t("Default maximum run minutes")}
-        description={t("For one unattended run. Empty means no limit.")}
+        info={t("For one unattended run. Empty means no limit.")}
       >
         <NumberField
           label={t("Default maximum run minutes")}
@@ -117,12 +118,19 @@ export function ModelOrderLimits({
           onChange={(event) => onChange({ ...draft, maxRunMinutes: event.currentTarget.value })}
         />
       </Row>
-      <Disclosure summary={t("Token and cost limits")} variant="row">
-        <Text size="secondary" tone="secondary">
-          {t(
-            "Empty or 0 means no limit. Limits apply before new turns and may be exceeded by a running turn.",
-          )}
-        </Text>
+      <Disclosure
+        summary={t("Token and cost limits")}
+        variant="row"
+        summaryActions={
+          <InfoPopover>
+            <p>
+              {t(
+                "Empty or 0 means no limit. Limits apply before new turns and may be exceeded by a running turn.",
+              )}
+            </p>
+          </InfoPopover>
+        }
+      >
         {(["total", ...SessionProviderSchema.options] as const).map((scope) => {
           const caps = scope === "total" ? draft.workCaps.total : draft.workCaps.providers[scope];
           const empty: CapDraft = {

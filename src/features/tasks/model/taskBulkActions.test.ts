@@ -22,6 +22,23 @@ const task = (id: string, patch: Partial<BoardTask> = {}): BoardTask => ({
 });
 
 describe("scoped bulk task operations", () => {
+  it.each([
+    ["start", "todo"],
+    ["stop", "running"],
+    ["retry", "blocked"],
+  ] as const)(
+    "keeps crew %s eligibility consistent with individual Host actions",
+    async (action, status) => {
+      const perform = vi.fn(async (_task: BoardTask) => {});
+      const result = await runTaskBulkAction(
+        [task("crew", { crewRunId: "run", status })],
+        action,
+        perform,
+      );
+      expect(result[0].status).toBe("succeeded");
+      expect(perform).toHaveBeenCalledOnce();
+    },
+  );
   it("groups repeated reasons without hiding failed task identities", () => {
     const groups = groupTaskBulkResults([
       { task: task("a"), status: "skipped", reason: "Crew owns this task" },
@@ -105,8 +122,12 @@ describe("scoped bulk task operations", () => {
     expect(results.map((row) => row.status)).toEqual(["succeeded", "failed", "succeeded"]);
   });
 });
-  it("allows deletion of inactive crew tasks while preserving active work", async () => {
-    const perform = vi.fn(async (_task: BoardTask) => {});
-    const results = await runTaskBulkAction([task("crew", { crewRunId: "run" }), task("active", { crewRunId: "run", status: "running" })], "delete", perform);
-    expect(results.map((row) => row.status)).toEqual(["succeeded", "skipped"]);
-  });
+it("allows deletion of inactive crew tasks while preserving active work", async () => {
+  const perform = vi.fn(async (_task: BoardTask) => {});
+  const results = await runTaskBulkAction(
+    [task("crew", { crewRunId: "run" }), task("active", { crewRunId: "run", status: "running" })],
+    "delete",
+    perform,
+  );
+  expect(results.map((row) => row.status)).toEqual(["succeeded", "skipped"]);
+});

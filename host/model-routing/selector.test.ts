@@ -23,6 +23,7 @@ const signals = (extra: Partial<ModelRoutingSignals> = {}): ModelRoutingSignals 
   available: () => true,
   signedIn: () => true,
   quota: () => ({ unknown: true }),
+  accountKind: () => undefined,
   ...extra,
 });
 const input = { role: "task.worker" as const };
@@ -209,5 +210,84 @@ describe("model routing selection", () => {
     });
     if (result.ok)
       expect(Object.keys(result.target.modelSettings).sort()).toEqual(["crossAdvisor", "effort"]);
+  });
+});
+
+describe("nested pools and project scope", () => {
+  const withPools = (): ModelRoutingDraft => {
+    const draft = state(["a", "b", "c", "d"].map((id) => entry(id)));
+    draft.pools = [
+      { id: "outer", name: "Outer", entryIds: ["c"], poolIds: ["inner", "other"] },
+      { id: "inner", name: "Inner", entryIds: ["b", "c"], poolIds: ["outer"] },
+      { id: "other", name: "Other", entryIds: ["d", "b"] },
+    ];
+    return draft;
+  };
+  const pick = (draft: ModelRoutingDraft, available: (id: string) => boolean) =>
+    selectModelRouting(
+      draft,
+      { ...input, choice: { kind: "pool", poolId: "outer" } },
+      signals({ available: (e) => available(e.id) }),
+    );
+
+  it("walks own entries, then included pools depth-first, deduped and cycle-safe", () => {
+    const skipped: string[] = [];
+    const result = pick(withPools(), (id) => {
+      skipped.push(id);
+      return false;
+    });
+    expect(result).toMatchObject({ ok: false, reason: "noEligibleEntry" });
+    expect(result.skipped.map((s) => s.entryId)).toEqual(["c", "b", "d"]);
+    expect(pick(withPools(), (id) => id === "d")).toMatchObject({
+      ok: true,
+      source: { kind: "pool", poolId: "outer", entryId: "d" },
+    });
+  });
+
+  const scoped = (cwd: string | undefined, kinds: Record<string, "work" | "personal"> = {}) => {
+    const draft = state([
+      entry("personal"),
+      entry("shared"),
+      entry("work"),
+    ]);
+    draft.projectKinds = { "c:/proj/app": "work", ...kinds };
+    return selectModelRouting(
+      draft,
+      { ...input, cwd },
+      signals({
+        accountKind: (e) => (e.id === "shared" ? undefined : (e.id as "personal" | "work")),
+      }),
+    );
+  };
+
+  it("skips other-scope accounts for a tagged project only", () => {
+    expect(scoped("C:\Proj\App\\")).toMatchObject({
+      ok: true,
+      source: { entryId: "shared" },
+      skipped: [{ entryId: "personal", reason: "otherScope" }],
+    });
+    expect(scoped("C:/proj/app", { "c:/proj/app": "personal" })).toMatchObject({
+      source: { entryId: "personal" },
+    });
+    expect(scoped(undefined)).toMatchObject({ source: { entryId: "personal" } });
+    expect(scoped("C:/untagged")).toMatchObject({ source: { entryId: "personal" } });
+  });
+
+  it("reports noEligibleEntry when scope removes every entry and never filters fixed", () => {
+    const draft = state([entry("p1")]);
+    draft.projectKinds = { "/x": "work" };
+    const only = signals({ accountKind: () => "personal" });
+    expect(selectModelRouting(draft, { ...input, cwd: "/x" }, only)).toMatchObject({
+      ok: false,
+      reason: "noEligibleEntry",
+      skipped: [{ entryId: "p1", reason: "otherScope" }],
+    });
+    expect(
+      selectModelRouting(
+        draft,
+        { ...input, cwd: "/x", choice: { kind: "fixed" }, fixed: entry("f") },
+        only,
+      ),
+    ).toMatchObject({ ok: true, source: { kind: "fixed" } });
   });
 });

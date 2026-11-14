@@ -1,7 +1,7 @@
 # Models and provider settings
 
 Open **Settings > Background work** to manage shared model routing and limits for this computer's Host.
-Its tabs contain Model order, Assignments and Subagents. **Settings > Models** keeps chat defaults:
+Its tabs contain Model order, Assignments and Subagents. **Settings > Providers > Defaults** keeps chat defaults:
 
 - **Model order** defines the main priority order, provider accounts, model
   options and how much quota to keep for your own use. Choose what happens when
@@ -18,6 +18,12 @@ Its tabs contain Model order, Assignments and Subagents. **Settings > Models** k
   ceiling and image models. Global defaults apply to chats and unattended work;
   provider, account and explicit item settings override them in that order.
 
+Conversation defaults start with **Bycoda defaults**. New conversations use them
+unless their project has its own settings. Choose **Project overrides** in the
+scope menu only when specific projects or groups need different settings. Saving
+Bycoda defaults does not overwrite project exceptions or change existing conversations.
+The old Models settings destination and search links open Providers > Defaults.
+
 Effort uses ascending bars, from Faster to Deeper. The selected level appears above
 the scale; hover or focus a bar for its full label. Provider effort retains its
 Automatic or inherited choice.
@@ -26,6 +32,12 @@ The conversation model picker keeps the reasoning heading, current level and bar
 together while other options scroll. Narrow panels scroll their model and settings
 sections instead of shrinking either list away. Open Help for complete setting
 descriptions with the keyboard or touch; hovering is optional.
+
+The Agents tab reads Advisor, Image models, Subagents, then Subagent max effort.
+These controls scroll together. Selected image and subagent models remain readable
+alongside their removal actions. Auto-compact window uses a slider in 50K-token steps;
+its first position restores Default. Codex starts at 50K, Claude Code at its native
+100K minimum; the provider's supported window remains the limit.
 
 Subagent max effort uses the same bars and has a separate **Automatic** switch. Automatic removes the
 ceiling and leaves the child's own reasoning setting unchanged. The picker shows
@@ -61,7 +73,9 @@ CLI sign-in on this computer. CLI manages installed agent tools. Catalog manages
 model availability. Decision models configure decision routing. Shared model
 order, limits and delegation are managed in Settings > Background work.
 
-Switching between Accounts and Usage & limits keeps account drafts and pending
+**Settings > Usage & limits** is a separate page for provider usage, quotas and
+local budgets. Existing usage links and Settings search open that page.
+Switching between Providers and Usage & limits keeps account drafts and pending
 sign-in operations intact. Finish or cancel account changes before switching the
 selected provider or its inner tabs. Account names show validation beside the field;
 choose a distinct name before starting browser sign-in. Searching for Antigravity
@@ -78,8 +92,8 @@ In **Settings > Background work**, token and cost limits can be set for all prov
 ## Automatic compaction
 
 The model picker offers the compaction controls supported by the current provider.
-Save their defaults in Settings under **New conversation defaults**, globally or for
-an account or project. Unsaved edits remain drafts. Existing conversations retain
+Save them in **Settings > Providers > Defaults**, as Bycoda defaults or as
+account or project overrides. Unsaved edits remain drafts. Existing conversations retain
 their own values. Reset a row to inherit the scope above; choose **Default** to use
 the provider's own configuration even when a higher scope specifies an override.
 
@@ -100,3 +114,5 @@ advertised by their own catalog. Unsupported settings are not copied across prov
 Model order and Assignments are edited on the selected Host. Changes remain drafts until Save; a version conflict requires loading the latest settings before saving again. Quota read failures show a retry action; an unknown quota is a separate valid state.
 
 Decision models show the Host used for scanning, local installation and saved keys. The app prefers this computer’s Host, then the first connected Host. Adding a model and testing it are separate steps: a failed connection test leaves the added source available to edit or retry.
+
+In **Settings > Background work > Model order**, **Create from provider catalog** adds enabled models from available, visible providers and creates one pool per provider account (or provider without account profiles). Existing entries, priorities, custom pools, assignments and limits stay unchanged. Repeating the action does not duplicate the same choices or pools. Review the draft and press **Save** to apply through the existing Host-owner and version checks. Catalog setup uses the current catalog; manage accounts and catalog visibility under Providers. If the model-order or pool limit would be exceeded, nothing is added; reduce unused catalog choices or pools and retry.

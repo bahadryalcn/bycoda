@@ -55,6 +55,7 @@ export async function createLifecycleRuntime(
     | "queueDrainer"
     | "crews"
     | "pullRequestWatch"
+    | "conversationDelegation"
     | "conversationSecrets"
     | "assistant"
     | "attachmentOwnership"
@@ -180,6 +181,12 @@ export async function createLifecycleRuntime(
         step("queue-drainer", () => dependencies.queueDrainer.start()),
         step("crews", () => dependencies.crews.start()),
         step("pull-request-watch", () => dependencies.pullRequestWatch.start()),
+        step("agent-communication", async () =>
+          dependencies.conversationDelegation.communication.start(
+            (wake) => dependencies.engine.store.subscribeChanges(wake),
+            () => dependencies.conversationDelegation.resumePending(),
+          ),
+        ),
         step("conversation-secrets", () => dependencies.conversationSecrets.start()),
         step("assistant", () => dependencies.assistant.start()),
         step("perf-metrics", () => perfMetrics.start()),
@@ -254,6 +261,7 @@ export async function createLifecycleRuntime(
       drain("pushNotifications", () => dependencies.pushNotifications.stop());
       drain("crews", () => dependencies.crews.close());
       drain("pullRequestWatch", () => dependencies.pullRequestWatch.close());
+      drain("agentCommunication", () => dependencies.conversationDelegation.communication.close());
       drain("conversationSecrets", () => dependencies.conversationSecrets.close());
       drain("attachmentOwnership", () => dependencies.attachmentOwnership.close());
       drain("terminals", async () => await dependencies.terminals.close());

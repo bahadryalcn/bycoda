@@ -379,7 +379,13 @@ stored account or switching them to the conversation's current account.
 
 Host advisors and subagents appear in their parent's activity dock, including finished
 runs. They do not appear in conversation lists, search results or workspace tabs.
+Existing desktop conversations can delegate without moving the parent conversation
+to Host execution. Child runs keep their own Host history; the parent's drafts and
+execution owner stay with the desktop.
 Opening an old child link returns to its parent and opens that child's panel.
+While the parent is open or running, completed children remain available in its
+transcript cards and subagent history menu. Finishing a child does not close its
+open panel. Reopening the parent loads its children from the Host again.
 The panel keeps the Advisor role distinct and shows the child's questions and approvals
 through its original Host connection. Hidden children can still request attention.
 The Host stores child transcripts. Opening a child's panel streams its tool steps and
@@ -398,6 +404,27 @@ advisor read-only access and child authority limits still apply. Approvals still
 need your answer in the child panel.
 The assistant can wait for up to 16 runs together: up to 240 seconds for Claude,
 Codex and Grok, or 50 seconds for other providers.
+
+Subagents can discover their parent and siblings with `agents.list` and contact
+them directly with `agents.send`. Messages keep the same child conversation and
+context. `auto` steers a running Host turn when the provider supports it; otherwise
+it waits for an idle turn. `queue` waits; `steer` requires an active Host turn.
+Parent messages can use the existing shared queue, including for desktop Native
+conversations. Existing owner pauses, approvals, drafts and queue leases remain in
+force. Queued or steered means accepted, not that the model has read the message.
+
+For background work, the assistant sets `notifyOnCompletion: true` on delegation
+or consultation and can end its turn. The result is queued to the original parent
+once that child turn finishes, waking the parent when its queue can run. The
+default remains explicit `agents.wait`. A stopped group cannot send queued wakes;
+an uncertain delivery after a disconnect is retained for inspection, never replayed.
+Background parent wake is for interactive conversations. Task, goal and automation
+Work parents keep waiting for child results: only their Work owner can resume them,
+and a child cannot create an unbudgeted parent turn through the generic queue.
+Peers cannot change one another's assigned scope or permissions, contact other
+groups, or target a conversation with broader execution permissions. Advisors can
+message their parent only. Useful questions/results are encouraged; acknowledgement
+loops are not.
 
 Limits: 16 Host subagents can run at once, and one advisor at a time. Host delegation
 is one level: a delegated child's session catalog, discovery and MCP tool list omit

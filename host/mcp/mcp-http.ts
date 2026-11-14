@@ -1,4 +1,5 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
+import { agentToolAllowedForChild } from "../delegation/tools";
 import { createHash } from "node:crypto";
 import { Readable, Writable } from "node:stream";
 import {
@@ -443,7 +444,7 @@ export class McpHttp {
               ? externalMcpCatalog(group, identities.get(group)!.grant!)
               : mcpCatalog(group)
             )
-              .filter((tool) => !child || !tool.action.startsWith("agents."))
+              .filter((tool) => !child || agentToolAllowedForChild(tool.action))
               .map(({ action: _action, ...tool }) => tool),
           ),
         };

@@ -133,9 +133,7 @@ export function SprintManagement({
       {t("New sprint")}
     </Button>
   );
-  const hostBar = (
-    <SprintHostBar board={board} busy={!!busy} error={error} showRefresh={!nothing} />
-  );
+  const hostBar = <SprintHostBar board={board} busy={!!busy} error={error} showRefresh={false} />;
   return (
     <Text
       as="section"

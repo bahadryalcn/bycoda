@@ -59,11 +59,16 @@ async function createSprint(
   await page.getByRole("option", { name: /^local-project / }).click();
   await page.getByRole("option", { name: /^remote-project / }).click();
   await page.keyboard.press("Escape");
+  await form
+    .locator("summary")
+    .filter({ hasText: /^Capacity$/ })
+    .click();
   await form.getByLabel("Sprint capacity (points)", { exact: true }).fill("13");
   await pickDate(page, form, "Start date", "2026-10-26");
   await pickDate(page, form, "End date", "2026-11-09");
   await form.getByRole("button", { name: "Save sprint", exact: true }).click();
   await expect(form).not.toBeVisible();
+  await page.getByRole("radio", { name: "Board view", exact: true }).check();
   await expect(page.getByRole("button", { name: "Start sprint", exact: true })).toBeVisible();
 }
 async function assignTasks(page: Page) {
@@ -136,7 +141,7 @@ test("long sprint names and goals keep planning controls and the board reachable
     });
   }, longName);
   await page
-    .getByRole("region", { name: "Sprints", exact: true })
+    .locator("header.task-board-toolbar")
     .getByRole("button", { name: "Refresh", exact: true })
     .click();
   await expect(page.getByRole("heading", { name: longName, exact: true })).toBeVisible();

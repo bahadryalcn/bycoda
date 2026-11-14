@@ -1,26 +1,21 @@
-import { useSyncExternalStore, type ReactNode } from "react";
 import { useFormat, useT } from "../../../../shared/i18n";
 import type {
   ModelRoutingEntry,
   ModelRoutingEntryStatus,
 } from "../../../../shared/model/host-contracts/model-routing";
+import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
-import { NumberField } from "../../../../shared/ui/NumberField";
-import { Select } from "../../../../shared/ui/Select";
 import { Text } from "../../../../shared/ui/Text";
-import { Timestamp } from "../../../../shared/ui/Timestamp";
-import { ArrowDown, ArrowUp, GripVertical, Trash2 } from "../../../../shared/ui/icons";
+import { OverflowTooltip } from "../../../../shared/ui/Tooltip";
+import { GripVertical } from "../../../../shared/ui/icons";
 import { REMOTE_PROVIDERS, isRemoteProvider } from "../../../connections/public/protocol";
-import {
-  defaultProviderAccountId,
-  providerAccounts,
-  subscribeProviderAccounts,
-} from "../../../providers/public/providerAccounts";
 import { ModelPicker } from "../../../sessions/public/ModelPicker";
 import { defaultModelSettings, resolveModel } from "../../../sessions/public/models";
 import { entrySettings } from "../../model/modelRoutingDraft";
 import type { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder";
+import { ModelOrderRowMore } from "./ModelOrderRowMore";
+import { ModelProfileBadge } from "./ModelProfileBadge";
+import { useEntryAccount } from "./useEntryAccount";
 
 const skipLabels = {
   unavailable: "Model unavailable or disabled",
@@ -28,8 +23,10 @@ const skipLabels = {
   belowLimit: "Below the reserved limit",
   unknownLimit: "Unknown limit: skipped",
   missingCapability: "Host capability unavailable",
+  otherScope: "Account is for other work",
 };
 
+/** One compact line per order entry; reordering is the grip (drag or Alt+Up/Down). */
 export function ModelOrderRow({
   entry,
   index,
@@ -41,7 +38,6 @@ export function ModelOrderRow({
   sortable,
   onChange,
   onPercent,
-  onMove,
   onRemove,
 }: {
   entry: ModelRoutingEntry;
@@ -54,19 +50,11 @@ export function ModelOrderRow({
   sortable: ReturnType<typeof useAnimatedReorder<string>>;
   onChange: (entry: ModelRoutingEntry) => void;
   onPercent: (text: string) => void;
-  onMove: (delta: -1 | 1) => void;
   onRemove: () => void;
 }) {
   const t = useT();
   const format = useFormat();
-  const accountProvider =
-    entry.harness === "claude" || entry.harness === "codex" ? entry.harness : undefined;
-  const accountSnapshot = useSyncExternalStore(subscribeProviderAccounts, () =>
-    JSON.stringify(accountProvider ? providerAccounts(accountProvider) : []),
-  );
-  const accounts: ReturnType<typeof providerAccounts> = JSON.parse(accountSnapshot);
-  const accountId =
-    entry.providerAccountId ?? (accountProvider ? defaultProviderAccountId(accountProvider) : "");
+  const account = useEntryAccount(entry);
   const left =
     status?.leftPercent == null
       ? t(statusLoading ? "Reading limit…" : statusError ? "Limit unavailable" : "Limit unknown")
@@ -74,171 +62,93 @@ export function ModelOrderRow({
   return (
     <div
       ref={(node) => sortable.setItemRef(entry.id, node)}
-      className="reorder-item flex flex-col gap-2 px-4 py-3"
+      className="reorder-item flex flex-wrap items-center gap-x-2 gap-y-1 px-4 py-2"
       data-dragging={sortable.draggingId === entry.id ? "" : undefined}
       aria-label={t("Model {p0}", { p0: index + 1 })}
     >
-      <div className="flex items-center gap-2">
-        <Button
-          iconOnly
-          variant="ghost"
-          size="sm"
-          label={t("Reorder model {p0}", { p0: index + 1 })}
-          tooltip={t("Drag to reorder")}
-          shortcut="Alt+↑ / Alt+↓"
-          disabled={count < 2}
-          onPointerDown={(event) => sortable.onItemPointerDown(entry.id, event)}
-          onKeyDown={(event) => sortable.onItemKeyDown(entry.id, event)}
-        >
-          <GripVertical className="icon-sm" />
-        </Button>
-        <Text size="secondary" tone="secondary" aria-hidden="true" className="w-4 text-center">
-          {format.formatNumber(index + 1)}
-        </Text>
-        <div className="min-w-0 flex-1">
-          <ModelPicker
-            harness={entry.harness}
-            model={entry.model}
-            values={entrySettings(entry.modelSettings)}
-            allowedHarnesses={REMOTE_PROVIDERS}
-            presentation="field"
-            showExtras
-            accountId={entry.providerAccountId}
-            onChange={(harness, model, accountId) => {
-              if (!isRemoteProvider(harness)) return;
-              onChange({
-                ...entry,
-                harness,
-                model,
-                providerAccountId:
-                  harness === "claude" || harness === "codex"
-                    ? (accountId ??
-                      (harness === entry.harness ? entry.providerAccountId : undefined))
-                    : undefined,
-                modelSettings: entrySettings(
-                  harness === entry.harness && model === entry.model
-                    ? entry.modelSettings
-                    : defaultModelSettings(resolveModel(harness, model)),
-                ),
-              });
-            }}
-            onSettingsChange={(settings) =>
-              onChange({
-                ...entry,
-                modelSettings: entrySettings({ ...entry.modelSettings, ...settings }),
-              })
-            }
-          />
-        </div>
-        <Text
-          size="caption"
-          tone={status?.skip ? "warning" : "secondary"}
-          className="w-24 shrink-0 text-end whitespace-nowrap"
-        >
-          {left}
-        </Text>
-        <Button
-          iconOnly
-          variant="ghost"
-          size="sm"
-          label={t("Move model {p0} up", { p0: index + 1 })}
-          disabled={index === 0}
-          onClick={() => onMove(-1)}
-        >
-          <ArrowUp className="icon-sm" />
-        </Button>
-        <Button
-          iconOnly
-          variant="ghost"
-          size="sm"
-          label={t("Move model {p0} down", { p0: index + 1 })}
-          disabled={index === count - 1}
-          onClick={() => onMove(1)}
-        >
-          <ArrowDown className="icon-sm" />
-        </Button>
-        <Button
-          iconOnly
-          variant="ghost"
-          size="sm"
-          label={t("Remove model {p0}", { p0: index + 1 })}
-          onClick={onRemove}
-        >
-          <Trash2 className="icon-sm" />
-        </Button>
-      </div>
-      <div
-        role="group"
-        aria-label={t("Limits and account for model {p0}", { p0: index + 1 })}
-        className="flex flex-wrap items-center gap-x-4 gap-y-2 ps-12"
+      <Button
+        iconOnly
+        variant="ghost"
+        size="sm"
+        label={t("Reorder model {p0}", { p0: index + 1 })}
+        tooltip={t("Drag to reorder")}
+        shortcut="Alt+↑ / Alt+↓"
+        disabled={count < 2}
+        onPointerDown={(event) => sortable.onItemPointerDown(entry.id, event)}
+        onKeyDown={(event) => sortable.onItemKeyDown(entry.id, event)}
       >
-        {accountProvider && (
-          <InlineField label={t("Account")}>
-            <Select
-              label={t("Account")}
-              hideLabel
-              fieldSize="sm"
-              value={accountId}
-              options={[
-                ...(!accounts.some((account) => account.id === accountId)
-                  ? [{ value: accountId, label: t("Unavailable account"), disabled: true }]
-                  : []),
-                ...accounts.map((account) => ({ value: account.id, label: account.label })),
-              ]}
-              onValueChange={(providerAccountId) => onChange({ ...entry, providerAccountId })}
-            />
-          </InlineField>
-        )}
-        <InlineField label={t("Keep % for my own use")}>
-          <div className="w-28">
-            <NumberField
-              label={t("Keep % for my own use")}
-              hideLabel
-              min={0}
-              max={100}
-              step={1}
-              value={percent}
-              onChange={(event) => onPercent(event.currentTarget.value)}
-            />
-          </div>
-        </InlineField>
-        <InlineField label={t("If the limit is unknown")}>
-          <Select
-            label={t("If the limit is unknown")}
-            hideLabel
-            fieldSize="sm"
-            value={entry.unknownLimit}
-            options={[
-              { value: "use", label: t("Use") },
-              { value: "skip", label: t("Skip") },
-            ]}
-            onValueChange={(value) =>
-              onChange({ ...entry, unknownLimit: value === "skip" ? "skip" : "use" })
-            }
-          />
-        </InlineField>
-        {status?.resetsAt != null && (
-          <Timestamp value={status.resetsAt} prefix={t("Resets")} size="caption" />
-        )}
-      </div>
-      {status?.skip && (
-        <div className="ps-12">
-          <InlineMessage tone="warning" live="off">
-            {t(skipLabels[status.skip])}
-          </InlineMessage>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InlineField({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      <Text size="caption" tone="secondary" aria-hidden="true" className="whitespace-nowrap">
-        {label}
+        <GripVertical className="icon-sm" />
+      </Button>
+      <Text size="secondary" tone="secondary" aria-hidden="true" className="w-4 text-center">
+        {format.formatNumber(index + 1)}
       </Text>
-      {children}
+      <div className="min-w-48 flex-1">
+        <ModelPicker
+          harness={entry.harness}
+          model={entry.model}
+          values={entrySettings(entry.modelSettings)}
+          allowedHarnesses={REMOTE_PROVIDERS}
+          presentation="field"
+          showExtras
+          accountId={entry.providerAccountId}
+          onChange={(harness, model, accountId) => {
+            if (!isRemoteProvider(harness)) return;
+            onChange({
+              ...entry,
+              harness,
+              model,
+              providerAccountId:
+                harness === "claude" || harness === "codex"
+                  ? (accountId ?? (harness === entry.harness ? entry.providerAccountId : undefined))
+                  : undefined,
+              modelSettings: entrySettings(
+                harness === entry.harness && model === entry.model
+                  ? entry.modelSettings
+                  : defaultModelSettings(resolveModel(harness, model)),
+              ),
+            });
+          }}
+          onSettingsChange={(settings) =>
+            onChange({
+              ...entry,
+              modelSettings: entrySettings({ ...entry.modelSettings, ...settings }),
+            })
+          }
+        />
+      </div>
+      {account.supported ? (
+        <div className="flex max-w-40 min-w-0 items-center gap-1">
+          <Text size="caption" tone="secondary" truncate>
+            {account.account?.label ?? t("Unavailable account")}
+          </Text>
+          {account.kind ? (
+            <Badge size="xs" tone={account.kind === "work" ? "info" : "neutral"}>
+              {account.kind === "work" ? t("Work") : t("Personal")}
+            </Badge>
+          ) : null}
+        </div>
+      ) : null}
+      <ModelProfileBadge harness={entry.harness} model={entry.model} />
+      <Text size="caption" tone="secondary" className="w-20 shrink-0 text-end whitespace-nowrap">
+        {left}
+      </Text>
+      {status?.skip ? (
+        <OverflowTooltip label={t(skipLabels[status.skip])}>
+          <Badge size="xs" tone="warning" truncate className="max-w-40">
+            {t(skipLabels[status.skip])}
+          </Badge>
+        </OverflowTooltip>
+      ) : null}
+      <ModelOrderRowMore
+        entry={entry}
+        index={index}
+        percent={percent}
+        account={account}
+        status={status}
+        onChange={onChange}
+        onPercent={onPercent}
+        onRemove={onRemove}
+      />
     </div>
   );
 }

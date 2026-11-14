@@ -14,15 +14,22 @@ export function DraftToken({
   children,
   className,
   onIconClick,
+  ordinal,
   ...props
 }: Omit<HTMLAttributes<HTMLSpanElement>, "prefix"> & {
   prefix: ReactNode;
   icon: ReactNode;
   /** Pointer shortcut only; the accessible textarea retains keyboard editing. */
   onIconClick?: MouseEventHandler<HTMLSpanElement>;
+  /** Compact attachment identity; source text keeps its original advance width. */
+  ordinal?: string;
 }) {
   return (
-    <span {...props} className={`${styles.token} ${className ?? ""}`}>
+    <span
+      {...props}
+      data-draft-token-ordinal={ordinal}
+      className={`${styles.token} ${className ?? ""}`}
+    >
       <span className={styles.prefix}>
         <span className={styles.hidden}>{prefix}</span>
         {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Pointer shortcut in an aria-hidden editor overlay; native textarea owns keyboard input. */}
@@ -36,7 +43,7 @@ export function DraftToken({
           {icon}
         </span>
       </span>
-      {children}
+      {ordinal ? <span className={styles.hidden}>{children}</span> : children}
     </span>
   );
 }

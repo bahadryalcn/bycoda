@@ -120,6 +120,31 @@ describe("useInboxCollection scope-bound item updates", () => {
     expect(view.providerErrors).toEqual({ jira: "A jira down" });
   });
 
+  it("keeps per-provider pending state during partial progress and clears it on settlement", async () => {
+    let finish!: (value: InboxListResult) => void;
+    listInboxItems.mockImplementationOnce(async (_projects, _query, options) => {
+      options.onProgress({
+        items: [item(1, "GitHub ready", "/a")],
+        errors: {},
+        pendingProviders: ["jira", "linear"],
+      });
+      return new Promise<InboxListResult>((resolve) => {
+        finish = resolve;
+      });
+    });
+    await render({ projects: projectsA });
+    await flush();
+    expect(view.loading).toBe(false);
+    expect(view.pendingProviders).toEqual(["jira", "linear"]);
+    expect(shown()).toEqual(["GitHub ready"]);
+    await act(async () =>
+      finish({ items: [item(1, "GitHub ready", "/a")], errors: { jira: "Jira unavailable" } }),
+    );
+    await flush();
+    expect(view.pendingProviders).toEqual([]);
+    expect(view.providerErrors.jira).toBe("Jira unavailable");
+  });
+
   it("does not show the previous scope's items while the new scope is loading", async () => {
     await render({ projects: projectsA });
     await flush();

@@ -203,7 +203,7 @@ it("admits native file drops only inside the editor and supports image-only comm
       }),
     ),
   );
-  const zone = container.querySelector('[aria-label="Markdown formatting"]')!.parentElement!;
+  const zone = container.querySelector<HTMLElement>("[data-inbox-comment-editor]")!;
   zone.getBoundingClientRect = () => ({ left: 10, right: 100, top: 10, bottom: 100 }) as DOMRect;
   await act(async () => {
     nativeDrop.listener!({
@@ -226,4 +226,107 @@ it("admits native file drops only inside the editor and supports image-only comm
   expect(onSubmit).toHaveBeenCalledWith("", [expect.objectContaining({ name: "native.png" })]);
   act(() => root.unmount());
   vi.mocked(isTauri).mockReturnValue(false);
+});
+
+it.each(["GitHub", "GitLab", "Azure DevOps", "Linear"])(
+  "keeps %s drafts and submission contract across preview modes and remount",
+  async (target) => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    let root = createRoot(container);
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(undefined);
+    const props = {
+      draftKey: `parity-${target}`,
+      target,
+      replyTo: null,
+      posting: false,
+      error: null,
+      onCancelReply: vi.fn(),
+      onSubmit,
+    };
+    await act(async () => root.render(createElement(InboxCommentForm, props)));
+    const field = container.querySelector("textarea")!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        field,
+        "**draft**",
+      );
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const tab = (label: string) =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+        (node) => node.textContent === label,
+      )!;
+    await act(async () => tab("Preview").click());
+    expect(field.closest("[hidden]")).not.toBeNull();
+    expect(container.querySelector("[data-comment-preview]")?.textContent).toBe("**draft**");
+    await act(async () => tab("Source").click());
+    expect(field.closest("[hidden]")).toBeNull();
+    await act(async () =>
+      container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(onSubmit).toHaveBeenCalledWith("**draft**");
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await act(async () =>
+      root.render(createElement(InboxCommentForm, { ...props, posting: true })),
+    );
+    expect(container.querySelector("textarea")!.value).toBe("**draft**");
+    expect(container.querySelector("textarea")!.disabled).toBe(true);
+    await act(async () =>
+      container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    await act(async () => root.render(createElement(InboxCommentForm, props)));
+    await act(async () =>
+      container
+        .querySelector("form")!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+    );
+    expect(onSubmit).toHaveBeenLastCalledWith("**draft**");
+    expect(container.querySelector("textarea")!.value).toBe("");
+    await act(async () => root.unmount());
+    container.remove();
+  },
+);
+
+it("isolates comment and reply drafts when switching targets", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const props = {
+    target: "Linear",
+    replyTo: null,
+    posting: false,
+    error: null,
+    onCancelReply: vi.fn(),
+    onSubmit: vi.fn(),
+  };
+  const render = async (draftKey: string) =>
+    act(async () => root.render(createElement(InboxCommentForm, { ...props, draftKey })));
+  const write = (value: string) =>
+    act(() => {
+      const field = container.querySelector("textarea")!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        field,
+        value,
+      );
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  await render("isolation-item-comment");
+  write("comment draft");
+  await render("isolation-item-reply-1");
+  expect(container.querySelector("textarea")!.value).toBe("");
+  write("reply draft");
+  await render("isolation-item-comment");
+  expect(container.querySelector("textarea")!.value).toBe("comment draft");
+  await render("isolation-item-reply-1");
+  expect(container.querySelector("textarea")!.value).toBe("reply draft");
+  await act(async () => root.unmount());
 });

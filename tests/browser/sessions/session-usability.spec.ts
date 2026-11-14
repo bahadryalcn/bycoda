@@ -470,3 +470,25 @@ for (const light of [true, false])
       await expect(page.getByText("5h", { exact: false }).first()).toBeVisible();
       await page.screenshot({ path: info.outputPath(`provider-usage-${light}-${width}.png`) });
     });
+for (const width of [800, 1280]) {
+  test(`social discussion keeps its real composer mounted at ${width}px`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/tests/browser/sessions/session-usability.html?socialDiscussion");
+    await page.getByRole("button", { name: "AI chat", exact: true }).click();
+    const composer = page.locator("[data-composer-box] textarea");
+    await expect(composer).toBeVisible();
+    await composer.fill("Keep this social draft");
+    // The app's idle-detach timer runs after 250 ms; the real pane must survive it.
+    await page.waitForTimeout(350);
+    await expect(composer).toHaveValue("Keep this social draft");
+    await page
+      .getByRole("button", { name: width === 800 ? "Close" : "Close panel", exact: true })
+      .click();
+    await page.getByRole("button", { name: "AI chat", exact: true }).click();
+    await expect(composer).toBeVisible();
+    await expect(composer).toHaveValue("Keep this social draft");
+    expect(errors).toEqual([]);
+  });
+}

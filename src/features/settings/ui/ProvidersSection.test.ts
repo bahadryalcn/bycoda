@@ -26,14 +26,14 @@ it("retains provider drafts and mounted operation owners across Usage navigation
   try {
     await act(async () => root.render(createElement(ProvidersSection)));
     const draft = container.querySelector("input")!;
-    const tab = (name: string) =>
-      [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-        (node) => node.textContent === name,
-      )!;
-    await act(async () => tab("Usage & limits").click());
+    expect(container.querySelector('[role="tab"]')).toBeNull();
+    await act(async () => root.render(createElement(ProvidersSection, { activePage: "usage" })));
     expect(container.contains(draft)).toBe(true);
     expect(draft.closest("[hidden]")).not.toBeNull();
-    await act(async () => tab("Accounts").click());
+    expect(container.textContent).toContain("Usage fixture");
+    await act(async () =>
+      root.render(createElement(ProvidersSection, { activePage: "providers" })),
+    );
     expect(container.querySelector("input")).toBe(draft);
     expect(draft.closest("[hidden]")).toBeNull();
   } finally {

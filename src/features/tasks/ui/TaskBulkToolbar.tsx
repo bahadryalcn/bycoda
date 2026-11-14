@@ -55,11 +55,17 @@ export function TaskBulkToolbar({
   }>();
   const [lastAction, setLastAction] = useState<TaskBulkAction>("delete");
   const chosen = tasks.filter((task) => selected.has(bulkTaskKey(task)));
+  const changeSelection = (keys: Set<string>) => {
+    setResults([]);
+    setProgress(undefined);
+    onSelect(keys);
+  };
   const report = (reason: unknown) =>
     onError(reason instanceof Error ? reason.message : String(reason));
   const failures = results.filter((row) => row.status === "failed");
   const resultGroups = groupTaskBulkResults(results);
-  const eligibility = (action: TaskBulkAction) => chosen.filter((task) => !taskBulkUnavailable(task, action));
+  const eligibility = (action: TaskBulkAction) =>
+    chosen.filter((task) => !taskBulkUnavailable(task, action));
   const unavailableReason = (action: TaskBulkAction) =>
     chosen.length && !eligibility(action).length
       ? t(taskBulkUnavailable(chosen[0], action) ?? "Unavailable")
@@ -104,9 +110,11 @@ export function TaskBulkToolbar({
             onDeleted(task);
           } else {
             const updated =
-              operation === "start"
-                ? await startTask(task)
-                : await moveTask(task, operation === "stop" ? "blocked" : "queued");
+              operation === "stop"
+                ? await moveTask(task, "blocked")
+                : task.workspaceControlsSupported
+                  ? await startTask(task)
+                  : await moveTask(task, "queued");
             onUpdated(updated);
           }
         },
@@ -149,26 +157,38 @@ export function TaskBulkToolbar({
           indeterminate={chosen.length > 0 && chosen.length < tasks.length}
           disabled={busy || disabled || !tasks.length}
           onChange={(event) =>
-            onSelect(new Set(event.currentTarget.checked ? tasks.map(bulkTaskKey) : []))
+            changeSelection(new Set(event.currentTarget.checked ? tasks.map(bulkTaskKey) : []))
           }
         />
         <Badge size="sm" tone={chosen.length ? "accent" : "neutral"} className="tabular-nums">
           {t("{p0} selected", { p0: chosen.length })}
         </Badge>
         {(["start", "stop", "retry"] as const).map((action) => (
-          <Tooltip key={action} label={eligibility(action).length ? t("Eligible tasks: {p0} of {p1}", { p0: eligibility(action).length, p1: chosen.length }) : undefined}>
-          <Button
+          <Tooltip
             key={action}
-            aria-label={t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
-            variant="secondary"
-            loading={activeAction === action}
-            disabled={busy || disabled || !eligibility(action).length}
-            disabledReason={unavailableReason(action)}
-            onClick={() => run(action).catch(report)}
+            label={
+              eligibility(action).length
+                ? t("Eligible tasks: {p0} of {p1}", {
+                    p0: eligibility(action).length,
+                    p1: chosen.length,
+                  })
+                : undefined
+            }
           >
-            {t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
-            <Badge size="xs" variant="count" aria-hidden>{eligibility(action).length}</Badge>
-          </Button>
+            <Button
+              key={action}
+              aria-label={t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
+              variant="secondary"
+              loading={activeAction === action}
+              disabled={busy || disabled || !eligibility(action).length}
+              disabledReason={unavailableReason(action)}
+              onClick={() => run(action).catch(report)}
+            >
+              {t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
+              <Badge size="xs" variant="count" aria-hidden>
+                {eligibility(action).length}
+              </Badge>
+            </Button>
           </Tooltip>
         ))}
         <Button
@@ -177,16 +197,26 @@ export function TaskBulkToolbar({
           loading={activeAction === "delete"}
           disabled={busy || disabled || !eligibility("delete").length}
           disabledReason={unavailableReason("delete")}
+          tooltip={
+            eligibility("delete").length
+              ? t("Eligible tasks: {p0} of {p1}", {
+                  p0: eligibility("delete").length,
+                  p1: chosen.length,
+                })
+              : undefined
+          }
           aria-label={t("Delete")}
           onClick={() => run("delete").catch(report)}
         >
           {t("Delete")}
-          <Badge size="xs" variant="count" aria-hidden>{eligibility("delete").length}</Badge>
+          <Badge size="xs" aria-hidden>
+            {eligibility("delete").length}
+          </Badge>
         </Button>
         <Button
           variant="ghost"
           disabled={busy || disabled || !chosen.length}
-          onClick={() => onSelect(new Set())}
+          onClick={() => changeSelection(new Set())}
         >
           {t("Clear selection")}
         </Button>
@@ -216,16 +246,27 @@ export function TaskBulkToolbar({
         />
       ) : null}
       {resultGroups.length ? (
-        <Disclosure summary={t("Details")} defaultOpen={failures.length > 0} className="task-bulk-results">
+        <Disclosure
+          summary={t("Details")}
+          defaultOpen={failures.length > 0}
+          className="task-bulk-results"
+        >
           {resultGroups.map((group, index) => (
             <div key={index} className="task-bulk-result-group">
               <Text as="p" size="caption" tone={group.status === "failed" ? "danger" : "secondary"}>
-                {t(group.status === "failed" ? "Failed" : "Skipped")}{": "}
+                {t(group.status === "failed" ? "Failed" : "Skipped")}
+                {": "}
                 {group.reason ? t(group.reason) : null}
               </Text>
-              <BadgeList label={t("Tasks")} max={3} items={group.tasks.map((task) => ({
-                id: bulkTaskKey(task), label: task.title, title: `${task.title} / ${task.machineName}`,
-              }))} />
+              <BadgeList
+                label={t("Tasks")}
+                max={3}
+                items={group.tasks.map((task) => ({
+                  id: bulkTaskKey(task),
+                  label: task.title,
+                  title: `${task.title} / ${task.machineName}`,
+                }))}
+              />
             </div>
           ))}
         </Disclosure>

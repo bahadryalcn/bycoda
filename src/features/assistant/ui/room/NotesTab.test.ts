@@ -87,7 +87,11 @@ it("keeps checked notes across search and removes only confirmed deletions", asy
     errorFor: () => null,
     empty: () => null,
   } as unknown as AssistantRoom;
-  const snapshot = { notes: [first, second], capabilities: { notes: true } } as AssistantSnapshot;
+  // This fixture supplies only the snapshot fields read by NotesTab.
+  const snapshot = {
+    notes: [first, second],
+    capabilities: { notes: true },
+  } as unknown as AssistantSnapshot;
   const host = document.createElement("div"),
     root = createRoot(host);
   document.body.append(host);

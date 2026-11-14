@@ -57,6 +57,7 @@ export function SprintEditor({
         if (!busy) onClose();
       }}
       fitViewport
+      closeDisabled={busy}
       footer={
         <ModalActions>
           <Button variant="ghost" type="button" disabled={busy} onClick={onClose}>
@@ -154,7 +155,12 @@ export function SprintEditor({
             />
           </div>
         </div>
-        <Disclosure summary={t("Capacity")} defaultOpen={Boolean(sprint?.capacityPoints != null || Object.keys(sprint?.projectCapacities ?? {}).length)}>
+        <Disclosure
+          summary={t("Capacity")}
+          defaultOpen={Boolean(
+            sprint?.capacityPoints != null || Object.keys(sprint?.projectCapacities ?? {}).length,
+          )}
+        >
           <NumberField
             label={t("Sprint capacity (points)")}
             value={capacity}

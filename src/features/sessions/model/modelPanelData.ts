@@ -23,7 +23,14 @@ export function accountSwitcherKind(count: number): AccountSwitcherKind {
  * The inline control a setting gets in the panel, so no setting needs a flyout that could
  * cover the panel: short choices become a segmented switch, up to nine a button grid.
  */
-export type SettingControlKind = "toggle" | "effort" | "choices" | "segmented" | "grid" | "list";
+export type SettingControlKind =
+  | "toggle"
+  | "effort"
+  | "slider"
+  | "choices"
+  | "segmented"
+  | "grid"
+  | "list";
 
 const SEGMENTED_MAX = 3;
 const GRID_MAX = 9;
@@ -37,6 +44,11 @@ export function settingControlKind(
   setting: ModelSetting,
   labels: readonly string[] = setting.options.map((option) => option.label),
 ): SettingControlKind {
+  if (
+    setting.id === "autoCompactWindow" &&
+    setting.options.some((option) => Number(option.value) > 0)
+  )
+    return "slider";
   if (setting.id === "crossSubagentMaxEffort") return "effort";
   if (setting.kind === "toggle") return "toggle";
   if (settingGroupId(setting) === "delegation") return "choices";
@@ -87,20 +99,20 @@ export function settingGridColumns(labels: readonly string[]): 2 | 3 | 4 {
   return labels.filter((label) => label.length > GRID_THREE_TEXT).length <= 1 ? 3 : 2;
 }
 
-/** Agents-tab rows kept last, in this order, below the single choices. */
+/** Advisor leads; image models, subagents and their effort ceiling follow. */
 const AGENTS_TAIL: readonly string[] = [
   IMAGE_MODELS_KEY,
   "subagentPolicy",
-  "crossSubagentMaxEffort",
   CROSS_SUBAGENTS_KEY,
+  "crossSubagentMaxEffort",
 ];
 
 /**
  * The panel's Settings tab holds model and context rows; Agents holds delegation rows. The menu
  * order ends with Reasoning beside the upward-opening trigger; the panel reads top-down, so
  * Reasoning leads and context settings follow. On Agents the single choices (Advisor) lead,
- * the subagent policy sits right above the subagents it governs, and the growing subagent list
- * comes last, where it scrolls on its own.
+ * the subagent policy sits right above the subagents it governs, and their effort ceiling
+ * follows the list. All Agents rows share the column's scroll area.
  */
 export function splitPanelSettings(settings: readonly ModelSetting[]): {
   model: ModelSetting[];

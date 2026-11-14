@@ -552,7 +552,7 @@ export async function handleSessionsRpc(
       // These four touch separate state (deletion replies, provider inbox, adopted
       // rows, drain leases) and none reads another's writes from this beat, so they
       // wait on the store together. Each keeps its own bounded wait and fallback.
-      const [deletions, inbox, adopted, queueLeases] = await Promise.all([
+      const [deletions, inbox, adopted, queueLeases, hostPush] = await Promise.all([
         measure("desktopLive.deletions", () =>
           dependencies.withinBeat(
             () =>
@@ -585,6 +585,10 @@ export async function handleSessionsRpc(
         measure("desktopLive.queueLeases", () =>
           dependencies.withinBeat(() => dependencies.renewQueueLeases(request.params), undefined),
         ),
+        dependencies.withinBeat(
+          () => dependencies.pushNotifications.ownedEvents().catch(() => undefined),
+          undefined,
+        ),
       ]);
       request.result = {
         ...beat,
@@ -604,7 +608,7 @@ export async function handleSessionsRpc(
         // Changes another device made that the desktop shows a notice for.
         activity: dependencies.remoteActivity.since(request.params.activitySeq),
         // Kinds this Host pushes itself; the desktop skips reporting them to the account.
-        hostPush: await dependencies.pushNotifications.ownedEvents().catch(() => undefined),
+        hostPush,
       };
       break;
     }

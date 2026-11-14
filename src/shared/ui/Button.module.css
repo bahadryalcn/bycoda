@@ -762,6 +762,25 @@
 .label[data-label-reserved] {
   text-align: center;
 }
+/* Confirmed check overlays the label start; the success ghost reserves the same inset. */
+.stableLabel[data-confirm-icon],
+.labelGhost[data-reserve-icon] {
+  padding-inline-start: calc(var(--button-icon-size) + var(--space-2));
+}
+.stableLabel[data-confirm-icon] {
+  position: relative;
+}
+.confirmIcon {
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 50%;
+  display: inline-flex;
+  transform: translateY(-50%);
+}
+.confirmIcon > svg {
+  inline-size: var(--button-icon-size);
+  block-size: var(--button-icon-size);
+}
 .control[data-button-align="start"] .label[data-label-reserved] {
   text-align: start;
 }

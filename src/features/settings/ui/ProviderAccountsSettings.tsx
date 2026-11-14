@@ -402,6 +402,10 @@ export function ProviderAccountsSettings({
                     account.id === DEFAULT_PROVIDER_ACCOUNT_ID &&
                     account.label === "Default account";
                   const displayLabel = autoDefaultLabel ? t("Default account") : account.label;
+                  const defaultNamed =
+                    autoDefaultLabel ||
+                    account.label === "Default" ||
+                    account.label === t("Default");
                   const editing = editor?.provider === provider && editor.accountId === account.id;
                   const removing = working === `remove:${provider}:${account.id}`;
                   const signingIn = working === `signin:${provider}:${account.id}`;
@@ -467,7 +471,7 @@ export function ProviderAccountsSettings({
                           >
                             {displayLabel}
                           </Text>
-                          {account.isDefault && !autoDefaultLabel ? (
+                          {account.isDefault && !defaultNamed ? (
                             <Badge size="xs" className="shrink-0">
                               {t("Default account")}
                             </Badge>

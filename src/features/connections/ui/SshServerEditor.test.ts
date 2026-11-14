@@ -140,6 +140,50 @@ async function submit() {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
 }
+it("saves an unnamed endpoint using its address without native validation blocking it", async () => {
+  vi.mocked(saveSshConnection).mockResolvedValue(legacy);
+  await act(async () => root.render(createElement(SshServerEditor, { onClose: vi.fn() })));
+  await input("Host", "fresh.invalid");
+  await input("SSH user", "alice");
+  const nameLabel = [...document.querySelectorAll("label")].find(
+    (label) => label.textContent?.replace("*", "").trim() === "Name",
+  )!;
+  const nameField = document.getElementById(nameLabel.htmlFor) as HTMLInputElement;
+  expect(nameField.required).toBe(false);
+  expect(nameField.checkValidity()).toBe(true);
+  await submit();
+  expect(saveSshConnection).toHaveBeenCalledWith(
+    expect.objectContaining({ name: "alice@fresh.invalid:22" }),
+  );
+});
+
+it("does not describe editing an existing server as adding a new server", async () => {
+  await act(async () =>
+    root.render(createElement(SshServerEditor, { server: legacy, onClose: vi.fn() })),
+  );
+  expect(document.body.textContent).not.toContain("Save adds it to your servers");
+});
+
+it("saves once when submission repeats before the pending state renders", async () => {
+  let finish!: (value: ServerRecord) => void;
+  vi.mocked(saveSshConnection).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const onSaved = vi.fn();
+  await act(async () =>
+    root.render(createElement(SshServerEditor, { server: legacy, onClose: vi.fn(), onSaved })),
+  );
+  await act(async () => {
+    const form = document.querySelector("form")!;
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  await act(async () => finish(legacy));
+  expect(saveSshConnection).toHaveBeenCalledOnce();
+  expect(onSaved).toHaveBeenCalledOnce();
+});
 it("selects a discovered key without connecting and saves only its path with the existing route", async () => {
   bridge.invoke.mockResolvedValue([
     { identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:public" },

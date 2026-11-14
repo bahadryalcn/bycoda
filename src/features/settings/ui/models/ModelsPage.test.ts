@@ -173,7 +173,9 @@ describe("model defaults scope inheritance", () => {
         .spyOn(savedButton, "matches")
         .mockImplementation((selector) => selector === ":focus-visible" || matches(selector));
       await act(async () => savedButton.focus());
-      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain("Saved to Global");
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+        "Saved to Bycoda defaults",
+      );
       await act(async () => savedButton.blur());
       focusVisible.mockRestore();
       await selectScope("repo");
@@ -182,7 +184,7 @@ describe("model defaults scope inheritance", () => {
       expect(providerSessionDefaults("codex", "/repo")).toMatchObject({
         runtimeMode: "supervised",
       });
-      await pick("Codex default permissions", "Global (Full access)");
+      await pick("Codex default permissions", "Bycoda defaults (Full access)");
       await clickButton("Save");
       expect(providerSessionDefaults("codex", "/repo").runtimeMode).toBe("full-access");
     } finally {
@@ -227,6 +229,11 @@ describe("model defaults scope inheritance", () => {
   async function selectScope(label: string) {
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Save in"]')!;
     await act(async () => trigger.click());
+    await act(async () =>
+      [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+        .find((node) => node.textContent === "Project overrides")!
+        .click(),
+    );
     const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
       (node) =>
         [...node.querySelectorAll("span.truncate")].some((span) => span.textContent === label),
@@ -234,10 +241,6 @@ describe("model defaults scope inheritance", () => {
     expect(option, document.body.textContent ?? "").toBeTruthy();
     await act(async () => option!.click());
     expect(option!.getAttribute("aria-selected")).toBe("true");
-    const global = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-      (node) => node.querySelector("span.truncate")?.textContent === "Global",
-    );
-    if (global?.getAttribute("aria-selected") === "true") await act(async () => global.click());
     const done = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (node) => node.textContent === "Done",
     );
@@ -576,14 +579,10 @@ describe("model defaults scope inheritance", () => {
     );
     const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Save in"]')!;
     await act(async () => trigger.click());
-    const global = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-      (node) => node.querySelector("span.truncate")?.textContent === "Global",
+    const global = [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+      (node) => node.textContent === "Bycoda defaults",
     )!;
     await act(async () => global.click());
-    const project = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
-      (node) => node.textContent?.includes("repo (Chats only)"),
-    )!;
-    await act(async () => project.click());
     await act(async () =>
       [...document.querySelectorAll<HTMLButtonElement>("button")]
         .find((node) => node.textContent === "Done")!

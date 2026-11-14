@@ -12,7 +12,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("keeps the empty-selection Global fallback and supports keyboard selection", async () => {
+it("separates Bycoda defaults from project overrides and keeps keyboard selection", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const onChange = vi.fn();
   await act(async () =>
@@ -21,7 +21,7 @@ it("keeps the empty-selection Global fallback and supports keyboard selection", 
         values: ["global"],
         onChange,
         options: [
-          { value: "global", label: "Global" },
+          { value: "global", label: "Bycoda defaults" },
           { value: "project:alpha", label: "Alpha", group: "Projects" },
         ],
       }),
@@ -30,15 +30,18 @@ it("keeps the empty-selection Global fallback and supports keyboard selection", 
   await act(async () =>
     host.querySelector<HTMLButtonElement>('button[aria-label="Save in"]')!.click(),
   );
+  expect(
+    document.querySelector('input[aria-label="Search projects, groups and workspaces"]'),
+  ).toBeNull();
+  expect(document.body.textContent).not.toContain("Everything");
+  const overrides = [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+    (node) => node.textContent === "Project overrides",
+  )!;
+  await act(async () => overrides.click());
   const search = document.querySelector<HTMLInputElement>(
     'input[aria-label="Search projects, groups and workspaces"]',
   )!;
   expect(search.getAttribute("aria-controls")).toBeTruthy();
-  const global = document.querySelector<HTMLButtonElement>(
-    '[role="option"][aria-selected="true"]',
-  )!;
-  await act(async () => global.click());
-  expect(onChange).toHaveBeenLastCalledWith(["global"]);
   await act(async () => {
     search.dispatchEvent(
       new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
@@ -49,6 +52,14 @@ it("keeps the empty-selection Global fallback and supports keyboard selection", 
       new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
     );
   });
-  expect(onChange).toHaveBeenLastCalledWith(["global", "project:alpha"]);
+  expect(onChange).toHaveBeenLastCalledWith(["project:alpha"]);
+  const bycoda = [...document.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
+    (node) => node.textContent === "Bycoda defaults",
+  )!;
+  await act(async () => bycoda.click());
+  expect(onChange).toHaveBeenLastCalledWith(["global"]);
+  expect(
+    document.querySelector('input[aria-label="Search projects, groups and workspaces"]'),
+  ).toBeNull();
   expect(document.querySelector('[role="dialog"][aria-label="Apply defaults to"]')).not.toBeNull();
 });

@@ -10,7 +10,7 @@
   align-items: center;
   gap: 0.5rem;
   padding-block: 0.5rem;
-  padding-inline: 0.75rem;
+  padding-inline: 1rem;
 }
 .task-project-scope {
   flex: 0 1 13rem;
@@ -180,7 +180,7 @@
 .task-board-summary {
   flex: none;
   margin: 0;
-  padding: 0.5rem 0.75rem 0;
+  padding: 0.5rem 1rem 0;
 }
 .task-scope-summary {
   flex: none;

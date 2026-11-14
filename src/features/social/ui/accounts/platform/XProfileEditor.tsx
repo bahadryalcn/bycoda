@@ -100,6 +100,7 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
       <Button
         variant="secondary"
         size="sm"
+        className="self-start"
         loading={is("read")}
         disabled={is("read")}
         onClick={read}

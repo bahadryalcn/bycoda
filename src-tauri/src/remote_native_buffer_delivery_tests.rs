@@ -683,6 +683,39 @@ fn remote_retirement_follows_local_full_ack_and_keeps_original_terminal() {
 }
 
 #[test]
+fn absent_remote_receipt_keeps_consumed_outbox_without_sending_ack() {
+    let (done, wait) = mpsc::channel();
+    let server = serve(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(&mut socket, &[APPLY, STATUS, ACK], "host.1").await;
+        let status = next(&mut socket).await;
+        assert_eq!(status["method"], STATUS);
+        result(&mut socket, &status, json!({"state":"absent"})).await;
+        await_done(&mut socket, wait).await;
+    });
+    let fixture = Fixture::new(&server.endpoint);
+    let transport = fixture.ack_transport();
+    let original = journal::prepare(
+        fixture.store(),
+        "ack:absent-receipt",
+        &ws_fingerprint(&fixture.machine),
+        "native.buffers.update",
+        &serde_json::to_string(&params()).unwrap(),
+    )
+    .unwrap();
+    let original = journal::mark_possible(fixture.store(), &original).unwrap();
+    let original =
+        journal::record_result(fixture.store(), &original, r#"{"acknowledged":true}"#).unwrap();
+    journal::acknowledge(fixture.store(), &original).unwrap();
+    transport
+        .reconcile_buffer_acknowledgements(fixture.store())
+        .unwrap();
+    assert_eq!(fixture.remote_ack_outbox().len(), 1);
+    assert!(fixture.pending().is_empty());
+    done.send(()).unwrap();
+}
+
+#[test]
 fn lost_remote_ack_reopens_to_ack_only_without_replaying_original_or_consumer() {
     let (done, wait) = mpsc::channel();
     let server = serve(move |listener| async move {
@@ -694,10 +727,13 @@ fn lost_remote_ack_reopens_to_ack_only_without_replaying_original_or_consumer() 
         assert_eq!(first_ack["method"], ACK);
         socket.close(None).await.unwrap();
         drop(socket);
-        let (mut restored, retry) = restored_connection(&listener, &[APPLY, STATUS, ACK]).await;
+        let (mut restored, status) = restored_connection(&listener, &[APPLY, STATUS, ACK]).await;
+        assert_eq!(status["method"], STATUS);
+        result(&mut restored, &status, recorded(&status["params"])).await;
+        let retry = next(&mut restored).await;
         assert_eq!(
             retry["method"], ACK,
-            "restart must not apply/status/consume the old report"
+            "restart must not apply or consume the old report"
         );
         assert_eq!(retry["params"], first_ack["params"]);
         result(&mut restored, &retry, retired(&retry["params"])).await;
@@ -874,6 +910,9 @@ fn http_recovery_ack_rechecks_current_caller_without_any_ws_reply_guard() {
             let warm = next(&mut socket).await;
             assert_eq!(warm["method"], STATUS);
             result(&mut socket, &warm, json!({"state":"absent"})).await;
+            let status = next(&mut socket).await;
+            assert_eq!(status["method"], STATUS);
+            result(&mut socket, &status, recorded(&status["params"])).await;
             let (mut http, _) = listener.accept().await.unwrap();
             let mut wire = Vec::new();
             let mut chunk = [0_u8; 4096];
@@ -978,6 +1017,9 @@ fn failed_remote_marker_commit_retains_outbox_and_retries_only_idempotent_ack() 
         let first = next(&mut socket).await;
         assert_eq!(first["method"], ACK);
         result(&mut socket, &first, retired(&first["params"])).await;
+        let status = next(&mut socket).await;
+        assert_eq!(status["method"], STATUS);
+        result(&mut socket, &status, retired(&first["params"])).await;
         let retry = next(&mut socket).await;
         assert_eq!(retry["method"], ACK);
         assert_eq!(retry["params"], first["params"]);

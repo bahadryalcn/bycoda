@@ -18,16 +18,21 @@ Jira token entry offers the shared show/hide control. When searching Jira projec
 
 ## Inbox attachments
 
-Jira comment drafts offer **Source**, **Split** and **Preview**. Split shows the
+Jira, GitHub, GitLab, Azure DevOps and Linear comment drafts offer **Source**, **Split** and **Preview**. Split shows the
 Markdown source beside its live preview and stacks them when space is limited.
 Switching views keeps the draft, editor history and attached images. Only
 **Comment** or Ctrl/Cmd+Enter publishes the comment.
+Jira keeps its image attachment controls. The other providers keep their existing
+text and reply formats; the local preview does not upload attachments.
+Azure DevOps work item comments publish as Markdown to match the local preview.
 
 Jira, GitHub, GitLab, Azure DevOps and Linear descriptions and comments use the same
 attachment preview. Images appear inline and open in the zoomable image viewer;
 videos play inline. PDFs open in a dialog. Other files and failed previews open a
 dialog with an explicit **Open in browser** action; failed downloads also offer
 **Retry**. Provider permissions and the existing preview size limit still apply.
+Retry discards only the failed attachment's cached bytes and requests a fresh copy.
+PDF and unsupported-file dialogs also provide Retry beside Open in browser.
 
 Jira issue details include the issue's full attachment collection, including files
 mentioned only by filename in the description. Azure DevOps work item details include
@@ -39,6 +44,10 @@ come from loaded issues in visible projects. Assignment choices are combined wit
 workflow statuses are combined with the existing Open/Closed, Time and Projects filters.
 Assignment and workflow selections narrow Jira's server query before its result limit.
 Selections persist with Inbox filters and **Clear filters** resets them.
+Selections that are temporarily absent from discovery remain selected when other
+scope choices change. A provider still loading does not show an empty collection
+because a different provider finished first. Jira boards keep **Load more issues**
+available when a short or empty page still has a continuation cursor.
 The filter panel groups assignment shortcuts and Open/Closed choices side by side.
 Assignee options show people's names; the closed picker shows selected names.
 
@@ -72,6 +81,11 @@ sending approvals and stop controls still apply.
 Account connection status and operation availability are separate. After signing
 in, use **Check connection**; capabilities that remain unavailable explain their
 own state. A browser login does not enable operations the platform does not support.
+
+Account settings use one aligned column. Open an account for connection details,
+access, autonomy, working hours and browser settings. Expand an operation group to
+see its supported actions; a shared connection reason appears once for the group.
+Empty lists keep their next action beside the explanation.
 
 ## Jira working folders
 

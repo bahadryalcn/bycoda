@@ -177,3 +177,27 @@ it("refreshes discovered keys without changing the selected draft", async () => 
   expect(changed).not.toHaveBeenCalled();
   expect(native.invoke).toHaveBeenCalledTimes(2);
 });
+
+it("discards stale key metadata after refresh fails while preserving the selected path", async () => {
+  const changed = vi.fn();
+  native.invoke.mockResolvedValue([
+    { identityFile: "C:/keys/work", keyType: "ssh-ed25519", fingerprint: "SHA256:stale" },
+    { identityFile: "C:/keys/removed", keyType: "ssh-ed25519", fingerprint: "SHA256:removed" },
+  ]);
+  await act(async () =>
+    root.render(createElement(SshIdentityField, { value: "C:/keys/work", onChange: changed })),
+  );
+  expect(container.textContent).toContain("SHA256:stale");
+  native.invoke.mockRejectedValue(new Error("inventory unavailable"));
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Refresh SSH keys:"]')!.click(),
+  );
+  expect(container.textContent).toContain("Could not load SSH keys");
+  expect(container.textContent).not.toContain("SHA256:stale");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label^="Choose SSH key:"]')!.click(),
+  );
+  expect(document.querySelector('[role="option"][data-value="C:/keys/removed"]')).toBeNull();
+  expect(document.querySelector('[role="option"][data-value="C:/keys/work"]')).toBeTruthy();
+  expect(changed).not.toHaveBeenCalled();
+});

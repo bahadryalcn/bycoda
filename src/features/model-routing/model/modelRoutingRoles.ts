@@ -127,6 +127,12 @@ export const MODEL_ROLE_METADATA: readonly RoleMetadata[] = [
     labelKey: "Theme generator",
     descriptionKey: "Generates themes.",
   },
+  {
+    role: "text.routingSetup",
+    group: "Helper models",
+    labelKey: "Routing setup",
+    descriptionKey: "Ranks models for smart setup.",
+  },
 ];
 
 export function effectiveRoleChoice(

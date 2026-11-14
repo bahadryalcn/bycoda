@@ -527,6 +527,31 @@ if (query.has("bulk")) {
     },
   );
 }
+// Synthetic counterpart of the owner's sparse, Crew-owned Tasks screenshot.
+if (query.has("tasksUx")) {
+  const base = tasks["machine-local"][0];
+  tasks["machine-local"] = [
+    "Integrate final runtime and verify isolated distribution across supported environments",
+    "Repair standalone packaging",
+    "Complete runtime translations",
+    "Fix review findings",
+    "Prepare the next release candidate",
+  ].map((title, index) => ({
+    ...base,
+    id: `ux-${index}`,
+    projectId: "local-project",
+    title,
+    prompt:
+      "Responsibilities\nImprove reproducible builds, CI, packaging and reliability.\n\nCurrent working method\nPreserve caches, credentials and active work.",
+    crewRunId: "fixture-crew-run",
+    goalId: undefined,
+    status: index === 0 ? "todo" : "blocked",
+    error: index ? "Stopped by you" : undefined,
+    createdAt: Date.now() - 86_400_000,
+    updatedAt: Date.now() - 3_600_000,
+  }));
+  goals["machine-local"] = [];
+}
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 const openedSessions: BackgroundSessionTarget[] = [];
 let projectFailure = query.has("projectError");
@@ -1143,7 +1168,7 @@ void languageReady
             ) : (
               <TasksView
                 besideRail
-                cwd={remotePath}
+                cwd={query.has("tasksUx") ? localPath : remotePath}
                 recents={[
                   { path: remotePath, openedAt: 2 },
                   { path: localPath, openedAt: 1 },

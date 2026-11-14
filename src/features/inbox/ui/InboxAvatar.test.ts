@@ -56,3 +56,36 @@ it("keeps the colored initial when authenticated loading fails", async () => {
     act(() => root.unmount());
   }
 });
+
+it("ignores an obsolete authenticated avatar response after identity changes", async () => {
+  let finish!: (bytes: Uint8Array<ArrayBuffer>) => void;
+  vi.mocked(fetchInboxMedia).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const create = vi.spyOn(URL, "createObjectURL");
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(InboxAvatar, {
+          name: "Ada",
+          avatarUrl: "https://acme.atlassian.net/secure/useravatar?avatarId=1",
+        }),
+      ),
+    );
+    await act(async () =>
+      root.render(
+        createElement(InboxAvatar, { name: "Bob", avatarUrl: "https://example.com/bob.png" }),
+      ),
+    );
+    await act(async () => finish(new Uint8Array([1, 2, 3])));
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("https://example.com/bob.png");
+    expect(create).not.toHaveBeenCalled();
+  } finally {
+    act(() => root.unmount());
+    create.mockRestore();
+  }
+});

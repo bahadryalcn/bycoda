@@ -11,7 +11,7 @@ it("names filtered bulk scope and preserves hidden selections", async () => {
   const root = createRoot(container);
   let selected: string[] = [];
   function Fixture() {
-    const [ids, setIds] = useState(["a", "b"]);
+    const [ids, setIds] = useState(["a", "b", "unknown"]);
     selected = ids;
     return createElement(InboxScopeCollection, {
       label: "Projects",
@@ -45,7 +45,7 @@ it("names filtered bulk scope and preserves hidden selections", async () => {
     )!;
     expect(clear).toBeDefined();
     await act(async () => clear.click());
-    expect(selected).toEqual(["b"]);
+    expect(selected).toEqual(["b", "unknown"]);
     await fill("");
     expect(container.textContent).toContain("1 of 2 selected");
   } finally {

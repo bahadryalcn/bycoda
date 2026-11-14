@@ -10,6 +10,73 @@ import {
 
 for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
+    test(`model panel compaction and agent order ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+      await page.goto(`/tests/browser/chat/composer-extras.html?chat-layout&theme=${theme}`);
+      await page.locator("[data-composer-model-controls] button[aria-haspopup]").first().click();
+      const panel = page.locator("[data-model-panel]");
+      const slider = panel.getByRole("slider", { name: "Auto-compact window", exact: true });
+      await slider.press("Home");
+      await expect(slider).toHaveAttribute("aria-valuetext", "Default");
+      await slider.press("ArrowRight");
+      await expect(slider).toHaveAttribute("aria-valuetext", "100K");
+      await slider.press("ArrowRight");
+      await expect(slider).toHaveAttribute("aria-valuetext", "150K");
+      await expect(page.getByTestId("choice")).toContainText('"autoCompactWindow":"150000"');
+      await slider.blur();
+      await page.mouse.move(0, 0);
+      await page.screenshot({
+        path: `temp/verification/model-panel-fix/settings-${theme}-${width}.png`,
+      });
+      await panel.getByRole("tab", { name: "Agents", exact: true }).click();
+      expect(
+        await panel
+          .locator("[data-model-settings] [data-setting-id]")
+          .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-setting-id"))),
+      ).toEqual([
+        "crossAdvisor",
+        "imageModels",
+        "subagentPolicy",
+        "crossSubagents",
+        "crossSubagentMaxEffort",
+      ]);
+      const images = panel.locator('[data-setting-id="imageModels"]');
+      await images.locator("[data-model-setting-add]").click();
+      await panel.getByRole("option", { name: /Nano Banana/ }).click();
+      await panel.getByRole("option", { name: /Codex ImageGen/ }).click();
+      await panel.getByRole("button", { name: "Done", exact: true }).click();
+      await expect(images).toContainText("Nano Banana");
+      await expect(images).toContainText("Codex ImageGen");
+      expect(
+        await images
+          .locator("[data-clamped]")
+          .evaluateAll((labels) => labels.map((label) => getComputedStyle(label).maskImage)),
+      ).toEqual(["none", "none"]);
+      await expect(images.getByRole("button", { name: /^Remove / })).toHaveCount(2);
+      await expect(images).toBeInViewport();
+      await page.screenshot({
+        path: `temp/verification/model-panel-fix/agents-${theme}-${width}.png`,
+      });
+      const effort = panel.locator('[data-setting-id="crossSubagentMaxEffort"]');
+      await effort.scrollIntoViewIfNeeded();
+      await effort.getByRole("radio", { name: "High", exact: true }).click();
+      await expect(effort.getByRole("radio", { name: "High", exact: true })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      await expect(effort.getByRole("switch")).toHaveAttribute("aria-checked", "false");
+      await expect(page.getByTestId("choice")).toContainText('"crossSubagentMaxEffort":"high"');
+      await page.screenshot({
+        path: `temp/verification/model-panel-fix/effort-${theme}-${width}.png`,
+      });
+    });
+  }
+}
+
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
     test(`model panel worst realistic identities ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
@@ -68,6 +135,7 @@ for (const theme of ["light", "dark"] as const) {
       const selectedModels = panel.locator('[data-setting-id="crossSubagents"]');
       await selectedModels.scrollIntoViewIfNeeded();
       const ceiling = panel.locator('[data-setting-id="crossSubagentMaxEffort"]');
+      await ceiling.scrollIntoViewIfNeeded();
       await expect(ceiling.getByRole("switch")).toBeInViewport();
       expect(
         await ceiling.evaluate((element) => {

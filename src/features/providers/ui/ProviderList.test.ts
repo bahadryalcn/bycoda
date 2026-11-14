@@ -16,6 +16,26 @@ const entry: ProviderListEntry = {
   updateAvailable: false,
   auth: { tone: "ready", label: "Signed in" },
 };
+it("paints the provider selection and picker switch inside one shared row", () => {
+  const root = document.createElement("div");
+  root.innerHTML = renderToStaticMarkup(
+    createElement(ProviderList, {
+      entries: [entry],
+      active: "codex",
+      probed: true,
+      disabled: false,
+      onSelect: vi.fn(),
+      onPickerVisible: vi.fn(),
+      onSetup: vi.fn(),
+    }),
+  );
+  const row = root.querySelector(".provider-cli-item");
+  expect(row?.hasAttribute("data-action-host")).toBe(true);
+  expect(row?.hasAttribute("data-selected")).toBe(true);
+  expect(row?.querySelector('[aria-current="true"]')).not.toBeNull();
+  expect(row?.querySelector('[role="switch"]')?.closest("[data-action-inline]")).not.toBeNull();
+  expect(row?.querySelector("button button")).toBeNull();
+});
 it("keeps CLI versions out of Accounts metadata and marks default and auth semantically", () => {
   expect(providerMetaLine(entry, true)).not.toContain("1.2.3");
   const html = renderToStaticMarkup(

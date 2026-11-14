@@ -11,7 +11,7 @@
   display: grid;
   grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
   align-items: start;
-  gap: 24px;
+  gap: 20px;
 }
 
 /* Tabs lead the page; each tab shows one concern. */
@@ -126,10 +126,12 @@
 /* Detail column: header, Status, Accounts, then the selected provider's panel. The column gap is
    the only space between groups; a group's own leading padding would double it. */
 .provider-cli-detail {
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 20px;
   min-inline-size: 0;
+  padding-inline-start: 20px;
 }
 .provider-cli-panel,
 .provider-cli-card {
@@ -266,6 +268,10 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
   }
+  .provider-cli-detail {
+    --surface-frame-visible: 0;
+    padding-inline-start: 0;
+  }
   .provider-cli-selector {
     display: none;
   }
@@ -340,9 +346,18 @@
 }
 @container provider-page (max-width: 640px) {
   .provider-account-row {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .provider-account-main {
+    grid-column: 2 / -1;
   }
   .provider-account-status {
+    grid-column: 2;
+    margin-inline-start: 0;
+  }
+  .provider-account-actions {
+    grid-column: 3;
     margin-inline-start: 0;
   }
 }

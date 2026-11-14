@@ -144,7 +144,7 @@ export function ProviderDefaultsForm({
         )
     : [];
   // Inheritance is shown per row: a row that holds its own value offers a way back.
-  const resetLabel = inherits ? t("Use global default") : t("Reset to automatic");
+  const resetLabel = inherits ? t("Use Bycoda defaults") : t("Reset to automatic");
 
   useEffect(() => {
     if (!available || hasLiveCatalog(harness)) return;
@@ -191,9 +191,7 @@ export function ProviderDefaultsForm({
               "Global settings apply to chats and unattended work. Project, group and workspace settings apply to chats only.",
             )
           : inherits
-            ? t(
-                "Fields left on Global follow the global defaults. Existing conversations keep their settings.",
-              )
+            ? t("Unset fields use Bycoda defaults. Existing conversations keep their settings.")
             : t("Applies to new conversations. Existing conversations keep their settings.")
       }
     >
@@ -218,18 +216,18 @@ export function ProviderDefaultsForm({
                 inherits
                   ? modelOverride
                     ? accountId
-                      ? t("Account override. Global: {p0}", {
+                      ? t("Account override. Bycoda default: {p0}", {
                           p0: modelDisplayName(harness, globalModel),
                         })
-                      : t("Project override. Global: {p0}", {
+                      : t("Project override. Bycoda default: {p0}", {
                           p0: modelDisplayName(harness, globalModel),
                         })
-                    : t("Follows the global model")
+                    : t("Uses Bycoda defaults")
                   : undefined
               }
               modified={inherits && Boolean(modelOverride)}
               onReset={onModelReset}
-              resetLabel={t("Use global model")}
+              resetLabel={t("Use Bycoda defaults")}
             >
               <SearchableSelect
                 hideLabel

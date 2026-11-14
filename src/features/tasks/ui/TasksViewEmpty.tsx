@@ -1,6 +1,7 @@
 import { FailureState } from "../../../shared/ui/FailureState";
 import { useT } from "../../../shared/i18n";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Button } from "../../../shared/ui/Button";
 import { TasksEmptyState } from "./TasksEmptyState";
 
 /** One answer for "no task is visible": unreadable board, filters hiding tasks, all planned, or none. */
@@ -14,6 +15,8 @@ export function TasksViewEmpty({
   onRetry,
   onReset,
   onCreate,
+  emptySprint = false,
+  onBacklog,
 }: {
   unreadable: string | null;
   retrying: boolean;
@@ -24,6 +27,8 @@ export function TasksViewEmpty({
   onRetry: () => void;
   onReset: () => void;
   onCreate: () => void;
+  emptySprint?: boolean;
+  onBacklog?: () => void;
 }) {
   const t = useT();
   if (unreadable)
@@ -35,6 +40,19 @@ export function TasksViewEmpty({
         description={unreadable}
         onRetry={onRetry}
         retrying={retrying}
+      />
+    );
+  if (emptySprint)
+    return (
+      <EmptyState
+        context="panel"
+        title={t("No tasks in this sprint")}
+        description={t("Add tasks from Backlog.")}
+        action={
+          <Button variant="secondary" onClick={onBacklog}>
+            {t("Backlog")}
+          </Button>
+        }
       />
     );
   if (hasVisibleTasks && narrowed)

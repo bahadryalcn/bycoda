@@ -68,7 +68,7 @@ class FakeHost {
 
   featureSession = async (sessionId: string) => {
     const entry = await this.store.session(sessionId);
-    return { projectId: entry.projectId, session: entry.session };
+    return { projectId: entry.projectId, session: entry.session, runId: entry.runId };
   };
 
   private handle(command: Command): Record<string, unknown> {
@@ -97,6 +97,11 @@ class FakeHost {
     if (command.type === "send") {
       entry.status = "running";
       entry.runId = `turn-${++this.seq}`;
+      this.append(entry, { role: "user", text: String(command.text) } as Block);
+      return {};
+    }
+    if (command.type === "steer") {
+      if (entry.runId !== command.runId) throw new Error("This turn was stopped");
       this.append(entry, { role: "user", text: String(command.text) } as Block);
       return {};
     }
@@ -206,6 +211,35 @@ const delegate = (requestId: string, extra: Record<string, unknown> = {}) =>
 const consult = (requestId: string, question = "Is this safe?") =>
   call("agents.consult", { requestId, question });
 
+it("supports direct sibling steering and same-context continuation with peer authority limits", async () => {
+  setup({ subagents: [codexSix] });
+  host.entries.get("parent")!.session.runtimeMode = "supervised";
+  const first = await delegate("peer-a");
+  const second = await delegate("peer-b");
+  const caller = { sessionId: String(first.sessionId), projectId: "p" };
+  expect(
+    await call(
+      "agents.send",
+      { requestId: "q", runId: second.runId, message: "Need schema" },
+      caller,
+    ),
+  ).toMatchObject({ delivery: "steered" });
+  expect(host.commandsOf("steer").at(-1)?.text).toContain("untrusted peer data");
+  host.finish(String(second.sessionId), "Schema is ready");
+  expect(
+    await call(
+      "agents.send",
+      { requestId: "next", runId: second.runId, message: "Check another field" },
+      caller,
+    ),
+  ).toMatchObject({ delivery: "started" });
+  expect(host.commandsOf("send").at(-1)?.sessionId).toBe(second.sessionId);
+  expect(host.commandsOf("send").at(-1)?.text).not.toContain("updates earlier task instructions");
+  await expect(
+    call("agents.delegate", { requestId: "nested", title: "No", prompt: "No" }, caller),
+  ).rejects.toThrow("subagent cannot start");
+});
+
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "delegation-service-"));
 });
@@ -214,10 +248,66 @@ afterEach(() => {
 });
 
 describe("agents.options", () => {
+  it("keeps a Native queued request through steer and fences it at a new execution", async () => {
+    setup({ advisor: codexSix });
+    const native = await host.featureSession("parent");
+    native.session.blocks = [{ id: "native-turn", role: "user", text: "Discuss physics" }];
+    host.entries.delete("parent");
+    deps.featureSession = async (id) => (id === "parent" ? native : host.featureSession(id));
+    const first = await consult("native-first");
+    const pending = await consult("native-pending");
+    expect(pending.status).toBe("queued");
+    native.session.blocks.push({
+      id: "steer",
+      role: "user",
+      text: "Keep it short",
+      continuationOf: "native-turn",
+    });
+    host.finish(String(first.sessionId), "First reply");
+    expect(await call("agents.wait", { runId: pending.runId, timeoutSeconds: 1 })).toMatchObject({
+      status: "running",
+    });
+    const next = await consult("native-next");
+    expect(next.status).toBe("queued");
+    native.session.blocks.push({ id: "new-turn", role: "user", text: "Another task" });
+    await expect(call("agents.wait", { runId: next.runId, timeoutSeconds: 1 })).rejects.toThrow(
+      "caller configuration changed",
+    );
+  });
+
+  it.each(["subagent", "advisor"])(
+    "starts and continues a %s for a desktop-only parent",
+    async (kind) => {
+      setup({ subagents: [codexSix], advisor: claudeSonnet });
+      const native = await host.featureSession("parent");
+      native.session.blocks = [{ id: "native-turn", role: "user", text: "Discuss physics" }];
+      host.entries.delete("parent");
+      deps.featureSession = async (id) => (id === "parent" ? native : host.featureSession(id));
+      await expect(host.store.session("parent")).rejects.toThrow("no session parent");
+      const run = await (kind === "advisor" ? consult("native-start") : delegate("native-start"));
+      expect(run).toMatchObject({ status: "running" });
+      expect(
+        await (kind === "advisor" ? consult("native-start") : delegate("native-start")),
+      ).toMatchObject({ runId: run.runId });
+      expect(host.commandsOf("create")).toHaveLength(1);
+      const childId = String(run.sessionId);
+      host.finish(childId, "First reply");
+      const continued = await call("agents.reply", {
+        requestId: "native-reply",
+        runId: run.runId,
+        message: "Answer the other participant",
+      });
+      expect(continued).toMatchObject({ runId: run.runId, sessionId: childId, status: "running" });
+      expect(host.entries.has("parent")).toBe(false);
+      expect(host.commandsOf("send")).toHaveLength(2);
+    },
+  );
+
   it("lists the selected models by readable ref key with availability and running counts", async () => {
     setup({ subagents: [claudeSonnet, codexFive], advisor: codexSix });
     const options = await call("agents.options");
     expect(options).toEqual({
+      notifyOnCompletionAvailable: true,
       subagents: [
         {
           tier: "medium",
@@ -276,6 +366,33 @@ describe("agents.options", () => {
     });
     await expect(delegate("req-1")).rejects.toThrow("The selected model is unavailable.");
   });
+});
+
+it("keeps unattended parent completion under its Work owner", async () => {
+  setup({ subagents: [codexSix] });
+  host.entries.get("parent")!.runId = "parent-turn";
+  Object.assign(host.store, {
+    db: {
+      prepare: (sql: string) => ({
+        all: async () =>
+          sql.includes("sqlite_master")
+            ? [{ name: "work_queue" }]
+            : [
+                {
+                  value: JSON.stringify({
+                    rootWorkId: "task:root",
+                    receipt: { sessionId: "parent", runId: "parent-turn" },
+                  }),
+                },
+              ],
+      }),
+    },
+  });
+  expect(await call("agents.options")).toMatchObject({ notifyOnCompletionAvailable: false });
+  await expect(delegate("background-work", { notifyOnCompletion: true })).rejects.toThrow(
+    "Work parents must wait",
+  );
+  expect(host.commandsOf("create")).toHaveLength(0);
 });
 
 describe("agents.delegate model selection", () => {

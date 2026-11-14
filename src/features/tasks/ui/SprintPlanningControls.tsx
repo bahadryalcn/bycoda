@@ -25,6 +25,7 @@ export function SprintPlanningControls({
   const [target, setTarget] = useState("");
   const [points, setPoints] = useState("keep");
   const [busy, setBusy] = useState(false);
+  const [batchTotal, setBatchTotal] = useState(0);
   const pending = useRef(false);
   const [results, setResults] = useState<{ id: string; title: string; error?: string }[]>([]);
   const eligible = board.sprints.filter(
@@ -46,6 +47,7 @@ export function SprintPlanningControls({
     pending.current = true;
     setBusy(true);
     setResults([]);
+    setBatchTotal(tasks.length);
     try {
       for (const task of tasks) {
         try {
@@ -158,7 +160,7 @@ export function SprintPlanningControls({
         >
           {t("Updated {p0} of {p1} tasks", {
             p0: results.length - failures.length,
-            p1: tasks.length,
+            p1: batchTotal,
           })}
         </Text>
       ) : null}

@@ -302,3 +302,30 @@ describe("linked work item update notice", () => {
     expect(button("Delete…")).toBeTruthy();
   });
 });
+
+it("renders translated labels for linked activity", async () => {
+  const { setLanguagePreference } = await import("../../../shared/i18n");
+  try {
+    await act(async () => {
+      await setLanguagePreference("de");
+    });
+    act(() =>
+      root.render(
+        createElement(LinkedWorkItemUpdateNotice, {
+          sessionId: "translated",
+          card: { ...baseCard, state: "merged" },
+          onAcknowledge: () => {},
+          onDismiss: () => {},
+          onOpenDiscussion: () => {},
+          onAddToChat: () => {},
+        }),
+      ),
+    );
+    expect(document.body.textContent).toContain("Kommentar");
+    expect(document.body.textContent).toContain("Pull-Anfrage zusammengeführt");
+  } finally {
+    await act(async () => {
+      await setLanguagePreference("en");
+    });
+  }
+});

@@ -37,6 +37,11 @@ vi.mock("./QuickProjectIcon", () => ({
   loadQuickProjectAppearance: () => ({}),
 }));
 vi.mock("./QuickModelSelector", () => ({ QuickModelSelector: () => null }));
+vi.mock("../../sessions/ui/useComposerSkills", () => ({
+  useComposerSkills: () => ({
+    skills: [{ name: "break-ui", invocation: "break-ui", kind: "file" }],
+  }),
+}));
 vi.mock("./useQuickAttachments", () => ({
   useQuickAttachments: () => ({ files: [], clear: () => {}, clearAfterHandoff: async () => {} }),
 }));
@@ -121,6 +126,12 @@ it("highlights a link after a mode without changing the draft", () => {
   input("/plan Review https://example.com/path");
   expect(prompt.value).toBe("/plan Review https://example.com/path");
   expect(container.querySelector("[data-composer-link-token]")).not.toBeNull();
+});
+
+it.each(["/break-ui", "$break-ui"])("deletes skill %s as one token", async (token) => {
+  input(`use ${token}`);
+  await key("Backspace");
+  expect(prompt.value).toBe("use ");
 });
 
 it("shows launch progress once and preserves a newer draft after completion", async () => {

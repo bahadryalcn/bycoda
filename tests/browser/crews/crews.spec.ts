@@ -174,6 +174,8 @@ for (const theme of ["light", "dark"] as const)
       await content.getByRole("button", { name: "New work", exact: true }).first().click();
       const task = page.getByRole("dialog", { name: "New task", exact: true });
       await expect(task.getByRole("textbox", { name: "Task title", exact: true })).toBeVisible();
+      await expect(task.locator(".task-form-body")).toHaveCSS("padding-left", "16px");
+      await expect(task.locator(".task-form-footer")).toHaveCSS("justify-content", "flex-end");
       await capture("task");
       await task
         .locator("summary")
@@ -199,6 +201,7 @@ for (const theme of ["light", "dark"] as const)
       await task.getByRole("button", { name: "Cancel", exact: true }).click();
       await editCrew(page);
       const editor = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      await expect(editor.getByRole("textbox", { name: "Crew name", exact: true })).toBeVisible();
       await capture("editor");
       await editor
         .locator("summary")
@@ -1674,7 +1677,7 @@ for (const theme of ["light", "dark"] as const) {
         .toBe(2);
       await shot("performance-error");
       await dialog
-        .getByRole("button", { name: /^Codex GPT/ })
+        .getByRole("heading", { name: "Model", exact: true })
         .last()
         .scrollIntoViewIfNeeded();
       await shot("member-model");

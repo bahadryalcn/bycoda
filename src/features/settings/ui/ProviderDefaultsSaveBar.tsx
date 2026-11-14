@@ -70,7 +70,7 @@ export function buildDefaultsTargets(
   const options: Option[] = [
     {
       value: targetValue({ kind: "global" }),
-      label: t("Global"),
+      label: t("Bycoda defaults"),
       icon: <Globe className={iconClass} tone="secondary" strokeWidth={1.75} />,
     },
   ];
@@ -123,7 +123,7 @@ export function buildDefaultsTargets(
         groups,
       ),
     label: (target: DefaultsTarget) =>
-      options.find((option) => option.value === targetValue(target))?.label ?? t("Global"),
+      options.find((option) => option.value === targetValue(target))?.label ?? t("Bycoda defaults"),
     has: (target: DefaultsTarget) =>
       options.some((option) => option.value === targetValue(target) && !option.disabled),
   };
@@ -248,7 +248,9 @@ export function ProviderDefaultsSaveBar({
                     leading="inherit"
                     className="provider-save-bar-note"
                   >
-                    {t("Saved into each project of the group. Projects added later follow Global.")}
+                    {t(
+                      "Saves overrides for the group's current projects. New projects use Bycoda defaults.",
+                    )}
                   </Text>
                 ) : null}
               </InfoPopover>
@@ -286,9 +288,6 @@ export function ProviderDefaultsSaveBar({
           </div>
         ) : null}
         <div className="provider-defaults-field">
-          <Text size="caption" tone="muted">
-            {t("Save in")}
-          </Text>
           <DefaultsTargetsPicker
             values={values}
             options={options}
@@ -313,11 +312,7 @@ export function ProviderDefaultsSaveBar({
             }
             onClick={onSave}
           >
-            {saveState.state === "error" && pending > 0
-              ? t("Retry")
-              : values.length > 1
-                ? t("Save to {p0} targets", { p0: values.length })
-                : t("Save")}
+            {saveState.state === "error" && pending > 0 ? t("Retry") : t("Save")}
           </Button>
         </div>
       </div>

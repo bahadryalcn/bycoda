@@ -206,6 +206,9 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           context="list"
           kind={filtered ? "filtered" : "empty"}
           title={t(filtered ? "No matching jobs" : "No jobs yet")}
+          description={t(
+            filtered ? "Try a different search or clear the filters." : "Discuss a job",
+          )}
           resetLabel={t("Reset")}
           onReset={
             filtered

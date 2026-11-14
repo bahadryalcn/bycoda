@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
+import "./inbox-audit.scenarios";
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])

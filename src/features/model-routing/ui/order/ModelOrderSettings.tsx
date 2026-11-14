@@ -1,7 +1,6 @@
 import { useT } from "../../../../shared/i18n";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAnimatedReorder } from "../../../../shared/hooks/useAnimatedReorder";
-import { moveItem } from "../../../../shared/lib/reorder";
 import {
   HOST_MODEL_ROUTING,
   MODEL_ROUTING_MAX_ENTRIES,
@@ -20,6 +19,8 @@ import { useModelRoutingStatus } from "../../model/modelRoutingClient";
 import { entrySettings, removeOrderEntry, replaceOrderEntry } from "../../model/modelRoutingDraft";
 import { ModelOrderLimits } from "./ModelOrderLimits";
 import { ModelOrderPools } from "./ModelOrderPools";
+import { OrderSortMenu } from "./OrderSortMenu";
+import { SmartSetupAction } from "./SmartSetupAction";
 import { ModelOrderRow } from "./ModelOrderRow";
 import { RoutingSaveBar } from "../RoutingSaveBar";
 import { useOrderDraft, useOrderSettings } from "./useOrderDraft";
@@ -132,35 +133,38 @@ function OrderSettingsForm({
           <EmptyState
             context="panel"
             title={t("Choose the models for unattended work")}
-            description={t(
-              "Tasks, epics, crews, automations and the assistant start on the first model in this list that still has quota. Until you add one, each item keeps its own model.",
-            )}
+            description=""
             action={
-              <Button variant="primary" onClick={addEntry}>
-                {t("Add model")}
-              </Button>
+              <div className="flex items-center gap-2">
+                <SmartSetupAction onEdit={editor.edit} />
+                <Button onClick={addEntry}>{t("Add model")}</Button>
+              </div>
             }
           />
         ) : (
           <Group
             title={t("Model order")}
             layout="full"
-            description={t(
+            info={t(
               "New work starts on the first model with quota left. Running work keeps its model.",
             )}
             action={
-              <Button
-                size="sm"
-                disabled={entries.length >= MODEL_ROUTING_MAX_ENTRIES}
-                disabledReason={
-                  entries.length >= MODEL_ROUTING_MAX_ENTRIES
-                    ? t("The model order is full.")
-                    : undefined
-                }
-                onClick={addEntry}
-              >
-                {t("Add model")}
-              </Button>
+              <div className="flex items-center gap-2">
+                <OrderSortMenu disabled={entries.length < 2} onEdit={editor.edit} />
+                <SmartSetupAction onEdit={editor.edit} />
+                <Button
+                  size="sm"
+                  disabled={entries.length >= MODEL_ROUTING_MAX_ENTRIES}
+                  disabledReason={
+                    entries.length >= MODEL_ROUTING_MAX_ENTRIES
+                      ? t("The model order is full.")
+                      : undefined
+                  }
+                  onClick={addEntry}
+                >
+                  {t("Add model")}
+                </Button>
+              </div>
             }
           >
             {status.error ? (
@@ -186,12 +190,6 @@ function OrderSettingsForm({
                 onChange={(next) => change(replaceOrderEntry(draft, next))}
                 onPercent={(text) =>
                   change({ ...draft, percentages: { ...draft.percentages, [entry.id]: text } })
-                }
-                onMove={(delta) =>
-                  change({
-                    ...draft,
-                    routing: { ...draft.routing, entries: moveItem(entries, index, index + delta) },
-                  })
                 }
                 onRemove={() => editor.edit((current) => removeOrderEntry(current, entry.id))}
               />

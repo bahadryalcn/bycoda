@@ -403,6 +403,9 @@ export type HostCommand = HostCommandBody & {
     clientId: string;
     revision: number;
     selected?: boolean;
+    leaseAware?: boolean;
+    epoch?: number;
+    claimToken?: string;
   };
 };
 type HostCommandBody =

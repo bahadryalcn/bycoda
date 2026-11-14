@@ -146,7 +146,10 @@ export function ProviderDefaultsPanel({
                 hideLabel
                 label={t("Provider defaults")}
                 value={harness}
-                options={providerControl.options}
+                options={providerControl.options.map((option) => ({
+                  ...option,
+                  icon: <HarnessIcon harness={option.value as HarnessId} className="icon-sm" />,
+                }))}
                 onChange={(value) => providerControl.onChange(value as HarnessId)}
               />
             </Row>

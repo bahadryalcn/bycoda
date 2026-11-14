@@ -5,6 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Check, Bot } from "../../../shared/ui/icons";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
@@ -67,12 +68,17 @@ function ProviderListItem({
   const meta = providerMetaLine(entry, probed);
   const muted = probed && !available;
   return (
-    <div className="provider-cli-item" data-muted={muted || undefined}>
+    <ActionHost
+      variant="row"
+      selected={selected}
+      padding={{ end: "md" }}
+      className="provider-cli-item"
+      data-muted={muted || undefined}
+    >
       <Button
         variant="item"
         controlHeight="auto"
         padding={{ block: "xl", inline: "md" }}
-        selected={selected}
         disabled={disabled}
         className="provider-cli-option"
         tooltip={title}
@@ -128,7 +134,7 @@ function ProviderListItem({
       </Button>
       {available ? (
         <Tooltip label={t("Show {p0} in the model picker", { p0: title })}>
-          <span className="provider-cli-item-action">
+          <span className="provider-cli-item-action" data-action-inline>
             <Toggle
               label={t("Show {p0} in the model picker", { p0: title })}
               on={entry.inPicker}
@@ -142,6 +148,7 @@ function ProviderListItem({
           size="sm"
           variant="ghost"
           className="provider-cli-item-action"
+          data-action-inline
           disabled={disabled}
           aria-label={t("Set up {p0}", { p0: title })}
           onClick={() => onSetup(harness)}
@@ -149,7 +156,7 @@ function ProviderListItem({
           {t("Set up")}
         </Button>
       ) : null}
-    </div>
+    </ActionHost>
   );
 }
 

@@ -29,7 +29,6 @@ function choiceValue(choice: ModelRoutingChoice | undefined): string {
 export function ModelRoleRow({
   role,
   label,
-  description,
   choice,
   pools,
   seed,
@@ -41,7 +40,6 @@ export function ModelRoleRow({
 }: {
   role: ModelRoutingRole;
   label: string;
-  description: string;
   choice: ModelRoutingChoice | undefined;
   pools: ModelRoutingDraft["pools"];
   seed?: ModelRoutingTarget;
@@ -118,11 +116,31 @@ export function ModelRoleRow({
   return (
     <Row
       label={t(label)}
-      description={t(description)}
       disabled={disabled}
-      feedback={
-        choice?.kind === "fixed" ? (
-          <ModelPicker
+      stacked={choice?.kind === "fixed"}
+      feedback={choice?.kind === "fixed" ? undefined : preview}
+    >
+      <div className="flex w-full flex-wrap items-center gap-2">
+        <div className="w-56 max-w-full shrink-0">
+          <Select
+            label={t("Model for {p0}", { p0: t(label) })}
+            hideLabel
+            value={value}
+            disabled={disabled}
+            options={options}
+            onValueChange={(next) => {
+              if (next === value) return;
+              if (next.startsWith(POOL_PREFIX))
+                onChange({ kind: "pool", poolId: next.slice(POOL_PREFIX.length) });
+              else if (next === "fixed") onChange({ kind: "fixed", target: fixedTarget() });
+              else if (next === "automatic") onChange(undefined);
+              else onChange({ kind: "order" });
+            }}
+          />
+        </div>
+        {choice?.kind === "fixed" ? (
+          <div className="min-w-56 flex-1">
+            <ModelPicker
             harness={choice.target.harness}
             model={choice.target.model}
             values={choice.target.modelSettings}
@@ -151,28 +169,10 @@ export function ModelRoleRow({
                   modelSettings: { ...choice.target.modelSettings, ...settings },
                 }),
               })
-            }
-          />
-        ) : (
-          preview
-        )
-      }
-    >
-      <Select
-        label={t("Model for {p0}", { p0: t(label) })}
-        hideLabel
-        value={value}
-        disabled={disabled}
-        options={options}
-        onValueChange={(next) => {
-          if (next === value) return;
-          if (next.startsWith(POOL_PREFIX))
-            onChange({ kind: "pool", poolId: next.slice(POOL_PREFIX.length) });
-          else if (next === "fixed") onChange({ kind: "fixed", target: fixedTarget() });
-          else if (next === "automatic") onChange(undefined);
-          else onChange({ kind: "order" });
-        }}
-      />
+            }            />
+          </div>
+        ) : null}
+      </div>
     </Row>
   );
 }

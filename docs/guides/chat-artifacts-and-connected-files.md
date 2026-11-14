@@ -25,6 +25,14 @@ show a link icon or a recognized provider mark. These decorations preserve the
 original draft text, selection and copied references. Sent skills retain their
 skill icon alongside attachment and tracker identities.
 
+Draft attachment tokens show a type icon and ordinal, with the original `[imageN]`
+or `[fileN]` text preserved for copying and sending.
+
+Backspace immediately after a recognized skill, image or file token removes the
+whole reference. Delete immediately before it does the same. Removing the last
+reference to an attachment also removes its card and renumbers remaining references. Selected
+text and text inside code keep ordinary text editing.
+
 Image attachments show small previews in the conversation, including saved images
 from earlier messages. Previews load as their cards approach the visible area.
 Click a preview to open it full screen; Escape returns to the conversation.

@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { HostStore } from "../store";
 import { delegationBudgetScope, delegationWorkRoot } from "./work-root";
 
-function fixture(
-  options: { work?: unknown[]; ledger?: Record<string, unknown>; runId?: string } = {},
-) {
+function fixture(options: { work?: unknown[]; ledger?: Record<string, unknown> } = {}) {
   const store = {
-    session: async () => ({ runId: options.runId ?? "parent-turn" }),
     db: {
       prepare: (sql: string) => ({
         all: async () =>
@@ -33,15 +30,15 @@ describe("delegation originating Work allowance", () => {
         { rootWorkId: "task:original", receipt: { sessionId: "parent", runId: "parent-turn" } },
       ],
     });
-    expect(await delegationWorkRoot(store, "parent")).toBe("task:original");
+    expect(await delegationWorkRoot(store, "parent", "parent-turn")).toBe("task:original");
   });
 
   it("recovers legacy task allowance from immutable accepted ledger", async () => {
     const store = fixture({
       ledger: { taskId: "original", parentTaskId: "outer", goalId: "goal" },
     });
-    expect(await delegationWorkRoot(store, "parent")).toBe("task:original");
-    expect(await delegationBudgetScope(store, "parent")).toEqual({
+    expect(await delegationWorkRoot(store, "parent", "parent-turn")).toBe("task:original");
+    expect(await delegationBudgetScope(store, "parent", "parent-turn")).toEqual({
       taskId: "original",
       parentTaskId: "outer",
       goalId: "goal",
@@ -53,12 +50,22 @@ describe("delegation originating Work allowance", () => {
       await delegationWorkRoot(
         fixture({ ledger: { taskId: "child", rootWorkId: "task:original" } }),
         "parent",
+        "parent-turn",
       ),
     ).toBe("task:original");
   });
 
   it("keeps ordinary interactive delegation outside unattended attribution", async () => {
-    expect(await delegationWorkRoot(fixture(), "parent")).toBeUndefined();
-    expect(await delegationBudgetScope(fixture(), "parent")).toBeUndefined();
+    expect(await delegationWorkRoot(fixture(), "parent", "parent-turn")).toBeUndefined();
+    expect(await delegationBudgetScope(fixture(), "parent", "parent-turn")).toBeUndefined();
+  });
+
+  it("keeps a Native parent outside Host Work and budget attribution", async () => {
+    const store = fixture({ ledger: { taskId: "unrelated" } });
+    store.session = async () => {
+      throw new Error("Session not found on this machine");
+    };
+    expect(await delegationWorkRoot(store, "native-parent", undefined)).toBeUndefined();
+    expect(await delegationBudgetScope(store, "native-parent", undefined)).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { agentToolAllowedForChild } from "../delegation/tools";
 import { dirname } from "node:path";
 import { sessionConversationPage } from "../../src/features/agent-app/model/sessionConversation";
 import type { DeviceAction } from "../../src/features/devices/types";
@@ -335,7 +336,7 @@ export async function dispatchConversationTools(
           projectId,
           tools: sessionConversationToolCatalog()
             .filter(crewAllows)
-            .filter((tool) => !child || !tool.action.startsWith("agents.")),
+            .filter((tool) => !child || agentToolAllowedForChild(tool.action)),
         };
       } else if (["tools.search", "tools.describe", "tools.status"].includes(action)) {
         const child = await dependencies.conversationDelegation.isChild(boundPrincipal.sessionId);
@@ -344,7 +345,7 @@ export async function dispatchConversationTools(
           args,
           managedMcpCatalog()
             .filter(crewAllows)
-            .filter((tool) => !child || !tool.action.startsWith("agents.")),
+            .filter((tool) => !child || agentToolAllowedForChild(tool.action)),
         );
       } else if (
         action.startsWith("ui.") ||

@@ -9,6 +9,7 @@ import { remoteBackoffDelay, withBackoffJitter } from "./remotePollingPolicy";
 import { cachedRemoteCapabilities, mayStartTunnel, remoteRequest } from "./connections";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 import { subscribeRemoteRecovered } from "./remoteHealth";
+import { nativeConnectionFailureCode } from "./remoteFailure";
 import {
   captureConnectionGeneration,
   environmentForMachine,
@@ -140,10 +141,23 @@ function releaseWs(channel: Channel) {
 /** A WS route that is not ready (connecting or retry-wait) this long is abandoned for HTTP. */
 const WS_NOT_READY_MS = 5_000;
 /** Same fallback for a WS error and for a route that never becomes ready. */
-function failWs(machineId: string, channel: Channel, error: unknown, notify = true) {
+function failWs(
+  machineId: string,
+  channel: Channel,
+  error: unknown,
+  notify = ![
+    "RPC_WS_UNAVAILABLE",
+    "RPC_WS_INTERRUPTED",
+    "RPC_WS_DEADLINE",
+    "RPC_WS_OVERLOAD",
+    "RPC_WS_DETACHED",
+  ].includes(nativeConnectionFailureCode(error) ?? ""),
+) {
   if (channel.stopped || channel.wsFailed) return;
   channel.wsFailed = true;
   releaseWs(channel);
+  // Read transport fallback is not an outage if HTTP still answers. Identity,
+  // admission and malformed-data errors remain visible immediately.
   for (const subscriber of notify ? channel.subscribers : []) {
     try {
       subscriber.onError?.(error);

@@ -5,6 +5,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
+import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { automationScheduleLabel } from "../model/automations";
 import { dateTimeFormat, useT } from "../../../shared/i18n";
 import {
@@ -86,11 +87,12 @@ export function AutomationProposalDialog() {
                 value={proposal.outputTarget === "room" ? t("Assistant Room") : t("Task")}
                 readOnly
               />
-              <TextField
-                label={t("Model")}
-                value={`${execution.harness} · ${execution.model}`}
-                readOnly
-              />
+              <div className="flex min-w-0 flex-col gap-1">
+                <Text size="caption" weight="medium">
+                  {t("Model")}
+                </Text>
+                <ModelLabel harness={execution.harness} model={execution.model} />
+              </div>
               <TextField label={t("Mode")} value={execution.runtimeMode} readOnly />
             </div>
           </>

@@ -47,7 +47,9 @@
 .primary,
 .secondary {
   min-inline-size: 0;
+  inline-size: max-content;
+  max-inline-size: 100%;
 }
 .secondary {
-  padding-inline-start: 12px;
+  padding-block-end: 4px;
 }

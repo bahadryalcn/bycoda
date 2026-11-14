@@ -52,6 +52,7 @@ export function ServerItem({
   const press = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const origin = useRef({ x: 0, y: 0 });
   const held = useRef(false);
+  const selectionClick = useRef(false);
   const check = useRef(onCheck);
   check.current = onCheck;
   const cancelPress = () => {
@@ -157,17 +158,24 @@ export function ServerItem({
       onDragStart={cancelPress}
       onClick={(event) => {
         if (held.current && event.detail !== 0) {
+          selectionClick.current = true;
           held.current = false;
           return;
         }
-        if (selectionMode) onCheck?.(!checked);
-        else onSelect(event);
+        if (selectionMode) {
+          selectionClick.current = true;
+          onCheck?.(!checked);
+        } else {
+          if (event.detail < 2) selectionClick.current = false;
+          onSelect(event);
+        }
       }}
       onContextMenu={onContextMenu}
       onDoubleClick={(event) => {
         if (
           !canConnect ||
           selectionMode ||
+          selectionClick.current ||
           held.current ||
           event.button !== 0 ||
           event.ctrlKey ||

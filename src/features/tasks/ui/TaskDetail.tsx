@@ -15,6 +15,7 @@ import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import { taskWorkspaceState } from "../../workspaces/public/taskWorkspaceState";
 import { TextField } from "../../../shared/ui/TextField";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { type BoardTask, taskTimeLabel } from "../model/taskClient";
 import { canEditTask, type TaskStatus } from "../model/hostTasks";
 import { taskStatusLine } from "../model/taskStatusLine";
@@ -321,8 +322,7 @@ export function TaskDetail({
               </Text>
             </Text>
           ) : null}
-          <section className="task-detail-section">
-            <SectionLabel as="h3">{t("Details")}</SectionLabel>
+          <Disclosure summary={t("Details")}>
             <DescriptionList size="sm">
               <DetailRow label={t("Completion")}>
                 {t(taskWorkspaceState(task).completion)}
@@ -386,7 +386,7 @@ export function TaskDetail({
                 </DetailRow>
               ) : null}
             </DescriptionList>
-          </section>
+          </Disclosure>
           {task.diffStat ? (
             <OutputBlock
               aria-label={t("Diff stat")}

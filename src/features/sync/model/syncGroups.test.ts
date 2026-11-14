@@ -52,6 +52,21 @@ describe("syncGroups", () => {
     ]);
   });
 
+  it("carries a group's personal/work tag both ways", () => {
+    saveProjectGroups([{ id: "g1", name: "Work", collapsed: false, kind: "work" }]);
+    captureLocalGroupChanges(MACHINE);
+    expect(takeOutbox(MACHINE).find((op) => op.table === "group")?.value).toEqual({
+      id: "g1",
+      name: "Work",
+      kind: "work",
+    });
+    applyRemoteGroupRecords(MACHINE, [
+      { table: "group", id: "g1", rev: 2, value: { id: "g1", name: "Work", kind: "personal" } },
+      { table: "group", id: "g2", rev: 3, value: { id: "g2", name: "New", kind: "work" } },
+    ]);
+    expect(loadProjectGroups().map((group) => group.kind)).toEqual(["personal", "work"]);
+  });
+
   it("flipping collapsed locally queues nothing", () => {
     saveProjectGroups([{ id: "g1", name: "Work", collapsed: false }]);
     markPulled(MACHINE, [{ table: "group", id: "g1", rev: 1, value: { name: "Work", id: "g1" } }]);

@@ -860,7 +860,7 @@ export function JiraBoardView({
             pages: g.pages + 1,
             error: undefined,
             cursors: [...(g.cursors ?? []), ...(page!.nextPageToken ? [page!.nextPageToken] : [])],
-            autoPaused: false,
+            autoPaused: page!.issues.length === 0,
           };
         }),
       );
@@ -895,7 +895,7 @@ export function JiraBoardView({
     const group =
       groupsRef.current.find((item) => item.id === groupId) ??
       (mode === "kanban" ? groupsRef.current[0] : undefined);
-    if (group?.token && !group.error && !group.stale) void loadMore(group);
+    if (group?.token && !group.error && !group.stale && !group.autoPaused) void loadMore(group);
   }
 
   function groupRecovery(group: Group) {
@@ -911,7 +911,7 @@ export function JiraBoardView({
             {group.error}
           </Alert>
         ) : null}
-        {group.stale || group.error ? (
+        {group.stale || group.error || group.token ? (
           <CollectionFooter
             standalone
             hasMore
@@ -1237,7 +1237,7 @@ export function JiraBoardView({
                     </div>
                   ) : null}
                 </Disclosure>
-                {open && (group.error || group.stale) ? groupRecovery(group) : null}
+                {open && (group.error || group.stale || group.token) ? groupRecovery(group) : null}
               </Surface>
             );
           })}

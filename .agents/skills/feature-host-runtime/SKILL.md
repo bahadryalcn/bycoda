@@ -17,6 +17,7 @@ installed acceptance remain separate; a successful slice grants no migration/def
 - Domain effects: `host/workspaces/`, `host/desktop/`, `host/conversation/`, `host/terminals/` and `host/devices/`; public entries are domain services.
 - Desktop: `src/features/connections/model/` and `src/shared/lib/host-runtime/`; schemas are under `src/shared/model/host-contracts/`.
 - Providers: `src/integrations/harness/core/` and `src/integrations/harness/providers/`.
+- Agent groups/messages: `host/delegation/`; Work-scoped continuations and opt-in parent queue wakes.
 - Native: `src-tauri/src/host_ws/`, `src-tauri/src/session_store/` and sibling authority/control modules. Mobile transport follows nested `mobile/` rules.
 
 ## Workflow
@@ -41,6 +42,7 @@ installed acceptance remain separate; a successful slice grants no migration/def
 - Desktop effects persist original receipts before offer; unknown/offered work cannot be reoffered. Page tokens route existing scope; ACK proves handling only.
 - Fence original authority/request identity before retiring proven settled receipts. Pending effects, failed cleanup, warm/unknown owners and physical completion need their own retained proof; preview settlement includes requested presentation.
 - Preserve drafts, queues, approvals and attachments. Detach does not Stop; migration needs its full admission contract.
+- `sessions.queue.claimDispatch` admits an existing desktop queue claim only for its exact row, client, token and drain epoch. Recheck the queue revision inside the command receipt transaction and settle the claim there; older Hosts defer the handoff.
 
 ## Focused checks
 

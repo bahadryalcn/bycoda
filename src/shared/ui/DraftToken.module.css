@@ -1,7 +1,8 @@
 /* Keep decoration inside the text bounds so inter-token whitespace stays visible.
    No normal-flow spacing: the native textarea remains the layout authority. */
 .token {
-  padding-block: 2px;
+  position: relative;
+  padding-block: 3px;
   border-radius: var(--ui-radius-control);
   background: color-mix(in oklch, currentColor 12%, transparent);
   box-decoration-break: clone;
@@ -10,20 +11,41 @@
 
 .prefix {
   position: relative;
+  /* Keep the glyph and its breathing room inside the introducer's advance.
+     Expanding this box would desynchronise the native textarea caret. */
+  padding-inline: 1px;
+  margin-inline: -1px;
 }
 
 .hidden {
   color: transparent;
 }
 
+.token[data-draft-token-ordinal] .prefix {
+  position: static;
+}
+
+.token[data-draft-token-ordinal] .icon {
+  inset-inline-start: calc(50% - 0.85em);
+  inset-inline-end: auto;
+  inline-size: 0.85em;
+}
+
+.token[data-draft-token-ordinal]::after {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: calc(50% + 0.2em);
+  content: attr(data-draft-token-ordinal);
+  transform: translateY(-50%);
+}
+
 .icon {
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-end: 0;
+  inset-inline-end: 2px;
   display: inline-flex;
-  inline-size: max(0.6em, 100%);
-  max-inline-size: 1em;
-  block-size: 0.9em;
+  inline-size: min(0.85em, calc(100% - 2px));
+  block-size: 0.75em;
   align-items: center;
   justify-content: center;
   text-indent: 0;

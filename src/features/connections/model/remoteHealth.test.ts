@@ -177,6 +177,20 @@ it("does not treat a busy or timed-out host as reachable", () => {
   unsubscribe();
 });
 
+it.each(["RPC_WS_DEADLINE: timed out", "RPC_WS_OVERLOAD: busy", "[RPC_TIMEOUT]"])(
+  "does not announce recovery from a connection-only report of %s",
+  (error) => {
+    const recovered = vi.fn();
+    const unsubscribe = subscribeRemoteRecovered(recovered);
+    reportRemoteConnection(project, "session", down);
+    reportRemoteConnection(project, "session", error);
+    expect(readRemoteConnection("env").status).toBe("unreachable");
+    expect(remotePollDue(project)).toBe(false);
+    expect(recovered).not.toHaveBeenCalled();
+    unsubscribe();
+  },
+);
+
 it("keeps a blocked machine blocked when a status poll finds it answering", () => {
   const recovered = vi.fn();
   const unsubscribe = subscribeRemoteRecovered(recovered);

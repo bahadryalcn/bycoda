@@ -1,5 +1,33 @@
 # Remote access (experimental)
 
+## Work from both computers
+
+Open the same conversation through its owning Host on either computer. Ordinary
+messages can steer a Host-owned active turn. A turn running in the desktop app
+keeps new remote messages queued until it finishes. A busy owner or a request
+proven not sent leaves that queue active; explicit Pause, Stop, restored queues
+and unknown delivery still require their existing recovery decisions.
+
+A desktop's claimed queued message can be dispatched through its Host when both
+support claim dispatch. The Host checks the original row, client, claim and drain
+epoch, then consumes the row with the command receipt. Older Hosts retain the
+message until it can be sent safely. Update both Host and desktop for this support.
+
+Short WebSocket read failures first use the HTTP fallback. Authentication,
+identity and invalid-data failures remain visible. A timed-out or overloaded read
+does not prove reconnection succeeded. Host discovery and desktop heartbeats do
+not wait indefinitely for optional Tailscale route or push-subscription lookups.
+An interrupted HTTP read retries once within its original deadline when the
+shared contract explicitly marks it as a safe query. Writes and unknown methods
+are never replayed by this recovery. Old consumed buffer reports check the Host's
+receipt before sending a cleanup acknowledgement; missing receipts remain held
+locally for recovery instead of repeatedly sending an unprovable acknowledgement.
+Queued turns retain file history under their original message IDs, including
+Host-generated queue IDs, so their file review and revert remain available.
+Host discovery waits at most 250 ms for optional Tailscale routes. A slow lookup
+continues in the background; discovery reuses its result without starting duplicate
+lookups. This limit does not mark an unreachable machine as connected.
+
 Host `status` and `stop` verify ownership when lifecycle metadata is unavailable
 or the endpoint does not respond. An active owner reports unconfirmed shutdown;
 unverifiable legacy ownership reports unknown. Neither result means work stopped.
@@ -213,6 +241,9 @@ conversations that another computer took over and stopped here. Inbox changes ma
 through this computer's GitHub or Jira accounts by another device appear at the top
 of the Inbox.
 
+Long device names wrap within the notice. Its dismiss button stays at the trailing
+edge beside the first line, including when the message also offers a recovery action.
+
 The reverse also applies: when you view a project on another computer, the sidebar
 says "<machine> deleted N conversations." or "<machine> archived N conversations."
 when that machine changes them. Your own actions do not produce a notice on your
@@ -236,10 +267,15 @@ from the Host connection status. Selecting an entry opens a right-hand details s
 and reserves its own space, so the catalog reflows and other servers remain selectable.
 On narrow panes the details sit below the catalog. Escape closes details from anywhere
 in Servers and returns focus to the selected entry; an open menu closes first.
+List rows adapt to the catalog's remaining width. Detail tool tabs scroll horizontally
+when space is limited, keeping their full labels and keyboard navigation.
 Its header stays visible; connection actions and tool
 tabs stay together while scrolling. Switching tool tabs preserves unfinished drafts.
 SSH settings, server editing, Termius import and SFTP open in side sheets with their
 existing explicit save, import, connection and transfer approvals.
+Server names are optional; an empty name uses the SSH address. Refreshing SSH keys
+preserves the selected path, while a failed refresh clears outdated key metadata.
+Known-host searches show an empty-result message with a reset action.
 
 SSH tabs support the close action, middle click and Delete on the focused tab.
 The existing terminal close policy asks before closing foreground work or a terminal

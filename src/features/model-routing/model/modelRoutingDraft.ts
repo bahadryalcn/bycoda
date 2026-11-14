@@ -3,9 +3,14 @@ import {
   ModelRoutingDraftSchema,
   type ModelRoutingDraft,
   type ModelRoutingEntry,
+  type ModelRoutingPool,
   type ModelRoutingState,
   type WorkCalendarCaps,
 } from "../../../shared/model/host-contracts/model-routing";
+import {
+  modelRoutingPoolCycle,
+  modelRoutingPoolReaches,
+} from "../../../shared/model/modelRoutingPools";
 import { parseHostSettings, type HostSettings } from "../../tasks/public/hostSettings";
 
 export type CapDraft = {
@@ -126,7 +131,7 @@ export function prepareOrderSave(draft: OrderDraft): {
   };
   if (!ModelRoutingDraftSchema.safeParse(routing).success)
     throw new Error(
-      "Choose a model for every entry and a name and at least one model for every pool.",
+      "Choose a model for every entry and a name and at least one model or pool for every pool.",
     );
   const entries = new Set(routing.entries.map((entry) => entry.id));
   const pools = new Set(routing.pools.map((pool) => pool.id));
@@ -138,12 +143,22 @@ export function prepareOrderSave(draft: OrderDraft): {
   }
   for (const pool of routing.pools) {
     if (!pool.name.trim()) throw new Error("Give every pool a name.");
+    if (!pool.entryIds.length && !pool.poolIds?.length)
+      throw new Error("Every pool needs at least one model or pool.");
     if (
       new Set(pool.entryIds).size !== pool.entryIds.length ||
       pool.entryIds.some((id) => !entries.has(id))
     )
       throw new Error("Pools must contain unique models from the main order.");
+    const included = pool.poolIds ?? [];
+    if (
+      new Set(included).size !== included.length ||
+      included.some((id) => id === pool.id || !pools.has(id))
+    )
+      throw new Error("A pool can include each other pool once, and only pools that exist.");
   }
+  if (modelRoutingPoolCycle(routing.pools))
+    throw new Error("Pools cannot include each other in a loop.");
   for (const choice of Object.values(routing.roles)) {
     if (choice?.kind === "pool" && !pools.has(choice.poolId))
       throw new Error("A role uses a pool that no longer exists.");
@@ -182,7 +197,11 @@ export function replaceOrderEntry(draft: OrderDraft, entry: ModelRoutingEntry): 
 }
 
 export function removeOrderEntry(draft: OrderDraft, id: string): OrderDraft {
-  if (draft.routing.pools.some((pool) => pool.entryIds.includes(id) && pool.entryIds.length === 1))
+  if (
+    draft.routing.pools.some(
+      (pool) => pool.entryIds.includes(id) && pool.entryIds.length === 1 && !pool.poolIds?.length,
+    )
+  )
     throw new Error(
       "This model is the last model in a pool. Add another model to that pool or delete the pool first.",
     );
@@ -208,21 +227,49 @@ export function removeOrderPool(draft: OrderDraft, id: string): OrderDraft {
     )
   )
     throw new Error("A role uses this pool. Change it in Assignments before deleting the pool.");
-  return {
-    ...draft,
-    routing: { ...draft.routing, pools: draft.routing.pools.filter((pool) => pool.id !== id) },
-  };
-}
-
-export function setPoolEntries(draft: OrderDraft, id: string, entryIds: string[]): OrderDraft {
-  if (!entryIds.length) throw new Error("Keep at least one model in a pool.");
+  if (draft.routing.pools.some((pool) => pool.poolIds?.includes(id)))
+    throw new Error("Another pool includes this pool. Remove it from that pool first.");
   return {
     ...draft,
     routing: {
       ...draft.routing,
-      pools: draft.routing.pools.map((pool) => (pool.id === id ? { ...pool, entryIds } : pool)),
+      pools: draft.routing.pools.filter((pool) => pool.id !== id),
     },
   };
+}
+
+/** Replace a pool's own models and included pools. Throws when it would be empty or cyclic. */
+export function setPoolMembers(
+  draft: OrderDraft,
+  poolId: string,
+  members: { entryIds: string[]; poolIds: string[] },
+): OrderDraft {
+  if (!members.entryIds.length && !members.poolIds.length)
+    throw new Error("Keep at least one model or pool in a pool.");
+  const pools = draft.routing.pools.map((pool) => {
+    if (pool.id !== poolId) return pool;
+    const { poolIds: _previous, ...rest } = pool;
+    return {
+      ...rest,
+      entryIds: members.entryIds,
+      ...(members.poolIds.length ? { poolIds: members.poolIds } : {}),
+    };
+  });
+  if (modelRoutingPoolCycle(pools)) throw new Error("Pools cannot include each other in a loop.");
+  return { ...draft, routing: { ...draft.routing, pools } };
+}
+
+/** Pools that can be included in `poolId` without creating a loop. */
+export function includablePools(draft: OrderDraft, poolId: string): ModelRoutingPool[] {
+  return draft.routing.pools.filter(
+    (pool) => pool.id !== poolId && !modelRoutingPoolReaches(draft.routing.pools, pool.id, poolId),
+  );
+}
+
+/** @deprecated Use `setPoolMembers`; kept until the UI stops calling it. */
+export function setPoolEntries(draft: OrderDraft, id: string, entryIds: string[]): OrderDraft {
+  const poolIds = draft.routing.pools.find((pool) => pool.id === id)?.poolIds ?? [];
+  return setPoolMembers(draft, id, { entryIds, poolIds });
 }
 
 export const sameOrderDraft = (a: OrderDraft, b: OrderDraft) =>

@@ -30,7 +30,7 @@ import { ProviderDefaultSubagents } from "./ProviderDefaultSubagents";
 /** Label of the "follow the scope above" choice, naming the value it inherits. */
 export function inheritedChoiceLabel(inherited: string | undefined, valid: boolean): string {
   return inherited
-    ? `${t("Global")} (${inherited}${valid ? "" : ` · ${t("Unavailable")}`})`
+    ? `${t("Bycoda defaults")} (${inherited}${valid ? "" : ` · ${t("Unavailable")}`})`
     : t("Automatic");
 }
 

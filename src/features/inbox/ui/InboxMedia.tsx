@@ -7,7 +7,12 @@ import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
-import { fetchInboxMedia, sniffInboxMedia, type InboxMediaType } from "../model/inboxMedia";
+import {
+  fetchInboxMedia,
+  invalidateInboxMedia,
+  sniffInboxMedia,
+  type InboxMediaType,
+} from "../model/inboxMedia";
 
 const PdfViewer = lazy(() => import("../../files/public/PdfViewer"));
 
@@ -55,6 +60,10 @@ function InboxMediaContent({ src, alt }: Props) {
   }, [src, attempt]);
 
   const ready = state.status === "ready" ? state : null;
+  const retry = () => {
+    invalidateInboxMedia(src);
+    setAttempt((value) => value + 1);
+  };
   return (
     <>
       {ready?.type.kind === "video" ? (
@@ -95,7 +104,12 @@ function InboxMediaContent({ src, alt }: Props) {
         </Button>
       )}
       {expanded && ready?.type.kind === "image" ? (
-        <ImageLightbox src={ready.url} alt={label} onClose={() => setExpanded(false)} />
+        <ImageLightbox
+          src={ready.url}
+          alt={label}
+          onClose={() => setExpanded(false)}
+          onImageError={() => setState({ status: "error" })}
+        />
       ) : expanded ? (
         <Modal
           title={label}
@@ -104,8 +118,10 @@ function InboxMediaContent({ src, alt }: Props) {
           onClose={() => setExpanded(false)}
           footer={
             <ModalActions>
-              {state.status === "error" ? (
-                <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry")}</Button>
+              {state.status === "error" ||
+              state.status === "unsupported" ||
+              ready?.type.kind === "pdf" ? (
+                <Button onClick={retry}>{t("Retry")}</Button>
               ) : null}
               <Button variant="secondary" onClick={() => openUrlSafely(src)}>
                 {t("Open in browser")}

@@ -89,8 +89,15 @@ export function AlwaysOnChecklist({
     <Row
       key={item.id}
       label={item.label}
+      description={
+        item.state !== "done"
+          ? item.target && !onOpen
+            ? `${item.detail} ${t("Settings · {p0}", { p0: t(WHERE[item.target]) })}`
+            : item.detail
+          : undefined
+      }
       info={
-        item.detail ? (
+        item.state === "done" && item.detail ? (
           <InfoPopover label={item.label}>
             <Text as="p" size="secondary">
               {item.target && !onOpen && item.state !== "done"
@@ -131,7 +138,7 @@ export function AlwaysOnChecklist({
           onClick={() => void load()}
         />
       </Row>
-      {!showAll && exceptions.filter((item) => item.target).map(row)}
+      {!showAll && exceptions.map(row)}
       <Disclosure size="sm" summary={t("All checks")} open={showAll} onOpenChange={setShowAll}>
         {items.map(row)}
       </Disclosure>

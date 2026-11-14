@@ -165,6 +165,7 @@ import {
   replaceSlashToken,
   slashTokenAt,
   skillTextParts,
+  skillInvocationTokens,
   type Skill,
   type SlashToken,
 } from "../../skills/model/skills";
@@ -1299,6 +1300,7 @@ export const Composer = memo(function Composer({
         back ? "back" : "forward",
         attachmentsRef.current,
         chatCitationTokens(citationsRef.current.length),
+        skillInvocationTokens(el.value).filter((token) => skillNames.has(token.name)),
       );
       if (!edit) return;
       event.preventDefault();
@@ -1309,7 +1311,7 @@ export const Composer = memo(function Composer({
       removeSelectionPolicy();
       el.removeEventListener("beforeinput", onBeforeInput);
     };
-  }, []);
+  }, [skillNames]);
 
   // An accepted external draft takes the same projection path as a native edit:
   // the textarea stays the authority and writes first, then the draft text,

@@ -195,6 +195,20 @@ Limits, from `DELEGATION_LIMITS`:
 
 A child cannot start `agents.*` runs. The Host rejects that call, and a child
 recorded in the run store or carrying a parent link is treated as a child.
+Children can discover `agents.list` and `agents.send`: trusted run records restrict
+these to their parent/siblings. `agents.send` accepts `requestId`, `runId`, `message`
+and optional `mode` (`auto`, `queue`, `steer`). Peer input is untrusted data; advisors
+can send only to their parent. Sends cannot target a broader runtime mode. Native
+parents receive shared queue rows without replacing drafts, pauses or leases.
+Child continuations reuse delegation Work admission and budget lineage.
+Work-owned parents retain explicit waiting and cannot opt into generic background
+wakes; parent messages cannot manufacture an unbudgeted owner queue turn.
+
+`notifyOnCompletion: true` on delegate/consult opts into one parent queue notice
+per completed child turn; the default retains explicit waiting. Host change events
+drain queued child messages and resume background admission. Durable message
+receipts bind caller/request/payload. Restarted dispatches with no acknowledgement
+become unknown and are not replayed. Parent Stop closes the group's queued sends.
 
 The child session copies the parent's runtime mode and worktree folder, and starts
 with its model's default settings, except that its reasoning level is matched to the

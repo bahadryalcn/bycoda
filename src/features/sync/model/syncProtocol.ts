@@ -38,6 +38,7 @@ export type SyncGroupValue = {
   colorIndex?: number;
   customColor?: string;
   mascot?: string;
+  kind?: "personal" | "work";
   workspaceFile?: string;
   workspaceFolders?: string[];
   lockable?: boolean;

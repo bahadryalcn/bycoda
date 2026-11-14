@@ -1,3 +1,4 @@
+import { useRef, useState } from "react";
 import {
   PickerList,
   PickerFooter,
@@ -5,82 +6,66 @@ import {
   type PickerOption,
 } from "../../../shared/ui/picker";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
-import { useRef, useState } from "react";
-
 import { t } from "../../../shared/i18n";
-
 import { Button } from "../../../shared/ui/Button";
-
 import { Popover } from "../../../shared/ui/Popover";
-
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-
-import { Badge } from "../../../shared/ui/Badge";
-
 import { ChevronDown, Globe } from "../../../shared/ui/icons";
-
 import { Text } from "../../../shared/ui/Text";
-
 import type { SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
 
 export function defaultsTargetsSummary(
   values: readonly string[],
   options: readonly SearchableSelectOption[],
 ) {
+  if (!values.length || (values.length === 1 && values[0] === "global"))
+    return t("Bycoda defaults");
   if (values.length === 1)
-    return options.find((option) => option.value === values[0])?.label ?? t("Global");
-
+    return options.find((option) => option.value === values[0])?.label ?? t("Project overrides");
   const projects = options.filter(
     (option) => option.value.startsWith("project:") && !option.disabled,
   );
-
   if (
     !values.includes("global") &&
     values.length === projects.length &&
     projects.every((option) => values.includes(option.value))
   )
     return t("All projects ({p0})", { p0: projects.length });
-
   return values.includes("global")
-    ? t("Global + {p0} targets", { p0: values.length - 1 })
-    : t("{p0} targets", { p0: values.length });
+    ? t("Bycoda defaults + {p0} overrides", { p0: values.length - 1 })
+    : t("{p0} overrides", { p0: values.length });
 }
 
-/** One searchable membership picker. Empty selection falls back to Global. */
-
+/** App defaults are the ordinary scope; project/group overrides are an explicit separate choice. */
 export function DefaultsTargetsPicker({
   values,
   options,
   onChange,
 }: {
   values: string[];
-
   options: SearchableSelectOption[];
-
   onChange: (values: string[]) => void;
 }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
-
   const [open, setOpen] = useState(false);
-
   const [query, setQuery] = useState("");
-
   const [group, setGroup] = useState("");
-
-  const available = options.filter((option) => !option.disabled);
-
-  const sections = [...new Set(options.map((option) => option.group ?? ""))];
-
-  const change = (next: string[]) => onChange(next.length ? next : ["global"]);
-
+  const hasOverrides = values.some((value) => value !== "global");
+  const [mode, setMode] = useState(hasOverrides ? "projects" : "default");
+  const available = options.filter((option) => !option.disabled && option.value !== "global");
+  const sections = [...new Set(available.map((option) => option.group ?? ""))];
+  const change = (next: string[]) => {
+    const overrides = next.filter((value) => value !== "global");
+    onChange(overrides.length ? overrides : ["global"]);
+    setMode(overrides.length ? "projects" : "default");
+  };
   const toggle = (entries: string[], checked: boolean) =>
     change(
       checked
         ? [...new Set([...values, ...entries])]
         : values.filter((value) => !entries.includes(value)),
     );
-
   const pickerOptions: PickerOption[] = sections
     .filter((section) => !group || section === group)
     .flatMap((section) => {
@@ -115,29 +100,29 @@ export function DefaultsTargetsPicker({
   const list = usePickerList({
     options: pickerOptions,
     multiple: true,
-    value: values,
+    value: values.filter((value) => value !== "global"),
     onChange: change,
     inputRef: search,
-    resetKey: `${open}:${query}:${group}`,
+    resetKey: `${open}:${query}:${group}:${mode}`,
   });
-
   return (
     <>
       <Button
         ref={anchor}
-        variant="secondary"
+        variant="ghost"
         size="sm"
         aria-label={t("Save in")}
         startIcon={<Globe className="icon-sm" />}
         endIcon={<ChevronDown className="icon-sm" />}
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          setMode(hasOverrides ? "projects" : "default");
+          setOpen(!open);
+        }}
       >
         {defaultsTargetsSummary(values, options)}
-        {values.length > 1 ? <Badge size="sm">{values.length}</Badge> : null}
       </Button>
-
       {open ? (
         <Popover
           anchor={anchor}
@@ -150,92 +135,58 @@ export function DefaultsTargetsPicker({
           onDismiss={() => setOpen(false)}
           className="provider-targets-popover"
         >
-          <div className="grid shrink-0 gap-3">
-            <PopoverSearchHeader
-              {...list.searchProps}
-              label={t("Search projects, groups and workspaces")}
-              value={query}
-              onValueChange={setQuery}
-            />
-
+          <div className="p-2">
             <SegmentedControl
-              label={t("Target categories")}
-              value={group}
-              onValueChange={setGroup}
+              label={t("Defaults scope")}
+              value={mode}
               options={[
-                {
-                  value: "",
-                  label: t("All"),
-                  accessory: <Badge size="sm">{available.length}</Badge>,
-                },
-                ...sections.filter(Boolean).map((value) => ({
-                  value,
-                  label: value,
-                  accessory: (
-                    <Badge size="sm">
-                      {available.filter((option) => option.group === value).length}
-                    </Badge>
-                  ),
-                })),
+                { value: "default", label: t("Bycoda defaults") },
+                { value: "projects", label: t("Project overrides") },
               ]}
+              onValueChange={(next) => {
+                setMode(next);
+                if (next === "default") onChange(["global"]);
+              }}
             />
-
-            <div className="provider-targets-quick">
-              <Text size="caption" tone="muted">
-                {t("Select:")}
-              </Text>
-
-              <Button size="sm" variant="ghost" onClick={() => change(["global"])}>
-                {t("Global only")}
-              </Button>
-
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() =>
-                  change(
-                    available
-                      .filter((option) => option.value.startsWith("project:"))
-                      .map((option) => option.value),
-                  )
-                }
-              >
-                {t("All projects")}
-              </Button>
-
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => change(available.map((option) => option.value))}
-              >
-                {t("Everything")}
-              </Button>
-            </div>
           </div>
-
-          <PickerList
-            label={t("Apply defaults to")}
-            controller={list}
-            className="min-h-0 overflow-y-auto"
-          />
-
+          {mode === "default" ? (
+            <Text as="p" size="secondary" tone="secondary" wrap="normal" className="px-3 pb-3">
+              {t("New conversations use these defaults unless a project has its own settings.")}
+            </Text>
+          ) : (
+            <>
+              <PopoverSearchHeader
+                {...list.searchProps}
+                label={t("Search projects, groups and workspaces")}
+                value={query}
+                onValueChange={setQuery}
+              />
+              <SegmentedControl
+                label={t("Target categories")}
+                value={group}
+                onValueChange={setGroup}
+                options={[
+                  { value: "", label: t("All") },
+                  ...sections.filter(Boolean).map((value) => ({ value, label: value })),
+                ]}
+              />
+              <PickerList
+                label={t("Apply defaults to")}
+                controller={list}
+                className="min-h-0 overflow-y-auto"
+              />
+            </>
+          )}
           <PickerFooter align="between">
-            <Text size="caption" tone="secondary">
-              {t("{p0} selected", { p0: values.length })}
-            </Text>
-            <Button variant="ghost" onClick={() => change(["global"])}>
-              {t("Clear")}
+            {mode === "projects" ? (
+              <Text size="caption" tone="secondary">
+                {t("{p0} selected", { p0: values.filter((value) => value !== "global").length })}
+              </Text>
+            ) : null}
+            <Button onClick={() => setOpen(false)} disabled={mode === "projects" && !hasOverrides}>
+              {t("Done")}
             </Button>
-            <Button onClick={() => setOpen(false)}>{t("Done")}</Button>
           </PickerFooter>
-
-          {values.length > 1 ? (
-            <Text size="caption" tone="muted">
-              {t("Preview: {p0}", {
-                p0: options.find((option) => option.value === values[0])?.label ?? t("Global"),
-              })}
-            </Text>
-          ) : null}
         </Popover>
       ) : null}
     </>

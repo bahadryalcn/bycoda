@@ -334,6 +334,9 @@ export function InboxView({
   };
   // Search, filters and mark-as-read only mean something once there is something to narrow or mark.
   const narrowed = filtersActive || searchInput.trim().length > 0;
+  const needsLocalProject =
+    source === "github" ||
+    ((source === "gitlab" || source === "azuredevops") && !activeFilters.assignedToMe);
   const resetNarrowing = () => {
     resetFilters();
     setSearchInput("");
@@ -416,7 +419,8 @@ export function InboxView({
       setRefreshAction(null);
     },
   });
-  const { items, providerErrors, loading } = collection;
+  const { items, providerErrors } = collection;
+  const loading = collection.loading || collection.pendingProviders.includes(source);
   const showCollectionTools = loading || items.length > 0 || narrowed;
   const linearProjects = useMemo(() => linearProjectOptions(items), [items]);
 
@@ -807,7 +811,7 @@ export function InboxView({
                   label={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
                   selected={filtersActive}
                   aria-expanded={!!filterMenu}
-                  aria-haspopup="menu"
+                  aria-haspopup="dialog"
                   onClick={onFilterButtonClick}
                 >
                   <ListFilter className="icon-sm" strokeWidth={1.75} />
@@ -876,11 +880,15 @@ export function InboxView({
               ) : undefined
             }
           />
-        ) : sourceError && visibleItems.length === 0 ? null : loading && items.length === 0 ? (
+        ) : sourceError && visibleItems.length === 0 ? null : loading &&
+          visibleItems.length === 0 ? (
           <LoadingText className="justify-center py-10" />
         ) : visibleItems.length === 0 &&
           !(source === "jira" && collection.jiraContinuation.hasMore) ? (
-          !pullRequestsOnly && !isTrackerSource(source) && projects.length === 0 ? (
+          !pullRequestsOnly &&
+          !isTrackerSource(source) &&
+          projects.length === 0 &&
+          !(source !== "github" && activeFilters.assignedToMe) ? (
             <EmptyState
               kind="empty"
               icon={<Inbox aria-hidden="true" />}
@@ -893,7 +901,7 @@ export function InboxView({
                 ) : undefined
               }
             />
-          ) : pullRequestsOnly && projects.length === 0 ? (
+          ) : pullRequestsOnly && needsLocalProject && projects.length === 0 ? (
             <EmptyState
               kind="empty"
               icon={<Inbox aria-hidden="true" />}
@@ -1033,14 +1041,14 @@ export function InboxView({
         {toolNavigation ? <ToolNavigation /> : null}
       </PaneHeader>
       <RemoteActivityNotices inbox />
-      {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
+      {pullRequestsOnly && needsLocalProject && projects.length === 0 && onOpenProject ? (
         <header
           {...surfaceAttributes(
             { frame: "neutral", edge: "bottom" },
             "flex shrink-0 flex-wrap items-center gap-2 px-3 py-2",
           )}
         >
-          {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
+          {pullRequestsOnly && needsLocalProject && projects.length === 0 && onOpenProject ? (
             <Button variant="ghost" type="button" onClick={() => void onOpenProject()}>
               {t("Add project")}
             </Button>

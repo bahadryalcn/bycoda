@@ -14,6 +14,47 @@ const outDir = "temp/verification/2026-10-28-session5-overlays/feedback";
 
 for (const theme of ["light", "dark"])
   for (const width of [800, 1280])
+    test(`dismiss stays beside wrapped copy ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await open(page, `?view=dismiss-layout&theme=${theme}`);
+      const rows = page
+        .getByTestId("dismiss-layout")
+        .getByRole("status")
+        .or(page.getByTestId("dismiss-layout").getByRole("alert"));
+      await page.screenshot({
+        path: `temp/verification/remote-alert-layout/${process.env.ALERT_LAYOUT_CAPTURE ?? "after"}-${theme}-${width}.png`,
+      });
+      for (const row of await rows.all()) {
+        const dismiss = row.getByRole("button", { name: "Dismiss", exact: true });
+        const geometry = await dismiss.evaluate((button) => {
+          const bounds = button.getBoundingClientRect();
+          const region = button.closest('[role="status"], [role="alert"]')!;
+          const glyph = region.querySelector("svg")!.getBoundingClientRect();
+          const box = region.getBoundingClientRect();
+          return {
+            top: bounds.top,
+            right: bounds.right,
+            glyphTop: glyph.top,
+            rowRight: box.right,
+            overflow: region.scrollWidth > region.clientWidth,
+          };
+        });
+        expect(Math.abs(geometry.top - geometry.glyphTop)).toBeLessThan(16);
+        expect(geometry.right).toBeLessThanOrEqual(geometry.rowRight + 1);
+        expect(geometry.overflow).toBe(false);
+      }
+      await rows
+        .filter({ hasText: "Retry" })
+        .getByRole("button", { name: "Retry", exact: true })
+        .click();
+      expect(await counter(page, "retry-layout")).toBe(1);
+      await rows.first().getByRole("button", { name: "Dismiss", exact: true }).click();
+      await expect.poll(() => counter(page, "dismiss-info")).toBe(1);
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
     test(`visual family matrix ${theme} ${width}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });

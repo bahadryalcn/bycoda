@@ -73,6 +73,7 @@ export type SettingsSectionId =
   | "chat"
   | "voice"
   | "providers"
+  | "usage"
   | "models"
   | "work"
   | "crews"
@@ -277,18 +278,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     },
     keywords: "account sign in login model harness claude codex cli default hooks",
   },
-  WORK_SETTINGS_SECTION,
   {
-    id: "models",
+    id: "usage",
     group: "agents",
     get label() {
-      return t("Models");
+      return t("Usage & limits");
     },
     get description() {
-      return t("The provider, model and effort new chats start with.");
+      return t("Provider usage");
     },
-    keywords: "default provider model effort permissions fast chat",
+    keywords: "usage tokens cost spend billing quota budget limits account",
   },
+  WORK_SETTINGS_SECTION,
   {
     id: "mcp",
     group: "tools",
@@ -976,7 +977,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   ...modelsSettingsEntries,
   {
     id: "agent-clis",
-    section: "models",
+    section: "providers",
     get label() {
       return t("Chat defaults");
     },
@@ -1029,7 +1030,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "show-remaining-usage",
-    section: "providers",
+    section: "usage",
     get label() {
       return t("Show remaining usage");
     },
@@ -1037,7 +1038,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   },
   {
     id: "provider-usage",
-    section: "providers",
+    section: "usage",
     get label() {
       return t("Provider usage");
     },
@@ -1185,13 +1186,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     },
     {
       id: "account-limits",
-      section: "providers",
+      section: "usage",
       label: "Provider account limit",
       keywords: "quota weekly session reset account limits kota hafta oturum hesap sınır",
     },
     {
       id: "cost-overview",
-      section: "providers",
+      section: "usage",
       label: "Cost by project and day",
       keywords:
         "range cost tokens input output cache api estimates dates project model provider maliyet gün tarih aralık tahmin token",
@@ -1312,7 +1313,13 @@ export function settingsSectionForAnchor(
 ): SettingsSectionId | undefined {
   const target =
     (anchor && SETTINGS_INDEX.find((entry) => entry.id === anchor)?.section) || section;
-  return target === "inbox" ? "integrations" : toolSettingsTabForSection(target) ? "tools" : target;
+  return target === "models"
+    ? "providers"
+    : target === "inbox"
+      ? "integrations"
+      : toolSettingsTabForSection(target)
+        ? "tools"
+        : target;
 }
 
 /** Shared with shortcut rows so search uses the same stable anchor. */
@@ -1494,7 +1501,9 @@ export const SETTINGS_SECTION_DEFAULT: SettingsSectionId = "general";
 
 export function isSettingsSectionId(value: unknown): value is SettingsSectionId {
   return (
-    !!toolSettingsTabForSection(value) || SETTINGS_SECTIONS.some((section) => section.id === value)
+    value === "models" ||
+    !!toolSettingsTabForSection(value) ||
+    SETTINGS_SECTIONS.some((section) => section.id === value)
   );
 }
 
@@ -1536,10 +1545,11 @@ export function saveSettingsSection(id: SettingsSectionId) {
   }
 }
 
-/** Carry a retired tool section's destination while its saved category migrates. */
+/** Carry a retired section's destination while its saved category migrates. */
 export function loadSettingsAliasAnchor(): string | null {
   try {
-    return toolSettingsAnchorForSection(localStorage.getItem(SECTION_KEY));
+    const saved = localStorage.getItem(SECTION_KEY);
+    return saved === "models" ? "models-chat" : toolSettingsAnchorForSection(saved);
   } catch {
     return null;
   }

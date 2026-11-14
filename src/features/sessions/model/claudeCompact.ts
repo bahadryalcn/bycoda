@@ -1,4 +1,5 @@
 import type { ModelSetting } from "./models";
+import { AUTO_COMPACT_WINDOWS } from "./autoCompact";
 
 export const CLAUDE_COMPACT_SETTINGS: ModelSetting[] = [
   {
@@ -23,11 +24,10 @@ export const CLAUDE_COMPACT_SETTINGS: ModelSetting[] = [
       "How many tokens the context may hold before auto-compacting. Overrides a window saved with /autocompact. Claude Code caps it at the model's context window.",
     options: [
       { value: "default", label: "Default" },
-      { value: "200000", label: "200K" },
-      { value: "300000", label: "300K" },
-      { value: "500000", label: "500K" },
-      { value: "750000", label: "750K" },
-      { value: "1000000", label: "1M" },
+      ...AUTO_COMPACT_WINDOWS.filter((tokens) => tokens >= 100_000).map((tokens) => ({
+        value: String(tokens),
+        label: tokens === 1_000_000 ? "1M" : `${tokens / 1000}K`,
+      })),
     ],
   },
 ];

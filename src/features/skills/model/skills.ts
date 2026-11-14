@@ -10,6 +10,7 @@ import { invalidateProjectFiles } from "../../files/model/fileIndex";
 import { joinPath } from "../../../shared/lib/paths";
 import { isLocalProject, normalizeProjectPath } from "../../projects/model/recents";
 import { skillInvocationTokens } from "./skillTokens";
+export { skillInvocationTokens } from "./skillTokens";
 import { withInstalledSkillScope } from "./skillProviderScope";
 import type { HarnessId } from "../../sessions/model/session";
 import { getHarness } from "../../../integrations/harness/core/registry";

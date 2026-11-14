@@ -91,3 +91,28 @@ it("rejects all reserved entry keys and non-delegation map keys", () => {
     expect(validateModelRoutingDraft(d, {})).toEqual(d);
   }
 });
+
+it("rejects unknown, duplicate, self and cyclic included pools and unnormalized project keys", () => {
+  const withPools = () => {
+    const d = draft();
+    d.pools.push({ id: "q", name: "Q", entryIds: [], poolIds: ["p"] });
+    return d;
+  };
+  expect(() => validateModelRoutingDraft(withPools(), {})).not.toThrow();
+  const invalid = [
+    (d: ModelRoutingDraft) => (d.pools[1]!.poolIds = []),
+    (d: ModelRoutingDraft) => (d.pools[1]!.poolIds = ["absent"]),
+    (d: ModelRoutingDraft) => (d.pools[1]!.poolIds = ["p", "p"]),
+    (d: ModelRoutingDraft) => (d.pools[1]!.poolIds = ["q"]),
+    (d: ModelRoutingDraft) => (d.pools[0]!.poolIds = ["q"]),
+    (d: ModelRoutingDraft) => (d.projectKinds = { "C:\Work\App": "work" }),
+  ];
+  for (const mutate of invalid) {
+    const d = withPools();
+    mutate(d);
+    expect(() => validateModelRoutingDraft(d, {})).toThrow();
+  }
+  const ok = withPools();
+  ok.projectKinds = { "c:/work/app": "work" };
+  expect(validateModelRoutingDraft(ok, {}).projectKinds).toEqual({ "c:/work/app": "work" });
+});

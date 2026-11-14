@@ -41,12 +41,23 @@ export async function resolveRunModel(
   role: ModelRoutingRole,
   item: ModelRoutingTarget,
   choice: ModelRoutingItemChoice | undefined = routingRun(item).modelChoice,
+  projectId?: string,
 ) {
   return resolveModelChoice(hostModelRoutingService(store), {
     role,
     choice,
     fixed: modelTarget(item),
+    cwd: await projectRoutingCwd(store, projectId),
   });
+}
+
+/** The project folder whose scope tag selects a run's accounts; undefined when there is none. */
+export async function projectRoutingCwd(
+  store: HostStore,
+  projectId: string | undefined,
+): Promise<string | undefined> {
+  if (!projectId) return undefined;
+  return (await store.project(projectId).catch(() => undefined))?.cwd;
 }
 
 export function modelTarget(item: ModelRoutingTarget): ModelRoutingTarget {

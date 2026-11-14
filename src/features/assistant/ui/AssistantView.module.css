@@ -119,6 +119,9 @@
   min-inline-size: 0;
   margin-inline: auto;
 }
+.content[data-view="Notes"] > * {
+  max-inline-size: none;
+}
 .jobsTitle {
   display: flex;
   align-items: center;

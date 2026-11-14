@@ -5,6 +5,7 @@ import {
 import { mergeProviderCliChecks } from "../model/providerCliChecks";
 import type { HarnessVersionCheck } from "../model/providerCliChecks";
 import { Text } from "../../../shared/ui/Text";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Group, RevealedSetting, SettingsFeedback, settingDomId } from "./settingsControls";
@@ -76,6 +77,7 @@ import { storedDefaultProvider } from "./ProviderDefaultsPanel";
 import { ProviderModelsGroup } from "./ProviderModelsGroup";
 import { ProviderCliTab } from "./ProviderCliTab";
 import { ProviderRuntimeGroup } from "./ProviderRuntimeGroup";
+import { ModelsPage as DefaultsPage } from "./models/ModelsPage";
 
 let retainedTab: ProvidersTab = "providers";
 
@@ -83,7 +85,7 @@ export function resetRetainedProvidersPage() {
   retainedTab = "providers";
 }
 
-export function ProvidersPage({ cwd }: { cwd?: string; recents?: RecentProject[] }) {
+export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: RecentProject[] }) {
   useLocale();
   const modelsVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   useSyncExternalStore(
@@ -123,6 +125,8 @@ export function ProvidersPage({ cwd }: { cwd?: string; recents?: RecentProject[]
     setTabState(next);
   };
   const [accountBusy, setAccountBusy] = useState(false);
+  const [defaultsVisited, setDefaultsVisited] = useState(tab === "defaults");
+  if (tab === "defaults" && !defaultsVisited) setDefaultsVisited(true);
   const [standaloneSignIn, setStandaloneSignIn] = useState<HarnessId | null>(null);
   // When this window last finished a version check; the snapshot itself carries no time.
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
@@ -301,7 +305,7 @@ export function ProvidersPage({ cwd }: { cwd?: string; recents?: RecentProject[]
             ? attention === 1
               ? t("1 CLI needs attention")
               : t("{p0} CLIs need attention", { p0: attention })
-            : t("All CLIs are up to date");
+            : t("Up to date");
 
   const setupProvider = (harness: HarnessId) => {
     setTab("cli");
@@ -316,6 +320,7 @@ export function ProvidersPage({ cwd }: { cwd?: string; recents?: RecentProject[]
 
   const tabs: { id: ProvidersTab; label: string }[] = [
     { id: "providers", label: t("Accounts") },
+    { id: "defaults", label: t("Defaults") },
     { id: "cli", label: t("CLI") },
     { id: "models", label: t("Catalog") },
     { id: "decision", label: t("Decision models") },
@@ -337,6 +342,12 @@ export function ProvidersPage({ cwd }: { cwd?: string; recents?: RecentProject[]
           ))}
         </TabList>
         <TabPanel className="provider-tab-panel" tabIndex={-1}>
+          <div
+            className="provider-cli-section provider-defaults-section"
+            hidden={tab !== "defaults"}
+          >
+            {defaultsVisited ? <DefaultsPage cwd={cwd} recents={recents} /> : null}
+          </div>
           {tab === "cli" ? (
             <Group
               id="harness-updates"
@@ -425,7 +436,10 @@ export function ProvidersPage({ cwd }: { cwd?: string; recents?: RecentProject[]
               }
             />
           </div>
-          <div className="provider-cli-container" hidden={tab === "decision" || tab === "cli"}>
+          <div
+            className="provider-cli-container"
+            hidden={tab === "decision" || tab === "cli" || tab === "defaults"}
+          >
             <div className="provider-cli-workspace">
               <div className="provider-cli-select">
                 <SearchableSelect
@@ -459,7 +473,12 @@ export function ProvidersPage({ cwd }: { cwd?: string; recents?: RecentProject[]
                 onPickerVisible={onPickerVisible}
                 onSetup={setupProvider}
               />
-              <div className="provider-cli-detail">
+              <div
+                {...surfaceAttributes(
+                  { frame: "settings", edge: "responsive-start" },
+                  "provider-cli-detail",
+                )}
+              >
                 {/* Overview stays mounted across tabs so CLI path, ACP and sign-in drafts survive. */}
                 <div className="provider-cli-section" hidden={tab !== "providers"}>
                   {activeProvider ? (

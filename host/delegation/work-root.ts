@@ -6,10 +6,11 @@ import type { BudgetRunRegistration } from "../tasks/task-budgets";
 export async function delegationWorkRoot(
   store: HostStore,
   sessionId: string,
+  parentRunId: string | undefined,
 ): Promise<string | undefined> {
-  if (!store.db) return undefined;
-  const parent = await store.session(sessionId);
-  if (!parent.runId) return undefined;
+  // The scoped caller resolves Native and Host sessions. Only a Host run can
+  // own an unattended Work receipt; never manufacture one for a Native turn.
+  if (!parentRunId || !store.db) return undefined;
   const tables = await store.db
     .prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('work_queue','task_run_budget_ledger')",
@@ -19,14 +20,14 @@ export async function delegationWorkRoot(
     const rows = await store.db.prepare("SELECT value FROM work_queue").all();
     for (const row of rows) {
       const work = JSON.parse(String(row.value)) as WorkRecord;
-      if (work.receipt?.sessionId === sessionId && work.receipt.runId === parent.runId)
+      if (work.receipt?.sessionId === sessionId && work.receipt.runId === parentRunId)
         return work.rootWorkId;
     }
   }
   if (tables.some((row) => row.name === "task_run_budget_ledger")) {
     const row = await store.db
       .prepare("SELECT value FROM task_run_budget_ledger WHERE session_id=? AND run_id=?")
-      .get(sessionId, parent.runId);
+      .get(sessionId, parentRunId);
     if (row) {
       const run = JSON.parse(String(row.value)) as BudgetRunRegistration;
       return (
@@ -39,11 +40,13 @@ export async function delegationWorkRoot(
 }
 
 /** Keep the originating task, parent task and goal in the single usage ledger. */
-export async function delegationBudgetScope(store: HostStore, sessionId: string) {
-  if (!store.db) return undefined;
-  const parent = await store.session(sessionId);
+export async function delegationBudgetScope(
+  store: HostStore,
+  sessionId: string,
+  parentRunId: string | undefined,
+) {
+  if (!parentRunId || !store.db) return undefined;
   if (
-    !parent.runId ||
     !(await store.db
       .prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='task_run_budget_ledger'",
@@ -53,7 +56,7 @@ export async function delegationBudgetScope(store: HostStore, sessionId: string)
     return undefined;
   const row = await store.db
     .prepare("SELECT value FROM task_run_budget_ledger WHERE session_id=? AND run_id=?")
-    .get(sessionId, parent.runId);
+    .get(sessionId, parentRunId);
   if (!row) return undefined;
   const { taskId, parentTaskId, goalId } = JSON.parse(String(row.value)) as BudgetRunRegistration;
   return {

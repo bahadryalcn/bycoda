@@ -3,6 +3,16 @@
 
 /* Box layout is layered so consumer utilities can size, align or hide an alert. */
 @layer components {
+  /* Dismiss owns a fixed trailing slot, independent of copy and recovery wrapping. */
+  .inlineRow {
+    display: flex;
+    align-items: start;
+    gap: var(--space-2);
+    min-inline-size: 0;
+  }
+  .inlineCopy {
+    flex: 1;
+  }
   .presence {
     min-inline-size: 0;
   }
@@ -58,6 +68,7 @@
 }
 .dismiss {
   align-self: flex-start;
+  flex-shrink: 0;
 }
 /* A tone is a pairing of glyph, border and subtle surface; the text keeps the neutral ink. */
 .alert {

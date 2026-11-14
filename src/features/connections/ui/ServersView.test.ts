@@ -877,3 +877,39 @@ it("switches between list and card layouts and remembers the choice", async () =
   expect(layout()).toBe("list");
   expect(rowFor("mac").textContent).toContain("Home Mac");
 });
+
+it.each(["list", "cards"] as const)(
+  "does not connect when a double-click exits selection in %s",
+  async (layout) => {
+    const connect = vi.fn();
+    let selecting = true;
+    const draw = () =>
+      root.render(
+        createElement(ServerItem, {
+          server: sshServer,
+          address: "alice@target.invalid",
+          layout,
+          selected: false,
+          selectionMode: selecting,
+          checked: selecting,
+          canConnect: true,
+          onCheck: (checked: boolean) => {
+            selecting = checked;
+            draw();
+          },
+          onSelect: vi.fn(),
+          onConnect: connect,
+          onMenu: vi.fn(),
+        }),
+      );
+    await act(async () => draw());
+    const row = document.querySelector<HTMLButtonElement>("[data-server-row]")!;
+    await act(async () => row.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })));
+    await act(async () => {
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+      row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, detail: 2 }));
+    });
+    expect(selecting).toBe(false);
+    expect(connect).not.toHaveBeenCalled();
+  },
+);

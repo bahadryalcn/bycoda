@@ -128,6 +128,7 @@ export function PrChecksTab({ overall }: { overall: GithubPrChecksOverall }) {
 
 function PrCheckRow({
   check,
+  provider,
   cwd,
   repo,
   headOid,
@@ -141,6 +142,7 @@ function PrCheckRow({
   revealToken,
 }: {
   check: GithubPrCheck;
+  provider?: GithubPrChecksView["provider"];
   cwd: string;
   repo: string;
   headOid: string;
@@ -404,6 +406,7 @@ function PrCheckRow({
           {details.annotations.length ? (
             <CheckEvidence
               annotations={details.annotations}
+              provider={check.provider ?? provider}
               cwd={cwd}
               repo={repo}
               headOid={headOid}
@@ -678,6 +681,7 @@ export function InboxPrChecks({
               }
               fixDisabled={refreshing || stale || Boolean(error)}
               fixAnchor={selection?.anchor}
+              provider={view.provider}
               cwd={cwd}
               repo={repo}
               headOid={checks?.headOid ?? ""}

@@ -3290,7 +3290,7 @@
                   ],
                   "type": "object"
                 },
-                "maxItems": 40,
+                "maxItems": 500,
                 "type": "array"
               },
               "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -6885,6 +6885,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -7087,6 +7091,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -7245,6 +7253,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -7445,6 +7457,10 @@
                       "queued": {
                         "additionalProperties": false,
                         "properties": {
+                          "claimToken": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                            "type": "string"
+                          },
                           "clientId": {
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                             "type": "string"
@@ -7660,6 +7676,10 @@
                       "queued": {
                         "additionalProperties": false,
                         "properties": {
+                          "claimToken": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                            "type": "string"
+                          },
                           "clientId": {
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                             "type": "string"
@@ -7727,6 +7747,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -7801,6 +7825,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -7870,6 +7898,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -7925,6 +7957,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -7970,6 +8006,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -8015,6 +8055,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -8056,6 +8100,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -8097,6 +8145,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -8137,6 +8189,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -8189,6 +8245,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -8238,6 +8298,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -8283,6 +8347,10 @@
               "queued": {
                 "additionalProperties": false,
                 "properties": {
+                  "claimToken": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
                   "clientId": {
                     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                     "type": "string"
@@ -31179,7 +31247,7 @@
                   "required": ["harness", "model", "modelSettings", "id", "unknownLimit"],
                   "type": "object"
                 },
-                "maxItems": 40,
+                "maxItems": 500,
                 "type": "array"
               },
               "pools": {
@@ -31188,7 +31256,7 @@
                   "properties": {
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
-                      "maxItems": 40,
+                      "maxItems": 500,
                       "minItems": 1,
                       "type": "array"
                     },
@@ -31705,7 +31773,7 @@
                   "required": ["harness", "model", "modelSettings", "id", "unknownLimit"],
                   "type": "object"
                 },
-                "maxItems": 40,
+                "maxItems": 500,
                 "type": "array"
               },
               "pools": {
@@ -31714,7 +31782,7 @@
                   "properties": {
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
-                      "maxItems": 40,
+                      "maxItems": 500,
                       "minItems": 1,
                       "type": "array"
                     },
@@ -31989,7 +32057,7 @@
                   "required": ["harness", "model", "modelSettings", "id", "unknownLimit"],
                   "type": "object"
                 },
-                "maxItems": 40,
+                "maxItems": 500,
                 "type": "array"
               },
               "pools": {
@@ -31998,7 +32066,7 @@
                   "properties": {
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
-                      "maxItems": 40,
+                      "maxItems": 500,
                       "minItems": 1,
                       "type": "array"
                     },
@@ -56187,6 +56255,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -56382,6 +56454,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -56533,6 +56609,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -56729,6 +56809,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -56944,6 +57028,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -57011,6 +57099,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57081,6 +57173,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57146,6 +57242,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57197,6 +57297,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57238,6 +57342,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57279,6 +57387,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57316,6 +57428,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57353,6 +57469,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57389,6 +57509,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57437,6 +57561,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57482,6 +57610,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -57523,6 +57655,10 @@
             "queued": {
               "additionalProperties": false,
               "properties": {
+                "claimToken": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "clientId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -66080,7 +66216,7 @@
                         "required": ["harness", "model", "modelSettings", "id", "unknownLimit"],
                         "type": "object"
                       },
-                      "maxItems": 40,
+                      "maxItems": 500,
                       "type": "array"
                     },
                     "pools": {
@@ -66089,7 +66225,7 @@
                         "properties": {
                           "entryIds": {
                             "items": { "maxLength": 200, "minLength": 1, "type": "string" },
-                            "maxItems": 40,
+                            "maxItems": 500,
                             "minItems": 1,
                             "type": "array"
                           },
@@ -74376,6 +74512,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -74586,6 +74726,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -74748,6 +74892,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -74959,6 +75107,10 @@
                             "queued": {
                               "additionalProperties": false,
                               "properties": {
+                                "claimToken": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                                  "type": "string"
+                                },
                                 "clientId": {
                                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                                   "type": "string"
@@ -75185,6 +75337,10 @@
                             "queued": {
                               "additionalProperties": false,
                               "properties": {
+                                "claimToken": {
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                                  "type": "string"
+                                },
                                 "clientId": {
                                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                                   "type": "string"
@@ -75256,6 +75412,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75338,6 +75498,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75422,6 +75586,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75481,6 +75649,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75530,6 +75702,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75583,6 +75759,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75628,6 +75808,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75673,6 +75857,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75717,6 +75905,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75773,6 +75965,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75826,6 +76022,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -75875,6 +76075,10 @@
                     "queued": {
                       "additionalProperties": false,
                       "properties": {
+                        "claimToken": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "clientId": {
                           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                           "type": "string"
@@ -77009,5 +77213,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "0b7ab665dd6293d951c9ed89512e4f37b1c800606ca9b7d2e0fced28594ce4f9"
+  "schemaHash": "e7439454833d119edc2a78980b85547b87e6237e70be41e9cca68619303cffe7"
 }

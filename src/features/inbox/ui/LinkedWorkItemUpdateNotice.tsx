@@ -43,13 +43,13 @@ type Props = {
 function entryKindLabel(entry: LinkedWorkItemActivityEntry): string {
   switch (entry.kind) {
     case "commit":
-      return `Commit ${entry.id.slice(0, 7)}`;
+      return t("Commit {p0}", { p0: entry.id.slice(0, 7) });
     case "review":
-      return "Review";
+      return t("Review");
     case "review_comment":
-      return "Review comment";
+      return t("Review comment");
     default:
-      return "Comment";
+      return t("Comment");
   }
 }
 
@@ -82,25 +82,25 @@ export function LinkedWorkItemUpdateNotice({
   if (!card || card.status === "loading") return null;
 
   const KindIcon = card.kind === "pr" ? GitPullRequest : CircleDot;
-  const kindLabel = card.kind === "pr" ? "Pull request" : "Issue";
+  const kindLabel = t(card.kind === "pr" ? "Pull request" : "Issue");
   const latest = card.entries[0];
   const discussion =
     latest?.kind === "comment" || latest?.kind === "review" || latest?.kind === "review_comment";
   const openLabel =
-    latest?.kind === "commit" ? "Open commit" : `Open ${card.kind === "pr" ? "PR" : "issue"}`;
+    latest?.kind === "commit" ? t("Open commit") : t(card.kind === "pr" ? "Open PR" : "Open issue");
   const agentLabel = discussion
-    ? "Address with agent"
+    ? t("Address with agent")
     : latest?.kind === "commit"
-      ? "Review with agent"
-      : "Continue with agent";
+      ? t("Review with agent")
+      : t("Continue with agent");
   const terminalState = linkedWorkItemTerminalState(card);
   const terminalLabel =
     terminalState === "pr_merged"
-      ? "Pull request merged"
+      ? t("Pull request merged")
       : terminalState === "pr_closed"
-        ? "Pull request closed"
+        ? t("Pull request closed")
         : terminalState === "issue_closed"
-          ? "Issue closed"
+          ? t("Issue closed")
           : "";
   const TerminalIcon =
     terminalState === "pr_merged"

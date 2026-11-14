@@ -23,6 +23,35 @@ function setup() {
 afterEach(async () => {
   for (const db of databases.splice(0)) await db.close();
 });
+
+it("admits only the exact claimed row when handing a desktop send to its Host", async () => {
+  const { queues } = setup();
+  const before = await queues.change(
+    "chat",
+    { messages: [] },
+    { messages: [message("a")], status: "active" },
+    "desktop:pc1",
+  );
+  const claimed = await queues.claim("chat", "a", "desktop:pc1", before.revision, true, {
+    legacy: true,
+  });
+  const authority = { legacy: true, claimToken: claimed.claim!.token };
+  await expect(
+    queues.assertSend("chat", "a", "desktop:pc1", claimed.revision, true, authority),
+  ).resolves.toEqual(claimed);
+  await expect(
+    queues.assertSend("chat", "a", "desktop:pc1", claimed.revision, true, {
+      ...authority,
+      claimToken: "wrong",
+    }),
+  ).rejects.toThrow();
+  await expect(
+    queues.assertSend("chat", "a", "other", claimed.revision, true, authority),
+  ).rejects.toThrow();
+  await expect(
+    queues.assertSend("chat", "b", "desktop:pc1", claimed.revision, true, authority),
+  ).rejects.toThrow();
+});
 it("gives the home host an active mobile queue without waiting for that client's legacy lease", async () => {
   const { queues } = setup();
   const before = await queues.change(
