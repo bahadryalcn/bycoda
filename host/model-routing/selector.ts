@@ -38,12 +38,12 @@ export function modelRoutingEntryStatus(
       : kind && kind !== scope
         ? "otherScope"
         : "unknown" in quota
-        ? entry.unknownLimit === "skip"
-          ? "unknownLimit"
-          : undefined
-        : quota.leftPercent < (entry.minRemainingPercent ?? 0)
-          ? "belowLimit"
-          : undefined;
+          ? entry.unknownLimit === "skip"
+            ? "unknownLimit"
+            : undefined
+          : quota.leftPercent < (entry.minRemainingPercent ?? 0)
+            ? "belowLimit"
+            : undefined;
   return {
     entryId: entry.id,
     ...(skip ? { skip } : {}),

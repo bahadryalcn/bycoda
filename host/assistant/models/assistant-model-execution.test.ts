@@ -48,6 +48,7 @@ function setup(draft = state(), limited = false) {
     selectModelRouting(draft, input, {
       available: () => true,
       signedIn: () => true,
+      accountKind: () => undefined,
       quota: () => ({ leftPercent: limited ? 0 : 100, resetsAt: 5000 }),
     }),
   );

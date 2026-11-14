@@ -31257,17 +31257,26 @@
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
                       "maxItems": 500,
-                      "minItems": 1,
                       "type": "array"
                     },
                     "id": { "maxLength": 200, "minLength": 1, "type": "string" },
-                    "name": { "maxLength": 80, "minLength": 1, "type": "string" }
+                    "name": { "maxLength": 80, "minLength": 1, "type": "string" },
+                    "poolIds": {
+                      "items": { "maxLength": 200, "minLength": 1, "type": "string" },
+                      "maxItems": 50,
+                      "type": "array"
+                    }
                   },
                   "required": ["id", "name", "entryIds"],
                   "type": "object"
                 },
                 "maxItems": 50,
                 "type": "array"
+              },
+              "projectKinds": {
+                "additionalProperties": { "enum": ["personal", "work"], "type": "string" },
+                "propertyNames": { "maxLength": 1024, "minLength": 1, "type": "string" },
+                "type": "object"
               },
               "roles": {
                 "additionalProperties": {
@@ -31350,7 +31359,8 @@
                     "text.title",
                     "text.git",
                     "text.skillGrouping",
-                    "text.themeGenerator"
+                    "text.themeGenerator",
+                    "text.routingSetup"
                   ],
                   "type": "string"
                 },
@@ -31487,6 +31497,7 @@
               }
             ]
           },
+          "cwd": { "maxLength": 4096, "minLength": 1, "type": "string" },
           "fixed": {
             "additionalProperties": false,
             "properties": {
@@ -31536,7 +31547,8 @@
               "text.title",
               "text.git",
               "text.skillGrouping",
-              "text.themeGenerator"
+              "text.themeGenerator",
+              "text.routingSetup"
             ],
             "type": "string"
           }
@@ -31567,7 +31579,8 @@
                             "signedOut",
                             "belowLimit",
                             "unknownLimit",
-                            "missingCapability"
+                            "missingCapability",
+                            "otherScope"
                           ],
                           "type": "string"
                         }
@@ -31657,7 +31670,8 @@
                             "signedOut",
                             "belowLimit",
                             "unknownLimit",
-                            "missingCapability"
+                            "missingCapability",
+                            "otherScope"
                           ],
                           "type": "string"
                         }
@@ -31783,17 +31797,26 @@
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
                       "maxItems": 500,
-                      "minItems": 1,
                       "type": "array"
                     },
                     "id": { "maxLength": 200, "minLength": 1, "type": "string" },
-                    "name": { "maxLength": 80, "minLength": 1, "type": "string" }
+                    "name": { "maxLength": 80, "minLength": 1, "type": "string" },
+                    "poolIds": {
+                      "items": { "maxLength": 200, "minLength": 1, "type": "string" },
+                      "maxItems": 50,
+                      "type": "array"
+                    }
                   },
                   "required": ["id", "name", "entryIds"],
                   "type": "object"
                 },
                 "maxItems": 50,
                 "type": "array"
+              },
+              "projectKinds": {
+                "additionalProperties": { "enum": ["personal", "work"], "type": "string" },
+                "propertyNames": { "maxLength": 1024, "minLength": 1, "type": "string" },
+                "type": "object"
               },
               "roles": {
                 "additionalProperties": {
@@ -31876,7 +31899,8 @@
                     "text.title",
                     "text.git",
                     "text.skillGrouping",
-                    "text.themeGenerator"
+                    "text.themeGenerator",
+                    "text.routingSetup"
                   ],
                   "type": "string"
                 },
@@ -32067,17 +32091,26 @@
                     "entryIds": {
                       "items": { "maxLength": 200, "minLength": 1, "type": "string" },
                       "maxItems": 500,
-                      "minItems": 1,
                       "type": "array"
                     },
                     "id": { "maxLength": 200, "minLength": 1, "type": "string" },
-                    "name": { "maxLength": 80, "minLength": 1, "type": "string" }
+                    "name": { "maxLength": 80, "minLength": 1, "type": "string" },
+                    "poolIds": {
+                      "items": { "maxLength": 200, "minLength": 1, "type": "string" },
+                      "maxItems": 50,
+                      "type": "array"
+                    }
                   },
                   "required": ["id", "name", "entryIds"],
                   "type": "object"
                 },
                 "maxItems": 50,
                 "type": "array"
+              },
+              "projectKinds": {
+                "additionalProperties": { "enum": ["personal", "work"], "type": "string" },
+                "propertyNames": { "maxLength": 1024, "minLength": 1, "type": "string" },
+                "type": "object"
               },
               "roles": {
                 "additionalProperties": {
@@ -32160,7 +32193,8 @@
                     "text.title",
                     "text.git",
                     "text.skillGrouping",
-                    "text.themeGenerator"
+                    "text.themeGenerator",
+                    "text.routingSetup"
                   ],
                   "type": "string"
                 },
@@ -32287,7 +32321,8 @@
                     "signedOut",
                     "belowLimit",
                     "unknownLimit",
-                    "missingCapability"
+                    "missingCapability",
+                    "otherScope"
                   ],
                   "type": "string"
                 }
@@ -66226,17 +66261,26 @@
                           "entryIds": {
                             "items": { "maxLength": 200, "minLength": 1, "type": "string" },
                             "maxItems": 500,
-                            "minItems": 1,
                             "type": "array"
                           },
                           "id": { "maxLength": 200, "minLength": 1, "type": "string" },
-                          "name": { "maxLength": 80, "minLength": 1, "type": "string" }
+                          "name": { "maxLength": 80, "minLength": 1, "type": "string" },
+                          "poolIds": {
+                            "items": { "maxLength": 200, "minLength": 1, "type": "string" },
+                            "maxItems": 50,
+                            "type": "array"
+                          }
                         },
                         "required": ["id", "name", "entryIds"],
                         "type": "object"
                       },
                       "maxItems": 50,
                       "type": "array"
+                    },
+                    "projectKinds": {
+                      "additionalProperties": { "enum": ["personal", "work"], "type": "string" },
+                      "propertyNames": { "maxLength": 1024, "minLength": 1, "type": "string" },
+                      "type": "object"
                     },
                     "roles": {
                       "additionalProperties": {
@@ -66319,7 +66363,8 @@
                           "text.title",
                           "text.git",
                           "text.skillGrouping",
-                          "text.themeGenerator"
+                          "text.themeGenerator",
+                          "text.routingSetup"
                         ],
                         "type": "string"
                       },
@@ -66480,6 +66525,7 @@
                     }
                   ]
                 },
+                "cwd": { "maxLength": 4096, "minLength": 1, "type": "string" },
                 "fixed": {
                   "additionalProperties": false,
                   "properties": {
@@ -66529,7 +66575,8 @@
                     "text.title",
                     "text.git",
                     "text.skillGrouping",
-                    "text.themeGenerator"
+                    "text.themeGenerator",
+                    "text.routingSetup"
                   ],
                   "type": "string"
                 }
@@ -77213,5 +77260,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "e7439454833d119edc2a78980b85547b87e6237e70be41e9cca68619303cffe7"
+  "schemaHash": "077239a575407ae5eff4bdcf765060d9e77ca412b64139d82ee67a66f1a6a94a"
 }

@@ -34,9 +34,9 @@ function fake(overrides: Partial<ProjectKindsIo> = {}) {
       async (version: number, draft: object) =>
         ({ ...state(version + 1), ...draft }) as ModelRoutingState,
     ),
-    ...overrides,
   };
-  return io;
+  // Overrides replace mocks with the same signature; keep the mock types for call assertions.
+  return { ...io, ...overrides } as typeof io;
 }
 
 describe("syncProjectKindsWith", () => {

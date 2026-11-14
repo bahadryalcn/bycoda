@@ -6,7 +6,8 @@ Its tabs contain Model order, Assignments and Subagents. **Settings > Providers 
 - **Model order** defines the main priority order, provider accounts, model
   options and how much quota to keep for your own use. Choose what happens when
   a quota is unknown. Pools are named, ordered subsets of this order; they share
-  its model definitions and limits. Daily agent minutes and the default maximum
+  its model definitions and limits. A pool can also include other pools: its own
+  models come first, then each included pool in order, with repeats dropped. Daily agent minutes and the default maximum
   run time also live here.
 - **Assignments** binds task workers and reviewers, goal planners and
   final reviews, stewards, automations, crew members, assistant and voice roles,
@@ -115,4 +116,6 @@ Model order and Assignments are edited on the selected Host. Changes remain draf
 
 Decision models show the Host used for scanning, local installation and saved keys. The app prefers this computer’s Host, then the first connected Host. Adding a model and testing it are separate steps: a failed connection test leaves the added source available to edit or retry.
 
-In **Settings > Background work > Model order**, **Create from provider catalog** adds enabled models from available, visible providers and creates one pool per provider account (or provider without account profiles). Existing entries, priorities, custom pools, assignments and limits stay unchanged. Repeating the action does not duplicate the same choices or pools. Review the draft and press **Save** to apply through the existing Host-owner and version checks. Catalog setup uses the current catalog; manage accounts and catalog visibility under Providers. If the model-order or pool limit would be exceeded, nothing is added; reduce unused catalog choices or pools and retry.
+In **Settings > Background work > Model order**, **Smart setup** replaces the old catalog action. It adds every active provider account and enabled model that is missing, sorts the order with the smartest models first (cheaper first on ties, the default account first) and creates the missing pools Smartest, Balanced and Fast, plus Work and Personal when an account has a kind. Models the app does not know yet are placed by an estimate and marked as estimated until they are added to the known tables. Smart setup can ask the model chosen for it to estimate unknown models and unlabelled accounts; if that fails, the deterministic result is used. Existing entries, ids, limits, settings, custom pools and assignments stay unchanged. Review the draft and press **Save** to apply through the existing Host-owner and version checks. If the model-order or pool limit would be exceeded, nothing is added; reduce unused choices or pools and retry.
+
+Accounts, projects and project groups can be tagged **Personal** or **Work**. An account without a tag, or whose name does not say work or personal, is shared. A run in a tagged project skips accounts tagged for the other kind and moves on to the next entry; if every entry is skipped, the work waits. Fixed models are never filtered, and runs without a project (such as the assistant) are unaffected. Tagging a project overrides its group's tag.

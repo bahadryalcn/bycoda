@@ -37,6 +37,7 @@ function setup() {
   const signals = vi.fn(async () => ({
     available: () => true,
     signedIn: () => true,
+    accountKind: () => undefined,
     quota: () => ({ unknown: true as const }),
   }));
   const service = createModelRoutingService({

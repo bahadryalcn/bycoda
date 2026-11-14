@@ -81,17 +81,14 @@ export const MODEL_ROUTING_MAX_POOLS = 50;
  * A named, ordered subset of the main order. `entryIds` order is the pool's own priority;
  * the pools in `poolIds` follow, each flattened in order (see `modelRoutingPoolEntryIds`).
  */
-export const ModelRoutingPoolSchema = z
-  .strictObject({
-    id,
-    name: z.string().min(1).max(80),
-    entryIds: z.array(id).max(MODEL_ROUTING_MAX_ENTRIES),
-    /** Other pools included by reference after this pool's own entries. Cycles are rejected. */
-    poolIds: z.array(id).max(MODEL_ROUTING_MAX_POOLS).optional(),
-  })
-  .refine((pool) => pool.entryIds.length + (pool.poolIds?.length ?? 0) > 0, {
-    message: "A pool needs at least one model or pool.",
-  });
+export const ModelRoutingPoolSchema = z.strictObject({
+  id,
+  name: z.string().min(1).max(80),
+  /** May be empty only when `poolIds` is not; draft validation enforces it. */
+  entryIds: z.array(id).max(MODEL_ROUTING_MAX_ENTRIES),
+  /** Other pools included by reference after this pool's own entries. Cycles are rejected. */
+  poolIds: z.array(id).max(MODEL_ROUTING_MAX_POOLS).optional(),
+});
 export type ModelRoutingPool = z.infer<typeof ModelRoutingPoolSchema>;
 
 /**

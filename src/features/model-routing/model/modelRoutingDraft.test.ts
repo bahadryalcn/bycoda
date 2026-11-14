@@ -14,7 +14,6 @@ import {
   replaceOrderEntry,
   sameOrderDraft,
   includablePools,
-  setPoolEntries,
   setPoolMembers,
 } from "./modelRoutingDraft";
 
@@ -88,9 +87,11 @@ describe("model routing order draft", () => {
   });
 
   it("blocks emptying any pool, including through main-order removal", () => {
-    const edit = setPoolEntries(draft(), "p", ["a"]);
+    const edit = setPoolMembers(draft(), "p", { entryIds: ["a"], poolIds: [] });
     expect(() => removeOrderEntry(edit, "a")).toThrow("last model in a pool");
-    expect(() => setPoolEntries(edit, "p", [])).toThrow("at least one model");
+    expect(() => setPoolMembers(edit, "p", { entryIds: [], poolIds: [] })).toThrow(
+      "at least one model",
+    );
     expect(edit.routing.pools[0]!.entryIds).toEqual(["a"]);
   });
 
@@ -102,7 +103,7 @@ describe("model routing order draft", () => {
   });
 
   it("pool priority is independent from main order", () => {
-    const changed = setPoolEntries(draft(), "p", ["a", "b"]);
+    const changed = setPoolMembers(draft(), "p", { entryIds: ["a", "b"], poolIds: [] });
     expect(changed.routing.pools[0]!.entryIds).toEqual(["a", "b"]);
     expect(changed.routing.entries.map((row) => row.id)).toEqual(["a", "b"]);
   });

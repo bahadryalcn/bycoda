@@ -1,4 +1,3 @@
-import { t } from "../../../shared/i18n";
 import { skillDisabled, type SkillPolicy } from "../../../integrations/harness/core/skillPolicy";
 import { loadSkillRestrictions } from "./skillPreferences";
 import {
@@ -9,7 +8,7 @@ import {
   type TemplateSkill,
 } from "./skills";
 import { listSkillGroups, resolveSkillGroup, type SkillGroup } from "./skillGroups";
-export type SkillGroupPickerItem = TemplateSkill & { groupId: string };
+export type SkillGroupPickerItem = TemplateSkill & { groupId: string; memberCount: number };
 export function isSkillGroupPickerItem(skill: Skill): skill is SkillGroupPickerItem {
   return skill.kind === "template" && "groupId" in skill && typeof skill.groupId === "string";
 }
@@ -33,7 +32,6 @@ export function skillGroupPickerItems(
   groups: SkillGroup[],
   skills: Skill[],
   policy: SkillPolicy,
-  translate: typeof t = t,
 ): SkillGroupPickerItem[] {
   return groups.flatMap((group) => {
     const members = skillGroupMembers(group, skills, policy);
@@ -47,7 +45,8 @@ export function skillGroupPickerItems(
             groupId: group.id,
             name: group.name,
             invocation: `group-${slugSkillName(group.name) || "skills"}`,
-            description: translate("{p0} skills", { p0: members.length }),
+            description: members.map((skill) => skill.invocation).join(", "),
+            memberCount: members.length,
             body: "",
           },
         ]

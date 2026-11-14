@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { useT } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { WandSparkles } from "../../../../shared/ui/icons";
@@ -24,11 +25,8 @@ export function SmartSetupAction({
   const [running, setRunning] = useState(false);
   const abort = useRef<AbortController | null>(null);
   // The edit lands after an async step, so it must use the editor of the latest render.
-  const latestEdit = useRef(onEdit);
-  useEffect(() => {
-    latestEdit.current = onEdit;
-  }, [onEdit]);
-  // Unmounting abandons a running refinement instead of editing a draft that is gone.
+  const edit = useStableCallback(onEdit);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Aborts a running refinement on unmount instead of editing a draft that is gone.
   useEffect(() => () => abort.current?.abort(), []);
   async function run() {
     const controller = new AbortController();
@@ -53,7 +51,7 @@ export function SmartSetupAction({
       work: t("Work"),
       personal: t("Personal"),
     };
-    latestEdit.current((draft) => {
+    edit((draft) => {
       if (failure) throw failure;
       if (!candidates.length)
         throw new Error("No available provider models found. Check Providers and try again.");

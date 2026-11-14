@@ -4,7 +4,6 @@ import {
   cachedSkillPolicy,
 } from "../../skills/public/skillGroups";
 import { useMemo, useSyncExternalStore } from "react";
-import { useT } from "../../../shared/i18n";
 import { hasNativeCommands, rankSkills, type SlashToken } from "../../skills/model/skills";
 import {
   loadPromptTemplates,
@@ -71,11 +70,10 @@ export function useComposerSlashInventory(input: {
   const skillCatalog = useComposerSkills({ harness, executionCwd, sessionId, pickerOpen });
   const skills = skillCatalog.skills;
   const groups = useSkillGroups();
-  const translate = useT();
   // Policy is re-read when groups or skills change; insertion re-checks authoritative policy.
   const groupItems = useMemo(
-    () => skillGroupPickerItems(groups, skills, cachedSkillPolicy(), translate),
-    [groups, skills, translate],
+    () => skillGroupPickerItems(groups, skills, cachedSkillPolicy()),
+    [groups, skills],
   );
   const promptTemplates = useSyncExternalStore(
     subscribePromptTemplates,

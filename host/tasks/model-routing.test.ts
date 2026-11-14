@@ -31,6 +31,7 @@ beforeEach(() => {
     selectModelRouting(state, input, {
       available: () => true,
       signedIn: () => true,
+      accountKind: () => undefined,
       quota: () => ({ leftPercent: eligible ? 100 : 0, resetsAt: 2000 }),
     }),
   );

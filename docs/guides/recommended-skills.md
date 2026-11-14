@@ -70,7 +70,7 @@ attempt. Reopen Discover skills to inspect the same window's retained operation.
 
 ## Skill groups in chat
 
-Skill groups reference installed skills by name. In the composer, choose a group from the **Skill groups** section to insert its available skills together as ordinary skill tokens. Missing, disabled and non-user-invocable skills are skipped. Groups retain missing names so reinstalling a skill restores membership. Group insertion refreshes the current machine policy and preserves the draft if that refresh fails.
+Skill groups reference installed skills by name. In the composer, type `/` (or `$`) followed by `group-`, the group's name or the name of one of its skills, then choose the group from the **Skill groups** section to insert its available skills together as ordinary skill tokens. A group that matches by name is listed first. Missing, disabled and non-user-invocable skills are skipped. Groups retain missing names so reinstalling a skill restores membership. Group insertion refreshes the current machine policy and preserves the draft if that refresh fails.
 
 AI grouping uses the selected skill grouping provider and model, falling back to the title-generation utility choice. Only skill names and descriptions are sent. Generation returns a proposal; existing groups change only when that proposal is explicitly applied.
 

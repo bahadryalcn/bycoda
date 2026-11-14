@@ -141,35 +141,37 @@ export function ModelRoleRow({
         {choice?.kind === "fixed" ? (
           <div className="min-w-56 flex-1">
             <ModelPicker
-            harness={choice.target.harness}
-            model={choice.target.model}
-            values={choice.target.modelSettings}
-            presentation="field"
-            showExtras
-            extrasDisabled={disabled}
-            onChange={(harness, model, providerAccountId) => {
-              const sameModel = harness === choice.target.harness && model === choice.target.model;
-              onChange({
-                kind: "fixed",
-                target: withoutDelegation({
-                  harness,
-                  model,
-                  providerAccountId,
-                  modelSettings: sameModel
-                    ? choice.target.modelSettings
-                    : defaultModelSettings(resolveModel(harness, model)),
-                }),
-              });
-            }}
-            onSettingsChange={(settings) =>
-              onChange({
-                kind: "fixed",
-                target: withoutDelegation({
-                  ...choice.target,
-                  modelSettings: { ...choice.target.modelSettings, ...settings },
-                }),
-              })
-            }            />
+              harness={choice.target.harness}
+              model={choice.target.model}
+              values={choice.target.modelSettings}
+              presentation="field"
+              showExtras
+              extrasDisabled={disabled}
+              onChange={(harness, model, providerAccountId) => {
+                const sameModel =
+                  harness === choice.target.harness && model === choice.target.model;
+                onChange({
+                  kind: "fixed",
+                  target: withoutDelegation({
+                    harness,
+                    model,
+                    providerAccountId,
+                    modelSettings: sameModel
+                      ? choice.target.modelSettings
+                      : defaultModelSettings(resolveModel(harness, model)),
+                  }),
+                });
+              }}
+              onSettingsChange={(settings) =>
+                onChange({
+                  kind: "fixed",
+                  target: withoutDelegation({
+                    ...choice.target,
+                    modelSettings: { ...choice.target.modelSettings, ...settings },
+                  }),
+                })
+              }
+            />
           </div>
         ) : null}
       </div>

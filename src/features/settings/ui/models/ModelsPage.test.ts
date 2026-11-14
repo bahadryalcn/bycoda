@@ -391,7 +391,8 @@ describe("model defaults scope inheritance", () => {
       node.textContent?.startsWith("Subagents"),
     )!;
     await act(async () => tab.click());
-    expect(container.textContent).toContain("Global settings apply to chats and unattended work.");
+    expect(container.textContent).not.toContain("Global settings apply to chats");
+    expect(container.querySelector('button[aria-label="Help"]')).not.toBeNull();
     const subagents = container.querySelector('[role="radiogroup"][aria-label="Subagents"]')!;
     const off = [...subagents.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(
       (node) => node.textContent === "Off",

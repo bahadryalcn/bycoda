@@ -52,6 +52,6 @@ export function modelRoutingPoolCycle(pools: readonly PoolRefs[]): string | unde
  * differ only by case.
  */
 export function modelRoutingProjectKey(cwd: string): string {
-  const key = cwd.trim().replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
+  const key = cwd.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
   return key || "/";
 }

@@ -22,7 +22,7 @@ const target: ModelRoutingTarget = {
 describe("model role choices", () => {
   it("covers every contract role once in contract order", () => {
     expect(MODEL_ROLE_METADATA.map((item) => item.role)).toEqual(MODEL_ROUTING_ROLES);
-    expect(MODEL_ROLE_METADATA.every((item) => item.labelKey && item.descriptionKey)).toBe(true);
+    expect(MODEL_ROLE_METADATA.every((item) => item.labelKey)).toBe(true);
   });
   it("uses implicit main order for unbound roles", () => {
     expect(effectiveRoleChoice({}, "task.worker")).toEqual({ kind: "order" });

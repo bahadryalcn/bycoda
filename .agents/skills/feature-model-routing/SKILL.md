@@ -15,7 +15,7 @@ Own the Host-wide routing document and run-start resolution in `host/model-routi
 - Renderer polling starts in `src/features/model-routing/public/rendererBootstrap.ts`, imported by the main and Quick Composer entry points; keep startup side effects out of the Host-reachable defaults model.
 - The renderer bootstrap also binds live catalog/account reads to `src/integrations/harness/core/automaticSubagents.ts`; the harness layer must not import feature stores. Preview reads remain live and `agents.options` remains authoritative.
 - UI/public entries: `src/features/model-routing/public/`; query ownership in `src/features/model-routing/model/`.
-- Catalog setup: `model/catalogOrder.ts` and `model/catalogOrderSource.ts` under `src/features/model-routing/`; the order action edits the existing draft.
+- Smart setup: `model/smartSetup*.ts` and `model/modelProfile.ts` under `src/features/model-routing/`; the order action edits the existing draft.
 - Work settings composition: `src/features/settings/ui/work/WorkPage.tsx`; Providers > Defaults embeds chat defaults from `src/features/settings/ui/models/ModelsPage.tsx`.
 
 ## Workflow
@@ -31,8 +31,9 @@ Own the Host-wide routing document and run-start resolution in `host/model-routi
 - Empty order resolves to `notConfigured`; callers keep their stored model. Items without a routing choice remain fixed.
 - All skipped entries resolve to `noEligibleEntry`; work waits until `nextResetAt` when known. Never turn exhausted eligibility into the stored-model fallback.
 - Unbound `text.*` roles retain each helper's cheap automatic model selection. Explicit role bindings override that behavior.
-- Pools contain ordered references to main-order entries, never independent copies of models or limits. Running and historical snapshots keep their concrete models.
-- Catalog setup is owner-triggered and append-only. Keep account identities, existing priorities and custom settings; deduplicate entries and equivalent pools. Save through the existing version-bound transaction, never during discovery.
+- Pools contain ordered references to main-order entries and to other pools, never independent copies of models or limits; included pools flatten depth-first and deduped, and cycles are rejected. Running and historical snapshots keep their concrete models.
+- Smart setup is owner-triggered and replaces catalog setup. It may re-sort the draft order but keeps entry ids, account identities, limits and settings; deduplicate entries and equivalent pools. AI refinement only estimates unknown models and account kinds and falls back to the deterministic result. Save through the existing version-bound transaction, never during discovery.
+- Scope filtering: a run with a project folder skips entries whose account kind is the other scope (`otherScope`); untagged accounts are shared and fixed choices are never filtered.
 - Delegation layers apply global, then provider, then account, then item. Subagents, advisor, effort ceiling and image models live separately from order-entry model settings.
 - Saves are owner-only and use `expectedVersion`; stale saves retain drafts and require reconciliation. Reading capability or showing a control grants no write authority.
 - Hosts without `models.routing.v1` retain fixed model behavior; unavailable reads must not masquerade as an authoritative empty order.

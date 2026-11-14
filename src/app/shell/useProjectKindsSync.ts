@@ -16,7 +16,7 @@ let lastSent = "";
 export function useProjectKindsSync(): void {
   // The app always has a client; a bare shell (a test fixture) has none and sends nothing.
   const client = useContext(QueryClientContext);
-  // Reason: the sync listens to the project stores for the shell's lifetime and must unsubscribe.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the project-store listener and startup timer attached while the shell is mounted
   useEffect(() => {
     if (!client) return;
     let timer: ReturnType<typeof setTimeout> | undefined;

@@ -41,7 +41,8 @@ export function validateModelRoutingDraft(
       throw new Error(`Unknown included pool in pool ${pool.id}.`);
     if (pool.poolIds?.includes(pool.id)) throw new Error(`Pool ${pool.id} includes itself.`);
   }
-  if (modelRoutingPoolCycle(draft.pools)) throw new Error("Pools must not include each other in a cycle.");
+  if (modelRoutingPoolCycle(draft.pools))
+    throw new Error("Pools must not include each other in a cycle.");
   for (const key of Object.keys(draft.projectKinds ?? {}))
     if (modelRoutingProjectKey(key) !== key)
       throw new Error("Project scope keys must be normalized project keys.");

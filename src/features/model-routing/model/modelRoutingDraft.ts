@@ -266,11 +266,5 @@ export function includablePools(draft: OrderDraft, poolId: string): ModelRouting
   );
 }
 
-/** @deprecated Use `setPoolMembers`; kept until the UI stops calling it. */
-export function setPoolEntries(draft: OrderDraft, id: string, entryIds: string[]): OrderDraft {
-  const poolIds = draft.routing.pools.find((pool) => pool.id === id)?.poolIds ?? [];
-  return setPoolMembers(draft, id, { entryIds, poolIds });
-}
-
 export const sameOrderDraft = (a: OrderDraft, b: OrderDraft) =>
   JSON.stringify(a) === JSON.stringify(b);

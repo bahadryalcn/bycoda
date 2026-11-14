@@ -310,6 +310,59 @@ describe("rankSkills", () => {
     expect(rankSkills(rows, "", Number.POSITIVE_INFINITY)).toHaveLength(75);
     expect(rankSkills(rows, "skill-74", Number.POSITIVE_INFINITY)[0]?.name).toBe("skill-74");
   });
+
+  describe("skill groups", () => {
+    const fileRows = (description: string): Skill[] =>
+      Array.from({ length: 60 }, (_, index) => ({
+        kind: "file",
+        name: `tool-${String(index).padStart(2, "0")}`,
+        invocation: `tool-${String(index).padStart(2, "0")}`,
+        description,
+        scope: "user",
+        source: "agents",
+        path: `/skills/tool-${index}/SKILL.md`,
+      }));
+    const group = (description: string): Skill & { groupId: string } => ({
+      kind: "template",
+      scope: "template",
+      source: "bycoda",
+      templateId: "skill-group:g1",
+      groupId: "g1",
+      name: "Build",
+      invocation: "group-build",
+      description,
+      body: "",
+    });
+
+    it("puts a group that hits by invocation first, past the limit", () => {
+      const rows = [...fileRows("group- helper"), group("a, b")];
+      expect(rankSkills(rows, "group-")[0]?.invocation).toBe("group-build");
+    });
+
+    it("keeps groups past the limit after commands for an empty query", () => {
+      const rows = [...fileRows("helper"), group("a, b")];
+      const ranked = rankSkills(rows, "");
+      const at = ranked.findIndex((skill) => "groupId" in skill);
+      expect(at).toBe(50);
+      expect(ranked.slice(0, at).every((skill) => skill.kind !== "template")).toBe(true);
+    });
+
+    it("sorts a description-only group after commands and before templates", () => {
+      const template: Skill = {
+        kind: "template",
+        scope: "template",
+        source: "bycoda",
+        templateId: "t1",
+        name: "Zeta",
+        invocation: "zeta",
+        description: "shipping notes",
+        body: "",
+      };
+      const command: Skill = { ...fileRows("shipping notes")[0]!, name: "x", invocation: "x" };
+      const ranked = rankSkills([template, group("shipping notes"), command], "shipping");
+      expect(ranked.map((skill) => skill.name)).toEqual(["x", "Build", "Zeta"]);
+    });
+  });
 });
 
 describe("skill names", () => {

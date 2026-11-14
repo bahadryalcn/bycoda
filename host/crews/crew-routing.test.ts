@@ -89,6 +89,7 @@ async function setup(entries: ModelRoutingEntry[]) {
     signals: async () => ({
       available: () => true,
       signedIn: () => true,
+      accountKind: () => undefined,
       quota: () => ({ leftPercent: left, resetsAt: 5000 }),
     }),
   });

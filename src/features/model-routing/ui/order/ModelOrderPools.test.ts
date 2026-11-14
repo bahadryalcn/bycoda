@@ -25,7 +25,7 @@ vi.mock("../../../providers/public/providerAccounts", () => ({
 
 const entry = (id: string) => ({
   id,
-  harness: "codex",
+  harness: "codex" as const,
   model: id,
   modelSettings: {},
   unknownLimit: "use" as const,
@@ -77,7 +77,7 @@ const main = () => container.querySelector<HTMLElement>('[aria-label="Main"]')!;
 it("lists only a pool's members, in order, instead of every model", () => {
   expect(main().textContent).toContain("a");
   expect(main().textContent).toContain("b");
-  expect(main().textContent).not.toMatch(/c/);
+  expect(main().textContent).not.toMatch(/\bc\b/);
   expect(main().querySelector('input[type="checkbox"]')).toBeNull();
 });
 
@@ -89,11 +89,17 @@ it("reorders and removes members through one setPoolMembers edit", async () => {
 });
 
 it("adds a model not yet in the pool and an includable pool", async () => {
-  const add = [...main().querySelectorAll("button")].find((button) => button.textContent === "Add")!;
+  const add = [...main().querySelectorAll("button")].find(
+    (button) => button.textContent === "Add",
+  )!;
   await act(() => add.click());
   const items = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')];
   expect(items().map((item) => item.textContent)).toEqual(["c", "Inner"]);
-  await act(() => items().find((item) => item.textContent === "Inner")!.click());
+  await act(() =>
+    items()
+      .find((item) => item.textContent === "Inner")!
+      .click(),
+  );
   expect(applied.routing.pools[0]).toMatchObject({ entryIds: ["a", "b"], poolIds: ["p2"] });
 });
 

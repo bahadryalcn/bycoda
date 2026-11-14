@@ -192,10 +192,7 @@ function SkillList({
                 : `${skill.kind}:${skill.source}:${skill.invocation}`
             }
           >
-            {skill.kind === "template" &&
-            (skills[index - 1]?.kind !== "template" ||
-              isSkillGroupPickerItem(skill) !==
-                (skills[index - 1] ? isSkillGroupPickerItem(skills[index - 1]) : false)) ? (
+            {sectionOf(skill) !== (index > 0 ? sectionOf(skills[index - 1]) : "commands") ? (
               <Text
                 as="p"
                 size="caption"
@@ -203,7 +200,7 @@ function SkillList({
                 weight="medium"
                 className="px-2 pb-0.5 pt-1.5"
               >
-                {isSkillGroupPickerItem(skill) ? t("Skill groups") : t("Templates")}
+                {SECTION_HEADINGS[sectionOf(skill)]()}
               </Text>
             ) : null}
             <Button
@@ -225,7 +222,9 @@ function SkillList({
                   {skill.invocation}
                 </Text>
                 <Text size="caption" tone="secondary" className="shrink-0">
-                  {isSkillGroupPickerItem(skill) ? skill.description : scopeLabel(skill)}
+                  {isSkillGroupPickerItem(skill)
+                    ? t("{p0} skills", { p0: skill.memberCount })
+                    : scopeLabel(skill)}
                 </Text>
               </span>
               {!compact && skill.description ? (
@@ -429,6 +428,19 @@ export function CreateSkillForm({
       </div>
     </form>
   );
+}
+
+type PickerSection = "commands" | "groups" | "templates";
+
+const SECTION_HEADINGS: Record<PickerSection, () => string> = {
+  commands: () => t("Commands and skills"),
+  groups: () => t("Skill groups"),
+  templates: () => t("Templates"),
+};
+
+function sectionOf(skill: Skill): PickerSection {
+  if (skill.kind !== "template") return "commands";
+  return isSkillGroupPickerItem(skill) ? "groups" : "templates";
 }
 
 function scopeLabel(skill: Skill): string {

@@ -17,24 +17,34 @@ const MAX_PICKER = 50;
 
 export function rankSkills(skills: Skill[], query: string, limit = MAX_PICKER): Skill[] {
   const needle = query.trim().toLowerCase();
-  // Templates list after commands and skills so the picker can show them as
-  // one "Templates" group.
-  const templatesLast = (ranked: Skill[]) => [
-    ...ranked.filter((skill) => skill.kind !== "template"),
-    ...ranked.filter((skill) => skill.kind === "template" && "groupId" in skill),
-    ...ranked.filter((skill) => skill.kind === "template" && !("groupId" in skill)),
-  ];
+  // Order: groups hit by name/invocation, commands, other groups, templates. `limit`
+  // trims commands then templates only, so groups are never cut off.
+  const arrange = (ranked: Skill[], direct: Set<Skill> = new Set()) => {
+    const isGroup = (skill: Skill) => skill.kind === "template" && "groupId" in skill;
+    const commands = ranked.filter((skill) => skill.kind !== "template").slice(0, limit);
+    const templates = ranked
+      .filter((skill) => skill.kind === "template" && !isGroup(skill))
+      .slice(0, Math.max(0, limit - commands.length));
+    const groups = ranked.filter(isGroup);
+    return [
+      ...groups.filter((skill) => direct.has(skill)),
+      ...commands,
+      ...groups.filter((skill) => !direct.has(skill)),
+      ...templates,
+    ];
+  };
   if (!needle) {
-    return templatesLast(
+    return arrange(
       [...skills].sort((a, b) => {
         const rank = scopeRank(a) - scopeRank(b);
         if (rank !== 0) return rank;
         return a.name.localeCompare(b.name);
       }),
-    ).slice(0, limit);
+    );
   }
 
   const scored: { skill: Skill; score: number }[] = [];
+  const direct = new Set<Skill>();
   for (const skill of skills) {
     const nameHit = fuzzyMatch(needle, skill.name);
     const invocationHit = nameHit
@@ -48,12 +58,16 @@ export function rankSkills(skills: Skill[], query: string, limit = MAX_PICKER): 
     if (!hit) continue;
     const score = nameHit || invocationHit ? hit.score + 400 : hit.score;
     scored.push({ skill, score });
+    if (nameHit || invocationHit) direct.add(skill);
   }
   scored.sort((a, b) => {
     if (b.score !== a.score) return b.score - a.score;
     return a.skill.name.localeCompare(b.skill.name);
   });
-  return templatesLast(scored.map((row) => row.skill)).slice(0, limit);
+  return arrange(
+    scored.map((row) => row.skill),
+    direct,
+  );
 }
 
 function scopeRank(skill: Skill): number {

@@ -24,10 +24,9 @@ it("inserts normal tokens while skipping missing, disabled and hidden skills", a
   }));
   mocks.load.mockResolvedValue(skills);
   mocks.policy.mockResolvedValue({ disabledNames: ["b"], disabledPaths: [] });
-  expect(
-    skillGroupPickerItems([group], skills, { disabledNames: ["b"], disabledPaths: [] })[0]
-      .description,
-  ).toBe("1 skills");
+  const item = skillGroupPickerItems([group], skills, { disabledNames: ["b"], disabledPaths: [] })[0];
+  expect(item.description).toBe("a");
+  expect(item.memberCount).toBe(1);
   expect(await skillGroupInsertion(group.id, { harness: "codex", cwd: "" }, "$")).toBe("$a");
   expect(mocks.policy).toHaveBeenCalledWith("", { refresh: true });
   mocks.policy.mockRejectedValue(new Error("policy unavailable"));

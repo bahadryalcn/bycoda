@@ -187,12 +187,17 @@ export function ProviderDefaultsForm({
       title={section === "delegation" ? null : t("New conversation defaults")}
       description={
         section === "delegation"
-          ? t(
-              "Global settings apply to chats and unattended work. Project, group and workspace settings apply to chats only.",
-            )
+          ? undefined
           : inherits
             ? t("Unset fields use Bycoda defaults. Existing conversations keep their settings.")
             : t("Applies to new conversations. Existing conversations keep their settings.")
+      }
+      info={
+        section === "delegation"
+          ? t(
+              "Global settings apply to chats and unattended work. Project, group and workspace settings apply to chats only.",
+            )
+          : undefined
       }
     >
       {providerControl}

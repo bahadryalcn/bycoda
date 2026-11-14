@@ -138,7 +138,7 @@ describe("model routing selection", () => {
     const fail = () => {
       throw new Error("must not read");
     };
-    const noSignals = { available: fail, signedIn: fail, quota: fail };
+    const noSignals = { available: fail, signedIn: fail, quota: fail, accountKind: fail };
     expect(
       selectModelRouting(draft, { ...input, choice: { kind: "fixed" }, fixed: target }, noSignals),
     ).toMatchObject({ ok: true, target, source: { kind: "fixed" } });
@@ -245,11 +245,7 @@ describe("nested pools and project scope", () => {
   });
 
   const scoped = (cwd: string | undefined, kinds: Record<string, "work" | "personal"> = {}) => {
-    const draft = state([
-      entry("personal"),
-      entry("shared"),
-      entry("work"),
-    ]);
+    const draft = state([entry("personal"), entry("shared"), entry("work")]);
     draft.projectKinds = { "c:/proj/app": "work", ...kinds };
     return selectModelRouting(
       draft,
