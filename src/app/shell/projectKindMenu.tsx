@@ -1,7 +1,12 @@
+import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { t } from "../../shared/i18n";
 import { Briefcase } from "../../shared/ui/icons";
 import type { ModelRoutingScope } from "../../shared/model/host-contracts/model-routing";
-import { inheritedProjectKind, projectKind, setProjectKind } from "../../features/projects/model/projectKinds";
+import {
+  inheritedProjectKind,
+  projectKind,
+  setProjectKind,
+} from "../../features/projects/model/projectKinds";
 import { updateProjectGroup, type ProjectGroup } from "../../features/projects/model/projectGroups";
 import type { TabGroupMenuExtraItem } from "../../features/workspace/ui/TabGroupMenu";
 
@@ -56,7 +61,9 @@ export function pickKindAction(action: string, target: { group?: string; path?: 
   const kind = parseKind(action.slice(scope.length));
   if (kind === null) return false;
   if (scope === GROUP_PREFIX && target.group)
-    updateProjectGroup(target.group, (group) => ({ ...group, kind }));
+    void withRoomPrivacyMutation(() =>
+      updateProjectGroup(target.group!, (group) => ({ ...group, kind })),
+    ).catch((error: unknown) => console.warn("Group tag was not saved", error));
   else if (target.path) setProjectKind(target.path, kind);
   return true;
 }

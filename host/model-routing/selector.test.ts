@@ -261,7 +261,7 @@ describe("nested pools and project scope", () => {
   };
 
   it("skips other-scope accounts for a tagged project only", () => {
-    expect(scoped("C:\Proj\App\\")).toMatchObject({
+    expect(scoped("C:/Proj/App/")).toMatchObject({
       ok: true,
       source: { entryId: "shared" },
       skipped: [{ entryId: "personal", reason: "otherScope" }],

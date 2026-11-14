@@ -409,7 +409,7 @@ it("keeps rows on the order quiet and previews only pools", async () => {
 it("explains an empty order once and links to it instead of repeating per row", async () => {
   const onOpenOrder = vi.fn();
   await render(<ModelRolesSettings machineId="host" supported onOpenOrder={onOpenOrder} />);
-  expect(container.textContent).toContain("The model order is empty");
+  expect(container.textContent).toContain("Model order is empty");
   expect(container.textContent).not.toContain("No model order configured");
   expect(mocks.resolve).not.toHaveBeenCalled();
   await click("Add models");

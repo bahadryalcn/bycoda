@@ -105,7 +105,7 @@ it("rejects unknown, duplicate, self and cyclic included pools and unnormalized 
     (d: ModelRoutingDraft) => (d.pools[1]!.poolIds = ["p", "p"]),
     (d: ModelRoutingDraft) => (d.pools[1]!.poolIds = ["q"]),
     (d: ModelRoutingDraft) => (d.pools[0]!.poolIds = ["q"]),
-    (d: ModelRoutingDraft) => (d.projectKinds = { "C:\Work\App": "work" }),
+    (d: ModelRoutingDraft) => (d.projectKinds = { "C:/Work/App": "work" }),
   ];
   for (const mutate of invalid) {
     const d = withPools();

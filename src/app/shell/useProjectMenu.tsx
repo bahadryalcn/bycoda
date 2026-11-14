@@ -98,6 +98,8 @@ import { RenameProjectFolderDialog } from "../../features/projects/ui/RenameProj
 import { isLocalProject, isRemoteProjectPath } from "../../features/projects/model/recents";
 import { projectNameError } from "../../features/projects/model/projectNames";
 import { TabGroupMenu, type TabGroupMenuExtraItem } from "../../features/workspace/ui/TabGroupMenu";
+import { groupKindItem, pickKindAction, projectKindItem } from "./projectKindMenu";
+import { useProjectKindsSync } from "./useProjectKindsSync";
 import {
   knownNotificationProject,
   type NotificationProject,
@@ -171,6 +173,7 @@ export function useProjectMenu({
   isProjectBusy,
 }: Options) {
   const t = useT();
+  useProjectKindsSync();
   const format = useFormat();
   const [projectMenu, setProjectMenu] = useState<
     | (Point & {
@@ -461,6 +464,8 @@ export function useProjectMenu({
         const currentId = projectGroupIdForPath(path, loadProjectGroupAssignments());
         return setProjectGroupAssignment(path, currentId === groupId ? null : groupId);
       }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+    } else if (pickKindAction(action, { path })) {
+      // Saved by the tag store; the menu closes like any other pick.
     } else if (action === "mute:custom") {
       if (!readyNotificationProject) return false;
       setNotificationMenu({
@@ -640,6 +645,7 @@ export function useProjectMenu({
             projectGroupIdForPath(projectMenu.path, loadProjectGroupAssignments()),
             Boolean(onRenameProjectFolder && isLocalProject(projectMenu.path)),
           ),
+          projectKindItem(projectMenu.path),
         ]}
         nameLabel={t("Project name")}
         info={
@@ -933,6 +939,7 @@ export function useProjectMenu({
               ]
             : []),
           branch("order", t("Reorder group"), ArrowUp, moveItems),
+          groupKindItem(group),
           ...lockItems.filter((item) => item.id === "lock-group" || item.id === "unlock-group"),
           branch("privacy", t("Group privacy"), Lock, privacyItems),
           ...groupItems.filter((item) => item.id === "add-project-to-group"),
@@ -1066,6 +1073,7 @@ export function useProjectMenu({
             return;
           }
           if (locked) return;
+          if (pickKindAction(action, { group: group.id })) return;
           if (action === "delete-group-with-projects") {
             const paths = pathsForGroup(group.id);
             if (!groupRemovalValid({ id: group.id, paths })) return false;

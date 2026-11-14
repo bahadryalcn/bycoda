@@ -27,6 +27,10 @@ vi.mock("../../../sessions/public/models", () => ({
 }));
 vi.mock("../../../sessions/public/modelSource", () => ({ useModelSource: vi.fn() }));
 vi.mock("../../../sessions/public/ModelLabel", () => ({ ModelLabel: () => null }));
+vi.mock("../../model/modelProfile", () => ({
+  modelProfile: () => ({ intelligence: 4, cost: 2, estimated: true }),
+  inferAccountKind: (label: string) => (/work/i.test(label) ? "work" : undefined),
+}));
 vi.mock("./useOrderDraft", () => ({ useOrderSettings: vi.fn(), useOrderDraft: vi.fn() }));
 vi.mock("../../../settings/public/settingsControls", () => ({
   Group: ({ children }: { children: ReactNode }) => createElement("section", null, children),
@@ -35,7 +39,10 @@ vi.mock("../../../settings/public/settingsControls", () => ({
 }));
 vi.mock("../../../providers/public/providerAccounts", () => ({
   subscribeProviderAccounts: () => () => {},
-  providerAccounts: () => [{ id: "default", label: "Default account" }],
+  providerAccounts: () => [
+    { id: "default", label: "Default account" },
+    { id: "work", label: "Work login" },
+  ],
   defaultProviderAccountId: () => "default",
 }));
 
@@ -106,7 +113,6 @@ function rowProps(): ComponentProps<typeof ModelOrderRow> {
     } as unknown as ComponentProps<typeof ModelOrderRow>["sortable"],
     onChange: vi.fn(),
     onPercent: vi.fn(),
-    onMove: vi.fn(),
     onRemove: vi.fn(),
   };
 }
@@ -121,13 +127,32 @@ it.each([
   expect(container.querySelector("input")).toBeNull();
 });
 
-it("renders field picker, saved quota and explicit skip reason", async () => {
+const more = (index = 1) => `[aria-label="More for model ${index}"]`;
+async function openMore() {
+  await act(() => container.querySelector<HTMLButtonElement>(more())!.click());
+}
+
+it("renders one compact line with picker, account, profile, quota and skip reason", async () => {
   await act(() => root.render(createElement(ModelOrderRow, rowProps())));
   expect(picker.presentation).toBe("field");
   expect(container.textContent).toContain("15% left");
   expect(container.textContent).toContain("Below the reserved limit");
-  expect(container.textContent).toContain("Account");
-  expect(container.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("25");
+  expect(container.textContent).toContain("Default account");
+  expect(container.textContent).toContain("4/5 · $$");
+  // Rare settings stay behind the overflow control until it opens.
+  expect(container.querySelector('input[type="number"]')).toBeNull();
+});
+
+it("tags an account with its inferred kind and keeps rare settings in the overflow", async () => {
+  const props = rowProps();
+  props.entry.providerAccountId = "work";
+  await act(() => root.render(createElement(ModelOrderRow, props)));
+  expect(container.textContent).toContain("Work login");
+  expect(container.textContent).toContain("Work");
+  await openMore();
+  expect(document.body.textContent).toContain("Keep % for my own use");
+  expect(document.body.textContent).toContain("If the limit is unknown");
+  expect(document.body.querySelector<HTMLInputElement>('input[type="number"]')!.value).toBe("25");
 });
 
 it("strips delegation defaults on model selection, preserves picker account selection", async () => {
@@ -173,16 +198,16 @@ it("clears account when switching to a provider without accounts and hides accou
   expect(container.textContent).not.toContain("Account");
 });
 
-it("provides non-drag ordering and removal controls with boundary state", async () => {
+it("reorders with the grip only and removes from the overflow", async () => {
   const props = rowProps();
   await act(() => root.render(createElement(ModelOrderRow, props)));
-  const up = container.querySelector<HTMLButtonElement>('[aria-label="Move model 1 up"]')!;
-  const down = container.querySelector<HTMLButtonElement>('[aria-label="Move model 1 down"]')!;
-  expect(up.disabled).toBe(true);
-  await act(() => down.click());
-  expect(props.onMove).toHaveBeenCalledWith(1);
+  expect(container.querySelector('[aria-label="Move model 1 down"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Reorder model 1"]')).not.toBeNull();
+  await openMore();
   await act(() =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Remove model 1"]')!.click(),
+    [...document.body.querySelectorAll("button")]
+      .find((button) => button.textContent === "Remove model 1")!
+      .click(),
   );
   expect(props.onRemove).toHaveBeenCalledOnce();
 });

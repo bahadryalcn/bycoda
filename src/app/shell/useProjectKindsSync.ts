@@ -1,5 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { QueryClientContext } from "@tanstack/react-query";
+import { useContext, useEffect } from "react";
 import { effectiveProjectKinds } from "../../features/projects/model/projectKinds";
 import { subscribeProjectPathsChanged } from "../../features/projects/model/recents";
 import { syncProjectKinds } from "../../features/model-routing/public/settings";
@@ -14,9 +14,11 @@ let lastSent = "";
  * failed first send is simply retried by the next change). The Host reads it at run start.
  */
 export function useProjectKindsSync(): void {
-  const client = useQueryClient();
+  // The app always has a client; a bare shell (a test fixture) has none and sends nothing.
+  const client = useContext(QueryClientContext);
   // Reason: the sync listens to the project stores for the shell's lifetime and must unsubscribe.
   useEffect(() => {
+    if (!client) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const send = (force: boolean) => {
       const kinds = effectiveProjectKinds();
