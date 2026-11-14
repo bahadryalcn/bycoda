@@ -17,6 +17,7 @@ const config = {
   allowPhysicalInput: false,
   permissionMode: "ask",
   allowAllApps: false,
+  driver: "agent-desktop",
   version: 0,
 };
 const state = {
@@ -138,14 +139,14 @@ it("distinguishes a verified helper from the saved permission and an ongoing ope
   });
   await render();
   expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
-  expect(container.textContent).not.toContain("Running");
+  expect(container.textContent).not.toContain("Working");
   mock.request.mockResolvedValueOnce({
     ...state,
     status: { ...state.status, installed: true, verified: true, enabled: true, active: true },
   });
   await click("Refresh");
   expect(container.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe("false");
-  expect(container.textContent).toContain("Running");
+  expect(container.textContent).toContain("Working");
   expect(container.textContent).toContain("Stop computer use");
 });
 it("clears stale status after a failed refresh", async () => {
@@ -154,10 +155,10 @@ it("clears stale status after a failed refresh", async () => {
     status: { ...state.status, installed: true, verified: true, enabled: true, active: true },
   });
   await render();
-  expect(container.textContent).toContain("Running");
+  expect(container.textContent).toContain("Working");
   mock.request.mockRejectedValueOnce(new Error("Status failed"));
   await click("Refresh");
-  expect(container.textContent).not.toContain("Running");
+  expect(container.textContent).not.toContain("Working");
   expect(container.textContent).not.toContain("Stop computer use");
   expect(container.textContent).toContain("Status failed");
 });
@@ -396,4 +397,66 @@ it("makes the shell save throw on refusal and keeps the owner's unsaved choice",
   expect(container.querySelectorAll('[role="switch"]')[1].getAttribute("aria-checked")).toBe(
     "true",
   );
+});
+
+const badgeText = () =>
+  [...container.querySelectorAll("span")]
+    .filter((node) => !node.children.length)
+    .map((node) => node.textContent)
+    .filter((text) =>
+      ["Off", "On · idle", "Working", "Stopped", "Turns on when saved"].includes(text ?? ""),
+    );
+async function renderUnified() {
+  await act(async () =>
+    root.render(createElement(DesktopControlSettings, { showPermissionControls: false })),
+  );
+}
+it("shows Off with a Turn on action and no Stop while computer use is off", async () => {
+  mock.helper.mockResolvedValue({ phase: "ready", helper });
+  await renderUnified();
+  expect(badgeText()).toEqual(["Off"]);
+  expect(container.textContent).toContain("Turn on");
+  expect(container.textContent).not.toContain("Stop computer use");
+  await click("Turn on");
+  await flush();
+  expect(badgeText()).toEqual(["Turns on when saved"]);
+  expect(mock.request.mock.calls.map(([input]) => input.op)).toEqual(["status"]);
+  expect(container.textContent).not.toContain("Turn on");
+  expect(container.textContent).toContain("Stop computer use");
+});
+it("separates On idle from Working and Stopped, each with its own action", async () => {
+  const enabled = { ...config, enabled: true, version: 1 };
+  mock.helper.mockResolvedValue({ phase: "ready", helper });
+  mock.request.mockResolvedValue({
+    ...state,
+    configuration: enabled,
+    status: { ...state.status, installed: true, verified: true, enabled: true },
+  });
+  await renderUnified();
+  await flush();
+  expect(badgeText()).toEqual(["On · idle"]);
+  expect(container.textContent).toContain("Stop computer use");
+  expect(container.textContent).not.toContain("Resume");
+  await act(() => root.unmount());
+  root = createRoot(container);
+  mock.request.mockResolvedValue({
+    ...state,
+    configuration: enabled,
+    status: { ...state.status, installed: true, verified: true, enabled: true, active: true },
+  });
+  await renderUnified();
+  await flush();
+  expect(badgeText()).toEqual(["Working"]);
+  expect(container.textContent).toContain("Stop computer use");
+});
+it("offers Resume after a stop and resumes through the existing request", async () => {
+  mock.request.mockResolvedValue({
+    ...state,
+    status: { ...state.status, stopped: true },
+  });
+  await renderUnified();
+  expect(badgeText()).toEqual(["Stopped"]);
+  expect(container.textContent).not.toContain("Turn on");
+  await click("Resume");
+  expect(mock.request.mock.calls.map(([input]) => input.op)).toContain("resume");
 });

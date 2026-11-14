@@ -274,6 +274,7 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
         "desktop.act.authorize",
         "management.write.authorize",
         "secrets.input.authorize",
+        "mcp.call.authorize",
         "preferences.read",
         "preferences.templateRead",
         "preferences.patch",

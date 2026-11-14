@@ -1,5 +1,11 @@
 import { expect, it } from "vitest";
 import { voiceGlobalToolAllowed, voiceThreadToolAllowed } from "./voiceToolScope";
+it("allows approved cross-session control only with an explicit project scope", () => {
+  for (const action of ["sessions.message", "sessions.cancel"]) {
+    expect(voiceThreadToolAllowed("conversation", action)).toBe(true);
+    expect(voiceGlobalToolAllowed("conversation", action)).toBe(false);
+  }
+});
 it("permits only the finite desktop approval path for a real assistant thread and retains working-copy scope", () => {
   for (const action of [
     "desktop.launch",

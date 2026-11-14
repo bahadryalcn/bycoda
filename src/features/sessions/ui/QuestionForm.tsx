@@ -533,19 +533,21 @@ function QuestionFormContent({
               <LiveText text={t("Preparing session checkpoint. Your draft is kept.")} />
             ) : null}
             {capacityMessage ? <InlineError>{capacityMessage}</InlineError> : null}
-            <Text
-              as="p"
-              size="caption"
-              tone={failed ? "danger" : "secondary"}
-              leading="normal"
-              role={failed || uncertain ? "alert" : "status"}
-              className={styles.status}
-              id={statusId}
-              data-error={failed ? "true" : undefined}
-            >
-              {StatusIcon ? <StatusIcon className="icon-sm shrink-0" aria-hidden /> : null}
-              <span>{status}</span>
-            </Text>
+            {status ? (
+              <Text
+                as="p"
+                size="caption"
+                tone={failed ? "danger" : "secondary"}
+                leading="normal"
+                role={failed || uncertain ? "alert" : "status"}
+                className={styles.status}
+                id={statusId}
+                data-error={failed ? "true" : undefined}
+              >
+                {StatusIcon ? <StatusIcon className="icon-sm shrink-0" aria-hidden /> : null}
+                <span>{status}</span>
+              </Text>
+            ) : null}
             {prompt.autoResolveAt != null && !transportHeld ? (
               <Tooltip label={t("Interact to keep this question open.")} asChild>
                 <Text size="caption" tone="secondary" className="tabular-nums">
@@ -600,7 +602,7 @@ function QuestionFormContent({
               loadingLabel={pendingLabel}
               startIcon={<SubmitIcon />}
               reserveLabels={[t("Sending answer…"), t("Send again"), t("Connection issue")]}
-              aria-describedby={statusId}
+              aria-describedby={status ? statusId : undefined}
             >
               {submitLabel}
             </Button>

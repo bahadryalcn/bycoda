@@ -357,7 +357,7 @@ describe("composer draft store", () => {
     ]);
     await store.hydrateComposerDrafts();
     expect(cache.getComposerDraft("d1")).toBe("unsent");
-    expect(cache.getComposerDraft("d2")).toBe("see [file1]");
+    expect(cache.getComposerDraft("d2")).toBe("see [File\u00a01\u00a0·\u00a01\u00a0B]");
     expect(cache.getComposerAttachments("d2").map((file) => file.name)).toEqual(["here.txt"]);
     expect(cache.takeComposerNotice("d2")).toContain("gone.txt");
     expect(cache.getComposerDraft("d3")).toBeUndefined();

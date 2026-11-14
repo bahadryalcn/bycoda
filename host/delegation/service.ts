@@ -14,7 +14,8 @@ import {
   localSessionLinkFields,
   type LocalSessionLocator,
 } from "../../src/features/sessions/model/localSessionReference";
-import type { Session } from "../../src/features/sessions/model/session";
+import type { Session, SessionMessageAuthor } from "../../src/features/sessions/model/session";
+import { isSessionNotFound } from "../sessions/session-authority";
 import { executionUserIndex } from "../../src/features/sessions/model/executionTurn";
 import type { AgentModel } from "../../src/features/sessions/model/models";
 import { CLAUDE_SUBAGENT_SETTINGS } from "../../src/features/sessions/model/claudeSubagents";
@@ -24,6 +25,7 @@ import {
   CROSS_SUBAGENT_MAX_EFFORT_KEY,
   AUTOMATIC_SUBAGENTS,
   DELEGATION_LIMITS,
+  DELEGATION_CHAT_ONLY_KEY,
   DELEGATION_PARENT_KEY,
   EFFORT_LEVELS,
   decodeAdvisor,
@@ -50,6 +52,7 @@ import { advisorBrief, subagentBrief, replyBrief } from "./prompts";
 import { modelEffortSetting } from "../../src/features/sessions/model/models";
 import { logWaitMaxTimeoutSeconds } from "../execution/runtime-log-wait";
 import { childModelSettings } from "./child-settings";
+import { CHAT_ONLY_PROVIDERS } from "./child-native";
 import { delegationBudgetScope, delegationWorkRoot } from "./work-root";
 import { cancelSessionWorkOccurrence } from "../work/session-adapter";
 import { refuseSingleSlotChild } from "./capacity";
@@ -70,12 +73,32 @@ export type DelegationDependencies = {
     provider: RemoteProvider,
     accountId?: string,
   ) => Promise<"signedIn" | "signedOut" | "unknown">;
-  enqueueParent?: (sessionId: string, id: string, text: string) => Promise<void>;
+  enqueueParent?: (
+    sessionId: string,
+    id: string,
+    text: string,
+    author?: SessionMessageAuthor,
+  ) => Promise<void>;
 };
 
 export type AgentsCaller = { sessionId: string; projectId: string };
 type Locate = (sessionId: string) => Promise<LocalSessionLocator | undefined>;
 type RunStatus = "queued" | "running" | "needsInput" | "succeeded" | "failed" | "cancelled";
+
+/**
+ * The child's parent link for its next turn: the round advances and the previous
+ * round's outcome fields are cleared. An unreadable link is kept as it was.
+ */
+function nextRoundParent(link: string, round: number): string {
+  const parent = decodeDelegationParent(link);
+  if (!parent) return link;
+  const next: DelegationParent = { ...parent, round };
+  delete next.childRunId;
+  delete next.status;
+  delete next.error;
+  delete next.finishedAt;
+  return JSON.stringify(next);
+}
 
 const KIND_LABEL: Record<DelegationKind, string> = { subagent: "Subagent", advisor: "Advisor" };
 
@@ -171,13 +194,22 @@ export class ConversationDelegation {
     return this.start("advisor", args, caller, locate, true);
   }
 
-  /** Stops every running child of a parent that was cancelled or deleted. */
-  async cancelChildren(parentSessionId: string): Promise<void> {
+  /**
+   * Stops every running child of a parent that was cancelled or deleted. With
+   * `keepNotifying`, children that report back to the parent (`notifyOnCompletion`)
+   * are background work and keep running, as the agents tool promises.
+   */
+  async cancelChildren(
+    parentSessionId: string,
+    options: { keepNotifying?: boolean } = {},
+  ): Promise<void> {
+    const stopped = (record: DelegationRecord) =>
+      record.parentSessionId === parentSessionId &&
+      !(options.keepNotifying && record.notifyOnCompletion);
     for (const record of await this.store.list())
-      if (record.parentSessionId === parentSessionId)
-        await this.store.patch(record.runId, { communicationClosed: true });
+      if (stopped(record)) await this.store.patch(record.runId, { communicationClosed: true });
     const records = (await this.refresh(await this.store.list())).filter(
-      (record) => record.parentSessionId === parentSessionId && record.finishedAt === undefined,
+      (record) => stopped(record) && record.finishedAt === undefined,
     );
     await Promise.all(
       records.map(async (record) => {
@@ -333,6 +365,7 @@ export class ConversationDelegation {
           args.context,
           ...(args.effort === undefined ? [] : [args.effort]),
           ...(args.notifyOnCompletion === undefined ? [] : [args.notifyOnCompletion]),
+          ...(args.files === undefined ? [] : [{ files: args.files }]),
         ]),
       )
       .digest("hex");
@@ -385,6 +418,11 @@ export class ConversationDelegation {
       const model = this.resolve(ref, catalog);
       if (!model) throw new Error("The selected model is unavailable. Choose another model.");
       await this.verifySignIn(ref);
+      if (args.files !== undefined && typeof args.files !== "boolean")
+        throw new Error("Field files must be a boolean.");
+      const chatOnly = args.files === false;
+      if (chatOnly && !CHAT_ONLY_PROVIDERS.has(ref.harness))
+        throw new Error("files:false needs a Claude or Codex model; omit it for this model.");
       const runId = existing?.runId ?? randomUUID();
       const rootWorkId =
         existing?.rootWorkId ??
@@ -415,8 +453,9 @@ export class ConversationDelegation {
         kind,
         model: model.id,
         startedAt: existing?.startedAt ?? Date.now(),
+        round: 1,
       };
-      const modelSettings =
+      const baseSettings =
         existing?.modelSettings ??
         childModelSettings(
           model,
@@ -426,6 +465,9 @@ export class ConversationDelegation {
             ? own.session.modelSettings[CROSS_SUBAGENT_MAX_EFFORT_KEY]
             : undefined,
         );
+      const modelSettings = chatOnly
+        ? { ...baseSettings, [DELEGATION_CHAT_ONLY_KEY]: "on" }
+        : baseSettings;
       if (!existing)
         await this.store.add({
           runId,
@@ -441,6 +483,7 @@ export class ConversationDelegation {
           pending: { args: structuredClone(args), callerFingerprint },
           startedAt: parent.startedAt,
           ...(args.notifyOnCompletion === true ? { notifyOnCompletion: true } : {}),
+          ...(chatOnly ? { chatOnly: true as const } : {}),
           ...(rootWorkId ? { rootWorkId } : {}),
           ...(budgetScope ? { budgetScope } : {}),
         });
@@ -473,11 +516,9 @@ export class ConversationDelegation {
         harness: ref.harness,
         ...(ref.providerAccountId ? { providerAccountId: ref.providerAccountId } : {}),
         model: model.id,
-        modelSettings: {
-          ...modelSettings,
-          [DELEGATION_PARENT_KEY]: JSON.stringify(parent),
-        },
-        runtimeMode: own.session.runtimeMode,
+        modelSettings: { ...modelSettings, [DELEGATION_PARENT_KEY]: JSON.stringify(parent) },
+        runtimeMode: chatOnly ? "supervised" : own.session.runtimeMode,
+        ...(chatOnly ? { scratchCwd: await this.store.scratchDir(runId) } : {}),
         // The model shows beside the row; the task names the run.
         title: title.trim() || label,
         prompt:
@@ -496,6 +537,7 @@ export class ConversationDelegation {
         kind,
         parentSessionId: caller.sessionId,
         childSessionId: started.sessionId,
+        ...(chatOnly ? { chatOnly: true as const } : {}),
         ...(rootWorkId ? { rootWorkId } : {}),
         ...(budgetScope ? { budgetScope } : {}),
         ...(started.runId ? { childRunId: started.runId } : {}),
@@ -530,6 +572,46 @@ export class ConversationDelegation {
     locate: Locate,
     brief?: string,
   ) {
+    if (args.runIds === undefined) {
+      if (args.runId === undefined) throw new Error("Pass exactly one of runId or runIds.");
+      return await this.replyOne(args, caller, locate, brief);
+    }
+    if (args.runId !== undefined) throw new Error("Pass exactly one of runId or runIds.");
+    const ids = args.runIds;
+    if (
+      !Array.isArray(ids) ||
+      ids.length < 1 ||
+      ids.length > 20 ||
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => typeof id !== "string" || id.length < 1 || id.length > 200)
+    )
+      throw new Error("runIds must be 1 to 20 unique run IDs.");
+    if (typeof args.requestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(args.requestId))
+      throw new Error("Invalid requestId.");
+    const replies: unknown[] = [];
+    // One failing child must not hide the others' results; each keeps its own idempotency key.
+    for (const runId of ids as string[]) {
+      try {
+        replies.push(
+          await this.replyOne({ ...args, runId, runIds: undefined }, caller, locate, brief, [
+            args.requestId,
+            runId,
+          ]),
+        );
+      } catch (error) {
+        replies.push({ runId, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return { replies };
+  }
+
+  private async replyOne(
+    args: Record<string, unknown>,
+    caller: AgentsCaller,
+    locate: Locate,
+    brief?: string,
+    keyParts?: [string, string],
+  ) {
     const own = await this.caller(caller);
     if (typeof args.requestId !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(args.requestId))
       throw new Error("Invalid requestId.");
@@ -541,7 +623,7 @@ export class ConversationDelegation {
       throw new Error("Invalid message length.");
     if (typeof args.runId !== "string" || args.runId.length < 1 || args.runId.length > 200)
       throw new Error("Invalid runId.");
-    const requestKey = `agents:${caller.sessionId}:${args.requestId}`;
+    const requestKey = `agents:${caller.sessionId}:${keyParts ? keyParts.join(":") : args.requestId}`;
     const payloadHash = createHash("sha256")
       .update(JSON.stringify(["reply", args.runId, args.message]))
       .digest("hex");
@@ -595,20 +677,37 @@ export class ConversationDelegation {
             ? { ...previousSettings, [effort.id]: clamped[effort.id]! }
             : previousSettings;
         // Restore the recorded model/account if the owner changed this child's settings.
-        await this.deps.engine.command({
-          type: "configure",
-          commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:configure`,
-          sessionId: record.childSessionId,
-          expectedRevision: child.revision,
-          harness: record.model.harness,
-          model: record.model.model,
-          providerAccountId: record.model.providerAccountId ?? null,
-          modelSettings: {
-            ...restoredSettings,
-            [DELEGATION_PARENT_KEY]: child.session.modelSettings[DELEGATION_PARENT_KEY]!,
-          },
-          runtimeMode: child.session.runtimeMode,
-        });
+        // The child's parent link moves to its next round.
+        const parentLink = nextRoundParent(
+          child.session.modelSettings[DELEGATION_PARENT_KEY]!,
+          (record.replies?.length ?? 0) + 2,
+        );
+        const configure = (revision: number | undefined) =>
+          this.deps.engine.command({
+            type: "configure",
+            commandId: `agents_${createHash("sha256").update(requestKey).digest("hex")}:configure`,
+            sessionId: record.childSessionId,
+            expectedRevision: revision,
+            harness: record.model.harness,
+            model: record.model.model,
+            providerAccountId: record.model.providerAccountId ?? null,
+            modelSettings: { ...restoredSettings, [DELEGATION_PARENT_KEY]: parentLink },
+            runtimeMode: child.session.runtimeMode,
+          });
+        try {
+          try {
+            await configure(child.revision);
+          } catch (error) {
+            // The child changed under us (owner edit, finishing turn): retry once on the fresh revision.
+            if (!(error instanceof Error) || !/conversation changed/i.test(error.message))
+              throw error;
+            await configure((await this.deps.engine.store.session(record.childSessionId)).revision);
+          }
+        } catch (error) {
+          // Nothing reached the child yet, so the message is undelivered, not "unknown".
+          if (error instanceof Error) Object.assign(error, { notOffered: true });
+          throw error;
+        }
         const rootWorkId =
           record.rootWorkId ??
           (await delegationWorkRoot(this.deps.engine.store, caller.sessionId, own.runId));
@@ -631,10 +730,7 @@ export class ConversationDelegation {
             ...(record.model.providerAccountId
               ? { providerAccountId: record.model.providerAccountId }
               : {}),
-            modelSettings: {
-              ...restoredSettings,
-              [DELEGATION_PARENT_KEY]: child.session.modelSettings[DELEGATION_PARENT_KEY]!,
-            },
+            modelSettings: { ...restoredSettings, [DELEGATION_PARENT_KEY]: parentLink },
             runtimeMode: child.session.runtimeMode,
             title: record.title,
             prompt: brief ?? replyBrief(args.message as string),
@@ -756,10 +852,14 @@ export class ConversationDelegation {
       await continuation;
       record = (await this.store.find(record.runId)) ?? record;
     }
+    // A queued launch has no child session yet; there is nothing to follow.
+    if (!record.childSessionId) return record;
     let child: HostSession;
     try {
       child = await this.deps.engine.store.session(record.childSessionId);
-    } catch {
+    } catch (error) {
+      // A transient read error must not be mistaken for a vanished child: look again later.
+      if (!isSessionNotFound(error)) throw error;
       return record;
     }
     if (!child.runId || child.runId === record.childRunId) return record;

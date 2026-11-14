@@ -14,8 +14,8 @@ import {
   type DockAgent,
 } from "./activityDock";
 import { stopAllControl } from "./backgroundStop";
-import { delegatedChildren, delegatedDockAgents } from "./delegatedAgents";
-import { createCardPlacer } from "./delegatedCards";
+import { delegatedChildren, delegatedDockAgents, delegationParentOf } from "./delegatedAgents";
+import { cardedChildren, createCardPlacer } from "./delegatedCards";
 import { executionUserIndex } from "./executionTurn";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
@@ -160,6 +160,19 @@ export function useDelegatedCardBlocks(
   return useMemo(() => place(blocks, children), [place, blocks, children]);
 }
 
+/** The run ids of a session's delegated children; their results show on their cards. */
+export function useDelegatedRunIds(parentId: string | undefined): string[] {
+  return useSessionsSelector(
+    (sessions) =>
+      parentId
+        ? delegatedChildren(sessions, parentId).flatMap(
+            (child) => delegationParentOf(child)?.runId ?? [],
+          )
+        : [],
+    (a, b) => a.length === b.length && a.every((id, index) => id === b[index]),
+  );
+}
+
 /** Cross-provider children of one session, as dock rows for its current turn. */
 export function useDelegatedDockAgents(parentId: string, blocks: Block[]): DockAgent[] {
   const catalog = useModelCatalogRevision();
@@ -169,10 +182,12 @@ export function useDelegatedDockAgents(parentId: string, blocks: Block[]): DockA
   );
   const turnStartedAt = blocks[executionUserIndex(blocks)]?.startedAt;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  return useMemo(
-    () => delegatedDockAgents(children, turnStartedAt),
-    [children, turnStartedAt, catalog],
-  );
+  return useMemo(() => {
+    const carded = cardedChildren(blocks, children);
+    return delegatedDockAgents(children, turnStartedAt).map((agent) =>
+      agent.sessionId && carded.has(agent.sessionId) ? { ...agent, inline: true } : agent,
+    );
+  }, [blocks, children, turnStartedAt, catalog]);
 }
 
 export function useDockCountLabel(dock: ActivityDock): string {

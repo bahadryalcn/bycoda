@@ -26,22 +26,18 @@ export type TaskFilterValues = {
 export function TaskToolbarFilters({
   values,
   activeCount,
-  machines,
   goals,
   sprints,
   onStatus,
-  onMachine,
   onGoal,
   onSprint,
   onReset,
 }: {
   values: TaskFilterValues;
   activeCount: number;
-  machines: readonly { id: string; name: string }[];
   goals: readonly { machineId: string; id: string; title: string }[];
   sprints: readonly { id: string; name: string }[];
   onStatus: (value: string) => void;
-  onMachine: (value: string) => void;
   onGoal: (value: string) => void;
   onSprint: (value: string) => void;
   onReset: () => void;
@@ -119,15 +115,6 @@ export function TaskToolbarFilters({
               ],
               values.status,
               onStatus,
-            )}
-            {field(
-              t("Machine"),
-              [
-                { value: "all", label: t("All") },
-                ...machines.map((machine) => ({ value: machine.id, label: machine.name })),
-              ],
-              values.machine,
-              onMachine,
             )}
             {field(
               t("Show epic"),

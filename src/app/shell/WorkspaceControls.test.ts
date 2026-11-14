@@ -44,6 +44,10 @@ it("opens each destination and refreshes without reloading the app", async () =>
       "Refresh current view",
       "Full screen",
     ]);
+    for (const button of host.querySelectorAll("button")) {
+      expect(button.getAttribute("data-button-size")).toBe("sm");
+    }
+    expect(host.querySelector("nav")!.classList.contains("px-2")).toBe(false);
     for (const label of [
       "Manage hidden groups",
       "Pull requests",

@@ -388,7 +388,6 @@
 .usage-history-table {
   max-block-size: 26rem;
   overflow: auto;
-  overscroll-behavior: contain;
   margin-block-start: 12px;
 }
 .usage-quota-axis {

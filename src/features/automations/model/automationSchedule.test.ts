@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { nextAutomationRunAt, type AutomationSchedule } from "./automationSchedule";
+import {
+  latestOverdueOccurrence,
+  nextAutomationRunAt,
+  type AutomationSchedule,
+} from "./automationSchedule";
 
 function inTimezone(zone: string, run: () => void) {
   const original = process.env.TZ;
@@ -19,6 +23,26 @@ const schedule: AutomationSchedule = {
   time: "02:30",
   dayOfWeek: 1,
 };
+
+describe("bounded overdue recovery", () => {
+  it("selects the latest hourly occurrence without scanning decades of missed work", () => {
+    const hourly = { ...schedule, scheduleKind: "hourly" as const, minute: 0 };
+    const now = new Date("2026-10-07T12:05:00").getTime();
+    const next = vi.fn((after: number) => nextAutomationRunAt(hourly, after));
+    expect(latestOverdueOccurrence(next, new Date("2000-01-01T00:00:00").getTime(), now)).toEqual({
+      scheduledFor: new Date("2026-10-07T12:00:00").getTime(),
+      nextRunAt: new Date("2026-10-07T13:00:00").getTime(),
+    });
+    expect(next.mock.calls.length).toBeLessThan(250);
+  });
+  it("does not claim future occurrences or loop when a schedule cannot advance", () => {
+    const next = vi.fn((after: number) => after);
+    expect(latestOverdueOccurrence(next, 200, 100)).toBeUndefined();
+    expect(next).not.toHaveBeenCalled();
+    expect(latestOverdueOccurrence(next, 100, 200)).toBeUndefined();
+    expect(latestOverdueOccurrence(() => NaN, 100, 200)).toBeUndefined();
+  });
+});
 
 describe("automation daylight-saving schedules", () => {
   it("restores a weekly time one week after the missing occurrence", () => {

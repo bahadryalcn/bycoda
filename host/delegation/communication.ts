@@ -1,5 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { RUNTIME_MODES } from "../../src/features/sessions/model/session";
+import {
+  RUNTIME_MODES,
+  type SessionMessageAuthor,
+} from "../../src/features/sessions/model/session";
 import { DELEGATION_LIMITS } from "../../src/shared/model/host-contracts/delegation";
 import type { AgentsCaller } from "./service";
 import type { DelegationRecord, DelegationStore } from "./store";
@@ -12,6 +15,8 @@ export type AgentDelivery = {
   text: string;
   commandId: string;
   mode: "auto" | "queue" | "steer";
+  /** Set when a child's completion or peer message goes to its parent: a system notice, not owner input. */
+  notice?: Extract<SessionMessageAuthor, { kind: "delegation" }>;
 };
 type Dependencies = {
   directory: string;
@@ -227,6 +232,16 @@ export class AgentCommunication {
       if (!mayMessage(group.own.runtimeMode, recipient.runtimeMode))
         throw new Error("Recipient has broader or unknown execution permissions.");
       if (target?.status === "cancelled") throw new Error("Recipient was cancelled.");
+      // A sibling's message must not wake a finished child: that would start a new turn,
+      // a new completion and another parent turn. Only the parent or owner restarts it.
+      if (
+        target &&
+        group.child &&
+        ["succeeded", "failed", "cancelled"].includes((await this.deps.result(target)).status)
+      )
+        throw new Error(
+          "Recipient already finished. Only the parent assistant can ask it for another turn.",
+        );
       if (message.mode === "steer" && recipient.status !== "running")
         throw new Error("Recipient has no active turn to steer.");
       if (target && recipient.status === "running" && message.mode === "queue") return;
@@ -236,6 +251,18 @@ export class AgentCommunication {
         ...(group.child ? { source: group.child } : {}),
         targetSessionId: message.targetSessionId,
         ...(target ? { target } : {}),
+        ...(!message.targetRunId && group.child
+          ? {
+              notice: {
+                kind: "delegation" as const,
+                runId: group.child.runId,
+                title: group.child.title,
+                reason: message.requestKey.startsWith("completion:")
+                  ? ("completion" as const)
+                  : ("message" as const),
+              },
+            }
+          : {}),
         text: message.text,
         commandId: `agent_message_${message.id}`,
         mode: message.mode,
@@ -244,7 +271,11 @@ export class AgentCommunication {
       message.delivery = delivery === "waiting" ? "queued" : delivery;
     } catch (error) {
       // Once offered to an execution owner, a thrown error is not proof it was unsent.
-      message.delivery = message.state === "dispatching" ? "unknown" : "failed";
+      // An error flagged `notOffered` happened before anything reached the recipient.
+      message.delivery =
+        message.state === "dispatching" && !(error as { notOffered?: true })?.notOffered
+          ? "unknown"
+          : "failed";
       message.state = "settled";
       message.error = error instanceof Error ? error.message : "Agent message failed.";
     }
@@ -267,8 +298,9 @@ export class AgentCommunication {
       for (const record of await this.deps.records.list()) {
         if (!record.notifyOnCompletion || record.communicationClosed || !record.childRunId)
           continue;
-        const result = await this.deps.result(record);
-        if (!["succeeded", "failed", "cancelled"].includes(result.status)) continue;
+        // A read error leaves the notice undecided; the next tick looks again.
+        const result = await this.deps.result(record).catch(() => undefined);
+        if (!result || !["succeeded", "failed", "cancelled"].includes(result.status)) continue;
         const requestKey = `completion:${record.runId}:${record.childRunId}`;
         if (messages.some((message) => message.requestKey === requestKey)) continue;
         const parent = await this.deps.inspect(record.parentSessionId).catch(() => undefined);

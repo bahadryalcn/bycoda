@@ -163,6 +163,7 @@ const SKIP_DIRECTORIES: &[&str] = &[
     ".svn",
     "node_modules",
     ".pnpm",
+    ".pnpm-store",
     ".yarn",
     ".cache",
     ".next",
@@ -170,6 +171,11 @@ const SKIP_DIRECTORIES: &[&str] = &[
     ".output",
     ".turbo",
     ".expo",
+    ".artifacts",
+    ".local-data",
+    ".venv",
+    "venv",
+    "__pycache__",
     "target",
     "dist",
     "build",
@@ -556,6 +562,52 @@ mod tests {
                 .unwrap_err()
                 .contains("timed out")
         );
+    }
+
+    #[test]
+    fn opt_in_skips_generated_data_and_dependency_stores_but_keeps_ignored_sources() {
+        let fixture = Fixture::new();
+        let parent = fixture.repo("parent");
+        let generated = [
+            ".artifacts",
+            ".local-data",
+            ".pnpm-store",
+            ".venv",
+            "venv",
+            "__pycache__",
+        ];
+        for name in generated {
+            let mut nested = parent.join(name);
+            for _ in 0..66 {
+                nested = nested.join("d");
+            }
+            std::fs::create_dir_all(nested).unwrap();
+        }
+        fixture.repo("parent/mobile");
+        let source = fixture.repo("source");
+        run(
+            &parent,
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                "--",
+                source.to_str().unwrap(),
+                ".artifacts/pinned",
+            ],
+        );
+        std::fs::write(
+            parent.join(".gitignore"),
+            format!("{}/\nmobile/\n", generated.join("/\n")),
+        )
+        .unwrap();
+        let before = run(&parent, &["status", "--porcelain"]);
+        assert_eq!(
+            list_options(&parent, true).unwrap(),
+            vec![".artifacts/pinned", "mobile"]
+        );
+        assert_eq!(run(&parent, &["status", "--porcelain"]), before);
     }
 
     #[test]

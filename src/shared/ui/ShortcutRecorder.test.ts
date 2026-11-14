@@ -28,6 +28,59 @@ const press = (target: Element, init: KeyboardEventInit) =>
 const recorder = () => container.querySelector<HTMLButtonElement>("button[aria-pressed]")!;
 const status = () => container.querySelector('[role="status"]')!.textContent;
 
+it.each([
+  { key: "Delete", code: "Delete", isComposing: true },
+  { key: "Backspace", code: "Backspace", keyCode: 229 },
+  { key: "Escape", code: "Escape", keyCode: 229 },
+  { key: "k", code: "KeyK", ctrlKey: true, keyCode: 229 },
+  { key: "Delete", code: "Delete", repeat: true },
+  { key: "k", code: "KeyK", ctrlKey: true, repeat: true },
+])("ignores composition and repeats during capture: %j", async (init) => {
+  const change = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ShortcutRecorder, {
+        label: "Open palette",
+        platform: "other",
+        defaultValue: "mod+p",
+        onValueChange: change,
+      }),
+    ),
+  );
+  await act(async () => recorder().click());
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  await act(async () => recorder().dispatchEvent(event));
+  expect(change).not.toHaveBeenCalled();
+  expect(recorder().getAttribute("aria-pressed")).toBe("true");
+  expect(event.defaultPrevented).toBe(false);
+});
+
+it.each([false, true])("keeps Tab navigation during capture (shift=%s)", async (shiftKey) => {
+  const change = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(ShortcutRecorder, {
+        label: "Open palette",
+        platform: "other",
+        defaultValue: "mod+p",
+        onValueChange: change,
+      }),
+    ),
+  );
+  await act(async () => recorder().click());
+  const event = new KeyboardEvent("keydown", {
+    key: "Tab",
+    code: "Tab",
+    shiftKey,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => recorder().dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(false);
+  expect(recorder().getAttribute("aria-pressed")).toBe("false");
+  expect(change).not.toHaveBeenCalled();
+});
+
 it("shows a distinct recording state, announces it, and Escape cancels without changing the value", async () => {
   const change = vi.fn();
   await act(async () =>

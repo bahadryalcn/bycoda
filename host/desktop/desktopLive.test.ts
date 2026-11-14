@@ -9,6 +9,7 @@ import {
   DESKTOP_COMMAND_RETAIN_MS,
   DESKTOP_WRITER_TRANSFER_MS,
   DESKTOP_STORED_RUNNING_MS,
+  parseDesktopProjectDirectory,
 } from "./desktopLive";
 import { ChangeSignal } from "../changeSignal";
 import { RemoteChanges } from "../workspaces/remoteChanges";
@@ -537,6 +538,36 @@ describe("privacy-filtered project directory", () => {
       projectDirectory: { ...projection, excludedPaths: ["/work"] },
     });
     expect(live.projectDirectory([], "host").projects).toEqual([]);
+  });
+  it("forwards desktop rail pins in desktop order and rejects malformed pins", () => {
+    const live = new DesktopLive(() => 0);
+    const projection = {
+      version: 1 as const,
+      projects: [
+        { cwd: "/pinned", name: "Pinned", pinned: true },
+        { cwd: "/plain", name: "Plain", pinned: false },
+        { cwd: "/legacy", name: "Legacy" },
+      ],
+      groups: [],
+      excludedPaths: [],
+      excludedGroupIds: [],
+    };
+    live.beat({ clientId: "desktop", sessions: [], projectDirectory: projection });
+    const projects = live.projectDirectory(
+      [{ id: "registered", cwd: "/pinned", name: "old" }],
+      "host",
+    ).projects;
+    expect(projects.map((project) => [project.cwd, project.pinned])).toEqual([
+      ["/pinned", true],
+      ["/plain", undefined],
+      ["/legacy", undefined],
+    ]);
+    expect(
+      parseDesktopProjectDirectory({
+        ...projection,
+        projects: [{ cwd: "/pinned", name: "Pinned", pinned: "yes" }],
+      }),
+    ).toBeUndefined();
   });
   it("uses desktop visibility and order while carrying read-only session organization", () => {
     const live = new DesktopLive(() => 0);

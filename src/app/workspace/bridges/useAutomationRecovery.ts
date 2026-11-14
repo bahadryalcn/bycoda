@@ -52,6 +52,7 @@ export function useAutomationRecovery({ launchAutomation }: AutomationRecoveryDe
         // Explicit recovery callers still use their original admission path.
         void refreshSshRunbookQueue().catch(() => undefined);
         await ensureAutomationRecovery();
+        if (disposed) return;
         const due = await claimDueAutomations();
         for (const item of due) {
           if (disposed) break;

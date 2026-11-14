@@ -2,6 +2,7 @@ import { t } from "../../../shared/i18n";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
 import { hasPendingApproval, type Block, type HarnessId } from "./session";
 import { executionUserIndex } from "./executionTurn";
+import { delegatedChildIdOf } from "./delegatedBlockId";
 import {
   lastTurn,
   isHiddenTool,
@@ -61,7 +62,7 @@ export function blockLifecycle(block: Block, busy: boolean): DockAgentStatus {
   if (block.tool?.status?.toLowerCase() === "interrupted") return "interrupted";
   const state = toolCallState(block);
   if (state === "rejected") return "failed";
-  if (state === "pending") return busy ? "running" : "interrupted";
+  if (state === "pending") return busy || delegatedChildIdOf(block.id) ? "running" : "interrupted";
   return "done";
 }
 
@@ -91,6 +92,10 @@ export type DockAgent = {
   /** Epoch ms the run began and ended; absent on older sessions. */
   startedAt?: number;
   endedAt?: number;
+  /** A delegated child's round, shown from the second on. */
+  round?: number;
+  /** The transcript already shows this child as a card, so the dock keeps it to a count. */
+  inline?: boolean;
 };
 
 export type ActivityDock = {
@@ -288,7 +293,7 @@ export function dockStateLabel(dock: ActivityDock): string {
         : agents;
     }
     case "background":
-      return t("Finished · {p0} running", {
+      return t("{p0} running", {
         p0:
           dock.backgroundAgents === dock.backgroundCount
             ? plural(dock.backgroundCount, "background agent")

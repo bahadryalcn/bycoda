@@ -86,6 +86,8 @@ export function TaskList({
           const model = task.harness ? resolveModel(task.harness, task.model) : null;
           return (
             <ActionHost
+              variant="row"
+              padding={{ inline: "md", block: "md" }}
               key={bulkTaskKey(task)}
               className="task-management-row"
               selected={
@@ -107,6 +109,7 @@ export function TaskList({
               ) : null}
               <div className="task-management-identity">
                 <Button
+                  truncate
                   variant="link"
                   layout="text"
                   align="start"
@@ -203,16 +206,13 @@ export function TaskList({
               >
                 {updatedAt ? <Timestamp value={updatedAt} /> : null}
               </Text>
-              <OverflowTooltip label={status.label}>
-                <Badge
-                  truncate
-                  tone={status.tone}
-                  data-task-status={status.kind}
-                  className="task-list-status"
-                >
-                  {status.label}
-                </Badge>
-              </OverflowTooltip>
+              <div className="task-list-status">
+                <OverflowTooltip label={status.label}>
+                  <Badge truncate tone={status.tone} data-task-status={status.kind}>
+                    {status.label}
+                  </Badge>
+                </OverflowTooltip>
+              </div>
             </ActionHost>
           );
         }}

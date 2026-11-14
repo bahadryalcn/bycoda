@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { type HostSessionSummary } from "../../src/features/connections/model/protocol";
 import { snapshotWeight } from "../../src/features/connections/model/snapshotWeight";
+import { crewSessionRuns } from "../crews/crew-managed-session";
 import { branchCache } from "../git/git-actions";
 import { withSessionWaits } from "../sessions/session-waits";
 import type { ServerBindings } from "./bindings";
@@ -205,11 +206,16 @@ export async function createSessionListRuntime(
     const branches = new Map(
       await Promise.all(paths.map(async (cwd) => [cwd, await branchCache.get(cwd)] as const)),
     );
+    // Read with the list, so a new crew assignment shows on the next rebuild (a session
+    // change or the PROJECT_LIST_SAFETY_MS refresh), like branch names.
+    const crews = await crewSessionRuns(dependencies.engine.store, projectId);
     const decorated = summaries.map((session) => {
+      const crewRunId = crews.get(session.id);
       const decorationKey = JSON.stringify([
         project.name,
         project.cwd,
         branches.get(session.cwd ?? project.cwd),
+        crewRunId,
       ]);
       const cached = decoratedSummaries.get(session);
       if (cached?.key === decorationKey) return cached.value;
@@ -222,6 +228,7 @@ export async function createSessionListRuntime(
           session.cwd && !dependencies.desktop.samePath(session.cwd, project.cwd)
             ? session.cwd
             : undefined,
+        ...(crewRunId ? { crewRunId } : {}),
       };
       decoratedSummaries.set(session, { key: decorationKey, value });
       return value;
@@ -237,6 +244,8 @@ export async function createSessionListRuntime(
         .update(etagPrefix)
         .update("\0")
         .update(branchKey)
+        .update("\0")
+        .update(JSON.stringify([...crews]))
         .digest("base64url"),
       bytes: snapshotWeight(list),
       paths,

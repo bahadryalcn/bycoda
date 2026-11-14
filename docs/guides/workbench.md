@@ -1,5 +1,12 @@
 # Workbench navigation
 
+The workspace footer uses one compact spacing rhythm for conversation tools,
+terminal, navigation, sound, view refresh, fullscreen and notifications.
+Click a provider's quota summary to inspect its accounts. Refresh usage in that
+panel reloads the displayed provider and account; Refresh current view remains
+in the workspace controls. Browsing quota accounts does not change a conversation's
+selected account.
+
 Tools navigation omits the standalone Terminal tab and picker option, including
 the combined tools window. Open project terminals from the workspace terminal actions.
 Conversation tools hides the session sidebar while open. Returning to conversations
@@ -310,6 +317,12 @@ own project, even while another project is open. Remote lifecycle actions remain
 in the owning project view. Deleting several remote conversations at once
 sends them together; the result appears on both computers.
 
+In **Settings > Archive**, project archive and restore keep the source entry until
+the destination is saved. Storage errors leave the project reachable for retry;
+failed deletion also retains an archived target. Restore and Delete recheck the
+stored target and group lock immediately before acting. While a conversation is
+being restored, this workspace blocks another archive, restore or delete for it.
+
 The sessions filter menu can show only conversations managed by your named
 assistant. It uses the Host's management record for local and remote projects and
 combines with provider, time, archive and status filters. Clear filters restores the full list.
@@ -424,6 +437,11 @@ inside the app, including updates from other conversations. Returning to bycoda
 before a queued banner is sent cancels that banner; it is not replayed when you
 leave. Sound preferences and in-app attention indicators remain independent.
 
+Queued conversation banners recheck desktop alerts, event choices and project mute before
+delivery. Turning those off cancels affected queued banners; resuming does not replay
+them. Locking a project before delivery removes its project and conversation text,
+including when several banners are combined.
+
 Use **Sounds** in the bottom-right workspace controls to toggle application sounds,
 including notification cues. The icon shows when sounds are muted. This shares
 the saved **Settings > Notifications > Sounds** preference; desktop banners and
@@ -435,6 +453,8 @@ In **Settings > Notifications**, delivery time names the first setting to enable
 the saved time and event choices. If project notification preferences cannot be
 read, category, mute and resume changes pause until the read succeeds. An open
 custom mute form keeps its date and time draft through that pause.
+Changing the selected projects closes an open mute menu or custom date form, so a
+date chosen for one selection cannot mute a different selection.
 
 In **Settings > Keybindings**, click a binding to record keys. Tab and Shift+Tab
 cancel capture and move focus in their usual direction. Escape cancels capture;
@@ -442,6 +462,11 @@ switching away from the window also cancels it. Conflicts keep the previous
 binding. Reset restores the default; Delete or Backspace alone disables a binding.
 Save and conflict feedback appears beside the affected row, with the recorder
 and Reset available for recovery once saving finishes.
+
+Text-composition and repeated key events do not record shortcuts; composition also
+does not run app commands. Shortcut conflicts ignore modifier order. If saved
+bindings cannot be read, saving stops without replacing them. Clearing overrides
+in another window refreshes shortcut labels and native shortcut synchronization.
 
 The project menu groups remote machine reconnection and editing under Machine.
 Recovery lists retain their open and clear actions, including local pending and

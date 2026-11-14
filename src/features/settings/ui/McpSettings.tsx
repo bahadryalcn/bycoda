@@ -34,6 +34,8 @@ import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import styles from "./McpSettings.module.css";
 import { ExternalMcpAccess } from "./ExternalMcpAccess";
+import { McpLoadingMode } from "./McpLoadingMode";
+import { McpOAuthSignIn } from "./McpOAuthSignIn";
 import { Modal } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
 import { Globe, Plus, RefreshCw, ListFilter, MoreHorizontal } from "../../../shared/ui/icons";
@@ -171,6 +173,8 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
         globalOnly={globalOnly}
         projectPicker={projectPicker}
       />
+      <McpLoadingMode cwd={project} />
+      <McpOAuthSignIn cwd={project} />
       <ExternalMcpAccess cwd={project} />
     </div>
   );

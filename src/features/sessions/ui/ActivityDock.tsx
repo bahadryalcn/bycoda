@@ -1,6 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { LiveText } from "../../../shared/ui/LiveText";
+import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -241,7 +242,9 @@ function DockBody({
     setExpandedState(next);
   };
   const lockList = useLockOverscroll<HTMLDivElement>();
-  const hasAgents = dock.agents.length > 0;
+  // Children the transcript already shows as cards stay in the count, not in the list.
+  const listed = dock.agents.filter((agent) => !agent.inline);
+  const hasAgents = listed.length > 0;
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;
   const counts = useDockCountLabel(dock);
@@ -341,6 +344,10 @@ function DockBody({
                 />
               </Button>
             </>
+          ) : dock.agents.length > 0 && counts ? (
+            <Text as="span" size="inherit" tone="secondary" className="shrink-0 tabular-nums">
+              {counts}
+            </Text>
           ) : null}
         </div>
       </Text>
@@ -352,7 +359,7 @@ function DockBody({
         >
           {/* Running rows lead, so their Stop buttons are not buried under
               finished ones. The sort is stable: transcript order otherwise. */}
-          {[...dock.agents]
+          {[...listed]
             .sort((a, b) => Number(b.status === "running") - Number(a.status === "running"))
             .map((agent) => (
               <DockAgentRow
@@ -382,13 +389,10 @@ function DockClock({ startedAt }: { startedAt?: number }) {
 
 function DockMark({ state }: { state: ActivityDockModel["state"] }) {
   const t = useT();
-  if (state === "done" || state === "background") {
+  if (state === "background") return <WorkingIndicator size="xs" />;
+  if (state === "done") {
     return (
-      <Check
-        className={`icon-sm shrink-0 ${state === "done" ? "activity-dock-check" : ""}`}
-        tone="success"
-        strokeWidth={2}
-      />
+      <Check className="icon-sm shrink-0 activity-dock-check" tone="success" strokeWidth={2} />
     );
   }
   if (state === "needs-input") {
@@ -470,6 +474,11 @@ function DockAgentRow({
               <Text size="inherit" tone="muted" weight="regular" className="ml-1.5">
                 @{agent.crewMember.handle}
               </Text>
+            ) : null}
+            {agent.round && agent.round > 1 ? (
+              <Badge size="xs" appearance="subtle" tone="neutral" className="ml-1.5">
+                {t("Round {p0}", { p0: agent.round })}
+              </Badge>
             ) : null}
           </ClampText>
           {agent.kind === "agent" ? (

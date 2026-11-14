@@ -120,6 +120,7 @@ import {
   type ClaudeControlRequest,
 } from "./claudeProtocol";
 import { claudeNativeLaunch } from "./claudeNativeLaunch";
+import { bycodaMcpOnly, leanContext } from "../../core/nativeToolLimits";
 import { compactionPhaseFromSystem } from "./claudeCompaction";
 import {
   COMPACTING_TEXT,
@@ -986,6 +987,12 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       input.cwd,
       { provider: "claude", id: input.providerAccountId ?? "default" },
       "claude",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      bycodaMcpOnly(input.modelSettings),
     );
     if (live.exitError) throw live.exitError;
     const writer = await captureByteTurnWriter(
@@ -2476,7 +2483,7 @@ function settingsKeyFor(input: HarnessSessionInput): string {
     runtimeMode: input.runtimeMode,
     hooks: loadClaudeHooks(),
     // Folders are fixed at launch, so a change needs a fresh process.
-  })}:${additionalDirsFor(input.sessionId).join("|")}:${JSON.stringify(input.skillPolicy)}${claudeNativeLaunch(input).nativeReadOnly ? ":ro" : ""}`;
+  })}:${additionalDirsFor(input.sessionId).join("|")}:${JSON.stringify(input.skillPolicy)}${claudeNativeLaunch(input).nativeReadOnly ? ":ro" : ""}${leanContext(input.modelSettings) ? ":lean" : ""}${bycodaMcpOnly(input.modelSettings) ? ":mcp" : ""}`;
 }
 
 function launchOptions(
@@ -2493,6 +2500,7 @@ function launchOptions(
   sessionId?: string;
   settings?: ClaudeCliSettings;
   additionalDirs: string[];
+  leanContext?: boolean;
 } & ReturnType<typeof claudeNativeLaunch> {
   const native = nativeModelId(input.model);
   const effortRaw = input.modelSettings?.effort;
@@ -2522,6 +2530,7 @@ function launchOptions(
     sessionId: resume ? undefined : sessionId,
     settings: Object.keys(settings).length > 0 ? settings : undefined,
     additionalDirs: additionalDirsFor(input.sessionId),
+    ...(leanContext(input.modelSettings) ? { leanContext: true } : {}),
   };
 }
 

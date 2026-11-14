@@ -79,48 +79,45 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
   const todayJobs = view === "Today" ? allJobs.slice(0, TODAY_JOB_LIMIT) : allJobs;
   const filtered = Boolean(query || filter || jobProjectFilter || jobDateFilter !== "all");
 
+  const brief = (
+    <Disclosure summary={t("Use a written brief")}>
+      <PromptField
+        label={t("Give {p0} a job", { p0: identity.name })}
+        frameClassName={styles.composer}
+        value={jobDraftVisible ? jobText : ""}
+        disabled={!jobDraftVisible}
+        minRows={1}
+        maxRows={4}
+        maxLength={16000}
+        placeholder={t("Give {p0} a job", { p0: identity.name })}
+        onChange={(event) => setJobText(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" || event.shiftKey || isImeComposition(event.nativeEvent))
+            return;
+          event.preventDefault();
+          start();
+        }}
+        toolbarTrailing={
+          <Button
+            startIcon={
+              confirmJobs ? <CheckList className="icon-sm" /> : <Play className="icon-sm" />
+            }
+            variant="primary"
+            disabled={!canStart}
+            loading={pending?.key === "jobs.create"}
+            onClick={start}
+          >
+            {t(confirmJobs ? "Review jobs" : "Start")}
+          </Button>
+        }
+      />
+    </Disclosure>
+  );
+
   return (
     <section className={styles.section}>
       {view === "Jobs" && <JobDiscussion />}
-      {view === "Today" && (
-        <div className={styles.discussionActions}>
-          <Button variant="primary" onClick={() => setView("Jobs")}>
-            {t("Discuss a job")}
-          </Button>
-        </div>
-      )}
-      <Disclosure summary={t("Use a written brief")}>
-        <PromptField
-          label={t("Give {p0} a job", { p0: identity.name })}
-          frameClassName={styles.composer}
-          value={jobDraftVisible ? jobText : ""}
-          disabled={!jobDraftVisible}
-          minRows={1}
-          maxRows={4}
-          maxLength={16000}
-          placeholder={t("Give {p0} a job", { p0: identity.name })}
-          onChange={(event) => setJobText(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" || event.shiftKey || isImeComposition(event.nativeEvent))
-              return;
-            event.preventDefault();
-            start();
-          }}
-          toolbarTrailing={
-            <Button
-              startIcon={
-                confirmJobs ? <CheckList className="icon-sm" /> : <Play className="icon-sm" />
-              }
-              variant="primary"
-              disabled={!canStart}
-              loading={pending?.key === "jobs.create"}
-              onClick={start}
-            >
-              {t(confirmJobs ? "Review jobs" : "Start")}
-            </Button>
-          }
-        />
-      </Disclosure>
+      {view === "Jobs" && brief}
       {!jobDraftVisible && (
         <Text as="p" size="caption" tone="secondary" leading="inherit" className={styles.notice}>
           {t("The selected project is no longer visible.")}
@@ -133,9 +130,29 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
       )}
       {!jobReview && errorFor("jobs.create")}
       <div className={styles.listHead}>
-        {(view === "Jobs" || allJobs.length > 0) && (
-          <SectionLabel as="h2" count={view === "Jobs" ? allJobs.length : undefined}>
-            {t(view === "Today" ? "Active jobs" : "Jobs")}
+        {view === "Today" && (
+          <SectionLabel
+            as="h2"
+            actions={
+              <>
+                {active.length > TODAY_JOB_LIMIT && (
+                  <Button
+                    variant="link"
+                    startIcon={<ListBullet className="icon-sm" />}
+                    onClick={() => setView("Jobs")}
+                  >
+                    {t("View all")}
+                  </Button>
+                )}
+                {allJobs.length > 0 && (
+                  <Button size="sm" variant="primary" onClick={() => setView("Jobs")}>
+                    {t("Discuss a job")}
+                  </Button>
+                )}
+              </>
+            }
+          >
+            {t("Active jobs")}
           </SectionLabel>
         )}
         {visibleSelectedCount > 0 && (
@@ -160,16 +177,8 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
             </Button>
           </Text>
         )}
-        {view === "Today" && active.length > TODAY_JOB_LIMIT && (
-          <Button
-            variant="link"
-            startIcon={<ListBullet className="icon-sm" />}
-            onClick={() => setView("Jobs")}
-          >
-            {t("View all")}
-          </Button>
-        )}
       </div>
+      {view === "Today" && brief}
       {todayJobs.length ? (
         <div className={styles.list} data-selection={visibleSelectedCount > 0 || undefined}>
           {todayJobs.map((job) => (
@@ -201,13 +210,15 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
             />
           ))}
         </div>
-      ) : view === "Jobs" ? (
+      ) : (
         <EmptyState
-          context="list"
+          context="panel"
           kind={filtered ? "filtered" : "empty"}
           title={t(filtered ? "No matching jobs" : "No jobs yet")}
           description={t(
-            filtered ? "Try a different search or clear the filters." : "Discuss a job",
+            filtered
+              ? "Try a different search or clear the filters."
+              : "Describe the outcome you want.",
           )}
           resetLabel={t("Reset")}
           onReset={
@@ -220,8 +231,15 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                 }
               : undefined
           }
+          action={
+            view === "Today" && !filtered ? (
+              <Button variant="primary" onClick={() => setView("Jobs")}>
+                {t("Discuss a job")}
+              </Button>
+            ) : undefined
+          }
         />
-      ) : null}
+      )}
       {errorFor("bulk")}
     </section>
   );

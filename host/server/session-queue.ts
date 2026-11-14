@@ -152,7 +152,10 @@ export async function createSessionQueueRuntime(
           // Agent input does not authorize migrating a Native conversation.
           // Its existing desktop queue consumer retains delivery ownership.
           const head = (await dependencies.sessionQueues.get(id)).messages[0];
-          if (head?.id.startsWith("agent_message_") && !(await dependencies.inHost(id)))
+          if (
+            (head?.id.startsWith("agent_message_") || head?.id.startsWith("session_control_")) &&
+            !(await dependencies.inHost(id))
+          )
             return false;
           return (
             !(await dependencies.engine.busyReason(id)) &&
@@ -170,12 +173,18 @@ export async function createSessionQueueRuntime(
       },
       send: async (id, row) => {
         await dependencies.adopt(id);
-        for (const command of queueRowCommands(
+        const commands = queueRowCommands(
           id,
           row,
           (await dependencies.engine.store.session(id)).session,
-        ))
-          await dependencies.engine.command(command);
+        );
+        const sendAll = async () => {
+          for (const command of commands) await dependencies.engine.command(command);
+        };
+        // A system-authored row (delegation notice) is stamped on the transcript block,
+        // so it never renders or counts as owner input.
+        if (row.author) await dependencies.engine.withMessageAuthor(row.author, sendAll);
+        else await sendAll();
         await dependencies.touchSessionWorkspace(id);
       },
       // Writer ACKs arrive through another RPC. Await them before taking the

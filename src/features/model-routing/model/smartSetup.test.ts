@@ -9,6 +9,10 @@ import type { ModelSource } from "../../sessions/public/modelSource";
 import { orderDraft, prepareOrderSave } from "./modelRoutingDraft";
 import {
   applySmartSetup,
+  baselineOrder,
+  enforceRoleNeeds,
+  ROLE_NEED,
+  rulePlan,
   setupCandidates,
   sortOrderDraft,
   type SetupCandidate,
@@ -57,6 +61,9 @@ const candidate = (
   profile: { intelligence, cost, estimated: false },
 });
 
+const setup = (base: ReturnType<typeof draft>, list: SetupCandidate[], poolNames = names) =>
+  applySmartSetup(base, list, rulePlan(list, poolNames));
+
 function source(): ModelSource {
   return {
     modelsFor: (harness) => ["enabled", "disabled"].map((id) => ({ id, harness, name: id })),
@@ -95,7 +102,7 @@ it("infers the kind from the label and uses explicit Host catalogs only", () => 
   expect(setupCandidates({ ...source(), available: () => false })).toEqual([]);
 });
 
-it("adds missing models, sorts smartest-first and creates tier pools", () => {
+it("adds missing models, orders capable models by benefit per cost and creates tier pools", () => {
   const candidates = [
     candidate("mini", 2, 1),
     candidate("opus", 4, 3),
@@ -104,21 +111,68 @@ it("adds missing models, sorts smartest-first and creates tier pools", () => {
     candidate("cheap-opus", 4, 2),
   ];
   const original = draft();
-  const next = applySmartSetup(original, candidates, names);
+  const next = setup(original, candidates);
   expect(original.routing.entries).toEqual([]);
-  expect(next.routing.entries).toHaveLength(5);
+  expect(next.routing.entries.map((e) => e.model)).toEqual([
+    "cheap-opus",
+    "opus",
+    "opus",
+    "mid",
+    "mini",
+  ]);
   expect(next.routing.entries.every((e) => !e.modelSettings.crossAdvisor)).toBe(true);
   expect(next.routing.pools.map((p) => [p.name, p.entryIds.length])).toEqual([
     ["Smartest", 3],
-    ["Balanced", 1],
+    ["Balanced", 2],
     ["Fast", 1],
   ]);
   expect(prepareOrderSave(next).routing.entries).toHaveLength(5);
 });
 
-it("keeps existing ids, limits, unknown entries and pools; is idempotent", () => {
-  const first = applySmartSetup(draft(), [candidate("opus", 4, 3)], names);
+it("ranks researched catalog models by benefit per cost, not by intelligence alone", () => {
+  const real = (model: string) => candidate(model, 3, 2);
+  const list = [
+    "claude:fable-5-2",
+    "codex:gpt-6-astra",
+    "codex:gpt-6.1-sol",
+    "codex:gpt-6-luna",
+  ].map(real);
+  list[3]!.profile = { intelligence: 2, cost: 1, estimated: false };
+  expect(baselineOrder(list).map((i) => list[i]!.target.model)).toEqual([
+    "codex:gpt-6.1-sol",
+    "claude:fable-5-2",
+    "codex:gpt-6-astra",
+    "codex:gpt-6-luna",
+  ]);
+});
+
+it("binds every role to a tier pool and replaces earlier fixed bindings", () => {
+  const base = draft();
+  base.routing.roles = {
+    "task.worker": { kind: "fixed", target: { harness: "codex", model: "x", modelSettings: {} } },
+  };
+  const next = setup(base, [
+    candidate("opus", 4, 3),
+    candidate("mid", 3, 2),
+    candidate("mini", 2, 1),
+  ]);
+  const poolName = (role: keyof typeof next.routing.roles) => {
+    const choice = next.routing.roles[role];
+    return choice?.kind === "pool"
+      ? next.routing.pools.find((p) => p.id === choice.poolId)?.name
+      : choice?.kind;
+  };
+  expect(poolName("task.worker")).toBe("Balanced");
+  expect(poolName("task.reviewer")).toBe("Smartest");
+  expect(poolName("text.title")).toBe("Fast");
+  expect(poolName("voice.reply")).toBe("Fast");
+  expect(() => prepareOrderSave(next)).not.toThrow();
+});
+
+it("keeps existing ids, limits and unknown entries, refills same-named pools; is idempotent", () => {
+  const first = setup(draft(), [candidate("opus", 4, 3)]);
   const id = first.routing.entries[0].id;
+  const poolId = first.routing.pools[0].id;
   first.percentages[id] = "60";
   first.routing.entries[0].unknownLimit = "skip";
   first.routing.entries.push({
@@ -130,15 +184,42 @@ it("keeps existing ids, limits, unknown entries and pools; is idempotent", () =>
   });
   first.percentages.legacy = "0";
   first.routing.pools[0].name = "smartest";
+  first.routing.pools.push({ id: "mine", name: "Mine", entryIds: ["legacy"] });
   const candidates = [candidate("opus", 4, 3), candidate("mini", 2, 1)];
-  const second = applySmartSetup(first, candidates, names);
+  const second = setup(first, candidates);
   expect(second.routing.entries[0].id).toBe(id);
   expect(second.routing.entries.map((e) => e.model)).toEqual(["opus", "mini", "old"]);
   expect(second.routing.entries[0].unknownLimit).toBe("skip");
   expect(second.percentages[id]).toBe("60");
-  expect(second.routing.pools.map((p) => p.name)).toEqual(["smartest", "Fast"]);
-  expect(second.routing.pools[0].entryIds).toEqual([id]);
-  expect(applySmartSetup(second, candidates, names)).toEqual(second);
+  expect(second.routing.pools.map((p) => p.name)).toEqual(["smartest", "Mine", "Fast"]);
+  expect(second.routing.pools[0].id).toBe(poolId);
+  expect(second.routing.pools[1].entryIds).toEqual(["legacy"]);
+  expect(setup(second, candidates)).toEqual(second);
+});
+
+it("applies planned pool includes and drops ones that would loop", () => {
+  const list = [candidate("a", 4, 3), candidate("b", 2, 1)];
+  const next = applySmartSetup(draft(), list, {
+    order: [1, 0],
+    pools: [
+      { name: "Top", members: [0], includes: ["Low"] },
+      { name: "Low", members: [1], includes: [] },
+    ],
+    roles: { "task.worker": { pool: "Top" }, "text.git": "order" },
+  });
+  const low = next.routing.pools.find((p) => p.name === "Low")!;
+  expect(next.routing.entries.map((e) => e.model)).toEqual(["b", "a"]);
+  expect(next.routing.pools.find((p) => p.name === "Top")!.poolIds).toEqual([low.id]);
+  expect(next.routing.roles["text.git"]).toEqual({ kind: "order" });
+  const looping = applySmartSetup(draft(), list, {
+    order: [],
+    pools: [
+      { name: "Top", members: [0], includes: ["Low"] },
+      { name: "Low", members: [1], includes: ["Top"] },
+    ],
+    roles: {},
+  });
+  expect(looping.routing.pools.every((p) => !p.poolIds)).toBe(true);
 });
 
 it("creates Work and Personal pools only when an account has a kind, sharing unlabelled", () => {
@@ -148,7 +229,7 @@ it("creates Work and Personal pools only when an account has a kind, sharing unl
     candidate("c", 4, 3, { id: "s", label: "Spare" }),
     candidate("d", 4, 3),
   ];
-  const next = applySmartSetup(draft(), candidates, names);
+  const next = setup(draft(), candidates);
   const model = (id: string) => next.routing.entries.find((e) => e.id === id)!.model;
   const pool = (name: string) =>
     next.routing.pools
@@ -157,7 +238,7 @@ it("creates Work and Personal pools only when an account has a kind, sharing unl
       .sort();
   expect(pool("Work")).toEqual(["a", "c", "d"]);
   expect(pool("Personal")).toEqual(["b", "c", "d"]);
-  const plain = applySmartSetup(draft(), [candidate("d", 4, 3)], names);
+  const plain = setup(draft(), [candidate("d", 4, 3)]);
   expect(plain.routing.pools.map((p) => p.name)).toEqual(["Smartest"]);
 });
 
@@ -170,18 +251,18 @@ it("respects entry and pool limits", () => {
     modelSettings: {},
     unknownLimit: "use" as const,
   }));
-  expect(() => applySmartSetup(full, [candidate("x", 3, 2)], names)).toThrow("Not enough room");
+  expect(() => setup(full, [candidate("x", 3, 2)])).toThrow("Not enough room");
   const pools = draft();
   pools.routing.pools = Array.from({ length: MODEL_ROUTING_MAX_POOLS }, (_, i) => ({
     id: `p${i}`,
     name: `P${i}`,
     entryIds: ["e"],
   }));
-  expect(() => applySmartSetup(pools, [candidate("x", 3, 2)], names)).toThrow("catalog pools");
+  expect(() => setup(pools, [candidate("x", 3, 2)])).toThrow("catalog pools");
 });
 
 it("fits long Unicode pool names into the wire limit", () => {
-  const next = applySmartSetup(draft(), [candidate("x", 5, 4)], {
+  const next = setup(draft(), [candidate("x", 5, 4)], {
     ...names,
     smartest: "\u{1F9D1}\u{1F3FD}‍\u{1F4BB}".repeat(48),
   });
@@ -190,11 +271,10 @@ it("fits long Unicode pool names into the wire limit", () => {
 });
 
 it("sorts the main order by intelligence or cost, stably", () => {
-  const base = applySmartSetup(
-    draft(),
-    [candidate("claude-haiku-4-5", 2, 1), candidate("claude-opus-4-6", 4, 3)],
-    names,
-  );
+  const base = setup(draft(), [
+    candidate("claude-haiku-4-5", 2, 1),
+    candidate("claude-opus-4-6", 4, 3),
+  ]);
   const reversed = {
     ...base,
     routing: { ...base.routing, entries: [...base.routing.entries].reverse() },
@@ -208,4 +288,42 @@ it("sorts the main order by intelligence or cost, stably", () => {
     "claude-opus-4-6",
   ]);
   expect(sortOrderDraft(base, "cost").routing.pools).toEqual(base.routing.pools);
+});
+
+it("moves each job to a pool that suits it when a plan binds it wrongly", () => {
+  const list = [candidate("frontier", 5, 4), candidate("worker", 4, 2), candidate("cheap", 2, 1)];
+  const plan = enforceRoleNeeds(list, {
+    order: [0, 1, 2],
+    pools: [
+      { name: "Top", members: [0], includes: [] },
+      { name: "Value", members: [1], includes: [] },
+      { name: "Quick", members: [2], includes: [] },
+      { name: "Wrapper", members: [], includes: ["Quick"] },
+    ],
+    roles: {
+      "text.title": { pool: "Top" },
+      "text.git": "order",
+      "voice.reply": { pool: "Wrapper" },
+      "task.reviewer": { pool: "Quick" },
+      "task.worker": { pool: "Top" },
+      "goal.planner": { pool: "Top" },
+    },
+  });
+  expect(plan.roles).toEqual({
+    "text.title": { pool: "Quick" },
+    "text.git": { pool: "Quick" },
+    "voice.reply": { pool: "Wrapper" },
+    "task.reviewer": { pool: "Top" },
+    "task.worker": { pool: "Value" },
+    "goal.planner": { pool: "Top" },
+  });
+});
+
+it("binds light jobs to the fast pool and heavy jobs to the smartest in the rule plan", () => {
+  const list = [candidate("frontier", 5, 4), candidate("worker", 4, 2), candidate("cheap", 2, 1)];
+  const { roles } = rulePlan(list, names);
+  for (const [role, need] of Object.entries(ROLE_NEED))
+    expect(roles[role as keyof typeof roles]).toEqual({
+      pool: need === "light" ? "Fast" : need === "heavy" ? "Smartest" : "Balanced",
+    });
 });

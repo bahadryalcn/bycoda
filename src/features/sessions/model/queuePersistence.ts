@@ -1,6 +1,7 @@
 import { removeAttachmentFromText } from "./attachmentTokens";
 import { REMOTE_PROVIDERS as HARNESSES } from "../../connections/public/protocol";
 import type { Attachment, AttachmentKind, ModelTarget, QueuedMessage, TurnIntent } from "./session";
+import { sessionMessageAuthor } from "./sessionProvenance";
 import { parseBrowserAnnotation } from "../../../shared/lib/browserAnnotation";
 
 /**
@@ -60,6 +61,7 @@ export function persistableQueue(queue: QueuedMessage[] | undefined): QueuedMess
     ...(message.noteCard ? { noteCard: message.noteCard } : {}),
     ...(message.handoffCard ? { handoffCard: message.handoffCard } : {}),
     ...(message.intent ? { intent: message.intent } : {}),
+    ...(message.author ? { author: message.author } : {}),
     ...(message.modelTarget
       ? {
           modelTarget: {
@@ -136,6 +138,7 @@ export function restoreQueuedMessages(raw: unknown): QueuedMessage[] {
         Object.values(target.modelSettings).some((setting) => typeof setting !== "string"))
     )
       continue;
+    const author = sessionMessageAuthor(value.author);
     const attachments = (Array.isArray(value.attachments) ? value.attachments : [])
       .map(restoreAttachment)
       .filter((file): file is Attachment => file != null);
@@ -167,6 +170,7 @@ export function restoreQueuedMessages(raw: unknown): QueuedMessage[] {
         ? { handoffCard: value.handoffCard }
         : {}),
       ...(value.intent && INTENTS.includes(value.intent) ? { intent: value.intent } : {}),
+      ...(author ? { author } : {}),
     });
   }
   return restored;

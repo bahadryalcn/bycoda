@@ -77,6 +77,7 @@ export const ComposerHighlight = memo(function ComposerHighlight({
                     key={index}
                     prefix={part.text[0]}
                     icon={<Sparkles />}
+                    label={part.text.slice(1)}
                     className="text-skill"
                     data-composer-skill-token=""
                   >

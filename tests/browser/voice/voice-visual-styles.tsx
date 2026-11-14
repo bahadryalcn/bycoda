@@ -165,6 +165,39 @@ createRoot(document.getElementById("root")!).render(
             startedAt: Date.now(),
             state: "running",
           },
+          ...(params.has("activity-states")
+            ? (
+                [
+                  {
+                    id: "unknown",
+                    name: "desktop.windows.list",
+                    state: "uncertain",
+                    elapsedMs: 1000,
+                  },
+                  { id: "done", name: "app_tools_list", state: "returned", elapsedMs: 0 },
+                  { id: "choices", name: "present_choices", state: "returned", elapsedMs: 81000 },
+                  {
+                    id: "waiting",
+                    name: "workspace.sessions.update",
+                    state: "waiting-owner",
+                    elapsedMs: 2000,
+                  },
+                  { id: "failed", name: "desktop.windows.focus", state: "failed", elapsedMs: 3000 },
+                  {
+                    id: "long",
+                    name: "workspace.sessions.anextremelylongunbrokentoolidentifierthatmustwrapwithoutoverlappingduration",
+                    state: "returned",
+                    elapsedMs: 3000,
+                  },
+                ] as const
+              ).map((entry) => ({
+                ...entry,
+                target: "project",
+                projectPath: "/fixture",
+                startedAt: 0,
+                requestId: `request-${entry.id}`,
+              }))
+            : []),
         ]}
         onStopWaiting={() => {}}
       />

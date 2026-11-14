@@ -24,6 +24,16 @@ let running = false;
 let drainCompletion: Promise<void> = Promise.resolve();
 let mutationTail: Promise<void> = Promise.resolve();
 let queuedMutations = 0;
+/** Waits between automatic retries of a Host busy failure: 1s to 16s. */
+const TRANSIENT_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
+/** Host capacity pushback only; a deadline or an unknown failure stays held for an explicit retry. */
+const HOST_BUSY =
+  /RPC_WS_OVERLOAD|Host read capacity is busy|Host pending (read request|control queue) limit reached/;
+/** Whether a held failure is Host capacity pushback rather than a privacy defect. */
+export function isRoomPrivacyHostBusy(error: unknown): boolean {
+  return HOST_BUSY.test(error instanceof Error ? error.message : String(error));
+}
+let wakeBackoff: (() => void) | null = null;
 let ready = false;
 let committedProjectionSeen: number | null = null;
 let uncertainBegin: string | null = null;
@@ -205,11 +215,13 @@ export function activateRoomPrivacyProjection(): void {
 }
 export function deactivateRoomPrivacyProjection(): void {
   ready = false;
+  wakeBackoff?.();
   if (queuedMutations > 0 || running || dirty)
     publish({ pending: false, error: "Room privacy window is unavailable." });
 }
 export function failRoomPrivacyProjection(error: unknown): void {
   ready = false;
+  wakeBackoff?.();
   publish({ pending: false, error: error instanceof Error ? error.message : String(error) });
 }
 export function retryRoomPrivacyProjection(): void {
@@ -218,7 +230,9 @@ export function retryRoomPrivacyProjection(): void {
   if (!isTauri() || !ready) return;
   publish({ pending: true, error: null });
   dirty = true;
-  if (!running && queuedMutations === 0) startDrain();
+  // A drain waiting out a transient failure retries now, under the same operation.
+  if (wakeBackoff) wakeBackoff();
+  else if (!running && queuedMutations === 0) startDrain();
 }
 /** Plain retry settles a held failure; closed-state recovery needs the explicit rebuild flow,
  * and an inactive window would leave the retry waiting. */
@@ -313,39 +327,71 @@ export async function rebuildClosedRoomPrivacyProjection(): Promise<void> {
     throw error;
   }
 }
+function backoff(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      wakeBackoff = null;
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    wakeBackoff = done;
+  });
+}
+
+/** Qualify the projection. A transient Host failure (busy, deadline) is retried with backoff
+ * under the same operation identity while the status stays pending; anything else, or an
+ * exhausted budget, is held as an error until explicit retry. */
 async function drain(): Promise<void> {
   running = true;
   try {
-    while (dirty) {
-      dirty = false;
-      if (!operation) {
-        if (uncertainBegin)
-          await invoke("control_privacy_projection_begin", { operationId: uncertainBegin });
-        const current = await invoke<Projection | null>("control_privacy_projection_read");
-        const { readRoomPrivacyScope } = await import("./roomPrivacyScope");
-        const operationId = uncertainBegin ?? crypto.randomUUID();
-        operation = {
-          expected: current?.revision ?? null,
-          operationId,
-          snapshot: readRoomPrivacyScope().stableStorageKeys,
-          ...(uncertainBegin ? { leaseId: uncertainBegin } : {}),
-        };
-        uncertainBegin = null;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await drainOnce();
+        if (queuedMutations === 0) publish({ pending: false, error: null });
+        return;
+      } catch (error) {
+        dirty = true;
+        const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
+        if (delay === undefined || !ready || !isRoomPrivacyHostBusy(error)) {
+          publish({
+            pending: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return;
+        }
+        await backoff(delay);
+        if (!ready) {
+          publish({ pending: false, error: "Room privacy window is unavailable." });
+          return;
+        }
       }
-      const committed = await invoke<Projection>(
-        "control_privacy_projection_transition",
-        operation,
-      );
-      if (!Number.isSafeInteger(committed?.revision) || committed.revision < 1)
-        throw new Error("Invalid privacy projection acknowledgement.");
-      committedProjectionSeen = committed.revision;
-      operation = null;
     }
-    if (queuedMutations === 0) publish({ pending: false, error: null });
-  } catch (error) {
-    dirty = true;
-    publish({ pending: false, error: error instanceof Error ? error.message : String(error) });
   } finally {
     running = false;
+  }
+}
+async function drainOnce(): Promise<void> {
+  while (dirty) {
+    dirty = false;
+    if (!operation) {
+      if (uncertainBegin)
+        await invoke("control_privacy_projection_begin", { operationId: uncertainBegin });
+      const current = await invoke<Projection | null>("control_privacy_projection_read");
+      const { readRoomPrivacyScope } = await import("./roomPrivacyScope");
+      const operationId = uncertainBegin ?? crypto.randomUUID();
+      operation = {
+        expected: current?.revision ?? null,
+        operationId,
+        snapshot: readRoomPrivacyScope().stableStorageKeys,
+        ...(uncertainBegin ? { leaseId: uncertainBegin } : {}),
+      };
+      uncertainBegin = null;
+    }
+    const committed = await invoke<Projection>("control_privacy_projection_transition", operation);
+    if (!Number.isSafeInteger(committed?.revision) || committed.revision < 1)
+      throw new Error("Invalid privacy projection acknowledgement.");
+    committedProjectionSeen = committed.revision;
+    operation = null;
   }
 }

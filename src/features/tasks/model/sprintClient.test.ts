@@ -45,8 +45,14 @@ function Harness({
   machines = [local, remote],
   projects = [],
   tasks = [],
-}: { machines?: RemoteMachine[]; projects?: SprintProjectRef[]; tasks?: BoardTask[] } = {}) {
-  const current = useSprintBoard(machines, tasks, projects);
+  onRead,
+}: {
+  machines?: RemoteMachine[];
+  projects?: SprintProjectRef[];
+  tasks?: BoardTask[];
+  onRead?: Parameters<typeof useSprintBoard>[3];
+} = {}) {
+  const current = useSprintBoard(machines, tasks, projects, onRead);
   useEffect(() => {
     board = current;
   });
@@ -71,6 +77,11 @@ afterEach(async () => {
 });
 
 describe("sprint planning authority", () => {
+  it("publishes confirmed coordinator reads for the shared catalog", async () => {
+    const onRead = vi.fn();
+    await act(async () => root!.render(createElement(Harness, { onRead })));
+    expect(onRead).toHaveBeenCalledWith(local, { sprints: [], planning: [], sources: [] });
+  });
   it("replaces a pruned source cursor with a scoped snapshot and marks the gap", async () => {
     const project = { environmentId: "mac", projectId: "b", cwd: "/b", name: "B" };
     mocks.capabilities.mockResolvedValue([HOST_SPRINTS, HOST_TASK_HISTORY]);

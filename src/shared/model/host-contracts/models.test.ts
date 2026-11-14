@@ -46,3 +46,18 @@ it("preserves the60s catalog budget and portable closed model/settings/account s
   ).toBe(false);
   expect(() => parseHostRpcParams("models.list", { progressive: "true" })).toThrow();
 });
+
+it("carries per-provider unavailable access modes and rejects unknown modes", () => {
+  const catalog = {
+    models: {},
+    errors: {},
+    runtimeModeLimits: { antigravity: { supervised: "Headless agy cannot ask." } },
+  };
+  expect(ModelsListResultSchema.parse(catalog)).toEqual(catalog);
+  expect(
+    ModelsListResultSchema.safeParse({
+      ...catalog,
+      runtimeModeLimits: { antigravity: { yolo: "x" } },
+    }).success,
+  ).toBe(false);
+});

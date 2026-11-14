@@ -9,12 +9,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { bridgeQueryEvents } from "../../shared/lib/queryClient";
 import { useDismissPopover } from "../../shared/hooks/useDismissPopover";
 import { useLocale, useT } from "../../shared/i18n";
-import { RefreshCw, Terminal } from "../../shared/ui/icons";
+import { Terminal } from "../../shared/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { Popover } from "../../shared/ui/Popover";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
-import { Spinner } from "../../shared/ui/Spinner";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import {
   consumeClaudeLimitReset,
@@ -155,12 +154,8 @@ export function UsageFooter({
     ? cachedCodex
     : unavailableRateLimits("codex", "This conversation uses a removed account");
 
-  const refresh = useCallback(() => {
-    const targets: [RateLimitProvider, string][] = [];
-    if (wantClaude && claudeAccountAvailable) targets.push(["claude", claudeAccountId]);
-    if (wantCodex && codexAccountAvailable) targets.push(["codex", codexAccountId]);
-    if (wantOpencode) targets.push(["opencode", "default"]);
-    if (wantGrok) targets.push(["grok", "default"]);
+  const refresh = useCallback((provider: RateLimitProvider, accountId = "default") => {
+    const targets: [RateLimitProvider, string][] = [[provider, accountId]];
     // A refresh for another account or provider set must not join this one.
     const key = JSON.stringify(targets);
     if (inflight.current && (inflightKey.current === null || inflightKey.current === key))
@@ -180,16 +175,7 @@ export function UsageFooter({
     inflight.current = run;
     inflightKey.current = key;
     return run;
-  }, [
-    claudeAccountAvailable,
-    claudeAccountId,
-    codexAccountAvailable,
-    codexAccountId,
-    wantClaude,
-    wantCodex,
-    wantOpencode,
-    wantGrok,
-  ]);
+  }, []);
 
   const queryClient = useQueryClient();
   useEffect(
@@ -327,7 +313,7 @@ export function UsageFooter({
       aria-label={ariaLabel}
       {...surfaceAttributes(
         embedded ? {} : { frame: "stroke", edge: "top" },
-        `@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 px-1.5 ${embedded ? "flex-1" : "shrink-0"}`,
+        `@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 ${embedded ? "flex-1" : "shrink-0 px-1.5"}`,
       )}
     >
       <ScrollArea
@@ -353,6 +339,10 @@ export function UsageFooter({
                 onManageAccounts={onManageAccounts ? () => onManageAccounts("claude") : undefined}
                 onConsumeReset={(creditId) => consumeReset("claude", claudeAccountId, creditId)}
                 onReconnect={reconnectClaude}
+                refreshing={refreshing}
+                onRefresh={
+                  claudeAccountAvailable ? (accountId) => refresh("claude", accountId) : undefined
+                }
               />
             ) : null}
             {wantCodex ? (
@@ -369,25 +359,30 @@ export function UsageFooter({
                 onManageAccounts={onManageAccounts ? () => onManageAccounts("codex") : undefined}
                 onConsumeReset={(creditId) => consumeReset("codex", codexAccountId, creditId)}
                 onReconnect={reconnectCodex}
+                refreshing={refreshing}
+                onRefresh={
+                  codexAccountAvailable ? (accountId) => refresh("codex", accountId) : undefined
+                }
               />
             ) : null}
             {showOpencodeChip ? (
-              <UsageProviderChip limits={opencode} now={now} project={project} />
+              <UsageProviderChip
+                limits={opencode}
+                now={now}
+                project={project}
+                refreshing={refreshing}
+                onRefresh={() => refresh("opencode")}
+              />
             ) : null}
-            {showGrokChip ? <UsageProviderChip limits={grok} now={now} project={project} /> : null}
-            <Button
-              iconOnly
-              label={t("Refresh usage")}
-              variant="ghost"
-              motion="none"
-              type="button"
-              size="sm"
-              className="shrink-0"
-              disabled={refreshing}
-              onClick={() => void refresh()}
-            >
-              {refreshing ? <Spinner /> : <RefreshCw className="icon-sm" aria-hidden />}
-            </Button>
+            {showGrokChip ? (
+              <UsageProviderChip
+                limits={grok}
+                now={now}
+                project={project}
+                refreshing={refreshing}
+                onRefresh={() => refresh("grok")}
+              />
+            ) : null}
           </>
         ) : session ? (
           <SessionChip key={session.id ?? session.harness} session={session} />

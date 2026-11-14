@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { activePromptId, barLift, previewLines, promptPreview } from "./promptOutline";
+import {
+  activePromptId,
+  barLift,
+  previewLines,
+  promptBlocks,
+  promptPreview,
+} from "./promptOutline";
 import type { Block } from "./session";
 
 const viewport = { top: 100, bottom: 500 };
@@ -124,4 +130,19 @@ describe("promptPreview", () => {
   it("returns null for an unknown prompt", () => {
     expect(promptPreview([], "missing")).toBeNull();
   });
+});
+
+it("lists the owner's messages, not answers to the agent's questions", () => {
+  const blocks: Block[] = [
+    { id: "u", role: "user", text: "work" },
+    {
+      id: "answer",
+      role: "user",
+      text: "Default?\nDark",
+      continuationOf: "u",
+      questionAnswers: [{ prompt: "Default?", answers: ["Dark"] }],
+    },
+    { id: "steer", role: "user", text: "also add tests", continuationOf: "u" },
+  ];
+  expect(promptBlocks(blocks).map((block) => block.id)).toEqual(["u", "steer"]);
 });

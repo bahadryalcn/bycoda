@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SessionProviderSchema } from "./session-commands";
+import { SessionProviderSchema, SessionRuntimeModeSchema } from "./session-commands";
 
 export const ModelsListParamsSchema = z.strictObject({
   projectId: z.string().optional(),
@@ -46,4 +46,10 @@ export const ModelsListResultSchema = z.strictObject({
   errors: z.record(z.string(), z.string()),
   pending: z.array(SessionProviderSchema).optional(),
   accounts: HostModelAccountsSchema.optional(),
+  runtimeModeLimits: z
+    .partialRecord(
+      SessionProviderSchema,
+      z.partialRecord(SessionRuntimeModeSchema, z.string().max(500)),
+    )
+    .optional(),
 });

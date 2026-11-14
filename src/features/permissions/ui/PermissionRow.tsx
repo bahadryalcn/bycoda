@@ -12,6 +12,7 @@ import {
 import { usePermissionStatus } from "../hooks/usePermissionStatus";
 import { permissionBadge, permissionInfo, permissionReady } from "../model/permissions";
 import { PermissionSetupSheet } from "./PermissionSetupSheet";
+import styles from "./PermissionRow.module.css";
 
 /**
  * One OS permission. A ready permission shows only its badge. "Allow" shows
@@ -59,38 +60,43 @@ export function PermissionRow({
         label={info.label}
         description={t("Used by: {p0}", { p0: info.usedBy })}
       >
-        <PermissionStatusBadge state={entry.state} animate={animate} />
-        {helperState && (
-          <Badge size="xs" tone={permissionBadge(helperState).tone}>
-            {t("Helper: {p0}", { p0: permissionBadge(helperState).label })}
-          </Badge>
-        )}
-        {failed && (
-          <Badge size="xs" tone="warning">
-            {t("Status unavailable")}
-          </Badge>
-        )}
-        {!ready && entry.canRequest && (
-          <Button loading={requesting} disabled={requesting} onClick={() => void allow()}>
-            {t("Allow")}
-          </Button>
-        )}
-        {!ready && !entry.canRequest && (
-          <Button onClick={() => setSetup(true)}>
-            {entry.canOpenSettings ? t("Review access…") : t("Setup guide")}
-          </Button>
-        )}
+        <span className={styles.badges}>
+          {failed ? (
+            <Badge size="xs" tone="warning">
+              {t("Status unavailable")}
+            </Badge>
+          ) : (
+            <PermissionStatusBadge state={entry.state} animate={animate} />
+          )}
+          {helperState && (
+            <Badge size="xs" tone={permissionBadge(helperState).tone}>
+              {t("Helper: {p0}", { p0: permissionBadge(helperState).label })}
+            </Badge>
+          )}
+        </span>
         {!ready && (
-          <Button
-            loading={loading}
-            onClick={(event) => {
-              // Keyboard-triggered refreshes stay instant; pointer clicks may fade.
-              setAnimate(event.detail !== 0);
-              void refresh();
-            }}
-          >
-            {t("Check again")}
-          </Button>
+          <span className={styles.actions}>
+            {entry.canRequest && (
+              <Button loading={requesting} disabled={requesting} onClick={() => void allow()}>
+                {t("Allow")}
+              </Button>
+            )}
+            {!entry.canRequest && (
+              <Button onClick={() => setSetup(true)}>
+                {entry.canOpenSettings ? t("Review access…") : t("Setup guide")}
+              </Button>
+            )}
+            <Button
+              loading={loading}
+              onClick={(event) => {
+                // Keyboard-triggered refreshes stay instant; pointer clicks may fade.
+                setAnimate(event.detail !== 0);
+                void refresh();
+              }}
+            >
+              {t("Check again")}
+            </Button>
+          </span>
         )}
       </Row>
       {setup && <PermissionSetupSheet id={id} onClose={() => setSetup(false)} />}

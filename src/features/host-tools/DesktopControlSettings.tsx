@@ -11,6 +11,7 @@ import { Alert } from "../../shared/ui/Alert";
 import { Badge } from "../../shared/ui/Badge";
 import { RefreshCw } from "../../shared/ui/icons";
 import {
+  DESKTOP_DRIVERS,
   DESKTOP_PERMISSION_MODES,
   type DesktopControlConfiguration,
   type DesktopControlResponse,
@@ -136,6 +137,7 @@ export function DesktopControlSettings({
       draft.binarySha256 !== saved.binarySha256 ||
       draft.allowPhysicalInput !== saved.allowPhysicalInput ||
       draft.permissionMode !== saved.permissionMode ||
+      draft.driver !== saved.driver ||
       JSON.stringify(draft.allowedApps) !== JSON.stringify(saved.allowedApps));
   // Helper preparation runs on the Host and survives closing, so it does not hold the dialog.
   useEffect(() => {
@@ -198,6 +200,8 @@ export function DesktopControlSettings({
                 allowedApps: draft.allowedApps,
                 allowPhysicalInput: draft.allowPhysicalInput,
                 permissionMode: draft.permissionMode,
+                // Older Hosts return no driver and reject an unknown field.
+                ...(draft.driver ? { driver: draft.driver } : {}),
               },
             })
           : await desktopControlRequest({
@@ -260,9 +264,10 @@ export function DesktopControlSettings({
   // Stop stays reachable while computer use is on, switching on, or saving.
   const computerOn =
     !!status?.enabled || !!status?.active || !!draft?.enabled || pending || stopping;
+  // One unambiguous state: Working, Stopped, a helper still preparing, On · idle, Off or unsaved.
   const computerBadge = status?.active ? (
     <Badge tone="info" appearance="subtle">
-      {t("Running")}
+      {t("Working")}
     </Badge>
   ) : status?.stopped ? (
     <Badge tone="warning" appearance="subtle">
@@ -271,6 +276,18 @@ export function DesktopControlSettings({
   ) : draft?.enabled && !helperReady ? (
     <Badge tone={helperPending ? "info" : "warning"} appearance="subtle">
       {helperPending ? t("Preparing helper…") : t("Helper not ready")}
+    </Badge>
+  ) : draft?.enabled && saved?.enabled === false ? (
+    <Badge tone="warning" appearance="subtle">
+      {t("Turns on when saved")}
+    </Badge>
+  ) : draft?.enabled ? (
+    <Badge tone="success" appearance="subtle">
+      {t("On · idle")}
+    </Badge>
+  ) : status ? (
+    <Badge tone="neutral" appearance="subtle">
+      {t("Off")}
     </Badge>
   ) : null;
   const refresh = (
@@ -285,6 +302,37 @@ export function DesktopControlSettings({
       onClick={() => void perform("status")}
     />
   );
+  // Resume after a stop, Turn on while off (no switch in the unified access layout), and the
+  // emergency Stop whenever computer use is on, switching on or saving.
+  const actions =
+    status?.stopped || computerOn || (!showPermissionControls && draft && !draft.enabled) ? (
+      <div className={styles.stopActions}>
+        {status?.stopped && (
+          <Button type="button" disabled={pending} onClick={() => void perform("resume")}>
+            {t("Resume")}
+          </Button>
+        )}
+        {!showPermissionControls && !computerOn && !status?.stopped && (
+          <Button
+            type="button"
+            disabled={pending}
+            onClick={() => draft && setDraft({ ...draft, enabled: true })}
+          >
+            {t("Turn on")}
+          </Button>
+        )}
+        {computerOn && (
+          <Button
+            type="button"
+            tone="danger"
+            loading={stopping}
+            onClick={() => void emergencyStop()}
+          >
+            {t("Stop computer use")}
+          </Button>
+        )}
+      </div>
+    ) : undefined;
   // In the settings dialog the rows are direct children of the dialog's group, so the shared row
   // layout (hairlines, padding, closing disclosure) applies; standalone they keep their own list.
   const embedded = !!refreshRef;
@@ -293,7 +341,38 @@ export function DesktopControlSettings({
       <PermissionRow id="accessibility" helperState={status?.permissions?.accessibility} />
       <PermissionRow id="screen-recording" helperState={status?.permissions?.screenRecording} />
 
+      {draft && (
+        <Row
+          label={t("Driver")}
+          info={
+            <InfoPopover>
+              {t(
+                "The native helper that reads and controls apps. Cua Driver works in the background without taking focus.",
+              )}
+            </InfoPopover>
+          }
+        >
+          <Select
+            hideLabel
+            label={t("Driver")}
+            value={draft.driver}
+            disabled={pending || stopping}
+            options={DESKTOP_DRIVERS.map((value) => ({
+              value,
+              label: value === "cua-driver" ? "Cua Driver" : "agent-desktop",
+            }))}
+            onChange={(value) => {
+              const driver = DESKTOP_DRIVERS.find((item) => item === value);
+              // A new driver needs its own verified helper; the setup row fills it in.
+              if (driver && driver !== draft.driver)
+                setDraft({ ...draft, driver, binaryPath: "", binarySha256: "" });
+            }}
+          />
+        </Row>
+      )}
       <DesktopHelperSetup
+        key={draft?.driver ?? "agent-desktop"}
+        driver={draft?.driver ?? "agent-desktop"}
         disabled={pending || stopping}
         autoPrepare={!!draft?.enabled}
         selectedPath={draft?.binaryPath ?? ""}
@@ -315,29 +394,10 @@ export function DesktopControlSettings({
         <>
           <Row
             label={t(showPermissionControls ? "Enable computer use" : "Status")}
-            feedback={
-              status?.stopped || computerOn ? (
-                <div className={styles.stopActions}>
-                  {status?.stopped && (
-                    <Button type="button" disabled={pending} onClick={() => void perform("resume")}>
-                      {t("Resume")}
-                    </Button>
-                  )}
-                  {computerOn && (
-                    <Button
-                      type="button"
-                      tone="danger"
-                      loading={stopping}
-                      onClick={() => void emergencyStop()}
-                    >
-                      {t("Stop computer use")}
-                    </Button>
-                  )}
-                </div>
-              ) : undefined
-            }
+            feedback={showPermissionControls ? actions : undefined}
           >
             {computerBadge}
+            {!showPermissionControls && actions}
             {showPermissionControls && (
               <Toggle
                 label={t("Enable computer use")}

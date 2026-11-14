@@ -113,9 +113,6 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
     !c.requestKey.current[c.threadId];
   return (
     <section className={styles.discussion}>
-      <Text size="caption" tone="secondary">
-        {t("Discuss the outcome, then review the brief before starting.")}
-      </Text>
       {!!c.visible.length && (
         <ScrollArea
           className={styles.discussionTranscript}

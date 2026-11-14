@@ -1,7 +1,7 @@
 /* The "Create with AI" dialog: model choice, interview and preview. */
 .stage {
   display: grid;
-  gap: 14px;
+  gap: 16px;
   min-inline-size: 0;
 }
 .interviewControls {
@@ -23,7 +23,7 @@
 .chat {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   min-inline-size: 0;
   min-block-size: min(18vh, 120px);
   max-block-size: 40vh;
@@ -36,8 +36,10 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+/* The assistant's questions are plain text on the dialog's left edge; only the owner's answers get a bubble. */
 .bubble[data-role="assistant"] {
   align-self: flex-start;
+  padding-inline: 0;
 }
 .bubble[data-role="owner"] {
   align-self: flex-end;
@@ -55,14 +57,14 @@
 }
 .fields {
   display: grid;
-  margin: 0;
+  margin-block: -8px;
   padding: 0;
   list-style: none;
 }
 .field {
   display: grid;
   gap: 6px;
-  padding: 12px 0;
+  padding: 8px 0;
   min-inline-size: 0;
 }
 .change {

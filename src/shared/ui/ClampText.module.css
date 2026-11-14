@@ -29,6 +29,9 @@
   .body[data-clamped] {
     max-block-size: calc(var(--clamp-lines, 4) * 1lh);
     overflow: hidden;
+  }
+
+  .body[data-clamped][data-overflowing] {
     mask-image: linear-gradient(to bottom, var(--color-content) calc(100% - 1lh), transparent);
   }
 }

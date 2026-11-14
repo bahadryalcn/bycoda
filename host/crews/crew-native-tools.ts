@@ -4,6 +4,7 @@ import {
   NATIVE_TOOLS_READ_ONLY,
 } from "../../src/integrations/harness/core/nativeToolLimits";
 import { crewToolProfileOf } from "./crew-tools";
+import { delegatedChildInput } from "../delegation/child-native";
 
 /**
  * Enforcement of a crew member's profile on what the provider itself runs: native tools
@@ -46,7 +47,9 @@ export const crewNativeReadOnly = (profile: CrewToolProfile | undefined): boolea
  */
 export function crewNativeInput<
   T extends { modelSettings?: Record<string, string>; runtimeMode?: string },
->(provider: string, input: T): T {
+>(provider: string, raw: T): T {
+  // A delegated child starts bycoda's MCP servers only; a chat-only one also runs read-only.
+  const input = delegatedChildInput(provider, raw);
   const profile = crewToolProfileOf(input.modelSettings);
   if (!profile) return input;
   if (profile.mcpServers && !MCP_FILTER_PROVIDERS.has(provider))

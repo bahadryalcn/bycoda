@@ -421,3 +421,41 @@ describe("crew member children", () => {
     expect(row.crewMember).toBeUndefined();
   });
 });
+
+describe("rounds of a child conversation", () => {
+  const reply: Block = { id: "u2", role: "user", text: "Now the tests.", startedAt: 9_000 };
+  const toolStep = (id: string, status = "completed"): Block => ({
+    id,
+    role: "tool",
+    text: id,
+    tool: { kind: "shell", status },
+  });
+  const rounds = () =>
+    child("rc", {
+      blocks: [
+        { ...brief, durationMs: 500 },
+        toolStep("t1"),
+        toolStep("t2"),
+        { id: "a1", role: "assistant", text: "First answer" },
+        { ...reply, durationMs: 700 },
+        toolStep("t3"),
+        { id: "a2", role: "assistant", text: "Second answer" },
+      ],
+    });
+
+  it("counts steps and time from the latest round and names the round", () => {
+    const block = delegatedAgentBlock(rounds());
+    expect(block.agentRun).toMatchObject({ startedAt: 9_000, endedAt: 9_700, round: 2 });
+    expect(block.agentRun?.steps.filter((step) => step.kind === "tool")).toHaveLength(1);
+    expect(delegatedDockAgents([rounds()], undefined)[0]).toMatchObject({
+      startedAt: 9_000,
+      round: 2,
+    });
+  });
+
+  it("prefers the Host's round number and leaves the first round unnamed", () => {
+    const hosted = child("rh", { blocks: [brief] }, { round: 3 });
+    expect(delegatedAgentBlock(hosted).agentRun?.round).toBe(3);
+    expect(delegatedAgentBlock(child("r1", { blocks: [brief] })).agentRun?.round).toBeUndefined();
+  });
+});

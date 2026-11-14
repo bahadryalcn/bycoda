@@ -290,6 +290,10 @@
 .settings-row-control > * {
   max-width: 100%;
 }
+/* Numeric fields share a column width instead of sizing from their current value/min/max. */
+.settings-row-control > .bycoda-arc-field:has(input[type="number"]) {
+  inline-size: 15rem;
+}
 /* Controls beside a label use the density-aware compact height (28px at the default density), so a
    row is label height + 20px instead of a 36px form control + padding. Stacked rows keep the form
    height for wide editors. */

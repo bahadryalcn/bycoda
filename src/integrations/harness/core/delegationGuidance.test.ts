@@ -22,9 +22,12 @@ describe("delegationGuidance", () => {
   });
 
   it("is empty when the saved values do not decode", () => {
-    expect(delegationGuidance({ [CROSS_SUBAGENTS_KEY]: "garbage", [CROSS_ADVISOR_KEY]: "{" })).toBe(
-      "",
-    );
+    expect(
+      delegationGuidance({
+        [CROSS_SUBAGENTS_KEY]: "garbage",
+        [CROSS_ADVISOR_KEY]: "{",
+      }),
+    ).toBe("");
   });
 
   it("lists the subagent and advisor labels when they are on", () => {
@@ -40,7 +43,7 @@ describe("delegationGuidance", () => {
     // Children are fresh sessions; the hint must say what they do not see.
     expect(text).toContain("sees only the question and context you send");
     expect(text).toContain("no conversation context");
-    expect(text).toContain("cannot commit, push or install");
+    expect(text).toContain("The Host enforces limits");
   });
 
   it("omits the advisor lines when only subagents are on", () => {
@@ -74,6 +77,11 @@ describe("delegationGuidance", () => {
     expect(text).toContain("agents.options");
     expect(text).toContain("agents.wait");
     expect(text).toContain("untrusted data");
+  });
+
+  it("mentions agents.reply with runIds once for several children", () => {
+    const text = delegationGuidance({ [CROSS_SUBAGENTS_KEY]: subagents });
+    expect(text.match(/runIds/g)).toHaveLength(1);
   });
 
   it("stays compact", () => {
@@ -111,16 +119,35 @@ describe("delegationGuidance", () => {
   it("says the built-in subagent tool is disabled whenever it is not fixed to one model", () => {
     const accounts =
       encodeSubagents([
-        { harness: "claude", model: "claude:opus-5-5", providerAccountId: "one" },
-        { harness: "claude", model: "claude:sonnet-5-5", providerAccountId: "two" },
-        { harness: "claude", model: "claude:haiku-5-5", providerAccountId: "three" },
-        { harness: "codex", model: "codex:gpt-6.1-sol", providerAccountId: "work" },
+        {
+          harness: "claude",
+          model: "claude:opus-5-5",
+          providerAccountId: "one",
+        },
+        {
+          harness: "claude",
+          model: "claude:sonnet-5-5",
+          providerAccountId: "two",
+        },
+        {
+          harness: "claude",
+          model: "claude:haiku-5-5",
+          providerAccountId: "three",
+        },
+        {
+          harness: "codex",
+          model: "codex:gpt-6.1-sol",
+          providerAccountId: "work",
+        },
       ]) ?? "";
     const settings = { [CROSS_SUBAGENTS_KEY]: accounts };
     // Main session on account one: Opus is the one native pick, the rest delegate.
-    expect(delegationGuidance(settings, { harness: "claude", providerAccountId: "one" })).toContain(
-      "native subagent tool is fixed to Claude Code claude:opus-5-5 (account one)",
-    );
+    expect(
+      delegationGuidance(settings, {
+        harness: "claude",
+        providerAccountId: "one",
+      }),
+    ).toContain("native subagent tool is fixed to Claude Code claude:opus-5-5 (account one)");
     const elsewhere = delegationGuidance(settings, {
       harness: "claude",
       providerAccountId: "four",

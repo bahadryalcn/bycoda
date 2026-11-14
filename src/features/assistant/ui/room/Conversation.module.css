@@ -157,7 +157,7 @@
 .messages {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   flex: 1;
   min-block-size: 0;
   overflow-y: auto;

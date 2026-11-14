@@ -55,6 +55,9 @@ export function ModelOrderRow({
   const t = useT();
   const format = useFormat();
   const account = useEntryAccount(entry);
+  const accountLabel = account.account?.label ?? t("Unavailable account");
+  // The badge adds the scope; it is dropped when the account name already says it.
+  const kindLabel = account.kind === "work" ? t("Work") : t("Personal");
   const left =
     status?.leftPercent == null
       ? t(statusLoading ? "Reading limit…" : statusError ? "Limit unavailable" : "Limit unknown")
@@ -117,28 +120,39 @@ export function ModelOrderRow({
         />
       </div>
       {account.supported ? (
-        <div className="flex max-w-40 min-w-0 items-center gap-1">
+        <div className="flex w-40 shrink-0 items-center gap-1">
           <Text size="caption" tone="secondary" truncate>
-            {account.account?.label ?? t("Unavailable account")}
+            {accountLabel}
           </Text>
-          {account.kind ? (
-            <Badge size="xs" tone={account.kind === "work" ? "info" : "neutral"}>
-              {account.kind === "work" ? t("Work") : t("Personal")}
+          {account.kind && kindLabel.toLowerCase() !== accountLabel.trim().toLowerCase() ? (
+            <Badge
+              size="xs"
+              tone={account.kind === "work" ? "info" : "neutral"}
+              className="shrink-0"
+            >
+              {kindLabel}
             </Badge>
           ) : null}
         </div>
-      ) : null}
-      <ModelProfileBadge harness={entry.harness} model={entry.model} />
-      <Text size="caption" tone="secondary" className="w-20 shrink-0 text-end whitespace-nowrap">
-        {left}
-      </Text>
-      {status?.skip ? (
-        <OverflowTooltip label={t(skipLabels[status.skip])}>
-          <Badge size="xs" tone="warning" truncate className="max-w-40">
-            {t(skipLabels[status.skip])}
-          </Badge>
-        </OverflowTooltip>
-      ) : null}
+      ) : (
+        <div className="w-40 shrink-0" />
+      )}
+      <div className="flex w-16 shrink-0">
+        <ModelProfileBadge harness={entry.harness} model={entry.model} />
+      </div>
+      {/* Fixed columns keep the pickers, tags and quota aligned across rows. */}
+      <div className="flex w-56 shrink-0 items-center justify-end gap-2">
+        {status?.skip ? (
+          <OverflowTooltip label={t(skipLabels[status.skip])}>
+            <Badge size="xs" tone="warning" truncate className="max-w-36">
+              {t(skipLabels[status.skip])}
+            </Badge>
+          </OverflowTooltip>
+        ) : null}
+        <Text size="caption" tone="secondary" className="whitespace-nowrap">
+          {left}
+        </Text>
+      </div>
       <ModelOrderRowMore
         entry={entry}
         index={index}

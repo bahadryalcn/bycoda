@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { TOOL_WORKFLOW_GUIDANCE_VERSION, toolWorkflowGuidance } from "./toolWorkflowGuidance";
+import {
+  MCP_ON_DEMAND_GUIDANCE,
+  TOOL_WORKFLOW_GUIDANCE_VERSION,
+  toolWorkflowGuidance,
+} from "./toolWorkflowGuidance";
 
 describe("tool workflow delivery", () => {
   it("does not advertise workflows when no transport is offered", () => {
@@ -40,6 +44,20 @@ describe("tool workflow delivery", () => {
     expect(hint).not.toContain("servers.ssh.execute");
     expect(hint).not.toContain("devices.control.claim");
     expect(hint.split("\n").length).toBeLessThanOrEqual(6);
-    expect(hint.length).toBeLessThan(1_400);
+    expect(hint.length).toBeLessThan(1_550);
+  });
+
+  it("teaches on-demand MCP in one short line without server names, only with Conversation Tools", () => {
+    expect(MCP_ON_DEMAND_GUIDANCE.length).toBeLessThanOrEqual(180);
+    for (const tool of ["conversation_mcp_servers_list", "_servers_describe", "_tools_call"])
+      expect(MCP_ON_DEMAND_GUIDANCE).toContain(tool);
+    const all = toolWorkflowGuidance({ conversation: true, social: false, runtimeLogs: false });
+    expect(all).toContain(MCP_ON_DEMAND_GUIDANCE);
+    const logs = toolWorkflowGuidance({ conversation: false, social: false, runtimeLogs: true });
+    expect(logs).not.toContain("conversation_mcp");
+  });
+
+  it("changes the delivery fingerprint with the version", () => {
+    expect(TOOL_WORKFLOW_GUIDANCE_VERSION).toBe("2026-11-14.1");
   });
 });

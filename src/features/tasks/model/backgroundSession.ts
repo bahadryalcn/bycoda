@@ -1,6 +1,5 @@
 import { remoteRequest } from "../../connections/public/connections";
 import type { HostSession } from "../../connections";
-import type { HostTask } from "./hostTasks";
 import type { BoardTask } from "./taskClient";
 import { sessionDisplayTitle, sessionNeedsInput } from "../../sessions/model/session";
 
@@ -16,31 +15,7 @@ export type BackgroundSessionTarget = {
   sessionId: string;
 };
 
-/** Keep navigation available while old hosts omit the current session fields.
- * A running review takes precedence over the previous verification result. */
-export function taskSessionIds(task: HostTask): {
-  worker?: string;
-  review?: string;
-} {
-  const available = (id: string | undefined) => (id?.trim() ? id : undefined);
-  const attempts = [...(task.attemptHistory ?? [])].reverse();
-  const latestNote = [...(task.reviewNotes ?? [])]
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .find((note) => available(note.sessionId) || note.sessionIds?.some(available));
-  return {
-    worker:
-      available(task.sessionId) ??
-      available(task.blockedTakeover?.previousSessionId) ??
-      attempts.map((entry) => available(entry.workerSessionId)).find(Boolean),
-    review:
-      available(task.status === "verifying" ? task.reviewer?.sessionId : undefined) ??
-      available(task.verification?.review?.sessionId) ??
-      available(task.reviewer?.sessionId) ??
-      attempts.map((entry) => available(entry.reviewerSessionId)).find(Boolean) ??
-      available(latestNote?.sessionId) ??
-      [...(latestNote?.sessionIds ?? [])].reverse().map(available).find(Boolean),
-  };
-}
+export { taskSessionIds } from "./hostTasks";
 
 /** Sessions retain the host project's binding even when an isolated task runs
  * in a worktree. The host session supplies its actual working copy on adoption. */

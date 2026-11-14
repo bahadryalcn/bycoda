@@ -8,6 +8,20 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/chat/subagent-relay.html?retention&theme=${theme}`);
       const history = page.locator("[data-composer-subagents-trigger]");
       await expect(history).toHaveAccessibleName("Session subagents: 10 running of 10");
+      await expect(
+        page
+          .getByRole("region", { name: "Turn activity" })
+          .getByText("10 background agents running", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByTestId("retained-cards").getByText("Running", { exact: true }),
+      ).toHaveCount(10);
+      await expect(
+        page.getByTestId("retained-cards").getByText("Interrupted", { exact: true }),
+      ).toHaveCount(0);
+      await page.screenshot({
+        path: `temp/verification/agent-communication/background-running-${theme}-${width}.png`,
+      });
       await history.click();
       await page.getByRole("menuitem", { name: /^Physics table 2,/ }).click();
       const panel = page.getByRole("dialog");
@@ -96,7 +110,10 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/chat/subagent-relay.html?status-colors&theme=${theme}`);
-      const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+      const dock = page.getByRole("region", {
+        name: "Turn activity",
+        exact: true,
+      });
       await dock.locator("button[data-dock-toggle]").click();
       await expect(dock.locator("[data-dock-agent]")).toHaveCount(5);
       await page.screenshot({
@@ -118,7 +135,10 @@ for (const theme of ["dark", "light"]) {
       await page.setViewportSize({ width, height: 720 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/chat/subagent-relay.html?status-colors&theme=${theme}`);
-      const dock = page.getByRole("region", { name: "Turn activity", exact: true });
+      const dock = page.getByRole("region", {
+        name: "Turn activity",
+        exact: true,
+      });
       await dock.locator("button[data-dock-toggle]").click();
       const rows = dock.locator("[data-dock-agent]");
       await expect(rows).toHaveCount(5);
@@ -168,7 +188,9 @@ for (const theme of ["dark", "light"]) {
       await expect(page.getByRole("dialog")).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(page.getByRole("dialog")).toHaveCount(0);
-      await dock.screenshot({ path: info.outputPath(`compact-dock-${theme}-${width}.png`) });
+      await dock.screenshot({
+        path: info.outputPath(`compact-dock-${theme}-${width}.png`),
+      });
     });
   }
 }
@@ -251,7 +273,8 @@ for (const theme of ["dark", "light"]) {
       expect(send!.x + send!.width).toBeLessThanOrEqual(width);
       if (width === 390 || width === 1440)
         await page.screenshot({ path: testInfo.outputPath("sheet.png") });
-      await panel.getByRole("button", { name: "Open main conversation" }).click();
+      await expect(panel.getByRole("button", { name: "Open main conversation" })).toHaveCount(0);
+      await panel.getByRole("button", { name: "Close agent panel", exact: true }).click();
       await expect(panel).toHaveCount(0);
     });
   }
@@ -296,4 +319,46 @@ for (const theme of ["light", "dark"])
       });
       await page.mouse.move(0, 0);
       await expect(label).toHaveCSS("color", before);
+    });
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`subagent audit display ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1100 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/subagent-relay.html?audit&theme=${theme}`);
+      // Queue: one batched row for three children, not owner input.
+      await expect(page.getByText(/^3 subagent results waiting/)).toBeVisible();
+      await expect(page.getByRole("button", { name: "Remove queued message" })).toBeVisible();
+      // Transcript: a completion folds into its card; a notice without a card stays a disclosure.
+      const benchmark = page.getByRole("button", { name: /^(Show|Hide) Benchmark review's work$/ });
+      await expect(async () => {
+        if ((await benchmark.getAttribute("aria-expanded")) !== "true") await benchmark.click();
+        await expect(page.getByText("Result received by the main agent")).toHaveCount(1, {
+          timeout: 500,
+        });
+      }).toPass();
+      const orphan = page.getByText("Result from Archived explorer");
+      await expect(orphan).toBeVisible();
+      await orphan.click();
+      await expect(page.getByText("No card remains for this run.")).toBeVisible();
+      await expect(page.getByText("Subagent completion:")).toHaveCount(0);
+      // Failed child: error text and Retry.
+      await expect(
+        page.getByText("Provider rejected the request: context length exceeded."),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Retry" })).toHaveCount(1);
+      // Round badge on the running second round.
+      await expect(page.getByText("Round 2").first()).toBeVisible();
+      // The call that failed before any child existed is a failed card without Retry.
+      await expect(
+        page.getByText("Model grok:grok-4.6 is unavailable for subagents."),
+      ).toBeVisible();
+      // The dock counts the carded children and lists no row of its own.
+      await expect(
+        page.getByRole("region", { name: "Turn activity" }).getByText(/background agent/),
+      ).toBeVisible();
+      await page.screenshot({
+        path: `temp/verification/subagent-audit/audit-${theme}-${width}.png`,
+      });
     });

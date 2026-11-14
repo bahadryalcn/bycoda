@@ -51,6 +51,32 @@ fn inbox_approval_details(operation: &Value, cwd: &str, thread: &str) -> Result<
     Ok(details)
 }
 
+/// Agent-supplied MCP call text is bounded and control-free before the owner sees it.
+fn mcp_call_approval_message(request: &Value) -> Result<String, String> {
+    let input = &request["input"];
+    let text = |key: &str, max: usize| -> Result<String, String> {
+        let value = input[key].as_str().ok_or("MCP call details required")?;
+        if value.trim().is_empty()
+            || value.chars().count() > max
+            || value.chars().any(char::is_control)
+        {
+            return Err("Invalid MCP call details".into());
+        }
+        Ok(escape_approval_direction(value))
+    };
+    Ok(format!(
+        "Project: {}\nServer: {}\nTool: {}\nArguments: {}\n\nThis MCP tool may change data outside bycoda. Approving allows this tool for the rest of this conversation.",
+        escape_approval_direction(
+            request["cwd"]
+                .as_str()
+                .ok_or("Project directory required")?
+        ),
+        text("server", 100)?,
+        text("tool", 200)?,
+        text("arguments", 2000)?,
+    ))
+}
+
 pub(super) fn call(
     app: &AppHandle,
     request: &Value,
@@ -162,6 +188,48 @@ pub(super) fn call(
             return Err("Native assistant consent changed".into());
         }
         return Ok(json!({ "approved": approved, "operationHash": operation_hash }));
+    }
+    if action == "mcp.call.authorize" {
+        let message = mcp_call_approval_message(request)?;
+        let check = || -> Result<(), String> {
+            taken.check()?;
+            if !issuer.is_current() {
+                return Err("MCP approval issuer changed".into());
+            }
+            let at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "Clock unavailable")?
+                .as_millis() as u64;
+            if request["deadline"]
+                .as_u64()
+                .is_none_or(|deadline| deadline <= at)
+            {
+                return Err("MCP approval expired; the tool was not called".into());
+            }
+            let allowed = issuer.project(
+                "conversation.desktop.authorize",
+                json!({"id": request["id"], "action": action}),
+                |result| Ok(result["authorized"] == true),
+            )?;
+            if !allowed {
+                return Err("MCP approval authority revoked".into());
+            }
+            taken.check()
+        };
+        check()?;
+        let approved = crate::control::owner_approval::ask_conversation(
+            app,
+            request,
+            crate::control::owner_approval::Prompt {
+                title: "bycoda — MCP tool approval",
+                message: &message,
+                confirm: "Approve this tool",
+                cancel: "Cancel",
+            },
+            || taken.check(),
+        )?;
+        check()?;
+        return Ok(json!({ "approved": approved }));
     }
     if action == "secrets.input.authorize" {
         // The owner-typed value returns only as this relay reply; native neither stores nor logs it.
@@ -313,6 +381,8 @@ mod secret_tests {
     #[test]
     fn room_task_and_crew_controls_can_reach_exact_native_review() {
         for action in [
+            "sessions.message",
+            "sessions.cancel",
             "crews.member.ask",
             "crews.answer",
             "tasks.delete",
@@ -357,5 +427,50 @@ mod inbox_preview_tests {
         let mut invalid = operation.clone();
         invalid["comments"][0]["line"] = json!(0);
         assert!(inbox_approval_details(&invalid, "/repo", "").is_err());
+    }
+}
+
+#[cfg(test)]
+mod mcp_approval_tests {
+    use super::*;
+
+    fn request(input: Value) -> Value {
+        json!({"cwd": "/repo", "input": input})
+    }
+
+    #[test]
+    fn mcp_message_names_server_tool_and_arguments() {
+        let message = mcp_call_approval_message(&request(
+            json!({"server": "fs", "tool": "write", "arguments": "{\"path\":\"a\"}"}),
+        ))
+        .unwrap();
+        assert!(message.contains("Server: fs"));
+        assert!(message.contains("Tool: write"));
+        assert!(message.contains("Arguments: {\"path\":\"a\"}"));
+    }
+
+    #[test]
+    fn mcp_fields_are_bounded_control_free_and_direction_escaped() {
+        let valid = json!({"server": "fs", "tool": "write", "arguments": "{}"});
+        for (key, value) in [
+            ("server", json!("")),
+            ("server", json!("a".repeat(101))),
+            ("tool", json!("a\nb")),
+            ("tool", json!("a".repeat(201))),
+            ("arguments", json!("x".repeat(2001))),
+            ("arguments", json!(5)),
+        ] {
+            let mut input = valid.clone();
+            input[key] = value;
+            assert!(mcp_call_approval_message(&request(input)).is_err(), "{key}");
+        }
+        let mut input = valid.clone();
+        input["tool"] = json!("a\u{202e}b");
+        let message = mcp_call_approval_message(&request(input)).unwrap();
+        assert!(!message.contains('\u{202e}'));
+        let mut missing = valid;
+        missing.as_object_mut().unwrap().remove("arguments");
+        assert!(mcp_call_approval_message(&request(missing)).is_err());
+        assert!(mcp_call_approval_message(&json!({"input": {}})).is_err());
     }
 }

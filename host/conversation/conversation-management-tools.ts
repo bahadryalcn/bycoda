@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { SESSION_CONTROL_TOOLS, describeSessionControlTool } from "./conversation-session-control";
 import { CommandDispatchParamsSchema } from "../../src/shared/model/host-contracts/session-commands";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import {
@@ -43,6 +44,7 @@ const sprintFields = {
 };
 /** Only these explicit operations are exposed. There is no arbitrary Host RPC proxy. */
 export const MANAGEMENT_CONVERSATION_TOOLS = {
+  ...SESSION_CONTROL_TOOLS,
   ...SESSION_MANAGEMENT_TOOLS,
   ...RUNTIME_MANAGEMENT_TOOLS,
   ...PROJECT_MANAGEMENT_TOOLS,
@@ -222,6 +224,7 @@ export function describeManagementTool(action: string) {
   if (action.startsWith("providers."))
     return "Read desktop provider/account/quota metadata through the verified source; configuration is not authentication. Explicit Claude quota refresh requires accountRevision from providers.status, existing accountId and in-app owner approval. Poll providers.operation.status with the same requestId. Sign-in/credentials remain owner-only.";
   const session =
+    describeSessionControlTool(action) ??
     describeSessionManagementTool(action) ??
     describeRuntimeManagementTool(action) ??
     describeWorkspaceManagementTool(action);

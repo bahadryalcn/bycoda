@@ -13,13 +13,19 @@ import { DelegatedRunOwner, SubagentRow } from "./SubagentCards";
 const fake = vi.hoisted(() => ({
   open: vi.fn(),
   stop: vi.fn(() => Promise.resolve()),
+  retry: vi.fn(() => Promise.resolve()),
+  received: false,
   child: undefined as unknown,
 }));
 
-vi.mock("../model/sessionsStore", () => ({ useSession: () => fake.child }));
+vi.mock("../model/sessionsStore", () => ({
+  useSession: () => fake.child,
+  useSessionsSelector: () => fake.received,
+}));
 vi.mock("./delegatedFocus", () => ({
   requestViewDelegated: fake.open,
   stopDelegated: fake.stop,
+  retryDelegated: fake.retry,
 }));
 
 let container: HTMLDivElement;
@@ -60,6 +66,8 @@ function render(session: Session) {
 beforeEach(() => {
   fake.open.mockClear();
   fake.stop.mockClear();
+  fake.retry.mockClear();
+  fake.received = false;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -90,4 +98,22 @@ it("stops a running member and offers no Stop once it is done", () => {
   render(child(false));
   expect(container.querySelector('button[aria-label^="Stop"]')).toBeNull();
   expect(container.textContent).toContain("Done");
+});
+
+it("shows a failed child's error with a Retry that sends the same task, and marks a received result", () => {
+  const failed = {
+    ...child(false),
+    blocks: [
+      { id: "u", role: "user", text: "Review", startedAt: 1 },
+      { id: "e", role: "system", notice: "error", text: "Provider rejected the request" },
+    ],
+  } as Session;
+  fake.received = true;
+  render(failed);
+  expect(container.textContent).toContain("Provider rejected the request");
+  expect(container.querySelector("[data-delegation-result-received]")).not.toBeNull();
+  act(() => container.querySelector<HTMLButtonElement>("[data-subagent-retry]")?.click());
+  expect(fake.retry).toHaveBeenCalledWith("parent-1", "child-1");
+  render(child(false));
+  expect(container.querySelector("[data-subagent-retry]")).toBeNull();
 });

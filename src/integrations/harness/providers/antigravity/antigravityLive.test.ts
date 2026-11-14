@@ -399,7 +399,10 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       value: "high",
     });
     expect(mock.sent.find((m) => m.method === "session/prompt")?.params?.prompt).toMatchObject([
-      { type: "text", text: "hi\n\nAttachments: [image1] = img.png (1st attached image)" },
+      {
+        type: "text",
+        text: "hi\n\nAttachments: [Image\u00a01\u00a0·\u00a04\u00a0B] = img.png (1st attached image)",
+      },
       { type: "image", data: "aGV5" },
     ]);
     expect(mock.sent.find((m) => m.method === "session/new")?.params?.cwd).toBe("/repo");

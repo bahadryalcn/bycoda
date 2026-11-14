@@ -262,7 +262,8 @@ export function recoveryStatus(
   // never carries into a newer submitted user turn.
   for (let index = session.blocks.length - 1; index >= 0; index--) {
     const block = session.blocks[index];
-    if (block.role === "user" && !block.draft) {
+    // Answers and steers continue their prompt's turn, which holds the duration.
+    if (block.role === "user" && !block.draft && !block.continuationOf) {
       if (session.historyLoading || session.historyLoadError) return "unknown";
       return block.durationMs !== undefined ? "done" : "unknown";
     }

@@ -3,13 +3,13 @@ import {
   Orchestrator,
   orchestrationPathKey,
   scopesOverlap,
-  visibleUserPrompt,
   workerTurnPrompt,
   type ControlOutcome,
   type OrchestrationHost,
   type OrchestrationRun,
   shellPath,
 } from "./orchestration";
+import { visibleUserPrompt } from "../../sessions/model/userPromptText";
 import { newSession } from "../../sessions/model/session";
 import type { OrchestrationProposal } from "./orchestrationPlan";
 import { normalizeOrchestrationRun } from "./orchestrationState";

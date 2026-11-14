@@ -140,7 +140,7 @@ describe("settleRestoredDraft", () => {
     expect(result?.dropped).toEqual(["notes.txt"]);
     expect(result?.draft.attachments.map((file) => file.id)).toEqual(["i"]);
     expect(result?.draft.text).not.toContain("[file1]");
-    expect(result?.draft.text).toContain("[image1]");
+    expect(result?.draft.text).toContain(`[Image\u00a01\u00a0·\u00a010\u00a0B]`);
   });
 
   it("drops an attachment saved as missing", async () => {

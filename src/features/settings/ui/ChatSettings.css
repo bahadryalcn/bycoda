@@ -31,7 +31,6 @@
   max-block-size: 24rem;
   overflow: auto;
   min-inline-size: 0;
-  overscroll-behavior: contain;
 }
 .template-manager-item {
   display: flex;

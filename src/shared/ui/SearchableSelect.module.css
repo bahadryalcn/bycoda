@@ -79,3 +79,9 @@ button:global(.bycoda-arc):is(
   font-weight: 500;
   line-height: 1.35;
 }
+.pinnedOption {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--ui-surface-raised);
+}

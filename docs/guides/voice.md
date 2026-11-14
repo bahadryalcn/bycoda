@@ -258,7 +258,9 @@ the bound session; a bare “stop” or “durdur” only silences speech. “St
 closing voice or stopping unrelated manual conversations. Unknown operation outcomes remain visible instead of being replayed.
 
 Clickable choice cards accept option labels, spoken numbers/ordinals and keyboard
-selection. Escape dismisses the card without disconnecting voice. Choices never
+selection. Each new card plays a short notification sound, including when the voice
+speaker is muted or the assistant does not read the question aloud. The application
+Sounds switch still controls these cues. Escape dismisses the card without disconnecting voice. Choices never
 replace application approval dialogs. Jobs start directly unless **Confirm jobs before
 starting** is on in assistant settings. Then multi-job requests show an editable
 review with a project per job; nothing is created until **Start jobs**. Accepted
@@ -388,6 +390,8 @@ then starts voice talk as an explicit action of yours.
 The expanded companion and floating window show recent tool activity with the
 tool, target, elapsed wait and observed outcome. **Stop waiting** releases voice
 from a pending result; it does not certify that the underlying action stopped.
+The action list places each tool name above its status, with elapsed time aligned
+on the right. Long names and uncertain-result guidance wrap within their row.
 An uncertain action keeps its request identity for a status check. A late result
 updates the activity entry without replaying the action. Cards asking for your
 choice or job review can wait for your answer; closing voice cancels that wait.
@@ -838,8 +842,22 @@ chords, hover, drag and window focus need the physical-input grant; scroll runs
 headless. All of them pass the same permission mode, presence and Stop checks. Alt+F4
 and Win+L stay blocked. Free mouse coordinates, held keys, resizing or moving windows,
 and system surfaces are not available. Physical input is available on
-Windows only. The owner configures the verified helper and the permission mode in
-**Computer use** settings. Observations and element refs belong to the captured
+Windows only. On Windows an app is named by its executable (Chrome is `chrome`, Edge is
+`msedge`; case and `.exe` do not matter). Launch finds installed apps through their
+Windows registration, and an app that is already running is used as is instead of being
+started again. The owner configures the verified helper and the permission mode in
+**Computer use** settings.
+
+**Driver** in **Computer use** settings chooses the native helper. **agent-desktop** is
+the default. **Cua Driver** (Windows) is downloaded once from its pinned release and
+checked against the release checksum; it reads and acts through UI Automation in the
+background, so the target app does not take focus and needs no OS grant. If an app ignores
+background input, the action reports that delivery failed; with the physical-input grant
+the assistant can repeat it in the foreground. Cua Driver does not support waiting on an
+element, hover, drag, check, uncheck, collapse, scroll-to or focus; those return an
+unsupported refusal without touching the app. Every permission mode, app approval, Stop
+and History record work the same with either driver. Changing the driver takes effect
+after saving and starts with that driver's own verified helper. Observations and element refs belong to the captured
 conversation and expire after five minutes. App content remains untrusted data.
 
 In the shared browser the assistant reads the page text and its buttons, links and fields

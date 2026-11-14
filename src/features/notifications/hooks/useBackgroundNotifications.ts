@@ -24,26 +24,32 @@ const POLL_MS = 60_000;
 type PollState = { cancelled: boolean; running: boolean; previous: BackgroundSnapshot | null };
 
 async function pollBackground(state: PollState, tasksViewOpen: () => boolean) {
-  if (state.running) return;
-  // Off: nothing to announce, and turning it on starts from a new baseline.
-  if (!loadNotificationsEnabled() || !(await isLeadWindow())) {
-    state.previous = null;
-    return;
-  }
+  if (state.cancelled || state.running) return;
   state.running = true;
   try {
+    // Reserve the poll before the native census; it may outlive the interval.
+    if (!loadNotificationsEnabled() || !(await isLeadWindow()) || !loadNotificationsEnabled()) {
+      state.previous = null;
+      return;
+    }
+    if (state.cancelled) return;
     const watchTasks = !tasksViewOpen();
     const [taskMachines, automationMachines, goalMachines] = await Promise.all([
       watchTasks ? backgroundMachines(HOST_TASKS) : [],
       backgroundMachines(HOST_AUTOMATIONS),
       watchTasks ? backgroundMachines(HOST_GOALS) : [],
     ]);
+    if (state.cancelled) return;
     const [tasks, automations, goals] = await Promise.all([
       listBoardTasks(taskMachines),
       listHostAutomations(automationMachines),
       listBoardGoals(goalMachines),
     ]);
     if (state.cancelled) return;
+    if (!loadNotificationsEnabled()) {
+      state.previous = null;
+      return;
+    }
     const seen = backgroundSnapshot(tasks, automations, goals);
     const previous = state.previous;
     if (previous && !watchTasks) {
@@ -71,6 +77,7 @@ export function useBackgroundNotifications(tasksViewOpen: boolean) {
   // The Tasks view polls the boards itself and shows every change; while it
   // is open the boards are left alone here, and watched afresh once it closes.
   const isTasksViewOpen = useStableCallback(() => tasksViewOpen);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the background notification polling timer and discard pending results after unmount.
   useEffect(() => {
     const state: PollState = { cancelled: false, running: false, previous: null };
     const poll = () => pollBackground(state, isTasksViewOpen);

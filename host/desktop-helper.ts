@@ -5,27 +5,67 @@ import {
   type DesktopHelperOptions,
   type PreparedDesktopHelper,
 } from "../scripts/setup/agent-desktop.mjs";
+import {
+  prepareCuaDriver,
+  readCuaDriver,
+  readCuaDriverBundle,
+} from "../scripts/setup/cua-driver.mjs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DesktopHelperRequestSchema,
   DesktopHelperResponseSchema,
+  type DesktopHelperRequest,
   type DesktopHelperResponse,
 } from "../src/shared/model/host-contracts/desktop-helper";
+import type { DesktopDriver } from "../src/shared/model/host-contracts/desktop-control";
 
+type HelperIdentity = Pick<
+  PreparedDesktopHelper,
+  "binaryPath" | "binarySha256" | "sourceRef" | "protocol" | "version" | "manifestPath"
+>;
 type Ports = {
-  read?: () => Promise<PreparedDesktopHelper | undefined>;
-  prepare?: (options: DesktopHelperOptions) => Promise<PreparedDesktopHelper>;
+  read?: () => Promise<HelperIdentity | undefined>;
+  prepare?: (options: DesktopHelperOptions) => Promise<HelperIdentity>;
   outsideScope?: <T>(work: () => Promise<T>) => Promise<T>;
 };
-/** Builds only after explicit owner intent. It never configures or enables input. */
+const packaged = (name: string) => join(dirname(fileURLToPath(import.meta.url)), name);
+const cuaPorts: Ports = {
+  read: async () => (await readCuaDriver()) ?? (await readCuaDriverBundle(packaged("cua-driver"))),
+  prepare: (options) =>
+    prepareCuaDriver({
+      signal: options.signal,
+      onProgress: options.onProgress,
+    }),
+};
+
+/** One slot per native driver; the owner chooses which one Computer use runs. */
 export class HostDesktopHelper {
+  private readonly slots: Record<DesktopDriver, HelperSlot>;
+  constructor(ports: Ports & { cua?: Ports } = {}) {
+    const { cua, ...agentDesktop } = ports;
+    this.slots = {
+      "agent-desktop": new HelperSlot(agentDesktop),
+      "cua-driver": new HelperSlot({ outsideScope: ports.outsideScope, ...cuaPorts, ...cua }),
+    };
+  }
+  async request(raw: unknown, authorized: () => Promise<boolean>): Promise<DesktopHelperResponse> {
+    const request = DesktopHelperRequestSchema.parse(raw);
+    return this.slots[request.driver ?? "agent-desktop"].request(request, authorized);
+  }
+  async close() {
+    await Promise.all(Object.values(this.slots).map((slot) => slot.close()));
+  }
+}
+
+/** Builds or downloads only after explicit owner intent. It never configures or enables input. */
+class HelperSlot {
   private state: DesktopHelperResponse = { phase: "missing" };
   private work?: Promise<void>;
   private controller?: AbortController;
   private closing = false;
   constructor(private ports: Ports = {}) {}
-  private prepared(helper: PreparedDesktopHelper): DesktopHelperResponse {
+  private prepared(helper: HelperIdentity): DesktopHelperResponse {
     const { binaryPath, binarySha256, sourceRef, protocol, version, manifestPath } = helper;
     return {
       phase: "ready",
@@ -37,10 +77,7 @@ export class HostDesktopHelper {
     const prepared = await (
       this.ports.read ??
       (async () =>
-        (await readDesktopHelper()) ??
-        (await readDesktopHelperBundle(
-          join(dirname(fileURLToPath(import.meta.url)), "agent-desktop"),
-        )))
+        (await readDesktopHelper()) ?? (await readDesktopHelperBundle(packaged("agent-desktop"))))
     )();
     if (prepared) this.state = this.prepared(prepared);
     else if (this.state.phase === "ready")
@@ -49,8 +86,10 @@ export class HostDesktopHelper {
         error: "The prepared helper is missing or its verification changed.",
       };
   }
-  async request(raw: unknown, authorized: () => Promise<boolean>): Promise<DesktopHelperResponse> {
-    const request = DesktopHelperRequestSchema.parse(raw);
+  async request(
+    request: DesktopHelperRequest,
+    authorized: () => Promise<boolean>,
+  ): Promise<DesktopHelperResponse> {
     if (this.closing || !(await authorized()))
       throw new Error("Desktop helper owner authority is unavailable.");
     if (request.op === "cancel") {

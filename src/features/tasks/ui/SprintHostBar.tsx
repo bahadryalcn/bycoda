@@ -17,11 +17,13 @@ export function SprintHostBar({
   busy,
   error,
   showRefresh,
+  onCoordinatorChange,
 }: {
   board: SprintBoardController;
   busy: boolean;
   error: string | null;
   showRefresh: boolean;
+  onCoordinatorChange?: () => void;
 }) {
   const t = useT();
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -35,14 +37,15 @@ export function SprintHostBar({
         <Text as="div" size="inherit" tone="secondary" className="sprint-context">
           {showHost ? (
             <Text size="caption" tone="inherit" leading="inherit" className="sprint-context-label">
-              {t("Planning Host")}
+              {t("Sprint server")}
             </Text>
           ) : null}
           {showHost ? (
             <div className="sprint-source">
               <SearchableSelect
                 hideLabel
-                label={t("Planning Host")}
+                label={t("Sprint server")}
+                tooltip={t("Sprint records are saved on this server. Tasks can run on any server.")}
                 value={board.coordinatorEnvironmentId}
                 options={[
                   ...(!board.coordinator && board.coordinatorEnvironmentId
@@ -63,7 +66,10 @@ export function SprintHostBar({
                     label: machine.name,
                   })),
                 ]}
-                onChange={board.setCoordinatorEnvironmentId}
+                onChange={(value) => {
+                  board.setCoordinatorEnvironmentId(value);
+                  onCoordinatorChange?.();
+                }}
                 disabled={busy}
               />
             </div>

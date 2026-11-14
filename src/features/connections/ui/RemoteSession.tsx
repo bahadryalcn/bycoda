@@ -3840,6 +3840,7 @@ function ConnectedRemoteSession({
         setRemoteHistoryError(
           t("Couldn’t load full output: {p0}", { p0: String(reason).replace(/^Error: /, "") }),
         );
+      throw reason;
     } finally {
       loadingRemoteBlocks.current.delete(blockId);
     }

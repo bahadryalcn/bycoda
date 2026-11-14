@@ -50,6 +50,9 @@ it("returns to Servers after opening and changing settings sections", () => {
     expect(deps.setNotificationSettingsRequest).toHaveBeenCalledTimes(1);
     act(() => actions.openSettings("devices"));
     expect(deps.setNotificationSettingsRequest).toHaveBeenCalledTimes(2);
+    act(() => actions.onSelectSettingsSection("appearance"));
+    expect(deps.setSettingsSection).toHaveBeenLastCalledWith("appearance");
+    expect(deps.setSettingsAnchor).toHaveBeenLastCalledWith(null);
     act(() => actions.openSettings("appearance"));
     act(() => actions.onCloseSettings());
     expect(deps.setServersViewOpen).toHaveBeenLastCalledWith(true);
@@ -82,8 +85,9 @@ it("opens Settings at Providers when Decision models asks for it", () => {
     automationsViewOpenRef: { current: false },
     serversViewOpenRef: { current: false },
   };
+  let actions!: ReturnType<typeof useSettingsSurfaceActions>;
   function Harness() {
-    useSettingsSurfaceActions(deps);
+    actions = useSettingsSurfaceActions(deps);
     return null;
   }
   const root = createRoot(document.createElement("div"));
@@ -99,6 +103,9 @@ it("opens Settings at Providers when Decision models asks for it", () => {
         tab === "chat" ? "providers" : "work",
       );
       expect(deps.setSettingsAnchor).toHaveBeenLastCalledWith(`models-${tab}`);
+      act(() => actions.onSelectSettingsSection("general"));
+      expect(deps.setSettingsSection).toHaveBeenLastCalledWith("general");
+      expect(deps.setSettingsAnchor).toHaveBeenLastCalledWith(null);
     }
 
     expect(deps.setSettingsOpen).toHaveBeenLastCalledWith(true);

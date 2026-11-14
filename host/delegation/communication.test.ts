@@ -34,10 +34,12 @@ async function fixture() {
     runtimeMode: "supervised",
     status: "idle",
   }));
-  const result = vi.fn(async (_record: DelegationRecord) => ({
-    status: "succeeded",
-    result: "Answer",
-  }));
+  const result = vi.fn(async (record: DelegationRecord) =>
+    // Only the child that opted in to notices has finished; its siblings are still working.
+    record.notifyOnCompletion
+      ? { status: "succeeded", result: "Answer" }
+      : { status: "running", result: "" },
+  );
   const create = () => new AgentCommunication({ directory, records, deliver, inspect, result });
   const communication = create();
   return { communication, create, records, deliver, inspect, result, directory };
@@ -241,4 +243,62 @@ it("drains from change events and unsubscribes cleanly without periodic polling"
   expect(unsubscribe).toHaveBeenCalledOnce();
   wake();
   expect(f.deliver).toHaveBeenCalledOnce();
+});
+
+it("does not wake a finished sibling: only the parent restarts a finished child", async () => {
+  const f = await fixture();
+  f.result.mockResolvedValue({ status: "succeeded", result: "Done" });
+  const caller = { sessionId: "child-a", projectId: "p" };
+  const receipt = await f.communication.send(
+    { requestId: "late", runId: "b", message: "One more thing" },
+    caller,
+  );
+  expect(receipt).toMatchObject({ delivery: "failed", error: expect.stringContaining("finished") });
+  expect(f.deliver).not.toHaveBeenCalled();
+});
+
+it("flags completion and peer messages to the parent as delegation notices", async () => {
+  const f = await fixture();
+  await f.records.patch("a", { notifyOnCompletion: true, childRunId: "turn-a" });
+  await f.communication.tick();
+  expect(f.deliver).toHaveBeenCalledWith(
+    expect.objectContaining({
+      targetSessionId: "parent",
+      notice: { kind: "delegation", runId: "a", title: "a", reason: "completion" },
+    }),
+  );
+  await f.communication.send(
+    { requestId: "peer", runId: "parent", message: "Question" },
+    { sessionId: "child-b", projectId: "p" },
+  );
+  expect(f.deliver).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      notice: { kind: "delegation", runId: "b", title: "b", reason: "message" },
+    }),
+  );
+});
+
+it("leaves a completion undecided when its result cannot be read, and reports not-offered failures as failed", async () => {
+  const f = await fixture();
+  await f.records.patch("a", { notifyOnCompletion: true, childRunId: "turn-a" });
+  f.result.mockRejectedValueOnce(new Error("database is locked"));
+  await f.communication.tick();
+  expect(f.deliver).not.toHaveBeenCalled();
+  await f.communication.tick();
+  expect(f.deliver).toHaveBeenCalledOnce();
+  f.inspect.mockImplementation(async (id) => ({
+    projectId: "p",
+    runtimeMode: "supervised",
+    status: id === "child-b" ? "idle" : "idle",
+  }));
+  f.result.mockResolvedValue({ status: "running", result: "" });
+  f.deliver.mockRejectedValueOnce(
+    Object.assign(new Error("The conversation changed."), { notOffered: true }),
+  );
+  expect(
+    await f.communication.send(
+      { requestId: "conflict", runId: "b", message: "Hello" },
+      { sessionId: "child-a", projectId: "p" },
+    ),
+  ).toMatchObject({ delivery: "failed" });
 });

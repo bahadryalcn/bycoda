@@ -105,10 +105,7 @@ interface PendingWrite {
   /** A constraint refused these rows: the timer stops, the state stays in memory. */
   unwritable?: boolean;
   value: HostSession;
-  events: {
-    revision: number;
-    event: unknown;
-  }[];
+  events: { revision: number; event: unknown }[];
   changed: Map<string, Block>;
   structural: boolean;
   timer?: ReturnType<typeof setTimeout>;
@@ -301,11 +298,7 @@ export class HostStore {
   private cacheWeights = new Map<string, number>();
   private stateMetadata = new Map<
     string,
-    {
-      revision: number;
-      status: HostSession["status"];
-      desktop: boolean;
-    }
+    { revision: number; status: HostSession["status"]; desktop: boolean }
   >();
   private receiptWrites = 0;
   // token -> data_version at the moment its device row was last seen.
@@ -317,12 +310,7 @@ export class HostStore {
     this.pendingBefore.set(
       id,
       entry
-        ? {
-            ...entry,
-            events: [...entry.events],
-            changed: new Map(entry.changed),
-            timer: undefined,
-          }
+        ? { ...entry, events: [...entry.events], changed: new Map(entry.changed), timer: undefined }
         : undefined,
     );
   }
@@ -661,9 +649,11 @@ export class HostStore {
     // mutations. Legacy rows get a full retention window; operation receipts
     // and unknown delivery evidence have no age-based deletion here.
     await this.db
-      .prepare(`UPDATE workspace_mutation_receipts SET created_at=?
+      .prepare(
+        `UPDATE workspace_mutation_receipts SET created_at=?
       WHERE created_at IS NULL AND (scope LIKE 'workspace-policy:%' OR
-        scope LIKE 'workspace-feature-acquire:%' OR scope LIKE 'workspace-feature-release:%')`)
+        scope LIKE 'workspace-feature-acquire:%' OR scope LIKE 'workspace-feature-release:%')`,
+      )
       .run(Date.now());
     await this.db.exec(
       "CREATE INDEX IF NOT EXISTS workspace_receipts_created_at ON workspace_mutation_receipts(created_at)",
@@ -872,9 +862,11 @@ export class HostStore {
     return this.db.storeScope(async () => {
       await this.db.checkAuthorization();
       await this.db
-        .prepare(`INSERT INTO managed_workspaces
+        .prepare(
+          `INSERT INTO managed_workspaces
         (id, repository_id, project_id, environment_id, owner_kind, owner_id, path, branch_ref, state, revision, payload)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
         .run(
           workspace.id,
           workspace.repositoryId,
@@ -1038,7 +1030,8 @@ export class HostStore {
   ): Promise<boolean> {
     return this.db.storeScope(async () => {
       const row = await this.db
-        .prepare(`SELECT 1 AS pending FROM workspace_operations
+        .prepare(
+          `SELECT 1 AS pending FROM workspace_operations
         WHERE workspace_id=? AND CASE
           WHEN json_valid(payload)=0 THEN 1
           WHEN json_extract(payload, '$.phase') IS NOT phase OR
@@ -1051,7 +1044,8 @@ export class HostStore {
             WHEN 'real' THEN json_extract(payload, '$.finalized')=0
             WHEN 'text' THEN json_extract(payload, '$.finalized')=''
             ELSE json_type(payload, '$.finalized') IS NULL END
-          ELSE 0 END LIMIT 1`)
+          ELSE 0 END LIMIT 1`,
+        )
         .get(workspaceId, except ?? null, except ?? null, includeUnfinalizedRewinds ? 1 : 0);
       return !!row;
     });
@@ -1536,11 +1530,13 @@ export class HostStore {
         if (safe.length) {
           const placeholders = safe.map(() => "(?,?,?,?)").join(",");
           const result = await this.db
-            .prepare(`WITH refreshed(id, revision, old_summary, new_summary) AS (VALUES ${placeholders})
+            .prepare(
+              `WITH refreshed(id, revision, old_summary, new_summary) AS (VALUES ${placeholders})
             UPDATE session_state SET summary=(SELECT new_summary FROM refreshed WHERE refreshed.id=session_state.id)
             WHERE EXISTS (SELECT 1 FROM refreshed WHERE refreshed.id=session_state.id
               AND refreshed.revision=session_state.revision AND refreshed.old_summary IS session_state.summary)
-              AND NOT EXISTS (SELECT 1 FROM host_authority_heads WHERE session_id=session_state.id)`)
+              AND NOT EXISTS (SELECT 1 FROM host_authority_heads WHERE session_id=session_state.id)`,
+            )
             .run(
               ...safe.flatMap((update) => [update.id, update.revision, update.old, update.value]),
             );
@@ -1623,9 +1619,11 @@ export class HostStore {
       const rows = new Map(
         (
           await this.db
-            .prepare(`SELECT id, project_id, revision, updated_at, status, desktop_updated_at,
+            .prepare(
+              `SELECT id, project_id, revision, updated_at, status, desktop_updated_at,
               json_extract(summary, '$.authorityGeneration') AS authority_generation
-        FROM session_state WHERE has_desktop=1${projectId === undefined ? "" : " AND project_id=?"}`)
+        FROM session_state WHERE has_desktop=1${projectId === undefined ? "" : " AND project_id=?"}`,
+            )
             .all(...(projectId === undefined ? [] : [projectId]))
         ).map((row) => [
           String(row.id),
@@ -1769,7 +1767,8 @@ export class HostStore {
         }
         budget -= bytes;
         const turns = (await this.db
-          .prepare(`WITH base AS MATERIALIZED (
+          .prepare(
+            `WITH base AS MATERIALIZED (
           SELECT json_extract(value,'$.id') AS block_id,value AS payload
           FROM sessions,json_each(snapshot,'$.session.blocks') WHERE sessions.id=?
         ), current_journal AS (
@@ -1784,7 +1783,8 @@ export class HostStore {
           json_extract(payload,'$.draft') AS draft,json_extract(payload,'$.continuationOf') AS continuationOf,
           json_extract(payload,'$.turnMetrics.inputTokens') AS inputTokens,json_extract(payload,'$.turnMetrics.outputTokens') AS outputTokens,
           json_extract(payload,'$.turnMetrics.cacheReadTokens') AS cacheReadTokens,json_extract(payload,'$.turnMetrics.cacheWriteTokens') AS cacheWriteTokens
-        FROM effective WHERE json_extract(payload,'$.role')='user' LIMIT ?`)
+        FROM effective WHERE json_extract(payload,'$.role')='user' LIMIT ?`,
+          )
           .all(sessionId, sessionId, cap + 1)) as unknown as UsageTurnMetadata[];
         sessions.push({
           sessionId,
@@ -1811,14 +1811,9 @@ export class HostStore {
       return (await this.sessionStateMetadata(id))?.revision;
     });
   }
-  async sessionStateMetadata(id: string): Promise<
-    | {
-        revision: number;
-        status: HostSession["status"];
-        desktop: boolean;
-      }
-    | undefined
-  > {
+  async sessionStateMetadata(
+    id: string,
+  ): Promise<{ revision: number; status: HostSession["status"]; desktop: boolean } | undefined> {
     return this.db.storeScope(async () => {
       const pending = this.pending.get(id)?.value;
       if (pending)
@@ -1855,11 +1850,7 @@ export class HostStore {
   }
   private rememberStateMetadata(
     id: string,
-    value: {
-      revision: number;
-      status: HostSession["status"];
-      desktop: boolean;
-    },
+    value: { revision: number; status: HostSession["status"]; desktop: boolean },
   ) {
     this.stateMetadata.delete(id);
     this.stateMetadata.set(id, value);
@@ -1882,11 +1873,7 @@ export class HostStore {
   async save(
     input: HostSession,
     event: unknown,
-    options: {
-      deferred?: boolean;
-      journal?: boolean;
-      blockChanges?: BlockChanges;
-    } = {},
+    options: { deferred?: boolean; journal?: boolean; blockChanges?: BlockChanges } = {},
   ): Promise<HostSession> {
     return this.db.storeScope(() =>
       this.transaction(
@@ -2126,17 +2113,16 @@ export class HostStore {
   }
   private async write(
     value: HostSession,
-    rows: {
-      revision: number;
-      event: unknown;
-    }[],
+    rows: { revision: number; event: unknown }[],
   ): Promise<void> {
     // Both tables store the same summary: build and serialize it once per save.
     const summaryJson = JSON.stringify(summary(value));
     const run = async () => {
       await this.db
-        .prepare(`INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, snapshot=excluded.snapshot, summary=excluded.summary, has_desktop=excluded.has_desktop, revision=excluded.revision, updated_at=excluded.updated_at, status=excluded.status, provider_session_id=excluded.provider_session_id, harness=excluded.harness, session_cwd=excluded.session_cwd, shell_running=excluded.shell_running`)
+        .prepare(
+          `INSERT INTO sessions (id, project_id, snapshot, summary, has_desktop, revision, updated_at, status, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, snapshot=excluded.snapshot, summary=excluded.summary, has_desktop=excluded.has_desktop, revision=excluded.revision, updated_at=excluded.updated_at, status=excluded.status, provider_session_id=excluded.provider_session_id, harness=excluded.harness, session_cwd=excluded.session_cwd, shell_running=excluded.shell_running`,
+        )
         .run(
           value.session.id,
           value.projectId,
@@ -2156,8 +2142,10 @@ export class HostStore {
           indexBlocks(value.session.blocks).root.shell > 0 ? 1 : 0,
         );
       await this.db
-        .prepare(`INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, summary=excluded.summary, revision=excluded.revision, updated_at=excluded.updated_at, status=excluded.status, has_desktop=excluded.has_desktop, desktop_updated_at=excluded.desktop_updated_at, provider_session_id=excluded.provider_session_id, harness=excluded.harness, session_cwd=excluded.session_cwd, shell_running=excluded.shell_running`)
+        .prepare(
+          `INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id, summary=excluded.summary, revision=excluded.revision, updated_at=excluded.updated_at, status=excluded.status, has_desktop=excluded.has_desktop, desktop_updated_at=excluded.desktop_updated_at, provider_session_id=excluded.provider_session_id, harness=excluded.harness, session_cwd=excluded.session_cwd, shell_running=excluded.shell_running`,
+        )
         .run(
           value.session.id,
           value.projectId,
@@ -2198,10 +2186,7 @@ export class HostStore {
    * compatible snapshots; journal publication remains in the same transaction. */
   private async writeJournal(
     value: HostSession,
-    rows: {
-      revision: number;
-      event: unknown;
-    }[],
+    rows: { revision: number; event: unknown }[],
     changes?: PendingWrite,
   ): Promise<void> {
     const id = value.session.id;
@@ -2326,6 +2311,21 @@ export class HostStore {
       "critical",
     );
   }
+  /** Host-internal: moves a session that has no turns yet into its own scratch folder. */
+  async setScratchCwd(id: string, cwd: string): Promise<void> {
+    await this.db.storeScope(() =>
+      this.withAuthorityGeneration(id, undefined, async () => {
+        const current = await this.session(id);
+        if (current.session.blocks.length)
+          throw new Error("Only a session without turns can move to a scratch folder.");
+        await this.save(
+          { ...current, revision: current.revision + 1, session: { ...current.session, cwd } },
+          { type: "session.metadata", patch: {} },
+        );
+      }),
+    );
+  }
+
   async updateSession(
     id: string,
     patch: {
@@ -2727,26 +2727,16 @@ export class HostStore {
   async events(
     id: string,
     after: number,
-  ): Promise<{
-    snapshot?: HostSession;
-    events?: unknown[];
-    revision: number;
-  }> {
+  ): Promise<{ snapshot?: HostSession; events?: unknown[]; revision: number }> {
     return this.db.storeScope(async () => {
       const snapshot = await this.session(id);
-      const rows: {
-        revision: number;
-        event: unknown;
-      }[] = (
+      const rows: { revision: number; event: unknown }[] = (
         await this.db
           .prepare(
             "SELECT revision, payload FROM events WHERE session_id=? AND revision>? ORDER BY revision",
           )
           .all(id, after)
-      ).map((row) => ({
-        revision: Number(row.revision),
-        event: JSON.parse(String(row.payload)),
-      }));
+      ).map((row) => ({ revision: Number(row.revision), event: JSON.parse(String(row.payload)) }));
       // Event rows of unwritten soft saves are newer than every stored row.
       for (const row of this.pending.get(id)?.events ?? [])
         if (row.revision > after) rows.push(row);
@@ -2756,16 +2746,10 @@ export class HostStore {
       ) {
         return { snapshot, revision: snapshot.revision };
       }
-      return {
-        events: rows,
-        revision: snapshot.revision,
-      };
+      return { events: rows, revision: snapshot.revision };
     });
   }
-  async issueDevice(name: string): Promise<{
-    id: string;
-    token: string;
-  }> {
+  async issueDevice(name: string): Promise<{ id: string; token: string }> {
     return this.db.storeScope(async () => {
       const id = randomUUID();
       const token = randomBytes(32).toString("base64url");
@@ -2781,11 +2765,7 @@ export class HostStore {
   }
   /** Owner-facing metadata only: device token hashes must never leave the store. */
   async pairedDevices(currentToken: string): Promise<{
-    devices: {
-      id: string;
-      name: string;
-      isCurrent: boolean;
-    }[];
+    devices: { id: string; name: string; isCurrent: boolean }[];
     devicesTruncated: boolean;
   }> {
     return this.db.storeScope(async () => {
@@ -2911,6 +2891,9 @@ export function summary(value: HostSession): HostSessionSummary {
     delegationParent:
       decodeDelegationParent(value.session.modelSettings?.[DELEGATION_PARENT_KEY]) ?? null,
     draft: root.draft > 0,
+    ...(value.session.orchestrationLeadId
+      ? { orchestrationLeadId: value.session.orchestrationLeadId }
+      : {}),
     ...hostTurnWait(value),
     needsInput:
       !value.session.worktreeRemoved &&

@@ -21,6 +21,7 @@ import {
 } from "../../connections/public/remoteSessionActions";
 import {
   consumeViewDelegated,
+  registerDelegatedRetry,
   registerDelegatedStop,
   VIEW_DELEGATED_EVENT,
 } from "./delegatedFocus";
@@ -65,6 +66,46 @@ function stopChild(id: string, fallback: (sessionId: string) => unknown): unknow
   return captured.actions.stop();
 }
 
+/** Sends text to a child session: straight to it, or through its Host owner. */
+function submitToChild(
+  child: NonNullable<ReturnType<typeof useSession>>,
+  text: string,
+  options: ComposerTurnOptions,
+  onSubmitToSession: (sessionId: string, text: string, options: ComposerTurnOptions) => unknown,
+): boolean | void {
+  if (!isHostChild(child)) return onSubmitToSession(child.id, text, options) as boolean | void;
+  const captured = captureRemoteSessionActions(child.id);
+  return captured?.current() && captured.actions.approvalSource?.()
+    ? captured.actions.submit(text, [], options)
+    : false;
+}
+
+type SubmitToSession = (
+  sessionId: string,
+  text: string,
+  options: ComposerTurnOptions,
+) => boolean | void;
+
+// Module level: React Compiler cannot lower try/finally inside a hook.
+async function retryChild(
+  id: string,
+  onSubmitToSession: SubmitToSession,
+  setConnecting: (update: (current: readonly string[]) => readonly string[]) => void,
+): Promise<void> {
+  const child = getSessions().find((session) => session.id === id);
+  const unavailable = () => new Error(t("This local conversation is unavailable or inaccessible."));
+  if (!child) throw unavailable();
+  // A Host child's owner connects only for a request: hold it until the task is sent.
+  setConnecting((current) => (current.includes(id) ? current : [...current, id]));
+  try {
+    if (isHostChild(child) && !readyOwner(id) && !(await waitForOwner(id))) throw unavailable();
+    if (submitToChild(child, t("Retry the same task."), {}, onSubmitToSession) === false)
+      throw new Error(t("Request was not accepted. Your message is kept here; try again."));
+  } finally {
+    setConnecting((current) => current.filter((entry) => entry !== id));
+  }
+}
+
 /** How long a Stop waits for the child's Host owner to connect. */
 const OWNER_DEADLINE_MS = 15_000;
 
@@ -95,11 +136,13 @@ export function useDelegatedSheet({
   sessionId,
   blocks,
   onStopSession,
+  onSubmitToSession,
   closeNative,
 }: {
   sessionId: string;
   blocks: Block[];
   onStopSession: (sessionId: string) => unknown;
+  onSubmitToSession: SubmitToSession;
   closeNative: () => void;
 }) {
   const [childId, setChildId] = useState<string | undefined>(undefined);
@@ -110,6 +153,8 @@ export function useDelegatedSheet({
   const running = agents
     .filter((agent) => agent.status === "running")
     .map((agent) => agent.sessionId);
+  // Children whose Host owner is held open while a Retry reaches them.
+  const [connecting, setConnecting] = useState<readonly string[]>([]);
   const stillStopping = stopping.filter((id) => running.includes(id));
   if (stillStopping.length !== stopping.length) setStopping(stillStopping);
   const open = useCallback(
@@ -148,6 +193,9 @@ export function useDelegatedSheet({
     [onStopSession],
   );
   useEffect(() => registerDelegatedStop(sessionId, stop), [sessionId, stop]);
+  const retry = useStableCallback((id: string) => retryChild(id, onSubmitToSession, setConnecting));
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers this pane as the owner of its children's Retry for the module registry until unmount
+  useEffect(() => registerDelegatedRetry(sessionId, retry), [sessionId, retry]);
   /** Ends the running children; their own sessions then report cancelled. */
   const stopRunning = useCallback(async () => {
     await Promise.all(
@@ -156,7 +204,7 @@ export function useDelegatedSheet({
         .map((agent) => stop(agent.sessionId!)),
     );
   }, [agents, stop]);
-  return { childId, isOpen, open, close, agents, stop, stopRunning, stopping };
+  return { childId, isOpen, open, close, agents, stop, stopRunning, stopping, connecting };
 }
 
 export type DelegatedSheetState = ReturnType<typeof useDelegatedSheet>;
@@ -172,6 +220,7 @@ export function useDockActions({
   perItemStop,
   stopBackground,
   onStop,
+  onSubmitToSession,
   native,
   btwOpen,
 }: {
@@ -181,6 +230,7 @@ export function useDockActions({
   perItemStop: boolean;
   stopBackground: (callId?: string) => Promise<void>;
   onStop: (sessionId: string) => unknown;
+  onSubmitToSession: SubmitToSession;
   native: { open: (blockId: string) => void; close: () => void };
   /** A side question takes over the pane: only one sheet over it at a time. */
   btwOpen: boolean;
@@ -190,6 +240,7 @@ export function useDockActions({
     sessionId,
     blocks,
     onStopSession: onStop,
+    onSubmitToSession,
     closeNative,
   });
   const { open: openChild, close: closeChild } = delegated;
@@ -254,16 +305,11 @@ export function SessionSubagentSheet({
     close: () => void;
     open: (blockId: string) => void;
     showInTranscript: (blockId: string) => boolean;
-    onOpenMain: () => void;
     /** Present when the harness can stop one run without the whole turn. */
     stopRun?: (callId?: string) => Promise<void>;
   };
   delegated: DelegatedSheetState;
-  onSubmitToSession: (
-    sessionId: string,
-    text: string,
-    options: ComposerTurnOptions,
-  ) => boolean | void;
+  onSubmitToSession: SubmitToSession;
   onStopSession: (sessionId: string) => unknown;
   onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
   onOpenFile?: (path: string) => void;
@@ -273,7 +319,7 @@ export function SessionSubagentSheet({
   const selected = !native.block && !!child && delegated.isOpen !== false;
   // A child's Host owner connects only while its panel is open or a Stop needs it;
   // children otherwise leave no sessions, queues or notices in the parent.
-  const stopping = new Set(delegated.stopping ?? []);
+  const stopping = new Set([...(delegated.stopping ?? []), ...(delegated.connecting ?? [])]);
   if (selected) stopping.delete(child.id);
   const pending = useSessionsSelector(
     (sessions) => sessions.filter((session) => stopping.has(session.id)),
@@ -301,11 +347,7 @@ export function SessionSubagentSheet({
     blocked: !child,
     onSubmit: (text, options) => {
       if (!child) return false;
-      if (!isHostChild(child)) return onSubmitToSession(child.id, text, options);
-      const captured = captureRemoteSessionActions(child.id);
-      return captured?.current() && captured.actions.approvalSource?.()
-        ? captured.actions.submit(text, [], options)
-        : false;
+      return submitToChild(child, text, options, onSubmitToSession);
     },
   });
 
@@ -332,11 +374,7 @@ export function SessionSubagentSheet({
           onLoadRemoteBlock={onLoadRemoteBlock}
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
-          relay={{
-            ...native.relay,
-            blockedReason: native.blockedReason,
-            onOpenConversation: native.onOpenMain,
-          }}
+          relay={{ ...native.relay, blockedReason: native.blockedReason }}
         />
       </>
     );
@@ -363,6 +401,12 @@ export function SessionSubagentSheet({
         }
         cwd={child.cwd}
         onClose={delegated.close}
+        onShowInTranscript={(blockId) => {
+          delegated.close();
+          const shown = native.showInTranscript(blockId);
+          if (!shown) delegated.open(child.id);
+          return shown;
+        }}
         onStop={
           running
             ? async () => {

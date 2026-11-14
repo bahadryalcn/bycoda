@@ -110,6 +110,37 @@ describe("ActivityDock", () => {
     expect(row.textContent).toContain("work");
     expect(row.getAttribute("aria-label")).toContain("work");
   });
+  it("keeps children that have an inline card to a count and names a later round on a listed row", () => {
+    const row = (id: string, extra: object) => ({
+      blockId: `delegated:${id}`,
+      sessionId: id,
+      name: `Child ${id}`,
+      kind: "agent" as const,
+      status: "running" as const,
+      detail: "",
+      ...extra,
+    });
+    render({
+      sessionId: "inline-children",
+      busy: true,
+      blocks: [user],
+      delegatedAgents: [row("a", { inline: true }), row("b", { inline: true })],
+    });
+    expect(container.querySelector("[data-dock-toggle]")).toBeNull();
+    expect(visibleSessionTestText(container)).toContain("2 running");
+    expect(container.querySelector("[data-dock-agent]")).toBeNull();
+    render({
+      sessionId: "inline-children",
+      busy: true,
+      blocks: [user],
+      delegatedAgents: [row("a", { inline: true }), row("c", { round: 2 })],
+    });
+    act(() => container.querySelector<HTMLButtonElement>("[data-dock-toggle]")?.click());
+    expect(container.querySelectorAll("[data-dock-agent]")).toHaveLength(1);
+    expect(container.querySelector('[data-dock-agent="delegated:c"]')?.textContent).toContain(
+      "Round 2",
+    );
+  });
   it("shows counts on the disclosure and points toward its opening direction", () => {
     render({ sessionId: "info-card", busy: true, blocks: [user, agent] });
     const toggle = container.querySelector<HTMLButtonElement>("[data-dock-toggle]")!;

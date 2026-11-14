@@ -10,6 +10,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 12px;
+  min-inline-size: 0;
 }
 .title {
   display: flex;
@@ -19,8 +20,8 @@
   min-inline-size: 0;
 }
 .search {
-  flex: 0 1 280px;
-  min-inline-size: 0;
+  flex: 0 1 240px;
+  min-inline-size: 140px;
 }
 .add {
   flex: 0 0 auto;
@@ -66,6 +67,7 @@
 .actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
 }
 .quote {

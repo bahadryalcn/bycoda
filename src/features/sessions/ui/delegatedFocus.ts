@@ -37,3 +37,21 @@ export function stopDelegated(parentId: string, childId: string): Promise<void> 
   const stop = stoppers.get(parentId);
   return stop ? stop(childId) : Promise.reject(new Error("No pane owns this conversation"));
 }
+
+const retriers = new Map<string, (childId: string) => Promise<void>>();
+
+/** The pane that owns a session's delegated children answers Retry from a failed card. */
+export function registerDelegatedRetry(
+  parentId: string,
+  retry: (childId: string) => Promise<void>,
+): () => void {
+  retriers.set(parentId, retry);
+  return () => {
+    if (retriers.get(parentId) === retry) retriers.delete(parentId);
+  };
+}
+
+export function retryDelegated(parentId: string, childId: string): Promise<void> {
+  const retry = retriers.get(parentId);
+  return retry ? retry(childId) : Promise.reject(new Error("No pane owns this conversation"));
+}

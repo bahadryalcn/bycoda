@@ -76,7 +76,7 @@ export function AssistantBuilderDialog({
                 startIcon={<Square className="icon-sm" />}
                 onClick={interview.cancel}
               >
-                {t("Stop waiting")}
+                {t("Stop")}
               </Button>
             ) : (
               <Button
@@ -86,7 +86,7 @@ export function AssistantBuilderDialog({
                 disabled={!canFinish || !available || interview.failure !== null}
                 onClick={finish}
               >
-                {t("Finish and show preview")}
+                {t("Preview assistant")}
               </Button>
             )}
           </ModalActions>
@@ -107,7 +107,7 @@ export function AssistantBuilderDialog({
         <>
           {!available && (
             <InlineMessage tone="warning">
-              {t("Choose a model that supports text actions to create an assistant.")}
+              {t("This model cannot write text. Pick another one to continue.")}
             </InlineMessage>
           )}
           <BuilderInterview
@@ -115,6 +115,7 @@ export function AssistantBuilderDialog({
               <>
                 <Select
                   label={t("Language")}
+                  hideLabel
                   fieldSize="sm"
                   value={interview.language}
                   disabled={interview.busy}

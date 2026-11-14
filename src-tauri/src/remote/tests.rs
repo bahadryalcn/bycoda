@@ -838,6 +838,11 @@ fn crew_work_operations_are_forwarded() {
 #[test]
 fn host_tools_methods_are_allowed_but_unknown_methods_are_not() {
     for method in [
+        "mcp.hub.loading.get",
+        "mcp.hub.loading.set",
+        "mcp.oauth.start",
+        "mcp.oauth.status",
+        "mcp.oauth.signOut",
         "mcp.tokens.create",
         "mcp.tokens.list",
         "mcp.tokens.revoke",

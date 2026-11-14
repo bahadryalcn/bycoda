@@ -491,6 +491,15 @@ export class DesktopSessions {
         throw error;
       /* older desktop without the table */
     }
+    // Internal orchestration workers, so lists can hide them as the desktop does.
+    const leads = new Map<string, string>();
+    if (
+      db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='orchestration_workers'")
+        .get()
+    )
+      for (const r of db.prepare("SELECT session_id, lead_id FROM orchestration_workers").all())
+        if (r.lead_id) leads.set(String(r.session_id), String(r.lead_id));
     return db
       .prepare(sql)
       .all(...args)
@@ -503,6 +512,8 @@ export class DesktopSessions {
       )
       .map((sqlRow) => {
         const row: Row = sqlRow;
+        const lead = leads.get(String(row.id));
+        if (lead) row.orchestration_lead_id = lead;
         if (summaryProjection && typeof row.summary_provider_history === "string") {
           row.provider_history = parse(row.summary_provider_history);
           row.interrupted = Number(row.summary_interrupted) !== 0;
@@ -648,6 +659,9 @@ export class DesktopSessions {
       linkedWorkItem: parse(row.linked_work_item_json),
       needsInput: false,
       delegationParent: desktopDelegationParent(row.model_settings),
+      ...(row.orchestration_lead_id
+        ? { orchestrationLeadId: String(row.orchestration_lead_id) }
+        : {}),
       origin: "desktop",
     };
   }

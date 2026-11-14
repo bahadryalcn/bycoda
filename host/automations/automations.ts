@@ -22,6 +22,7 @@ import { QUICK_AUTOMATION_MAX_AHEAD_MS } from "../../src/shared/model/host-contr
 import { assertExpectedConfiguration } from "../configurationConflict";
 import { automationLimits } from "../../src/features/automations/model/automationLimits";
 import {
+  latestOverdueOccurrence,
   nextAutomationRunAt,
   type AutomationSchedule,
 } from "../../src/features/automations/model/automationSchedule";
@@ -466,8 +467,16 @@ export class HostAutomations {
       try {
         if (automation.trigger?.kind === "continuous" && (await this.hasActiveRun(automation.id)))
           continue;
-        const scheduledFor = automation.nextRunAt;
         const once = (await this.onceRunAt(automation.id)) !== undefined;
+        const occurrence =
+          !once && automation.trigger?.kind !== "continuous"
+            ? latestOverdueOccurrence(
+                (after) => nextAutomationRunAt(automation, after),
+                automation.nextRunAt,
+                now,
+              )
+            : undefined;
+        const scheduledFor = occurrence?.scheduledFor ?? automation.nextRunAt;
         const due = await this.write({
           ...automation,
           ...(once
@@ -476,7 +485,7 @@ export class HostAutomations {
                 nextRunAt:
                   automation.trigger?.kind === "continuous"
                     ? now + automation.trigger.minimumGapMinutes * 60000
-                    : nextAutomationRunAt(automation, now),
+                    : (occurrence?.nextRunAt ?? nextAutomationRunAt(automation, now)),
               }),
         });
         if (once) await this.clearOnce(automation.id);

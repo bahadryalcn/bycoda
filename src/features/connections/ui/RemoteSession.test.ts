@@ -24,6 +24,7 @@ import {
 } from "../../sessions/model/models";
 import { rememberRemoteProject, remoteProjectFor } from "../model/remoteProjects";
 import { RemoteSession, type RemoteSessionOverrides } from "./RemoteSession";
+import { outputTest } from "./RemoteSession.output.test-support";
 import { outboxFixture } from "./remoteSessionOutboxFixture";
 import { effort, settle, tooltipText, typeText } from "./RemoteSession.test-support";
 import {
@@ -919,6 +920,12 @@ async function renderRemoteProbe(visible = true, session = shell()) {
   );
   await settle();
 }
+outputTest(
+  openExistingChat,
+  () => host!,
+  renderRemoteProbe,
+  () => remoteOverrides,
+);
 it("holds the composer while durable outbox storage is unavailable and recovers on retry", async () => {
   outboxFixture.unavailable = true;
   await renderRemoteProbe();

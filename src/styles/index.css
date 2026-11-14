@@ -1781,12 +1781,37 @@ html.chat-background-layer-off .gradient-blur-background-strong {
   }
 }
 
+/* Actions under a message that sits in a hover zone: shown with the zone's hover or keyboard
+ * focus on a fine pointer, always visible on touch. The actions keep their layout box. */
+@media (hover: hover) and (pointer: fine) {
+  .message-hover-actions {
+    opacity: 0;
+    transition: opacity var(--motion-duration-fast) ease;
+  }
+
+  .message-hover-zone:hover .message-hover-actions,
+  .message-hover-zone:focus-within .message-hover-actions {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-hover-actions {
+    transition: none;
+  }
+}
+
 .user-message-with-link {
   display: block;
 }
 
 .transcript-content {
   background: var(--ui-transcript-surface);
+}
+
+/* The Jump to latest pill must not cover the last row. */
+[data-jump-pill] .transcript-content {
+  padding-block-end: 4rem;
 }
 
 /* Neutral reading surface: the accent never paints message bodies. */

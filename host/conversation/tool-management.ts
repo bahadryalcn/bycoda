@@ -13,6 +13,7 @@ import { SOCIAL_TOOLS } from "../../src/features/social/model/social";
 import { socialAuthorizationScope } from "../social/social-tools";
 import { AGENT_TOOL_SCHEMAS } from "../delegation/tools";
 import { PULL_REQUEST_WATCH_TOOLS } from "../pull-request-watch/pull-request-watch-tools";
+import { EXTERNAL_MCP_TOOLS } from "./conversation-external-mcp-tools";
 
 /** Metadata describes existing operations; it never grants permission or dispatches them. */
 export type ManagedToolGroup = "conversation" | "social" | "runtime-logs";
@@ -88,6 +89,7 @@ for (const action of [
   CONVERSATION_ACTIONS.add(action);
 for (const action of Object.keys(MANAGEMENT_CONVERSATION_TOOLS)) CONVERSATION_ACTIONS.add(action);
 for (const action of Object.keys(PULL_REQUEST_WATCH_TOOLS)) CONVERSATION_ACTIONS.add(action);
+for (const action of Object.keys(EXTERNAL_MCP_TOOLS)) CONVERSATION_ACTIONS.add(action);
 for (const action of [
   ...Object.keys(ROOM_NOTEBOOK_TOOLS),
   ...Object.keys(ROOM_WORKSPACE_TOOLS),

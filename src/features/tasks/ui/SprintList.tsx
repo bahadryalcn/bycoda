@@ -1,6 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { useT } from "../../../shared/i18n";
+import type { RemoteMachine } from "../../connections";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -17,8 +18,14 @@ export function SprintList({
   rows,
   accessible,
   onSelect,
+  machines = [],
 }: {
-  rows: readonly HostSprint[];
+  rows: readonly (HostSprint & {
+    catalogKey?: string;
+    serverName?: string;
+    unavailable?: boolean;
+  })[];
+  machines?: readonly RemoteMachine[];
   accessible: ReadonlySet<string>;
   onSelect: (id: string) => void;
 }) {
@@ -54,11 +61,23 @@ export function SprintList({
       ) : null}
       <Surface as="ul" variant="card" padding="none" dividers="pane" className="sprint-collection">
         {shown.map((sprint) => (
-          <li className="sprint-row" key={sprint.id}>
+          <li className="sprint-row" key={sprint.catalogKey ?? sprint.id}>
             <div className="sprint-row-main">
-              <Button variant="link" align="start" onClick={() => onSelect(sprint.id)}>
+              <Button
+                variant="link"
+                align="start"
+                disabled={sprint.unavailable}
+                disabledReason={sprint.unavailable ? t("Offline") : undefined}
+                onClick={() => onSelect(sprint.catalogKey ?? sprint.id)}
+              >
                 {sprint.name}
               </Button>
+              {sprint.serverName ? (
+                <Text size="caption" tone="secondary">
+                  {sprint.serverName}
+                  {sprint.unavailable ? ` (${t("Offline")})` : ""}
+                </Text>
+              ) : null}
               {sprint.startsAt !== undefined || sprint.endsAt !== undefined ? (
                 <Text tone="muted" size="caption" leading="inherit" className="sprint-row-dates">
                   {displayDate(sprint.startsAt, t("No start date"))} ·{" "}
@@ -74,7 +93,7 @@ export function SprintList({
                 .filter((project) => accessible.has(sprintProjectKey(project)))
                 .map((project, index) => ({
                   id: `${index}:${project.name}`,
-                  label: project.name,
+                  label: `${project.name}${machines.find((machine) => machine.environmentId === project.environmentId) ? ` / ${machines.find((machine) => machine.environmentId === project.environmentId)!.name}` : ""}`,
                 }))}
             />
             <SprintStatusBadge state={sprint.state} />

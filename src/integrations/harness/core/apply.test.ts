@@ -2220,3 +2220,44 @@ it("does not attach an approval to an existing tool when the call id differs eve
     43,
   );
 });
+
+it("keeps updating one plan, task list and status row after an answer continues the turn", () => {
+  let session: Session = {
+    ...newSession("codex", "/tmp"),
+    busy: true,
+    blocks: [{ id: "owner", role: "user", text: "Build it", startedAt: 1 }],
+  };
+  session = applyHarnessEvent(session, { type: "plan", text: "1. Inspect" });
+  session = applyHarnessEvent(session, {
+    type: "tasks.updated",
+    items: [{ id: "t1", text: "Inspect", status: "in_progress" }],
+  } as HarnessEvent);
+  session = applyHarnessEvent(session, { type: "status", text: "Reading", key: "phase" });
+  session = {
+    ...session,
+    blocks: [
+      ...session.blocks,
+      {
+        id: "answer",
+        role: "user",
+        text: "Default?\nLet the user choose",
+        continuationOf: "owner",
+        questionAnswers: [{ prompt: "Default?", answers: ["Let the user choose"] }],
+      },
+    ],
+  };
+  session = applyHarnessEvent(session, { type: "plan", text: "1. Inspect\n2. Build" });
+  session = applyHarnessEvent(session, {
+    type: "tasks.updated",
+    items: [{ id: "t1", text: "Inspect", status: "completed" }],
+  } as HarnessEvent);
+  session = applyHarnessEvent(session, { type: "status", text: "Writing", key: "phase" });
+
+  expect(
+    session.blocks.filter((block) => block.role === "plan").map((block) => block.text),
+  ).toEqual(["1. Inspect\n2. Build"]);
+  expect(session.blocks.filter((block) => block.role === "tasks")).toHaveLength(1);
+  expect(
+    session.blocks.filter((block) => block.statusKey === "phase").map((block) => block.text),
+  ).toEqual(["Writing"]);
+});

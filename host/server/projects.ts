@@ -8,6 +8,9 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { setHarnessModels } from "../../src/features/sessions/model/models";
 import { readHarnessAuthStatus } from "../../src/integrations/harness/core/authStatus";
+import { resolveAntigravityBinary } from "../../src/integrations/harness/core/child";
+import { STREAM_MODE_LIMITS } from "../../src/integrations/harness/providers/antigravity/antigravityStreamProtocol";
+import type { HostModelCatalog } from "../../src/features/connections/model/protocol";
 import { ConversationDelegation } from "../delegation/service";
 import { enqueueAgentParentMessage } from "../delegation/message-delivery";
 import { ConversationGoalTools } from "../conversation/conversation-goal-tools";
@@ -52,10 +55,19 @@ export function createProjectsRuntime(
     | "sessionQueues"
   >,
 ) {
+  // Modes a resolved transport refuses (headless agy cannot ask before editing), so remote
+  // pickers grey them out as the desktop does. Refreshed with each provider's discovery.
+  const runtimeModeLimits: NonNullable<HostModelCatalog["runtimeModeLimits"]> = {};
   const catalogs = new ModelCatalogCache(
     [...new Set([...dependencies.providers, "acp" as const])],
     async () => await providerBinaries(dependencies.providers),
     async (provider, cwd) => {
+      if (provider === "antigravity") {
+        const binary = await resolveAntigravityBinary().catch(() => undefined);
+        if (binary?.transport === "stream-json")
+          runtimeModeLimits.antigravity = STREAM_MODE_LIMITS.runtimeModes;
+        else delete runtimeModeLimits.antigravity;
+      }
       const discovered =
         provider === "acp"
           ? (await dependencies.genericAcp.list()).map((config) => ({
@@ -106,14 +118,22 @@ export function createProjectsRuntime(
         dependencies.startWorkspaceActivity(cwd, "mutation", "workspace-command"),
     },
   );
-  const models = async (projectId?: unknown, progressive = false, force = false) =>
-    await catalogs.read(
+  const models = async (
+    projectId?: unknown,
+    progressive = false,
+    force = false,
+  ): Promise<HostModelCatalog> => {
+    const catalog = await catalogs.read(
       typeof projectId === "string"
         ? (await dependencies.engine.store.project(projectId)).cwd
         : homedir(),
       progressive,
       force,
     );
+    return Object.keys(runtimeModeLimits).length
+      ? { ...catalog, runtimeModeLimits: { ...runtimeModeLimits } }
+      : catalog;
+  };
   const conversationProject = new ConversationProjectTools(
     dependencies.engine.store,
     dependencies.goals,
@@ -184,8 +204,8 @@ export function createProjectsRuntime(
     engine: dependencies.engine,
     directory: dirname(dependencies.engine.store.attachmentDir),
     featureSession: dependencies.featureSession,
-    enqueueParent: (sessionId, id, text) =>
-      enqueueAgentParentMessage(dependencies.sessionQueues, sessionId, id, text),
+    enqueueParent: (sessionId, id, text, author) =>
+      enqueueAgentParentMessage(dependencies.sessionQueues, sessionId, id, text, author),
     models: async (projectId) =>
       applyDisabledModels(
         await models(projectId),
@@ -197,8 +217,8 @@ export function createProjectsRuntime(
       providerDefaultAccounts(await readProviderAccountStyles(dependencies.engine.store)),
   });
   dependencies.tasks.repairDelegation = conversationDelegation;
-  dependencies.engine.onParentStopped = async (sessionId) =>
-    await conversationDelegation.cancelChildren(sessionId);
+  dependencies.engine.onParentStopped = async (sessionId, options) =>
+    await conversationDelegation.cancelChildren(sessionId, options);
   const conversationStewards = new ConversationStewardTools(
     dependencies.engine.store,
     dependencies.stewards,

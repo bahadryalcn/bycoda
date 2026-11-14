@@ -16,7 +16,7 @@ export type CommandInspection = {
     /** The retained command was cut to the inspection size limit. */
     truncated: boolean;
   };
-  /** Failure text; present only for a failed call. Never repeated in `output`. */
+  /** Failure text; present only for a failed call. A standalone duplicate is omitted from output. */
   error?: string;
   /** Reconciled output (see `reconcileToolText`); empty when nothing was reported. */
   output: string;
@@ -26,6 +26,16 @@ export type CommandInspection = {
   /** Present while only a bounded remote summary is held locally. */
   remote?: { revision: number; bytes: number };
 };
+
+function comparisonText(text: string): string {
+  return text.trim() || text;
+}
+
+function containsResult(full: string, part: string): boolean {
+  const fullText = full.trim();
+  const partText = part.trim();
+  return fullText && partText ? fullText.includes(partText) : full === part;
+}
 
 /**
  * Merges candidate result texts, in priority order, without repeating
@@ -37,16 +47,15 @@ export type CommandInspection = {
 export function reconcileToolText(candidates: readonly (string | undefined)[]): string[] {
   const kept: string[] = [];
   for (const raw of candidates) {
-    const text = raw?.trim();
-    if (!text) continue;
-    if (kept.some((existing) => existing.includes(text))) continue;
-    const firstContained = kept.findIndex((existing) => text.includes(existing));
+    if (!raw) continue;
+    if (kept.some((existing) => containsResult(existing, raw))) continue;
+    const firstContained = kept.findIndex((existing) => containsResult(raw, existing));
     if (firstContained === -1) {
-      kept.push(text);
+      kept.push(raw);
       continue;
     }
-    const rest = kept.filter((existing) => !text.includes(existing));
-    rest.splice(Math.min(firstContained, rest.length), 0, text);
+    const rest = kept.filter((existing) => !containsResult(raw, existing));
+    rest.splice(Math.min(firstContained, rest.length), 0, raw);
     kept.length = 0;
     kept.push(...rest);
   }
@@ -64,11 +73,11 @@ export function reconcileToolText(candidates: readonly (string | undefined)[]): 
 export function toolResultTexts(block: Block): { error?: string; output: string[] } {
   const tool = block.tool;
   const failed = toolCallState(block) === "rejected";
-  const detail = tool?.detail?.trim();
+  const detail = tool?.detail;
   const error = failed && detail ? detail : undefined;
   const canonical = [tool?.output, failed ? undefined : detail];
   const output = reconcileToolText([...canonical, tool?.preview?.output]).filter(
-    (text) => !error || (!error.includes(text) && !text.includes(error)),
+    (text) => !error || comparisonText(text) !== comparisonText(error),
   );
   return { ...(error ? { error } : {}), output };
 }

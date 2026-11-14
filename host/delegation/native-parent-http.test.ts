@@ -150,7 +150,8 @@ it("delegates through an authenticated Native parent absent from the Host sessio
     { action: "agents.send", input: messageInput },
     childGrant.token,
   );
-  expect(message.delivery).toBe("started");
+  // The sibling already finished: a peer message does not restart it.
+  expect(message).toMatchObject({ delivery: "failed", error: expect.stringContaining("finished") });
   expect(
     await call(
       "conversation.tools.call",
@@ -158,15 +159,7 @@ it("delegates through an authenticated Native parent absent from the Host sessio
       childGrant.token,
     ),
   ).toEqual(message);
-  await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(3));
-  expect(
-    (await store.session(sibling.sessionId)).session.blocks.some(
-      (block) =>
-        block.role === "user" &&
-        block.text.includes("untrusted peer data") &&
-        block.text.includes("What is your schema?"),
-    ),
-  ).toBe(true);
+  expect(send).toHaveBeenCalledTimes(2);
   await call(
     "conversation.tools.call",
     {

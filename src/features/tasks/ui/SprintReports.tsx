@@ -36,12 +36,14 @@ export function SprintReports({
   board,
   sprintId,
   projectKey,
+  environmentId,
   onChooseSprint,
   onOpenSprints,
 }: {
   board: SprintBoardController;
   sprintId: string;
   projectKey?: string;
+  environmentId?: string;
   /** Selects the sprint to report on. */
   onChooseSprint?: (sprintId: string) => void;
   /** Goes to the sprint list, where a sprint is created or started. */
@@ -74,6 +76,15 @@ export function SprintReports({
       }),
   );
   const scopeKey = [...allowed].sort().join("|");
+  const matchesEnvironment = (key: string) =>
+    !environmentId ||
+    board.allowedProjects?.some(
+      (project) => sprintProjectKey(project) === key && project.environmentId === environmentId,
+    ) ||
+    board.tasks.some((task) => {
+      const ref = board.taskRef(task);
+      return ref?.environmentId === environmentId && sprintProjectKey(ref) === key;
+    });
   const readKey = JSON.stringify([
     sprintId,
     revision,
@@ -82,6 +93,7 @@ export function SprintReports({
     board.supported,
     board.coordinatorEnvironmentId,
     projectKey,
+    environmentId,
     scopeKey,
     refresh,
   ]);
@@ -95,7 +107,8 @@ export function SprintReports({
           sprint.projects.some(
             (project) =>
               allowed.has(sprintProjectKey(project)) &&
-              (!projectKey || sprintProjectKey(project) === projectKey),
+              (!projectKey || sprintProjectKey(project) === projectKey) &&
+              (!environmentId || project.environmentId === environmentId),
           ),
       )
       .sort((a, b) => (a.completedAt ?? a.updatedAt) - (b.completedAt ?? b.updatedAt))
@@ -135,7 +148,8 @@ export function SprintReports({
     const timer = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(timer);
   }, [staleCheck]);
-  const visibleKey = (key: string) => allowed.has(key) && (!projectKey || key === projectKey);
+  const visibleKey = (key: string) =>
+    allowed.has(key) && (!projectKey || key === projectKey) && matchesEnvironment(key);
   const totalsFor = (value: SprintReport) =>
     sumTotals(
       Object.entries(value.projects)
@@ -180,7 +194,7 @@ export function SprintReports({
                 .filter(([key]) => visibleKey(key))
                 .map(([, value]) => value),
             )
-          : !partial && !projectKey
+          : !partial && !projectKey && !environmentId
             ? entry.totals
             : null,
       }))
@@ -253,7 +267,8 @@ export function SprintReports({
         {error ? <InlineError>{error}</InlineError> : null}
       </Text>
     );
-  const capacityPoints = report && !partial && !projectKey ? report.sprint.capacityPoints : null;
+  const capacityPoints =
+    report && !partial && !projectKey && !environmentId ? report.sprint.capacityPoints : null;
   const staleSources =
     (!!report &&
       !report.frozen &&

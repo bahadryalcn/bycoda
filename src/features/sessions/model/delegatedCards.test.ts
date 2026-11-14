@@ -5,7 +5,12 @@ import {
   DELEGATION_PARENT_KEY,
 } from "../../../shared/model/host-contracts/delegation";
 import { delegatedBlockId } from "./delegatedBlockId";
-import { createCardPlacer, delegatedCardBlock, placeDelegatedCards } from "./delegatedCards";
+import {
+  cardedChildren,
+  createCardPlacer,
+  delegatedCardBlock,
+  placeDelegatedCards,
+} from "./delegatedCards";
 import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks";
 import { newSession, type Block, type Session } from "./session";
 import { groupTurnItems } from "./transcriptActivity";
@@ -101,7 +106,9 @@ describe("placeDelegatedCards for Host agents.delegate calls", () => {
     const child = member(id, {}, undefined, askedAt);
     return {
       ...child,
-      modelSettings: { [DELEGATION_PARENT_KEY]: child.modelSettings![DELEGATION_PARENT_KEY] },
+      modelSettings: {
+        [DELEGATION_PARENT_KEY]: child.modelSettings![DELEGATION_PARENT_KEY],
+      },
     };
   };
   const call = (id: string, title: string, detail: string): Block => ({
@@ -119,7 +126,9 @@ describe("placeDelegatedCards for Host agents.delegate calls", () => {
     call(
       id,
       "mcp__bycoda_conversation__conversation_agents_wait",
-      JSON.stringify({ runs: sessionIds.map((sessionId) => ({ sessionId, status: "done" })) }),
+      JSON.stringify({
+        runs: sessionIds.map((sessionId) => ({ sessionId, status: "done" })),
+      }),
     );
   const ids = (blocks: Block[]) => blocks.map((block) => block.id);
 
@@ -170,7 +179,7 @@ describe("placeDelegatedCards for Host agents.delegate calls", () => {
     expect(ids(placed)).toEqual(["u1", delegatedBlockId("c1")]);
   });
 
-  it("keeps a failed delegate call and a wait that names an unknown run", () => {
+  it("turns a failed delegate call into a failed card and keeps a wait that names an unknown run", () => {
     const failed = call("d1", "agents.delegate", JSON.stringify({ error: "no model" }));
     const blocks = [
       user("u1", "audit", 1_000),
@@ -298,5 +307,41 @@ describe("createCardPlacer", () => {
     edited[2] = { ...edited[2], text: "go again" };
     registerStreamingTextUpdate(base, edited, 2);
     expect(place(edited, [child])).toEqual(placeDelegatedCards(edited, [child]));
+  });
+});
+
+describe("failed children and dock summary", () => {
+  it("carries a failed child's error text into its card", () => {
+    const failed = {
+      ...newSession("codex", "/repo", "codex:gpt-a"),
+      id: "f1",
+      blocks: [
+        { id: "u", role: "user", text: "Do it", startedAt: 1 },
+        {
+          id: "e",
+          role: "system",
+          notice: "error",
+          text: "Provider rejected the request",
+        },
+      ],
+    } as Session;
+    const card = delegatedCardBlock(failed);
+    expect(card.tool?.status).toBe("failed");
+    expect(card.tool?.detail).toBe("Provider rejected the request");
+  });
+});
+
+describe("cardedChildren", () => {
+  it("names the children that get an inline card, and not those without a turn to follow", () => {
+    const asked: Block = {
+      id: "u1",
+      role: "user",
+      text: "Review",
+      startedAt: 10_000,
+    };
+    const carded = member("c1", {}, undefined, 10_500);
+    const orphan = member("c2", {}, undefined, 500);
+    expect([...cardedChildren([asked], [carded, orphan])]).toEqual(["c1"]);
+    expect(cardedChildren([asked], []).size).toBe(0);
   });
 });

@@ -19,4 +19,6 @@ export type ClaudeSpawnInput = {
   persistSession?: boolean;
   /** Folders beyond the cwd the session may read and edit. */
   additionalDirs?: readonly string[];
+  /** No skill listing and no auto memory: a chat-only delegated child needs neither. */
+  leanContext?: boolean;
 } & ClaudeNativeLimits;

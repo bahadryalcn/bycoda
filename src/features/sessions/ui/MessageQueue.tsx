@@ -64,6 +64,7 @@ import { announceDrag } from "../../../shared/lib/drag";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
 import { Button } from "../../../shared/ui/Button";
 import { QueueRemovalNotice } from "./QueueRemovalNotice";
+import { QueuedDelegationRow } from "./QueuedDelegationRow";
 type QueueActionContext = {
   actionRef: { current: boolean };
   setPendingAction: (id: string | undefined) => void;
@@ -513,6 +514,16 @@ export function MessageQueue({
             </div>
           ) : null}
           {messages.map((message, index) => {
+            if (message.author?.kind === "delegation")
+              return (
+                <QueuedDelegationRow
+                  key={message.id}
+                  message={message}
+                  itemRef={(node) => sortable.setItemRef(message.id, node)}
+                  disabled={queueClosed || !!pendingAction || pendingDelivery}
+                  onRemove={() => removeMessage(message.id)}
+                />
+              );
             const attachmentGone = hasMissingAttachment(message);
             const route = attachmentGone ? "join" : steerRoute(message);
             const target = message.modelTarget;

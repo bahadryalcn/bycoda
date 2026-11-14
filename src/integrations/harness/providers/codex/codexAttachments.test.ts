@@ -150,7 +150,7 @@ describe("Codex attachment delivery", () => {
       expect(input).toEqual([
         {
           type: "text",
-          text: "Read attached\n\nAttachments: [image1] = screenshot.png (1st attached image)",
+          text: "Read attached\n\nAttachments: [Image\u00a01\u00a0·\u00a0100\u00a0B] = screenshot.png (1st attached image)",
         },
         { type: "image", url: "data:image/png;base64,aW1hZ2U=" },
       ]);
@@ -161,7 +161,7 @@ describe("Codex attachment delivery", () => {
       expect(input).toEqual([
         {
           type: "text",
-          text: `${ATTACHMENT_ONLY_PROMPT}\n\nAttachments: [image1] = large.png (1st attached image)`,
+          text: `${ATTACHMENT_ONLY_PROMPT}\n\nAttachments: [Image\u00a01\u00a0·\u00a021.0\u00a0MB] = large.png (1st attached image)`,
         },
         { type: "localImage", path: "/tmp/issue174/large.png" },
       ]);
@@ -173,7 +173,7 @@ describe("Codex attachment delivery", () => {
       expect(input).toEqual([
         {
           type: "text",
-          text: "Review both\n\nAttachments: [image1] = screenshot.png (1st attached image), [file1] = /tmp/issue174/report.pdf",
+          text: "Review both\n\nAttachments: [Image\u00a01\u00a0·\u00a0100\u00a0B] = screenshot.png (1st attached image), [File\u00a01\u00a0·\u00a0100\u00a0B] = /tmp/issue174/report.pdf",
         },
         { type: "image", url: "data:image/png;base64,aW1hZ2U=" },
         {

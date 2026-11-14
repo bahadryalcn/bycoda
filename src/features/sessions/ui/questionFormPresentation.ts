@@ -68,7 +68,7 @@ export function questionFormPresentation({
               ? t("Waiting for your answer")
               : prompt.behavior === "nonBlocking"
                 ? t("Work may continue while this question is open")
-                : t("Question open");
+                : undefined;
   const StatusIcon =
     uncertain || failed
       ? CircleAlert

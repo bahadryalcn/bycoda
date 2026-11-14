@@ -20,3 +20,17 @@ it("reenables native fallback even when the base config disables agents", () => 
     "features.multi_agent_v2": false,
   });
 });
+
+it("turns off provider memory and the skill listing for a chat-only child", () => {
+  const lean = {
+    "features.memories": false,
+    "memories.use_memories": false,
+    "memories.generate_memories": false,
+    "skills.include_instructions": false,
+  };
+  expect(codexThreadConfig(undefined, { leanContext: "on" })).toEqual(lean);
+  expect(
+    codexThreadConfig({ "skills.config": [] }, { leanContext: "on", nativeSubagents: "off" }),
+  ).toMatchObject({ ...lean, "agents.enabled": false, "skills.config": [] });
+  expect(codexThreadConfig(undefined, {})).toBeUndefined();
+});

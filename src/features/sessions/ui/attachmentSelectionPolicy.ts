@@ -3,7 +3,7 @@ import { findTokens } from "../model/attachmentTokens";
 
 export function snapAttachmentSelection(
   text: string,
-  files: Pick<Attachment, "kind">[],
+  files: Pick<Attachment, "kind" | "size">[],
   start: number,
   end: number,
   motion: "forward" | "backward" | "none" = "none",
@@ -31,7 +31,7 @@ export function snapAttachmentSelection(
 
 export function installAttachmentSelectionPolicy(
   el: HTMLTextAreaElement,
-  files: () => Pick<Attachment, "kind">[],
+  files: () => Pick<Attachment, "kind" | "size">[],
 ) {
   let composing = false;
   let snapping = false;

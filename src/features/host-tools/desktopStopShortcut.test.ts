@@ -55,3 +55,20 @@ it("does not persist a shortcut when native registration fails", async () => {
   await expect(applyDesktopStopShortcut(next)).rejects.toThrow("OS conflict");
   expect(loadKeybindingOverrides()[DESKTOP_STOP_COMMAND]).toBeUndefined();
 });
+
+it("restores the native default after a sibling clears all keybinding overrides", () => {
+  saveKeybindingOverride(DESKTOP_STOP_COMMAND, { disabled: true });
+  const stop = startDesktopStopShortcut();
+  try {
+    expect(native.invoke).toHaveBeenLastCalledWith("desktop_shortcut_configure", {
+      shortcut: null,
+    });
+    localStorage.clear();
+    window.dispatchEvent(new StorageEvent("storage", { key: null }));
+    expect(native.invoke).toHaveBeenLastCalledWith("desktop_shortcut_configure", {
+      shortcut: DESKTOP_STOP_DEFAULT_SHORTCUT,
+    });
+  } finally {
+    stop();
+  }
+});

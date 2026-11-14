@@ -8,7 +8,10 @@ export type OutlineAnchor = OutlineBand & { id: string };
 export const NEAR_END_PX = 16;
 
 export function promptBlocks(blocks: Block[]): Block[] {
-  return blocks.filter((block) => block.role === "user" && !block.internal);
+  // Answers to the agent's questions are replies inside a turn, not prompts.
+  return blocks.filter(
+    (block) => block.role === "user" && !block.internal && !block.questionAnswers?.length,
+  );
 }
 
 /**

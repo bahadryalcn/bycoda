@@ -238,6 +238,7 @@ export class SessionQueues {
         await this.release(id, clientId, epoch);
         queue = await this.get(id);
       } else if (action === "change") {
+        await this.assertNoticesUntouched(id, change?.after);
         queue = await this.change(
           id,
           change?.before,
@@ -476,6 +477,29 @@ export class SessionQueues {
         ...(reason ? { holdReason: reason.slice(0, 500) } : {}),
       } as StoredQueue);
     });
+  }
+  /**
+   * Host-authored rows (delegation notices) are never editable by an owner client and an
+   * owner cannot author one; only removing such a row is allowed.
+   */
+  private async assertNoticesUntouched(id: string, after: unknown): Promise<void> {
+    const current = await this.get(id);
+    const incoming = new Map(this.parse(after).messages.map((row) => [row.id, row]));
+    const refuse = () =>
+      new HostDomainRefusalError(
+        "QUEUE_AUTHORITY",
+        "validation",
+        false,
+        "A system notice in the queue cannot be edited. Remove it or let it send.",
+      );
+    for (const row of incoming.values()) {
+      const existing = current.messages.find((entry) => entry.id === row.id);
+      if (row.author && !sameQueueValue(existing, row)) throw refuse();
+    }
+    for (const row of current.messages) {
+      const next = incoming.get(row.id);
+      if (row.author && next && !sameQueueValue(row, next)) throw refuse();
+    }
   }
   /** `owner` asks to own the queue the way older clients do: a takeover. */
   async change(id: string, before: unknown, after: unknown, owner?: string): Promise<SharedQueue> {

@@ -135,8 +135,6 @@ export function ArchivePage({
     unavailable: archivedProjectsUnavailable,
     retry: retryArchivedProjects,
   } = useArchivedProjectsRead();
-  const availableProjects = useRef(archivedProjects);
-  availableProjects.current = archivedProjects;
   // A project that left the archive closes its pending delete confirmation.
   if (deleting && !archivedProjects.some((project) => project.path === deleting.path)) {
     setDeleting(null);
@@ -176,8 +174,20 @@ export function ArchivePage({
     }
   };
 
+  const requireArchivedProject = (path: string) => {
+    const current = readArchivedProjects();
+    if (
+      current.state !== "ready" ||
+      !current.items.some((project) => sameProjectPath(project.path, path)) ||
+      isProjectLockedIn(getGroupLockView().lock, path)
+    ) {
+      throw new Error(t("The operation did not complete. You can try again."));
+    }
+  };
+
   // The restore callback has no result, so confirm it from the stores it writes.
   const restoreProject = async (path: string) => {
+    requireArchivedProject(path);
     await onRestoreProject?.(path);
     const archivedNow = readArchivedProjects();
     const stillArchived =
@@ -500,13 +510,10 @@ export function ArchivePage({
           path={deleting.path}
           onCancel={() => setDeleting(null)}
           onConfirm={async () => {
-            if (
-              !onDeleteProject ||
-              isProjectLockedIn(getGroupLockView().lock, deleting.path) ||
-              !availableProjects.current.some((project) => project.path === deleting.path)
-            ) {
+            if (!onDeleteProject) {
               throw new Error(t("The operation did not complete. You can try again."));
             }
+            requireArchivedProject(deleting.path);
             await onDeleteProject?.(deleting.path);
             setDeleting(null);
           }}

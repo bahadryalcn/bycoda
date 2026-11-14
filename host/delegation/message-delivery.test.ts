@@ -78,7 +78,12 @@ it("queues a Native parent without creating or adopting its session", async () =
   expect(
     await f.deliver({ ...f.message, target: undefined, targetSessionId: "native-parent" }),
   ).toBe("queued");
-  expect(f.enqueueParent).toHaveBeenCalledWith("native-parent", "message-id", "Question");
+  expect(f.enqueueParent).toHaveBeenCalledWith(
+    "native-parent",
+    "message-id",
+    "Question",
+    undefined,
+  );
   expect(f.command).not.toHaveBeenCalled();
 });
 
@@ -120,4 +125,65 @@ it("preserves existing queue text and the owner's pause", async () => {
   const queue = await queues.get("parent");
   expect(queue.status).toBe("paused");
   expect(queue.messages.map((row) => row.text)).toEqual(["Draft", "Completion"]);
+});
+
+async function noticeQueues() {
+  const directory = mkdtempSync(join(tmpdir(), "agent-notice-"));
+  const store = new HostStore(join(directory, "host.db"));
+  cleanup.push(async () => {
+    await store.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const queues = new SessionQueues(store.db);
+  await queues.ready;
+  return queues;
+}
+const notice = (runId: string, reason: "completion" | "message" = "completion") =>
+  ({ kind: "delegation", runId, title: runId, reason }) as const;
+
+it("queues a completion as a system-authored row and batches later ones into it", async () => {
+  const queues = await noticeQueues();
+  await enqueueAgentParentMessage(queues, "parent", "agent_message_1", "Done one", notice("a"));
+  await enqueueAgentParentMessage(queues, "parent", "agent_message_2", "Done two", notice("b"));
+  await enqueueAgentParentMessage(queues, "parent", "agent_message_2", "Done two", notice("b"));
+  const queue = await queues.get("parent");
+  expect(queue.messages).toHaveLength(1);
+  expect(queue.messages[0]).toMatchObject({
+    id: "agent_message_1",
+    author: notice("a"),
+    text: expect.stringContaining("Done one"),
+  });
+  expect(queue.messages[0]!.text).toContain("Done two");
+});
+
+it("does not merge notices across reasons, owner rows or a row being sent, and caps each section", async () => {
+  const queues = await noticeQueues();
+  await enqueueAgentParentMessage(queues, "parent", "agent_message_1", "Done", notice("a"));
+  await enqueueAgentParentMessage(
+    queues,
+    "parent",
+    "agent_message_2",
+    "Peer",
+    notice("b", "message"),
+  );
+  const before = await queues.get("parent");
+  await queues.change("parent", before, {
+    ...before,
+    messages: [...before.messages, { id: "owner", text: "Hi", attachments: [] }],
+  });
+  await enqueueAgentParentMessage(
+    queues,
+    "parent",
+    "agent_message_3",
+    "x".repeat(20_000),
+    notice("c"),
+  );
+  const rows = (await queues.get("parent")).messages;
+  expect(rows.map((row) => row.id)).toEqual([
+    "agent_message_1",
+    "agent_message_2",
+    "owner",
+    "agent_message_3",
+  ]);
+  expect(rows[3]!.text.length).toBeLessThanOrEqual(8_000);
 });

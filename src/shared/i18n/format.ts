@@ -215,12 +215,7 @@ export function formatImportBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-export function formatAttachmentSize(size: number): string | null {
-  if (!Number.isFinite(size) || size <= 0) return null;
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
+export { formatAttachmentSize } from "./attachmentSize";
 
 export function formatTokens(count: number): string {
   if (!Number.isFinite(count) || count < 0) return "0";

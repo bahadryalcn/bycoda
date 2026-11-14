@@ -1,6 +1,7 @@
 import { t } from "../../../shared/i18n/core";
 import type { BuiltinSkill } from "../../skills/model/skills";
 import type { Block } from "./session";
+import { LEGACY_OPERATOR_COMMAND, operatorPromptText } from "./userPromptText";
 
 export const OPERATOR_COMMAND: BuiltinSkill = {
   kind: "builtin",
@@ -24,7 +25,7 @@ export function consumeOperatorCommand(text: string): {
   return { text: text.slice(match[0].length), matched: true };
 }
 
-const LEGACY_COMMAND = /^\s*\/(?:mono|bycoda)(?=\s|$)\s*/i;
+const LEGACY_COMMAND = LEGACY_OPERATOR_COMMAND;
 
 /** A submitted /operator turn keeps CLI access available in later turns. */
 export function isOperatorUserTurn(block: Block): boolean {
@@ -39,12 +40,7 @@ export function isOperatorUserTurn(block: Block): boolean {
 
 /** Old command messages remain enabled and render without their old prefix. */
 export function operatorUserPrompt(block: Block): string {
-  const legacy = block.text.match(LEGACY_COMMAND);
-  if (!legacy) return block.text;
-  return (
-    block.text.slice(legacy[0].length).trim() ||
-    "Explain what you can do in bycoda with the app CLI."
-  );
+  return operatorPromptText(block.text);
 }
 
 export function operatorEnabledInThread(blocks: Block[]): boolean {

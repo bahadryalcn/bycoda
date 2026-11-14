@@ -16,6 +16,7 @@ import { resolve, join, dirname } from "node:path";
 import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
 import { readBuildIdentity } from "../scripts/build/build-info.mjs";
 import { readDesktopHelper, copyDesktopHelperBundle } from "../scripts/setup/agent-desktop.mjs";
+import { readCuaDriver, copyCuaDriverBundle } from "../scripts/setup/cua-driver.mjs";
 import { signDesktopHelperBundle } from "../scripts/release/sign-desktop-helper.mjs";
 import {
   buildHostServiceLauncher,
@@ -106,6 +107,7 @@ if (
 const desktopHelperCache =
   desktopHelperCacheIndex >= 0 ? resolve(args[desktopHelperCacheIndex + 1]) : undefined;
 const desktopHelpers = new Map();
+const cuaDrivers = new Map();
 for (const target of targets) {
   if (!(target in runtimes)) throw new Error(`Unsupported host target: ${target}`);
   const [platform, arch] = target.split("-");
@@ -113,6 +115,12 @@ for (const target of targets) {
   if (!helper && (args.includes("--desktop-helper") || desktopHelperCacheIndex >= 0))
     throw new Error(`Prepare the pinned desktop helper before packaging ${target}`);
   if (helper) desktopHelpers.set(target, helper);
+  // The optional cua-driver backend ships with the Host when its pinned release is prepared.
+  const cua =
+    platform === "win32"
+      ? await readCuaDriver({ cacheRoot: desktopHelperCache, platform, arch })
+      : undefined;
+  if (cua) cuaDrivers.set(target, cua);
 }
 const nativeAdmission = args.includes("--native-admission");
 const admissionDirectoryIndex = args.indexOf("--native-admission-dir");
@@ -328,6 +336,16 @@ for (const target of targets) {
         storeLocation: process.env.BYCODA_WINDOWS_SIGNING_STORE || "CurrentUser",
         arch,
       });
+  }
+  if (cuaDrivers.has(target)) {
+    const [platform, arch] = target.split("-");
+    const copied = await copyCuaDriverBundle(
+      dirname(cuaDrivers.get(target).manifestPath),
+      join(folder, "cua-driver"),
+      { platform, arch },
+    );
+    if (JSON.stringify(copied.manifest) !== JSON.stringify(cuaDrivers.get(target).manifest))
+      throw new Error(`cua-driver changed before packaging ${target}`);
   }
   if (nativeAdmission)
     await copyAdmissionBundle(

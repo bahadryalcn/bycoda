@@ -282,7 +282,8 @@ describe("question delivery and ownership", () => {
   it("reports only provider-confirmed waiting and continuation behavior", () => {
     const typed = prompt();
     render(typed);
-    expect(container.querySelector('[role="status"]')?.textContent).toBe("Question open");
+    expect(container.querySelector('[role="status"]')).toBeNull();
+    expect(container.textContent).not.toContain("Question open");
     render({ ...typed, behavior: "blocking" });
     expect(container.querySelector('[role="status"]')?.textContent).toBe("Waiting for your answer");
     render({ ...typed, behavior: "nonBlocking" });

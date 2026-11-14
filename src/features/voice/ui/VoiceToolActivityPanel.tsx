@@ -5,6 +5,9 @@ import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
+import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Divider } from "../../../shared/ui/Divider";
+import { Heading } from "../../../shared/ui/Heading";
 import { Wrench } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { formatDuration } from "../../../shared/i18n/format";
@@ -33,8 +36,8 @@ export function voiceActionLabel(name: string) {
   return name.replace(/^(?:workspace|app|conversation)[._]/, "").replace(/[._]+/g, " ");
 }
 
-/** Voice actions: an icon button with a count badge, so the header title keeps its width; the
- * list opens in a popover. The shared pending glyph marks running actions. */
+/** Shared action history for the companion and detached window. Status and duration
+ * have their own slots so long tool names and uncertain outcomes stay readable. */
 export function VoiceToolActivityPanel({
   entries,
   onStopWaiting,
@@ -49,6 +52,7 @@ export function VoiceToolActivityPanel({
   const running = entries.some(
     (entry) => entry.state === "running" || entry.state === "waiting-owner",
   );
+  // Keep elapsed time current while an action is running or awaiting its owner.
   useEffect(() => {
     if (!running) return;
     const timer = setInterval(() => refresh((value) => value + 1), 1000);
@@ -92,12 +96,19 @@ export function VoiceToolActivityPanel({
           anchor={anchor}
           role="dialog"
           aria-label={t("Voice actions")}
-          width={300}
+          width={340}
           flow="scroll"
-          tabIndex={-1}
+          tabIndex={0}
           onDismiss={() => setAnchor(null)}
           className={styles.popover}
         >
+          <div className={styles.header}>
+            <Heading size="caption">{t("Voice actions")}</Heading>
+            <Text size="caption" tone="muted">
+              {entries.length}
+            </Text>
+          </div>
+          <Divider decorative />
           <ul className={styles.list}>
             {entries.map((entry) => {
               const live = entry.state === "running" || entry.state === "waiting-owner";
@@ -108,22 +119,52 @@ export function VoiceToolActivityPanel({
                   asChild
                 >
                   <li className={styles.row} data-state={entry.state} key={entry.id}>
-                    <Text size="inherit" tone="inherit" truncate className={styles.name}>
-                      {voiceActionLabel(entry.name)}
-                    </Text>
-                    <Text
-                      as="span"
-                      size="inherit"
-                      tone={STATUS_TONE[entry.state]}
-                      className={styles.status}
-                    >
-                      {t(STATUS[entry.state])}
-                    </Text>
-                    <Text size="inherit" tone="muted" className={styles.time}>
+                    <div className={styles.marker}>
+                      {entry.state === "running" ? (
+                        <Spinner size="sm" />
+                      ) : (
+                        <StatusDot
+                          tone={
+                            entry.state === "returned"
+                              ? "muted"
+                              : entry.state === "failed"
+                                ? "danger"
+                                : "warning"
+                          }
+                        />
+                      )}
+                    </div>
+                    <div className={styles.details}>
+                      <Text
+                        as="div"
+                        size="secondary"
+                        weight="medium"
+                        tone="primary"
+                        wrap="anywhere"
+                      >
+                        {voiceActionLabel(entry.name)}
+                      </Text>
+                      <Text
+                        as="div"
+                        size="caption"
+                        leading="normal"
+                        tone={STATUS_TONE[entry.state]}
+                        wrap="anywhere"
+                      >
+                        {t(STATUS[entry.state])}
+                      </Text>
+                    </div>
+                    <Text size="caption" tone="muted" className={styles.time}>
                       {formatDuration(entry.elapsedMs ?? elapsedSince(entry.startedAt))}
                     </Text>
                     {live && (
-                      <Button size="sm" variant="ghost" onClick={() => onStopWaiting(entry.id)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        touchTarget={touchTarget}
+                        className={styles.stop}
+                        onClick={() => onStopWaiting(entry.id)}
+                      >
                         {t("Stop waiting")}
                       </Button>
                     )}

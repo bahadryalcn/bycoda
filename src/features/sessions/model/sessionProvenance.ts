@@ -25,12 +25,21 @@ export function assistantSessionManagement(value: unknown): AssistantSessionMana
 export function sessionMessageAuthor(value: unknown): SessionMessageAuthor | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
   const row = value as Record<string, unknown>;
+  if (row.kind === "delegation") {
+    if (
+      !bounded(row.runId, 200) ||
+      !bounded(row.title, 400) ||
+      (row.reason !== "completion" && row.reason !== "message")
+    )
+      return;
+    return { kind: "delegation", runId: row.runId, title: row.title, reason: row.reason };
+  }
   if (!bounded(row.name, 200) || !bounded(row.reason, 200)) return;
   if (row.kind === "assistant-room") {
     if (
       !bounded(row.threadId, 200) ||
       !bounded(row.operationId, 1000) ||
-      row.reason !== "kickoff" ||
+      (row.reason !== "kickoff" && row.reason !== "message") ||
       row.jobId !== undefined ||
       row.supervisionId !== undefined
     )
@@ -39,7 +48,7 @@ export function sessionMessageAuthor(value: unknown): SessionMessageAuthor | und
       kind: "assistant-room",
       name: row.name,
       threadId: row.threadId,
-      reason: "kickoff",
+      reason: row.reason,
       operationId: row.operationId,
     };
   }
@@ -80,7 +89,10 @@ export function sessionMessageAuthor(value: unknown): SessionMessageAuthor | und
     };
   }
   if (
-    (row.kind === "task" || row.kind === "automation" || row.kind === "steward") &&
+    (row.kind === "task" ||
+      row.kind === "automation" ||
+      row.kind === "steward" ||
+      row.kind === "conversation") &&
     bounded(row.id, 200)
   ) {
     if (row.operationId !== undefined && !bounded(row.operationId, 1000)) return;

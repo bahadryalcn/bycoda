@@ -1,13 +1,8 @@
-import { execFile } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { hostWarnDeduped, type DedupedWarn } from "../diagnostics/log-dedupe";
 
 export type DesktopPresence = { locked: boolean; supported: boolean; idleMs?: number };
-export type DesktopPresenceRunner = (
-  binary: string,
-  args: string[],
-  options: { windowsHide: true; timeout: number; maxBuffer: number },
-) => Promise<string>;
 // Fixed read-only source, never composed with app names, tool text or secrets.
 // WTSInfoEx supplies the current process session's initial lock state without
 // relying on the desktop UI to relay a lock event to the background Host.
@@ -44,22 +39,80 @@ public static class BycodaDesktopPresence {
   public static uint Idle() { LastInput input=new LastInput();input.Size=(uint)Marshal.SizeOf(typeof(LastInput));if(!GetLastInputInfo(ref input))throw new InvalidOperationException("Idle time is unknown.");return unchecked(GetTickCount()-input.Time); }
 }
 '@
-@{locked=[BycodaDesktopPresence]::Locked();supported=$true;idleMs=[BycodaDesktopPresence]::Idle()} | ConvertTo-Json -Compress
+while ($null -ne [Console]::In.ReadLine()) {
+  try { $json=@{locked=[BycodaDesktopPresence]::Locked();supported=$true;idleMs=[BycodaDesktopPresence]::Idle()} | ConvertTo-Json -Compress }
+  catch { $json='{"supported":false}' }
+  [Console]::Out.WriteLine($json); [Console]::Out.Flush()
+}
 `;
-const runNative: DesktopPresenceRunner = (binary, args, options) =>
-  new Promise((resolve, reject) => {
-    execFile(binary, args, { ...options, shell: false, encoding: "utf8" }, (error, stdout) =>
-      error
-        ? reject(new Error(error.killed ? "timed out" : `exited with ${String(error.code)}`))
-        : resolve(stdout),
-    );
-  });
-/** Unsupported and failed reads never certify an active, unlocked desktop. */
-export async function readDesktopPresence(
-  options: { platform?: NodeJS.Platform; run?: DesktopPresenceRunner; warn?: DedupedWarn } = {},
-): Promise<DesktopPresence> {
-  if ((options.platform ?? process.platform) !== "win32") return { supported: false, locked: true };
-  try {
+type PresenceSpawn = (binary: string, args: string[]) => ChildProcess;
+const defaultSpawn: PresenceSpawn = (binary, args) =>
+  spawn(binary, args, { windowsHide: true, shell: false, stdio: ["pipe", "pipe", "ignore"] });
+const MAX_LINE = 16384;
+
+/**
+ * One resident PowerShell compiles the native type once and answers one JSON line per request.
+ * Spawning PowerShell and compiling C# for every read took seconds under load and timed out,
+ * which made the computer count as away and refused computer use. Concurrent callers share one
+ * reading; a timeout kills the process so the next read starts fresh; the process exits when
+ * idle or when the Host closes its stdin.
+ */
+export class DesktopPresenceWorker {
+  private child?: ChildProcess;
+  private partial = "";
+  private waiter?: { resolve(line: string): void; reject(error: Error): void };
+  private inflight?: Promise<string>;
+  private idle?: ReturnType<typeof setTimeout>;
+  constructor(
+    private readonly spawnChild: PresenceSpawn = defaultSpawn,
+    private readonly idleMs = 120_000,
+  ) {}
+
+  read(timeoutMs: number): Promise<string> {
+    this.inflight ??= this.query(timeoutMs).finally(() => {
+      this.inflight = undefined;
+    });
+    return this.inflight;
+  }
+
+  stop() {
+    const child = this.child;
+    this.child = undefined;
+    this.partial = "";
+    clearTimeout(this.idle);
+    if (child && child.exitCode === null) child.kill();
+  }
+
+  private query(timeoutMs: number) {
+    clearTimeout(this.idle);
+    return new Promise<string>((resolve, reject) => {
+      const settle = (error?: Error, line?: string) => {
+        clearTimeout(timer);
+        this.waiter = undefined;
+        if (error) return reject(error);
+        this.idle = setTimeout(() => this.stop(), this.idleMs);
+        this.idle.unref?.();
+        resolve(line!);
+      };
+      const timer = setTimeout(() => {
+        this.stop();
+        settle(new Error("timed out"));
+      }, timeoutMs);
+      this.waiter = {
+        resolve: (line) => settle(undefined, line),
+        reject: (error) => settle(error),
+      };
+      try {
+        this.start().stdin!.write("\n");
+      } catch (error) {
+        this.stop();
+        settle(error instanceof Error ? error : new Error("presence helper unavailable"));
+      }
+    });
+  }
+
+  private start() {
+    if (this.child) return this.child;
     const binary = join(
       process.env.SystemRoot ?? "C:/Windows",
       "System32",
@@ -67,19 +120,55 @@ export async function readDesktopPresence(
       "v1.0",
       "powershell.exe",
     );
-    const stdout = await (options.run ?? runNative)(
-      binary,
-      [
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-WindowStyle",
-        "Hidden",
-        "-Command",
-        WINDOWS_DESKTOP_PRESENCE_SCRIPT,
-      ],
-      { windowsHide: true, timeout: 10000, maxBuffer: 16384 },
-    );
+    const child = this.spawnChild(binary, [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle",
+      "Hidden",
+      "-Command",
+      WINDOWS_DESKTOP_PRESENCE_SCRIPT,
+    ]);
+    this.child = child;
+    // Lossy per-line decoding: one invalid byte never ends the reader.
+    const decoder = new TextDecoder("utf-8", { fatal: false });
+    child.stdout!.on("data", (chunk: Uint8Array) => {
+      if (this.child !== child) return;
+      this.partial += decoder.decode(chunk, { stream: true });
+      for (let index = this.partial.indexOf("\n"); index >= 0; index = this.partial.indexOf("\n")) {
+        const line = this.partial.slice(0, index).trim();
+        this.partial = this.partial.slice(index + 1);
+        if (line) this.waiter?.resolve(line);
+      }
+      if (this.partial.length > MAX_LINE) {
+        this.stop();
+        this.waiter?.reject(new Error("oversized output"));
+      }
+    });
+    const gone = () => {
+      if (this.child !== child) return;
+      this.stop();
+      this.waiter?.reject(new Error("presence helper exited"));
+    };
+    child.on("exit", gone);
+    child.on("error", gone);
+    child.stdin!.on("error", gone);
+    return child;
+  }
+}
+const sharedWorker = new DesktopPresenceWorker();
+
+/** Unsupported and failed reads never certify an active, unlocked desktop. */
+export async function readDesktopPresence(
+  options: {
+    platform?: NodeJS.Platform;
+    read?: (timeoutMs: number) => Promise<string>;
+    warn?: DedupedWarn;
+  } = {},
+): Promise<DesktopPresence> {
+  if ((options.platform ?? process.platform) !== "win32") return { supported: false, locked: true };
+  try {
+    const stdout = await (options.read ?? ((timeoutMs) => sharedWorker.read(timeoutMs)))(10000);
     const parsed: unknown = JSON.parse(stdout.trim());
     if (!parsed || typeof parsed !== "object") throw new Error("Invalid presence");
     const value = parsed as DesktopPresence;

@@ -31,6 +31,7 @@ import {
 import { handleEditorFindKey } from "../../../features/files/editor/editorFindBridge";
 import { terminalToolShortcut } from "../../../features/terminal/model/terminalKeys";
 import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import type { WorkspaceActions, WorkspaceRun } from "./useWorkspaceActions";
 
 export interface WorkspaceKeyboardShortcutDeps {
@@ -73,7 +74,7 @@ export function useWorkspaceKeyboardShortcuts({
       // Never act on a chord while an IME is composing: tabCommand and the
       // editor guards already do, and the app shortcut resolver does too, so
       // this keeps the whole handler consistent for whatever is added next.
-      if (e.isComposing) return;
+      if (isImeComposition(e)) return;
       // Terminal tools own their input and scoped chords. This handler runs on
       // window capture, before the terminal can prevent editor/global shortcuts.
       const terminalTarget = e.target instanceof Element ? e.target : null;

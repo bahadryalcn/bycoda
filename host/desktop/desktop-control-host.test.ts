@@ -9,6 +9,7 @@ import {
   HostDesktopControl,
   type DesktopRunner,
   type DesktopControlPorts,
+  type DesktopControlPrincipal,
 } from "./desktop-control-host";
 import { isForbiddenDesktopShortcut } from "../../src/shared/model/host-contracts/desktop-control";
 import { readDesktopPresence, WINDOWS_DESKTOP_PRESENCE_SCRIPT } from "./desktop-presence";
@@ -110,6 +111,66 @@ it("launches only an owner-approved app headlessly and journals before dispatch 
   expect(
     (await f.store.db.prepare("SELECT value FROM desktop_control_receipts").get())!.value,
   ).not.toContain("PRIVATE");
+});
+it("on Windows attaches to a running app by any casing and launches installed apps by path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bycoda-desktop-apps-"));
+  cleanups.push(async () => rmSync(dir, { recursive: true, force: true }));
+  const edge = join(dir, "msedge.exe");
+  writeFileSync(edge, "");
+  const launches: string[][] = [];
+  const f = await setup({
+    platform: "win32",
+    run: async (binary, args) => {
+      if (/reg\.exe$/i.test(binary))
+        return args[1].includes("msedge.exe") && args[1].startsWith("HKLM")
+          ? { stdout: `    (Default)    REG_SZ    ${edge}`, exitCode: 0 }
+          : { stdout: "", exitCode: 1 };
+      const command = args[2];
+      const app = args[args.indexOf("--app") + 1];
+      if (command === "list-apps")
+        return envelope(command, {
+          apps: /chrome/i.test(app) ? [{ name: "chrome.exe", pid: 7 }] : [],
+        });
+      if (command === "list-windows")
+        return envelope(command, [{ id: "w-1", title: "Google", app_name: "chrome.exe", pid: 7 }]);
+      if (command === "snapshot")
+        return envelope(command, {
+          app: "chrome.exe",
+          window: { id: "w-1" },
+          snapshot_id: "s1",
+          complete: true,
+          tree: { role: "window", ref_id: "@s1:e1" },
+        });
+      launches.push(args.slice(2));
+      return envelope(command, { disposition: { delivery: "delivered_verified", retry: "safe" } });
+    },
+  });
+  await f.request({
+    op: "configure",
+    expectedVersion: 0,
+    configuration: {
+      enabled: true,
+      binaryPath: f.binary,
+      binarySha256: f.digest,
+      allowedApps: ["chrome.exe", "msedge"],
+      allowPhysicalInput: false,
+    },
+  });
+  await expect(
+    f.request({ op: "launch", requestId: "other", app: "firefox" }, agent),
+  ).rejects.toThrow("not approved");
+  const attached = await f.request({ op: "launch", requestId: "chrome", app: "Chrome" }, agent);
+  expect(attached.operation).toMatchObject({ state: "settled", ok: true });
+  expect(launches).toEqual([]);
+  expect((await f.request({ op: "windows.list", app: "chrome" }, agent)).windows).toEqual([
+    { id: "w-1", title: "Google", app: "chrome.exe", pid: 7 },
+  ]);
+  expect(
+    (await f.request({ op: "snapshot", app: "Chrome" }, agent)).snapshot?.snapshotId,
+  ).toBeTruthy();
+  const launched = await f.request({ op: "launch", requestId: "edge", app: "msedge" }, agent);
+  expect(launched.operation).toMatchObject({ ok: true, delivery: "delivered_verified" });
+  expect(launches).toEqual([["launch", "--timeout", "10000", "--", edge]]);
 });
 it.each(["get", "set", "clear"])(
   "denies clipboard %s even for direct owner or physical consent without exact sensitive approval",
@@ -624,9 +685,10 @@ async function setup(options: DesktopControlPorts = {}) {
   };
   let store = new HostStore(path);
   await store.ready;
-  const ports = {
+  const ports: DesktopControlPorts = {
     presence: async () => ({ supported: true, locked: false }),
     run: runner,
+    platform: "linux",
     ...options,
   };
   let control = new HostDesktopControl(store, ports);
@@ -641,7 +703,8 @@ async function setup(options: DesktopControlPorts = {}) {
     get store() {
       return store;
     },
-    request: (input: unknown, principal = owner) => control.request(input, principal),
+    request: (input: unknown, principal: DesktopControlPrincipal = owner) =>
+      control.request(input, principal),
     configure: () =>
       control.request(
         {
@@ -1064,30 +1127,24 @@ it("remembers an owner-approved app without retiring live snapshots", async () =
   expect(page.snapshot?.snapshotId).toBe(snapshot.snapshotId);
 });
 it("keeps Host presence headless and treats unsupported, failed and malformed reads as a locked, unsupported desktop", async () => {
-  let args: string[] = [];
   const read = await readDesktopPresence({
     platform: "win32",
-    run: async (_binary, input, options) => {
-      args = input;
-      expect(options.windowsHide).toBe(true);
-      return '{"locked":false,"supported":true,"idleMs":20}';
-    },
+    read: async () => '{"locked":false,"supported":true,"idleMs":20}',
   });
   expect(read).toEqual({ locked: false, supported: true, idleMs: 20 });
-  expect(args).toContain("Hidden");
   expect(await readDesktopPresence({ platform: "linux" })).toEqual({
     locked: true,
     supported: false,
   });
   expect(
-    await readDesktopPresence({ platform: "win32", run: async () => '{"locked":false}' }),
+    await readDesktopPresence({ platform: "win32", read: async () => '{"locked":false}' }),
   ).toEqual({ locked: true, supported: false });
 });
 it.runIf(process.platform === "win32")(
   "compiles the fixed presence helper and validates its native layout without reading or driving the desktop",
   async () => {
     const source =
-      WINDOWS_DESKTOP_PRESENCE_SCRIPT.split("@{locked=")[0] +
+      WINDOWS_DESKTOP_PRESENCE_SCRIPT.split("while (")[0] +
       "[Runtime.InteropServices.Marshal]::SizeOf([type][BycodaDesktopPresence+Info])";
     const stdout = await new Promise<string>((resolve, reject) =>
       execFile(

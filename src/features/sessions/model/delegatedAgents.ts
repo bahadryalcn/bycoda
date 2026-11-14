@@ -9,6 +9,8 @@ import {
 import type { DockAgent, DockAgentStatus } from "./activityDock";
 import type { AgentStep, Block, Session } from "./session";
 import { delegatedBlockId } from "./delegatedBlockId";
+import { executionUserIndex } from "./executionTurn";
+import { isSessionErrorBlock } from "./sessionIssue";
 import { sessionIssue } from "./sessionIssue";
 import { sessionNeedsInput } from "./session";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
@@ -134,10 +136,34 @@ function delegatedDockAgent(child: Session): DockAgent {
     detail: subagentStatusLine(block, steps),
     ...(startedAt !== undefined ? { startedAt } : {}),
     ...(endedAt !== undefined ? { endedAt } : {}),
+    ...(block.agentRun?.round ? { round: block.agentRun.round } : {}),
   };
 }
 
 export { delegatedBlockId };
+
+/**
+ * Which round of the conversation the child is in: the Host counts one per brief
+ * and each parent reply; without it, the child's own user turns tell.
+ */
+export function delegatedRound(child: Session): number {
+  const hosted = delegationParentOf(child)?.round;
+  const turns = child.blocks.filter(
+    (block) => block.role === "user" && !block.internal && !block.continuationOf,
+  ).length;
+  return Math.max(hosted ?? 0, turns, 1);
+}
+
+/** Why a failed child failed: its error notice, else the Host's note on the link. */
+export function delegatedFailureText(child: Session): string | undefined {
+  for (let i = child.blocks.length - 1; i >= 0; i--) {
+    const block = child.blocks[i];
+    if (block.role === "user" && !block.draft) break;
+    if (isSessionErrorBlock(block) && block.text.trim()) return block.text.trim();
+  }
+  const reason = child.usageLimit ? undefined : delegationParentOf(child)?.error?.trim();
+  return reason || undefined;
+}
 
 /**
  * A tool-shaped block for a child session, so the subagent sheet renders it
@@ -146,8 +172,11 @@ export { delegatedBlockId };
 export function delegatedAgentBlock(child: Session): Block {
   const parent = delegationParentOf(child);
   const first = child.blocks.find((block) => block.role === "user");
+  // The clock and steps belong to the latest round; earlier rounds are history.
+  const latestIndex = executionUserIndex(child.blocks);
+  const latest = child.blocks[latestIndex] ?? first;
   const steps: AgentStep[] = [];
-  for (const block of child.blocks) {
+  for (const block of latestIndex > 0 ? child.blocks.slice(latestIndex) : child.blocks) {
     if (block.internal) continue;
     if (isToolBlock(block)) {
       steps.push({
@@ -169,11 +198,12 @@ export function delegatedAgentBlock(child: Session): Block {
       steps.push({ id: block.id, kind: "message", text: block.text });
     }
   }
-  const startedAt = first?.startedAt ?? parent?.startedAt;
+  const startedAt = latest?.startedAt ?? parent?.startedAt;
   const ended =
-    !child.busy && first?.startedAt !== undefined && first.durationMs !== undefined
-      ? first.startedAt + first.durationMs
+    !child.busy && latest?.startedAt !== undefined && latest.durationMs !== undefined
+      ? latest.startedAt + latest.durationMs
       : undefined;
+  const round = delegatedRound(child);
   const status = child.busy || child.continuingElsewhere ? "running" : "completed";
   // Runs started before the task title was kept are named "Subagent · <model>";
   // recover their task line from the brief instead of repeating the model.
@@ -200,6 +230,7 @@ export function delegatedAgentBlock(child: Session): Block {
       steps,
       ...(startedAt !== undefined ? { startedAt } : {}),
       ...(ended !== undefined ? { endedAt: ended } : {}),
+      ...(round > 1 ? { round } : {}),
     },
   };
 }

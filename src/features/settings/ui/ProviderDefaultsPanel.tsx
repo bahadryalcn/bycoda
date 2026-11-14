@@ -141,7 +141,16 @@ export function ProviderDefaultsPanel({
         section={section}
         providerControl={
           providerControl ? (
-            <Row label={t("Edit defaults for")}>
+            <Row
+              label={t("Edit defaults for")}
+              info={
+                section === "delegation"
+                  ? t(
+                      "Global settings apply to chats and unattended work. Project, group and workspace settings apply to chats only.",
+                    )
+                  : undefined
+              }
+            >
               <Select
                 hideLabel
                 label={t("Provider defaults")}

@@ -10,6 +10,7 @@ import {
 } from "./SprintManagement";
 import type { SprintBoardController } from "../model/sprintClient";
 import type { SprintProjectRef } from "../model/hostSprints";
+import { SprintList } from "./SprintList";
 
 it("round-trips calendar dates without shifting at positive or negative UTC offsets", () => {
   const date = "2026-10-26";
@@ -164,10 +165,9 @@ it("lists sprints with a status badge and offers the status filter only when sta
     }) as unknown as SprintBoardController;
   const render = (states: string[]) =>
     renderToStaticMarkup(
-      createElement(SprintManagement, {
-        board: make(states),
-        projects: [project],
-        selectedId: "",
+      createElement(SprintList, {
+        rows: make(states).sprints,
+        accessible: new Set(['["local","project"]']),
         onSelect: () => {},
       }),
     );

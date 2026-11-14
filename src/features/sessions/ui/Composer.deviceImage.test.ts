@@ -60,7 +60,7 @@ it("preserves the current draft and adds an image, its comment and device contex
     );
     await act(async () => attachDeviceImage("/project", "device-image-session", image));
     const text = container.querySelector("textarea")!.value;
-    expect(text).toMatch(/^Please adjust this\n\n\[image1\]/);
+    expect(text).toMatch(/^Please adjust this\n\n\[Image 1 · 68 B\]/);
     expect(text).toContain(image.comment);
     expect(text).toContain("iPhone · iOS 27 simulator");
     expect(text).toContain("on MacBook (machine mac)");

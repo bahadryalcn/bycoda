@@ -6,7 +6,7 @@ export type ToolWorkflowAvailability = {
 };
 
 /** Change when routing or recovery instructions change; delivery fingerprints include this text. */
-export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-07.2";
+export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-14.1";
 
 /**
  * Per-tool rules live in each tool's description and in tools.describe; this hint
@@ -16,8 +16,13 @@ export const TOOL_WORKFLOW_GUIDANCE_VERSION = "2026-11-07.2";
 const COMMON_GUIDANCE =
   "Offered tools are not proof of permission, readiness or success: read the relevant status before acting and verify the result after. Pass returned hashes, revisions and leases; retry an uncertain write with the same requestId and reconcile through status/readback instead of resending. Send, publish, merge, install, credential and PR writes keep their owner approval inside bycoda. SSH skips repeated approval only with Host-verified full-access in the source session. Approvals appear in chat or app, never a platform confirmation dialog; never bypass permissions or install anything to recover a tool.";
 
+/** Shared with delegated children; names no server so it stays valid for every project. */
+export const MCP_ON_DEMAND_GUIDANCE =
+  "MCP servers load on demand: conversation_mcp_servers_list, then _servers_describe one, then _tools_call; none are wired directly.";
+
 const CONVERSATION_GUIDANCE =
-  "Discover narrowly: conversation_tools_search (CLI tools.search) by task or family, then conversation_tools_describe and conversation_tools_status for the tools you will use; avoid full catalog dumps. For browser work prefer the integrated browser.preview/browser.status route over an external browser. Show visuals via visuals.preview then visuals.render when asked to see something or a chart/diagram beats text; keep simple answers as text.";
+  "Discover narrowly: conversation_tools_search (CLI tools.search) by task or family, then conversation_tools_describe and conversation_tools_status for the tools you will use; avoid full catalog dumps. For browser work prefer the integrated browser.preview/browser.status route over an external browser. Show visuals via visuals.preview then visuals.render when asked to see something or a chart/diagram beats text; keep simple answers as text. " +
+  MCP_ON_DEMAND_GUIDANCE;
 
 export function toolWorkflowGuidance(availability: ToolWorkflowAvailability): string {
   const offered = [

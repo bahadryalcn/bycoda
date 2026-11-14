@@ -378,7 +378,7 @@ it("opens task and goal creation in dialogs with workspace and start choices", a
   expect(document.querySelector('[role="dialog"] form[aria-label="New task"]')).toBeTruthy();
 });
 
-it("starts in the open project's backlog and creates in the explicitly selected project", async () => {
+it("starts across all projects and creates in the explicitly selected project", async () => {
   host([
     task({ id: "a", title: "Project A work", status: "todo" }),
     task({ id: "b", projectId: "project-2", title: "Project B work", status: "todo" }),
@@ -400,7 +400,7 @@ it("starts in the open project's backlog and creates in the explicitly selected 
   await render(undefined, "backlog");
   const list = () => container.querySelector('[role="list"][aria-label="Tasks"]');
   expect(list()?.textContent).toContain("Project A work");
-  expect(list()?.textContent).not.toContain("Project B work");
+  expect(list()?.textContent).toContain("Project B work");
   await allProjects();
   expect(list()?.textContent).toContain("Project B work");
   await act(async () =>
@@ -754,7 +754,7 @@ it.each(["environment.describe", "goals.list"])(
             (args as any)?.method,
           ),
       ),
-    ).toBe(false);
+    ).toBe(delayedMethod === "goals.list");
     await allProjects();
     expect(container.querySelector('[data-remote-data-state="refreshing"]')).toBeTruthy();
     expect(container.querySelector('[data-remote-data-state="empty"]')).toBeNull();
@@ -837,7 +837,14 @@ it("removes the old host's cards and write targets while a reused machine identi
   expect(isDisabled(button(form, "Add and start")!)).toBe(true);
   await act(async () => releaseProbe({ capabilities: ["tasks", "tasks.todo"] }));
   await act(async () => {});
-  expect(container.querySelector('[data-remote-data-state="empty"]')).toBeTruthy();
+  expect(
+    invoke.mock.calls.some(
+      ([command, args]) =>
+        command === "remote_request" &&
+        args.method === "tasks.list" &&
+        args.machineId === "machine-local",
+    ),
+  ).toBe(true);
   expect(card("Old host task")).toBeNull();
 });
 
@@ -900,6 +907,28 @@ it("offers to merge a reviewed branch and shows what was checked", async () => {
     "Update bycoda Host to review and approve this task's delivery.",
   );
   expect(requests.some((request) => request.method === "tasks.move")).toBe(false);
+});
+
+it("keeps a failed delete open with the Host error and retries the same task", async () => {
+  const requests = host([task({ status: "blocked" })]);
+  const handle = invoke.getMockImplementation()!;
+  let fail = true;
+  invoke.mockImplementation(async (...args: unknown[]) => {
+    if (args[0] === "remote_request" && (args[1] as any)?.method === "tasks.delete" && fail) {
+      throw new Error("Other unfinished tasks depend on this task. Remove those tasks first.");
+    }
+    return handle(...args);
+  });
+  await render();
+  await pickAction(column("blocked"), "Delete");
+  const dialog = () => document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+  await act(async () => button(dialog(), "Delete")!.click());
+  expect(dialog()?.textContent).toContain("Other unfinished tasks depend on this task.");
+  expect(column("blocked").textContent).toContain("Ship the report");
+  fail = false;
+  await act(async () => button(dialog(), "Delete")!.click());
+  expect(document.body.querySelector('[role="dialog"]')).toBeNull();
+  expect(requests.some((request) => request.method === "tasks.delete")).toBe(true);
 });
 
 it("confirms before discarding the branch of an unmerged task", async () => {

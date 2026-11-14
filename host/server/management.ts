@@ -1,4 +1,9 @@
 import { sessionWorkCwd } from "../../src/features/sessions/model/session";
+import {
+  dispatchSessionControl,
+  isSessionControlAction,
+} from "../conversation/conversation-session-control";
+import { crewManagedSession } from "../crews/crew-managed-session";
 import { conversationGitReviewHash } from "../conversation/conversation-git-review";
 import {
   ConversationManagementRuntime,
@@ -58,6 +63,7 @@ export function createManagementRuntime(
     | "featureClaims"
     | "projectsService"
     | "workspacePolicy"
+    | "sessionQueues"
     | "sprints"
     | "sprintsService"
     | "gitService"
@@ -222,6 +228,42 @@ export function createManagementRuntime(
         principal.kind === "session"
           ? sessionWorkCwd((await checkSession(principal.sessionId)).session)
           : project.cwd;
+      if (isSessionControlAction(action)) {
+        const control = () =>
+          dispatchSessionControl(action, args, principal, authorized, {
+            session: dependencies.featureSession,
+            queues: dependencies.sessionQueues,
+            owned: async (id) =>
+              !!(await crewManagedSession(dependencies.engine.store, id)) ||
+              (await dependencies.tasks.list()).some(
+                (task) => task.sessionId === id || task.reviewer?.sessionId === id,
+              ),
+            cancel: (target, commandId, check) =>
+              dependencies.engine.withCommandAdmission(
+                {
+                  check: async () => {
+                    await check();
+                  },
+                },
+                () =>
+                  dependencies.commandService.dispatch(
+                    {
+                      type: "cancel",
+                      commandId,
+                      sessionId: target.session.id,
+                      runId: target.runId!,
+                      ...(target.authorityGeneration !== undefined
+                        ? { authorityGeneration: target.authorityGeneration }
+                        : {}),
+                    },
+                    context,
+                  ),
+              ),
+          });
+        return action === "sessions.message"
+          ? dependencies.engine.store.db.scope(control)
+          : control();
+      }
       if (isSessionManagementAction(action))
         return dispatchSessionManagement(action, args, principal, authorized, {
           session: dependencies.featureSession,

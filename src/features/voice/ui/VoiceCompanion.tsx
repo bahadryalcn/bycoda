@@ -119,6 +119,7 @@ import {
   captureLocalVoiceHistory,
 } from "../model/voiceHistoryTransport";
 import { persistVoiceOwnerChoice, VoiceOwnerChoicePending } from "../model/voiceOwnerChoice";
+import { playCue } from "../../settings/public/sounds";
 import { ownerQuestionDraftScope } from "../../assistant/model/assistantOwnerQuestions";
 import { resolveQuestionDraft } from "../../sessions/model/questionDrafts";
 import {
@@ -2292,6 +2293,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       return new Promise<unknown>((resolve) => {
         const timer = setTimeout(releaseChoice, next.timeoutSec * 1000);
         pendingChoice.current = { choice: shown, resolve, timer, owner, presentation };
+        playCue("voiceQuestion");
       });
     }
     // Memory belongs to this device, not to a session or project.

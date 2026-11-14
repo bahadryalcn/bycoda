@@ -404,7 +404,12 @@ describe("provider-account sources", () => {
     expect(sets[1].has("extra")).toBe(true);
     expect(sets[2].has("extra")).toBe(false);
 
-    const hub = new McpHub({ dataDir: join(home, "hub"), files, accountDirs: accounts });
+    const hub = new McpHub({
+      dataDir: join(home, "hub"),
+      files,
+      accountDirs: accounts,
+      policy: async () => ({ version: 1, mode: "always", direct: [] }),
+    });
     const published = await hub.publication("http://127.0.0.1:4555");
     expect(published.servers.map((server) => server.name)).toEqual(
       expect.arrayContaining(["tradingview", "blender", "dokploy", "extra"]),

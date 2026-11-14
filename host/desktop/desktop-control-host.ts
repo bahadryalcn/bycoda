@@ -1,4 +1,6 @@
 import { nativeRun, type DesktopRunner } from "./desktop-control-runner";
+import { CuaDriverClient } from "./cua-driver-client";
+import { createCuaDriverRunner } from "./cua-driver-runner";
 export type { DesktopRunner } from "./desktop-control-runner";
 import {
   SNAPSHOT_PAGE_DEFAULT_CHARS,
@@ -28,10 +30,13 @@ import {
   isDesktopAppAllowed,
   isPlainDesktopAppName,
   normalizeDesktopConfiguration,
+  sameDesktopApp,
 } from "./desktop-control-permission";
+import { resolveWindowsAppPath } from "./desktop-app-paths";
 import {
   AGENT_DESKTOP_PROTOCOL,
   AGENT_DESKTOP_UPSTREAM_REF,
+  CUA_DRIVER_RELEASE,
   DesktopControlRequestValidationSchema,
   DesktopControlResponseSchema,
   type DesktopControlConfiguration,
@@ -40,10 +45,13 @@ import {
   type DesktopControlResponse,
 } from "../../src/shared/model/host-contracts/desktop-control";
 import { hasControlCharacters } from "../../src/shared/lib/controlCharacters";
+import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
 
 export type DesktopControlPrincipal = { kind: "owner" | "assistant" | "chief"; id: string };
 export interface DesktopControlPorts {
   run?: DesktopRunner;
+  /** Test seam for the cua-driver backend; defaults to its MCP stdio adapter. */
+  cuaRun?: DesktopRunner;
   presence?(): Promise<{ locked: boolean; supported: boolean }>;
   authorize?(principal: DesktopControlPrincipal): Promise<boolean>;
   physicalGrant?(
@@ -54,6 +62,8 @@ export interface DesktopControlPorts {
   /** Internal metadata-only sink; never a tool action or an input authority. */
   onOperation?(event: DesktopOperationAudit): Promise<void>;
   now?(): number;
+  /** Test seam; defaults to the Host's platform. */
+  platform?: NodeJS.Platform;
 }
 const envelopeSchema = z.object({
   version: z.literal(AGENT_DESKTOP_PROTOCOL),
@@ -116,11 +126,15 @@ export class HostDesktopControl {
   private readonly snapshots = new Map<string, Snapshot>();
   private helperState?: { path: string; parent: string; dev: number; ino: number };
   private readonly permissions: DesktopSystemPermissions;
+  private readonly cuaClient = new CuaDriverClient();
+  private readonly cuaRun: DesktopRunner;
+  private verifiedBinary?: { identity: string; digest: string };
   constructor(
     private readonly store: HostStore,
     private readonly ports: DesktopControlPorts = {},
   ) {
     this.permissions = new DesktopSystemPermissions(ports.run ?? nativeRun, () => this.now());
+    this.cuaRun = ports.cuaRun ?? createCuaDriverRunner(this.cuaClient, ports.platform);
     this.ready = (async () => {
       await store.ready;
       await store.db.scope(() =>
@@ -134,6 +148,9 @@ export class HostDesktopControl {
   private now() {
     return this.ports.now?.() ?? Date.now();
   }
+  private get platform() {
+    return this.ports.platform ?? process.platform;
+  }
   private owner(principal: DesktopControlPrincipal) {
     if (principal.kind !== "owner")
       throw new Error("Desktop settings require the owner's direct authority.");
@@ -146,6 +163,7 @@ export class HostDesktopControl {
     this.halted = true;
     this.active?.abort();
     await this.tail;
+    this.cuaClient.close();
     await this.auditDraining;
     this.snapshots.clear();
     await this.clearHelperState();
@@ -300,6 +318,7 @@ export class HostDesktopControl {
       this.stopGeneration++;
       this.halted = true;
       this.active?.abort();
+      this.cuaClient.close();
       this.statusChanged();
       this.snapshots.clear();
     }
@@ -363,7 +382,7 @@ export class HostDesktopControl {
   /** Whether the conversation gate must ask the owner before this app is used. */
   async appAllowed(app: string) {
     await this.ready;
-    return isDesktopAppAllowed(await this.configuration(), app);
+    return isDesktopAppAllowed(await this.configuration(), app, this.platform);
   }
   /** Remembers an app after the owner's exact native approval, which the conversation gate
    * holds. Never a model tool. Live snapshots stay valid: adding an app revokes nothing. */
@@ -373,7 +392,7 @@ export class HostDesktopControl {
       throw new Error("Desktop app names must be plain non-option names.");
     await this.store.transaction(async () => {
       const current = await this.configuration();
-      if (isDesktopAppAllowed(current, app)) return;
+      if (isDesktopAppAllowed(current, app, this.platform)) return;
       if (current.allowedApps.length >= 50)
         throw new Error(
           "The approved app list is full. Remove an app in Computer use settings first.",
@@ -404,9 +423,21 @@ export class HostDesktopControl {
     const details = await stat(configuration.binaryPath);
     if (!details.isFile() || details.size > 100 * 1024 * 1024)
       throw new Error("The desktop helper is not a supported native binary.");
-    const digest = createHash("sha256")
-      .update(await readFile(configuration.binaryPath))
-      .digest("hex");
+    // Rehash only when the file identity changes; a rewrite always moves ctime.
+    const identity = JSON.stringify([
+      configuration.binaryPath,
+      details.size,
+      details.mtimeMs,
+      details.ctimeMs,
+      details.ino,
+    ]);
+    const digest =
+      this.verifiedBinary?.identity === identity
+        ? this.verifiedBinary.digest
+        : createHash("sha256")
+            .update(await readFile(configuration.binaryPath))
+            .digest("hex");
+    this.verifiedBinary = { identity, digest };
     if (digest !== configuration.binarySha256.toLowerCase())
       throw new Error(
         "The desktop helper's checksum changed. Verify its installation before enabling it.",
@@ -455,16 +486,14 @@ export class HostDesktopControl {
     try {
       if (args[0].startsWith("clipboard-") && !(await this.sensitiveAuthorities.getStore()?.()))
         throw new Error("Clipboard approval expired before dispatch.");
-      const result = await (this.ports.run ?? nativeRun)(
-        configuration.binaryPath,
-        ["--session", this.namespace, ...args],
-        {
-          signal: controller.signal,
-          timeoutMs: 15000,
-          maxBuffer: args[0] === "screenshot" ? 6 * 1024 * 1024 : 1024 * 1024,
-          env,
-        },
-      );
+      const run =
+        configuration.driver === "cua-driver" ? this.cuaRun : (this.ports.run ?? nativeRun);
+      const result = await run(configuration.binaryPath, ["--session", this.namespace, ...args], {
+        signal: controller.signal,
+        timeoutMs: 15000,
+        maxBuffer: args[0] === "screenshot" ? 6 * 1024 * 1024 : 1024 * 1024,
+        env,
+      });
       if (controller.signal.aborted || this.halted || this.closing)
         throw new Error("Desktop command was cancelled; its delivery is unknown.");
       // Owned action outcomes are journaled even after revocation. Request disclosure
@@ -521,7 +550,11 @@ export class HostDesktopControl {
       )
       .max(200)
       .parse(envelope.data);
-    if (windows.some((window) => window.app_name !== app || window.pid !== pid))
+    if (
+      windows.some(
+        (window) => !sameDesktopApp(window.app_name, app, this.platform) || window.pid !== pid,
+      )
+    )
       throw new Error("Desktop inventory contained a foreign application process.");
     return windows.map((window) => ({
       id: window.id,
@@ -551,7 +584,7 @@ export class HostDesktopControl {
     app: string,
     principal: DesktopControlPrincipal,
   ) {
-    if (!isDesktopAppAllowed(configuration, app))
+    if (!isDesktopAppAllowed(configuration, app, this.platform))
       throw new Error("The owner has not approved this app for computer use.");
     const data = this.requireData(
       await this.invoke(configuration, ["list-apps", "--app", app], principal),
@@ -559,10 +592,30 @@ export class HostDesktopControl {
     const apps = z
       .array(z.object({ name: z.string(), pid: z.number().int().positive() }))
       .parse(data.apps)
-      .filter((item) => item.name === app);
+      .filter((item) => sameDesktopApp(item.name, app, this.platform));
     if (apps.length !== 1)
       throw new Error("The allowed app is missing or ambiguous; choose a single running app.");
     return apps[0].pid;
+  }
+  /** Whether exactly one instance of the app already runs; inventory failures count as no. */
+  private async runningWindowsApp(
+    configuration: DesktopControlConfiguration,
+    app: string,
+    principal: DesktopControlPrincipal,
+  ) {
+    try {
+      const data = this.requireData(
+        await this.invoke(configuration, ["list-apps", "--app", app], principal),
+      );
+      return (
+        z
+          .array(z.object({ name: z.string() }))
+          .parse(data.apps)
+          .filter((item) => sameDesktopApp(item.name, app, this.platform)).length === 1
+      );
+    } catch {
+      return false;
+    }
   }
   /** Journal one non-ref operation before any effect. Sensitive results remain
    * volatile: a retry returns only the durable receipt, never clipboard bytes. */
@@ -584,7 +637,10 @@ export class HostDesktopControl {
       return { operation: receipt.operation };
     }
     if (input.op === "launch") {
-      if (!isPlainDesktopAppName(input.app) || !isDesktopAppAllowed(configuration, input.app))
+      if (
+        !isPlainDesktopAppName(input.app) ||
+        !isDesktopAppAllowed(configuration, input.app, this.platform)
+      )
         throw new Error("The owner has not approved this app for computer use.");
     } else {
       if ((input.action === "set") !== (input.text !== undefined) || input.text?.includes("\0"))
@@ -634,7 +690,7 @@ export class HostDesktopControl {
           .run(receiptId, JSON.stringify(receipt)),
       "critical",
     );
-    const args =
+    let args =
       input.op === "launch"
         ? ["launch", "--timeout", "10000", "--", input.app]
         : input.action === "get"
@@ -648,7 +704,23 @@ export class HostDesktopControl {
       // Authority may change while the critical journal write is pending.
       if (input.op === "clipboard" && !(await this.sensitiveAuthorities.getStore()?.()))
         throw new Error("Clipboard approval expired before dispatch.");
-      const envelope = await this.invoke(configuration, args, principal, true);
+      let envelope: Envelope | undefined;
+      if (input.op === "launch" && this.platform === "win32") {
+        // The helper attaches by process name and refuses multi-process apps such as
+        // Chrome (AMBIGUOUS_TARGET); one running app needs no launch.
+        if (await this.runningWindowsApp(configuration, input.app, principal))
+          envelope = {
+            version: AGENT_DESKTOP_PROTOCOL,
+            ok: true,
+            command: "launch",
+            data: { disposition: { delivery: "not_delivered", retry: "safe" } },
+          };
+        else {
+          const path = await resolveWindowsAppPath(input.app, this.ports.run ?? nativeRun);
+          if (path) args = ["launch", "--timeout", "10000", "--", path];
+        }
+      }
+      envelope ??= await this.invoke(configuration, args, principal, true);
       const report = envelope.ok ? envelope.data : envelope.error;
       const disposition = z
         .object({
@@ -716,7 +788,7 @@ export class HostDesktopControl {
       this.statusChanged();
       if (input.op === "launch")
         for (const [id, snapshot] of this.snapshots)
-          if (snapshot.app === input.app) this.snapshots.delete(id);
+          if (sameDesktopApp(snapshot.app, input.app, this.platform)) this.snapshots.delete(id);
       this.scheduleAuditDrain();
     }
   }
@@ -767,7 +839,10 @@ export class HostDesktopControl {
     ];
     const data = this.requireData(await this.invoke(configuration, args, principal));
     const observed = observedSnapshotSchema.parse(data);
-    if (observed.app !== input.app || (input.windowId && observed.window.id !== input.windowId))
+    if (
+      !sameDesktopApp(observed.app, input.app, this.platform) ||
+      (input.windowId && observed.window.id !== input.windowId)
+    )
       throw new Error("Desktop observation resolved to a different app or window.");
     if (JSON.stringify(observed.tree).length > 500000)
       throw new Error("Desktop snapshot is too large; narrow the target window.");
@@ -808,10 +883,19 @@ export class HostDesktopControl {
         } catch (error) {
           message = error instanceof Error ? error.message : "Desktop helper is unavailable.";
         }
-        const permissions = await this.permissions.read(
-          verified ? configuration.binaryPath : undefined,
-          verified ? configuration.binarySha256 : undefined,
-        );
+        const cua = configuration.driver === "cua-driver";
+        // cua-driver uses UI Automation and needs no OS grant on Windows.
+        const permissions = cua
+          ? {
+              accessibility: "not-required" as const,
+              screenRecording: "not-required" as const,
+              source: verified ? ("cua-driver" as const) : ("unavailable" as const),
+              checkedAt: isoTimestamp(this.now()) ?? "",
+            }
+          : await this.permissions.read(
+              verified ? configuration.binaryPath : undefined,
+              verified ? configuration.binarySha256 : undefined,
+            );
         return {
           configuration,
           status: {
@@ -822,8 +906,8 @@ export class HostDesktopControl {
             active: !!this.active,
             permissions,
             ...(this.currentAction ? { currentAction: { ...this.currentAction } } : {}),
-            upstreamRef: AGENT_DESKTOP_UPSTREAM_REF,
-            protocol: AGENT_DESKTOP_PROTOCOL,
+            upstreamRef: cua ? CUA_DRIVER_RELEASE : AGENT_DESKTOP_UPSTREAM_REF,
+            protocol: cua ? "mcp" : AGENT_DESKTOP_PROTOCOL,
             ...(message ? { message } : {}),
           },
         };
@@ -860,6 +944,7 @@ export class HostDesktopControl {
             .run(JSON.stringify(next));
         }, "critical");
         this.snapshots.clear();
+        this.cuaClient.close();
         await this.clearHelperState();
         this.halted = !next.enabled || generation !== this.stopGeneration;
         return { configuration: next };
@@ -1021,7 +1106,7 @@ export class HostDesktopControl {
           if (
             !stored?.text ||
             stored.owner !== principal.id ||
-            stored.app !== input.app ||
+            !sameDesktopApp(stored.app, input.app, this.platform) ||
             stored.configurationVersion !== configuration.version ||
             this.now() - stored.createdAt > 5 * 60000
           )

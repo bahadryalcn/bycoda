@@ -81,6 +81,7 @@ export function useAutomationActions({
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [running, setRunning] = useState<string | null>(null);
+  const runningRef = useRef(new Set<string>());
   const [deleting, setDeleting] = useState<string | null>(null);
   const togglingRef = useRef(new Set<string>());
   const [toggling, setToggling] = useState<Set<string>>(() => new Set());
@@ -122,8 +123,10 @@ export function useAutomationActions({
   };
 
   const onRun = async (automation: Automation) => {
-    if (running) return;
-    setRunning(automationKey(automation));
+    const key = automationKey(automation);
+    if (runningRef.current.has(key)) return;
+    runningRef.current.add(key);
+    setRunning(key);
     try {
       if (automation.host) {
         await runHostAutomationNow(automation);
@@ -135,7 +138,9 @@ export function useAutomationActions({
     } catch (reason: unknown) {
       failWith(reason);
     } finally {
-      setRunning(null);
+      runningRef.current.delete(key);
+      const remaining = [...runningRef.current].pop() ?? null;
+      setRunning((current) => (current === key ? remaining : current));
     }
   };
 
@@ -149,7 +154,7 @@ export function useAutomationActions({
   const onDelete = async (automation: Automation) => {
     if (deleting || saving) return;
     if (
-      running === automationKey(automation) ||
+      runningRef.current.has(automationKey(automation)) ||
       automation.lastRunStatus === "running" ||
       (selectedId === automationKey(automation) && runs.some((run) => run.status === "running"))
     ) {

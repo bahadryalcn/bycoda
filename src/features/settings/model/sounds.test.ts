@@ -90,12 +90,15 @@ describe("sounds", () => {
     expect(play).toHaveBeenCalledWith("touch");
     playCue("copy");
     expect(play).toHaveBeenCalledWith("stamp");
+    playCue("voiceQuestion");
+    expect(play).toHaveBeenLastCalledWith("knock");
   });
 
   it("is silent when muted", () => {
     saveSoundsEnabled(false);
     play.mockClear();
     playCue("turnFinished", { projectId: "work", category: "agentFinished" });
+    playCue("voiceQuestion");
     expect(play).not.toHaveBeenCalled();
   });
 

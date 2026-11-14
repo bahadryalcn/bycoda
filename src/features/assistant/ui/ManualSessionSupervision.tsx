@@ -240,6 +240,7 @@ export function ManualSessionSupervision({
         <Row
           label={t("Supervise my conversations")}
           description={t("Only conversations you enroll in selected projects are supervised.")}
+          descriptionVisible={false}
         >
           {off}
           {!draftMode && refresh}
@@ -305,6 +306,7 @@ export function ManualSessionSupervision({
           description={t(
             "Saving project scope does not enroll conversations. Choose each conversation in Sessions.",
           )}
+          descriptionVisible={false}
           stacked
           feedback={
             scopeChanged ? (

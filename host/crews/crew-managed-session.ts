@@ -1,3 +1,4 @@
+import { taskSessionIds, type HostTask } from "../../src/features/tasks/model/hostTasks";
 import type { HostStore } from "../store";
 
 export const CREW_MANAGED_SESSION_CODE = "crew_managed_session";
@@ -53,6 +54,50 @@ async function lookup(store: Pick<HostStore, "db">, sessionId: string) {
     )
     .get(sessionId, sessionId);
   return member ? ({ runId: String(member.run_id), role: "member" } as const) : undefined;
+}
+
+/**
+ * Session id -> crew run id for every crew run of a project, finished or not: the
+ * coordinator plus each task's current worker and review session. Desktop hides
+ * exactly these from its session lists (it reads them from `crews.list`).
+ */
+export async function crewSessionRuns(
+  store: Pick<HostStore, "db">,
+  projectId: string,
+): Promise<Map<string, string>> {
+  const owned = new Map<string, string>();
+  try {
+    for (const row of await store.db
+      .prepare(
+        "SELECT DISTINCT run_id, coordinator_session_id FROM crew_runs_v2 WHERE project_id=? AND coordinator_session_id IS NOT NULL",
+      )
+      .all(projectId))
+      owned.set(String(row.coordinator_session_id), String(row.run_id));
+    for (const row of await store.db
+      .prepare(
+        `SELECT t.value FROM tasks t
+         WHERE CASE WHEN json_valid(t.value) THEN json_extract(t.value,'$.crewRunId') END IN
+           (SELECT run_id FROM crew_runs_v2 WHERE project_id=?)`,
+      )
+      .all(projectId)) {
+      let task: HostTask;
+      let ids: ReturnType<typeof taskSessionIds>;
+      try {
+        task = JSON.parse(String(row.value)) as HostTask;
+        if (!task || typeof task.crewRunId !== "string") continue;
+        ids = taskSessionIds(task);
+      } catch {
+        continue; // One unreadable task must not hide the project's sessions.
+      }
+      for (const id of [ids.worker, ids.review])
+        if (id && !owned.has(id)) owned.set(id, task.crewRunId);
+    }
+  } catch (error) {
+    // Hosts that never initialized crews or tasks own no crew sessions.
+    if (error instanceof Error && /no such table/i.test(error.message)) return owned;
+    throw error;
+  }
+  return owned;
 }
 
 export async function assertNotCrewManaged(

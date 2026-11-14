@@ -285,9 +285,12 @@ each run starts; running sessions keep their model. Creation saves the schedule 
 starting a run. Open its confirmed result in Automations to inspect or change it.
 An unconfirmed result keeps its original identity for reconciliation.
 
-After the desktop has been offline, scheduled automations consider only the newest
+After the computer running a schedule has been offline, both desktop and Host
+recurring automations consider only the newest
 missed occurrence. It runs only within its configured grace period; the schedule
 then advances to a future occurrence instead of replaying every missed run.
+One-time runs keep their exact scheduled time. Repeated **Run** clicks for the same
+automation share one pending launch; other automations remain independent.
 
 Plan approval can be required always, only for big jobs, or never. Big jobs have
 four or more planned tasks or span multiple projects. The selected policy is
@@ -301,6 +304,12 @@ The Room shows current jobs, linked tasks and sessions, conversations, saved
 memory, notes and activity. Today lists the day's notes, and each job's details
 show its **Activity** and the **Notes** that mention it. Open a linked session to
 inspect its actual work.
+For an explicit message or stop request in a project-scoped Room conversation,
+`sessions.message` and `sessions.cancel` use exact in-app owner approval, just as
+they do in coding conversations. This one-operation approval does not enroll the
+target for future supervision. Queued messages retain drafts and queue pauses;
+stop applies only to the reviewed run. Existing managed-work owners remain in force.
+
 The supervisor can follow and contact sessions belonging to its own jobs.
 To include a conversation you opened yourself, enable the separate manual-session
 policy in assistant settings, choose its projects, then explicitly enroll the

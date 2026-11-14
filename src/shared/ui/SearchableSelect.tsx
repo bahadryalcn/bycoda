@@ -54,6 +54,8 @@ export type SearchableSelectOption = {
   keywords?: string;
   description?: string;
   disabled?: boolean;
+  /** Keep this scope reset visible above scrolling results, including during search. Use at most one, first in options. */
+  pinned?: boolean;
   /** Leading glyph, logo or avatar (icon-sm/icon-md); also shown in the trigger for the selected value. */
   icon?: ReactNode;
   /** Short end-aligned secondary text on the row (path, account, count). A string is also searched. */
@@ -280,6 +282,7 @@ const OptionRow = memo(function OptionRow({
   return (
     <ComboboxItem
       data-value={option.value}
+      data-pinned={option.pinned || undefined}
       ref={rowRef}
       id={`${listId}-option-${index}`}
       type="button"
@@ -298,7 +301,7 @@ const OptionRow = memo(function OptionRow({
         if (!option.disabled) onHover(index);
       }}
       onClick={() => onPick(option.value)}
-      className={`bycoda-arc-select-option`}
+      className={`bycoda-arc-select-option${option.pinned ? ` ${styles.pinnedOption}` : ""}`}
     >
       <PickerChoice
         selected={selected}
@@ -451,10 +454,12 @@ function SearchableSelectMenu({
   const filtered = useMemo(
     () =>
       normalizedQuery
-        ? scoped.filter((option) =>
-            `${option.label}\n${option.description ?? ""}\n${option.keywords ?? ""}\n${typeof option.meta === "string" ? option.meta : ""}\n${option.group ?? ""}`
-              .toLocaleLowerCase(searchLocale)
-              .includes(normalizedQuery),
+        ? scoped.filter(
+            (option) =>
+              option.pinned ||
+              `${option.label}\n${option.description ?? ""}\n${option.keywords ?? ""}\n${typeof option.meta === "string" ? option.meta : ""}\n${option.group ?? ""}`
+                .toLocaleLowerCase(searchLocale)
+                .includes(normalizedQuery),
           )
         : [...scoped],
     [normalizedQuery, scoped, searchLocale],

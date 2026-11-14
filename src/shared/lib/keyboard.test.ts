@@ -12,6 +12,11 @@ function keyEvent(
 }
 
 describe("isImeComposition", () => {
+  it("accepts chord-only inputs while checking any available composition metadata", () => {
+    expect(isImeComposition({})).toBe(false);
+    expect(isImeComposition({ isComposing: true })).toBe(true);
+    expect(isImeComposition({ keyCode: 229 })).toBe(true);
+  });
   it("detects an active IME composition", () => {
     expect(isImeComposition(keyEvent({ isComposing: true }))).toBe(true);
   });

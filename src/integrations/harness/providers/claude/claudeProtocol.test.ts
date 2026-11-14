@@ -151,6 +151,17 @@ describe("buildClaudeSpawnArgs", () => {
     expect(JSON.parse(settings).disableAllHooks).toBeUndefined();
   });
 
+  it("drops the skill listing and auto memory for a chat-only child", () => {
+    const lean = buildClaudeSpawnArgs({ leanContext: true, nativeReadOnly: true });
+    expect(lean).toContain("--disable-slash-commands");
+    const settings = JSON.parse(lean[lean.indexOf("--settings") + 1]);
+    expect(settings.env).toEqual({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" });
+    expect(lean).toEqual(expect.arrayContaining(["--disallowedTools", "Bash", "Edit", "Write"]));
+    const normal = buildClaudeSpawnArgs({});
+    expect(normal).not.toContain("--disable-slash-commands");
+    expect(JSON.parse(normal[normal.indexOf("--settings") + 1]).env).toBeUndefined();
+  });
+
   it("only disables hooks for interactive sessions when asked", () => {
     const args = buildClaudeSpawnArgs({ settings: { disableAllHooks: true } });
     const settings = args[args.indexOf("--settings") + 1];
@@ -207,7 +218,7 @@ describe("buildClaudeUserMessage", () => {
     const content = (message.message as { content: unknown[] }).content;
     expect(content[0]).toEqual({
       type: "text",
-      text: "look\n\nAttachments: [image1] = diagram.png (1st attached image)",
+      text: "look\n\nAttachments: [Image\u00a01\u00a0·\u00a04\u00a0B] = diagram.png (1st attached image)",
     });
     expect(content[1]).toEqual({
       type: "image",

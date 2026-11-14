@@ -10,7 +10,9 @@ export function harnessSupportsEditLastTurn(harness: HarnessId): boolean {
 export function lastUserTurnStartIndex(blocks: Block[]): number {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const block = blocks[index];
-    if (block.role === "user" && !block.internal && !block.draft) return index;
+    // An answer to the agent's question belongs to the running turn; it never starts one.
+    if (block.role === "user" && !block.internal && !block.draft && !block.questionAnswers?.length)
+      return index;
   }
   return -1;
 }

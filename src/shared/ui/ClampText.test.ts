@@ -48,6 +48,7 @@ async function mount(overflowing: boolean, expandable = true) {
 it("keeps the text readable and toggles when the content overflows", async () => {
   const host = await mount(true);
   const body = host.querySelector("[data-clamped]") as HTMLElement;
+  expect(body.hasAttribute("data-overflowing")).toBe(true);
   expect(body.textContent).toBe("A long comment");
   expect(body.style.getPropertyValue("--clamp-lines")).toBe("3");
   const button = host.querySelector("button") as HTMLButtonElement;
@@ -63,6 +64,7 @@ it("renders no toggle when the text fits", async () => {
   const host = await mount(false);
   expect(host.querySelector("button")).toBeNull();
   expect(host.textContent).toBe("A long comment");
+  expect(host.querySelector("[data-overflowing]")).toBeNull();
 });
 
 it("only cuts the text when it is not expandable", async () => {

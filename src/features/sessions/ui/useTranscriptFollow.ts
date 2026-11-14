@@ -96,6 +96,8 @@ export function useTranscriptFollow({
     (show: boolean) => {
       if (showJumpRef.current === show) return;
       showJumpRef.current = show;
+      // The Jump to latest pill floats over the pane's bottom edge; the styles leave room under the last row.
+      scroller.current?.toggleAttribute("data-jump-pill", show);
       onJumpToBottomChange?.(show);
     },
     [onJumpToBottomChange],

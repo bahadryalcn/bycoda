@@ -137,6 +137,8 @@ export type HostProjectDirectory = {
     groupId?: string;
     registered: boolean;
     sessionLayout?: HostSessionLayout;
+    /** Pinned on the desktop rail; `projects` already lists pinned ones first. */
+    pinned?: boolean;
   })[];
   groups: HostProjectGroup[];
 };
@@ -149,6 +151,7 @@ export type DesktopProjectDirectory = {
     groupId?: string;
     sessionLayout?: HostSessionLayout;
     appearance?: HostProjectAppearance;
+    pinned?: boolean;
   }[];
   groups: HostProjectGroup[];
   excludedPaths: string[];
@@ -179,6 +182,9 @@ export type HostModelCatalog = {
   errors: Partial<Record<RemoteProvider, string>>;
   /** Providers still being discovered; available models remain usable. */
   pending?: RemoteProvider[];
+  /** Access modes a provider's current transport cannot honour, with why. Pickers show
+   * them disabled; absent means every mode is available. */
+  runtimeModeLimits?: Partial<Record<RemoteProvider, Partial<Record<RuntimeMode, string>>>>;
 };
 export type HostWorktree = {
   path: string;
@@ -262,6 +268,10 @@ export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" 
   draft?: boolean;
   /** Set when the session lives in the bycoda app on the host machine, not yet adopted by the host. */
   origin?: "desktop";
+  /** Internal orchestration worker: the lead conversation that owns it. Lists hide it. */
+  orchestrationLeadId?: string;
+  /** Crew run that owns this conversation. Lists hide it; it is managed from Crews. */
+  crewRunId?: string;
 };
 
 export type RemoteAttachment = {

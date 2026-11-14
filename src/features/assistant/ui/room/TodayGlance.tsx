@@ -38,13 +38,13 @@ function Tile({ value, caption, onOpen }: { value: number; caption: string; onOp
       >
         {formatNumber(value)}
       </Text>
-      <Text size="caption" tone="muted" leading="inherit" className={styles.tileCaption}>
+      <Text size="caption" tone="muted" leading="inherit">
         {caption}
       </Text>
     </>
   );
   return (
-    <Surface variant="canvas" padding="none" className={styles.tile}>
+    <Surface variant="card" padding="none" className={styles.tile}>
       {onOpen ? (
         <Button variant="item" layout="stacked" align="start" onClick={onOpen}>
           {body}

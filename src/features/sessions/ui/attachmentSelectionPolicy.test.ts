@@ -1,7 +1,10 @@
 import { expect, it } from "vitest";
 import { snapAttachmentSelection } from "./attachmentSelectionPolicy";
 
-const files = [{ kind: "image" as const }, { kind: "file" as const }];
+const files = [
+  { kind: "image" as const, size: 1 },
+  { kind: "file" as const, size: 1 },
+];
 
 it("snaps caret and selection around resolved references", () => {
   const text = "a [image1] [file1] z";

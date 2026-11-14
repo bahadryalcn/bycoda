@@ -107,6 +107,20 @@ it("rejects a past or too-distant run time", async () => {
   );
 });
 
+it("keeps an overdue one-time occurrence exact instead of treating it as a recurring schedule", async () => {
+  const f = await setup();
+  await f.automations.save(f.input({ scheduleKind: "hourly", missedRunGraceMinutes: 10 }));
+  const runAt = new Date("2026-10-05T09:00:00").getTime();
+  await f.automations.scheduleOnce("once", runAt);
+  f.clock.now = new Date("2026-10-07T12:05:00").getTime();
+  await f.automations.tick();
+  expect(await f.automations.runs("once")).toMatchObject([
+    { scheduledFor: runAt, status: "skipped" },
+  ]);
+  expect((await f.automations.list())[0].enabled).toBe(false);
+  expect(f.sent).toHaveLength(0);
+});
+
 it("keeps the arming through a pause edit but drops it when the schedule changes", async () => {
   const f = await setup();
   await f.automations.save(f.input());

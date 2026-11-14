@@ -158,9 +158,6 @@ const messageOf = (error: unknown) => (error instanceof Error ? error.message : 
 const recoveryTurn = (reason: string) =>
   `Continue the existing assignment from its retained worker checkout. The previous turn was stopped because the orchestration run was interrupted: ${reason}\n\nInspect the current files and prior conversation before acting. Preserve completed work, do not repeat destructive or external operations, remain inside the assigned write scope, run the remaining focused checks, and report what was already done versus what you completed now.`;
 
-const ASSIGNMENT_BLOCK =
-  /(?:\r?\n[ \t]*)*<bycoda_assignment\b[^>]*>[\s\S]*?<\/bycoda_assignment>/gi;
-
 /** Prompt the worker receives, including the envelope the transcript hides. */
 export function workerTurnPrompt(
   prompt: string,
@@ -175,11 +172,6 @@ export function workerTurnPrompt(
     ? ` Temporary helpers and test output may be written in your private scratch directory: ${JSON.stringify(scratchDir)}. TMPDIR, TMP and TEMP point there. Use this directory for scratch files; do not write elsewhere outside the project. Deliver final changes in your assigned project files.`
     : "";
   return `${prompt}\n\n<bycoda_assignment>\nYou are a worker managed by a bycoda lead. Work only in the checkout selected for this run. The workspace, scope and Git rules in this assignment envelope override any contradictory wording in the task text above. Your assigned write scope is: ${files.join(", ")}.${scratch} Read other files as needed, but do not edit outside your scope. If another file or shared operation is needed, report the blocker and stop so the lead can expand or create a new assignment. ${commits} Do not spawn agents, create worktrees, switch branches, push, install dependencies or run broad formatters/generators. A task owning '.' may run explicitly requested project-wide validation or generation, and report the final branch and commit SHA. Delivery requires owner-approved managed delivery; a lead acceptance is not permission to merge or publish. Other workers may be working concurrently in separate checkouts; do not rely on their work until the lead has accepted it. Report focused checks, changed files, remaining issues and a concise final result.\n</bycoda_assignment>`;
-}
-
-/** Task text a person should see: the assignment envelope stays in the send. */
-export function visibleUserPrompt(text: string): string {
-  return text.replace(ASSIGNMENT_BLOCK, "").trimEnd();
 }
 
 function text(value: unknown, label: string, max = 30_000): string {

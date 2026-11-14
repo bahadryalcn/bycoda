@@ -45,3 +45,4 @@ Model order, pools, role bindings and delegation defaults belong to [model routi
 - [Execution/delivery contract](../../../docs/reference/managed-workspaces.md)
 - [Common Host authority](../../../docs/reference/host-runtime.md)
 - [Task states and recovery](../../../docs/guides/tasks.md)
+- [Owner decisions on shared server scope](references/decisions.md)

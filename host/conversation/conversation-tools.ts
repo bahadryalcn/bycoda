@@ -63,6 +63,7 @@ import {
   SERVER_CONVERSATION_TOOLS,
   serverConversationDescription,
 } from "./conversation-server-tools";
+import { EXTERNAL_MCP_TOOLS, describeExternalMcpTool } from "./conversation-external-mcp-tools";
 import { TASK_CONFIGURATION_FIELDS, TASK_READ_TOOLS } from "./conversation-task-tools";
 import { CONVERSATION_READ_ACTIONS } from "./conversation-read-actions";
 import { LOG_WAIT_TOOL_DESCRIPTION, LOG_WAIT_TOOL_SCHEMA } from "../execution/runtime-log-wait";
@@ -175,6 +176,7 @@ export const CONVERSATION_TOOLS = {
   ...GOAL_WRITE_TOOLS,
   ...SECRET_TOOLS,
   ...PULL_REQUEST_WATCH_TOOLS,
+  ...EXTERNAL_MCP_TOOLS,
   ...TASK_QUEUE_TOOLS,
   ...BROWSER_ANNOTATION_TOOLS,
   ...BROWSER_PAGE_TOOLS,
@@ -780,6 +782,7 @@ function conversationToolDescription(action: string) {
     describeGoalWriteTool(action) ??
     describeSecretTool(action) ??
     describePullRequestWatchTool(action) ??
+    describeExternalMcpTool(action) ??
     describeRoomFolderTool(action) ??
     describeFileConversationTool(action) ??
     describeProjectConversationTool(action) ??
@@ -948,7 +951,7 @@ function validate(schema: any, value: any, path: string): void {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new Error("Expected an object.");
     if (schema.properties === undefined && schema.additionalProperties !== false) {
-      if (JSON.stringify(value).length > 16000)
+      if (JSON.stringify(value).length > (schema.maxJsonLength ?? 16000))
         throw new Error("Object exceeds the management input limit.");
       return;
     }

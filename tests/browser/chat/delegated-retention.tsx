@@ -15,6 +15,7 @@ import {
 } from "../../../src/features/sessions/ui/SessionSubagentSheet";
 import { SessionSubagentsMenu } from "../../../src/features/sessions/ui/SessionSubagentsMenu";
 import { Button } from "../../../src/shared/ui/Button";
+import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
 
 const parentId = "retention-parent";
 const noop = () => {};
@@ -24,7 +25,7 @@ export function seedDelegatedRetention() {
   const parent = {
     ...newSession("codex", "/fixture"),
     id: parentId,
-    busy: true,
+    busy: false,
     blocks: [{ id: "ask", role: "user" as const, text: "Discuss physics", startedAt }],
   };
   setSessions([
@@ -114,10 +115,21 @@ export function DelegatedRetentionFixture() {
       </Button>
       <div data-testid="retained-cards">
         <DelegatedRunOwner.Provider value={parentId}>
-          <SubagentStack blocks={cards} live />
+          <SubagentStack blocks={cards} live={!!parent.busy} />
         </DelegatedRunOwner.Provider>
       </div>
       <div data-composer>
+        <ActivityDock
+          sessionId={parentId}
+          blocks={parent.blocks}
+          busy={!!parent.busy}
+          pendingQuestion={false}
+          atEnd
+          delegatedAgents={delegated.agents}
+          onOpenAgent={(agent) => {
+            if (agent.sessionId) delegated.open(agent.sessionId);
+          }}
+        />
         <SessionSubagentsMenu
           agents={delegated.agents}
           onOpen={(agent) => delegated.open(agent.sessionId!)}

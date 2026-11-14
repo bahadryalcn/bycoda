@@ -1,5 +1,4 @@
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
-import noteStyles from "../AssistantNoteCard.module.css";
 import { Heading } from "../../../../shared/ui/Heading";
 import { Text } from "../../../../shared/ui/Text";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
@@ -65,26 +64,34 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
     (filter ? 1 : 0) +
     (view === "Jobs" ? (jobProjectFilter ? 1 : 0) + (jobDateFilter !== "all" ? 1 : 0) : 0);
 
+  // One title row for every collection tab: name and count left, tools right.
+  const count =
+    view === "Notes"
+      ? snapshot.notes.filter((note) => matches(query, note.title, note.body)).length
+      : view === "Jobs"
+        ? allJobs.length
+        : view === "History"
+          ? snapshot.activity.length
+          : undefined;
+
   return (
     <>
       {view !== "Today" && view !== "Memory" && view !== "Conversations" && (
-        <div className={`${styles.collectionTools} ${view === "Notes" ? noteStyles.toolbar : ""}`}>
-          {view === "Notes" && (
-            <Heading size="page" level={2}>
-              {t("Notes")}{" "}
-              <Text as="span" weight="regular" leading="inherit">
-                {snapshot.notes.filter((note) => matches(query, note.title, note.body)).length}
+        <div className={styles.collectionTools}>
+          <Heading size="page" level={2} className={styles.pageTitle}>
+            {view === "History"
+              ? t("What I did")
+              : view === "Notes"
+                ? t("Notes")
+                : view === "Sessions"
+                  ? t("Sessions")
+                  : t("Jobs")}
+            {count !== undefined && (
+              <Text as="span" weight="regular" tone="muted" leading="inherit">
+                {count}
               </Text>
-            </Heading>
-          )}
-          {view === "Jobs" && (
-            <Heading size="page" level={2} className={styles.jobsTitle}>
-              {t("Jobs")}{" "}
-              <Text as="span" weight="regular" leading="inherit">
-                {allJobs.length}
-              </Text>
-            </Heading>
-          )}
+            )}
+          </Heading>
           <SearchInput
             type="search"
             value={query}

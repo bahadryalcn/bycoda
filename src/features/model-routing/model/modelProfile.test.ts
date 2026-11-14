@@ -56,3 +56,18 @@ describe("inferAccountKind", () => {
     expect(inferAccountKind("this account")).toBeUndefined();
   });
 });
+
+it("profiles catalog ids with harness and vendor prefixes from the researched table", () => {
+  expect(modelProfile("codex", "codex:gpt-6.1-sol")).toEqual({
+    intelligence: 4,
+    cost: 2,
+    estimated: false,
+  });
+  expect(modelProfile("claude", "claude:fable-5-2")).toEqual({
+    intelligence: 5,
+    cost: 4,
+    estimated: false,
+  });
+  expect(modelProfile("opencode", "opencode:opencode/glm-5.3").cost).toBe(1);
+  expect(modelProfile("codex", "codex:gpt-6-luna").intelligence).toBe(2);
+});

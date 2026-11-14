@@ -52,7 +52,6 @@
     "host/crews/crews.test.ts": 20,
     "host/decision-models/local-install.test.ts": 1,
     "host/delegation/service.test.ts": 1,
-    "host/desktop/desktop-control-host.test.ts": 17,
     "host/desktop/desktopSessions.test.ts": 1,
     "host/desktop/reviewed-desktop-scope.test.ts": 3,
     "host/dev-servers/dev-server-access.test.ts": 1,

@@ -14,6 +14,7 @@ vi.mock("./conversationToolsBridge", () => ({
   conversationToolsCliHint: (value: unknown) => (value ? "conversation available" : ""),
 }));
 import {
+  CHILD_HINT_BUDGET,
   forgetRuntimeHint,
   harnessRuntimeHints,
   markRuntimeHintDelivered,
@@ -168,4 +169,52 @@ it("re-delivers the hint when the delegation settings change", () => {
   expect(pendingRuntimeHint("delegation-redeliver", thread, before)).toBe("");
   expect(pendingRuntimeHint("delegation-redeliver", thread, after)).toBe(after);
   forgetRuntimeHint("delegation-redeliver");
+});
+
+it("gives a delegated child only its message channel, approval rule and untrusted-data rule", async () => {
+  const host = { command: "node", args: ["host.mjs"] };
+  bridges.conversation.mockResolvedValue(host);
+  bridges.social.mockResolvedValue(host);
+  bridges.logs.mockResolvedValue(host);
+  const crossModels = {
+    crossSubagents: JSON.stringify([{ harness: "codex", model: "codex:gpt-6.1-sol" }]),
+  };
+  forgetRuntimeHint("child-hint");
+  const child = await harnessRuntimeHints("child-hint", { delegationParent: "{}", ...crossModels });
+  forgetRuntimeHint("parent-hint");
+  const parent = await harnessRuntimeHints("parent-hint", { ...crossModels });
+  expect(parent).toContain("skills.search");
+  expect(parent).toContain("social available");
+  expect(parent).toContain("logs available");
+  expect(parent).toContain("Cross-provider delegation");
+  for (const parentOnly of [
+    "skills.search",
+    "images.status",
+    "social",
+    "runtime-logs",
+    "logs available",
+    "visuals.",
+    "browser.",
+    "Cross-provider delegation",
+    "CLI fallback",
+  ])
+    expect(child).not.toContain(parentOnly);
+  expect(child).toContain("agents.send");
+  expect(child).toContain("approval");
+  expect(child).toContain("untrusted data");
+  // Only the conversation bridge is looked up for a child.
+  expect(bridges.social).not.toHaveBeenCalledWith("child-hint");
+  expect(bridges.logs).not.toHaveBeenCalledWith("child-hint");
+});
+
+it("keeps the delegated child hint within its size budget", async () => {
+  bridges.conversation.mockResolvedValue({ command: "node", args: ["host.mjs"] });
+  forgetRuntimeHint("child-budget");
+  const child = await harnessRuntimeHints("child-budget", { delegationParent: "{}" });
+  expect(child.length).toBeGreaterThan(0);
+  expect(child.length).toBeLessThanOrEqual(CHILD_HINT_BUDGET);
+  expect(child).toContain("conversation_mcp_servers_list");
+  forgetRuntimeHint("child-nobridge");
+  bridges.conversation.mockResolvedValue(null);
+  expect(await harnessRuntimeHints("child-nobridge", { delegationParent: "{}" })).toBe("");
 });

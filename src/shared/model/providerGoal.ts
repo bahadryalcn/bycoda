@@ -4,6 +4,9 @@ export type SessionGoal = {
   providerSessionId: string;
   objective: string;
   status: "active" | "paused" | "blocked" | "usageLimited" | "budgetLimited" | "complete";
+  tokensUsed?: number;
+  tokenBudget?: number | null;
+  timeUsedSeconds?: number;
 };
 
 /** Validate open remote JSON before using provider-authored text or status. */
@@ -21,6 +24,12 @@ export function isSessionGoal(value: unknown): value is SessionGoal {
     !("status" in value)
   )
     return false;
+  for (const key of ["tokensUsed", "tokenBudget", "timeUsedSeconds"] as const) {
+    if (!(key in value)) continue;
+    const metric = (value as Record<string, unknown>)[key];
+    if (metric === undefined || (key === "tokenBudget" && metric === null)) continue;
+    if (typeof metric !== "number" || !Number.isSafeInteger(metric) || metric < 0) return false;
+  }
   switch (value.status) {
     case "active":
     case "paused":

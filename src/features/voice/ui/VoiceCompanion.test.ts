@@ -10,6 +10,12 @@ import * as historyTransport from "../model/voiceHistoryTransport";
 import * as groupLock from "../../group-lock/model/groupLock";
 import * as roomPrivacy from "../../group-lock/model/roomPrivacyProjection";
 import { pendingOwnerQuestionPresentations } from "../../assistant/model/assistantOwnerQuestionPresentations";
+const questionSound = vi.hoisted(() => vi.fn());
+vi.mock("../../settings/model/bycodaSoundEngine", () => ({
+  play: questionSound,
+  setEnabled: vi.fn(),
+  setVolume: vi.fn(),
+}));
 /** Dialogs portal to the document body, outside the companion container. */
 const page = document.body;
 const assistantHost = vi.hoisted(() => ({
@@ -2168,27 +2174,34 @@ it("does not retry credential failures", async () => {
   expect(page.textContent).toContain("Sign in required");
 });
 
-it("shows a clickable voice choice and consumes its spoken answer without starting work", async () => {
-  localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
-  const { onSubmit } = await setup();
-  let answer: Promise<unknown>;
-  await act(async () => {
-    answer = mock.realtime.tool("present_choices", {
-      question: "Which project?",
-      options: [
-        { id: "one", label: "upstream" },
-        { id: "two", label: "clinic" },
-      ],
+it.each([false, true])(
+  "announces a voice question with speaker muted=%s and accepts its spoken answer",
+  async (speakerMuted) => {
+    localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
+    const { onSubmit } = await setup();
+    if (speakerMuted) await click("Mute speaker");
+    questionSound.mockClear();
+    let answer: Promise<unknown>;
+    await act(async () => {
+      answer = mock.realtime.tool("present_choices", {
+        question: "Which project?",
+        options: [
+          { id: "one", label: "upstream" },
+          { id: "two", label: "clinic" },
+        ],
+      });
     });
-  });
-  expect(page.textContent).toContain("Which project?");
-  await act(async () => {
-    expect(mock.realtime.interceptTranscript("the second one")).toBe(true);
-  });
-  await expect(answer!).resolves.toEqual({ kind: "answered", answers: { choice: ["two"] } });
-  expect(onSubmit).not.toHaveBeenCalled();
-  expect(page.textContent).not.toContain("Which project?");
-});
+    expect(page.textContent).toContain("Which project?");
+    expect(questionSound).toHaveBeenCalledExactlyOnceWith("knock");
+    expect(page.textContent).not.toContain("Question open");
+    await act(async () => {
+      expect(mock.realtime.interceptTranscript("the second one")).toBe(true);
+    });
+    await expect(answer!).resolves.toEqual({ kind: "answered", answers: { choice: ["two"] } });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(page.textContent).not.toContain("Which project?");
+  },
+);
 it("keeps a realtime choice pending through an explicit wait and accepts the later answer", async () => {
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
   const { onSubmit } = await setup();

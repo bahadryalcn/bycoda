@@ -19,6 +19,13 @@ export function GoalFinalReview({
   onOpenFinal?: () => void;
 }) {
   if (!goal.finalReview) return null;
+  if (
+    goal.status === "cancelled" &&
+    (!goal.finalAcceptance ||
+      goal.finalAcceptance.status === "pending" ||
+      goal.finalAcceptance.status === "running")
+  )
+    return null;
   // A single-task or simple plan runs no final review, so there is nothing to show.
   if (!goal.finalAcceptance && goal.plan && !goalPlanReviews(goal).final) return null;
   return (
@@ -46,7 +53,9 @@ export function GoalFinalReview({
             {t("Open final review")}
           </Button>
         ) : null}
-        {goal.finalAcceptance?.status === "failed" && onRecheckFinal ? (
+        {goal.status !== "cancelled" &&
+        goal.finalAcceptance?.status === "failed" &&
+        onRecheckFinal ? (
           <Button
             variant="secondary"
             size="sm"

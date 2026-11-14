@@ -21,22 +21,45 @@
   color: transparent;
 }
 
-.token[data-draft-token-ordinal] .prefix {
-  position: static;
-}
-
-.token[data-draft-token-ordinal] .icon {
-  inset-inline-start: calc(50% - 0.85em);
-  inset-inline-end: auto;
-  inline-size: 0.85em;
-}
-
-.token[data-draft-token-ordinal]::after {
+/* Face mode: icon and label drawn over the hidden source. It stays inside the source's
+   advance, inset 1px per side, so the whitespace between adjacent tokens stays visible. */
+.face {
   position: absolute;
   inset-block-start: 50%;
-  inset-inline-start: calc(50% + 0.2em);
-  content: attr(data-draft-token-ordinal);
+  inset-inline-start: 1px;
+  display: inline-flex;
+  max-inline-size: calc(100% - 2px);
+  align-items: center;
+  gap: 0.18em;
+  padding-block: 2px;
+  padding-inline: 0.1em;
+  border-radius: var(--ui-radius-control);
+  /* The face, not the source, carries the fill so it matches what is drawn. */
+  background: color-mix(in oklch, currentColor 12%, transparent);
+  font-size: 0.85em;
+  line-height: 1;
+  white-space: nowrap;
   transform: translateY(-50%);
+}
+
+.faceLabel {
+  min-inline-size: 0;
+  /* Room for descenders, which overflow clipping would otherwise cut. */
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.token[data-draft-token-face] {
+  background: none;
+}
+
+.face > .icon {
+  position: static;
+  flex: none;
+  inline-size: 1em;
+  block-size: 1em;
+  transform: none;
 }
 
 .icon {

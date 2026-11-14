@@ -54,7 +54,6 @@
   display: grid;
   max-block-size: 320px;
   overflow-y: auto;
-  overscroll-behavior: contain;
 }
 .row {
   padding: 10px 16px;

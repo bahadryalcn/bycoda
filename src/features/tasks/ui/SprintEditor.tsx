@@ -9,6 +9,8 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { Text } from "../../../shared/ui/Text";
+import type { RemoteMachine } from "../../connections";
 import {
   sprintProjectKey,
   type HostSprint,
@@ -23,12 +25,14 @@ export function SprintEditor({
   sprint,
   projects,
   defaultProjectKey,
+  machines = [],
   onClose,
   onSave,
 }: {
   sprint?: HostSprint;
   projects: readonly SprintProjectRef[];
   defaultProjectKey?: string;
+  machines?: readonly RemoteMachine[];
   onClose: () => void;
   onSave: (fields: SprintFields) => Promise<void>;
 }) {
@@ -50,6 +54,8 @@ export function SprintEditor({
   const pending = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const formId = useId();
+  const projectLabel = (project: SprintProjectRef) =>
+    `${project.name} / ${machines.find((machine) => machine.environmentId === project.environmentId)?.name ?? t("Unavailable server")}`;
   return (
     <Modal
       title={sprint ? t("Edit sprint") : t("New sprint")}
@@ -69,6 +75,11 @@ export function SprintEditor({
             form={formId}
             loading={busy}
             disabled={!name.trim() || !selected.length}
+            disabledReason={
+              !name.trim() || !selected.length
+                ? t("Enter a sprint name and choose at least one project.")
+                : undefined
+            }
           >
             {t("Save sprint")}
           </Button>
@@ -120,6 +131,7 @@ export function SprintEditor({
         />
         <TextareaField
           label={t("Sprint goal")}
+          description={t("What should be finished by the end of this sprint?")}
           value={goal}
           onChange={(event) => setGoal(event.currentTarget.value)}
           disabled={busy}
@@ -128,17 +140,21 @@ export function SprintEditor({
         <SearchableSelect
           multiple
           label={t("Projects")}
+          description={t("A sprint can include projects from different servers.")}
           value={selected}
           onChange={setSelected}
           options={projects.map((project) => ({
             value: sprintProjectKey(project),
-            label: project.name,
+            label: projectLabel(project),
             description: project.cwd,
             keywords: `${project.environmentId} ${project.cwd}`,
           }))}
           disabled={busy}
         />
         <div className="sprint-form-section">
+          <Text size="caption" tone="secondary">
+            {t("Dates are optional.")}
+          </Text>
           <div className="sprint-form-grid">
             <DatePicker
               label={t("Start date")}
@@ -156,13 +172,16 @@ export function SprintEditor({
           </div>
         </div>
         <Disclosure
-          summary={t("Capacity")}
+          summary={t("Work estimates")}
           defaultOpen={Boolean(
             sprint?.capacityPoints != null || Object.keys(sprint?.projectCapacities ?? {}).length,
           )}
         >
           <NumberField
             label={t("Sprint capacity (points)")}
+            description={t(
+              "Optional planning target. Add task estimates: 3 + 5 points = 8 points. Points are not hours and do not limit running tasks.",
+            )}
             value={capacity}
             min={0}
             step={1}
@@ -177,7 +196,7 @@ export function SprintEditor({
                   const key = sprintProjectKey(project);
                   return (
                     <div className="sprint-project-budget" key={key}>
-                      <span>{project.name}</span>
+                      <span>{projectLabel(project)}</span>
                       <NumberField
                         label={t("Capacity for {p0}", { p0: project.name })}
                         hideLabel

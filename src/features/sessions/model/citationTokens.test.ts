@@ -29,9 +29,9 @@ describe("citation tokens", () => {
   });
 
   it("does not treat quote tokens as attachment tokens", () => {
-    expect(findTokens("[quote1] [image1]", [{ kind: "image" }]).map((m) => m.token)).toEqual([
-      "[image1]",
-    ]);
+    expect(
+      findTokens("[quote1] [image1]", [{ kind: "image", size: 1 }]).map((m) => m.token),
+    ).toEqual(["[image1]"]);
   });
 
   it("deletes a whole quote token with backspace when passed as an extra token", () => {

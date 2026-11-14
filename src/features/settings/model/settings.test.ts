@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AUTOSAVE_DEFAULT,
   COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
@@ -24,6 +24,7 @@ import {
   loadDiffLayout,
   loadDiffViewer,
   loadKeybindingOverrides,
+  prepareKeybindingOverride,
   loadFormatOnSave,
   loadFileTabMode,
   loadCrewSceneEnabled,
@@ -31,6 +32,7 @@ import {
   loadNotesEnabled,
   keybindingPressed,
   matchCustomKeybinding,
+  shortcutMatches,
   loadQuickComposerShortcut,
   loadTabAnimationsEnabled,
   NOTES_ENABLED_DEFAULT,
@@ -203,6 +205,19 @@ describe("keybinding overrides", () => {
     expect(matchCustomKeybinding(prototyped)).toBe("App: Search");
   });
 
+  it.each([{ isComposing: true }, { keyCode: 229 }])(
+    "excludes composing events %j from shared default and custom dispatch",
+    (composition) => {
+      const defaultEvent = { ...key("KeyK", { ctrlKey: true }), ...composition };
+      expect(keybindingPressed("App: Search", defaultEvent, true)).toBe(false);
+      saveKeybindingOverride("App: Search", { shortcut: "Option+KeyQ" });
+      const customEvent = { ...key("KeyQ", { altKey: true }), ...composition };
+      expect(matchCustomKeybinding(customEvent)).toBeNull();
+      expect(keybindingPressed("App: Search", customEvent, false)).toBe(false);
+      expect(shortcutMatches("Option+KeyQ", customEvent)).toBe(false);
+    },
+  );
+
   it("serves a cached value without letting callers mutate it", () => {
     saveKeybindingOverride("App: Search", { shortcut: "Command+KeyY" });
     const first = loadKeybindingOverrides();
@@ -268,6 +283,55 @@ describe("keybinding overrides", () => {
     expect(loadKeybindingOverrides()).toEqual({
       "App: Search": { shortcut: "Command+Shift+KeyM" },
     });
+  });
+
+  it.each(["read failure", "invalid JSON", "invalid root"])(
+    "refuses shortcut mutations after %s while retaining read-only defaults",
+    (failure) => {
+      const retained =
+        failure === "invalid JSON"
+          ? "{recoverable"
+          : failure === "invalid root"
+            ? "[]"
+            : JSON.stringify({ "App: Search": { disabled: true } });
+      localStorage.setItem(KEYBINDING_OVERRIDES_KEY, retained);
+      const read = vi.spyOn(localStorage, "getItem");
+      const write = vi.spyOn(localStorage, "setItem");
+      if (failure === "read failure")
+        read.mockImplementation(() => {
+          throw new Error("Read unavailable");
+        });
+      try {
+        expect(loadKeybindingOverrides()).toEqual({});
+        expect(() => prepareKeybindingOverride("App: Open Notes", { disabled: true })).toThrow();
+        expect(() => saveKeybindingOverride("App: Open Notes", { disabled: true })).toThrow();
+        expect(write).not.toHaveBeenCalled();
+      } finally {
+        read.mockRestore();
+        write.mockRestore();
+      }
+      expect(localStorage.getItem(KEYBINDING_OVERRIDES_KEY)).toBe(retained);
+    },
+  );
+
+  it("normalises stored Quick Composer shortcut modifier order", () => {
+    localStorage.setItem(QUICK_COMPOSER_SHORTCUT_KEY, "Shift+Control+F23");
+    expect(loadQuickComposerShortcut()).toBe("Control+Shift+F23");
+  });
+
+  it("retains the Quick Composer chord when conflict ownership cannot be read", () => {
+    localStorage.setItem(QUICK_COMPOSER_SHORTCUT_KEY, "Control+Option+F22");
+    const getItem = localStorage.getItem.bind(localStorage);
+    const read = vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
+      if (key === KEYBINDING_OVERRIDES_KEY) throw new Error("Read unavailable");
+      return getItem(key);
+    });
+    try {
+      expect(() => saveQuickComposerShortcut("Control+Option+F23")).toThrow("Read unavailable");
+    } finally {
+      read.mockRestore();
+    }
+    expect(loadQuickComposerShortcut()).toBe("Control+Option+F22");
   });
 
   it("ignores malformed, unknown, and invalid stored overrides", () => {

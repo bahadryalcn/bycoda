@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { newSession } from "../../sessions/model/session";
+import { newSession, type Block } from "../../sessions/model/session";
 import { markTurnInterrupted } from "../../sessions/model/inFlight";
 import { newTab, splitPane, leafIds } from "./layout";
 import { collectWorkspaceSnapshot } from "./workspaceSnapshot";
@@ -202,6 +202,21 @@ describe("durable session recovery", () => {
     expect(recoveryStatus(undefined, false, false)).toBe("unknown");
     expect(recoveryStatus(markTurnInterrupted(chat("a")), false, true)).toBe("interrupted");
     expect(recoveryStatus(chat("a"), false, true)).toBe("unknown");
+  });
+  it("reads a finished turn from its prompt, not from an answer that continued it", () => {
+    const blocks: Block[] = [
+      { id: "prompt", role: "user", text: "Build it", startedAt: 1, durationMs: 20 },
+      { id: "question", role: "assistant", text: "Default?" },
+      {
+        id: "answer",
+        role: "user",
+        text: "Default?\nLet the user choose",
+        continuationOf: "prompt",
+        questionAnswers: [{ prompt: "Default?", answers: ["Let the user choose"] }],
+      },
+      { id: "reply", role: "assistant", text: "Done" },
+    ];
+    expect(recoveryStatus({ ...chat("a"), blocks }, false, true)).toBe("done");
   });
   it("keeps an interruption visible through trailing status rows, but not a new finished turn", () => {
     const interrupted = markTurnInterrupted(chat("a"));

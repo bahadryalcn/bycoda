@@ -10,6 +10,7 @@ import {
   type DelegatedSheetState,
 } from "./SessionSubagentSheet";
 import type { SubagentRelay } from "./SubagentMessageForm";
+import { retryDelegated } from "./delegatedFocus";
 import { registerRemoteSessionActions } from "../../connections/model/remoteSessionActions";
 
 const fake = vi.hoisted(() => ({
@@ -96,7 +97,6 @@ function props(overrides: Record<string, unknown> = {}) {
       close: vi.fn(),
       open: vi.fn(),
       showInTranscript: vi.fn(() => true),
-      onOpenMain: vi.fn(),
     },
     delegated: delegatedState(),
     onSubmitToSession: vi.fn(() => true),
@@ -155,7 +155,6 @@ it("routes a native subagent's message through the main agent relay", () => {
         close: vi.fn(),
         open: vi.fn(),
         showInTranscript: vi.fn(() => true),
-        onOpenMain: vi.fn(),
       },
     }),
   );
@@ -343,6 +342,7 @@ it("connects a closed Host child's owner only for Stop, then stops that child", 
       sessionId: "parent",
       blocks: [],
       onStopSession,
+      onSubmitToSession: vi.fn(() => true),
       closeNative: vi.fn(),
     });
     return null;
@@ -366,4 +366,49 @@ it("connects a closed Host child's owner only for Stop, then stops that child", 
   expect(stop).toHaveBeenCalledOnce();
   expect(onStopSession).not.toHaveBeenCalled();
   release();
+});
+
+it("shows a delegated child's card in the transcript from its sheet", () => {
+  fake.sessions.set("child-1", child());
+  const showInTranscript = vi.fn(() => true);
+  const delegated = delegatedState("child-1");
+  render(
+    props({
+      native: {
+        block: undefined,
+        relay: nativeRelay(),
+        close: vi.fn(),
+        open: vi.fn(),
+        showInTranscript,
+      },
+      delegated,
+    }),
+  );
+  const sheet = lastSheet() as unknown as { onShowInTranscript: (id: string) => boolean };
+  act(() => void sheet.onShowInTranscript("delegated:child-1"));
+  expect(delegated.close).toHaveBeenCalledOnce();
+  expect(showInTranscript).toHaveBeenCalledWith("delegated:child-1");
+});
+
+it("retries a failed child by sending it the same task through the pane's send path", async () => {
+  fake.sessions.set("child-1", child());
+  const onSubmitToSession = vi.fn(() => true);
+  let state!: DelegatedSheetState;
+  function Harness() {
+    state = useDelegatedSheet({
+      sessionId: "parent",
+      blocks: [],
+      onStopSession: vi.fn(),
+      onSubmitToSession,
+      closeNative: vi.fn(),
+    });
+    return null;
+  }
+  act(() => root.render(createElement(Harness)));
+  expect(state.connecting).toEqual([]);
+  await act(async () => retryDelegated("parent", "child-1"));
+  expect(onSubmitToSession).toHaveBeenCalledWith("child-1", "Retry the same task.", {});
+  expect(state.connecting).toEqual([]);
+  onSubmitToSession.mockReturnValue(false as never);
+  await expect(retryDelegated("parent", "child-1")).rejects.toThrow();
 });

@@ -867,6 +867,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
     },
     [navigateBlock],
   );
+  const submitToChild = (sessionId: string, text: string, options: ComposerTurnOptions) =>
+    onSubmit(sessionId, text, [], options);
   const subagentSheet = useSubagentSheet(stableBlocks, visible);
   const closeSubagentSheet = subagentSheet.close;
   // Claude can end one task on its own; the others only end the whole turn.
@@ -883,6 +885,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     perItemStop,
     stopBackground,
     onStop,
+    onSubmitToSession: submitToChild,
     native: subagentSheet,
     btwOpen: btw.open,
   });
@@ -1160,7 +1163,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       );
       // The conversation guards are shared by every accepted user message.
       if (!messages.length || !canRewindConversation(stableSession, messages[0].id)) return [];
-      return messages.map((block) => block.id);
+      return messages.flatMap((block) => (block.questionAnswers?.length ? [] : [block.id]));
     }, [stableSession, onRewindMessage, managed, sendBlockedReason]),
     shallowArrayEqual,
   );
@@ -1239,63 +1242,59 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onOpenDiff,
     ],
   );
-  const composerChildren = useMemo(
-    () => (
-      <>
-        {/* Stable order above the writing box: question/approval and blocker, then activity, queue, input. */}
-        <InterruptedNotice
-          session={stableSession}
-          interruptedTurn={interruptedTurn}
-          blockedReason={sendBlockedReason}
-          message={remote ? "The host stopped this turn before it finished." : undefined}
-          onContinue={continueInterruptedTurn}
-        />
-        {/* Above the queue and the input, below any blocker. */}
-        <ActivityDock
-          sessionId={session.id}
-          harness={session.harness}
-          blocks={stableBlocks}
-          busy={sessionBusy}
-          pendingQuestion={hasPendingQuestion}
-          pendingOwnerApproval={session.pendingOwnerApproval}
-          questionPresented={hasPendingQuestion}
-          deliveryUnconfirmed={stableSession.queuedMessages?.some(
-            (message) => message.deliveryUnknown,
-          )}
-          backgroundTasks={session.backgroundTasks}
-          backgroundAgents={session.backgroundAgents}
-          visible={visible}
-          atEnd={dockAtEnd}
-          onOpenAgent={openDockAgent}
-          perItemStop={perItemStop}
-          onStopAgent={stopDockAgent}
-          onStopAll={stopDockAll}
-          delegatedAgents={delegatedAgents}
-        />
-      </>
-    ),
-    [
-      session.id,
-      session.harness,
-      stableBlocks,
-      sessionBusy,
-      hasPendingQuestion,
-      session.backgroundTasks,
-      session.pendingOwnerApproval,
-      session.backgroundAgents,
-      visible,
-      dockAtEnd,
-      openDockAgent,
-      perItemStop,
-      stopDockAgent,
-      stopDockAll,
-      delegatedAgents,
-      stableSession,
-      interruptedTurn,
-      sendBlockedReason,
-      remote,
-      continueInterruptedTurn,
-    ],
+  const providerGoalCommand = useStableCallback((command: "/goal resume" | "/goal clear") =>
+    onSubmit(session.id, command, [], { intent: "default" }),
+  );
+  const composerChildren = (
+    <>
+      {/* Stable order above the writing box: question/approval and blocker, then activity, queue, input. */}
+      <InterruptedNotice
+        session={stableSession}
+        interruptedTurn={interruptedTurn}
+        blockedReason={sendBlockedReason}
+        message={remote ? "The host stopped this turn before it finished." : undefined}
+        onContinue={continueInterruptedTurn}
+      />
+      {/* Above the queue and the input, below any blocker. */}
+      <ActivityDock
+        sessionId={session.id}
+        harness={session.harness}
+        blocks={stableBlocks}
+        busy={sessionBusy}
+        pendingQuestion={hasPendingQuestion}
+        pendingOwnerApproval={session.pendingOwnerApproval}
+        questionPresented={hasPendingQuestion}
+        deliveryUnconfirmed={stableSession.queuedMessages?.some(
+          (message) => message.deliveryUnknown,
+        )}
+        backgroundTasks={session.backgroundTasks}
+        backgroundAgents={session.backgroundAgents}
+        visible={visible}
+        atEnd={dockAtEnd}
+        onOpenAgent={openDockAgent}
+        perItemStop={perItemStop}
+        onStopAgent={stopDockAgent}
+        onStopAll={stopDockAll}
+        delegatedAgents={delegatedAgents}
+      />
+      <SessionProviderGoal
+        key={`${session.id}:${session.providerSessionId}:${session.providerGoal?.status}`}
+        session={stableSession}
+        blockedReason={
+          sendBlockedReason ||
+          (managed ||
+          editingLastTurn ||
+          stableSession.worktreeRemoved ||
+          stableSession.inboxAsk ||
+          rewindingMessage ||
+          workspaceSwitchingSessionId === session.id ||
+          windowMovingSessionIds?.has(session.id)
+            ? t("Messaging is unavailable in this conversation.")
+            : undefined)
+        }
+        onCommand={providerGoalCommand}
+      />
+    </>
   );
   const crewManaged = useCrewManagedSession(session.id);
   const ownerComposer = (
@@ -1670,7 +1669,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           </div>
         )
       ) : null}
-      <SessionProviderGoal session={session} />
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
         <AdoptedSessionNotice
@@ -1991,14 +1989,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
             close: closeSubagentSheet,
             open: subagentSheet.open,
             showInTranscript: showAgentInTranscript,
-            onOpenMain: () => {
-              closeSubagentSheet();
-              jumpToBottomRef.current?.();
-            },
             stopRun: perItemStop ? stopBackground : undefined,
           }}
           delegated={delegated}
-          onSubmitToSession={(sessionId, text, options) => onSubmit(sessionId, text, [], options)}
+          onSubmitToSession={submitToChild}
           onStopSession={onStop}
           onLoadRemoteBlock={onLoadRemoteBlock}
           onOpenFile={onOpenFile}

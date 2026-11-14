@@ -151,6 +151,9 @@ it("keeps the RPC allowlist aligned with the dispatch literals, including J2 tok
   expect(methods.length).toBeGreaterThan(0);
   const expected = new Set([
     ...methods,
+    "mcp.oauth.signOut",
+    "mcp.oauth.start",
+    "mcp.oauth.status",
     "mcp.tokens.create",
     "mcp.tokens.list",
     "mcp.tokens.revoke",

@@ -26,6 +26,7 @@ import { registerHarness } from "../../../src/integrations/harness/core/registry
 import { applyHarnessEvent } from "../../../src/integrations/harness/core/apply";
 import { EmptySession } from "../../../src/features/sessions/ui/EmptySession";
 import { WorkingIndicator } from "../../../src/shared/ui/WorkingIndicator";
+import { WorkspaceFooter } from "../../../src/app/workspace/layout/WorkspaceFooter";
 import { UsageFooter } from "../../../src/app/shell/UsageFooter";
 import { ModelSourceContext } from "../../../src/features/sessions/ui/modelSource";
 import {
@@ -542,11 +543,48 @@ function Fixture() {
         )}
         {withFooter ? (
           <>
-            <UsageFooter
-              providers={["claude", "codex"]}
-              tools={{ cwd: fixtureCwd, sessionId: "composer-layout-fixture", title: "Chat" }}
-              onNewTerminal={() => setTerminalOpened(true)}
-            />
+            {new URLSearchParams(location.search).has("workspace-footer-bar") ? (
+              <WorkspaceFooter
+                searchViewOpen={false}
+                inboxViewOpen={false}
+                notesViewOpen={false}
+                automationsViewOpen={false}
+                settingsOpen={false}
+                settingsSection="usage"
+                pullRequestsOnly={false}
+                setPullRequestsOnly={() => {}}
+                onOpenInbox={() => {}}
+                openSettings={() => {}}
+                active={undefined}
+                projectCwd={fixtureCwd}
+                usageProviders={["claude", "codex"]}
+                usageSession={undefined}
+                onSelectProviderAccount={undefined}
+                runningTerminals={[]}
+                runningTerminalOpen={false}
+                onToggleRunningTerminal={undefined}
+                onNewTerminal={() => setTerminalOpened(true)}
+                onShowProjectTerminal={() => setTerminalOpened(true)}
+                currentProjectDock={undefined}
+                dockVisible={false}
+                conversationTools={{
+                  cwd: fixtureCwd,
+                  sessionId: "composer-layout-fixture",
+                  title: "Chat",
+                }}
+                onOpenFile={() => {}}
+                pendingNotifications={[]}
+                hiddenApprovalToasts={[]}
+                onOpenApprovalSession={() => {}}
+                onApproval={async () => {}}
+              />
+            ) : (
+              <UsageFooter
+                providers={["claude", "codex"]}
+                tools={{ cwd: fixtureCwd, sessionId: "composer-layout-fixture", title: "Chat" }}
+                onNewTerminal={() => setTerminalOpened(true)}
+              />
+            )}
             <output data-testid="terminal-opened" className="sr-only">
               {String(terminalOpened)}
             </output>

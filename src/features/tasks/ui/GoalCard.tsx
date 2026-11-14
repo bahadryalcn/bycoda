@@ -1,7 +1,7 @@
 import { TaskModelChoiceLabel } from "./TaskModelChoiceLabel";
 import { ModelLabel } from "../../sessions/public/ModelLabel";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { useState } from "react";
@@ -12,6 +12,7 @@ import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { MessageSquare, Pencil, Sparkles, Square, Trash2 } from "../../../shared/ui/icons";
 import { Progress } from "../../../shared/ui/Progress";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { type BoardGoal } from "../model/goalClient";
 import { goalProgress } from "../model/hostGoals";
@@ -62,17 +63,33 @@ export function GoalCard({
   const progress = goalProgress(goal, tasks);
   const reason = goal.planError ?? goal.error;
   const finished = goal.status === "done" || goal.status === "cancelled";
+  const showDetails =
+    !finished ||
+    Boolean(
+      goal.budgetUsage ||
+      goal.budgetStop ||
+      goal.budget ||
+      (goal.finalAcceptance &&
+        (goal.finalAcceptance.status === "passed" || goal.finalAcceptance.status === "failed")),
+    );
   const canCancel = !finished;
   const canDelete = goal.status !== "planning" && goal.status !== "running";
   return (
-    <ActionHost
+    <Surface
       as="article"
+      variant="canvas"
+      padding="sm"
       aria-label={goal.title}
       data-goal-status={goal.status}
       aria-busy={pending || undefined}
       className="goal-card"
     >
-      <div className="goal-card-head">
+      <ActionHost
+        variant="row"
+        interactionTone="neutral"
+        pressFeedback={false}
+        className="goal-card-head"
+      >
         <span
           aria-hidden
           {...surfaceAttributes({ radius: "control", variant: "fill-subtle" }, "goal-card-well")}
@@ -221,35 +238,36 @@ export function GoalCard({
             />
           ) : null}
         </div>
-      </div>
+      </ActionHost>
       {goal.status === "blocked" && reason ? (
         <Text as="p" size="caption" tone="danger" leading="inherit" className="goal-card-reason">
           {reason}
         </Text>
       ) : null}
-      <Text
-        as="div"
-        size="caption"
-        tone="inherit"
-        leading="inherit"
-        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "goal-card-body")}
-      >
-        <GoalFinalReview
-          goal={goal}
-          busy={busy}
-          onRecheckFinal={onRecheckFinal}
-          onOpenFinal={onOpenFinal}
-        />
-        <TaskBudgetUsage usage={goal.budgetUsage} stop={goal.budgetStop} budget={goal.budget} />
-        <GoalPlanSteps goal={goal} />
-        <GoalApprovalBar
-          goal={goal}
-          busy={busy}
-          onApprove={onApprove}
-          onReplan={onReplan}
-          onError={onError}
-        />
-      </Text>
-    </ActionHost>
+      {showDetails ? (
+        <Disclosure
+          summary={t("Details")}
+          size="sm"
+          defaultOpen={!finished}
+          className="goal-card-body"
+        >
+          <GoalFinalReview
+            goal={goal}
+            busy={busy}
+            onRecheckFinal={onRecheckFinal}
+            onOpenFinal={onOpenFinal}
+          />
+          <TaskBudgetUsage usage={goal.budgetUsage} stop={goal.budgetStop} budget={goal.budget} />
+          <GoalPlanSteps goal={goal} />
+          <GoalApprovalBar
+            goal={goal}
+            busy={busy}
+            onApprove={onApprove}
+            onReplan={onReplan}
+            onError={onError}
+          />
+        </Disclosure>
+      ) : null}
+    </Surface>
   );
 }

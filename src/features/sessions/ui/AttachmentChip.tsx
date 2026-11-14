@@ -59,8 +59,10 @@ export function AttachmentChip({ attachment, onRemove, token, onInsertToken }: P
   // A gone image has no picture worth showing; it reads as a marked file chip.
   const image = attachment.kind === "image" && canOpen;
   const label = token ? tokenLabel(token) : null;
-  // An image card is only its thumbnail; the message text names it as `image1 113 KB`.
-  const imageDetails = [label, attachment.name, size].filter(Boolean).join(" · ");
+  // An image card is only its thumbnail; its token label already carries the size.
+  const imageDetails = (label ? [label, attachment.name] : [attachment.name, size])
+    .filter(Boolean)
+    .join(" · ");
 
   const typeText = presentation.typeExtension ?? t(presentation.label);
   // The app tooltip carries what a native `title` would: the full path (or name), type and size.

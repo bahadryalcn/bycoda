@@ -9,6 +9,26 @@ export type AutomationSchedule = {
   dayOfWeek: number;
 };
 
+/** Only the newest missed occurrence is eligible; bound recovery after a long offline interval. */
+export function latestOverdueOccurrence(
+  nextRunAfter: (after: number) => number,
+  firstRunAt: number,
+  now: number,
+): { scheduledFor: number; nextRunAt: number } | undefined {
+  if (firstRunAt > now) return undefined;
+  // Supported schedules recur at least weekly, including across DST changes.
+  const anchor = Math.max(firstRunAt, now - 9 * 24 * 60 * 60 * 1000);
+  let scheduledFor = anchor === firstRunAt ? firstRunAt : nextRunAfter(anchor);
+  let latest: { scheduledFor: number; nextRunAt: number } | undefined;
+  while (scheduledFor <= now) {
+    const nextRunAt = nextRunAfter(scheduledFor);
+    if (!Number.isFinite(nextRunAt) || nextRunAt <= scheduledFor) break;
+    latest = { scheduledFor, nextRunAt };
+    scheduledFor = nextRunAt;
+  }
+  return latest;
+}
+
 export function isScheduleKind(value: string): value is AutomationScheduleKind {
   return value === "hourly" || value === "daily" || value === "weekdays" || value === "weekly";
 }

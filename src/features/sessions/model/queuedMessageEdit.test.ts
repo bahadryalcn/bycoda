@@ -12,6 +12,10 @@ import {
 import { isEditingQueuedHead } from "./messageQueue";
 import type { Attachment, QueuedMessage, Session } from "./session";
 
+/** The generated token form: words joined by no-break spaces, then the size. */
+const tok = (kind: "Image" | "File", n: number, size = "1 B") =>
+  `[${kind}\u00a0${n}\u00a0·\u00a0${size.replace(" ", "\u00a0")}]`;
+
 function file(id: string, kind: Attachment["kind"] = "image", extra = {}): Attachment {
   return { id, name: id, mimeType: "image/png", kind, size: 1, ...extra };
 }
@@ -27,7 +31,7 @@ describe("removeDraftAttachment", () => {
       attachments: [file("x"), file("y")],
     };
     const next = removeDraftAttachment(draft, "x");
-    expect(next.text).toBe("a b [image1]");
+    expect(next.text).toBe(`a b ${tok("Image", 1)}`);
     expect(next.attachments.map((f) => f.id)).toEqual(["y"]);
   });
 
@@ -45,7 +49,7 @@ describe("editDraftText", () => {
     };
     const { draft: next, caret } = editDraftText(draft, "see  and [image2]", 4);
     expect(next.attachments.map((f) => f.id)).toEqual(["y"]);
-    expect(next.text).toBe("see  and [image1]");
+    expect(next.text).toBe(`see  and ${tok("Image", 1)}`);
     expect(caret).toBe(4);
   });
 
@@ -76,10 +80,10 @@ describe("addDraftAttachments", () => {
     const draft = { text: "[image1] and [image2]", attachments: [file("old"), file("keep")] };
     const result = addDraftAttachments(draft, [file("new")], { start: 0, end: 8 });
     expect(result.draft).toEqual({
-      text: "[image2] and [image1]",
+      text: `${tok("Image", 2)} and ${tok("Image", 1)}`,
       attachments: [file("keep"), file("new")],
     });
-    expect(result.caret).toBe(8);
+    expect(result.caret).toBe(tok("Image", 2).length);
   });
 
   it("frees attachment capacity before replacing a selected token", () => {
@@ -90,7 +94,7 @@ describe("addDraftAttachments", () => {
     });
     expect(result.draft.attachments).toHaveLength(20);
     expect(result.draft.attachments.some((item) => item.id === "f0")).toBe(false);
-    expect(result.draft.text).toBe("[image20]");
+    expect(result.draft.text).toBe(tok("Image", 20));
   });
   it("appends the files and puts their tokens at the caret", () => {
     const draft = { text: "hello", attachments: [file("x")] };
@@ -99,7 +103,7 @@ describe("addDraftAttachments", () => {
       end: 5,
     });
     expect(result.draft.attachments.map((f) => f.id)).toEqual(["x", "y", "d"]);
-    expect(result.draft.text).toBe("hello [image2] [file1]");
+    expect(result.draft.text).toBe(`hello ${tok("Image", 2)} ${tok("File", 1)}`);
     expect(result.caret).toBe(result.draft.text.length);
   });
 
@@ -138,7 +142,7 @@ describe("applyQueuedEdit", () => {
       attachments: [file("gone", "image", { missing: true }), file("here")],
     });
     expect(next.attachments.map((f) => f.id)).toEqual(["here"]);
-    expect(next.text).toBe("[image1]");
+    expect(next.text).toBe(tok("Image", 1));
   });
 });
 

@@ -38,6 +38,10 @@ function attachment(partial: Partial<Attachment> & Pick<Attachment, "id" | "name
   };
 }
 
+/** The generated token form: words joined by no-break spaces, then the size. */
+const tok = (kind: "Image" | "File", n: number, size: string) =>
+  `[${kind}\u00a0${n}\u00a0·\u00a0${size.replace(" ", "\u00a0")}]`;
+
 describe("mergeAttachments", () => {
   it.each([undefined, "other-host"])(
     "keeps same-spelling paths from different hosts (%s)",
@@ -93,7 +97,7 @@ describe("attachment order, which numbers the tokens", () => {
   ];
 
   it("keeps the order through merging, persisting and display", () => {
-    const expected = ["[image1]", "[file1]", "[image2]"];
+    const expected = [tok("Image", 1, "4 B"), tok("File", 1, "4 B"), tok("Image", 2, "4 B")];
     expect(attachmentTokens(mergeAttachments([files[0]], files.slice(1)))).toEqual(expected);
     expect(attachmentTokens(files.map(persistableAttachment))).toEqual(expected);
     expect(displayAttachments(files).map((file) => file.id)).toEqual(["a", "b", "c"]);
@@ -107,7 +111,11 @@ describe("attachment order, which numbers the tokens", () => {
     });
     const merged = mergeAttachments(files, [again]);
     expect(merged).toEqual(files);
-    expect(attachmentTokens(merged)).toEqual(["[image1]", "[file1]", "[image2]"]);
+    expect(attachmentTokens(merged)).toEqual([
+      tok("Image", 1, "4 B"),
+      tok("File", 1, "4 B"),
+      tok("Image", 2, "4 B"),
+    ]);
   });
 });
 
@@ -116,7 +124,7 @@ describe("promptText", () => {
 
   it("adds the legend after the message when there are attachments", () => {
     expect(promptText("  fix [image1]  ", [image])).toBe(
-      "fix [image1]\n\nAttachments: [image1] = shot.png (1st attached image)",
+      `fix [image1]\n\nAttachments: ${tok("Image", 1, "4 B")} = shot.png (1st attached image)`,
     );
   });
 
@@ -126,7 +134,7 @@ describe("promptText", () => {
   });
 
   it("treats a message of only tokens as attachment-only", () => {
-    const legend = "Attachments: [image1] = shot.png (1st attached image)";
+    const legend = `Attachments: ${tok("Image", 1, "4 B")} = shot.png (1st attached image)`;
     expect(promptText("[image1]", [image])).toBe(`${ATTACHMENT_ONLY_PROMPT}\n\n${legend}`);
     expect(promptText("", [image])).toBe(`${ATTACHMENT_ONLY_PROMPT}\n\n${legend}`);
     // A token for an attachment that is not there is still the user's text.

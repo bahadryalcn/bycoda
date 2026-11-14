@@ -131,6 +131,7 @@ import { runHostShell } from "./execution/shell";
 import { assertShellOwnershipAvailable, reserveShellOwnership } from "./execution/shell-ownership";
 import { isTaskWorktreeRemoving } from "./tasks/task-worktree-cleanup";
 import { prepareHostSkillPrompt } from "./skills/prompt-skills";
+import { DELEGATION_PARENT_KEY } from "../src/shared/model/host-contracts/delegation";
 import { projectChatCitationsForProvider } from "../src/features/sessions/model/chatCitation";
 import {
   forgetRuntimeHint,
@@ -796,12 +797,17 @@ export class HostEngine {
       if (held) this.deletingSessions.delete(id);
     }
   }
-  /** Stops the children of a parent turn that was cancelled or whose session is deleted. */
-  onParentStopped?: (sessionId: string) => Promise<void>;
+  /**
+   * Stops the children of a parent turn that was cancelled or whose session is deleted.
+   * A cancelled turn passes `keepNotifying`: children that report back keep running.
+   */
+  onParentStopped?: (sessionId: string, options?: { keepNotifying?: boolean }) => Promise<void>;
   private async turnHint(session: Session): Promise<string> {
+    // A delegated child never gets the owner's persona and style: it does not talk to the owner.
+    const child = !!session.modelSettings?.[DELEGATION_PARENT_KEY];
     const hints = [
       await harnessRuntimeHints(session.id, session.modelSettings, session),
-      await this.ownerInstructions?.(),
+      child ? "" : await this.ownerInstructions?.(),
     ];
     return hints.filter(Boolean).join("\n");
   }
@@ -4645,7 +4651,7 @@ export class HostEngine {
               if (cold) await soft("retirement", () => active.activity?.release());
               active.failureStage = "callback";
               if (active.cancelled)
-                this.onParentStopped?.(session.id).catch((error) =>
+                this.onParentStopped?.(session.id, { keepNotifying: true }).catch((error) =>
                   console.warn("Subagent stop failed:", error),
                 );
               await this.onSettled?.(session.id, {

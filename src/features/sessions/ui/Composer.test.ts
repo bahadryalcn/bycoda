@@ -1238,7 +1238,14 @@ describe("Composer question focus", () => {
     expect(skill).toBeDefined();
     await act(async () => skill!.click());
     expect(textarea.value).toBe("Review this $plugin:review ");
-    expect(document.querySelector(".text-skill")?.textContent).toBe("$plugin:review");
+    // The source text stays in a hidden span; the face repeats it without the introducer.
+    const token = document.querySelector(".text-skill")!;
+    expect(token.querySelector("[data-draft-token-face] > :first-child")?.textContent).toBe(
+      "$plugin:review",
+    );
+    expect(token.querySelector("[data-draft-token-face] > [aria-hidden]")?.textContent).toBe(
+      "plugin:review",
+    );
   });
 
   it("hides /operator from suggestions but submits the typed command", async () => {

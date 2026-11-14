@@ -61,7 +61,7 @@ async function createSprint(
   await page.keyboard.press("Escape");
   await form
     .locator("summary")
-    .filter({ hasText: /^Capacity$/ })
+    .filter({ hasText: /^Work estimates$/ })
     .click();
   await form.getByLabel("Sprint capacity (points)", { exact: true }).fill("13");
   await pickDate(page, form, "Start date", "2026-10-26");

@@ -51,6 +51,7 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
     async (sessionId: string, archived: boolean, listed?: SessionSummary) => {
       if (archived) return onRemoveHistorySession(sessionId, "archive", false, undefined, listed);
       if (removingSessionIds.current.has(sessionId)) return false;
+      removingSessionIds.current.add(sessionId);
       try {
         await setSessionArchived(sessionId, false);
         setHistory((current) =>
@@ -63,6 +64,8 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
           kind: "error",
         });
         return false;
+      } finally {
+        removingSessionIds.current.delete(sessionId);
       }
     },
     [onRemoveHistorySession, setHistory, removingSessionIds],

@@ -5,7 +5,7 @@ import { installAttachmentSelectionPolicy } from "./attachmentSelectionPolicy";
 it("snaps native selections without recursion and defers during composition", () => {
   const el = document.createElement("textarea");
   el.value = "[image1]";
-  const remove = installAttachmentSelectionPolicy(el, () => [{ kind: "image" }]);
+  const remove = installAttachmentSelectionPolicy(el, () => [{ kind: "image", size: 1 }]);
   const set = vi.spyOn(el, "setSelectionRange");
   el.setSelectionRange(3, 3);
   expect([el.selectionStart, el.selectionEnd]).toEqual([0, 0]);

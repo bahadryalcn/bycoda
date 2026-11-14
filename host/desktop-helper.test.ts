@@ -87,3 +87,23 @@ it("rejects unknown parameters and retains a failed preparation for explicit ret
   expect((await helper.request({ op: "status" }, allowed)).error).toContain("compiler");
   await helper.close();
 });
+
+it("keeps the cua-driver helper state separate from agent-desktop", async () => {
+  const helper = new HostDesktopHelper({
+    read: async () => undefined,
+    cua: {
+      read: async () => ({
+        binaryPath: "C:/helpers/cua-driver.exe",
+        binarySha256: "b".repeat(64),
+        sourceRef: "cua-driver-rs-v0.49.11",
+        protocol: "mcp",
+        version: "0.49.11",
+        manifestPath: "C:/helpers/manifest.json",
+      }),
+    },
+  });
+  expect((await helper.request({ op: "status" }, allowed)).phase).toBe("missing");
+  const cua = await helper.request({ op: "status", driver: "cua-driver" }, allowed);
+  expect(cua).toMatchObject({ phase: "ready", helper: { protocol: "mcp", version: "0.49.11" } });
+  await helper.close();
+});

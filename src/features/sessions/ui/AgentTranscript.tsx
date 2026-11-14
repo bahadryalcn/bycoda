@@ -17,7 +17,7 @@ import {
   useTranscriptActiveBlocksVersion,
 } from "./transcriptVirtualization";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { SessionMessageAuthor } from "./SessionMessageAuthor";
+import { DelegationNoticeRow, SessionMessageAuthor } from "./SessionMessageAuthor";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Alert } from "../../../shared/ui/Alert";
 import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
@@ -85,7 +85,7 @@ import { TranscriptSkills } from "./SkillTokenText";
 import { RunHarness } from "./SubagentAnatomy";
 import { UserTextPreview } from "./UserTextPreview";
 import { userTextParts } from "../model/userTextPreview";
-import { attachmentTokens, findTokens } from "../model/attachmentTokens";
+import { findTokens } from "../model/attachmentTokens";
 import { GeneratedImage } from "./GeneratedImage";
 import { BycodaSparkles } from "./BycodaSparkles";
 import { OrchestratorConstellation } from "./OrchestratorConstellation";
@@ -119,7 +119,7 @@ import {
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Attachment } from "../model/session";
 import type { ShellRun } from "../model/shellRun";
-import { visibleUserPrompt } from "../../orchestration/model/orchestration";
+import { visibleUserPrompt } from "../model/userPromptText";
 import { playCue } from "../../settings/public/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
 import { useResolvedModelName } from "../model/reactiveReads";
@@ -2084,6 +2084,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
 }) {
   const t = useT();
   if (block.role === "user") {
+    if (block.author?.kind === "delegation") return <DelegationNoticeRow block={block} />;
     const resumeKind = resumePromptKind(block.text);
     if (resumeKind && !block.attachments?.length)
       return <ResumeTurnRow block={block} kind={resumeKind} embedded={embedded} />;
@@ -2145,9 +2146,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
     );
   }
 
-  if (block.role === "image") {
-    return block.image ? <GeneratedImage image={block.image} /> : null;
-  }
+  if (block.role === "image") return block.image ? <GeneratedImage image={block.image} /> : null;
 
   if (block.role === "tool") {
     if (block.inlineVisual) return <InlineVisual snapshot={block.inlineVisual} />;
@@ -2388,10 +2387,10 @@ function UserMessageBlock({
   // A chip carries its token's label only when the message mentions it, so
   // messages sent before tokens existed look as they always did.
   const attachmentFiles = block.attachments ?? [];
-  const usedTokenIndexes = new Set(findTokens(text, attachmentFiles).map((match) => match.index));
-  const referencedTokens = attachmentTokens(attachmentFiles).map((token, index) =>
-    usedTokenIndexes.has(index) ? token : undefined,
+  const usedTokens = new Map(
+    findTokens(text, attachmentFiles).map((match) => [match.index, match.token]),
   );
+  const referencedTokens = attachmentFiles.map((_, index) => usedTokens.get(index));
   const overflows = useClampOverflow(
     textRef,
     Boolean(text),

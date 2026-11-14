@@ -3,14 +3,14 @@
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   align-items: start;
-  gap: var(--space-8);
+  gap: var(--space-6) var(--space-8);
   min-inline-size: 0;
 }
 .work,
 .overview {
   display: grid;
   align-content: start;
-  gap: var(--space-6);
+  gap: var(--space-5);
   min-inline-size: 0;
 }
 .workspace:not(:has(.work)) {
@@ -95,9 +95,6 @@
 
 .tileValue {
   font-variant-numeric: tabular-nums;
-}
-
-.tileCaption {
 }
 
 .charts {

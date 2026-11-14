@@ -16,7 +16,7 @@ test("reference token icons preserve editable text in both themes and widths", a
       const field = section.getByRole("textbox", { name: "Reference token message" });
       const raw = await field.inputValue();
       expect(raw).toContain("/frontend-design and $frontend-design before /unknown");
-      expect(raw).toContain("[image1]");
+      expect(raw).toContain("[Image\u00a01\u00a0·");
       expect(raw).toContain("@jira:PFDEV-1196");
       const overlay = section.locator("[data-reference-overlay]");
       await expect(overlay.locator("[data-composer-skill-token] svg")).toHaveCount(2);
@@ -99,12 +99,12 @@ test("attachment cards and inline references retain kind tones and the selected 
         probe.style.cssText = `color:var(${role});background:color-mix(in srgb,var(${role}) 14%,transparent)`;
         card.parentElement!.append(probe);
         const expectedCard = read(probe);
-        // DraftToken paints its own background; decoration stays inside the text bounds.
+        // DraftToken's face paints the background over the hidden source text.
         probe.style.background = `color-mix(in oklch,var(${role}) 12%,transparent)`;
         const expectedHighlight = read(probe);
         probe.remove();
         const composerToken = document.querySelector(
-          `[aria-label="Composer"] [data-composer-attachment-kind="${kind}"]`,
+          `[aria-label="Composer"] [data-composer-attachment-kind="${kind}"] > [aria-hidden="true"]`,
         )!;
         const transcriptToken = document.querySelector(
           `[aria-label="Message"] span[data-attachment-kind="${kind}"]`,
@@ -172,12 +172,13 @@ test("attachment surfaces retain native caret, insertion and removal", async ({ 
   const message = composer.getByRole("textbox", { name: "Composer message" });
   await message.fill("Review this");
   await message.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(7, 7));
-  await composer
-    .getByRole("button", { name: "Insert [image1] into the message", exact: true })
-    .click();
+  await composer.getByRole("button", { name: /^Insert \[Image\s1\s·/ }).click();
   await expect(message).toBeFocused();
-  await expect(message).toHaveValue("Review [image1] this");
-  expect(await message.evaluate((element: HTMLTextAreaElement) => element.selectionStart)).toBe(16);
+  const token = /^Review (\[Image\u00a01\u00a0·[^\]]+\]) this$/.exec(await message.inputValue())?.[1];
+  expect(token).toBeDefined();
+  expect(await message.evaluate((element: HTMLTextAreaElement) => element.selectionStart)).toBe(
+    "Review ".length + token!.length + 1,
+  );
   await composer
     .getByRole("button", { name: "Remove mountain-reference-for-the-new-project.png", exact: true })
     .click();
@@ -330,7 +331,7 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
       });
       await expect(page.locator("[data-attachment-chip]")).toHaveCount(3);
       await expect(message).toHaveValue(
-        "Review references and retain this existing draft. [image1] [image2] [file1]",
+        /^Review references and retain this existing draft\. \[Image\u00a01\u00a0·[^\]]+\] \[Image\u00a02\u00a0·[^\]]+\] \[File\u00a01\u00a0·[^\]]+\]$/,
       );
       await expect(page.locator('[data-composer-attachment-kind="image"]')).toHaveCount(2);
       await expect(page.locator('[data-composer-attachment-kind="markdown"]')).toHaveCount(1);
@@ -361,7 +362,7 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
       await page.getByRole("button", { name: "Remove first-reference.png", exact: true }).click();
       await expect(page.locator("[data-attachment-chip]")).toHaveCount(2);
       await expect(message).toHaveValue(
-        "Review references and retain this existing draft. [image1] [file1]",
+        /^Review references and retain this existing draft\. \[Image\u00a01\u00a0·[^\]]+\] \[File\u00a01\u00a0·[^\]]+\]$/,
       );
       const remainingImage = page.locator('[data-attachment-chip="image"]');
       await expect(remainingImage).toHaveCount(1);
@@ -371,14 +372,13 @@ test("real Composer accepts pasted files, decorates native tokens and renumbers 
       });
       await expect(preview).toBeVisible();
       await preview.hover();
-      await expect(page.getByRole("tooltip")).toContainText("image1 · second-reference.png");
-      await expect(page.getByRole("tooltip")).toContainText(/\b\d+ B\b/);
+      await expect(page.getByRole("tooltip")).toContainText(
+        /Image\s1\s·\s\d+\sB · second-reference\.png/,
+      );
       await message.focus();
       await message.press("Home");
-      await page
-        .getByRole("button", { name: "Insert [image1] into the message", exact: true })
-        .click();
+      await page.getByRole("button", { name: /^Insert \[Image\s1\s·/ }).click();
       await expect(message).toBeFocused();
-      expect(await message.inputValue()).toContain("[image1]");
+      expect(await message.inputValue()).toMatch(/^\[Image\u00a01\u00a0·/);
     }
 });

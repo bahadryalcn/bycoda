@@ -151,6 +151,7 @@ export async function dispatchSessionManagement(
       revision: source.revision,
       authorityGeneration: source.authorityGeneration ?? null,
       status: source.status,
+      runId: source.runId ?? null,
       harness: source.session.harness,
       model: source.session.model,
       modelSettings: source.session.modelSettings ?? {},

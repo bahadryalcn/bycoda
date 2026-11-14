@@ -45,15 +45,6 @@
     max-inline-size: 24rem;
   }
 }
-/* Presence and keep-awake status: one line under the presence group, on the rows' left edge. */
-.statusLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 16px;
-  padding-block-start: 12px;
-}
-
 /* Footer actions wrap when translated labels or discard feedback need another line. */
 .footer {
   display: flex;

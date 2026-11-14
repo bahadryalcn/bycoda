@@ -54,6 +54,20 @@ describe("mobile desktop projection", () => {
     expect(result.projects.map((project) => project.cwd)).toEqual(["/visible"]);
     expect(result.projects[0]?.groupId).toBe("work");
   });
+  it("marks rail pins on ungrouped projects only, as the desktop rail shows them", () => {
+    const result = projectMobileDirectory({
+      paths: ["/pinned", "/grouped", "/plain"],
+      groups: [{ id: "work", name: "Work", collapsed: false }],
+      assignments: { "/grouped": "work" },
+      lock: { lockedGroupIds: new Set(), lockedProjectKeys: new Set() },
+      pinned: ["/pinned", "/grouped"],
+    });
+    expect(result.projects.map((project) => [project.cwd, project.pinned])).toEqual([
+      ["/pinned", true],
+      ["/grouped", undefined],
+      ["/plain", undefined],
+    ]);
+  });
   it("exports nested session folders and manual order only for visible projects", () => {
     const folders = [
       { id: "f", name: "Work", sessionIds: ["one"], collapsed: false },

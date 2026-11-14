@@ -147,7 +147,8 @@ describe("buildPiPrompt", () => {
     });
     expect(prompt).toMatchObject({
       type: "prompt",
-      message: "look\n\nAttachments: [image1] = shot.png (1st attached image)",
+      message:
+        "look\n\nAttachments: [Image\u00a01\u00a0·\u00a012\u00a0B] = shot.png (1st attached image)",
       streamingBehavior: "steer",
       images: [{ type: "image", data: "abc", mimeType: "image/png" }],
     });

@@ -8,8 +8,14 @@ import type { ExpandingButtonGroupItem } from "../../../src/shared/ui/ButtonGrou
 import { File, X } from "../../../src/shared/ui/icons";
 import type { Block } from "../../../src/features/sessions/model/session";
 import "../../../src/styles/index.css";
+import { SessionProviderGoal } from "../../../src/features/sessions/ui/SessionProviderGoal";
+import type { SessionGoal } from "../../../src/features/sessions/model/providerGoal";
+import { PromptField } from "../../../src/shared/ui/PromptField";
+import { Text } from "../../../src/shared/ui/Text";
+import { setLanguagePreference } from "../../../src/shared/i18n";
 
 const params = new URLSearchParams(location.search);
+if (params.has("tr")) setLanguagePreference("tr");
 document.documentElement.classList.toggle("dark", params.has("dark"));
 document.documentElement.classList.toggle("theme-light", !params.has("dark"));
 const blocks: Block[] = Array.from({ length: Number(params.get("count") ?? 120) }, (_, i) => ({
@@ -32,6 +38,57 @@ function Fixture() {
   const [find, setFind] = useState<ExpandingButtonGroupItem | null>(null);
   const [notes, setNotes] = useState(false);
   const [closed, setClosed] = useState(false);
+  const [goal, setGoal] = useState<SessionGoal | undefined>({
+    provider: "codex",
+    providerSessionId: "fixture-codex",
+    objective: params.has("long")
+      ? "Hesapları ve seçili modeli doğrula 👨‍👩‍👧‍👦 مرحبا ".repeat(80)
+      : "Ödeme, rapor erişimi ve demo seed doğrulamalarındaki açık işleri tamamla.",
+    status: (params.get("goal") || "blocked") as SessionGoal["status"],
+    tokensUsed: 12400,
+    tokenBudget: 50000,
+    timeUsedSeconds: 376,
+  });
+  const [draft, setDraft] = useState("Taslağım burada kalmalı.");
+  if (params.has("goal"))
+    return (
+      <main className="flex h-dvh flex-col bg-(--ui-surface) text-(--ui-text-primary)">
+        <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-4 p-4">
+          <Text weight="medium">Değişikliklerde Hata ve Eksikler</Text>
+          <Text tone="secondary">
+            Kaldığım yerden devam ediyorum. Ödeme, rapor erişimi ve demo seed doğrulamalarını
+            kontrol ediyorum.
+          </Text>
+        </div>
+        <div className="mx-auto w-full max-w-4xl p-4">
+          {params.has("busy") ? (
+            <Text size="caption" tone="secondary" className="px-4 py-2">
+              Working · 3 running
+            </Text>
+          ) : null}
+          <SessionProviderGoal
+            session={{
+              harness: "codex",
+              providerSessionId: "fixture-codex",
+              providerGoal: goal,
+              busy: params.has("busy"),
+            }}
+            onCommand={(command) => {
+              if (params.has("reject")) return false;
+              setGoal(
+                command === "/goal clear" ? undefined : goal && { ...goal, status: "active" },
+              );
+              return true;
+            }}
+          />
+          <PromptField
+            label="Message"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </div>
+      </main>
+    );
   return (
     <main className="flex h-dvh flex-col bg-(--ui-surface) text-(--ui-text-primary)">
       <header

@@ -137,6 +137,9 @@ function TaskCardBody({
     // A click anywhere on the card but its buttons opens the detail panel.
     <ActionHost
       as="article"
+      variant="row"
+      padding={{ inline: "md", block: "md" }}
+      interactionTone="neutral"
       selected={selected}
       aria-label={task.title}
       aria-busy={actions.pending || undefined}

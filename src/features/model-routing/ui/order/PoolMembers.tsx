@@ -78,7 +78,9 @@ function EntryMember({
   const name = entryName(entry);
   return (
     <MemberFrame label={name} {...frame}>
-      <ModelLabel model={entry.model} harness={entry.harness} />
+      <Text as="span" size="secondary" className="min-w-0">
+        <ModelLabel model={entry.model} harness={entry.harness} />
+      </Text>
       {account.account ? (
         <Text size="caption" tone="secondary" truncate>
           {account.account.label}

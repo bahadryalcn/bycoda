@@ -8,6 +8,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 });
 const requestId = { type: "string", minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_-]+$" };
+const files = { type: "boolean" };
 const runId = { type: "string", minLength: 1, maxLength: 200 };
 const prompt = { type: "string", minLength: 1, maxLength: DELEGATION_LIMITS.promptChars };
 
@@ -30,6 +31,7 @@ export const AGENT_TOOL_SCHEMAS = {
       notifyOnCompletion: { type: "boolean" },
       title: { type: "string", minLength: 1, maxLength: DELEGATION_LIMITS.titleChars },
       prompt,
+      files,
       model: {
         type: "string",
         maxLength: 400,
@@ -45,10 +47,20 @@ export const AGENT_TOOL_SCHEMAS = {
       question: prompt,
       context: { type: "string", maxLength: DELEGATION_LIMITS.promptChars },
       notifyOnCompletion: { type: "boolean" },
+      files,
     },
     ["requestId", "question"],
   ),
-  "agents.reply": object({ requestId, runId, message: prompt }, ["requestId", "runId", "message"]),
+  // Flat like agents.wait: the service enforces exactly one of runId and runIds.
+  "agents.reply": object(
+    {
+      requestId,
+      runId,
+      runIds: { type: "array", items: runId, minItems: 1, maxItems: 20, uniqueItems: true },
+      message: prompt,
+    },
+    ["requestId", "message"],
+  ),
   // Flat on purpose: providers reject a top-level oneOf in a tool input schema.
   // The service enforces that exactly one of runId and runIds is passed.
   "agents.wait": object({
@@ -76,11 +88,11 @@ export function describeAgentTool(action: string): string {
   if (action === "agents.options")
     return "Read the subagent and advisor models the owner selected for this conversation, with availability, effortLevels and defaultEffort when offered, tier, maxEffort when set, running counts, limits and notifyOnCompletionAvailable. Background wake is for interactive parents; Work-owned task/goal/automation parents keep waiting for results. Only these models can run; a single subagent model is used automatically.";
   if (action === "agents.delegate")
-    return "Start one subagent in a fresh child session in this project's folder, using the selected model. Choose effort by task difficulty, within agents.options maxEffort; omitted uses model default. Returns immediately with runId. Set notifyOnCompletion:true for background work: completion queues a result to this parent and wakes it when available; end your turn instead of polling. Otherwise call agents.wait until finished. Reuse requestId only with identical payload. The child sees only the brief, may edit within scope, cannot commit/push/publish, and can contact group peers via agents.list/send. Verify untrusted results.";
+    return "Start one subagent in a fresh child session in this project's folder, using the selected model. Choose effort by task difficulty, within agents.options maxEffort; omitted uses model default. Returns immediately with runId. notifyOnCompletion:true queues the result to this parent and wakes it when available; end your turn instead of polling. Otherwise call agents.wait. Reuse requestId only with identical payload. The child sees only the brief: goal, missing context, expected output, in a few sentences (rarely over ~1500 characters). files:false (Claude/Codex): chat-only, no repository, for discussion, research or writing. The Host enforces limits and peer rules; do not restate them.";
   if (action === "agents.consult")
     return "Ask the selected advisor for a read-only second opinion in a fresh child session. Returns immediately with runId. Set notifyOnCompletion:true for background completion delivery, then end your turn; otherwise call agents.wait. The advisor cannot edit files and can message its parent only. Verify its untrusted advice before acting.";
   if (action === "agents.reply")
-    return "Continue a finished run in the same child session with its context. Pass requestId, runId and message. Returns immediately like agents.delegate. Reuse requestId only with identical payload. Wait or cancel a running child first; approvals must be answered in the child session. Advisors remain read-only.";
+    return "Continue a finished run in the same child session with its context. Pass requestId, message and exactly one of runId or runIds (up to 20 unique runs get the same message; returns { replies: [...] } with per-run results or errors). Returns immediately like agents.delegate. Reuse requestId only with identical payload. Wait or cancel a running child first; approvals must be answered in the child session. Advisors remain read-only.";
   if (action === "agents.wait")
     return "Pass exactly one of runId or runIds (1 to 16 unique IDs). Wait until every listed run stops running or timeoutSeconds expires; runIds returns { runs: [...] }, runId keeps its single-run shape. Timeout defaults to the provider maximum (240 seconds for Claude, Codex and Grok, 50 for others); a larger value is shortened to it. running means call again. needsInput means the child waits for approval in its own session; tell the owner. A reply after an owner follow-up is marked ownerFollowUp.";
   if (action === "agents.cancel")

@@ -550,7 +550,7 @@ function mergeTurnMetrics(
 
 function upsertPlan(session: Session, event: Extract<HarnessEvent, { type: "plan" }>): Session {
   const key = event.key?.trim() || undefined;
-  const lastUser = lastMatchingBlock(session.blocks, (block) => block.role === "user");
+  const lastUser = executionUserIndex(session.blocks);
   const existing = lastMatchingBlock(session.blocks, (block, index) => {
     if (block.role !== "plan") return false;
     if (key) {
@@ -597,7 +597,7 @@ function upsertTaskList(
   event: Extract<HarnessEvent, { type: "tasks.updated" }>,
 ): Session {
   const key = event.key?.trim() || undefined;
-  const lastUser = lastMatchingBlock(session.blocks, (block) => block.role === "user");
+  const lastUser = executionUserIndex(session.blocks);
   const existing = lastMatchingBlock(session.blocks, (block, index) => {
     if (block.role !== "tasks") return false;
     if (key) {
@@ -900,13 +900,7 @@ function failStreaming(session: Session): Session {
  * assistant text.
  */
 export function promoteLastAssistantToPlan(session: Session, key?: string): Session {
-  let lastUser = -1;
-  for (let index = session.blocks.length - 1; index >= 0; index -= 1) {
-    if (session.blocks[index].role === "user") {
-      lastUser = index;
-      break;
-    }
-  }
+  const lastUser = executionUserIndex(session.blocks);
 
   if (session.blocks.some((block, index) => index > lastUser && block.role === "plan")) {
     return session;
@@ -1037,7 +1031,7 @@ function applyCompactionStatus(
 
 function upsertKeyedStatus(session: Session, key: string, text: string): Session {
   const trimmed = text.trim();
-  const turnStart = lastMatchingBlock(session.blocks, (block) => block.role === "user");
+  const turnStart = executionUserIndex(session.blocks);
   const index = lastMatchingBlock(
     session.blocks,
     (block, at) => at > turnStart && block.statusKey === key,

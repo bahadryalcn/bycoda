@@ -174,20 +174,18 @@ export function useTaskGoals({
     act({ id: `goal:${goalKey(goal.machineId, goal.id)}` }, action, putGoal);
 
   const remove = async (goal: BoardGoal) => {
-    if (
-      !(await confirm({
-        title: t("Delete epic"),
-        message: t("Delete the epic “{p0}”? Its tasks stay on the board.", { p0: goal.title }),
-        confirmLabel: t("Delete"),
-      }))
-    )
-      return;
-    if (filter === goalKey(goal.machineId, goal.id)) setFilter(ALL_GOALS);
-    act(
-      { id: `goal:${goalKey(goal.machineId, goal.id)}` },
-      () => deleteGoal(goal),
-      () => removeGoal(goal),
-    ).catch(report);
+    await confirm({
+      title: t("Delete epic"),
+      message: t("Delete the epic “{p0}”? Its tasks stay on the board.", { p0: goal.title }),
+      confirmLabel: t("Delete"),
+      onConfirm: async () => {
+        await deleteGoal(goal);
+        removeGoal(goal);
+        if (filter === goalKey(goal.machineId, goal.id)) setFilter(ALL_GOALS);
+        setError(null);
+        refresh().catch(report);
+      },
+    });
   };
 
   const cancel = (goal: BoardGoal) => {

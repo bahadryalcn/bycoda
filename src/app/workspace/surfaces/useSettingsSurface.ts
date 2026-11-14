@@ -217,10 +217,12 @@ export function useSettingsSurfaceActions({
 
   const onSelectSettingsSection = useCallback(
     (section: SettingsSectionId) => {
+      // A deep link selects its owner until cleared; manual navigation replaces that intent.
+      setSettingsAnchor(null);
       setSettingsSection(section);
       saveSettingsSection(section);
     },
-    [setSettingsSection],
+    [setSettingsAnchor, setSettingsSection],
   );
 
   return {

@@ -1,9 +1,12 @@
 import {
   crewMemberOf,
   delegatedAgentBlock,
+  delegatedFailureText,
   delegatedStatus,
   delegationParentOf,
 } from "./delegatedAgents";
+import { delegatedChildIdOf } from "./delegatedBlockId";
+import { failedAskCard } from "./delegatedFailedCalls";
 import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import type { Block, Session } from "./session";
 import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks";
@@ -18,7 +21,10 @@ import { registerStreamingTextUpdate, streamingTextUpdate } from "./stableBlocks
 /** Slack for a user message stamped marginally after the Host recorded its ask. */
 const ASK_SKEW_MS = 2_000;
 
-type DelegateCall = { kind: "delegate" | "wait" | "reply"; sessionIds: string[] };
+type DelegateCall = {
+  kind: "delegate" | "wait" | "reply";
+  sessionIds: string[];
+};
 
 /** `agents.delegate` / `wait` / `reply` however the provider names the Host tool. */
 const DELEGATE_TOOL = /(?:^|[:_.])agents[_.](delegate|wait|reply)$/i;
@@ -80,7 +86,12 @@ function buildCardBlock(child: Session): Block {
   const status = delegatedStatus(child);
   const steps = block.agentRun?.steps ?? [];
   const last = steps[steps.length - 1];
-  const report = status === "done" && last?.kind === "message" ? last.text.trim() : "";
+  const report =
+    status === "done" && last?.kind === "message"
+      ? last.text.trim()
+      : status === "failed"
+        ? (delegatedFailureText(child) ?? "")
+        : "";
   return {
     ...block,
     tool: {
@@ -90,7 +101,7 @@ function buildCardBlock(child: Session): Block {
     },
     agentRun: block.agentRun && {
       ...block.agentRun,
-      steps: report ? steps.slice(0, -1) : steps,
+      steps: report && status === "done" ? steps.slice(0, -1) : steps,
     },
   };
 }
@@ -119,12 +130,37 @@ function askingTurn(blocks: readonly Block[], child: Session): number {
  * turn cannot be found is left out, and the dock still lists it.
  */
 export function placeDelegatedCards(blocks: Block[], children: readonly Session[]): Block[] {
-  if (!children.length) return blocks;
+  const { inPlace, hidden, after } = planCards(blocks, children);
+  if (!after.size && !inPlace.size && !hidden.size) return blocks;
+  return blocks.flatMap((block, index) =>
+    hidden.has(index) ? [] : [inPlace.get(index) ?? block, ...(after.get(index) ?? [])],
+  );
+}
+
+/** The children `placeDelegatedCards` gives an inline card; the dock need not list them again. */
+export function cardedChildren(blocks: Block[], children: readonly Session[]): Set<string> {
+  const ids = new Set<string>();
+  if (!children.length) return ids;
+  const { placed, after } = planCards(blocks, children);
+  for (const child of placed) ids.add(child.id);
+  for (const cards of after.values()) {
+    for (const card of cards) {
+      const id = delegatedChildIdOf(card.id);
+      if (id) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+function planCards(blocks: Block[], children: readonly Session[]) {
   const byId = childIndex(children);
   const placed = new Set<Session>();
   const inPlace = new Map<number, Block>();
   const hidden = new Set<number>();
   blocks.forEach((block, index) => {
+    // A call that failed before any child existed becomes a failed card of its own.
+    const failed = failedAskCard(block);
+    if (failed) inPlace.set(index, failed);
     const call = delegateCall(block);
     if (!call) return;
     if (call.kind === "delegate") {
@@ -144,10 +180,7 @@ export function placeDelegatedCards(blocks: Block[], children: readonly Session[
     if (turn < 0) continue;
     after.set(turn, [...(after.get(turn) ?? []), delegatedCardBlock(child)]);
   }
-  if (!after.size && !inPlace.size && !hidden.size) return blocks;
-  return blocks.flatMap((block, index) =>
-    hidden.has(index) ? [] : [inPlace.get(index) ?? block, ...(after.get(index) ?? [])],
-  );
+  return { placed, inPlace, hidden, after };
 }
 
 /**

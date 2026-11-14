@@ -14,15 +14,7 @@ export function isTurnInterruptMessage(text: string): boolean {
   return text === INTERRUPT_MESSAGE || text === "Turn interrupted when Bycoda quit.";
 }
 
-/**
- * Sent to resume a turn cut off by a quit or crash. The work may have half
- * finished, so the agent must check before repeating anything that changes state.
- */
-export const CONTINUE_PROMPT =
-  "Continue where you left off. Your last turn was cut short, so a command or other action it started may have finished or may still be running. Before you repeat one that changes state, confirm it did not take effect and is not still running; if you cannot tell, say so instead of repeating it.";
-
-/** Resumes a turn stopped by a usage limit; nothing was cut off mid-action. Also the pre-2026-11 restart prompt. */
-export const RESUME_PROMPT = "Continue from where you left off.";
+export { CONTINUE_PROMPT, RESUME_PROMPT } from "./userPromptText";
 
 export type InFlightRef = {
   sessionId: string;

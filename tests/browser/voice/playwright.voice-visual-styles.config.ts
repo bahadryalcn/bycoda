@@ -6,6 +6,7 @@ export default defineConfig({
     "voice-overlay.e2e.ts",
     "voice-persona.e2e.ts",
     "voice-companion-controls.e2e.ts",
+    "voice-tool-activity.e2e.ts",
   ],
   outputDir: "../../../temp/test-results/voice-visual-styles",
   workers: 1,

@@ -1,26 +1,35 @@
+import { useState } from "react";
 import type { Session } from "../model/session";
 import { isSessionGoal, type SessionGoal } from "../model/providerGoal";
-import { useT } from "../../../shared/i18n";
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { useFormat, useT } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
 import { ClampText } from "../../../shared/ui/ClampText";
-import { Heading } from "../../../shared/ui/Heading";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { Text, type TextTone } from "../../../shared/ui/Text";
+import { CircleDot } from "../../../shared/ui/icons";
 
-const GOAL_STATUS: Record<SessionGoal["status"], { label: string; tone: BadgeTone }> = {
-  active: { label: "Active", tone: "accent" },
-  paused: { label: "Paused", tone: "neutral" },
-  blocked: { label: "Blocked", tone: "warning" },
-  usageLimited: { label: "Usage limit reached", tone: "warning" },
-  budgetLimited: { label: "Budget reached", tone: "warning" },
-  complete: { label: "Completed", tone: "success" },
+const GOAL_STATUS: Record<SessionGoal["status"], { label: string; tone: TextTone }> = {
+  active: { label: "Pursuing goal", tone: "primary" },
+  paused: { label: "Goal paused", tone: "secondary" },
+  blocked: { label: "Goal blocked", tone: "warning" },
+  usageLimited: { label: "Goal hit a usage limit", tone: "warning" },
+  budgetLimited: { label: "Goal reached its token budget", tone: "warning" },
+  complete: { label: "Goal complete", tone: "success" },
 };
 
-/** Show the last reported native state only for this exact conversation. */
+/** Native goal state and owner actions beside the current work, independent of the draft. */
 export function SessionProviderGoal({
   session,
+  onCommand,
+  blockedReason,
 }: {
-  session: Pick<Session, "harness" | "providerSessionId" | "providerGoal">;
+  session: Pick<Session, "harness" | "providerSessionId" | "providerGoal" | "busy">;
+  onCommand: (command: "/goal resume" | "/goal clear") => boolean | void;
+  blockedReason?: string;
 }) {
   const t = useT();
+  const format = useFormat();
+  const [failed, setFailed] = useState(false);
   const goal = session.providerGoal;
   if (
     !isSessionGoal(goal) ||
@@ -29,26 +38,90 @@ export function SessionProviderGoal({
   )
     return null;
   const status = GOAL_STATUS[goal.status];
+  const usage: string[] = [];
+  if (goal.tokensUsed !== undefined && goal.tokensUsed > 0) {
+    usage.push(
+      goal.tokenBudget == null
+        ? t("{p0} tokens", { p0: format.formatNumber(goal.tokensUsed) })
+        : t("{p0} / {p1} tokens", {
+            p0: format.formatNumber(goal.tokensUsed),
+            p1: format.formatNumber(goal.tokenBudget),
+          }),
+    );
+  }
+  if (goal.timeUsedSeconds !== undefined && goal.timeUsedSeconds >= 60)
+    usage.push(format.formatDuration(goal.timeUsedSeconds * 1000));
+  const disabledReason =
+    blockedReason ||
+    (session.busy ? t("Wait for the current work to finish before changing the goal.") : undefined);
+  const run = (command: "/goal resume" | "/goal clear") => {
+    if (disabledReason) return;
+    try {
+      setFailed(onCommand(command) === false);
+    } catch {
+      setFailed(true);
+    }
+  };
   return (
-    <div
-      data-provider-goal={goal.status}
-      className="min-h-0 max-h-[30%] shrink-0 overflow-y-auto px-3 py-2"
-    >
-      <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
-        <Heading size="caption">{t("Codex Goal")}</Heading>
-        <Badge size="xs" tone={status.tone}>
-          {t(status.label)}
-        </Badge>
+    <div data-provider-goal={goal.status} className="flex min-w-0 flex-col gap-1 px-4 py-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <Text
+          as="span"
+          size="caption"
+          weight="medium"
+          tone={status.tone}
+          className="flex items-center gap-2"
+        >
+          <CircleDot className="icon-sm shrink-0" aria-hidden />
+          {t(goal.status === "active" && !session.busy ? "Goal set" : status.label)}
+        </Text>
+        {usage.length ? (
+          <Text as="span" size="caption" tone="muted">
+            {usage.join(" · ")}
+          </Text>
+        ) : null}
+        <div className="ms-auto flex shrink-0 items-center gap-1">
+          {goal.status !== "active" && goal.status !== "complete" && !session.busy ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!!disabledReason}
+              disabledReason={disabledReason}
+              onClick={() => run("/goal resume")}
+            >
+              {t("Resume goal")}
+            </Button>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={!!disabledReason}
+            disabledReason={disabledReason}
+            onClick={() => run("/goal clear")}
+          >
+            {t("Clear goal")}
+          </Button>
+        </div>
       </div>
       <ClampText
         key={`${goal.providerSessionId}:${goal.objective}`}
         lines={2}
         size="caption"
-        tone="primary"
+        tone="secondary"
         wrap="anywhere"
       >
         {goal.objective}
       </ClampText>
+      {goal.status === "blocked" ? (
+        <Text size="caption" tone="muted">
+          {t("Codex did not provide a reason for this goal's blocked state.")}
+        </Text>
+      ) : null}
+      {failed ? (
+        <InlineError>
+          {t("Goal action was not sent. Try again when the conversation is ready.")}
+        </InlineError>
+      ) : null}
     </div>
   );
 }

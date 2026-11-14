@@ -38,8 +38,11 @@ import {
   normalizeSocialToolRequest,
 } from "../social/social-tools";
 import { McpTokens, MCP_GROUPS, type McpGrant, type McpGroup } from "./mcp-tokens";
+import { z } from "zod";
+import { readLoadingPolicy, writeLoadingPolicy } from "./hub/load-policy";
 import { EXT_ROUTE_PREFIX, ExternalMcpRoute } from "./hub/http";
 import type { McpHub } from "./hub/hub";
+import { isOAuthMethod, oauthRpc } from "./hub/oauth/rpc";
 import type { HostStore } from "../store";
 import { RequestAuthorizationError } from "../store-db";
 import type { SocialService } from "../social/social";
@@ -73,6 +76,11 @@ const SESSION_RPC_TIMEOUT_MS = 120_000;
 const LOG_WAIT_RPC_TIMEOUT_MS = 245_000;
 export const sessionRpcTimeoutMs = (action: string): number =>
   action === "logs.wait" ? LOG_WAIT_RPC_TIMEOUT_MS : SESSION_RPC_TIMEOUT_MS;
+const LOADING_SET_INPUT = z.object({
+  mode: z.enum(["onDemand", "always"]),
+  direct: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/)).max(200),
+  expectedVersion: z.literal(1).optional(),
+});
 const MCP_INSTRUCTIONS: Record<McpGroup, string> = {
   conversation: CONVERSATION_MCP_INSTRUCTIONS,
   "runtime-logs":
@@ -212,12 +220,23 @@ export class McpHttp {
     token: string,
     response: ServerResponse,
   ): Promise<Awaited<boolean>> {
-    if (typeof method !== "string" || !method.startsWith("mcp.tokens.")) return false;
+    if (
+      typeof method !== "string" ||
+      !(
+        method.startsWith("mcp.tokens.") ||
+        method.startsWith("mcp.hub.loading.") ||
+        isOAuthMethod(method)
+      )
+    )
+      return false;
     if (!(await this.options.store.authenticated(token)))
       throw new Error("Owner device credential required.");
     const result = await this.options.store.db.withAuthorization(
       () => this.options.store.authenticated(token),
       async () => {
+        if (method === "mcp.hub.loading.get") return await this.loadingGet(input);
+        if (method === "mcp.hub.loading.set") return await this.loadingSet(input);
+        if (isOAuthMethod(method)) return await oauthRpc(this.hub, method, input);
         if (method === "mcp.tokens.create") return await this.tokens.create(input);
         if (method === "mcp.tokens.list") return { tokens: await this.tokens.list() };
         if (method === "mcp.tokens.revoke") return await this.tokens.revoke(input.id);
@@ -226,6 +245,36 @@ export class McpHttp {
     );
     response.end(JSON.stringify({ result }));
     return true;
+  }
+
+  /** Policy, corrupt flag and the hub-hosted names that may be listed under `direct`. */
+  private async loadingGet(input: Record<string, unknown>) {
+    const cwd = typeof input.cwd === "string" && input.cwd ? input.cwd : undefined;
+    const { corrupt, ...policy } = await readLoadingPolicy(this.hub.dataDir);
+    const inventory = await this.hub.inventory(cwd);
+    // Signed-in http servers load on demand like hub-hosted ones, so `direct` may name them.
+    const hostedHttp = new Set<string>();
+    for (const def of inventory)
+      if (def.kind === "http" && (await this.hub.oauthSignedIn({ name: def.name, url: def.url! })))
+        hostedHttp.add(def.name);
+    const servers = inventory
+      .filter((def) => def.kind === "stdio" || hostedHttp.has(def.name))
+      .map((def) => def.name)
+      .sort((a, b) => a.localeCompare(b));
+    return { policy, corrupt: corrupt === true, servers };
+  }
+
+  private async loadingSet(input: Record<string, unknown>) {
+    const parsed = LOADING_SET_INPUT.safeParse(input);
+    if (!parsed.success) throw new Error("Invalid MCP loading policy.");
+    // Refuses while the stored file is corrupt; the owner repairs it first.
+    const policy = await writeLoadingPolicy(
+      this.hub.dataDir,
+      { version: 1, mode: parsed.data.mode, direct: parsed.data.direct },
+      parsed.data.expectedVersion,
+    );
+    this.hub.resetPublications();
+    return { policy, corrupt: false };
   }
 
   private async identity(token: string, group: McpGroup) {

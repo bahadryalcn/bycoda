@@ -3564,6 +3564,28 @@ describe("handoff context capacity", () => {
     expect(session.blocks.some((block) => block.notice === "info")).toBe(true);
     turns[0].finish();
   });
+
+  it("keeps the owner's persona and style out of a delegated child's runtime instructions", async () => {
+    const hint = "Child bycoda tools.";
+    const hints = vi.spyOn(runtimeGuidance, "harnessRuntimeHints").mockResolvedValue(hint);
+    cleanups.push(() => hints.mockRestore());
+    const { engine, store, turns, id, waitForTurnStart } = await seedHandoff(1024);
+    engine.ownerInstructions = async () => "Call the owner Arif and answer in his style.";
+    const saved = await store.session(id);
+    await store.save(
+      {
+        ...saved,
+        revision: saved.revision + 1,
+        session: { ...saved.session, modelSettings: { delegationParent: "{}" } },
+      },
+      { type: "test.child" },
+    );
+    await engine.command({ type: "send", commandId: "child-turn", sessionId: id, text: "Go." });
+    await waitForTurnStart();
+    expect(turns[0].input.runtimeInstructions).toBe(hint);
+    expect(turns[0].input.runtimeInstructions).not.toContain("Arif");
+    turns[0].finish();
+  });
 });
 
 describe("headless session ownership", () => {

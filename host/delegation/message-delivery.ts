@@ -1,6 +1,12 @@
 import type { HostSession } from "../../src/features/connections/model/protocol";
 import type { SessionQueues } from "../sessions/session-queue";
-import { sessionNeedsInput } from "../../src/features/sessions/model/session";
+import {
+  sessionNeedsInput,
+  type QueuedMessage,
+  type SessionMessageAuthor,
+} from "../../src/features/sessions/model/session";
+import { truncateGraphemes } from "../../src/shared/lib/text/truncate";
+import { isSessionNotFound } from "../sessions/session-authority";
 import type { AgentDelivery } from "./communication";
 import type { DelegationDependencies } from "./service";
 
@@ -10,7 +16,12 @@ export function agentMessageDelivery(
   continueChild: (message: AgentDelivery) => Promise<"started" | "waiting">,
 ) {
   return async (message: AgentDelivery): Promise<"started" | "steered" | "queued" | "waiting"> => {
-    const target = await deps.engine.store.session(message.targetSessionId).catch(() => undefined);
+    // Only a missing session means "no host session" (a Native parent); a transient read
+    // error must surface instead of silently routing the message elsewhere.
+    const target = await deps.engine.store.session(message.targetSessionId).catch((error) => {
+      if (isSessionNotFound(error)) return undefined;
+      throw error;
+    });
     // Work owns task/goal/automation continuation. A generic owner queue cannot
     // manufacture an unbudgeted turn from a child result.
     const workParent = !message.target && !!message.source?.rootWorkId;
@@ -21,7 +32,12 @@ export function agentMessageDelivery(
     if (workParent && message.mode === "queue") return "waiting";
     const queueParent = async () => {
       if (!deps.enqueueParent) throw new Error("Parent message delivery is unavailable.");
-      await deps.enqueueParent(message.targetSessionId, message.commandId, message.text);
+      await deps.enqueueParent(
+        message.targetSessionId,
+        message.commandId,
+        message.text,
+        message.notice,
+      );
       return "queued" as const;
     };
     if (
@@ -66,26 +82,63 @@ export function agentMessageDelivery(
   };
 }
 
-/** Append without replacing drafts, queue rows, owner pauses or a live drain lease. */
+/** Longest one child's notice section may be, and the longest a batched notice row may grow. */
+export const NOTICE_SECTION_GRAPHEMES = 8_000;
+export const NOTICE_ROW_CHARS = 60_000;
+const NOTICE_SEPARATOR = "\n\n---\n\n";
+
+/**
+ * Append without replacing drafts, queue rows, owner pauses or a live drain lease.
+ * A system notice joins an unclaimed notice row of the same reason at the queue's tail,
+ * so one parent turn handles every notice that arrived while it was busy.
+ */
 export async function enqueueAgentParentMessage(
   queues: SessionQueues,
   sessionId: string,
   id: string,
   text: string,
+  author?: SessionMessageAuthor,
 ) {
-  const before = await queues.get(sessionId);
-  if (before.messages.some((message) => message.id === id)) return;
-  const row = { id, text, attachments: [] };
-  await queues.change(sessionId, before, {
-    ...before,
-    status: before.status ?? "active",
-    messages: [...before.messages, row],
-  });
+  for (let attempt = 0; ; attempt++) {
+    const before = await queues.get(sessionId);
+    if (before.messages.some((message) => message.id === id)) return;
+    const section = author ? truncateGraphemes(text, NOTICE_SECTION_GRAPHEMES) : text;
+    const tail = before.messages.at(-1);
+    const mergeable =
+      author?.kind === "delegation" &&
+      tail?.author?.kind === "delegation" &&
+      tail.author.reason === author.reason &&
+      !tail.deliveryUnknown &&
+      before.claim?.id !== tail.id &&
+      before.editingId !== tail.id &&
+      tail.text.length + NOTICE_SEPARATOR.length + section.length <= NOTICE_ROW_CHARS;
+    const rows: QueuedMessage[] = mergeable
+      ? [
+          ...before.messages.slice(0, -1),
+          { ...tail, text: `${tail.text}${NOTICE_SEPARATOR}${section}` },
+        ]
+      : [...before.messages, { id, text: section, attachments: [], ...(author ? { author } : {}) }];
+    try {
+      await queues.change(sessionId, before, {
+        ...before,
+        status: before.status ?? "active",
+        messages: rows,
+      });
+      return;
+    } catch (error) {
+      // The tail was claimed or edited between the read and the write: look again.
+      if (attempt >= 2) throw error;
+    }
+  }
 }
 
 export async function inspectAgentSession(deps: DelegationDependencies, id: string) {
   const snapshot: Pick<HostSession, "projectId" | "session"> & { status?: string } =
-    await deps.engine.store.session(id).catch(() => deps.featureSession(id));
+    await deps.engine.store.session(id).catch((error) => {
+      // Only a missing host session falls back to the desktop copy; other errors propagate.
+      if (!isSessionNotFound(error)) throw error;
+      return deps.featureSession(id);
+    });
   return {
     projectId: snapshot.projectId,
     runtimeMode: snapshot.session.runtimeMode,

@@ -12,44 +12,86 @@ const machine = {
   endpoint: "http://127.0.0.1:9999",
   environmentId: "fixture-work",
 };
-let state: ModelRoutingState = {
+const redesign = new URLSearchParams(location.search).get("workFixture") === "routing";
+const routingEntry = (
+  id: string,
+  harness: "claude" | "codex",
+  model: string,
+  providerAccountId?: string,
+) => ({
+  id,
+  harness,
+  model,
+  ...(providerAccountId ? { providerAccountId } : {}),
+  modelSettings: {},
+  unknownLimit: "use" as const,
+});
+/** `?workFixture=routing`: two accounts (work and personal), nested pools and one skipped entry. */
+const routingState: ModelRoutingState = {
   ...structuredClone(EMPTY_MODEL_ROUTING),
   version: 1,
   updatedAt: 1,
   entries: [
-    {
-      id: "fixture-codex",
-      harness: "codex",
-      model: "codex:gpt-5.3-codex",
-      modelSettings: {},
-      unknownLimit: "use",
-      minRemainingPercent: 15,
-    },
-    {
-      id: "fixture-claude",
-      harness: "claude",
-      model: "claude:sonnet",
-      modelSettings: {},
-      unknownLimit: "skip",
-    },
+    routingEntry("r-opus", "claude", "claude:opus", "account-work"),
+    routingEntry("r-sol", "codex", "codex:gpt-6.1-sol"),
+    routingEntry("r-sonnet", "claude", "claude:sonnet"),
+    routingEntry("r-terra", "codex", "codex:gpt-6.1-terra"),
+    routingEntry("r-haiku", "claude", "claude:haiku", "account-work"),
+    routingEntry("r-luna", "codex", "codex:gpt-5.6-luna"),
   ],
   pools: [
-    {
-      id: "fixture-review",
-      name: "Independent review",
-      entryIds: ["fixture-claude", "fixture-codex"],
-    },
+    { id: "r-smart", name: "Smartest", entryIds: ["r-opus", "r-sol"] },
+    { id: "r-work", name: "Work", entryIds: ["r-haiku"], poolIds: ["r-smart"] },
   ],
-  roles: {
-    "task.reviewer": { kind: "pool", poolId: "fixture-review" },
-    "goal.finalReview": { kind: "pool", poolId: "fixture-review" },
-  },
+  roles: { "task.reviewer": { kind: "pool", poolId: "r-work" } },
   delegation: { global: { crossSubagents: "auto" }, providers: {}, accounts: {} },
   defaultMaxRunMinutes: 30,
-  workCaps: {
-    total: { daily: { tokens: 100000, costUsd: 10 }, monthly: { tokens: 2000000, costUsd: 200 } },
-  },
 };
+let state: ModelRoutingState = redesign
+  ? routingState
+  : {
+      ...structuredClone(EMPTY_MODEL_ROUTING),
+      version: 1,
+      updatedAt: 1,
+      entries: [
+        {
+          id: "fixture-codex",
+          harness: "codex",
+          model: "codex:gpt-5.3-codex",
+          modelSettings: {},
+          unknownLimit: "use",
+          minRemainingPercent: 15,
+        },
+        {
+          id: "fixture-claude",
+          harness: "claude",
+          model: "claude:sonnet",
+          modelSettings: {},
+          unknownLimit: "skip",
+        },
+      ],
+      pools: [
+        {
+          id: "fixture-review",
+          name: "Independent review",
+          entryIds: ["fixture-claude", "fixture-codex"],
+        },
+      ],
+      roles: {
+        "task.reviewer": { kind: "pool", poolId: "fixture-review" },
+        "goal.finalReview": { kind: "pool", poolId: "fixture-review" },
+      },
+      delegation: { global: { crossSubagents: "auto" }, providers: {}, accounts: {} },
+      defaultMaxRunMinutes: 30,
+      workCaps: {
+        total: {
+          daily: { tokens: 100000, costUsd: 10 },
+          monthly: { tokens: 2000000, costUsd: 200 },
+        },
+      },
+    };
+if (new URLSearchParams(location.search).get("workFixture") === "empty")
+  state = { ...structuredClone(EMPTY_MODEL_ROUTING), version: 1, updatedAt: 1 };
 let settings = { maxRunningTasks: 2, dailyAgentMinutes: 120, usedMinutes: 75, limitReached: false };
 
 /** In-memory Host contract for populated Work visual fixtures, never owner data. */
@@ -77,6 +119,7 @@ export function workSettingsFixture(
         entries: state.entries.map((entry, index) => ({
           entryId: entry.id,
           leftPercent: index ? 62 : 84,
+          ...(redesign && entry.id === "r-sonnet" ? { skip: "otherScope" as const } : {}),
         })),
       },
     };

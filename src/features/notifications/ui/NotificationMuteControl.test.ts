@@ -53,6 +53,42 @@ const pickTime = (hour: number, minute: number) => {
 };
 
 describe("NotificationMuteControl", () => {
+  it("dismisses a custom deadline when the selected projects change", () => {
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
+    click("Mute notifications");
+    click("Choose date and time");
+    pickTime(17, 35);
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["personal"] })));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(loadNotificationPreferences()).toEqual({});
+  });
+
+  it("dismisses duration presets when the selected projects change", () => {
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["private"] })));
+    click("Mute notifications");
+    act(() => root.render(createElement(NotificationMuteControl, { projectIds: ["personal"] })));
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    expect(loadNotificationPreferences()).toEqual({});
+  });
+
+  it("keeps the custom draft when the same selection is reordered", () => {
+    vi.mocked(Date.now).mockReturnValue(new Date(2030, 0, 15, 12).getTime());
+    act(() =>
+      root.render(createElement(NotificationMuteControl, { projectIds: ["private", "personal"] })),
+    );
+    click("Mute notifications");
+    click("Choose date and time");
+    pickTime(17, 35);
+    act(() =>
+      root.render(createElement(NotificationMuteControl, { projectIds: ["personal", "private"] })),
+    );
+    click("Mute until then");
+    for (const id of ["private", "personal"])
+      expect(loadNotificationPreferences()[id].mutedUntil).toBe(
+        new Date(2030, 0, 15, 17, 35).getTime(),
+      );
+  });
+
   it("pauses resume and mute when saved choices cannot be read and recovers without resetting intent", () => {
     updateNotificationPreferences(["private"], { disabled: ["issues"], mutedUntil: null });
     localStorage.setItem("bycoda.projectNotifications.v1", "{broken");

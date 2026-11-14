@@ -103,7 +103,7 @@ import {
 import { trackAgentRow } from "./codexAgentRows";
 import { codexThreadConfig } from "./codexSubagentLimits";
 import { conversationToolsBridge } from "../../core/conversationToolsBridge";
-import { codexExternalMcpConfig } from "../../core/externalMcpLaunch";
+import { codexThreadMcpConfig, codexThreadMcpNeeded } from "../../core/externalMcpLaunch";
 import { snapshotRemainder } from "../../core/streamText";
 import type {
   ApprovalDecision,
@@ -1071,14 +1071,14 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     const externalMcp = (await conversationToolsBridge(input.sessionId))?.externalMcp;
     let mcpConfig: Record<string, unknown> | undefined;
-    if (externalMcp?.disable.codex.length) {
+    if (codexThreadMcpNeeded(externalMcp, input.modelSettings)) {
       const result = await startupRpc.request("config/read", {
         includeLayers: false,
         cwd: input.cwd,
       });
       const config = asRecord(asRecord(result)?.config);
       if (!config) throw new Error("Codex did not return its effective MCP configuration");
-      mcpConfig = codexExternalMcpConfig(externalMcp, config);
+      mcpConfig = codexThreadMcpConfig(externalMcp, config, input.modelSettings);
     }
     let skillConfig: Record<string, unknown> | undefined;
     if (input.skillPolicy) {

@@ -1,3 +1,4 @@
+import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   DelegateModelRef,
@@ -19,6 +20,8 @@ export type DelegationRecord = {
   rootWorkId?: string;
   budgetScope?: { taskId?: string; parentTaskId?: string; goalId?: string };
   ownerFollowUp?: boolean;
+  /** `files: false`: the child runs in this record's scratch folder, removed with the record. */
+  chatOnly?: true;
   /** Opt-in asynchronous completion delivery to the original parent. */
   notifyOnCompletion?: boolean;
   /** Parent Stop revokes peer sends and queued wakes for this group member. */
@@ -69,20 +72,40 @@ export class DelegationStore {
     const next = this.chain.then(async () => {
       const records = await this.load();
       const result = await change(records);
-      this.trim(records);
+      const dropped = this.trim(records);
       await writeFileAtomic(this.file, JSON.stringify(records), { mode: 0o600 });
+      // After the row is gone: a failed cleanup leaves an unreferenced empty folder, never a dangling row.
+      for (const runId of dropped) await this.removeScratch(runId);
       return result;
     });
     this.chain = next.catch(() => undefined);
     return next;
   }
 
-  private trim(records: DelegationRecord[]): void {
+  /** Drops the oldest finished rows; returns the run ids of the chat-only ones. */
+  private trim(records: DelegationRecord[]): string[] {
+    const dropped: string[] = [];
     while (records.length > MAX_DELEGATION_RECORDS) {
       const index = records.findIndex((record) => record.finishedAt !== undefined);
       if (index < 0) break;
-      records.splice(index, 1);
+      const [record] = records.splice(index, 1);
+      if (record?.chatOnly) dropped.push(record.runId);
     }
+    return dropped;
+  }
+
+  /** The empty folder of a chat-only child. Created once; the same child reuses it on every reply. */
+  async scratchDir(runId: string): Promise<string> {
+    const path = join(this.directory, "delegation", "scratch", runId);
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    return path;
+  }
+
+  private async removeScratch(runId: string): Promise<void> {
+    await rm(join(this.directory, "delegation", "scratch", runId), {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined);
   }
 
   async list(): Promise<DelegationRecord[]> {

@@ -1,4 +1,4 @@
-export { formatAttachmentSize } from "../../../shared/i18n/format";
+export { formatAttachmentSize } from "../../../shared/i18n/attachmentSize";
 import type { Attachment } from "./session";
 
 export type AttachmentPresentationKind =

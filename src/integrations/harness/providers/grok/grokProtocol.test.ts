@@ -44,7 +44,7 @@ describe("grok protocol", () => {
     ).toEqual([
       {
         type: "text",
-        text: "describe this\n\nAttachments: [image1] = screenshot.png (1st attached image)",
+        text: "describe this\n\nAttachments: [Image\u00a01\u00a0·\u00a03\u00a0B] = screenshot.png (1st attached image)",
       },
       { type: "image", mimeType: "image/png", data: "YWJj" },
     ]);

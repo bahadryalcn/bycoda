@@ -151,6 +151,23 @@ it("opens a directly assigned settings section and respects a disabled binding",
   expect(deps.actions.current.openSettings).toHaveBeenCalledTimes(1);
 });
 
+it("leaves legacy IME key events untouched for default and custom workspace chords", () => {
+  editorFind.mockClear();
+  const defaultEvent = press({
+    key: "i",
+    code: "KeyI",
+    ctrlKey: true,
+    shiftKey: true,
+    keyCode: 229,
+  });
+  expect(defaultEvent.defaultPrevented).toBe(false);
+  saveKeybindingOverride("App: Open Inbox", { shortcut: "Option+KeyQ" });
+  const customEvent = press({ key: "q", code: "KeyQ", altKey: true, keyCode: 229 });
+  expect(customEvent.defaultPrevented).toBe(false);
+  expect(deps.actions.current.onOpenInbox).not.toHaveBeenCalled();
+  expect(editorFind).not.toHaveBeenCalled();
+});
+
 it("opens a session on Ctrl+N and routes Ctrl+Alt+N to notes", () => {
   expect(press({ key: "n", code: "KeyN", ctrlKey: true }).defaultPrevented).toBe(true);
   expect(deps.actions.current.onNew).toHaveBeenCalledOnce();

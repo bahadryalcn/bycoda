@@ -24266,19 +24266,28 @@
         "oneOf": [
           {
             "additionalProperties": false,
-            "properties": { "op": { "const": "status", "type": "string" } },
+            "properties": {
+              "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
+              "op": { "const": "status", "type": "string" }
+            },
             "required": ["op"],
             "type": "object"
           },
           {
             "additionalProperties": false,
-            "properties": { "op": { "const": "prepare", "type": "string" } },
+            "properties": {
+              "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
+              "op": { "const": "prepare", "type": "string" }
+            },
             "required": ["op"],
             "type": "object"
           },
           {
             "additionalProperties": false,
-            "properties": { "op": { "const": "cancel", "type": "string" } },
+            "properties": {
+              "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
+              "op": { "const": "cancel", "type": "string" }
+            },
             "required": ["op"],
             "type": "object"
           }
@@ -24349,6 +24358,7 @@
                   "allowedApps": { "items": { "type": "string" }, "maxItems": 50, "type": "array" },
                   "binaryPath": { "type": "string" },
                   "binarySha256": { "type": "string" },
+                  "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
                   "enabled": { "type": "boolean" },
                   "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" }
                 },
@@ -24525,6 +24535,7 @@
               "allowedApps": { "items": { "type": "string" }, "maxItems": 50, "type": "array" },
               "binaryPath": { "type": "string" },
               "binarySha256": { "type": "string" },
+              "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
               "enabled": { "type": "boolean" },
               "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" },
               "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
@@ -24537,6 +24548,7 @@
               "allowPhysicalInput",
               "permissionMode",
               "allowAllApps",
+              "driver",
               "version"
             ],
             "type": "object"
@@ -24658,7 +24670,10 @@
                     ],
                     "type": "string"
                   },
-                  "source": { "enum": ["agent-desktop", "unavailable"], "type": "string" }
+                  "source": {
+                    "enum": ["agent-desktop", "cua-driver", "unavailable"],
+                    "type": "string"
+                  }
                 },
                 "required": ["accessibility", "screenRecording", "source", "checkedAt"],
                 "type": "object"
@@ -32490,6 +32505,33 @@
               "type": "string"
             },
             "type": "array"
+          },
+          "runtimeModeLimits": {
+            "additionalProperties": {
+              "additionalProperties": { "maxLength": 500, "type": "string" },
+              "propertyNames": {
+                "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "propertyNames": {
+              "enum": [
+                "codex",
+                "claude",
+                "cursor",
+                "grok",
+                "opencode",
+                "pi",
+                "omp",
+                "fx",
+                "hermes",
+                "antigravity",
+                "acp"
+              ],
+              "type": "string"
+            },
+            "type": "object"
           }
         },
         "required": ["models", "errors"],
@@ -35846,6 +35888,7 @@
               "desktop.act.authorize",
               "management.write.authorize",
               "secrets.input.authorize",
+              "mcp.call.authorize",
               "preferences.read",
               "preferences.templateRead",
               "preferences.patch",
@@ -38527,6 +38570,7 @@
                 "groupId": { "type": "string" },
                 "id": { "type": "string" },
                 "name": { "type": "string" },
+                "pinned": { "type": "boolean" },
                 "registered": { "type": "boolean" },
                 "sessionLayout": {
                   "additionalProperties": false,
@@ -39321,21 +39365,35 @@
                 "autoWorktreeBranch": { "type": "string" },
                 "branch": { "type": "string" },
                 "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "crewRunId": { "maxLength": 256, "minLength": 1, "type": "string" },
                 "cwd": { "type": "string" },
                 "delegationParent": {
                   "anyOf": [
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "childRunId": { "maxLength": 128, "minLength": 1, "type": "string" },
+                        "error": { "maxLength": 2000, "type": "string" },
+                        "finishedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
                         "kind": { "enum": ["subagent", "advisor"], "type": "string" },
                         "model": { "maxLength": 200, "minLength": 1, "type": "string" },
                         "parentSessionId": { "maxLength": 128, "minLength": 1, "type": "string" },
+                        "round": {
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991,
+                          "type": "integer"
+                        },
                         "runId": { "maxLength": 128, "minLength": 1, "type": "string" },
                         "startedAt": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
                           "type": "integer"
-                        }
+                        },
+                        "status": { "enum": ["succeeded", "failed", "cancelled"], "type": "string" }
                       },
                       "required": ["parentSessionId", "runId", "kind", "model", "startedAt"],
                       "type": "object"
@@ -39420,6 +39478,7 @@
                 },
                 "model": { "type": "string" },
                 "needsInput": { "type": "boolean" },
+                "orchestrationLeadId": { "maxLength": 256, "minLength": 1, "type": "string" },
                 "origin": { "const": "desktop", "type": "string" },
                 "pinned": { "type": "boolean" },
                 "projectId": {
@@ -39598,12 +39657,20 @@
                     "autoWorktreeBranch": { "type": "string" },
                     "branch": { "type": "string" },
                     "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "crewRunId": { "maxLength": 256, "minLength": 1, "type": "string" },
                     "cwd": { "type": "string" },
                     "delegationParent": {
                       "anyOf": [
                         {
                           "additionalProperties": false,
                           "properties": {
+                            "childRunId": { "maxLength": 128, "minLength": 1, "type": "string" },
+                            "error": { "maxLength": 2000, "type": "string" },
+                            "finishedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
                             "kind": { "enum": ["subagent", "advisor"], "type": "string" },
                             "model": { "maxLength": 200, "minLength": 1, "type": "string" },
                             "parentSessionId": {
@@ -39611,11 +39678,20 @@
                               "minLength": 1,
                               "type": "string"
                             },
+                            "round": {
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991,
+                              "type": "integer"
+                            },
                             "runId": { "maxLength": 128, "minLength": 1, "type": "string" },
                             "startedAt": {
                               "maximum": 9007199254740991,
                               "minimum": 0,
                               "type": "integer"
+                            },
+                            "status": {
+                              "enum": ["succeeded", "failed", "cancelled"],
+                              "type": "string"
                             }
                           },
                           "required": ["parentSessionId", "runId", "kind", "model", "startedAt"],
@@ -39721,6 +39797,7 @@
                     },
                     "model": { "type": "string" },
                     "needsInput": { "type": "boolean" },
+                    "orchestrationLeadId": { "maxLength": 256, "minLength": 1, "type": "string" },
                     "origin": { "const": "desktop", "type": "string" },
                     "pinned": { "type": "boolean" },
                     "projectId": {
@@ -59819,6 +59896,7 @@
                         },
                         "binaryPath": { "type": "string" },
                         "binarySha256": { "type": "string" },
+                        "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
                         "enabled": { "type": "boolean" },
                         "permissionMode": { "enum": ["ask", "auto", "full"], "type": "string" }
                       },
@@ -59996,19 +60074,28 @@
               "oneOf": [
                 {
                   "additionalProperties": false,
-                  "properties": { "op": { "const": "status", "type": "string" } },
+                  "properties": {
+                    "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
+                    "op": { "const": "status", "type": "string" }
+                  },
                   "required": ["op"],
                   "type": "object"
                 },
                 {
                   "additionalProperties": false,
-                  "properties": { "op": { "const": "prepare", "type": "string" } },
+                  "properties": {
+                    "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
+                    "op": { "const": "prepare", "type": "string" }
+                  },
                   "required": ["op"],
                   "type": "object"
                 },
                 {
                   "additionalProperties": false,
-                  "properties": { "op": { "const": "cancel", "type": "string" } },
+                  "properties": {
+                    "driver": { "enum": ["agent-desktop", "cua-driver"], "type": "string" },
+                    "op": { "const": "cancel", "type": "string" }
+                  },
                   "required": ["op"],
                   "type": "object"
                 }
@@ -63158,6 +63245,7 @@
                     "desktop.act.authorize",
                     "management.write.authorize",
                     "secrets.input.authorize",
+                    "mcp.call.authorize",
                     "preferences.read",
                     "preferences.templateRead",
                     "preferences.patch",
@@ -76459,17 +76547,23 @@
         "autoWorktreeBranch": { "type": "string" },
         "branch": { "type": "string" },
         "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+        "crewRunId": { "maxLength": 256, "minLength": 1, "type": "string" },
         "cwd": { "type": "string" },
         "delegationParent": {
           "anyOf": [
             {
               "additionalProperties": false,
               "properties": {
+                "childRunId": { "maxLength": 128, "minLength": 1, "type": "string" },
+                "error": { "maxLength": 2000, "type": "string" },
+                "finishedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
                 "kind": { "enum": ["subagent", "advisor"], "type": "string" },
                 "model": { "maxLength": 200, "minLength": 1, "type": "string" },
                 "parentSessionId": { "maxLength": 128, "minLength": 1, "type": "string" },
+                "round": { "exclusiveMinimum": 0, "maximum": 9007199254740991, "type": "integer" },
                 "runId": { "maxLength": 128, "minLength": 1, "type": "string" },
-                "startedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                "startedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "status": { "enum": ["succeeded", "failed", "cancelled"], "type": "string" }
               },
               "required": ["parentSessionId", "runId", "kind", "model", "startedAt"],
               "type": "object"
@@ -76551,6 +76645,7 @@
         },
         "model": { "type": "string" },
         "needsInput": { "type": "boolean" },
+        "orchestrationLeadId": { "maxLength": 256, "minLength": 1, "type": "string" },
         "origin": { "const": "desktop", "type": "string" },
         "pinned": { "type": "boolean" },
         "projectId": {
@@ -77260,5 +77355,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "077239a575407ae5eff4bdcf765060d9e77ca412b64139d82ee67a66f1a6a94a"
+  "schemaHash": "fe3d59f1e5646e992a710f5e27d4905657798b1270cb44565ebe799750d61db1"
 }

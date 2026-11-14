@@ -7,6 +7,26 @@ import {
 } from "./codexGoal";
 
 describe("Codex goal commands", () => {
+  it("retains valid native usage and drops malformed optional values", () => {
+    const goal = {
+      threadId: "t",
+      objective: "Ship",
+      status: "blocked",
+      tokensUsed: 123,
+      tokenBudget: 500,
+      timeUsedSeconds: 90,
+    };
+    expect(codexGoalState({ goal })).toMatchObject({
+      tokensUsed: 123,
+      tokenBudget: 500,
+      timeUsedSeconds: 90,
+    });
+    expect(
+      codexGoalState({
+        goal: { ...goal, tokensUsed: -1, tokenBudget: "500", timeUsedSeconds: Infinity },
+      }),
+    ).toEqual({ provider: "codex", providerSessionId: "t", objective: "Ship", status: "blocked" });
+  });
   it.each(["active", "paused", "blocked", "usageLimited", "budgetLimited", "complete"])(
     "projects native %s status without inferring a reason",
     (status) => {

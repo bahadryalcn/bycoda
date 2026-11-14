@@ -1,6 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { ExternalMcpAccess } from "../../../src/features/settings/ui/ExternalMcpAccess";
+import { McpLoadingMode } from "../../../src/features/settings/ui/McpLoadingMode";
+import { McpOAuthSignIn } from "../../../src/features/settings/ui/McpOAuthSignIn";
 import { setLanguagePreference } from "../../../src/shared/i18n";
 import {
   applyThemePreference,
@@ -23,6 +25,12 @@ const tokens = [
 if (new URLSearchParams(location.search).has("visual-rows")) {
   tokens.push({ ...tokens[0], id: "other", name: "Another revoked" });
 }
+let loading = { version: 1, mode: "onDemand", direct: ["github"] };
+const oauth = [
+  { name: "linear", state: "signed-in" },
+  { name: "notion", state: "none" },
+  { name: "sentry-with-a-long-server-name", state: "expired" },
+];
 let creates = 0;
 let revokes = 0;
 mockWindows("main");
@@ -49,6 +57,22 @@ mockIPC(
     if (args.method === "projects.list")
       return [{ id: "project", name: "Local project", cwd: "/fixture" }];
     if (args.method === "mcp.tokens.list") return { tokens };
+    if (args.method === "mcp.hub.loading.get")
+      return { policy: loading, corrupt: false, servers: ["github", "playwright", "filesystem"] };
+    if (args.method === "mcp.hub.loading.set") {
+      loading = { version: 1, ...(args.params as { mode: string; direct: string[] }) };
+      return { policy: loading, corrupt: false };
+    }
+    if (args.method === "mcp.oauth.status") return { servers: oauth };
+    if (args.method === "mcp.oauth.start") {
+      document.body.dataset.oauthStart = (args.params as { name: string }).name;
+      return { authorizationUrl: "https://auth.example/authorize", expiresAt: Date.now() + 1000 };
+    }
+    if (args.method === "mcp.oauth.signOut") {
+      const row = oauth.find((item) => item.name === (args.params as { name: string }).name);
+      if (row) row.state = "none";
+      return { signedOut: true };
+    }
     const params = args.params as Record<string, unknown>;
     if (args.method === "mcp.tokens.create") {
       creates++;
@@ -81,6 +105,8 @@ await setLanguagePreference(
 );
 createRoot(document.getElementById("root")!).render(
   <main style={{ padding: 16, maxWidth: 720, marginInline: "auto" }}>
+    <McpLoadingMode cwd="/fixture" />
+    <McpOAuthSignIn cwd="/fixture" />
     <ExternalMcpAccess cwd="/fixture" />
   </main>,
 );

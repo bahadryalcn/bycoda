@@ -291,6 +291,42 @@ describe("burst coalescing", () => {
       vi.useRealTimers();
     }
   });
+
+  it("suppresses a failed preparation without stranding other callers", async () => {
+    vi.useFakeTimers();
+    try {
+      const deliver = vi.fn(async (_payload: NotificationPayload) => true);
+      const batcher = createNotificationBatcher(deliver, () => 0);
+      const first = batcher.enqueue(item("a", "finished"));
+      const failed = batcher.enqueue(item("b", "finished"), () => {
+        throw new Error("Policy unavailable");
+      });
+      const last = batcher.enqueue(item("c", "finished"));
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(Promise.all([first, failed, last])).resolves.toEqual([true, false, true]);
+      expect(deliver.mock.calls[0][0].title).toBe("2 sessions finished");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resolves every caller when delivery throws before returning a promise", async () => {
+    vi.useFakeTimers();
+    try {
+      const batcher = createNotificationBatcher(
+        () => {
+          throw new Error("Delivery unavailable");
+        },
+        () => 0,
+      );
+      const first = batcher.enqueue(item("a", "finished"));
+      const second = batcher.enqueue(item("b", "finished"));
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(Promise.all([first, second])).resolves.toEqual([false, false]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("taskbar attention", () => {

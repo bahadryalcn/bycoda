@@ -11,7 +11,7 @@
   flex: 1;
   overflow-y: auto;
   min-block-size: 0;
-  padding: 16px;
+  padding: 20px 24px;
   overscroll-behavior: contain;
 }
 .section {
@@ -37,13 +37,24 @@
 .feedback {
   padding: 10px 16px;
 }
+/* One header row for every collection tab: title and count on the left, tools on the right. */
 .collectionTools {
-  margin-block-end: 12px;
-  gap: 8px;
+  gap: 8px 12px;
 }
-.collectionTools > :first-child {
-  flex: 0 1 320px;
-  min-inline-size: min(200px, 100%);
+.pageTitle {
+  display: flex;
+  align-items: baseline;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-inline-size: 0;
+  margin: 0;
+}
+.pageTitle span {
+  font-variant-numeric: tabular-nums;
+}
+.collectionTools > :nth-child(2) {
+  flex: 0 1 240px;
+  min-inline-size: 140px;
 }
 .fieldRow {
   display: grid;
@@ -100,52 +111,34 @@
 .content[data-view="Conversations"] > .collectionTools {
   padding: 12px 16px 0;
 }
-/* Today and Jobs: every direct child of the content shares the same
-   width and the same vertical gap, so the briefing, notes, header, composer and rows align. */
-.content[data-view="Today"],
-.content[data-view="Jobs"] {
+/* One content column for every tab except Conversations: the same width, gutter and
+   vertical rhythm, so headers, composers, lists and readers align. */
+.content:not([data-view="Conversations"]) {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
 }
-.content[data-view="Today"] > *,
-.content[data-view="Jobs"] > * {
-  margin-block: 0;
-}
-/* One content column for every tab except Conversations. */
 .content:not([data-view="Conversations"]) > * {
   inline-size: 100%;
   max-inline-size: 72rem;
   min-inline-size: 0;
+  margin-block: 0;
   margin-inline: auto;
 }
-.content[data-view="Notes"] > * {
-  max-inline-size: none;
-}
-.jobsTitle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-.content[data-view="Jobs"] .collectionTools > .jobsTitle {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-}
-.jobsTitle span {
-  font-variant-numeric: tabular-nums;
-}
-.content[data-view="Jobs"] .collectionTools > :nth-child(2) {
-  flex: 0 1 240px;
-  min-inline-size: 0;
+/* Notes fills the pane height: the list and reader scroll on their own. */
+.content[data-view="Notes"] {
+  overflow: hidden;
 }
 @media (max-width: 600px) {
-  .content[data-view="Jobs"] {
-    padding: 16px;
+  .collectionTools > .pageTitle {
+    flex-basis: 100%;
+  }
+  .collectionTools > :nth-child(2) {
+    flex: 1 1 10rem;
   }
 }
 @media (max-width: 720px) {
   .content {
-    padding: 12px;
+    padding: 16px 12px;
   }
 }

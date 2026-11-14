@@ -239,6 +239,23 @@ it("turns a queued row into the host's own commands", () => {
   ).toThrow(/desktop/);
 });
 
+it("retains the queued authority on every command instead of adopting a newer owner", () => {
+  const session = { harness: "codex", model: "gpt", runtimeMode: "supervised", modelSettings: {} };
+  for (const text of ["Message from another conversation", "/compact"]) {
+    const commands = queueRowCommands(
+      "s",
+      {
+        ...row("approved", { text }),
+        authorityGeneration: 4,
+        modelTarget: { harness: "codex", model: "other", modelSettings: {} },
+      } as never,
+      session,
+    );
+    expect(commands).toHaveLength(2);
+    expect(commands.every((command) => command.authorityGeneration === 4)).toBe(true);
+  }
+});
+
 it("configures the queued provider account and keeps the session account for rows without one", () => {
   const session = {
     harness: "codex",

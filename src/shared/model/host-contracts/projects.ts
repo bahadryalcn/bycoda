@@ -35,6 +35,7 @@ export const ProjectDirectorySchema = z.strictObject({
       groupId: z.string().optional(),
       registered: z.boolean(),
       sessionLayout: layout.optional(),
+      pinned: z.boolean().optional(),
     }),
   ),
   groups: z.array(

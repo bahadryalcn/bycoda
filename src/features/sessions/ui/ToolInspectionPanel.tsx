@@ -42,9 +42,9 @@ export function hasToolInspection(block: Block): boolean {
     (tool?.preview?.kind === "shell" && tool.preview.title) ||
     tool?.preview?.lines?.length ||
     tool?.preview?.contentOnly ||
-    tool?.detail?.trim() ||
-    tool?.output?.trim() ||
-    tool?.preview?.output?.trim() ||
+    tool?.detail ||
+    tool?.output ||
+    tool?.preview?.output ||
     tool?.outputTruncated
   );
 }

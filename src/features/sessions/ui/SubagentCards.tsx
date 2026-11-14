@@ -7,11 +7,12 @@ import { createContext, useContext, useEffect } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
-import { ChevronRight, ExternalLink, Square } from "../../../shared/ui/icons";
-import { crewMemberOf } from "../model/delegatedAgents";
+import { Check, ChevronRight, ExternalLink, Square } from "../../../shared/ui/icons";
+import { crewMemberOf, delegationParentOf } from "../model/delegatedAgents";
+import { delegationResultFor } from "../model/delegationNotice";
 import { delegatedChildIdOf } from "../model/delegatedBlockId";
 import type { Block } from "../model/session";
-import { useSession } from "../model/sessionsStore";
+import { useSession, useSessionsSelector } from "../model/sessionsStore";
 import { useSubagentModelName } from "../model/reactiveReads";
 import {
   needsApproval,
@@ -19,10 +20,11 @@ import {
   subagentReport,
   toolCallState,
 } from "../model/transcriptActivity";
-import { requestViewDelegated, stopDelegated } from "./delegatedFocus";
+import { requestViewDelegated, retryDelegated, stopDelegated } from "./delegatedFocus";
 import { useStopRequests } from "./useStopRequests";
 import { ActivityPhases } from "./AgentTranscriptActivity";
 import { blockForStep } from "./agentStepBlocks";
+import { SubagentRetryButton } from "./SubagentRetryButton";
 import { SubagentMarks, SubagentReport, SubagentStateLine } from "./SubagentAnatomy";
 import { consumeOpenSubagent, OPEN_SUBAGENT_EVENT, requestViewSubagent } from "./subagentFocus";
 import { TranscriptVirtualRows } from "./TranscriptVirtualRows";
@@ -41,6 +43,10 @@ type DelegatedCard = {
   onStop?: () => void;
   stopping?: boolean;
   stopFailed?: boolean;
+  /** A failed child can be sent the same task again. */
+  onRetry?: () => Promise<void>;
+  /** The main agent already received this child's result. */
+  resultReceived?: boolean;
 };
 
 /**
@@ -122,12 +128,21 @@ export function SubagentRow({
   const child = useSession(childId);
   const stops = useStopRequests();
   const running = toolCallState(block) === "pending";
+  const runId = child && delegationParentOf(child)?.runId;
+  const resultReceived = useSessionsSelector((sessions) => {
+    const parent = sessions.find((session) => session.id === parentId);
+    return !!parent && !!runId && !!delegationResultFor(parent.blocks, runId);
+  });
   const delegated: DelegatedCard | undefined =
     childId && parentId
       ? {
           member: child && crewMemberOf(child),
           subtitle: child?.title,
           onOpen: () => requestViewDelegated(parentId, childId),
+          resultReceived,
+          ...(toolCallState(block) === "rejected"
+            ? { onRetry: () => retryDelegated(parentId, childId) }
+            : {}),
           ...(running
             ? {
                 onStop: () => stops.request(childId, () => stopDelegated(parentId, childId)),
@@ -193,6 +208,9 @@ function SubagentPanel({
   const t = useT();
   const name = subagentName(block);
   const model = useSubagentModelName(block);
+  // A child named for its task would repeat that task beside its own name.
+  const subtitle =
+    delegated?.subtitle && delegated.subtitle !== name ? delegated.subtitle : undefined;
   const state = toolCallState(block);
   const active = live && state === "pending";
   const runSteps = block.agentRun?.steps;
@@ -233,11 +251,9 @@ function SubagentPanel({
           {name}
         </Text>
       )}
-      {(delegated?.subtitle ?? model) ? (
+      {(subtitle ?? model) ? (
         <Text size="caption" tone="muted" truncate className="max-w-[40%] shrink-0">
-          {delegated?.subtitle ?? (
-            <ModelLabel model={block.agentRun?.model ?? ""} name={model} size="xs" />
-          )}
+          {subtitle ?? <ModelLabel model={block.agentRun?.model ?? ""} name={model} size="xs" />}
         </Text>
       ) : null}
     </span>
@@ -375,6 +391,22 @@ function SubagentPanel({
               heading="h4"
               className="mt-2 ps-5"
             />
+            {delegated?.onRetry || delegated?.resultReceived ? (
+              <div className="mt-2 flex min-w-0 flex-col items-start gap-1.5 ps-5">
+                {delegated.onRetry ? <SubagentRetryButton onRetry={delegated.onRetry} /> : null}
+                {delegated.resultReceived ? (
+                  <Text
+                    size="caption"
+                    tone="muted"
+                    className="flex items-center gap-1"
+                    data-delegation-result-received
+                  >
+                    <Check className="icon-xs" aria-hidden />
+                    {t("Result received by the main agent")}
+                  </Text>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

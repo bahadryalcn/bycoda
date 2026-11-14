@@ -39,7 +39,6 @@
 .list {
   max-block-size: min(60dvh, 38rem);
   overflow: auto;
-  overscroll-behavior: contain;
 }
 .row {
   display: flex;

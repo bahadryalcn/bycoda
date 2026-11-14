@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
+import { join } from "node:path";
+import { osSecretValues } from "../../secrets/secret-store";
+import { McpOAuth, type OAuthServerRef } from "./oauth/manager";
 import { measure } from "../../diagnostics/perf-metrics";
 import { HubCacheStore, type HubCache } from "./cache";
 import { McpChild, REQUEST_TIMEOUT_MS, STOP_GRACE_MS } from "./child";
 import { McpInventory, type InventoryDefinition } from "./inventory";
+import { readLoadingPolicy, type McpLoadingPolicy } from "./load-policy";
 import { hubIdleMs, hubMode, type HubMode } from "./policy";
 import { readRssBytes } from "./rss";
 import { inventoryFiles, type AccountDirs, type InventoryFiles } from "./inventory-sources";
@@ -36,6 +40,20 @@ export type HubOptions = {
   accountDirs?: () => Promise<AccountDirs>;
   /** Longest `externalMcp` waits for discovery before answering without the hub. */
   externalMcpWaitMs?: number;
+  /** Test seam. Defaults to `<dataDir>/mcp-hub/loading.json`. */
+  policy?: () => Promise<McpLoadingPolicy>;
+  /** Test seam. Defaults to Host-held OAuth backed by the encrypted secrets vault. */
+  oauth?: McpOAuth;
+};
+
+/** Longest an on-demand client request waits before giving up; callers may pass less. */
+export const CLIENT_DEADLINE_MS = 110_000;
+
+/** What a cached server answered at its last real start. */
+export type HubPeek = {
+  serverInfo?: { name?: string; version?: string };
+  instructions?: string;
+  tools: unknown[];
 };
 
 /** Hosts inherited stdio MCP servers behind `/mcp/ext/<name>`, one child per (name, scope). */
@@ -65,6 +83,33 @@ export class McpHub {
     this.codexSets = (cwd) => discovered.codexNameSets(cwd);
   }
 
+  private oauthManager?: McpOAuth;
+
+  /** Host-held OAuth for http servers; created on first use so no vault is touched before. */
+  get oauth(): McpOAuth {
+    this.oauthManager ??=
+      this.options.oauth ??
+      new McpOAuth({
+        dataDir: this.options.dataDir,
+        values: osSecretValues(
+          join(this.options.dataDir, "mcp-hub", "oauth"),
+          `mcp-oauth-${createHash("sha256").update(this.options.dataDir).digest("hex").slice(0, 12)}`,
+        ),
+        onChange: () => this.resetPublications(),
+      });
+    return this.oauthManager;
+  }
+
+  /** Bearer header for an http server the owner signed into; undefined otherwise. */
+  httpAuth(server: OAuthServerRef): Promise<Record<string, string> | undefined> {
+    return this.oauth.httpAuth(server);
+  }
+
+  /** A signed-in http server is hub-hosted for loading purposes. */
+  oauthSignedIn(server: OAuthServerRef): Promise<boolean> {
+    return this.oauth.signedIn(server);
+  }
+
   inventory(cwd?: string): Promise<InventoryDefinition[]> {
     return this.discovery(cwd);
   }
@@ -92,7 +137,7 @@ export class McpHub {
       // Launch identity keeps same-named project servers from different folders apart.
       const launch = launchKey(definition);
       const key = `${name}\0${launch}\0${scope}`;
-      const cacheKey = `${name.slice(0, 40)}-${launch}`;
+      const cacheKey = cacheKeyFor(definition);
       let child = this.children.get(key);
       if (!child) {
         child = new McpChild({
@@ -111,6 +156,68 @@ export class McpHub {
       }
       return await child.handle(message);
     });
+  }
+
+  /** Cached initialize and tools/list for a hub-hosted server. Never starts a process. */
+  async peek(name: string, cwd?: string): Promise<HubPeek | undefined> {
+    const definition = (await this.inventory(cwd)).find(
+      (def) => def.name === name && def.kind === "stdio",
+    );
+    if (!definition) return undefined;
+    const cache = await this.loadCache(cacheKeyFor(definition));
+    if (!cache) return undefined;
+    const init = cache.initialize as {
+      serverInfo?: HubPeek["serverInfo"];
+      instructions?: unknown;
+    };
+    return {
+      serverInfo: init.serverInfo,
+      ...(typeof init.instructions === "string" ? { instructions: init.instructions } : {}),
+      tools: cache.tools,
+    };
+  }
+
+  /** `serve` with a hard deadline; resolves to a JSON-RPC error when it passes. A late reply is dropped. */
+  async request(
+    name: string,
+    scopeKey: string,
+    message: Rpc,
+    cwd?: string,
+    deadlineMs: number = CLIENT_DEADLINE_MS,
+  ): Promise<Rpc | undefined> {
+    let timer: NodeJS.Timeout | undefined;
+    const late = new Promise<Rpc>((resolve) => {
+      timer = setTimeout(
+        () =>
+          resolve({
+            jsonrpc: "2.0",
+            id: message.id ?? null,
+            error: { code: -32001, message: `${name} MCP timed out.` },
+          }),
+        Math.max(1, Math.min(deadlineMs, CLIENT_DEADLINE_MS)),
+      );
+    });
+    try {
+      return await Promise.race([this.serve(name, scopeKey, message, cwd), late]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Host data directory; owner RPCs persist the loading policy under it. */
+  get dataDir(): string {
+    return this.options.dataDir;
+  }
+
+  async loadingPolicy(): Promise<McpLoadingPolicy> {
+    return await (this.options.policy?.() ?? readLoadingPolicy(this.options.dataDir));
+  }
+
+  /** Drops cached publications so the next launch sees a changed loading policy. */
+  resetPublications(): void {
+    this.generation++;
+    this.publications.clear();
+    this.publishing.clear();
   }
 
   private loadCache(name: string): Promise<HubCache | undefined> {
@@ -200,7 +307,20 @@ export class McpHub {
     // A session's account is not known here, so each candidate config is considered.
     const codexSets = await this.codexSets(cwd);
     const codexNames = new Set(codexSets.flatMap((set) => [...set]));
-    const servers = definitions.map((def) => {
+    const policy = await this.loadingPolicy();
+    // On demand, hub-hosted stdio servers are reached through the conversation tools, not
+    // wired into the session; their aliases stay in `disable` so native copies stay off.
+    const hosted = new Set<string>();
+    for (const def of definitions)
+      if (def.kind === "http" && (await this.oauthSignedIn({ name: def.name, url: def.url! })))
+        hosted.add(def.name);
+    const published = definitions.filter(
+      (def) =>
+        (def.kind === "http" && !hosted.has(def.name)) ||
+        policy.mode === "always" ||
+        policy.direct.includes(def.name),
+    );
+    const servers = published.map((def) => {
       const mode = def.kind === "http" ? "shared" : hubMode(def.name, def);
       const codexName = codexNameFor(def.name, codexNames);
       if (def.kind === "http")
@@ -228,7 +348,7 @@ export class McpHub {
       opencode: new Set<string>(),
     };
     for (const def of definitions) {
-      if (def.kind !== "stdio") continue;
+      if (def.kind !== "stdio" && !hosted.has(def.name)) continue;
       for (const alias of def.aliases) {
         // Codex refuses overrides for names a candidate config lacks, so only names every
         // candidate has are safe to disable.
@@ -249,17 +369,21 @@ export class McpHub {
   /** Published hub fragments by relay origin and project, refreshed off the request path. */
   private readonly publications = new Map<string, { value: unknown; at: number }>();
   private readonly publishing = new Map<string, Promise<unknown>>();
+  private generation = 0;
 
   private refreshPublication(key: string, origin: string, cwd: string | undefined) {
     let pending = this.publishing.get(key);
     if (!pending) {
+      const generation = this.generation;
       pending = this.publication(origin, cwd)
         .then((value) => {
-          this.publications.set(key, { value, at: this.now() });
+          if (generation === this.generation) this.publications.set(key, { value, at: this.now() });
           return value;
         })
         .catch(() => undefined)
-        .finally(() => this.publishing.delete(key));
+        .finally(() => {
+          if (generation === this.generation) this.publishing.delete(key);
+        });
       this.publishing.set(key, pending);
     }
     return pending;
@@ -320,8 +444,8 @@ export function codexNameFor(name: string, codexNames: ReadonlySet<string>): str
 function launchKey(def: InventoryDefinition): string {
   return createHash("sha256")
     .update(JSON.stringify([def.kind, def.command, def.args, def.url]))
-
     .digest("hex")
-
     .slice(0, 10);
 }
+
+const cacheKeyFor = (def: InventoryDefinition) => `${def.name.slice(0, 40)}-${launchKey(def)}`;

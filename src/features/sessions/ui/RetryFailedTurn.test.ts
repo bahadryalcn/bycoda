@@ -219,3 +219,68 @@ it("holds retry during work, questions, queued sends, incomplete history and hos
   );
   expect(host.querySelector("button")).toBeNull();
 });
+
+it("retries the original prompt, not an answer to the agent's question", () => {
+  const session = {
+    ...chat(),
+    blocks: [
+      blocks[0],
+      { id: "question", role: "assistant" as const, text: "Which theme should be the default?" },
+      {
+        id: "answer",
+        role: "user" as const,
+        text: "Which theme should be the default?\nLet the user choose",
+        continuationOf: "user",
+        questionAnswers: [
+          { prompt: "Which theme should be the default?", answers: ["Let the user choose"] },
+        ],
+      },
+      blocks[1],
+    ],
+  };
+  expect(failedTurnRetry(session)).toMatchObject({
+    text: "Inspect this image",
+    errorId: "error",
+    intent: "plan",
+  });
+});
+
+it("retries the prompt together with the messages sent while it ran", () => {
+  const extra = {
+    id: "notes",
+    kind: "file" as const,
+    name: "notes.md",
+    mimeType: "text/markdown",
+    size: 4,
+    data: "abcd",
+  };
+  const session = {
+    ...chat(),
+    blocks: [
+      blocks[0],
+      { id: "partial", role: "assistant" as const, text: "Looking" },
+      {
+        id: "steer",
+        role: "user" as const,
+        text: "Also check the notes",
+        continuationOf: "user",
+        attachments: [extra],
+      },
+      {
+        id: "answer",
+        role: "user" as const,
+        text: "Default?\nDark",
+        continuationOf: "user",
+        questionAnswers: [{ prompt: "Default?", answers: ["Dark"] }],
+      },
+      blocks[1],
+    ],
+  };
+  const retry = failedTurnRetry(session);
+  expect(retry).toMatchObject({
+    text: "Inspect this image\n\nAlso check the notes",
+    errorId: "error",
+    intent: "plan",
+  });
+  expect(retry?.attachments.map((file) => file.id)).toEqual(["image", "notes"]);
+});

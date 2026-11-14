@@ -14,6 +14,37 @@ let root: Root;
 
 let container: HTMLDivElement;
 
+it("keeps a pinned scope available while searching and supports keyboard selection", async () => {
+  const onChange = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(SearchableSelect, {
+        label: "Project",
+        value: "alpha",
+        onChange,
+        options: [
+          { value: "all", label: "All projects", pinned: true },
+          { value: "alpha", label: "Alpha" },
+          { value: "beta", label: "Beta" },
+        ],
+      }),
+    ),
+  );
+  await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+  const input = document.body.querySelector<HTMLInputElement>('[role="combobox"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "beta");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    Array.from(document.body.querySelectorAll('[role="option"]')).map((row) => row.textContent),
+  ).toEqual(["All projects", "Beta"]);
+  await act(async () =>
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+  );
+  expect(onChange).toHaveBeenCalledWith("all");
+});
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 

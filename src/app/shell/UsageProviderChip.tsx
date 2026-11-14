@@ -5,6 +5,8 @@ import {
   type UsageWindowEntry,
 } from "./usageProviderLabels";
 import { UsageWindowStat } from "./UsageWindowStat";
+import { UsageRefreshButton } from "./UsageRefreshButton";
+import { UnknownUsageBar } from "./UnknownUsageBar";
 import { Text } from "../../shared/ui/Text";
 import { motionAttributes } from "../../shared/ui/Motion";
 import { UsageMeter as QuotaMeter } from "../../shared/ui/UsageMeter";
@@ -108,6 +110,8 @@ type UsageProviderChipProps = {
   onManageAccounts?: () => void;
   onConsumeReset?: (creditId?: string) => Promise<CodexRateLimitResetOutcome>;
   onReconnect?: () => Promise<void>;
+  onRefresh?: (accountId?: string) => Promise<void>;
+  refreshing?: boolean;
 };
 export function UsageProviderChip(props: UsageProviderChipProps) {
   const { limits, now, accounts = [], accountId, presentation } = props;
@@ -209,6 +213,8 @@ function UsageProviderDetails({
   onManageAccounts,
   onConsumeReset,
   onReconnect,
+  onRefresh,
+  refreshing = false,
   presentation,
   usageOnly = false,
   trigger,
@@ -329,6 +335,12 @@ function UsageProviderDetails({
       className={`overflow-y-auto ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
     >
       <Text as="div" size="inherit" tone="primary">
+        <UsageRefreshButton
+          accountId={detailAccountId}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+          disabled={resetAction === "using" || reconnectState === "running"}
+        />
         {canBrowseUsage ? (
           <div role="group" aria-label={t("Accounts")} className="mbe-2 flex flex-wrap gap-1">
             {accounts.map((account) => (
@@ -942,28 +954,6 @@ function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; load
       />
       {limits.error ? <InlineError live="off">{limits.error}</InlineError> : null}
     </Surface>
-  );
-}
-function UnknownUsageBar({ label, loading = false }: { label: string; loading?: boolean }) {
-  return (
-    <Tooltip label={label}>
-      <Text
-        aria-label={label}
-        size="caption"
-        tone="secondary"
-        {...surfaceAttributes(
-          {
-            radius: "sm",
-            variant: "inset",
-            frame: "stroke",
-            borderStyle: "dashed",
-          },
-          "inline-flex h-4 min-w-12 items-center justify-center px-1",
-        )}
-      >
-        {loading ? "···" : "?"}
-      </Text>
-    </Tooltip>
   );
 }
 function BankedResets({

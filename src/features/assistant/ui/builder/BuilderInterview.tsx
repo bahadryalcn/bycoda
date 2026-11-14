@@ -96,10 +96,12 @@ export function BuilderInterview({
       {failure !== null ? (
         <InlineError retry={{ onRetry }}>
           {[
-            t("The interview failed."),
+            t("That did not go through."),
             failure,
             SIGNED_OUT.test(failure)
-              ? t("Pick a signed-in account in the model picker, or sign in to the provider again.")
+              ? t(
+                  "Choose a signed-in account in the model picker, or sign in to the provider again.",
+                )
               : "",
           ]
             .filter(Boolean)
@@ -132,7 +134,7 @@ export function BuilderInterview({
         maxRows={6}
         value={draft}
         maxLength={BUILDER_MAX_TURN_TEXT}
-        placeholder={t("Type your answer")}
+        placeholder={t("Tell me in your own words")}
         onChange={(event) => onDraftChange(event.currentTarget.value)}
         onKeyDown={onKeyDown}
         toolbarTrailing={

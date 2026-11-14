@@ -35,6 +35,33 @@ function Action({ command, native }: { command: string; native: boolean }) {
   });
 }
 
+it.each([{ shortcut: "Option+KeyQ" }, { disabled: true }])(
+  "restores the live default label after a sibling clears override %j",
+  async (override) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    localStorage.clear();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    function Probe() {
+      return createElement("span", null, useKeybindingShortcut("App: Search"));
+    }
+    try {
+      saveKeybindingOverride("App: Search", override);
+      await act(async () => root.render(createElement(Probe)));
+      expect(container.textContent).not.toBe(`${MOD}K`);
+      await act(async () => {
+        localStorage.clear();
+        window.dispatchEvent(new StorageEvent("storage", { key: null, storageArea: localStorage }));
+      });
+      expect(container.textContent).toBe(`${MOD}K`);
+    } finally {
+      await act(async () => root.unmount());
+      localStorage.clear();
+      vi.unstubAllGlobals();
+    }
+  },
+);
+
 it("updates native and Arc tooltips immediately after rebind, disable, reset and external storage changes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(

@@ -12,6 +12,7 @@ export const EMPTY_DESKTOP_CONFIGURATION: DesktopControlConfiguration = {
   allowPhysicalInput: false,
   permissionMode: "ask",
   allowAllApps: false,
+  driver: "agent-desktop",
   version: 0,
 };
 
@@ -27,6 +28,7 @@ export function normalizeDesktopConfiguration(
     ...raw,
     permissionMode: mode,
     allowAllApps: mode === "full",
+    driver: raw.driver === "cua-driver" ? "cua-driver" : "agent-desktop",
   };
 }
 
@@ -37,8 +39,27 @@ export function isPlainDesktopAppName(app: string) {
   );
 }
 
-export function isDesktopAppAllowed(configuration: DesktopControlConfiguration, app: string) {
-  return configuration.allowedApps.includes(app) || configuration.allowAllApps;
+/** Windows reports process names such as "chrome.exe"; owners and models say "Chrome" or
+ * "chrome". On Windows names compare case-insensitively with an optional ".exe"; elsewhere exactly. */
+export function sameDesktopApp(a: string, b: string, platform: NodeJS.Platform = process.platform) {
+  if (platform !== "win32") return a === b;
+  const key = (name: string) =>
+    name
+      .trim()
+      .toLowerCase()
+      .replace(/\.exe$/, "");
+  return key(a) === key(b);
+}
+
+export function isDesktopAppAllowed(
+  configuration: DesktopControlConfiguration,
+  app: string,
+  platform: NodeJS.Platform = process.platform,
+) {
+  return (
+    configuration.allowAllApps ||
+    configuration.allowedApps.some((allowed) => sameDesktopApp(allowed, app, platform))
+  );
 }
 
 export type DesktopGate = {

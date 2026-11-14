@@ -29,7 +29,7 @@ for (const width of [1280, 800])
         .getByRole("button", { name: /^Project:/ })
         .click();
       await page.getByRole("option", { name: "All projects", exact: true }).click();
-      const captures = "temp/verification/tasks-redesign-20261114";
+      const captures = "temp/verification/tasks-actions-20261114";
       await mkdir(captures, { recursive: true });
       const capture = async (state: string) => {
         expect(
@@ -40,6 +40,14 @@ for (const width of [1280, 800])
           animations: "disabled",
         });
       };
+      await page
+        .locator("header.task-board-toolbar")
+        .getByRole("button", { name: /^Project:/ })
+        .click();
+      await page.getByRole("combobox").fill("no-matching-project");
+      await expect(page.getByRole("option", { name: "All projects", exact: true })).toBeVisible();
+      await capture("project-filter");
+      await page.getByRole("option", { name: "All projects", exact: true }).click();
       await expect(page.getByRole("button", { name: "New sprint", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: "New task", exact: true })).toHaveCount(0);
       await expect(page.locator('[data-task-column="todo"]')).toBeHidden();
@@ -51,7 +59,7 @@ for (const width of [1280, 800])
       await capture("sprint-form");
       await sprint
         .locator("summary")
-        .filter({ hasText: /^Capacity$/ })
+        .filter({ hasText: /^Work estimates$/ })
         .click();
       await sprint.getByLabel("Sprint capacity (points)", { exact: true }).fill("13");
       await capture("sprint-capacity");
@@ -175,6 +183,177 @@ for (const width of [1280, 800])
     });
   }
 const fixture = "/tests/browser/tasks/tasks.html";
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`shared server sprints ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`${fixture}?sprints&sharedServers`);
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const captures = "temp/verification/tasks-shared-20261114";
+      await mkdir(captures, { recursive: true });
+      const capture = async (state: string) => {
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+        ).toBe(true);
+        await page.screenshot({
+          path: `${captures}/${width}-${theme}-${state}.png`,
+          animations: "disabled",
+        });
+      };
+      await expect(
+        page.getByRole("button", { name: "Project: All projects", exact: true }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Server: All servers", exact: true }),
+      ).toBeVisible();
+      await capture("tasks-all-servers");
+      await expect(page.locator(".task-board-summary")).toContainText("1 running");
+      await page.getByRole("tab", { name: "Sprints", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Mac sprint", exact: true })).toBeVisible();
+      await capture("sprint-catalog");
+      await page.getByRole("button", { name: "Server: All servers", exact: true }).click();
+      await page.getByRole("option", { name: "Demo MacBook", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toHaveCount(
+        0,
+      );
+      await expect(page.getByRole("button", { name: "Mac sprint", exact: true })).toBeVisible();
+      await capture("sprint-server-filter");
+      await page.getByRole("button", { name: /^Filters/ }).click();
+      const filters = page.getByRole("dialog", { name: "Filters", exact: true });
+      await filters.getByRole("button", { name: /^Status:/ }).click();
+      await page.getByRole("option", { name: "Done", exact: true }).click();
+      await filters.getByRole("button", { name: "Reset", exact: true }).click();
+      await expect(
+        page.getByRole("button", { name: "Server: Demo MacBook", exact: true }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "Mac sprint", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Mac sprint", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "MacBook checkout", exact: true }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Start sprint", exact: true }).click();
+      await expect(page.locator('[data-sprint-state="active"]')).toBeVisible();
+      expect(
+        await page.evaluate(() =>
+          (window as unknown as { taskFixtureCalls: HostCall[] }).taskFixtureCalls.some(
+            (call) =>
+              call.args.method === "sprints.start" && call.args.machineId === "machine-remote",
+          ),
+        ),
+      ).toBe(true);
+      await capture("remote-sprint");
+      await expect(page.locator(".task-board-summary")).not.toContainText("running");
+      await page.getByRole("button", { name: "New sprint", exact: true }).click();
+      const form = page.getByRole("dialog", { name: "New sprint", exact: true });
+      await form.getByLabel("Sprint name", { exact: true }).fill("Shared rollout");
+      await expect(form).toContainText("A sprint can include projects from different servers.");
+      await form.getByRole("button", { name: /^Projects:/ }).click();
+      await expect(
+        page.getByRole("option", { name: /local-project.*Renamed development PC/ }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("option", { name: /remote-project.*Demo MacBook/ }),
+      ).toBeVisible();
+      await capture("sprint-project-servers");
+      await page.keyboard.press("Escape");
+      await form
+        .locator("summary")
+        .filter({ hasText: /^Work estimates$/ })
+        .click();
+      await expect(form).toContainText("Points are not hours and do not limit running tasks.");
+      await capture("sprint-estimates");
+      await form.getByRole("button", { name: "Cancel", exact: true }).click();
+      await page.getByRole("button", { name: "All sprints", exact: true }).click();
+      await page.getByRole("button", { name: "Server: Demo MacBook", exact: true }).click();
+      await page.getByRole("option", { name: "All servers", exact: true }).click();
+      await page.getByRole("button", { name: "Sprint server: Demo MacBook", exact: true }).click();
+      await page.getByRole("option", { name: "Renamed development PC", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toBeVisible();
+      await page.evaluate(() =>
+        (
+          window as unknown as { taskFixtureDisconnectSprintServer: () => void }
+        ).taskFixtureDisconnectSprintServer(),
+      );
+      await page.getByRole("button", { name: "Refresh", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Mac sprint", exact: true })).toBeDisabled();
+      await expect(
+        page
+          .locator(".sprint-row")
+          .filter({ hasText: "Mac sprint" })
+          .locator('[data-sprint-state="active"]'),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Desktop sprint", exact: true })).toBeEnabled();
+      await expect(page.getByText(/Fixture sprint server offline/)).toBeVisible();
+      await capture("sprint-server-offline");
+    });
+  }
+for (const width of [1280, 800])
+  for (const theme of ["light", "dark"]) {
+    test(`task action recovery ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `${fixture}?boardControls&tasksUx&tasksActions&taskDeleteError&epicDeleteError`,
+      );
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const capture = async (state: string) => {
+        await page.screenshot({
+          path: `temp/verification/tasks-actions-20261114/${width}-${theme}-${state}.png`,
+          animations: "disabled",
+        });
+      };
+      await page
+        .locator("header.task-board-toolbar")
+        .getByRole("button", { name: /^Project:/ })
+        .click();
+      const allProjects = page.getByRole("option", { name: "All projects", exact: true });
+      await page.getByRole("listbox").evaluate((list) => {
+        list.scrollTop = list.scrollHeight;
+      });
+      await expect(allProjects).toBeInViewport();
+      await capture("projects-scrolled");
+      await allProjects.click();
+      await page.locator(".task-goals-disclosure > summary").click();
+      const epic = page.getByRole("article", { name: "Mobile workspace refresh", exact: true });
+      await expect(epic).toBeVisible();
+      const details = epic.locator("details");
+      await expect(details).not.toHaveAttribute("open", "");
+      await expect(epic).not.toContainText("Final epic acceptance");
+      await capture("epic-collapsed");
+      await details.locator("summary").click();
+      await expect(epic.getByText("Run usage", { exact: true })).toBeVisible();
+      await capture("epic-details");
+      await epic.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+      const epicConfirm = page.getByRole("dialog", { name: "Delete epic", exact: true });
+      await epicConfirm.getByRole("button", { name: "Delete", exact: true }).click();
+      await expect(epicConfirm).toContainText("Stop this goal’s running tasks before deleting it.");
+      await expect(epic).toBeVisible();
+      await capture("epic-delete-error");
+      await epicConfirm.getByRole("button", { name: "Delete", exact: true }).click();
+      await expect(epicConfirm).toBeHidden();
+      await expect(epic).toHaveCount(0);
+      await page.getByRole("radio", { name: "Board view", exact: true }).check();
+      const task = page.getByRole("article", { name: "Repair standalone packaging", exact: true });
+      await task.getByRole("button", { name: "More actions", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+      const taskConfirm = page.getByRole("dialog", { name: "Delete task", exact: true });
+      await taskConfirm.getByRole("button", { name: "Delete", exact: true }).click();
+      await expect(taskConfirm).toContainText("The machine disconnected during deletion.");
+      await expect(task).toBeVisible();
+      await capture("task-delete-error");
+      await taskConfirm.getByRole("button", { name: "Delete", exact: true }).click();
+      await expect(taskConfirm).toBeHidden();
+      await expect(task).toHaveCount(0);
+    });
+  }
 for (const width of [1280, 800])
   for (const theme of ["light", "dark"])
     for (const zoom of [1, 2]) {

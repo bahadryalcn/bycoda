@@ -9,8 +9,8 @@ import { splitCitationTokens } from "../model/citationTokens";
 import styles from "./ComposerAttachmentHighlight.module.css";
 
 /**
- * Decoration only: every character retains its native textarea width. The hidden
- * source text reserves a padded icon slot; the ordinal identifies the attachment.
+ * Decoration only: every character retains its native textarea width. Each token's
+ * face (icon + `Image 1 · 54 KB` label) is drawn over its hidden source text.
  */
 export function ComposerAttachmentHighlight({
   text,
@@ -31,11 +31,11 @@ export function ComposerAttachmentHighlight({
           key={index}
           prefix="["
           icon={<BlockQuote />}
+          label={tokenLabel(part.token)}
           className={styles.token}
           data-composer-citation-token=""
         >
-          {tokenLabel(part.token)}
-          <span className={styles.bracket}>{"]"}</span>
+          {part.token.slice(1)}
         </DraftToken>
       ) : (
         <Fragment key={index}>{renderText(part.text)}</Fragment>
@@ -44,19 +44,17 @@ export function ComposerAttachmentHighlight({
   return splitAttachmentTokens(text, attachments).map((part, index) => {
     if (!("token" in part)) return <Fragment key={index}>{renderPlain(part.text)}</Fragment>;
     const presentation = attachmentPresentation(part.attachment);
-    const prefix = part.token.startsWith("[image") ? "[image" : "[file";
     return (
       <DraftToken
         key={index}
         prefix="["
-        ordinal={part.token.slice(prefix.length, -1)}
         icon={<AttachmentIdentity attachment={part.attachment} size="pill" />}
+        label={part.label}
         className={styles.token}
         data-composer-attachment-kind={presentation.kind}
         data-attachment-kind={presentation.kind}
       >
-        {part.label}
-        <span className={styles.bracket}>{"]"}</span>
+        {part.token.slice(1)}
       </DraftToken>
     );
   });

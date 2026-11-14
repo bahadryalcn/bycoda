@@ -16,18 +16,22 @@ vi.mock("./helperModelRouting", () => ({
   resolveHelperModel: provider.resolve,
 }));
 
-import type { SetupCandidate } from "./smartSetup";
-import {
-  applySetupRefinement,
-  buildSetupPrompt,
-  parseSetupRefinement,
-  refineSetupCandidates,
-} from "./smartSetupAi";
+import { rulePlan, type SetupCandidate, type SetupPoolNames } from "./smartSetup";
+import { buildSetupPrompt, parsePlanAnswer, planFromAnswer, planSmartSetup } from "./smartSetupAi";
+
+const names: SetupPoolNames = {
+  smartest: "Smartest",
+  balanced: "Balanced",
+  fast: "Fast",
+  work: "Work",
+  personal: "Personal",
+};
 
 const make = (
   model: string,
   estimated: boolean,
   account?: SetupCandidate["account"],
+  intelligence: 1 | 2 | 3 | 4 | 5 = 3,
 ): SetupCandidate => ({
   target: {
     harness: "codex",
@@ -37,13 +41,19 @@ const make = (
   },
   modelName: model,
   ...(account ? { account } : {}),
-  profile: { intelligence: 3, cost: 2, estimated },
+  profile: { intelligence, cost: 2, estimated },
 });
 
-const goodAnswer = JSON.stringify({
-  models: [{ harness: "codex", model: "mystery", intelligence: 5, cost: 3 }],
-  accounts: [],
-});
+const answer = {
+  accounts: [{ ref: "a1", kind: "work" }],
+  models: [{ key: 1, intelligence: 5, cost: 3 }],
+  order: [1, 0, 99],
+  pools: [
+    { name: "Heavy", members: [1, 42], includes: [] },
+    { name: "Empty", members: [99], includes: [] },
+  ],
+  roles: { "task.worker": { pool: "Heavy" }, "text.title": "order", "not.a.role": "order" },
+};
 
 afterEach(() => {
   vi.useRealTimers();
@@ -51,109 +61,85 @@ afterEach(() => {
   provider.resolve.mockReset();
 });
 
-it("lists only estimated models and kind-less accounts in the prompt", () => {
-  const prompt = buildSetupPrompt([
-    make("known", false, { id: "a", label: "Work", kind: "work" }),
-    make("mystery", true, { id: "b", label: "Spare" }),
-  ]);
-  expect(prompt).toContain("mystery");
-  expect(prompt).not.toContain('"model":"known"');
-  expect(prompt).toContain('"id":"b"');
-  expect(prompt).not.toContain('"id":"a"');
+it("sends every candidate with researched facts, the baseline, accounts and roles", () => {
+  const prompt = buildSetupPrompt(
+    [make("codex:gpt-6.1-sol", false, { id: "x", label: "Spare" }), make("mystery", true)],
+    names,
+  );
+  expect(prompt).toContain('"researchedScore":90');
+  expect(prompt).toContain('"usdPerMInput":2');
+  expect(prompt).toContain('"profile":"estimated"');
+  expect(prompt).toContain('"baselineOrder":[');
+  expect(prompt).toContain('"ref":"a1"');
+  expect(prompt).toContain('"kind":"unknown"');
+  expect(prompt).toContain('"role":"task.worker"');
+  expect(prompt).not.toContain('"id":"x"');
 });
 
 it("parses strictly and tolerates a code fence", () => {
-  expect(parseSetupRefinement("```json\n" + goodAnswer + "\n```")?.models).toHaveLength(1);
+  expect(parsePlanAnswer("```json\n" + JSON.stringify(answer) + "\n```")?.pools).toHaveLength(2);
   for (const text of [
     "nope",
     "{}",
-    JSON.stringify({
-      models: [{ harness: "codex", model: "m", intelligence: 9, cost: 2 }],
-      accounts: [],
-    }),
-    JSON.stringify({
-      models: [],
-      accounts: [{ harness: "codex", id: "a", kind: "boss" }],
-    }),
+    JSON.stringify({ ...answer, models: [{ key: 0, intelligence: 9, cost: 2 }] }),
+    JSON.stringify({ ...answer, accounts: [{ ref: "a1", kind: "boss" }] }),
   ])
-    expect(parseSetupRefinement(text)).toBeUndefined();
+    expect(parsePlanAnswer(text)).toBeUndefined();
 });
 
-it("applies answers only to estimated profiles and kind-less accounts", () => {
+it("keeps only valid keys, known roles and estimated or kind-less answers", () => {
   const candidates = [
-    make("known", false, { id: "a", label: "Work", kind: "work" }),
-    make("mystery", true, { id: "b", label: "Spare" }),
-    make("mystery", true, { id: "c", label: "Other" }),
+    make("known", false, { id: "a", label: "Spare" }),
+    make("mystery", true, { id: "b", label: "Home", kind: "personal" }),
   ];
-  const result = applySetupRefinement(candidates, {
-    models: [
-      { harness: "codex", model: "known", intelligence: 1, cost: 1 },
-      { harness: "codex", model: "mystery", intelligence: 5, cost: 4 },
-    ],
-    accounts: [
-      { harness: "codex", id: "a", kind: "personal" },
-      { harness: "codex", id: "b", kind: "personal" },
-      { harness: "codex", id: "c", kind: "shared" },
-    ],
-  });
-  expect(result[0]).toEqual(candidates[0]);
-  expect(result[1].profile).toEqual({
-    intelligence: 5,
-    cost: 4,
-    estimated: true,
-  });
-  expect(result[1].account?.kind).toBe("personal");
-  expect(result[2].account?.kind).toBeUndefined();
-});
-
-it("skips the model call when nothing is unknown", async () => {
-  const candidates = [make("known", false, { id: "a", label: "Work", kind: "work" })];
-  expect(await refineSetupCandidates(candidates, {})).toEqual({
+  const { candidates: refined, plan } = planFromAnswer(
     candidates,
-    refined: false,
-  });
-  expect(provider.resolve).not.toHaveBeenCalled();
+    parsePlanAnswer(JSON.stringify(answer))!,
+  );
+  expect(refined[0]!.account?.kind).toBe("work");
+  expect(refined[0]!.profile).toEqual(candidates[0]!.profile);
+  expect(refined[1]!.profile).toEqual({ intelligence: 5, cost: 3, estimated: true });
+  expect(refined[1]!.account?.kind).toBe("personal");
+  expect(plan.order).toEqual([1, 0]);
+  expect(plan.pools).toEqual([{ name: "Heavy", members: [1], includes: [] }]);
+  expect(plan.roles).toEqual({ "task.worker": { pool: "Heavy" }, "text.title": "order" });
 });
 
-it("refines through the routing helper model", async () => {
-  provider.resolve.mockResolvedValue({
-    harness: "codex",
-    model: "helper",
-    modelSettings: {},
-  });
-  provider.run.mockResolvedValue(goodAnswer);
-  const result = await refineSetupCandidates([make("mystery", true)], {});
-  expect(result.refined).toBe(true);
-  expect(result.candidates[0].profile.intelligence).toBe(5);
+it("plans through the routing-setup binding and names the planner", async () => {
+  provider.resolve.mockResolvedValue({ harness: "codex", model: "helper", modelSettings: {} });
+  provider.run.mockResolvedValue(JSON.stringify(answer));
+  const candidates = [make("known", false), make("mystery", true)];
+  const result = await planSmartSetup(candidates, names, {});
+  expect(result.plannedBy).toBe("helper");
+  expect(result.plan.pools[0]!.name).toBe("Heavy");
   expect(provider.resolve).toHaveBeenCalledWith("text.routingSetup");
   expect(provider.run).toHaveBeenCalledWith(
-    expect.objectContaining({
-      model: "helper",
-      ephemeral: true,
-      timeoutMs: expect.any(Number),
-    }),
+    expect.objectContaining({ model: "helper", ephemeral: true, timeoutMs: expect.any(Number) }),
   );
 });
 
-it("never rejects: no model, garbage, failure and hang fall back", async () => {
+it("falls back to the cheapest strong catalog model when no binding exists", async () => {
+  provider.resolve.mockResolvedValue(undefined);
+  provider.run.mockResolvedValue(JSON.stringify(answer));
+  const strong = make("strong", false, undefined, 4);
+  const result = await planSmartSetup([make("weak", false), strong], names, {});
+  expect(provider.run.mock.calls[0]![0].model).toBe("strong");
+  expect(result.plannedBy).toBe("strong");
+});
+
+it("never rejects: no model, garbage, failure and hang use the researched rules", async () => {
   const candidates = [make("mystery", true)];
-  expect(await refineSetupCandidates(candidates, {})).toEqual({
-    candidates,
-    refined: false,
-  });
-  provider.resolve.mockResolvedValue({
-    harness: "codex",
-    model: "helper",
-    modelSettings: {},
-  });
+  const rules = { candidates, plan: rulePlan(candidates, names) };
+  expect(await planSmartSetup(candidates, names, {})).toEqual(rules);
+  provider.resolve.mockResolvedValue({ harness: "codex", model: "helper", modelSettings: {} });
   provider.run.mockResolvedValueOnce("garbage");
-  expect((await refineSetupCandidates(candidates, {})).refined).toBe(false);
+  expect(await planSmartSetup(candidates, names, {})).toEqual(rules);
   provider.run.mockRejectedValueOnce(new Error("offline"));
-  expect((await refineSetupCandidates(candidates, {})).refined).toBe(false);
+  expect(await planSmartSetup(candidates, names, {})).toEqual(rules);
   vi.useFakeTimers();
   provider.run.mockReturnValueOnce(new Promise(() => {}));
-  const pending = refineSetupCandidates(candidates, {});
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(await pending).toEqual({ candidates, refined: false });
+  const pending = planSmartSetup(candidates, names, {});
+  await vi.advanceTimersByTimeAsync(200_000);
+  expect(await pending).toEqual(rules);
   expect(provider.run.mock.calls.at(-1)?.[0].signal.aborted).toBe(true);
 });

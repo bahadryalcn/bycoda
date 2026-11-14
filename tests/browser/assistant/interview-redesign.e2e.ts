@@ -38,7 +38,7 @@ for (const theme of ["light", "dark"])
       await expect(
         page.getByText("Asistanınızın ne yapmasını veya neyi değiştirmesini istersiniz?"),
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Finish and show preview" })).toBeDisabled();
+      await expect(page.getByRole("button", { name: "Preview assistant" })).toBeDisabled();
       await requestCount(page, 0);
       await capture("initial");
       const answer = page.getByRole("textbox", { name: "Your answer" });
@@ -60,7 +60,7 @@ for (const theme of ["light", "dark"])
         "en-US",
       );
       await expect(page.getByText("Thinking…", { exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Stop waiting", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
       await capture("pending");
       await resolve(page, { kind: "question", question: longQuestion, options });
       await expect(page.getByRole("button", { name: options[0], exact: true })).toBeVisible();
@@ -84,7 +84,7 @@ for (const theme of ["light", "dark"])
       ).toBeVisible();
       await expect(page.getByRole("button", { name: "Apply to settings" })).toBeDisabled();
       await capture("unchanged");
-      await page.getByRole("button", { name: "Back to questions" }).click();
+      await page.getByRole("button", { name: "Back" }).click();
       await answer.fill("Call yourself Aleksandra Wiśniewska-Kowalczyk.");
       await page.getByRole("button", { name: "Send answer", exact: true }).click();
       await requestCount(page, 4);
@@ -138,11 +138,11 @@ test("cancel fences a late proposal and retains conversation for continuation", 
   await page.getByRole("textbox", { name: "Your answer" }).fill("Keep voice replies short.");
   await page.getByRole("button", { name: "Send answer", exact: true }).click();
   await requestCount(page, 1);
-  await page.getByRole("button", { name: "Stop waiting", exact: true }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
   await resolve(page, { kind: "proposal", summary: "Late result", profile: { name: "Late" } });
   await expect(page.getByText("Late result", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Keep voice replies short.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Finish and show preview" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Preview assistant" })).toBeEnabled();
 });
 
 test("long quick answers remain reachable in a 320px panel", async ({ page }) => {
@@ -172,7 +172,7 @@ test("interview remains usable with doubled root text size", async ({ page }) =>
   await answer.fill("Keep technical names unchanged: Đặng Thị Ngọc Hân, 王秀英, نور الهدى.");
   await page.getByRole("button", { name: "Send answer", exact: true }).click();
   await requestCount(page, 1);
-  await expect(page.getByRole("button", { name: "Stop waiting", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Stop", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: `${output}/light-1280-double-text.png` });
 });

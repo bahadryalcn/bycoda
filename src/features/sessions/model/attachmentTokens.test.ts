@@ -25,6 +25,11 @@ function make(kind: Attachment["kind"], name: string, path?: string): Attachment
   };
 }
 
+const NBSP = "\u00a0";
+/** The generated token form; the test attachments are 1 byte each. */
+const tok = (kind: "Image" | "File", n: number, size = "1 B") =>
+  `[${kind}${NBSP}${n}${NBSP}·${NBSP}${size.replace(" ", NBSP)}]`;
+
 const image = (name = "a.png") => make("image", name);
 const doc = (name = "a.md") => make("file", name);
 
@@ -32,19 +37,40 @@ describe("attachmentTokens", () => {
   it("numbers images and other files separately, in the order given", () => {
     const files = [image(), doc(), image(), make("audio", "a.wav"), doc()];
     expect(attachmentTokens(files)).toEqual([
-      "[image1]",
-      "[file1]",
-      "[image2]",
-      "[file2]",
-      "[file3]",
+      tok("Image", 1),
+      tok("File", 1),
+      tok("Image", 2),
+      tok("File", 2),
+      tok("File", 3),
     ]);
     expect(attachmentTokens([])).toEqual([]);
-    expect(tokenLabel("[image12]")).toBe("image12");
+    expect(tokenLabel(tok("Image", 12))).toBe(`Image${NBSP}12${NBSP}·${NBSP}1${NBSP}B`);
+  });
+
+  it("writes the size with the shared format and leaves it out when unknown", () => {
+    const sized = (kind: Attachment["kind"], size: number) => ({ ...make(kind, "x"), size });
+    expect(
+      attachmentTokens([
+        sized("image", 54 * 1024),
+        sized("file", 5 * 1024),
+        sized("file", 1536 * 1024),
+        sized("image", 0),
+        sized("file", Number.NaN),
+      ]),
+    ).toEqual([
+      tok("Image", 1, "54 KB"),
+      tok("File", 1, "5 KB"),
+      tok("File", 2, "1.5 MB"),
+      `[Image${NBSP}2]`,
+      `[File${NBSP}3]`,
+    ]);
   });
 
   it("gives incoming files the next numbers after the ones already there", () => {
-    expect(tokensForIncoming([image(), doc()], [image(), image()])).toBe("[image2] [image3]");
-    expect(tokensForIncoming([], [doc(), image()])).toBe("[file1] [image1]");
+    expect(tokensForIncoming([image(), doc()], [image(), image()])).toBe(
+      `${tok("Image", 2)} ${tok("Image", 3)}`,
+    );
+    expect(tokensForIncoming([], [doc(), image()])).toBe(`${tok("File", 1)} ${tok("Image", 1)}`);
   });
 });
 
@@ -88,7 +114,7 @@ describe("findTokens", () => {
     expect(findTokens(text, files).map((match) => match.start)).toEqual([
       text.lastIndexOf("[image2]"),
     ]);
-    expect(removeAttachmentFromText(text, files, 0)).toBe(`${code}\n\n[image1]`);
+    expect(removeAttachmentFromText(text, files, 0)).toBe(`${code}\n\n${tok("Image", 1)}`);
     expect(stripAttachmentTokens(text, files)).toBe(`${code}\n\n`);
     expect(
       deleteTokenAtCaret(text, code.indexOf("[image1]") + "[image1]".length, "back", files),
@@ -164,7 +190,7 @@ describe("removeAttachmentFromText", () => {
   it("drops every occurrence and tidies the doubled space", () => {
     const files = [image(), doc()];
     expect(removeAttachmentFromText("a [image1] b [image1] c [file1]", files, 0)).toBe(
-      "a b c [file1]",
+      `a b c ${tok("File", 1)}`,
     );
     expect(removeAttachmentFromText("[image1] fix", files, 0)).toBe("fix");
     expect(removeAttachmentFromText("fix [image1]", files, 0)).toBe("fix");
@@ -175,34 +201,59 @@ describe("removeAttachmentFromText", () => {
   it("renumbers the attachments left behind", () => {
     const files = [image(), image(), image()];
     const text = "[image1] and [image2] and [image3]";
-    expect(removeAttachmentFromText(text, files, 0)).toBe("and [image1] and [image2]");
-    expect(removeAttachmentFromText(text, files, 1)).toBe("[image1] and and [image2]");
+    expect(removeAttachmentFromText(text, files, 0)).toBe(
+      `and ${tok("Image", 1)} and ${tok("Image", 2)}`,
+    );
+    expect(removeAttachmentFromText(text, files, 1)).toBe(
+      `${tok("Image", 1)} and and ${tok("Image", 2)}`,
+    );
   });
 
   it("renumbers in one pass, so a renamed token is never renamed again", () => {
     const files = [image(), image(), image()];
     expect(removeAttachmentFromText("[image3] [image2] [image1]", files, 0)).toBe(
-      "[image2] [image1]",
+      `${tok("Image", 2)} ${tok("Image", 1)}`,
     );
   });
 
   it("handles [image1] [image2] [image10] and keeps kinds apart", () => {
     const files = [...Array.from({ length: 10 }, (_, i) => image(`${i}.png`)), doc()];
     const text = "[image1] [image2] [image10] [file1]";
-    expect(removeAttachmentFromText(text, files, 0)).toBe("[image1] [image9] [file1]");
-    expect(removeAttachmentFromText(text, files, 9)).toBe("[image1] [image2] [file1]");
+    expect(removeAttachmentFromText(text, files, 0)).toBe(
+      `${tok("Image", 1)} ${tok("Image", 9)} ${tok("File", 1)}`,
+    );
+    expect(removeAttachmentFromText(text, files, 9)).toBe(
+      `${tok("Image", 1)} ${tok("Image", 2)} ${tok("File", 1)}`,
+    );
     // Removing a file never touches the image numbering, and vice versa.
-    expect(removeAttachmentFromText(text, files, 10)).toBe("[image1] [image2] [image10]");
+    expect(removeAttachmentFromText(text, files, 10)).toBe(
+      `${tok("Image", 1)} ${tok("Image", 2)} ${tok("Image", 10)}`,
+    );
     const mixed = [image(), doc("a"), doc("b")];
-    expect(removeAttachmentFromText("[file1] [file2]", mixed, 1)).toBe("[file1]");
-    expect(removeAttachmentFromText("[file1] [file2]", mixed, 2)).toBe("[file1]");
-    expect(removeAttachmentFromText("[file1] [file2]", mixed, 0)).toBe("[file1] [file2]");
+    expect(removeAttachmentFromText("[file1] [file2]", mixed, 1)).toBe(tok("File", 1));
+    expect(removeAttachmentFromText("[file1] [file2]", mixed, 2)).toBe(tok("File", 1));
+    expect(removeAttachmentFromText("[file1] [file2]", mixed, 0)).toBe(
+      `${tok("File", 1)} ${tok("File", 2)}`,
+    );
   });
 
   it("leaves tokens for attachments that do not exist, and code, as written", () => {
     const files = [image(), image()];
     expect(removeAttachmentFromText("[image1] [image7] `[image2]` arr[image2]", files, 0)).toBe(
       "[image7] `[image2]` arr[image2]",
+    );
+  });
+
+  it("still finds the legacy form and rewrites surviving legacy tokens into the new form", () => {
+    const files = [image(), image(), doc()];
+    expect(findTokens("see [image1]", files).map((m) => [m.token, m.index])).toEqual([
+      ["[image1]", 0],
+    ]);
+    expect(removeAttachmentFromText("[image1] [image2] [file1]", files, 0)).toBe(
+      `${tok("Image", 1)} ${tok("File", 1)}`,
+    );
+    expect(removeAttachmentFromText("[image1] [image2] [file1]", files, 2)).toBe(
+      `${tok("Image", 1)} ${tok("Image", 2)}`,
     );
   });
 
@@ -304,13 +355,13 @@ describe("attachmentLegend", () => {
         image("two.png"),
       ]),
     ).toBe(
-      "Attachments: [image1] = screenshot.png (1st attached image), [file1] = src/app/App.tsx, [image2] = two.png (2nd attached image)",
+      `Attachments: ${tok("Image", 1)} = screenshot.png (1st attached image), ${tok("File", 1)} = src/app/App.tsx, ${tok("Image", 2)} = two.png (2nd attached image)`,
     );
   });
 
   it("falls back to the name when a file has no path, and keeps it on one line", () => {
     expect(attachmentLegend([make("audio", "voice\nnote.wav")])).toBe(
-      "Attachments: [file1] = voice note.wav",
+      `Attachments: ${tok("File", 1)} = voice note.wav`,
     );
   });
 

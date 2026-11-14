@@ -1,4 +1,5 @@
 import { keybindingPressed, matchCustomKeybinding, type ShortcutEvent } from "./settings";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import type { LayoutPreset } from "../../workspace/model/layoutPresets";
 import type { SettingsSectionId } from "./settings";
 
@@ -28,6 +29,7 @@ export const LAYOUT_SHORTCUTS: Record<string, LayoutPreset> = {
 type AppShortcutEvent = ShortcutEvent & {
   key: string;
   isComposing: boolean;
+  keyCode: number;
 };
 
 /** command, key, and whether Shift must be held. */
@@ -60,7 +62,7 @@ const APP_COMMANDS = new Set([
  * rebound or disabled shortcut through `keybindingPressed`.
  */
 export function resolveAppShortcut(event: AppShortcutEvent): string | null {
-  if (event.isComposing) return null;
+  if (isImeComposition(event)) return null;
   // A rebound chord is resolved before the default table, otherwise recording
   // a new combination could never fire, and it may legitimately be Alt-only.
   const custom = matchCustomKeybinding(event);

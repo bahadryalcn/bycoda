@@ -303,8 +303,11 @@ export function coalesceNotifications(items: NotificationPayload[]): Notificatio
 }
 
 export type NotificationBatcher = {
-  /** Resolves true once the coalesced notification was accepted. */
-  enqueue(payload: NotificationPayload): Promise<boolean>;
+  /** Revalidates each entry before coalescing; suppressed entries resolve false. */
+  enqueue(
+    payload: NotificationPayload,
+    prepare?: (payload: NotificationPayload) => NotificationPayload | null,
+  ): Promise<boolean>;
 };
 
 /**
@@ -315,24 +318,45 @@ export function createNotificationBatcher(
   deliver: (payload: NotificationPayload) => Promise<boolean>,
   delay: () => number,
 ): NotificationBatcher {
-  let items: NotificationPayload[] = [];
-  let waiters: Array<(sent: boolean) => void> = [];
+  let items: Array<{
+    payload: NotificationPayload;
+    prepare?: (payload: NotificationPayload) => NotificationPayload | null;
+    resolve: (sent: boolean) => void;
+  }> = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = () => {
     const batch = items;
-    const done = waiters;
     items = [];
-    waiters = [];
     timer = undefined;
-    deliver(coalesceNotifications(batch)).then(
-      (sent) => done.forEach((resolve) => resolve(sent)),
-      () => done.forEach((resolve) => resolve(false)),
-    );
+    const ready: NotificationPayload[] = [];
+    const done: Array<(sent: boolean) => void> = [];
+    for (const entry of batch) {
+      let payload: NotificationPayload | null;
+      try {
+        payload = entry.prepare ? entry.prepare(entry.payload) : entry.payload;
+      } catch {
+        entry.resolve(false);
+        continue;
+      }
+      if (!payload) entry.resolve(false);
+      else {
+        ready.push(payload);
+        done.push(entry.resolve);
+      }
+    }
+    if (!ready.length) return;
+    try {
+      deliver(coalesceNotifications(ready)).then(
+        (sent) => done.forEach((resolve) => resolve(sent)),
+        () => done.forEach((resolve) => resolve(false)),
+      );
+    } catch {
+      done.forEach((resolve) => resolve(false));
+    }
   };
   return {
-    enqueue(payload) {
-      items.push(payload);
-      const result = new Promise<boolean>((resolve) => waiters.push(resolve));
+    enqueue(payload, prepare) {
+      const result = new Promise<boolean>((resolve) => items.push({ payload, prepare, resolve }));
       timer ??= setTimeout(flush, delay());
       return result;
     },

@@ -450,6 +450,7 @@ fn execute_desktop_request_inner(
             | "tasks.write.authorize"
             | "inbox.write.authorize"
             | "secrets.input.authorize"
+            | "mcp.call.authorize"
     ) {
         return owner_approval::call(app, request, issuer, taken, now);
     }

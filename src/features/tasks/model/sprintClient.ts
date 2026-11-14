@@ -108,6 +108,7 @@ export function useSprintBoard(
   machines: readonly RemoteMachine[],
   tasks: readonly BoardTask[],
   allowedProjects?: readonly SprintProjectRef[],
+  onRead?: (machine: RemoteMachine, board: SprintBoard) => void | Promise<void>,
 ) {
   const visible = useQueryVisible();
   const visibleRef = useRef(visible);
@@ -137,7 +138,7 @@ export function useSprintBoard(
   const coordinatorReads = useRef(new Set<symbol>());
   const requests = useRef(new Map<string, string>());
   const knownTasks = useRef(new Set<string>());
-  const refs = useRef({ machines, tasks, allowedProjects });
+  const refs = useRef({ machines, tasks, allowedProjects, onRead });
   const coordinator = planningCoordinator(machines, environmentId);
   // The first planning Host becomes the stored choice; the state follows it during render.
   if (!environmentId && coordinator) setEnvironmentId(coordinator.environmentId);
@@ -152,7 +153,7 @@ export function useSprintBoard(
   // effects, so they run first in each commit.
   useEffect(() => {
     visibleRef.current = visible;
-    refs.current = { machines, tasks, allowedProjects };
+    refs.current = { machines, tasks, allowedProjects, onRead };
     dataRef.current = data;
   });
   const projectScope = JSON.stringify(
@@ -199,6 +200,7 @@ export function useSprintBoard(
         };
       };
       const readBoard = async () => {
+        const machine = refs.current.machines.find((entry) => entry.id === coordinatorId)!;
         const finish = beginCoordinatorRead();
         const revision = ++publication.current;
         try {
@@ -206,6 +208,7 @@ export function useSprintBoard(
           if (current() && revision === publication.current) {
             dataRef.current = board;
             patchBoard({ data: board, error: null });
+            await refs.current.onRead?.(machine, board);
           }
           return board;
         } finally {

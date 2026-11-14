@@ -39,6 +39,36 @@ it("preserves the unknown-delivery hold across persistence and restore", () => {
   expect(restoreQueuedMessages(persistableQueue(queue))).toEqual(queue);
 });
 
+it("keeps the delegation author of a system-authored row through restore", () => {
+  const author = { kind: "delegation", runId: "r1", title: "Check", reason: "completion" } as const;
+  const queue = [message({ author })];
+  expect(restoreQueuedMessages(persistableQueue(queue))).toEqual(queue);
+});
+
+it("keeps the approved conversation sender through queue persistence", () => {
+  const author = {
+    kind: "conversation",
+    id: "source",
+    name: "Source",
+    reason: "message",
+    operationId: "approved-request",
+  } as const;
+  const queue = [message({ author })];
+  expect(restoreQueuedMessages(persistableQueue(queue))).toEqual(queue);
+});
+
+it("retains Assistant Room follow-up provenance without presenting it as a kickoff", () => {
+  const author = {
+    kind: "assistant-room",
+    threadId: "room",
+    name: "Assistant",
+    reason: "message",
+    operationId: "approved-request",
+  } as const;
+  const queue = [message({ author })];
+  expect(restoreQueuedMessages(persistableQueue(queue))).toEqual(queue);
+});
+
 it("persists a shared attachment's host identity and does not probe its path on another PC", async () => {
   const saved = persistableQueue([
     message({ attachments: [file({ path: "/host/upload", hostEnvironmentId: "host" })] }),
@@ -206,6 +236,10 @@ describe("markMissingAttachments", () => {
   });
 });
 
+/** The generated token form: words joined by no-break spaces, then the size. */
+const tok = (kind: "Image" | "File", n: number, size = "1 B") =>
+  `[${kind}\u00a0${n}\u00a0·\u00a0${size.replace(" ", "\u00a0")}]`;
+
 describe("withoutMissingAttachments", () => {
   it("drops gone files with their tokens and renumbers the rest", () => {
     const edited = withoutMissingAttachments(
@@ -215,6 +249,6 @@ describe("withoutMissingAttachments", () => {
       }),
     );
     expect(edited.attachments.map((entry) => entry.id)).toEqual(["b"]);
-    expect(edited.text).toBe("compare and [file1]");
+    expect(edited.text).toBe(`compare and ${tok("File", 1, "3 B")}`);
   });
 });

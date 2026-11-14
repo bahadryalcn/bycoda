@@ -160,6 +160,7 @@ export function ProviderDefaultExtras({
                 <EffortScale
                   label={t(setting.label)}
                   showLabel={false}
+                  showValue={Boolean(subagentEffortCeiling(effectiveValues[setting.id]))}
                   value={subagentEffortCeiling(effectiveValues[setting.id]) || ""}
                   disabled={!subagentEffortCeiling(effectiveValues[setting.id])}
                   options={setting.options

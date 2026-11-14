@@ -59,7 +59,7 @@ export function BuilderPreview({
           {proposal.summary}
         </Text>
       )}
-      {entries.length > 0 && <SectionLabel as="h3">{t("Proposed settings")}</SectionLabel>}
+      {entries.length > 0 && <SectionLabel as="h3">{t("What would change")}</SectionLabel>}
       {entries.length > 0 ? (
         <Surface as="ul" variant="transparent" padding="none" className={styles.fields}>
           {entries.map((entry) => (
@@ -71,7 +71,7 @@ export function BuilderPreview({
                 description={
                   entry.key === "persona" ? (
                     entry.before === "—" ? undefined : (
-                      t("Currently: {p0}", { p0: entry.before })
+                      t("Now: {p0}", { p0: entry.before })
                     )
                   ) : (
                     <Text size="inherit" tone="secondary" className={styles.change}>
@@ -106,10 +106,10 @@ export function BuilderPreview({
         </Surface>
       ) : (
         <Text as="p" size="caption" tone="secondary" leading="normal" className={styles.muted}>
-          {t("The proposal matches your current settings. Nothing to change.")}
+          {t("Your assistant already matches this. Nothing to change.")}
         </Text>
       )}
-      <Disclosure summary={t("Avatar (optional)")}>
+      <Disclosure summary={t("Add an avatar (optional)")}>
         <section className={styles.avatarSection} aria-label={t("Avatar")}>
           {avatar ? (
             <div className={styles.avatarResult}>
@@ -150,7 +150,7 @@ export function BuilderPreview({
             startIcon={<ArrowLeft className="icon-sm" />}
             onClick={onBack}
           >
-            {t("Back to questions")}
+            {t("Back")}
           </Button>
           <Button
             variant="primary"

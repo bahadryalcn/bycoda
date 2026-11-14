@@ -227,6 +227,7 @@ export async function hostFeatureRequest<T>(
           allowPhysicalInput: false,
           permissionMode: "ask",
           allowAllApps: false,
+          driver: "agent-desktop",
           version: 0,
         },
         status: {

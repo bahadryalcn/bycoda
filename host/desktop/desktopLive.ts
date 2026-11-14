@@ -125,6 +125,7 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
       return;
     if (project.groupId !== undefined && (!text(project.groupId, 200) || !ids.has(project.groupId)))
       return;
+    if (project.pinned !== undefined && typeof project.pinned !== "boolean") return;
     const sessionLayout = parseSessionLayout(project.sessionLayout);
     const appearance = readAppearance(project.appearance);
     projects.push({
@@ -133,6 +134,7 @@ export function parseDesktopProjectDirectory(input: unknown): DesktopProjectDire
       ...(typeof project.groupId === "string" ? { groupId: project.groupId } : {}),
       ...(sessionLayout ? { sessionLayout } : {}),
       ...(appearance ? { appearance } : {}),
+      ...(project.pinned === true ? { pinned: true } : {}),
     });
   }
   return {

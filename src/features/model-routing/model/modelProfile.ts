@@ -1,6 +1,7 @@
 import type { ModelRoutingScope } from "../../../shared/model/host-contracts/model-routing";
 import { subagentTier } from "../../../shared/model/automaticSubagents";
 import { usageRate } from "../../providers/public/providerUsage";
+import { blendedUsd, catalogModelFacts } from "./modelCatalogFacts";
 
 export type ModelProfile = {
   /** 5 is the strongest tier. */
@@ -32,22 +33,36 @@ function estimateIntelligence(modelId: string): ModelProfile["intelligence"] {
  * Cost bucket from the blended list price, the mean of input and output dollars per million
  * tokens: up to 4 is 1, up to 10 is 2, up to 20 is 3, above that 4.
  */
-function costBucket(input: number, output: number): ModelProfile["cost"] {
-  const blended = (input + output) / 2;
+function costBucket(blended: number): ModelProfile["cost"] {
   return blended <= 4 ? 1 : blended <= 10 ? 2 : blended <= 20 ? 3 : 4;
 }
 
 const COST_FROM_INTELLIGENCE = { 1: 1, 2: 1, 3: 2, 4: 3, 5: 4 } as const;
 
-/** Known models come from the tier and price tables; the rest are estimated from the name. */
+/** Researched catalog score to the 1-5 scale; the thresholds match the tier table's families. */
+function scoreIntelligence(score: number): ModelProfile["intelligence"] {
+  return score >= 93 ? 5 : score >= 84 ? 4 : score >= 74 ? 3 : score >= 60 ? 2 : 1;
+}
+
+/**
+ * Researched catalog families first, then the tier and price tables; the rest are estimated
+ * from the name.
+ */
 export function modelProfile(harness: string, modelId: string): ModelProfile {
+  const researched = catalogModelFacts(modelId);
+  if (researched)
+    return {
+      intelligence: scoreIntelligence(researched.score),
+      cost: costBucket(blendedUsd(researched)),
+      estimated: false,
+    };
   const tier = subagentTier(`${harness}:${modelId}`);
   const known = tier === "unranked" ? undefined : TIER_INTELLIGENCE[tier];
   const intelligence = known ?? estimateIntelligence(modelId);
   const rate = usageRate(modelId);
   return {
     intelligence,
-    cost: rate ? costBucket(rate.input, rate.output) : COST_FROM_INTELLIGENCE[intelligence],
+    cost: rate ? costBucket((rate.input + rate.output) / 2) : COST_FROM_INTELLIGENCE[intelligence],
     estimated: known === undefined || !rate,
   };
 }

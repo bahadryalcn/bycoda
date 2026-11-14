@@ -237,6 +237,8 @@ export type AgentRunMeta = {
   startedAt?: number;
   /** Epoch ms the run reached a terminal state. Absent while running, and on runs that never recorded one. */
   endedAt?: number;
+  /** Delegated child only: which round of the conversation this run shows; set from round 2. */
+  round?: number;
 };
 
 export type AttachmentKind = "image" | "audio" | "file";
@@ -288,6 +290,8 @@ export type QueuedMessage = {
   noteCard?: NoteComposerCard;
   handoffCard?: HandoffComposerCard;
   intent?: TurnIntent;
+  /** Set by the Host for system-authored rows (delegation notices); the owner cannot edit them. */
+  author?: SessionMessageAuthor;
 };
 
 /**
@@ -328,7 +332,7 @@ export type SessionMessageAuthor =
       kind: "assistant-room";
       name: string;
       threadId: string;
-      reason: "kickoff";
+      reason: "kickoff" | "message";
       operationId: string;
     }
   | {
@@ -348,7 +352,16 @@ export type SessionMessageAuthor =
       activityId?: string;
     }
   | {
-      kind: "task" | "automation" | "steward";
+      /** A subagent completion or peer message the Host delivers to its parent; never owner input. */
+      kind: "delegation";
+      runId: string;
+      title: string;
+      reason: "completion" | "message";
+      /** Never set; lets code read `author.operationId` across every author kind. */
+      operationId?: undefined;
+    }
+  | {
+      kind: "task" | "automation" | "steward" | "conversation";
       id: string;
       name: string;
       reason: string;

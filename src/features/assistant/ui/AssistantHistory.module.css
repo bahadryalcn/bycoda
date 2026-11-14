@@ -1,16 +1,3 @@
-/* Section content for the History view (AssistantView applies `.workspace` and `.heading`). */
-.workspace {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-inline-size: 0;
-}
-.heading {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-inline-size: 0;
-}
 .history {
   display: grid;
   gap: 16px;
@@ -30,12 +17,19 @@
   min-inline-size: 0;
   overflow: hidden;
 }
+/* Time | summary | row actions | kind badge. The badge is pinned to the last track, so every
+   row ends at the same edge whether or not it has actions. */
 .event {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 4px 12px;
   padding: 8px 12px;
+}
+.kind {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: end;
 }
 .time {
   white-space: nowrap;
@@ -48,6 +42,8 @@
   overflow-wrap: anywhere;
 }
 .actions {
+  grid-column: 3;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -66,8 +62,9 @@
   .event {
     grid-template-columns: 4.5rem minmax(0, 1fr) auto;
   }
-  .event > :nth-child(3) {
+  .kind {
     grid-column: 2;
+    grid-row: 2;
     justify-self: start;
   }
   .actions {

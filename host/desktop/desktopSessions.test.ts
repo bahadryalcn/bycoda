@@ -9,7 +9,11 @@ import { DesktopLive } from "./desktopLive";
 import { verifyRemoteProjectAlias } from "../../src/features/connections/model/remoteProjects";
 import { blockDigest, conversationHead } from "../../src/features/sync/model/conversationDigest";
 import type { Block } from "../../src/features/sessions/model/session";
-import { SessionSyncSchema } from "../../src/shared/model/host-contracts/session-reads";
+import {
+  SessionSyncSchema,
+  SessionsListResultSchema,
+} from "../../src/shared/model/host-contracts/session-reads";
+import { initializeCrewSchedulerProjection } from "../crews/crew-scheduler-projection";
 
 import { setupDesktopHost, WAIT_FOR_DESKTOP_JOB } from "./desktopSessionFixture";
 
@@ -586,6 +590,46 @@ describe("desktop sessions on the host", () => {
       status: "running",
       providerSessionId: "prov-ok",
       revision: 200,
+    });
+  });
+
+  it("marks orchestration workers and crew-owned sessions on list summaries", async () => {
+    const s = await setup();
+    for (const id of ["lead", "worker", "coordinator", "member", "plain"])
+      s.seed({ id, cwd: s.project.cwd });
+    s.desktopDb.exec(
+      "CREATE TABLE orchestration_workers (session_id TEXT PRIMARY KEY, lead_id TEXT NOT NULL); INSERT INTO orchestration_workers VALUES ('worker', 'lead');",
+    );
+    await initializeCrewSchedulerProjection(s.store);
+    await s.store.db.exec("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, value TEXT)");
+    await s.store.db
+      .prepare(
+        "INSERT INTO crew_runs_v2(ordinal,run_id,project_id,created_at,status,coordinator_session_id,payload) VALUES(9000,'run',?,1,'finished','coordinator','{}')",
+      )
+      .run(s.project.id);
+    await s.store.db.prepare("INSERT INTO tasks(id,value) VALUES('t',?)").run(
+      JSON.stringify({
+        projectId: s.project.id,
+        status: "running",
+        updatedAt: 1,
+        crewRunId: "run",
+        sessionId: "member",
+      }),
+    );
+    const list = (await s.call("sessions.list", { projectId: s.project.id })).result;
+    SessionsListResultSchema.parse(list);
+    const marks = Object.fromEntries(
+      list.map((row: { id: string; orchestrationLeadId?: string; crewRunId?: string }) => [
+        row.id,
+        [row.orchestrationLeadId, row.crewRunId],
+      ]),
+    );
+    expect(marks).toEqual({
+      lead: [undefined, undefined],
+      worker: ["lead", undefined],
+      coordinator: [undefined, "run"],
+      member: [undefined, "run"],
+      plain: [undefined, undefined],
     });
   });
 

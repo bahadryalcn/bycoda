@@ -122,6 +122,22 @@ it("reports incomplete discovery when the physical folder depth limit is exceede
   );
 });
 
+it("skips generated data and dependency stores while retaining ignored source repositories", async () => {
+  const f = fixture();
+  const parent = f.repo("parent");
+  const generated = [".artifacts", ".local-data", ".pnpm-store", ".venv", "venv", "__pycache__"];
+  for (const name of generated) {
+    mkdirSync(join(parent, name, ...Array.from({ length: 66 }, () => "d")), { recursive: true });
+  }
+  f.repo("parent/mobile");
+  const source = f.repo("source");
+  f.add(parent, source, ".artifacts/pinned");
+  writeFileSync(join(parent, ".gitignore"), `${generated.join("/\n")}/\nmobile/\n`);
+  const before = f.git(parent, "status", "--porcelain");
+  expect(await hostGitSubmodules(parent, true)).toEqual([".artifacts/pinned", "mobile"]);
+  expect(f.git(parent, "status", "--porcelain")).toBe(before);
+});
+
 it("deduplicates conflicted gitlink stages and preserves recursive discovery without index mutation", async () => {
   const f = fixture();
   const source = f.repo("source");

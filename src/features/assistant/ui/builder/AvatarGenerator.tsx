@@ -105,7 +105,7 @@ export function AvatarGenerator({
       ) : null}
       {failure !== null ? (
         <InlineError retry={{ onRetry: start }}>
-          {[t("Avatar generation failed."), failure].filter(Boolean).join(" ")}
+          {[t("Could not draw the avatar."), failure].filter(Boolean).join(" ")}
         </InlineError>
       ) : null}
     </div>

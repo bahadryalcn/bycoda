@@ -1,3 +1,5 @@
+/* Hallmark · built: the project · redesign: polish · shape: app screen · theme: locked bycoda · scope: app */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V3 · weakest: V, retained familiar task lanes under the locked product system. */
 /* Board lanes and cards. Lanes are quiet fills on the canvas; cards are thin frames
    that step up only on hover, selection and drag. */
 .task-board-columns {
@@ -13,7 +15,7 @@
   max-block-size: 100%;
 }
 .task-board-columns > section.bycoda-task-column[data-empty] {
-  flex: 0 0 6.5rem;
+  flex: 0 0 7.5rem;
   min-inline-size: 0;
   align-self: start;
 }

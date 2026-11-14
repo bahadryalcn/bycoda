@@ -63,7 +63,10 @@ vi.mock("./AssistantProfileFields", async () => {
   };
 });
 vi.mock("./AssistantPresenceStatus", () => ({ AssistantPresenceStatus: () => null }));
-vi.mock("./AssistantKeepAwakeStatus", () => ({ AssistantKeepAwakeStatus: () => null }));
+vi.mock("./AssistantKeepAwakeStatus", () => ({
+  AssistantKeepAwakeStatus: () => null,
+  keepAwakeLabel: () => "",
+}));
 vi.mock("./settings/AssistantUsageSettings", () => ({
   AssistantRetentionField: () => null,
 }));

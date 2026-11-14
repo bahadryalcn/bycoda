@@ -3,6 +3,8 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import type { SessionMessageAuthor as Author } from "../model/session";
 
+export { DelegationNoticeRow } from "./DelegationNoticeRow";
+
 /** A provenance label, not a permission badge. The Host supplies the identity. */
 export function SessionMessageAuthor({ author, onOpen }: { author?: Author; onOpen?: () => void }) {
   const t = useT();
@@ -10,13 +12,16 @@ export function SessionMessageAuthor({ author, onOpen }: { author?: Author; onOp
   const label =
     author.kind === "assistant" ||
     author.kind === "assistant-manual" ||
-    author.kind === "assistant-room"
+    author.kind === "assistant-room" ||
+    author.kind === "conversation"
       ? t("{p0} wrote", { p0: author.name })
-      : author.kind === "task"
-        ? t("Task wrote")
-        : author.kind === "automation"
-          ? t("Automation wrote")
-          : t("Steward wrote");
+      : author.kind === "delegation"
+        ? t("{p0} wrote", { p0: author.title })
+        : author.kind === "task"
+          ? t("Task wrote")
+          : author.kind === "automation"
+            ? t("Automation wrote")
+            : t("Steward wrote");
   const reason =
     author.kind === "assistant" ||
     author.kind === "assistant-manual" ||
@@ -26,8 +31,11 @@ export function SessionMessageAuthor({ author, onOpen }: { author?: Author; onOp
           answer: t("Answer"),
           steer: t("Steer"),
           kickoff: t("Kickoff"),
+          message: t("Message"),
         }[author.reason]
-      : author.reason;
+      : author.kind === "delegation" || author.kind === "conversation"
+        ? undefined
+        : author.reason;
   const content = (
     <>
       <span>{label}</span>

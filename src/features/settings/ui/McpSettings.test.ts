@@ -9,6 +9,8 @@ import { clearMcpSettingsCache } from "../model/mcpSettingsCache";
 // External owner-token lifecycle has its own isolated browser coverage. Keep
 // these discovery/cache assertions scoped to provider MCP connections.
 vi.mock("./ExternalMcpAccess", () => ({ ExternalMcpAccess: () => null }));
+vi.mock("./McpLoadingMode", () => ({ McpLoadingMode: () => null }));
+vi.mock("./McpOAuthSignIn", () => ({ McpOAuthSignIn: () => null }));
 // Keep this settings fixture independent of unrelated application barrel cycles.
 vi.mock("../../sessions", () => import("../../sessions/ui/HarnessIcon"));
 vi.mock("../../projects", () => import("../../projects/ui/SearchableProjectPicker"));

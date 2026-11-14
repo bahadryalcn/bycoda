@@ -105,7 +105,6 @@
   flex-direction: column;
   gap: 16px;
   min-inline-size: 0;
-  max-inline-size: 48rem;
   min-block-size: 0;
   overflow-y: auto;
   padding-block-start: 4px;
@@ -135,6 +134,11 @@
   flex: none;
 }
 
+/* The reader fills its pane so the actions sit on its right edge; the text keeps a readable measure. */
+.markdown,
+.timeline {
+  max-inline-size: 48rem;
+}
 .markdown {
   min-inline-size: 0;
   overflow-wrap: anywhere;

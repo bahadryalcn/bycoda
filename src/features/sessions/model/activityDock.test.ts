@@ -11,6 +11,7 @@ import {
 } from "./activityDock";
 import type { Block, Session } from "./session";
 import { newSession } from "./session";
+import { delegatedAgentBlock } from "./delegatedAgents";
 import { appendSteerUser, applyHarnessEvent } from "../../../integrations/harness/core/apply";
 
 const user: Block = { id: "u1", role: "user", text: "go", startedAt: 1_000 };
@@ -27,6 +28,15 @@ function agent(id: string, status: string, patch: Partial<Block> = {}): Block {
 }
 
 describe("dock agent timing", () => {
+  it("keeps a Host child running after its parent turn finishes", () => {
+    const child = { ...newSession("codex", "/fixture"), id: "background-child", busy: true };
+    const block = delegatedAgentBlock(child);
+    expect(blockLifecycle(block, false)).toBe("running");
+    for (const status of ["completed", "failed", "stopped", "interrupted"])
+      expect(blockLifecycle({ ...block, tool: { ...block.tool, status } }, false)).toBe(
+        status === "completed" ? "done" : status,
+      );
+  });
   it("carries the run's start and end, and omits them on old data", () => {
     const dock = derive({
       busy: true,
@@ -153,10 +163,10 @@ describe("deriveActivityDock", () => {
       backgroundAgents: 0,
     });
     expect(dock.state).toBe("background");
-    expect(dockStateLabel(dock)).toBe("Finished · 1 background command running");
+    expect(dockStateLabel(dock)).toBe("1 background command running");
     expect(
       dockStateLabel(derive({ busy: true, backgroundTasks: ["a", "b"], backgroundAgents: 0 })),
-    ).toBe("Finished · 2 background commands running");
+    ).toBe("2 background commands running");
   });
 
   it("never calls work finished when it cannot tell what is running", () => {
@@ -425,7 +435,7 @@ describe("delegated child sessions in the dock", () => {
     expect(dock.state).toBe("background");
     expect(dock.backgroundCount).toBe(1);
     expect(dock.backgroundAgents).toBe(1);
-    expect(dockStateLabel(dock)).toBe("Finished · 1 background agent running");
+    expect(dockStateLabel(dock)).toBe("1 background agent running");
   });
 
   it("goes idle once the children have finished after the parent turn", () => {

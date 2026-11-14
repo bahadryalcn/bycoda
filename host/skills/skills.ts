@@ -397,10 +397,33 @@ async function discoveryStat(path: string, budget: DiscoveryBudget) {
   }
 }
 
+class SkillInventoryChangedError extends Error {
+  constructor() {
+    super("Skill inventory changed during discovery; retry preparation.");
+  }
+}
+/** Parallel child starts can touch skill folders mid-scan; a fresh scan almost always settles. */
+const DISCOVERY_ATTEMPTS = 3;
+
 /** Async, lazy metadata discovery for execution paths; no bodies or policy cached. */
 export async function listHostSkillCandidatesAsync(
   project: string | null,
   home = homedir(),
+  provider?: string,
+) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await discoverSkillCandidatesOnce(project, home, provider);
+    } catch (error) {
+      if (!(error instanceof SkillInventoryChangedError) || attempt >= DISCOVERY_ATTEMPTS)
+        throw error;
+    }
+  }
+}
+
+async function discoverSkillCandidatesOnce(
+  project: string | null,
+  home: string,
   provider?: string,
 ) {
   const budget: DiscoveryBudget = { remaining: 10_000, truncated: false, stamps: new Map() };
@@ -426,8 +449,7 @@ export async function listHostSkillCandidatesAsync(
           : discoveryStamp(info),
       (error: NodeJS.ErrnoException) => `error:${error.code}`,
     );
-    if (value !== expected)
-      throw new Error("Skill inventory changed during discovery; retry preparation.");
+    if (value !== expected) throw new SkillInventoryChangedError();
   }
   return { skills, truncated: budget.truncated };
 }

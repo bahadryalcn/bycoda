@@ -24,6 +24,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const NBSP = "\u00a0";
+/** The generated token form for the fixture files (sizes 100, 200 and 300 bytes). */
+const tok = (kind: "Image" | "File", n: number, size: string) =>
+  `[${kind}${NBSP}${n}${NBSP}·${NBSP}${size.replace(" ", NBSP)}]`;
+
+/** Text as typed: the hidden source spans, without the labelled faces drawn over them. */
+function sourceText(root: HTMLElement): string | null {
+  const clone = root.cloneNode(true) as HTMLElement;
+  for (const face of clone.querySelectorAll("[data-draft-token-face] > [aria-hidden]")) {
+    face.remove();
+  }
+  return clone.textContent;
+}
+
 function render(text: string, attachments = files) {
   const renderText = vi.fn((value: string) => value);
   act(() =>
@@ -34,9 +48,19 @@ function render(text: string, attachments = files) {
 
 describe("ComposerAttachmentHighlight", () => {
   it("keeps every native character and decorates each resolved attachment type", async () => {
-    const text = "See [image1], [file1] and [file2].\nKeep draft.";
+    // The image keeps its legacy form; the files use the new one.
+    const text = `See [image1], ${tok("File", 1, "200 B")} and ${tok("File", 2, "300 B")}.\nKeep draft.`;
     render(text);
-    expect(container.textContent).toBe(text);
+    expect(sourceText(container)).toBe(text);
+    expect(
+      [...container.querySelectorAll("[data-draft-token-face] > [aria-hidden]")].map(
+        (face) => face.textContent,
+      ),
+    ).toEqual([
+      "image1",
+      tok("File", 1, "200 B").slice(1, -1),
+      tok("File", 2, "300 B").slice(1, -1),
+    ]);
     expect(
       [...container.querySelectorAll("[data-composer-attachment-kind]")].map((element) =>
         element.getAttribute("data-composer-attachment-kind"),
@@ -53,9 +77,9 @@ describe("ComposerAttachmentHighlight", () => {
   });
 
   it("leaves code, unknown references and index expressions to existing text highlighting", () => {
-    const text = "`[image1]` arr[image1] [image2] $skill @path [file1]";
+    const text = `\`[image1]\` arr[image1] [image2] $skill @path ${tok("File", 1, "200 B")}`;
     const renderText = render(text);
-    expect(container.textContent).toBe(text);
+    expect(sourceText(container)).toBe(text);
     expect(container.querySelectorAll("[data-composer-attachment-kind]")).toHaveLength(1);
     expect(renderText).toHaveBeenCalledWith("`[image1]` arr[image1] [image2] $skill @path ");
   });

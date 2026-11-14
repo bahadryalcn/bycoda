@@ -88,9 +88,10 @@ function WorkspaceFooterComponent({
 }: WorkspaceFooterProps) {
   return (
     <div
+      data-workspace-footer
       {...surfaceAttributes(
         { frame: "stroke", edge: "top" },
-        "flex h-8 min-w-0 shrink-0 items-center",
+        "flex h-8 min-w-0 shrink-0 items-center gap-1 px-1.5",
       )}
     >
       {searchViewOpen ||
@@ -148,7 +149,7 @@ function WorkspaceFooterComponent({
               : undefined
         }
       />
-      <div className="flex shrink-0 items-center pe-2">
+      <div className="flex shrink-0 items-center gap-1">
         <LocalHostVersionPrompt onUpdateApp={updateApp} />
         <HiddenDictationIndicator onOpenSession={onOpenApprovalSession} />
         <ApprovalToasts

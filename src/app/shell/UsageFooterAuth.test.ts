@@ -57,6 +57,23 @@ it("shows Grok plan headroom in the footer without profile selection", async () 
   expect(document.body.textContent).not.toContain("Add account");
 });
 
+it("keeps quota refresh inside provider details, separate from workspace refresh", async () => {
+  rateLimitsFetch.fetchClaudeRateLimits.mockResolvedValue(connectedLimits("claude"));
+  rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(connectedLimits("codex"));
+  await act(async () =>
+    root.render(createElement(UsageFooter, { providers: ["claude", "codex"] })),
+  );
+  expect(container.querySelector('[aria-label="Refresh usage"]')).toBeNull();
+  await act(async () => button("Claude Code usage details").click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.querySelector('[aria-label="Refresh usage"]')).not.toBeNull();
+  const calls = rateLimitsFetch.fetchClaudeRateLimits.mock.calls.length;
+  const codexCalls = rateLimitsFetch.fetchCodexRateLimits.mock.calls.length;
+  await act(async () => button("Refresh usage").click());
+  expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(calls + 1);
+  expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(codexCalls);
+});
+
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal(
@@ -149,7 +166,6 @@ describe("UsageFooter provider authentication", () => {
     expect(defaultProviderAccountId("claude")).toBe("default");
     expect(session.providerAccountId).toBe("default");
     expect(onSelectAccount).not.toHaveBeenCalled();
-    await act(async () => button("Claude Code usage details").click());
     await act(async () => button("Refresh usage").click());
     expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenLastCalledWith("account-work", false);
     act(() => root.unmount());
@@ -159,6 +175,7 @@ describe("UsageFooter provider authentication", () => {
     await act(async () => removeProviderAccount("claude", "account-work"));
     expect(button("Claude Code usage details").textContent).not.toContain("work");
     expect(button("Claude Code usage details").textContent).toContain("19%");
+    await act(async () => button("Claude Code usage details").click());
     await act(async () => button("Refresh usage").click());
     expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenLastCalledWith("default", false);
   });
@@ -186,6 +203,7 @@ describe("UsageFooter provider authentication", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
 
+    await act(async () => button("Codex usage details").click());
     await act(async () => button("Refresh usage").click());
     expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(2);
   });

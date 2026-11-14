@@ -113,6 +113,7 @@ export function ClampText({
         ref={body}
         className={styles.body}
         data-clamped={expanded ? undefined : ""}
+        data-overflowing={overflows ? "" : undefined}
         style={{ "--clamp-lines": lines } as CSSProperties}
       >
         {children}

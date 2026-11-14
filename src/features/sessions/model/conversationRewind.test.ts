@@ -155,6 +155,42 @@ describe("conversation rewind", () => {
     expect(markConversationTurnStopped(stopped, 789)).toBe(stopped);
   });
 
+  it("marks the prompt as stopped, not an answer or steer that continued its turn", () => {
+    const source = chat([
+      { id: "u", role: "user", text: "work" },
+      { id: "q", role: "assistant", text: "Default?" },
+      {
+        id: "answer",
+        role: "user",
+        text: "Default?\nDark",
+        continuationOf: "u",
+        questionAnswers: [{ prompt: "Default?", answers: ["Dark"] }],
+      },
+      { id: "steer", role: "user", text: "also add tests", continuationOf: "u" },
+      { id: "assistant", role: "assistant", text: "partial", streaming: true },
+    ]);
+    const stopped = markConversationTurnStopped(source, 456);
+    expect(stopped.blocks.filter((block) => block.turnOutcome).map((block) => block.id)).toEqual([
+      "u",
+    ]);
+  });
+
+  it("does not offer an answer to the agent's question as a rewind point", () => {
+    const source = chat([
+      { id: "u", role: "user", text: "work" },
+      { id: "q", role: "assistant", text: "Default?" },
+      {
+        id: "answer",
+        role: "user",
+        text: "Default?\nDark",
+        continuationOf: "u",
+        questionAnswers: [{ prompt: "Default?", answers: ["Dark"] }],
+      },
+    ]);
+    expect(canRewindConversation(source, "u")).toBe(true);
+    expect(canRewindConversation(source, "answer")).toBe(false);
+  });
+
   it("matches the native receipt bridge literal replay format", () => {
     const blocks: Block[] = [
       {

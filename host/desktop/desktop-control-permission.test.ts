@@ -5,6 +5,7 @@ import {
   isDesktopAppAllowed,
   isPlainDesktopAppName,
   normalizeDesktopConfiguration,
+  sameDesktopApp,
 } from "./desktop-control-permission";
 
 describe("desktop permission gate table", () => {
@@ -66,5 +67,16 @@ describe("desktop configuration normalization", () => {
     expect(isPlainDesktopAppName("Google Chrome")).toBe(true);
     expect(isDesktopAppAllowed(base, "Anything")).toBe(false);
     expect(isDesktopAppAllowed(base, "Editor")).toBe(true);
+  });
+});
+describe("desktop app names", () => {
+  it("matches Windows process names regardless of case and .exe, and exactly elsewhere", () => {
+    expect(sameDesktopApp("chrome.exe", "Chrome", "win32")).toBe(true);
+    expect(sameDesktopApp("CHROME.EXE", "chrome.exe", "win32")).toBe(true);
+    expect(sameDesktopApp("chrome.exe", "Google Chrome", "win32")).toBe(false);
+    expect(sameDesktopApp("chrome.exe", "Chrome", "darwin")).toBe(false);
+    const approved = normalizeDesktopConfiguration({ allowedApps: ["chrome.exe"] });
+    expect(isDesktopAppAllowed(approved, "Chrome", "win32")).toBe(true);
+    expect(isDesktopAppAllowed(approved, "Chrome", "darwin")).toBe(false);
   });
 });

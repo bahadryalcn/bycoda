@@ -109,7 +109,11 @@ export function AssistantHistory({
                     ? `${entry.operation.tool} · ${entry.operation.target}`
                     : entry.summary}
                 </Text>
-                <Badge size="xs" tone={DANGER_KINDS.has(entry.kind) ? "danger" : "neutral"}>
+                <Badge
+                  size="xs"
+                  className={styles.kind}
+                  tone={DANGER_KINDS.has(entry.kind) ? "danger" : "neutral"}
+                >
                   {t(assistantActivityLabels[entry.kind] ?? "Activity")}
                 </Badge>
                 {(entry.jobId || (entry.sessionId && onOpenSession)) && (

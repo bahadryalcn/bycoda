@@ -901,6 +901,8 @@ export async function spawnChild(
   beforeSpawn?: () => Promise<void>,
   logicalSessionId?: string,
   autoCompact?: "on" | "off",
+  /** Start only bycoda's own MCP servers (delegated children). */
+  bycodaMcpOnly?: boolean,
 ): Promise<void> {
   const state = childState(handle);
   const { sessionId } = handle;
@@ -945,7 +947,7 @@ export async function spawnChild(
     // Only bridged providers wait here; other spawns keep their synchronous path to invoke.
     const { launchArgs, launchEnv } =
       !state.purpose && bridgedProvider(binaryProvider)
-        ? await bridgedLaunch(binaryProvider, sessionId, args, autoCompact)
+        ? await bridgedLaunch(binaryProvider, sessionId, args, autoCompact, bycodaMcpOnly)
         : { launchArgs: args, launchEnv: undefined };
     if (beforeSpawn && group && attempt) {
       await beforeSpawn();

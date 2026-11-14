@@ -344,7 +344,7 @@ describe("Composer image drops", () => {
     });
 
     expect(submit).toHaveBeenCalledWith(
-      "look [image1]",
+      "look [Image 1 · 12 B]",
       [expect.objectContaining({ name: "image.png", data: "aW1hZ2U=" })],
       expect.anything(),
     );

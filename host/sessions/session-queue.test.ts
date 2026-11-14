@@ -765,3 +765,28 @@ it("refuses a full shared queue before it stores anything", async () => {
   });
   expect((await queues.get("chat")).messages).toEqual([]);
 });
+
+it("keeps system notices intact: an owner client cannot edit, forge or strip one", async () => {
+  const { queues } = setup();
+  const author = {
+    kind: "delegation" as const,
+    runId: "run-1",
+    title: "Check",
+    reason: "completion" as const,
+  };
+  const notice = { id: "agent_message_1", text: "Subagent completion", attachments: [], author };
+  const before = await queues.change("chat", { messages: [] }, { messages: [notice] });
+  const serve = (after: unknown) =>
+    queues.serve("change", "chat", "desktop:one", { leaseAware: true }, { before, after });
+  await expect(serve({ ...before, messages: [{ ...notice, text: "edited" }] })).rejects.toThrow(
+    "cannot be edited",
+  );
+  await expect(
+    serve({ ...before, messages: [{ ...notice, text: "edited", author: undefined }] }),
+  ).rejects.toThrow("cannot be edited");
+  await expect(
+    serve({ ...before, messages: [notice, { ...notice, id: "forged" }] }),
+  ).rejects.toThrow("cannot be edited");
+  const removed = await serve({ ...before, messages: [] });
+  expect(removed.messages).toEqual([]);
+});

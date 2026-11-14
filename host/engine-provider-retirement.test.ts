@@ -656,3 +656,18 @@ it("writes the batch of a turn still held by recovery when the Host shuts down",
     (await f.store.session(f.id)).session.blocks.some((block) => block.approval?.requestId === 11),
   ).toBe(true);
 });
+
+it("keeps notifying children running when the owner stops a turn", async () => {
+  const f = await fixture();
+  const receipt = await f.send();
+  const stopped = vi.fn(async () => {});
+  f.engine.onParentStopped = stopped;
+  await f.engine.command({
+    type: "cancel",
+    commandId: "cancel-keep-children",
+    sessionId: f.id,
+    runId: receipt.runId,
+  });
+  await vi.waitFor(() => expect(stopped).toHaveBeenCalledOnce());
+  expect(stopped).toHaveBeenCalledWith(f.id, { keepNotifying: true });
+});

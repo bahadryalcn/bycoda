@@ -6,6 +6,10 @@ When Host delegation is unavailable for a turn, the conversation notice uses you
 
 Tool rows keep the conversation compact. Use **Changes** beside an edit or the output chevron beside a command to inspect its saved code, patch, or result. Expanded text can be selected and copied. A failed call shows its error before any earlier output.
 
+Command details and Copy preserve retained output indentation, blank output and final line breaks. A log containing the failure message remains available alongside the error. If loading full output from a connected machine fails, its summary stays visible and **Retry** requests the same revision again.
+
+Repeated Stop clicks share one pending request per target. After its unconfirmed timeout, another attempt is allowed; an older attempt's late error cannot change the newer attempt's feedback. A Stop acknowledgement alone does not confirm that the command ended.
+
 Subagent rows show the latest status, elapsed time and step counts beside the name, before the disclosure arrow. Previous status labels and counter values are replaced immediately. Completed runs use the success color, failed runs use the danger color, interrupted or stopped runs use the warning color, and running agents use the accent color. Failed-step counts appear in red; a failed step does not mean the entire run failed.
 
 Operator is hidden from the composer mode menu and command suggestions, including

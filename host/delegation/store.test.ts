@@ -41,6 +41,19 @@ describe("DelegationStore", () => {
     expect(await store.find(`run-${MAX_DELEGATION_RECORDS}`)).toBeDefined();
   });
 
+  it("creates a chat-only child's scratch folder once and removes it with its evicted record", async () => {
+    const store = new DelegationStore(directory);
+    const scratch = await store.scratchDir("run-1");
+    writeFileSync(join(scratch, "note.txt"), "x");
+    expect(await store.scratchDir("run-1")).toBe(scratch);
+    expect(readdirSync(scratch)).toEqual(["note.txt"]);
+    await store.add({ ...record(1), chatOnly: true });
+    for (let index = 2; index <= MAX_DELEGATION_RECORDS + 1; index++)
+      await store.add(record(index));
+    expect(await store.find("run-1")).toBeUndefined();
+    expect(existsSync(scratch)).toBe(false);
+  });
+
   it("reads the same rows after a restart and resolves them by run and request key", async () => {
     const first = new DelegationStore(directory);
     await first.add(record(1));

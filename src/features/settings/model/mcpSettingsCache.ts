@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createStore } from "../../../shared/lib/store";
-import { parseClaudeMcpList, type McpConnection } from "./mcp";
+import { parseClaudeMcpList, type McpConnection, type McpLoadingState } from "./mcp";
 
 export type McpServerRow = McpConnection & {
   status: string;
@@ -233,3 +233,10 @@ export function clearMcpSettingsCache() {
   healthRequests.clear();
   codexRequests.clear();
 }
+
+const loadingStates = new Map<string, McpLoadingState>();
+
+/** Last-good loading policy per project, so reopening the section renders before the refetch. */
+export const getCachedMcpLoading = (cwd: string) => loadingStates.get(cwd);
+export const cacheMcpLoading = (cwd: string, state: McpLoadingState) =>
+  void loadingStates.set(cwd, state);

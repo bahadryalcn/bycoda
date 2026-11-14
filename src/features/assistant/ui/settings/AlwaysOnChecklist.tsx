@@ -139,7 +139,13 @@ export function AlwaysOnChecklist({
         />
       </Row>
       {!showAll && exceptions.map(row)}
-      <Disclosure size="sm" summary={t("All checks")} open={showAll} onOpenChange={setShowAll}>
+      <Disclosure
+        variant="row"
+        size="sm"
+        summary={t("All checks")}
+        open={showAll}
+        onOpenChange={setShowAll}
+      >
         {items.map(row)}
       </Disclosure>
     </div>

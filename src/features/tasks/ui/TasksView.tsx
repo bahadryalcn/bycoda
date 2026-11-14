@@ -1,4 +1,6 @@
 import { findRevealedTask } from "../model/taskReveal";
+import { useQueryClient } from "@tanstack/react-query";
+import { SPRINT_CATALOG_QUERY_KEY } from "../model/useSprintCatalog";
 import { Button } from "../../../shared/ui/Button";
 import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
 import { Text } from "../../../shared/ui/Text";
@@ -176,13 +178,7 @@ function TasksContent({
   // Tasks for a project in a locked group are not shown.
   const viewStateKey = `tasks:${cwd ? projectKey(cwd) : "global"}`;
   const lock = useLockSnapshot();
-  const [projectFilter, setProjectFilter] = useState(() => initialTaskProjectScope(cwd));
-  // A new project folder resets the scope, adjusted during render from the previous one.
-  const [scopeCwd, setScopeCwd] = useState(cwd);
-  if (scopeCwd !== cwd) {
-    setScopeCwd(cwd);
-    setProjectFilter(initialTaskProjectScope(cwd));
-  }
+  const [projectFilter, setProjectFilter] = useState("all");
   // The board query owns every confirmed collection. A mutation writes the
   // host's answer back through the put/remove functions, so a later poll cannot
   // roll it back; only drafts and selections below are local state.
@@ -203,12 +199,18 @@ function TasksContent({
   // Background polls refresh silently; the spinner belongs to the first read and
   // to a refresh the user asked for.
   const [manualRefresh, setManualRefresh] = useState(false);
+  const queryClient = useQueryClient();
   const retryBoard = () => {
     if (board.pending || manualRefresh) return;
     setManualRefresh(true);
     void Promise.all([
       refreshQueries(true),
-      ...(section === "sprints" || section === "reports" ? [sprintBoard.refresh()] : []),
+      ...(section === "sprints" || section === "reports"
+        ? [
+            sprintBoard.refresh(),
+            queryClient.invalidateQueries({ queryKey: SPRINT_CATALOG_QUERY_KEY }),
+          ]
+        : []),
     ])
       .catch((reason: unknown) =>
         setError(reason instanceof Error ? reason.message : String(reason)),
@@ -319,7 +321,21 @@ function TasksContent({
       })),
     [projectScopes],
   );
-  const sprintBoard = useSprintBoard(board.planningMachines, visibleTasks, sprintProjects);
+  const sprintBoard = useSprintBoard(
+    board.planningMachines,
+    visibleTasks,
+    sprintProjects,
+    async (machine, data) => {
+      const queryKey = [
+        ...SPRINT_CATALOG_QUERY_KEY,
+        machine.id,
+        machine.environmentId,
+        machine.endpoint,
+      ];
+      await queryClient.cancelQueries({ queryKey, exact: true }, { revert: false });
+      queryClient.setQueryData(queryKey, { machine, sprints: data.sprints, error: null });
+    },
+  );
   const accessibleSprints = useMemo(
     () =>
       sprintBoard.sprints.filter((sprint) =>
@@ -340,7 +356,7 @@ function TasksContent({
     selectedProject?.cwd ??
     (cwd && projectFilter === initialTaskProjectScope(cwd) ? cwd : undefined);
   useEffect(() => {
-    // Reopening a project starts in that project, even if its previous sprint scope was broader.
+    // A chosen project must not retain an incompatible sprint selection.
     if (
       currentSprint &&
       selectedProject &&
@@ -476,10 +492,7 @@ function TasksContent({
     sprintFilter,
   });
   const activeFilterCount =
-    Number(goalFilter !== ALL_GOALS) +
-    Number(statusFilter !== "all") +
-    Number(machineFilter !== "all") +
-    Number(sprintFilter !== "");
+    Number(goalFilter !== ALL_GOALS) + Number(statusFilter !== "all") + Number(sprintFilter !== "");
   // Changing scope drops hidden selections; select-all never means hidden tasks.
   // Adjusted during render when the visible set changes (the list itself is rebuilt often).
   const visibleSignature = JSON.stringify(tasks.map(bulkTaskKey));
@@ -657,6 +670,7 @@ function TasksContent({
   const narrowed =
     Boolean(searchQuery.trim()) ||
     activeFilterCount > 0 ||
+    machineFilter !== "all" ||
     projectFilter !== "all" ||
     sprintFilter !== "";
   const resetTaskFilters = () => {
@@ -671,17 +685,19 @@ function TasksContent({
     setSprintFilter("");
     setGoalFilter(ALL_GOALS);
     setStatusFilter("all");
-    setMachineFilter("all");
   };
   const hasTasks = visibleTasks.length > 0;
   // Nothing to run yet: only "what is this and how do I start" is shown.
   const showOnboarding = section === "backlog" && !loading && !hasTasks && !unreadable;
-  const runningTasks = visibleTasks.filter((task) => taskColumn(task.status) === "running").length;
-  const agentMinutesToday = limits.reduce((sum, entry) => sum + entry.usedMinutes, 0);
+  const runningTasks = tasks.filter((task) => taskColumn(task.status) === "running").length;
+  const scopedLimits = limits.filter(
+    (entry) => machineFilter === "all" || entry.machineId === machineFilter,
+  );
+  const agentMinutesToday = scopedLimits.reduce((sum, entry) => sum + entry.usedMinutes, 0);
   const summaryLine = [
     t("{p0} tasks", { p0: tasks.length }),
     runningTasks > 0 ? t("{p0} running", { p0: runningTasks }) : "",
-    limits.length > 0 && !board.limitErrors.length
+    scopedLimits.length > 0 && !board.limitErrors.length
       ? t("{p0} agent time today", { p0: formatAgentMinutes(agentMinutesToday) })
       : "",
   ]
@@ -756,7 +772,6 @@ function TasksContent({
           setSection(value);
           if (value === "backlog") setSprintFilter("");
         }}
-        onboarding={showOnboarding}
         projectOptions={projectScopeOptions({
           t,
           projectFilter,
@@ -791,7 +806,16 @@ function TasksContent({
           goals: goalList,
           sprints: accessibleSprints,
           onStatus: setStatusFilter,
-          onMachine: setMachineFilter,
+          onMachine: (value) => {
+            setMachineFilter(value);
+            const environment = machines.find((machine) => machine.id === value)?.environmentId;
+            if (
+              currentSprint &&
+              environment &&
+              !currentSprint.projects.some((project) => project.environmentId === environment)
+            )
+              setSprintFilter("");
+          },
           onGoal: setGoalFilter,
           onSprint: selectSprint,
           onReset: resetPopoverFilters,
@@ -848,6 +872,7 @@ function TasksContent({
           selectedId={sprintFilter}
           onSelect={selectSprint}
           projectKey={selectedProject?.key}
+          environmentId={machines.find((machine) => machine.id === machineFilter)?.environmentId}
         />
       ) : null}
       {section === "reports" ? (
@@ -856,6 +881,7 @@ function TasksContent({
             board={accessibleSprintBoard}
             sprintId={sprintFilter}
             projectKey={selectedProject?.key}
+            environmentId={machines.find((machine) => machine.id === machineFilter)?.environmentId}
             onChooseSprint={selectSprint}
             onOpenSprints={() => setSection("sprints")}
           />

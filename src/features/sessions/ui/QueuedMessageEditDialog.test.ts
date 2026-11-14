@@ -129,7 +129,7 @@ describe("QueuedMessageEditDialog", () => {
     });
     act(() => button("Save").click());
     expect(onSave.mock.calls[0][1].map((file: Attachment) => file.id)).toEqual(["first", "second"]);
-    expect(onSave.mock.calls[0][0]).toContain("[image2]");
+    expect(onSave.mock.calls[0][0]).toContain("[Image 2 · 1 B]");
   });
   it("starts with the full text and its attachment chips", async () => {
     const { field } = await open();

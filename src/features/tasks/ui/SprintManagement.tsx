@@ -20,7 +20,7 @@ import { SprintCompletion } from "./SprintCompletion";
 import { SprintEditor } from "./SprintEditor";
 import { SprintGoalDescription } from "./SprintGoalDescription";
 import { SprintHostBar } from "./SprintHostBar";
-import { SprintList } from "./SprintList";
+import { SprintCatalog } from "./SprintCatalog";
 import { SprintStatusBadge } from "./SprintStatusBadge";
 import "./sprints.css";
 
@@ -33,12 +33,14 @@ export function SprintManagement({
   selectedId,
   onSelect,
   projectKey,
+  environmentId,
 }: {
   board: SprintBoardController;
   projects: readonly SprintProjectRef[];
   selectedId: string;
   onSelect: (id: string) => void;
   projectKey?: string;
+  environmentId?: string;
 }) {
   const t = useT();
   const [editing, setEditing] = useState<HostSprint | "new" | null>(null);
@@ -72,6 +74,7 @@ export function SprintManagement({
     board.coordinatorEnvironmentId,
     projectKey,
     visibleProjectKeys,
+    environmentId,
   ]);
   const summary = answer?.key === summaryKey ? answer.summary : null;
   useEffect(() => {
@@ -81,7 +84,13 @@ export function SprintManagement({
       (report) => {
         if (cancelled) return;
         const visibleKey = (key: string) =>
-          accessible.has(key) && (!projectKey || key === projectKey);
+          accessible.has(key) &&
+          (!projectKey || key === projectKey) &&
+          (!environmentId ||
+            projects.some(
+              (project) =>
+                sprintProjectKey(project) === key && project.environmentId === environmentId,
+            ));
         const totals = Object.entries(report.projects)
           .filter(([key]) => visibleKey(key))
           .map(([, value]) => value);
@@ -133,7 +142,15 @@ export function SprintManagement({
       {t("New sprint")}
     </Button>
   );
-  const hostBar = <SprintHostBar board={board} busy={!!busy} error={error} showRefresh={false} />;
+  const hostBar = (
+    <SprintHostBar
+      board={board}
+      busy={!!busy}
+      error={error}
+      showRefresh={false}
+      onCoordinatorChange={() => onSelect("")}
+    />
+  );
   return (
     <Text
       as="section"
@@ -169,6 +186,11 @@ export function SprintManagement({
               ) : null}
             </div>
             <div className="sprint-actions">
+              {selected ? (
+                <Button variant="ghost" disabled={!!busy} onClick={() => onSelect("")}>
+                  {t("All sprints")}
+                </Button>
+              ) : null}
               {selected && fullyAccessible(selected) ? (
                 <>
                   {selected.state === "planned" || selected.state === "active" ? (
@@ -245,8 +267,14 @@ export function SprintManagement({
           )}
         </Text>
       ) : null}
-      {!selected && !nothing ? (
-        <SprintList rows={rows} accessible={accessible} onSelect={onSelect} />
+      {!selected ? (
+        <SprintCatalog
+          board={board}
+          projects={projects}
+          projectKey={projectKey}
+          environmentId={environmentId}
+          onSelect={onSelect}
+        />
       ) : null}
       {editing ? (
         <SprintEditor
@@ -254,6 +282,7 @@ export function SprintManagement({
           sprint={editing === "new" ? undefined : editing}
           projects={projects}
           defaultProjectKey={projectKey}
+          machines={board.machines}
           onClose={() => setEditing(null)}
           onSave={async (fields) => {
             const saved =

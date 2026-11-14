@@ -349,3 +349,87 @@ it("keeps privacy open when the change itself fails after its projection committ
   await expect(model.withRoomPrivacyMutation(() => "folder")).resolves.toBe("folder");
   model.deactivateRoomPrivacyProjection();
 });
+
+const BUSY = "RPC_WS_OVERLOAD: Host read capacity is busy; retry later.";
+function transitions() {
+  return mocks.invoke.mock.calls.filter(
+    ([command]) => command === "control_privacy_projection_transition",
+  );
+}
+async function startBusy(transition: (n: number) => unknown) {
+  vi.resetModules();
+  vi.useFakeTimers();
+  mocks.invoke.mockReset();
+  mocks.scope.mockReturnValue({ stableStorageKeys: { groups: [] } });
+  let n = 0;
+  mocks.invoke.mockImplementation((command: string) => {
+    if (command === "control_privacy_projection_read") return Promise.resolve({ revision: 4 });
+    return Promise.resolve().then(() => {
+      const result = transition(++n);
+      if (result instanceof Error) throw result;
+      return result;
+    });
+  });
+  const model = await import("./roomPrivacyProjection");
+  model.activateRoomPrivacyProjection();
+  return model;
+}
+
+it("retries a transient Host overload automatically under the same operation", async () => {
+  const model = await startBusy((n) => (n < 3 ? new Error(BUSY) : { revision: 5 }));
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(model.getRoomPrivacyStatus()).toEqual({ pending: true, error: null });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(model.getRoomPrivacyStatus()).toEqual({ pending: true, error: null });
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(model.getRoomPrivacyStatus()).toEqual({ pending: false, error: null });
+    const calls = transitions();
+    expect(calls).toHaveLength(3);
+    expect(calls[1][1]).toEqual(calls[0][1]);
+    expect(calls[2][1]).toEqual(calls[0][1]);
+    expect(calls[0][1].operationId).toBeTruthy();
+  } finally {
+    model.deactivateRoomPrivacyProjection();
+    vi.useRealTimers();
+  }
+});
+
+it("holds a non-transient failure without retrying", async () => {
+  const model = await startBusy(() => new Error("unknown"));
+  try {
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(model.getRoomPrivacyStatus().error).toBe("unknown");
+    expect(transitions()).toHaveLength(1);
+  } finally {
+    model.deactivateRoomPrivacyProjection();
+    vi.useRealTimers();
+  }
+});
+
+it("holds the overload once automatic retries are exhausted", async () => {
+  const model = await startBusy(() => new Error(BUSY));
+  try {
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(model.getRoomPrivacyStatus()).toEqual({ pending: false, error: BUSY });
+    expect(transitions()).toHaveLength(6);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(transitions()).toHaveLength(6);
+  } finally {
+    model.deactivateRoomPrivacyProjection();
+    vi.useRealTimers();
+  }
+});
+
+it("stops waiting to retry when the window deactivates", async () => {
+  const model = await startBusy(() => new Error(BUSY));
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    model.deactivateRoomPrivacyProjection();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(model.getRoomPrivacyStatus().error).toBe("Room privacy window is unavailable.");
+    expect(transitions()).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});

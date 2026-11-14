@@ -1,3 +1,4 @@
+import { executionUserIndex } from "./executionTurn";
 import type { Block, Session } from "./session";
 
 const MAX_REPLAY_CHARS = 24_000;
@@ -81,8 +82,14 @@ export function canRewindConversation(session: Session, blockId: string): boolea
     session.blocks.some((block) => block.approval && !block.approval.decided)
   )
     return false;
+  // An answer to the agent's question replays the question as its text; rewind to the prompt.
   return session.blocks.some(
-    (block) => block.id === blockId && block.role === "user" && !block.draft && !block.internal,
+    (block) =>
+      block.id === blockId &&
+      block.role === "user" &&
+      !block.draft &&
+      !block.internal &&
+      !block.questionAnswers?.length,
   );
 }
 
@@ -147,6 +154,11 @@ export function markConversationTurnStopped(session: Session, now = Date.now()):
       index = i;
       break;
     }
+  }
+  // Answers and steers continue a turn; the stop belongs to the prompt that started it.
+  if (index >= 0 && session.blocks[index].continuationOf) {
+    const owner = executionUserIndex(session.blocks.slice(0, index + 1));
+    if (owner >= 0) index = owner;
   }
   if (index < 0 || session.blocks[index].turnOutcome === "stopped") return session;
   const blocks = session.blocks.slice();

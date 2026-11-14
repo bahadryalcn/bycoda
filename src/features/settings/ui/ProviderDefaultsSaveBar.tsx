@@ -1,5 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
-import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
+import { surfaceAttributes } from "../../../shared/ui/Surface";
 import "./ProviderDefaults.css";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { DefaultsTargetsPicker } from "./providerDefaultsTargetsPicker";
@@ -197,14 +197,6 @@ export function ProviderDefaultsSaveBar({
         "provider-defaults-save-bar",
       )}
     >
-      <Surface
-        variant="transparent"
-        padding="none"
-        radius="none"
-        frame="settings"
-        edge="block-end"
-        className="provider-defaults-boundary"
-      />
       {status || skips.length || groupTarget ? (
         <div className="provider-save-bar-status">
           {status ? <StatusDot tone={tone} /> : null}

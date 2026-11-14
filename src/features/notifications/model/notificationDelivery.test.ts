@@ -17,8 +17,16 @@ import { newSession, type Block } from "../../sessions/model/session";
 import { saveNotificationEvent } from "./notificationEvents";
 import { saveSoundsEnabled } from "../../settings/model/sounds";
 
-const { invoke, play } = vi.hoisted(() => ({ invoke: vi.fn(), play: vi.fn() }));
+const { invoke, play, locked } = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  play: vi.fn(),
+  locked: new Set<string>(),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("../../group-lock/model/groupLock", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../group-lock/model/groupLock")>()),
+  isProjectLocked: (path: string) => locked.has(path),
+}));
 vi.mock("../../settings/model/bycodaSoundEngine", () => ({
   play,
   setEnabled: vi.fn(),
@@ -28,6 +36,7 @@ beforeEach(() => {
   localStorage.clear();
   invoke.mockReset();
   play.mockClear();
+  locked.clear();
   invoke.mockResolvedValue(true);
   saveNotificationsEnabled(true);
   setWindowFocused(false);
@@ -270,4 +279,99 @@ it("retains the in-app cue when native focus suppresses a banner", async () => {
   await announceSessionFinished(turn({ id: "a", role: "assistant", text: "Done" }), false);
   expect(banners()).toHaveLength(1);
   expect(play).toHaveBeenCalled();
+});
+
+it.each(["desktop off", "event off", "mute", "mute then resume"])(
+  "drops a queued session banner after %s without replaying it",
+  async (change) => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1000);
+      setNotificationBatchDelay(800);
+      const sent = notifySession(newSession("claude", "/work/app"), "finished", false);
+      vi.setSystemTime(1100);
+      if (change === "desktop off") saveNotificationsEnabled(false);
+      else if (change === "event off") saveNotificationEvent("finished", false);
+      else {
+        updateNotificationPreferences(["local:/work/app"], { mutedUntil: null });
+        if (change === "mute then resume") {
+          vi.setSystemTime(1200);
+          updateNotificationPreferences(["local:/work/app"], { mutedUntil: undefined });
+        }
+      }
+      await vi.advanceTimersByTimeAsync(800);
+      expect(await sent).toBe(false);
+      expect(banners()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("filters a newly muted project before coalescing a mixed batch", async () => {
+  vi.useFakeTimers();
+  try {
+    setNotificationBatchDelay(800);
+    const privateSession = newSession("claude", "/private");
+    privateSession.title = "Secret title";
+    const openSession = newSession("claude", "/work/app");
+    openSession.title = "Open title";
+    const hidden = notifySession(privateSession, "finished", false);
+    const visible = notifySession(openSession, "finished", false);
+    updateNotificationPreferences(["local:/private"], { mutedUntil: null });
+    await vi.advanceTimersByTimeAsync(800);
+    expect(await hidden).toBe(false);
+    expect(await visible).toBe(true);
+    expect(banners()).toHaveLength(1);
+    expect(JSON.stringify(banners())).not.toContain("Secret");
+    expect(banners()[0].title).toBe("Finished · app");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("redacts newly locked projects before coalescing a mixed batch", async () => {
+  vi.useFakeTimers();
+  try {
+    setNotificationBatchDelay(800);
+    const privateSession = newSession("claude", "/private");
+    privateSession.title = "Secret title";
+    privateSession.blocks = [{ id: "reply", role: "assistant", text: "Secret output" }];
+    const hidden = notifySession(privateSession, "finished", false);
+    const visible = notifySession(newSession("claude", "/work/app"), "finished", false);
+    locked.add("/private");
+    await vi.advanceTimersByTimeAsync(800);
+    expect(await hidden).toBe(true);
+    expect(await visible).toBe(true);
+    expect(banners()).toHaveLength(1);
+    const payload = JSON.stringify(invoke.mock.calls);
+    expect(payload).not.toContain("Secret");
+    expect(payload).not.toContain("private");
+    expect(payload).toContain("Locked session");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("redacts a single queued session when its project locks before dispatch", async () => {
+  vi.useFakeTimers();
+  try {
+    setNotificationBatchDelay(800);
+    const session = newSession("claude", "/private");
+    session.title = "Secret title";
+    session.blocks = [{ id: "reply", role: "assistant", text: "Secret output" }];
+    const sent = notifySession(session, "finished", false);
+    locked.add("/private");
+    await vi.advanceTimersByTimeAsync(800);
+    expect(await sent).toBe(true);
+    expect(banners()).toEqual([
+      expect.objectContaining({
+        title: "A session in a locked group needs attention",
+        subtitle: "",
+        body: "",
+      }),
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -1,0 +1,9 @@
+/* A permission's status badges and actions: each group stays together, the groups wrap as a unit. */
+.badges,
+.actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}

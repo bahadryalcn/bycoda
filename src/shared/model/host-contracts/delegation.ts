@@ -15,6 +15,11 @@ export const CROSS_ADVISOR_KEY = "crossAdvisor";
 /** Set by the Host on a child session; display linkage only, never authority. */
 export const DELEGATION_PARENT_KEY = "delegationParent";
 /**
+ * Set by the Host on a child started with `files: false`: a chat-only run in an empty scratch
+ * folder, read-only, without provider memory or skill listing. Only ever narrows the child.
+ */
+export const DELEGATION_CHAT_ONLY_KEY = "delegationChatOnly";
+/**
  * Set by the Host on a session that runs one Crew member for an owner `@member` ask
  * (`crews.member.ask`). JSON of `CrewMemberChildSchema`; display only, never authority.
  */
@@ -32,6 +37,7 @@ export const CROSS_DELEGATION_KEYS = [
 const RESERVED_KEYS = new Set<string>([
   ...CROSS_DELEGATION_KEYS,
   DELEGATION_PARENT_KEY,
+  DELEGATION_CHAT_ONLY_KEY,
   CREW_MEMBER_KEY,
   CREW_TOOLS_KEY,
   IMAGE_MODELS_KEY,
@@ -82,6 +88,13 @@ export const DelegationParentSchema = z.strictObject({
   kind: DelegationKindSchema,
   model: z.string().min(1).max(200),
   startedAt: z.number().int().nonnegative(),
+  /** The child's own current turn id; set once a run exists. */
+  childRunId: z.string().min(1).max(128).optional(),
+  /** 1 for the first run, +1 for each parent follow-up or reply. */
+  round: z.number().int().positive().optional(),
+  status: z.enum(["succeeded", "failed", "cancelled"]).optional(),
+  error: z.string().max(2000).optional(),
+  finishedAt: z.number().int().nonnegative().optional(),
 });
 export type DelegationParent = z.infer<typeof DelegationParentSchema>;
 
@@ -206,6 +219,7 @@ export function carryCrossDelegation(
   if (advisor) into[CROSS_ADVISOR_KEY] = advisor;
   else if (from[CROSS_ADVISOR_KEY] === "null") into[CROSS_ADVISOR_KEY] = "null";
   if (parent) into[DELEGATION_PARENT_KEY] = JSON.stringify(parent);
+  if (from[DELEGATION_CHAT_ONLY_KEY] === "on") into[DELEGATION_CHAT_ONLY_KEY] = "on";
   const images = encodeImageModels(decodeImageModels(from[IMAGE_MODELS_KEY]));
   if (images) into[IMAGE_MODELS_KEY] = images;
   // A model change must not lift the member's tool restriction.

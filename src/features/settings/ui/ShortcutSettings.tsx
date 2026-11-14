@@ -47,6 +47,7 @@ import {
 
 import { Group, Row, RevealedSetting, Select, SettingsFeedback } from "./settingsControls";
 import { ShortcutRecorder } from "../../../shared/ui/ShortcutRecorder";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 
 export type ShortcutModifier = "metaKey" | "ctrlKey" | "altKey" | "shiftKey";
 type ShortcutFeedback =
@@ -150,7 +151,7 @@ export function ShortcutEditor({
       onFeedbackChange?.(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.isComposing || event.repeat) return;
+      if (isImeComposition(event) || event.repeat) return;
       const bare = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
       // Tab and Shift+Tab retain forward/backward keyboard navigation.
       if (!event.metaKey && !event.ctrlKey && !event.altKey && event.code === "Tab") {
@@ -186,6 +187,7 @@ export function ShortcutEditor({
       if (next) void run(() => onApply(next));
     };
     const onKeyUp = (event: KeyboardEvent) => {
+      if (isImeComposition(event) || event.repeat) return;
       const modifier = shortcutModifier(event);
       if (!modifier) return;
       event.preventDefault();

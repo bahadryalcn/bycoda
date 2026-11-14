@@ -55,7 +55,9 @@
   font-variant-numeric: tabular-nums;
 }
 .task-list-status {
-  flex: 0 1 auto;
+  display: flex;
+  justify-content: flex-end;
+  flex: 0 1 14rem;
   min-inline-size: 0;
   max-inline-size: 16rem;
 }

@@ -74,6 +74,11 @@ export function sessionNotFound(): HostDomainRefusalError {
   );
 }
 
+/** Whether a store read failed because the session does not exist, not for any transient reason. */
+export function isSessionNotFound(error: unknown): boolean {
+  return error instanceof Error && error.message === sessionNotFound().message;
+}
+
 /** How long a metadata read still stands when the desktop database moved after it. */
 const PREPARED_FRESH_MS = 5_000;
 

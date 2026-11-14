@@ -570,7 +570,7 @@
     {
       "id": "external-mcp",
       "config": "tests/browser/settings/playwright.external-mcp.config.ts",
-      "files": ["external-mcp.spec.ts"],
+      "files": ["external-mcp.spec.ts", "mcp-loading.spec.ts", "mcp-oauth.spec.ts"],
       "fixture": {
         "config": "tests/browser/settings/vite.external-mcp.config.ts",
         "mode": "preview",
@@ -580,12 +580,12 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["external-mcp.spec.ts"]
+          "files": ["external-mcp.spec.ts", "mcp-loading.spec.ts", "mcp-oauth.spec.ts"]
         },
         {
           "name": "webkit",
           "browser": "webkit",
-          "files": ["external-mcp.spec.ts"]
+          "files": ["external-mcp.spec.ts", "mcp-loading.spec.ts", "mcp-oauth.spec.ts"]
         }
       ]
     },
@@ -1310,7 +1310,8 @@
         "voice-visual-styles.e2e.ts",
         "voice-overlay.e2e.ts",
         "voice-persona.e2e.ts",
-        "voice-companion-controls.e2e.ts"
+        "voice-companion-controls.e2e.ts",
+        "voice-tool-activity.e2e.ts"
       ],
       "fixture": {
         "config": "tests/browser/voice/vite.voice-visual-styles.config.ts",
@@ -1325,7 +1326,8 @@
             "voice-visual-styles.e2e.ts",
             "voice-overlay.e2e.ts",
             "voice-persona.e2e.ts",
-            "voice-companion-controls.e2e.ts"
+            "voice-companion-controls.e2e.ts",
+            "voice-tool-activity.e2e.ts"
           ]
         }
       ]

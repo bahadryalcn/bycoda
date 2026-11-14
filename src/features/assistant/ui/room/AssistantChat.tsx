@@ -31,7 +31,7 @@ export function AssistantChatMessage({
 }) {
   const messageId = useId();
   return (
-    <article className={styles.message} data-author={role}>
+    <article className={`${styles.message} message-hover-zone`} data-author={role}>
       <div
         {...surfaceAttributes(
           { variant: "fill-subtle", radius: role === "user" ? "chat-end" : "chat-start" },
@@ -49,15 +49,19 @@ export function AssistantChatMessage({
         )}
         {children}
       </div>
-      <Text as="div" size="caption" tone="secondary" className={styles.author}>
-        {author && (
-          <Text as="span" size="caption" weight="medium">
-            {author}
-          </Text>
-        )}
-        {metadata}
-      </Text>
-      <TurnOutputActions getText={() => text} extraItems={actions} />
+      <div className={styles.footer}>
+        <Text as="div" size="caption" tone="secondary" className={styles.author}>
+          {author && (
+            <Text as="span" size="caption" weight="medium">
+              {author}
+            </Text>
+          )}
+          {metadata}
+        </Text>
+        <div className={`${styles.actions} message-hover-actions`}>
+          <TurnOutputActions getText={() => text} extraItems={actions} />
+        </div>
+      </div>
     </article>
   );
 }

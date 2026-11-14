@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HostModelCatalog } from "../../src/features/connections/model/protocol";
@@ -7,6 +7,7 @@ import type { Block, Session } from "../../src/features/sessions/model/session";
 import {
   CROSS_ADVISOR_KEY,
   CROSS_SUBAGENTS_KEY,
+  DELEGATION_CHAT_ONLY_KEY,
   DELEGATION_LIMITS,
   DELEGATION_PARENT_KEY,
   type DelegateModelRef,
@@ -43,12 +44,17 @@ class FakeHost {
       if (!entry) throw new Error(`no session ${sessionId}`);
       return entry;
     },
+    setScratchCwd: async (sessionId: string, cwd: string) => {
+      this.scratch.set(sessionId, cwd);
+    },
   };
   readonly engine = {
     store: this.store,
     command: async (command: Command) => this.handle(command),
     updateSession: async () => undefined,
+    sessionStoreWrite: async <T>(_sessionId: string, write: () => Promise<T>) => await write(),
   };
+  readonly scratch = new Map<string, string>();
 
   add(sessionId: string, options: Partial<Pick<Entry, "projectId">> & Partial<Session> = {}) {
     const { projectId = "p", ...session } = options;
@@ -68,7 +74,11 @@ class FakeHost {
 
   featureSession = async (sessionId: string) => {
     const entry = await this.store.session(sessionId);
-    return { projectId: entry.projectId, session: entry.session, runId: entry.runId };
+    return {
+      projectId: entry.projectId,
+      session: entry.session,
+      runId: entry.runId,
+    };
   };
 
   private handle(command: Command): Record<string, unknown> {
@@ -157,7 +167,10 @@ const catalog = {
   errors: {},
 } as unknown as HostModelCatalog;
 
-const claudeSonnet: DelegateModelRef = { harness: "claude", model: "claude:sonnet-5" };
+const claudeSonnet: DelegateModelRef = {
+  harness: "claude",
+  model: "claude:sonnet-5",
+};
 const codexFive: DelegateModelRef = { harness: "codex", model: "codex:gpt-5" };
 const codexSix: DelegateModelRef = { harness: "codex", model: "codex:gpt-6.1" };
 const parent: AgentsCaller = { sessionId: "parent", projectId: "p" };
@@ -206,7 +219,12 @@ const call = (
   delegation.call(action, args, caller, locate) as Promise<Record<string, unknown>>;
 
 const delegate = (requestId: string, extra: Record<string, unknown> = {}) =>
-  call("agents.delegate", { requestId, title: "Review", prompt: "Check the parser", ...extra });
+  call("agents.delegate", {
+    requestId,
+    title: "Review",
+    prompt: "Check the parser",
+    ...extra,
+  });
 
 const consult = (requestId: string, question = "Is this safe?") =>
   call("agents.consult", { requestId, question });
@@ -229,12 +247,30 @@ it("supports direct sibling steering and same-context continuation with peer aut
   expect(
     await call(
       "agents.send",
-      { requestId: "next", runId: second.runId, message: "Check another field" },
+      {
+        requestId: "next",
+        runId: second.runId,
+        message: "Check another field",
+      },
       caller,
     ),
-  ).toMatchObject({ delivery: "started" });
+  ).toMatchObject({
+    delivery: "failed",
+    error: expect.stringContaining("finished"),
+  });
+  // Only the parent restarts a finished child.
+  const sendsBefore = host.commandsOf("send").length;
+  expect(sendsBefore).toBe(2);
+  await call(
+    "agents.reply",
+    {
+      requestId: "parent-restart",
+      runId: second.runId,
+      message: "Check another field",
+    },
+    parent,
+  );
   expect(host.commandsOf("send").at(-1)?.sessionId).toBe(second.sessionId);
-  expect(host.commandsOf("send").at(-1)?.text).not.toContain("updates earlier task instructions");
   await expect(
     call("agents.delegate", { requestId: "nested", title: "No", prompt: "No" }, caller),
   ).rejects.toThrow("subagent cannot start");
@@ -269,7 +305,11 @@ describe("agents.options", () => {
     });
     const next = await consult("native-next");
     expect(next.status).toBe("queued");
-    native.session.blocks.push({ id: "new-turn", role: "user", text: "Another task" });
+    native.session.blocks.push({
+      id: "new-turn",
+      role: "user",
+      text: "Another task",
+    });
     await expect(call("agents.wait", { runId: next.runId, timeoutSeconds: 1 })).rejects.toThrow(
       "caller configuration changed",
     );
@@ -297,7 +337,11 @@ describe("agents.options", () => {
         runId: run.runId,
         message: "Answer the other participant",
       });
-      expect(continued).toMatchObject({ runId: run.runId, sessionId: childId, status: "running" });
+      expect(continued).toMatchObject({
+        runId: run.runId,
+        sessionId: childId,
+        status: "running",
+      });
       expect(host.entries.has("parent")).toBe(false);
       expect(host.commandsOf("send")).toHaveLength(2);
     },
@@ -347,7 +391,9 @@ describe("agents.options", () => {
   it("reports a running subagent in the running counts", async () => {
     setup({ subagents: [claudeSonnet] });
     await delegate("req-1");
-    expect(await call("agents.options")).toMatchObject({ running: { subagents: 1, advisors: 0 } });
+    expect(await call("agents.options")).toMatchObject({
+      running: { subagents: 1, advisors: 0 },
+    });
   });
 
   it("reports a selected model whose provider was disabled after the setting was saved", async () => {
@@ -388,7 +434,9 @@ it("keeps unattended parent completion under its Work owner", async () => {
       }),
     },
   });
-  expect(await call("agents.options")).toMatchObject({ notifyOnCompletionAvailable: false });
+  expect(await call("agents.options")).toMatchObject({
+    notifyOnCompletionAvailable: false,
+  });
   await expect(delegate("background-work", { notifyOnCompletion: true })).rejects.toThrow(
     "Work parents must wait",
   );
@@ -431,7 +479,9 @@ describe("agents.delegate model selection", () => {
     expect(checks).toEqual([["codex", "work"]]);
     expect(host.commandsOf("create")).toHaveLength(0);
     deps.authStatus = async () => "unknown";
-    await expect(delegate("req-unknown")).resolves.toMatchObject({ status: "running" });
+    await expect(delegate("req-unknown")).resolves.toMatchObject({
+      status: "running",
+    });
     expect(host.commandsOf("create")).toHaveLength(1);
   });
   it("uses the only selected subagent model without a model field", async () => {
@@ -441,7 +491,10 @@ describe("agents.delegate model selection", () => {
       status: "running",
       model: { harness: "codex", model: "codex:gpt-5" },
     });
-    expect(host.commandsOf("create")[0]).toMatchObject({ harness: "codex", model: "codex:gpt-5" });
+    expect(host.commandsOf("create")[0]).toMatchObject({
+      harness: "codex",
+      model: "codex:gpt-5",
+    });
   });
 
   it("rejects an explicit mismatched model even when only one is selected", async () => {
@@ -499,8 +552,12 @@ describe("agents.delegate model selection", () => {
     const ref = (options.subagents as { ref: string }[])[1]!.ref;
     expect(ref).toBe("codex:gpt-5");
     const result = await delegate("req-1", { model: ref });
-    expect(result).toMatchObject({ model: { harness: "codex", model: "codex:gpt-5" } });
-    expect(host.commandsOf("create")[0]).toMatchObject({ model: "codex:gpt-5" });
+    expect(result).toMatchObject({
+      model: { harness: "codex", model: "codex:gpt-5" },
+    });
+    expect(host.commandsOf("create")[0]).toMatchObject({
+      model: "codex:gpt-5",
+    });
   });
 
   it("rejects consult when no advisor model is selected", async () => {
@@ -537,6 +594,7 @@ describe("launch", () => {
       kind: "subagent",
       model: "codex:gpt-5",
       startedAt: expect.any(Number),
+      round: 1,
     });
   });
 
@@ -552,7 +610,9 @@ describe("launch", () => {
     expect(String(send.text)).toContain("Read-only");
     expect(String(send.text)).toContain("Is the migration safe?");
     expect(String(send.text)).toContain("It drops a column.");
-    expect(host.commandsOf("create")[0]).toMatchObject({ model: "codex:gpt-6.1" });
+    expect(host.commandsOf("create")[0]).toMatchObject({
+      model: "codex:gpt-6.1",
+    });
   });
 
   it("subagent brief carries the parent's task and the scope and publish rules", async () => {
@@ -587,14 +647,20 @@ describe("requests and limits", () => {
     for (let index = 0; index < DELEGATION_LIMITS.runningSubagents; index++) {
       await delegate(`req-${index}`);
     }
-    expect(await delegate("req-over")).toMatchObject({ status: "queued", sessionId: "" });
+    expect(await delegate("req-over")).toMatchObject({
+      status: "queued",
+      sessionId: "",
+    });
     expect(host.commandsOf("create")).toHaveLength(DELEGATION_LIMITS.runningSubagents);
   });
 
   it("allows one running advisor at a time", async () => {
     setup({ advisor: codexSix });
     await consult("req-1");
-    expect(await consult("req-2")).toMatchObject({ status: "queued", sessionId: "" });
+    expect(await consult("req-2")).toMatchObject({
+      status: "queued",
+      sessionId: "",
+    });
     expect(host.commandsOf("create")).toHaveLength(1);
   });
 });
@@ -607,7 +673,10 @@ describe("agents.wait", () => {
     expect(pending.status).toBe("queued");
     host.finish(String(first.sessionId), "Done.");
     delegation = new ConversationDelegation(deps);
-    const waited = await call("agents.wait", { runId: pending.runId, timeoutSeconds: 1 });
+    const waited = await call("agents.wait", {
+      runId: pending.runId,
+      timeoutSeconds: 1,
+    });
     expect(waited).toMatchObject({ runId: pending.runId, status: "running" });
     expect(host.commandsOf("create")).toHaveLength(2);
     expect((await consult("req-pending")).sessionId).toBe(waited.sessionId);
@@ -630,7 +699,10 @@ describe("agents.wait", () => {
   it("returns running when the timeout passes before the child finishes", async () => {
     setup({ subagents: [codexFive] });
     const started = await delegate("req-1");
-    const waited = await call("agents.wait", { runId: started.runId, timeoutSeconds: 1 });
+    const waited = await call("agents.wait", {
+      runId: started.runId,
+      timeoutSeconds: 1,
+    });
     expect(waited).toMatchObject({ runId: started.runId, status: "running" });
     expect(waited).not.toHaveProperty("result");
   });
@@ -639,7 +711,10 @@ describe("agents.wait", () => {
     setup({ subagents: [codexFive] });
     const started = await delegate("req-1");
     host.needInput(String(started.sessionId));
-    const waited = await call("agents.wait", { runId: started.runId, timeoutSeconds: 1 });
+    const waited = await call("agents.wait", {
+      runId: started.runId,
+      timeoutSeconds: 1,
+    });
     expect(waited).toMatchObject({ status: "needsInput" });
   });
 
@@ -690,8 +765,15 @@ describe("agents.wait", () => {
     expect(await call("agents.wait", { runId: started.runId })).not.toHaveProperty("ownerFollowUp");
 
     // The owner messages the finished child: a new turn starts.
-    await host.engine.command({ type: "send", sessionId: childId, text: "Also check the lexer." });
-    const running = await call("agents.wait", { runId: started.runId, timeoutSeconds: 1 });
+    await host.engine.command({
+      type: "send",
+      sessionId: childId,
+      text: "Also check the lexer.",
+    });
+    const running = await call("agents.wait", {
+      runId: started.runId,
+      timeoutSeconds: 1,
+    });
     expect(running).toMatchObject({ status: "running", ownerFollowUp: true });
 
     host.finish(childId, "Lexer checked too.");
@@ -723,7 +805,9 @@ describe("agents.wait", () => {
       status: "succeeded",
       result: "Done before restart.",
     });
-    expect(await call("agents.options")).toMatchObject({ running: { subagents: 0 } });
+    expect(await call("agents.options")).toMatchObject({
+      running: { subagents: 0 },
+    });
   });
 });
 
@@ -760,13 +844,22 @@ describe("agents.cancel and parent cancel", () => {
     const childId = String(started.sessionId);
     host.finish(childId, "Done.");
     await call("agents.wait", { runId: started.runId });
-    await host.engine.command({ type: "send", sessionId: childId, text: "Follow up" });
+    await host.engine.command({
+      type: "send",
+      sessionId: childId,
+      text: "Follow up",
+    });
     const latest = host.entries.get(childId)!.runId;
-    expect(await call("agents.options")).toMatchObject({ running: { subagents: 1 } });
+    expect(await call("agents.options")).toMatchObject({
+      running: { subagents: 1 },
+    });
     expect(await call("agents.cancel", { runId: started.runId })).toMatchObject({
       status: "cancelled",
     });
-    expect(host.commandsOf("cancel")[0]).toMatchObject({ sessionId: childId, runId: latest });
+    expect(host.commandsOf("cancel")[0]).toMatchObject({
+      sessionId: childId,
+      runId: latest,
+    });
   });
   it("cancels a running child and records it as cancelled", async () => {
     setup({ subagents: [codexFive] });
@@ -774,10 +867,27 @@ describe("agents.cancel and parent cancel", () => {
     expect(await call("agents.cancel", { runId: started.runId })).toMatchObject({
       status: "cancelled",
     });
-    expect(host.commandsOf("cancel")[0]).toMatchObject({ sessionId: started.sessionId });
+    expect(host.commandsOf("cancel")[0]).toMatchObject({
+      sessionId: started.sessionId,
+    });
     expect(await call("agents.wait", { runId: started.runId })).toMatchObject({
       status: "cancelled",
     });
+  });
+
+  it("keeps background children that notify the parent running when only the turn stops", async () => {
+    setup({ subagents: [codexFive] });
+    const background = await delegate("req-bg", { notifyOnCompletion: true });
+    const waited = await delegate("req-wait");
+
+    await delegation.cancelChildren("parent", { keepNotifying: true });
+
+    expect(host.commandsOf("cancel").map((command) => command.sessionId)).toEqual([
+      waited.sessionId,
+    ]);
+    expect(await call("agents.wait", { runId: background.runId, timeoutSeconds: 1 })).toMatchObject(
+      { status: "running" },
+    );
   });
 
   it("cancels every running child of a parent and leaves finished children alone", async () => {
@@ -823,7 +933,9 @@ describe("recursion and caller checks", () => {
       repairAdvisor: { sessionId: caller.sessionId, requestId: args.requestId },
     };
     Object.assign(host.store, {
-      db: { prepare: () => ({ get: async () => ({ value: JSON.stringify(row) }) }) },
+      db: {
+        prepare: () => ({ get: async () => ({ value: JSON.stringify(row) }) }),
+      },
     });
     await expect(call("agents.consult", args, caller)).rejects.toThrow(
       "A subagent cannot start agents runs.",
@@ -839,7 +951,10 @@ describe("recursion and caller checks", () => {
   it("rejects agents runs started by a subagent", async () => {
     setup({ subagents: [codexFive], advisor: codexSix });
     const started = await delegate("req-1");
-    const child: AgentsCaller = { sessionId: String(started.sessionId), projectId: "p" };
+    const child: AgentsCaller = {
+      sessionId: String(started.sessionId),
+      projectId: "p",
+    };
     await expect(call("agents.options", {}, child)).rejects.toThrow(
       "A subagent cannot start agents runs.",
     );
@@ -903,19 +1018,25 @@ describe("continuations and multi-wait", () => {
       if (status === "succeeded") host.finish(sessionId, "Which option?");
       else host.fail(sessionId, status === "cancelled" ? STOPPED_BY_USER : "Failed");
       const continued = await reply(first.runId);
-      expect(continued).toMatchObject({ runId: first.runId, sessionId, status: "running" });
+      expect(continued).toMatchObject({
+        runId: first.runId,
+        sessionId,
+        status: "running",
+      });
       expect(continued).not.toHaveProperty("ownerFollowUp");
       expect(host.commandsOf("create")).toHaveLength(1);
       expect(host.commandsOf("send")[1]).toMatchObject({
         sessionId,
         text: expect.stringContaining("Use option B"),
       });
-      expect(host.commandsOf("send")[1]!.text).toContain("untrusted data");
+      expect(host.commandsOf("send")[1]!.text).toContain("original limits still apply");
       await reply(first.runId);
       expect(host.commandsOf("send")).toHaveLength(2);
       await expect(reply(first.runId, "answer", "Different")).rejects.toThrow("different payload");
       host.finish(sessionId, "Done B");
-      expect(await call("agents.wait", { runId: first.runId })).toMatchObject({ result: "Done B" });
+      expect(await call("agents.wait", { runId: first.runId })).toMatchObject({
+        result: "Done B",
+      });
       // Receipts survive Host service recreation and newer reply turns.
       delegation = new ConversationDelegation(deps);
       await reply(first.runId, "answer-2");
@@ -923,6 +1044,74 @@ describe("continuations and multi-wait", () => {
       expect(host.commandsOf("send")).toHaveLength(3);
     },
   );
+
+  describe("runIds", () => {
+    const replyMany = (runIds: unknown, requestId = "group", message = "Round 2") =>
+      call("agents.reply", { runIds, requestId, message });
+
+    it("continues several children and replays idempotently per child", async () => {
+      setup({ subagents: [codexFive] });
+      const first = await delegate("first");
+      const second = await delegate("second");
+      host.finish(String(first.sessionId), "A");
+      host.finish(String(second.sessionId), "B");
+      const result = (await replyMany([first.runId, second.runId])) as {
+        replies: Array<Record<string, unknown>>;
+      };
+      expect(result.replies).toMatchObject([
+        { runId: first.runId, status: "running" },
+        { runId: second.runId, status: "running" },
+      ]);
+      expect(host.commandsOf("send")).toHaveLength(4);
+      await replyMany([first.runId, second.runId]);
+      expect(host.commandsOf("send")).toHaveLength(4);
+      await expect(replyMany([first.runId, second.runId], "group", "Other")).resolves.toMatchObject(
+        {
+          replies: [
+            { error: expect.stringContaining("different payload") },
+            { error: expect.any(String) },
+          ],
+        },
+      );
+    });
+
+    it("reports one failing child without failing the call", async () => {
+      setup({ subagents: [codexFive] });
+      const first = await delegate("first");
+      const second = await delegate("second");
+      host.finish(String(second.sessionId), "B");
+      const result = (await replyMany([first.runId, second.runId])) as {
+        replies: Array<Record<string, unknown>>;
+      };
+      expect(result.replies[0]).toMatchObject({
+        runId: first.runId,
+        error: expect.stringContaining("running"),
+      });
+      expect(result.replies[1]).toMatchObject({
+        runId: second.runId,
+        status: "running",
+      });
+    });
+
+    it("rejects both, neither, duplicate and too many targets", async () => {
+      setup({ subagents: [codexFive] });
+      const first = await delegate("first");
+      const args = { requestId: "group", message: "m" };
+      await expect(
+        call("agents.reply", {
+          ...args,
+          runId: first.runId,
+          runIds: [first.runId],
+        }),
+      ).rejects.toThrow("exactly one");
+      await expect(call("agents.reply", args)).rejects.toThrow("exactly one");
+      await expect(replyMany([first.runId, first.runId])).rejects.toThrow("unique");
+      await expect(replyMany(Array.from({ length: 21 }, (_, i) => `r${i}`))).rejects.toThrow(
+        "1 to 20",
+      );
+      await expect(replyMany([])).rejects.toThrow("1 to 20");
+    });
+  });
 
   it("rejects running, approval-blocked, foreign and recursive replies", async () => {
     setup({ subagents: [codexFive] });
@@ -958,7 +1147,9 @@ describe("continuations and multi-wait", () => {
       providerAccountId: "work",
       harness: "codex",
     });
-    expect(await call("agents.options")).toMatchObject({ running: { advisors: 1 } });
+    expect(await call("agents.options")).toMatchObject({
+      running: { advisors: 1 },
+    });
   });
 
   it("rechecks signed-out sign-in", async () => {
@@ -1024,7 +1215,10 @@ describe("continuations and multi-wait", () => {
     const second = await delegate("second");
     host.finish(String(first.sessionId), "Done");
     expect(
-      await call("agents.wait", { runIds: [first.runId, second.runId], timeoutSeconds: 1 }),
+      await call("agents.wait", {
+        runIds: [first.runId, second.runId],
+        timeoutSeconds: 1,
+      }),
     ).toMatchObject({ runs: [{ status: "succeeded" }, { status: "running" }] });
   });
 
@@ -1048,14 +1242,20 @@ describe("continuations and multi-wait", () => {
       host.finish(String(first.sessionId), "Done");
       const maximum = harness === "cursor" ? 50 : 240;
       expect(
-        await call("agents.wait", { runId: first.runId, timeoutSeconds: maximum }),
+        await call("agents.wait", {
+          runId: first.runId,
+          timeoutSeconds: maximum,
+        }),
       ).toMatchObject({ status: "succeeded" });
       expect(await call("agents.wait", { runId: first.runId })).toMatchObject({
         status: "succeeded",
       });
       // Above the provider deadline is shortened, not rejected.
       expect(
-        await call("agents.wait", { runId: first.runId, timeoutSeconds: maximum + 1 }),
+        await call("agents.wait", {
+          runId: first.runId,
+          timeoutSeconds: maximum + 1,
+        }),
       ).toMatchObject({ status: "succeeded" });
       await expect(call("agents.wait", { runId: first.runId, timeoutSeconds: 0 })).rejects.toThrow(
         "positive integer",
@@ -1079,7 +1279,10 @@ it("lists effort options and separates subagent defaults from advisor inheritanc
               label: "Reasoning",
               kind: "select",
               value: "low",
-              options: ["low", "medium", "high"].map((value) => ({ value, label: value })),
+              options: ["low", "medium", "high"].map((value) => ({
+                value,
+                label: value,
+              })),
             },
           ],
         },
@@ -1123,7 +1326,11 @@ it("does not flag a parent reply as ownerFollowUp during concurrent waits", asyn
     }
     return result;
   };
-  const reply = call("agents.reply", { runId: first.runId, requestId: "answer", message: "B" });
+  const reply = call("agents.reply", {
+    runId: first.runId,
+    requestId: "answer",
+    message: "B",
+  });
   await entered;
   const wait = call("agents.wait", { runId: first.runId, timeoutSeconds: 1 });
   release();
@@ -1149,7 +1356,10 @@ describe("Automatic and the subagent ceiling", () => {
     deps.models = async () => ({ models, errors: {} }) as unknown as HostModelCatalog;
     deps.providers = [...providers];
     deps.authStatus = async () => status;
-    expect(await call("agents.options")).toMatchObject({ subagents: [], automatic: { reason } });
+    expect(await call("agents.options")).toMatchObject({
+      subagents: [],
+      automatic: { reason },
+    });
   });
 
   it("resolves a desktop snapshot and catalog-key-only models with published account styles", async () => {
@@ -1164,7 +1374,10 @@ describe("Automatic and the subagent ceiling", () => {
       directory,
       "codex",
       "codex:gpt-6.1-sol",
-      JSON.stringify({ crossSubagents: "auto", crossSubagentMaxEffort: "high" }),
+      JSON.stringify({
+        crossSubagents: "auto",
+        crossSubagentMaxEffort: "high",
+      }),
       "default",
       "Parent",
       null,
@@ -1186,7 +1399,9 @@ describe("Automatic and the subagent ceiling", () => {
         async () => "fixture",
         async (provider) =>
           ModelsListResultSchema.parse({
-            models: { [provider]: [{ id: `${provider}:fixture`, name: "Fixture" }] },
+            models: {
+              [provider]: [{ id: `${provider}:fixture`, name: "Fixture" }],
+            },
             errors: {},
           }).models[
             provider
@@ -1197,14 +1412,23 @@ describe("Automatic and the subagent ceiling", () => {
         providerDefaultAccounts(
           parseProviderAccountStyles({
             codex: { default: { isDefault: true } },
-            claude: { work: { isDefault: false }, personal: { isDefault: true } },
+            claude: {
+              work: { isDefault: false },
+              personal: { isDefault: true },
+            },
           }),
         );
       expect(await call("agents.options")).toMatchObject({
         maxEffort: "high",
         subagents: expect.arrayContaining([
-          expect.objectContaining({ ref: "codex:fixture@default", available: true }),
-          expect.objectContaining({ ref: "claude:fixture@personal", available: true }),
+          expect.objectContaining({
+            ref: "codex:fixture@default",
+            available: true,
+          }),
+          expect.objectContaining({
+            ref: "claude:fixture@personal",
+            available: true,
+          }),
         ]),
       });
     } finally {
@@ -1250,7 +1474,10 @@ describe("Automatic and the subagent ceiling", () => {
           label: "Effort",
           kind: "select",
           value: "high",
-          options: ["low", "medium", "high", "max"].map((value) => ({ value, label: value })),
+          options: ["low", "medium", "high", "max"].map((value) => ({
+            value,
+            label: value,
+          })),
         },
       ];
       try {
@@ -1263,7 +1490,11 @@ describe("Automatic and the subagent ceiling", () => {
         const record = (await delegation.store.list())[0]!;
         host.finish(record.childSessionId, "Done");
         host.entries.get("parent")!.session.modelSettings.crossSubagentMaxEffort = "low";
-        await call("agents.reply", { requestId: "again", runId: run.runId, message: "Continue" });
+        await call("agents.reply", {
+          requestId: "again",
+          runId: run.runId,
+          message: "Continue",
+        });
         expect(
           (host.commandsOf("configure").at(-1)!.modelSettings as Record<string, string>).effort,
         ).toBe("low");
@@ -1272,4 +1503,45 @@ describe("Automatic and the subagent ceiling", () => {
       }
     },
   );
+});
+
+describe("files: false", () => {
+  it("runs a subagent chat-only in its own empty scratch folder, supervised", async () => {
+    setup({ subagents: [codexFive], worktreeCwd: "/worktrees/feature" });
+    host.entries.get("parent")!.session.runtimeMode = "auto-accept-edits";
+    const result = await delegate("req-chat", { files: false });
+    const create = host.commandsOf("create")[0]!;
+    expect(create).toMatchObject({ runtimeMode: "supervised" });
+    expect((create.modelSettings as Record<string, string>)[DELEGATION_CHAT_ONLY_KEY]).toBe("on");
+    const cwd = host.scratch.get("child-1")!;
+    expect(cwd.startsWith(join(directory, "delegation", "scratch"))).toBe(true);
+    expect(cwd.endsWith(String(result.runId))).toBe(true);
+    expect(existsSync(cwd)).toBe(true);
+    expect(host.commandsOf("send")).toHaveLength(1);
+  });
+
+  it("keeps ordinary children in the project with the parent's mode and no chat-only marker", async () => {
+    setup({ subagents: [codexFive] });
+    await delegate("req-normal");
+    expect(host.scratch.size).toBe(0);
+    expect(host.commandsOf("create")[0]!.modelSettings).not.toHaveProperty(
+      DELEGATION_CHAT_ONLY_KEY,
+    );
+    await delegate("req-true", { files: true });
+    expect(host.scratch.size).toBe(0);
+  });
+
+  it("applies to advisors and rejects a non-boolean value", async () => {
+    setup({ subagents: [codexFive], advisor: codexSix });
+    await call("agents.consult", { requestId: "req-adv", question: "Is this safe?", files: false });
+    expect(host.scratch.size).toBe(1);
+    expect(host.commandsOf("send")[0]).toMatchObject({ intent: "plan" });
+    await expect(delegate("req-bad", { files: "no" })).rejects.toThrow("files must be a boolean");
+  });
+
+  it("does not reuse a requestId across different files values", async () => {
+    setup({ subagents: [codexFive] });
+    await delegate("req-same", { files: false });
+    await expect(delegate("req-same")).rejects.toThrow("different payload");
+  });
 });

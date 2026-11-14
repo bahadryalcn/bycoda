@@ -705,14 +705,26 @@ describe("host automations", () => {
   });
   it("skips a run missed while the machine was off and reschedules", async () => {
     const { automations, input, clock, provider } = await setup();
-    await automations.save(input());
+    await automations.save(input({ missedRunGraceMinutes: 10 }));
     clock.now = at("2026-10-07T12:00:00");
     await automations.tick();
     expect(await automations.runs("nightly")).toMatchObject([
-      { status: "skipped", error: MISSED_RUN_SKIP },
+      { scheduledFor: at("2026-10-07T09:00:00"), status: "skipped", error: MISSED_RUN_SKIP },
     ]);
     expect(provider.send).not.toHaveBeenCalled();
     expect((await automations.list())[0].nextRunAt).toBe(at("2026-10-08T09:00:00"));
+  });
+  it("recovers only the newest overdue occurrence inside grace after a long offline interval", async () => {
+    const { automations, input, clock } = await setup();
+    await automations.save(input({ scheduleKind: "hourly", missedRunGraceMinutes: 10 }));
+    clock.now = at("2026-10-07T12:05:00");
+    await automations.tick();
+    expect(await automations.runs("nightly")).toMatchObject([
+      { scheduledFor: at("2026-10-07T12:00:00"), status: "pending" },
+    ]);
+    expect((await automations.list())[0].nextRunAt).toBe(at("2026-10-07T13:00:00"));
+    await automations.tick();
+    expect(await automations.runs("nightly")).toHaveLength(1);
   });
   it("does not run a disabled automation and forgets a deleted one", async () => {
     const { automations, input, clock } = await setup();

@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { DESKTOP_DRIVERS } from "./desktop-control";
 
+/** `driver` selects which helper to read or prepare; omitted means agent-desktop. */
+const driver = z.enum(DESKTOP_DRIVERS).optional();
 export const DesktopHelperRequestSchema = z.discriminatedUnion("op", [
-  z.strictObject({ op: z.literal("status") }),
-  z.strictObject({ op: z.literal("prepare") }),
-  z.strictObject({ op: z.literal("cancel") }),
+  z.strictObject({ op: z.literal("status"), driver }),
+  z.strictObject({ op: z.literal("prepare"), driver }),
+  z.strictObject({ op: z.literal("cancel"), driver }),
 ]);
 export const DesktopHelperResponseSchema = z.strictObject({
   phase: z.enum(["missing", "preparing", "ready", "failed", "interrupted"]),

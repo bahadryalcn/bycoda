@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { HostStore } from "../store";
 import { launchSessionRun, sessionRunState } from "./sessionRuns";
+import { sessionNotFound } from "./session-authority";
 import { isSessionRunActivity } from "./session-run-activity";
 
 it("never treats polls, metadata writes or another run's activity as observed output", async () => {
@@ -28,6 +29,25 @@ it("never treats polls, metadata writes or another run's activity as observed ou
   }
   record.runActivity = { runId: "current", lastActivityAt: 200 };
   expect(await sessionRunState(store, run, 0, 1000)).toMatchObject({ lastActivityAt: 200 });
+});
+it("reports a deleted session only for a real not-found and rethrows other read errors", async () => {
+  const run = { sessionId: "s", runId: "current", startedAt: 100 };
+  const missing = {
+    session: async () => {
+      throw sessionNotFound();
+    },
+  } as unknown as HostStore;
+  expect(await sessionRunState(missing, run, 0, 1000)).toEqual({
+    state: "finished",
+    status: "failed",
+    error: "The run's session was deleted.",
+  });
+  const broken = {
+    session: async () => {
+      throw new Error("database is locked");
+    },
+  } as unknown as HostStore;
+  await expect(sessionRunState(broken, run, 0, 1000)).rejects.toThrow("database is locked");
 });
 it("counts actual repeated output but excludes telemetry and periodic background snapshots", () => {
   expect(

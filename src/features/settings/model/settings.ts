@@ -1,4 +1,5 @@
 import { CREWS_SETTINGS_SECTION, WORK_SETTINGS_SECTION } from "./workSettingsSections";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { modelsSettingsEntries } from "./modelsSettingsEntries";
 import { TOOL_SETTINGS_INDEX, TOOL_SETTINGS_SECTIONS } from "./toolSettingsSections";
 import { toolSettingsAnchorForSection, toolSettingsTabForSection } from "./toolSettingsSections";
@@ -533,6 +534,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       return t("MCP servers");
     },
     keywords: "claude tools connections oauth authenticate login add remove",
+  },
+  {
+    id: "mcp-loading",
+    section: "mcp",
+    get label() {
+      return t("MCP loading");
+    },
+    keywords: "on demand session start context load yükleme isteğe bağlı oturum başında",
   },
   {
     id: "workspace-policy",
@@ -1735,7 +1744,8 @@ export const subscribeQuickComposerEnabled = quickComposerEnabledSetting.subscri
 export function loadQuickComposerShortcut(): string {
   try {
     const value = localStorage.getItem(QUICK_COMPOSER_SHORTCUT_KEY);
-    return value && isGlobalShortcut(value) ? value : QUICK_COMPOSER_DEFAULT_SHORTCUT;
+    if (!value || !isGlobalShortcut(value)) return QUICK_COMPOSER_DEFAULT_SHORTCUT;
+    return canonicalShortcut(value)!;
   } catch {
     return QUICK_COMPOSER_DEFAULT_SHORTCUT;
   }
@@ -2466,7 +2476,7 @@ function shortcutOwners(): Map<string, string> {
         : defaultShortcutsFor(row.command);
     for (const chord of chords) owners.set(chord, row.command);
   }
-  for (const [command, override] of Object.entries(loadKeybindingOverrides())) {
+  for (const [command, override] of Object.entries(loadKeybindingOverrides(true))) {
     if (override.shortcut) owners.set(override.shortcut, command);
   }
   return owners;
@@ -2498,7 +2508,8 @@ let cacheValue: KeybindingOverrides = {};
 
 function parseKeybindingOverrides(raw: string | null): KeybindingOverrides {
   const value = JSON.parse(raw ?? "{}");
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Could not read shortcuts");
   const next: KeybindingOverrides = {};
   for (const [command, entry] of Object.entries(value as Record<string, unknown>)) {
     if (!VALID_COMMANDS.has(command) || !entry || typeof entry !== "object") continue;
@@ -2514,8 +2525,8 @@ function parseKeybindingOverrides(raw: string | null): KeybindingOverrides {
   return next;
 }
 
-/** Cached per raw value: this runs several times on every keydown. Returns a fresh object. */
-export function loadKeybindingOverrides(): KeybindingOverrides {
+/** Cached per raw value. Strict reads prevent mutations from replacing unreadable data. Returns a fresh object. */
+export function loadKeybindingOverrides(strict = false): KeybindingOverrides {
   try {
     const storage = localStorage;
     const raw = storage.getItem(KEYBINDING_OVERRIDES_KEY);
@@ -2525,7 +2536,8 @@ export function loadKeybindingOverrides(): KeybindingOverrides {
     cacheRaw = raw;
     cacheValue = next;
     return { ...next };
-  } catch {
+  } catch (error) {
+    if (strict) throw error;
     return {};
   }
 }
@@ -2534,7 +2546,7 @@ export function prepareKeybindingOverride(
   command: string,
   override: KeybindingOverride,
 ): KeybindingOverrides {
-  const next = loadKeybindingOverrides();
+  const next = loadKeybindingOverrides(true);
   if (override.disabled) next[command] = { disabled: true };
   else if (override.shortcut) {
     const shortcut = validateKeybindingShortcut(command, override.shortcut);
@@ -2564,9 +2576,11 @@ export function saveKeybindingOverride(
 }
 
 export type ShortcutEvent = Pick<KeyboardEvent, "code"> &
-  Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey">;
+  Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey"> &
+  Partial<Pick<KeyboardEvent, "isComposing" | "keyCode">>;
 
 export function shortcutMatches(shortcut: string, event: ShortcutEvent): boolean {
+  if (isImeComposition(event)) return false;
   // Copy the fields: real keyboard events expose modifiers as prototype
   // accessors, so spreading the event would silently drop all of them.
   return (
@@ -2581,6 +2595,7 @@ export function shortcutMatches(shortcut: string, event: ShortcutEvent): boolean
 }
 
 export function matchCustomKeybinding(event: ShortcutEvent): string | null {
+  if (isImeComposition(event)) return null;
   for (const [command, override] of Object.entries(loadKeybindingOverrides())) {
     if (override.shortcut && shortcutMatches(override.shortcut, event)) {
       return command;
@@ -2594,6 +2609,7 @@ export function keybindingPressed(
   event: ShortcutEvent,
   defaultMatch: boolean,
 ): boolean {
+  if (isImeComposition(event)) return false;
   const override = loadKeybindingOverrides()[command];
   if (override?.disabled) return false;
   if (override?.shortcut) return shortcutMatches(override.shortcut, event);
@@ -2615,7 +2631,7 @@ export function keybindingShortcutTokens(command: string, fallback: string): str
 export function subscribeKeybindings(onStoreChange: () => void) {
   if (typeof window === "undefined") return () => {};
   const onStorage = (event: StorageEvent) => {
-    if (event.key === KEYBINDING_OVERRIDES_KEY) onStoreChange();
+    if (event.key === KEYBINDING_OVERRIDES_KEY || event.key === null) onStoreChange();
   };
   window.addEventListener(KEYBINDINGS_CHANGE_EVENT, onStoreChange);
   window.addEventListener("storage", onStorage);

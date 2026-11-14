@@ -33,3 +33,15 @@ Owner decision, 2026-11-14, source: owner model-routing redesign request:
 (Gloss: pools can include other pools; projects and groups can be tagged personal or work; "Create from provider catalog" must become an AI-assisted smart setup.)
 
 Recorded decision: pools may include pools (no cycles); projects, groups and accounts carry a personal or work scope and a run skips accounts of the other scope; catalog setup becomes smart setup that orders by intelligence and cost and places unknown models by estimate. No new execution or publishing authority.
+
+## AI-planned smart setup by benefit per cost
+
+Owner decision, 2026-11-15:
+
+> burdaki smart setup hep aynı şeyi veriyor AI ile yapması gerekiyordu bunların maliyetlerine göre iş atamalarının hepsini yapması gerekiyordu model order pool ve assignmentların hepsini yapabilmesi gerekiyordu. Ayrıca çalışma durumlarına göre yani work ve individual hesaplara göre ayrım yapabilmesi gerekiyordu
+>
+> gerekirse aktif modellerin hepsini araştırıp ilk sıralamayı biz yaptıralım fayda maliyet sıralamsını ona göre bu yapsın.
+
+(Gloss: smart setup must use AI to plan the model order, pools and all assignments by cost, and separate work and personal accounts; we provide a researched benefit/cost ranking of the active models as its starting point.)
+
+Recorded decision: smart setup sends the full catalog with a researched capability and price table and a benefit-per-cost baseline to the planner model, which returns the order, pools and role bindings; the researched rules are the fallback. Same-named pools are refilled and role bindings replaced in the draft; Save keeps its owner approval. No new execution or publishing authority.

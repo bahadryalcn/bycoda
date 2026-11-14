@@ -13,6 +13,10 @@ import {
   isFileConversationTool,
 } from "../conversation/conversation-file-tools";
 import { isGoalWriteTool } from "../conversation/conversation-goal-tools";
+import {
+  conversationExternalMcp,
+  isExternalMcpTool,
+} from "../conversation/conversation-external-mcp-tools";
 import { isSecretTool } from "../secrets/secret-schemas";
 import { isPullRequestWatchTool } from "../pull-request-watch/pull-request-watch-tools";
 import {
@@ -56,6 +60,7 @@ import {
 } from "../execution/runtime-log-conversation";
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
 import { resolveHostWorktreeAsync } from "../git/git-worktrees";
+import { HubExternalMcpTools } from "../mcp/hub/external-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { readHarnessSkill, searchHarnessSkills } from "../skills/harness-skills";
 import type { ServerBindings } from "./bindings";
@@ -89,6 +94,7 @@ export async function dispatchConversationTools(
     | "conversationDelegation"
     | "conversationGoals"
     | "conversationSecrets"
+    | "mcpHub"
     | "pullRequestWatchTools"
     | "conversationProject"
     | "browserRuntime"
@@ -273,7 +279,25 @@ export async function dispatchConversationTools(
           boundPrincipal,
           async () => !!(await dependencies.conversationAccess.principalForToken(request.token)),
         );
-      else if (isSecretTool(action))
+      else if (isExternalMcpTool(action)) {
+        const own = (await dependencies.featureMeta(boundPrincipal.sessionId)).session;
+        request.result = await conversationExternalMcp(
+          dependencies.mcpHub,
+          () =>
+            new HubExternalMcpTools({
+              hub: dependencies.mcpHub,
+              httpAuth: (server) => dependencies.mcpHub.httpAuth(server),
+            }),
+          dependencies.conversationDesktop,
+        ).call(action, args, {
+          principal: boundPrincipal,
+          cwd: project.cwd,
+          modelSettings: own.modelSettings,
+          runtimeMode: own.runtimeMode,
+          authorized: async () =>
+            !!(await dependencies.conversationAccess.principalForToken(request.token)),
+        });
+      } else if (isSecretTool(action))
         request.result = await dependencies.conversationSecrets.call(
           action,
           args,

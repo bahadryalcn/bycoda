@@ -1,6 +1,7 @@
 "use client";
 
 import { useT } from "../../../i18n";
+import { isImeComposition } from "../../../lib/keyboard";
 
 import {
   useCallback,
@@ -329,7 +330,8 @@ export function ShortcutRecorder({
   };
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
-    if (externalRecording !== undefined) return;
+    if (externalRecording !== undefined || isImeComposition(event.nativeEvent) || event.repeat)
+      return;
     if (!recording) {
       if ((event.key === "Backspace" || event.key === "Delete") && current) {
         event.preventDefault();
@@ -337,13 +339,7 @@ export function ShortcutRecorder({
       }
       return;
     }
-    if (
-      event.key === "Tab" &&
-      !event.shiftKey &&
-      !event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey
-    ) {
+    if (event.key === "Tab" && !event.metaKey && !event.ctrlKey && !event.altKey) {
       stop();
       return;
     }
@@ -385,6 +381,7 @@ export function ShortcutRecorder({
     commit(shortcut);
   }
   function onKeyUp(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (isImeComposition(event.nativeEvent) || event.repeat) return;
     if (recording) setLive(liveMods(event));
   }
 

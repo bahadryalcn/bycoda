@@ -81,6 +81,7 @@ let desktopConfiguration = {
   allowPhysicalInput: false,
   permissionMode: "ask",
   allowAllApps: false,
+  driver: "agent-desktop",
   version: 0,
 };
 function desktopFixtureRequest(input: any) {

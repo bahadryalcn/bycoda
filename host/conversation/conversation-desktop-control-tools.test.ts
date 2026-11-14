@@ -75,6 +75,7 @@ function fixture() {
             allowPhysicalInput: false,
             permissionMode: "ask",
             allowAllApps: false,
+            driver: "agent-desktop",
             version: 1,
           },
           status: {

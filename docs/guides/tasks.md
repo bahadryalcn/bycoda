@@ -51,7 +51,17 @@ An epic runs only the reviews its plan needs. A plan with one task skips the fin
 
 An epic is a planned outcome split into tasks for owner approval. Existing saved goal records and Host API identifiers continue to work. Codex's native `/goal` command remains a separate conversation capability; it does not create or approve an epic.
 
+Codex conversation goals appear above the message input, beside current work rather than in the chat header. The row shows the provider's last goal state, objective, reported token usage/budget and elapsed time. An active goal with no current turn reads **Goal set**. **Resume goal** continues a stopped, blocked or limited goal; **Clear goal** removes it. Both actions use the conversation's existing permission and submission gates and preserve the input draft. Wait for current work to finish before changing the goal. A blocked goal does not mean the current turn or its subagents have stopped. Codex does not supply a blocked reason in this state; the row says so instead of guessing.
+
 ## Retry safely
+
+Tasks open across all projects and servers. Use **Server** to narrow tasks, sprint projects and report totals; **All servers** restores the shared view. The sprint list includes records saved on each connected server and identifies their owning server. Opening a sprint keeps actions on that server, even when another server uses the same sprint ID. Unavailable servers keep their last known catalog with an error and disabled actions.
+
+In the sprint form, project choices include server names. **Sprint server** is where the record is saved; its tasks can run on other servers. Dates and **Work estimates** are optional. Capacity is a planning target in points. Two task estimates of 3 and 5 points total 8 points. Points do not represent hours or limit concurrent execution. Leave capacity blank when not estimating work.
+
+The project picker keeps **All projects** above the scrolling results, including while searching. Finished epic details collapse under **Details** so task lists stay visible. Expand them to inspect run usage, the plan and completed acceptance evidence.
+
+Task and epic deletion wait for Host confirmation. A rejected deletion keeps its confirmation open with the Host's reason and a retry action; the item stays on the board. Cancelling leaves it unchanged. Unmerged work still requires explicit discard confirmation. A cancelled epic never presents an unfinished final acceptance as queued or offers to restart that acceptance.
 
 Automatic correction allows one repair, after a configured read-only advisor has
 returned advice. A second failed review keeps its findings for owner review.

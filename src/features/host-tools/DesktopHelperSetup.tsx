@@ -6,6 +6,7 @@ import { desktopHelperRequest } from "./desktopControlClient";
 import type { DesktopHelperResponse } from "../../shared/model/host-contracts/desktop-helper";
 import { InlineError } from "../../shared/ui/InlineError";
 import { Badge } from "../../shared/ui/Badge";
+import type { DesktopDriver } from "../../shared/model/host-contracts/desktop-control";
 
 type VerifiedHelper = NonNullable<DesktopHelperResponse["helper"]>;
 
@@ -29,6 +30,7 @@ export function isEarlierBundledHelper(selected: string, verified: string) {
  * earlier runtime version; it never enables control.
  */
 export function DesktopHelperSetup({
+  driver = "agent-desktop",
   disabled,
   autoPrepare = false,
   selectedPath = "",
@@ -36,6 +38,8 @@ export function DesktopHelperSetup({
   onPendingChange,
   onReadyChange,
 }: {
+  /** Which native driver's helper this row reads and prepares. */
+  driver?: DesktopDriver;
   disabled?: boolean;
   autoPrepare?: boolean;
   /** Currently selected helper path. An empty or stale bundled selection receives the verified helper automatically. */
@@ -45,6 +49,8 @@ export function DesktopHelperSetup({
   onReadyChange?: (ready: boolean) => void;
 }) {
   const [state, setState] = useState<DesktopHelperResponse>();
+  // Older Hosts know only agent-desktop and reject an unknown field.
+  const driverField = driver === "agent-desktop" ? {} : { driver };
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const preparing = pending || state?.phase === "preparing";
@@ -65,7 +71,10 @@ export function DesktopHelperSetup({
       if (reading) return;
       reading = true;
       try {
-        const next = await desktopHelperRequest({ op: "status" });
+        const next = await desktopHelperRequest({
+          op: "status",
+          ...(driver === "agent-desktop" ? {} : { driver }),
+        });
         if (!cancelled) {
           setState(next);
           setError("");
@@ -82,13 +91,13 @@ export function DesktopHelperSetup({
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [driver]);
   async function act(op: "prepare" | "cancel") {
     if (pending) return;
     setPending(true);
     setError("");
     try {
-      setState(await desktopHelperRequest({ op }));
+      setState(await desktopHelperRequest({ op, ...driverField }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {

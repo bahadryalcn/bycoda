@@ -39,7 +39,11 @@ In narrow Commit Graph windows, reopening Branches keeps the commit inspector vi
 
 Repository discovery includes initialized submodules and independent repositories
 inside the selected checkout, including ignored source folders such as a separate
-`mobile` repository. It skips dependency/build directories and directory links.
+`mobile` repository. It skips dependency/build directories and directory links,
+including `.pnpm-store`, Python environments (`.venv`, `venv`, `__pycache__`),
+generated `.artifacts` and `.local-data` trees. These trees do not consume the
+discovery budget; explicitly selected repositories and initialized submodules
+inside them remain accessible.
 Discovery is bounded; an access or limit error keeps the previous inventory and
 offers Refresh rather than presenting an incomplete scan as an empty result.
 

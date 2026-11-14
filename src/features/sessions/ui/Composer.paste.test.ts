@@ -75,12 +75,12 @@ it("pastes copied message text at the selection together with its attachment", a
     });
     // Restoring the attachment is asynchronous and slower on shared runners.
     await act(async () =>
-      vi.waitFor(() => expect(textarea.value).toBe("Before See image after [image1]")),
+      vi.waitFor(() => expect(textarea.value).toBe("Before See image after [Image 1 · 3 B]")),
     );
     await act(async () =>
       container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!.click(),
     );
-    expect(submit.mock.calls[0][0]).toBe("Before See image after [image1]");
+    expect(submit.mock.calls[0][0]).toBe("Before See image after [Image 1 · 3 B]");
     expect(submit.mock.calls[0][1][0]).toMatchObject({
       name: "shot.png",
       data: "YWJj",

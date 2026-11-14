@@ -122,7 +122,7 @@ it("uploads from the plus menu, preserves attachments on dismissal, and submits 
     expect.objectContaining({
       submission: expect.objectContaining({
         request: expect.objectContaining({
-          prompt: "[image1]",
+          prompt: "[Image 1 · 4 B]",
           attachments: [expect.objectContaining({ path: "/tmp/image.png", kind: "image" })],
         }),
       }),
@@ -169,8 +169,8 @@ it("references an attachment in the prompt and drops the token with the chip", a
     prompt.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await attach();
-  expect(prompt.value).toBe("fix the [image1]");
-  expect(button("Insert [image1] into the message")).toBeDefined();
+  expect(prompt.value).toBe("fix the [Image 1 · 4 B]");
+  expect(button("Insert [Image 1 · 4 B] into the message")).toBeDefined();
 
   act(() => button("Remove image.png").click());
   expect(prompt.value).toBe("fix the");

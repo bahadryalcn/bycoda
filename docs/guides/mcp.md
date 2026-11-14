@@ -76,4 +76,10 @@ configuration before submitting the same change again.
 bycoda's local Host. Creating one does not sign in to Cloudflare, Hostinger or any
 other outgoing MCP service.
 
+Incoming tokens retain their project, tool groups, access modes and expiry. The Host
+checks expiry again after project validation before issuing a token, and rechecks
+revocation and expiry before returning access. Invalid stored grants do not authorize
+requests. Lists expose grant metadata only; a failed refresh keeps the last successful
+list visible. The issued secret remains a one-time display, never a history field.
+
 MCP operation errors can be dismissed using the close control beside the message. Dismissing an error does not retry the operation.

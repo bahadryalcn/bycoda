@@ -37,8 +37,7 @@ import {
 } from "../../../shared/ui/icons";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { AssistantProfileFields, type ProfileSection } from "./AssistantProfileFields";
-import { AssistantPresenceStatus } from "./AssistantPresenceStatus";
-import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
+import { PresenceStatusRow } from "./settings/PresenceStatusRow";
 import { ManualSessionSupervision } from "./ManualSessionSupervision";
 import {
   DesktopControlSettings,
@@ -501,7 +500,7 @@ export function AssistantSettings({
                       type="button"
                       size="sm"
                       startIcon={<Sparkles className="icon-sm" />}
-                      tooltip={t("Answer a few questions and let AI draft your whole profile")}
+                      tooltip={t("Answer a few questions and AI drafts the profile for you")}
                       onClick={() => setBuilderOpen(true)}
                     >
                       {t("Create with AI")}
@@ -540,10 +539,7 @@ export function AssistantSettings({
                 </Group>
                 <Group title={t("Presence and hours")} info={<AssistantScheduleInfo />}>
                   {profile("presence")}
-                  <div className={settingsStyles.statusLine}>
-                    <AssistantPresenceStatus snapshot={snapshot} details />
-                    <AssistantKeepAwakeStatus state={snapshot.keepAwake} />
-                  </div>
+                  <PresenceStatusRow snapshot={snapshot} draft={draft} />
                 </Group>
                 <Group title={null}>
                   <AdvancedSettings
@@ -591,6 +587,7 @@ export function AssistantSettings({
                   {draft.permissionLevel && (
                     <Row
                       label={t("Native consent")}
+                      descriptionVisible={false}
                       description={t(
                         "Native consent stays with this installation and selected Host until changed. Host credential changes require new consent. Host profile settings alone grant no native approval.",
                       )}
@@ -614,6 +611,7 @@ export function AssistantSettings({
                     description={t(
                       "Configures existing job, folder and computer permissions. Assistant authority and critical exclusions still apply.",
                     )}
+                    descriptionVisible={false}
                     stacked
                   >
                     <SegmentedControl
@@ -636,6 +634,7 @@ export function AssistantSettings({
                         {
                           value: "custom",
                           label: t("Custom"),
+                          icon: <SlidersHorizontal className="icon-sm" />,
                           disabled: busy || access === "loading",
                         },
                       ]}

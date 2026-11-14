@@ -22,6 +22,10 @@ function command(
 }
 
 describe("reconcileToolText", () => {
+  it("keeps blank output alongside a distinct preview containing spaces", () => {
+    expect(reconcileToolText([" ", "preview with spaces"])).toEqual([" ", "preview with spaces"]);
+    expect(reconcileToolText(["preview with spaces", " "])).toEqual(["preview with spaces", " "]);
+  });
   it("drops repeats and texts contained in a fuller one", () => {
     expect(reconcileToolText(["a", "a b", " a b ", undefined, ""])).toEqual(["a b"]);
   });
@@ -54,6 +58,25 @@ describe("commandText", () => {
 });
 
 describe("inspectCommand", () => {
+  it.each(["  item: value\n  next: value\n", " \t\n"])(
+    "preserves exact output whitespace: %j",
+    (output) => {
+      const result = inspectCommand(command({ output, status: "completed" }), false);
+      expect(result.output).toBe(output);
+      expect(emptyOutputReason(result)).toBeNull();
+      expect(commandCopyText(result, "Done").endsWith(output)).toBe(true);
+    },
+  );
+  it("preserves indentation and trailing newlines in canonical detail", () => {
+    const detail = "  first\n    second\n";
+    expect(inspectCommand(command({ detail, status: "completed" }), false).output).toBe(detail);
+  });
+  it("does not drop a complete log merely because it contains the failure message", () => {
+    const output = "starting\nexit 1\ncleanup finished\n";
+    const result = inspectCommand(command({ output, detail: "exit 1", status: "failed" }), false);
+    expect(result.output).toBe(output);
+    expect(result.error).toBe("exit 1");
+  });
   it("keeps the fuller canonical output over a stale preview", () => {
     const block = command(
       {

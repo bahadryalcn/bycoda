@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   current: vi.fn(),
   tasks: vi.fn(),
   notify: vi.fn(),
+  enabled: vi.fn(() => true),
 }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({ getAllWebviewWindows: mocks.windows }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: mocks.current }));
@@ -17,13 +18,18 @@ vi.mock("../../automations/model/hostAutomationClient", () => ({
 vi.mock("../../tasks/model/taskClient", () => ({ listBoardTasks: mocks.tasks }));
 vi.mock("../../tasks/model/goalClient", () => ({ listBoardGoals: async () => [] }));
 vi.mock("../model/notifications", () => ({
-  loadNotificationsEnabled: () => true,
+  loadNotificationsEnabled: mocks.enabled,
   notifyBackground: mocks.notify,
 }));
 import { isLeadWindow, useBackgroundNotifications } from "./useBackgroundNotifications";
 let root: Root | undefined;
+function Watcher() {
+  useBackgroundNotifications(false);
+  return null;
+}
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.enabled.mockReturnValue(true);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
 afterEach(async () => {
@@ -31,6 +37,58 @@ afterEach(async () => {
   root = undefined;
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+
+it("keeps one poll in flight while workspace leadership enumeration is pending", async () => {
+  vi.useFakeTimers();
+  let resolveWindows!: (windows: { label: string }[]) => void;
+  mocks.windows.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveWindows = resolve;
+      }),
+  );
+  mocks.current.mockReturnValue({ label: "main" });
+  mocks.tasks.mockResolvedValue([]);
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Watcher)));
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  expect(mocks.windows).toHaveBeenCalledOnce();
+  await act(async () => resolveWindows([{ label: "main" }]));
+  expect(mocks.tasks).toHaveBeenCalledOnce();
+});
+
+it("does not start background reads when leadership resolves after unmount", async () => {
+  let resolveWindows!: (windows: { label: string }[]) => void;
+  mocks.windows.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveWindows = resolve;
+      }),
+  );
+  mocks.current.mockReturnValue({ label: "main" });
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Watcher)));
+  await act(async () => root!.unmount());
+  root = undefined;
+  await act(async () => resolveWindows([{ label: "main" }]));
+  expect(mocks.tasks).not.toHaveBeenCalled();
+});
+
+it("does not start reads if notifications turn off during leadership enumeration", async () => {
+  let resolveWindows!: (windows: { label: string }[]) => void;
+  mocks.windows.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveWindows = resolve;
+      }),
+  );
+  mocks.current.mockReturnValue({ label: "main" });
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Watcher)));
+  mocks.enabled.mockReturnValue(false);
+  await act(async () => resolveWindows([{ label: "main" }]));
+  expect(mocks.tasks).not.toHaveBeenCalled();
 });
 
 it("holds every watcher when enumeration is unknown and never elects an unidentified window", async () => {

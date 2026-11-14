@@ -576,5 +576,24 @@ async function notifyProjectSession(
   // Preserve unread attention for other chats even when foreground delivery
   // is suppressed by deliver(). The active chat was excluded above.
   if (kind !== "input") markUnseen(session.id);
-  return batcher.enqueue(isProjectLocked(session.cwd) ? maskLockedNotification(payload) : payload);
+  const cwd = session.cwd;
+  return batcher.enqueue(
+    isProjectLocked(cwd) ? maskLockedNotification(payload) : payload,
+    (queued) => {
+      // Preferences and privacy may change while this event waits in the burst.
+      // Keep its original occurrence so resuming never replays suppressed work.
+      if (
+        !shouldNotify({
+          enabled: loadNotificationsEnabled(),
+          permission,
+          windowFocused,
+          sessionVisible,
+        }) ||
+        !loadNotificationEvents()[kind] ||
+        !allowsProjectNotification(subject)
+      )
+        return null;
+      return isProjectLocked(cwd) ? maskLockedNotification(queued) : queued;
+    },
+  );
 }

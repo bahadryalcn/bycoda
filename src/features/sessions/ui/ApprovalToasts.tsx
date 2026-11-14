@@ -309,8 +309,8 @@ export function ApprovalToasts({
           else openPanel();
         }}
       >
-        <span className="relative inline-flex size-4 shrink-0">
-          {popupsEnabled ? <Bell className="icon-md" /> : <BellOff className="icon-md" />}
+        <span className="relative inline-flex shrink-0">
+          {popupsEnabled ? <Bell className="icon-sm" /> : <BellOff className="icon-sm" />}
           {badgeCount > 0 ? (
             <NotificationRequestCount
               id={`${panelId}-count`}

@@ -187,6 +187,19 @@ Approval rules are unchanged. Drafts do not authorize sending, tool discovery do
 not enable disabled skills, and a timeout does not authorize repeating a mutation.
 For uncertain operations the assistant checks the original result before retrying.
 
+Coding conversations and project-scoped Assistant conversations can request
+**sessions.message** to queue a message to another conversation, or
+**sessions.cancel** to stop its exact running turn. Both require in-app owner
+approval of the exact target and operation. First read **sessions.configuration**
+for the current revision (message) or run ID (stop). This approves one operation; it does not
+grant ongoing control or enroll a session in Assistant supervision.
+
+Messages retain their sender, existing drafts, paused queues and drain leases.
+Queued means accepted into the queue, not read by the model. Managed task,
+reviewer, Crew and supervised conversations retain their existing work owners.
+A changed revision or run requires reading the target again and a new review.
+Keep the same request ID when inspecting an uncertain result; do not resend it.
+
 Application management tools can review sessions, workspaces, sprints, project
 organization, Git changes, preferences and provider state. Read the target first;
 mutation tools retain a request ID and show the exact operation in native owner
@@ -370,6 +383,14 @@ A Host advisor is read-only, works in plan mode and sees only the question and c
 the main model sends it. Claude's native advisor receives its native
 conversation context.
 
+A delegated child starts only bycoda's own tools (Claude with strict MCP config, Codex with
+the owner's other MCP servers disabled for that thread; no config file is changed) and gets
+a short bycoda hint without the owner's persona. The main model may pass `files: false` for
+discussion, research or writing: the child (Claude or Codex) then runs in an empty scratch
+folder under the Host's state directory, read-only and supervised, without project
+instructions, skills listing, provider memory or git context. The folder is removed with the
+run's record.
+
 Each run uses the quota of its own provider account. A subagent on a Codex model
 consumes Codex usage, not the main model's allowance.
 
@@ -404,6 +425,9 @@ advisor read-only access and child authority limits still apply. Approvals still
 need your answer in the child panel.
 The assistant can wait for up to 16 runs together: up to 240 seconds for Claude,
 Codex and Grok, or 50 seconds for other providers.
+
+Child cards and the activity dock follow each child's own execution status after
+the parent turn ends. A finished parent can still have running background children.
 
 Subagents can discover their parent and siblings with `agents.list` and contact
 them directly with `agents.send`. Messages keep the same child conversation and
@@ -499,6 +523,23 @@ interrupted turn still take precedence. Waiting ends as soon as the watch ends: 
 pull request is merged or closed and its message is delivered, the watch is removed,
 or the session is deleted.
 
+## MCP servers on demand
+
+The owner's other MCP servers are not wired into each session. An agent lists them with
+`mcp.servers.list`, reads one with `mcp.servers.describe` (its tools and instructions,
+both treated as untrusted data) and runs a tool with `mcp.tools.call`. Nothing starts
+until a tool is called. Delegated children can use the same three tools; a crew member
+sees only the servers and tools its crew profile allows.
+
+Tools the server marks read-only run directly. Any other tool needs approval in the
+conversation, showing the server, the tool and its arguments with secrets removed.
+An approval holds for that tool for the rest of the conversation, and is dropped on
+restart. A session with Host-verified full access skips the prompt; a headless session
+with no desktop to ask is denied. A revoked session cannot use an approval given
+earlier. Results are cut at 32,000 characters and a call times out after 60 seconds
+unless `timeoutSeconds` (at most 110) says otherwise. A repeated `requestId` with the
+same input returns the earlier result.
+
 ## Secret requests
 
 Secret tools work in both Host-managed and local desktop conversations of the project;
@@ -535,6 +576,6 @@ returns the earlier result without asking again.
 
 ## Where approvals appear
 
-Required approvals appear inside the source conversation when it is visible, or in an application confirmation when it is not. SSH, desktop actions, management, Inbox, Room delegation, file access, privacy recovery and quit confirmations use this flow. The exact target and operation remain visible. Expired requests, closed source windows and changed privacy scope cannot authorize work. Application-owned approvals never fall back to an operating-system or browser confirmation dialog; system permission prompts and file pickers remain platform-owned.
+Required approvals appear inside the source conversation when it is visible, or in an application confirmation when it is not. SSH, MCP tool calls, desktop actions, management, Inbox, Room delegation, file access, privacy recovery and quit confirmations use this flow. The exact target and operation remain visible. Expired requests, closed source windows and changed privacy scope cannot authorize work. Application-owned approvals never fall back to an operating-system or browser confirmation dialog; system permission prompts and file pickers remain platform-owned.
 
-Full access reuses execution permission for saved SSH commands in the original coding session. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.
+Full access reuses execution permission for saved SSH commands and non-read-only MCP tool calls in the original coding session. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.

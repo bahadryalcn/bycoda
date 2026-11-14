@@ -11,6 +11,7 @@ function key(partial: Partial<Parameters<typeof resolveAppShortcut>[0]>) {
     altKey: false,
     shiftKey: false,
     isComposing: false,
+    keyCode: 0,
     ...partial,
   };
 }
@@ -79,6 +80,14 @@ describe("resolveAppShortcut", () => {
           isComposing: true,
         }),
       ),
+    ).toBeNull();
+  });
+
+  it("ignores default and rebound chords during legacy IME key events", () => {
+    expect(resolveAppShortcut({ ...key({ key: "k", ctrlKey: true }), keyCode: 229 })).toBeNull();
+    saveKeybindingOverride("App: Search", { shortcut: "Option+KeyQ" });
+    expect(
+      resolveAppShortcut({ ...key({ key: "q", code: "KeyQ", altKey: true }), keyCode: 229 }),
     ).toBeNull();
   });
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import { createRoot } from "react-dom/client";
 import { DelegatedRetentionFixture, seedDelegatedRetention } from "./delegated-retention";
+import { SubagentAuditFixture, seedSubagentAudit } from "./subagent-audit";
 import { SubagentSheet, useSubagentSheet } from "../../../src/features/sessions/ui/SubagentSheet";
 import { useSubagentRelay } from "../../../src/features/sessions/ui/useSubagentRelay";
 import { ActivityDock } from "../../../src/features/sessions/ui/ActivityDock";
@@ -16,7 +17,11 @@ const agent: Block = {
   role: "tool",
   text: "Review changes",
   tool: { callId: "spawn-1", kind: "agent", status: "in_progress" },
-  agentRun: { name: "Reviewer", prompt: "Review the requested changes", steps: [] },
+  agentRun: {
+    name: "Reviewer",
+    prompt: "Review the requested changes",
+    steps: [],
+  },
 };
 const layoutAgent: Block = {
   ...agent,
@@ -137,7 +142,15 @@ function Fixture() {
   const sheet = useSubagentSheet(
     statusColors
       ? statusBlocks
-      : [reviewer, command, { ...agent, id: "agent-2", agentRun: { name: "Explorer", steps: [] } }],
+      : [
+          reviewer,
+          command,
+          {
+            ...agent,
+            id: "agent-2",
+            agentRun: { name: "Explorer", steps: [] },
+          },
+        ],
     true,
   );
   const [submitted, setSubmitted] = useState<string[]>([]);
@@ -232,7 +245,9 @@ function Fixture() {
 // the fixture mounts it directly, so it hydrates the same store first.
 await flushHostSessionBindings();
 const retention = new URLSearchParams(location.search).has("retention");
+const audit = new URLSearchParams(location.search).has("audit");
 if (retention) seedDelegatedRetention();
+if (audit) seedSubagentAudit();
 createRoot(document.getElementById("root")!).render(
-  retention ? <DelegatedRetentionFixture /> : <Fixture />,
+  audit ? <SubagentAuditFixture /> : retention ? <DelegatedRetentionFixture /> : <Fixture />,
 );

@@ -42,6 +42,9 @@
   min-inline-size: 0;
   flex-wrap: wrap;
 }
+.listHead > :first-child {
+  flex: 1 1 auto;
+}
 .listHead:empty {
   display: none;
 }
@@ -55,6 +58,7 @@
 .list {
   display: flex;
   flex-direction: column;
+  gap: var(--space-3);
   min-inline-size: 0;
 }
 

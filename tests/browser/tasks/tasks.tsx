@@ -80,6 +80,13 @@ const goals: Record<string, HostGoal[]> = {
 const seedSprints = query.has("sprintSeed");
 const sprintFixture =
   query.has("sprints") || seedSprints ? new SprintFixture(machines, () => tasks) : null;
+const remoteSprintFixture = sprintFixture ? new SprintFixture(machines, () => tasks) : null;
+let sprintServerOffline = false;
+Object.assign(window, {
+  taskFixtureDisconnectSprintServer: () => {
+    sprintServerOffline = true;
+  },
+});
 if (sprintFixture) {
   const demo = (
     id: string,
@@ -552,6 +559,50 @@ if (query.has("tasksUx")) {
   }));
   goals["machine-local"] = [];
 }
+if (query.has("tasksActions")) {
+  projects["machine-local"].push(
+    ...Array.from({ length: 25 }, (_, index) => ({
+      id: `scope-${index}`,
+      name: `Workspace ${index}`,
+      cwd: `C:/fixture/workspace-${index}`,
+    })),
+  );
+  goals["machine-local"] = [
+    {
+      id: "cancelled-epic",
+      title: "Mobile workspace refresh",
+      prompt: "Improve projects and conversations.",
+      projectIds: ["local-project"],
+      leadProjectId: "local-project",
+      harness: "claude",
+      model: "claude:fixture",
+      modelSettings: {},
+      runtimeMode: "auto",
+      maxRunMinutes: 0,
+      verifyDefaults: { review: false },
+      approvePlan: false,
+      finalReview: true,
+      status: "cancelled",
+      taskIds: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      budgetUsage: {
+        historyComplete: false,
+        agentMinutes: 60.1,
+        attempts: 1,
+        completedRuns: 1,
+        runningRuns: 0,
+        reportedTokens: 77107,
+        tokens: null,
+        tokensComplete: false,
+        unknownTokenRuns: 1,
+        reportedCostUsd: null,
+        estimatedCostUsd: null,
+        measuredAt: Date.now(),
+      },
+    },
+  ];
+}
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 const openedSessions: BackgroundSessionTarget[] = [];
 let projectFailure = query.has("projectError");
@@ -649,6 +700,12 @@ Object.assign(window, {
       const machineId = String(args.machineId);
       const machine = machines.find((entry) => entry.id === machineId);
       if (!machine) throw new Error("Unknown fixture machine");
+      if (
+        sprintServerOffline &&
+        machineId === "machine-remote" &&
+        String(args.method).startsWith("sprints.")
+      )
+        throw new Error("Fixture sprint server offline");
       const params = (args.params ?? {}) as Record<string, unknown>;
       if (machineId === "machine-remote" && args.method === slowRemoteMethod) await remoteGate;
       if (args.method === query.get("slowOperation")) await remoteGate;
@@ -658,7 +715,11 @@ Object.assign(window, {
           args.method === "tasks.snapshotWithCursor" ||
           args.method === "tasks.events")
       )
-        return sprintFixture.rpc(String(args.method), machineId, params);
+        return (
+          machineId === "machine-remote" && String(args.method).startsWith("sprints.")
+            ? remoteSprintFixture!
+            : sprintFixture
+        ).rpc(String(args.method), machineId, params);
       switch (args.method) {
         case "environment.describe":
           return requireHostDescriptor({
@@ -891,6 +952,10 @@ Object.assign(window, {
           return new Promise(() => {});
         }
         case "tasks.delete": {
+          if (query.has("taskDeleteError")) {
+            query.delete("taskDeleteError");
+            throw new Error("The machine disconnected during deletion.");
+          }
           if (query.has("bulkFailure") && params.taskId === "bulk-42") {
             query.delete("bulkFailure");
             throw new Error("The machine disconnected during deletion.");
@@ -920,6 +985,14 @@ Object.assign(window, {
             );
           else tasks[machineId].push(task);
           return structuredClone(task);
+        }
+        case "goals.delete": {
+          if (query.has("epicDeleteError")) {
+            query.delete("epicDeleteError");
+            throw new Error("Stop this goal’s running tasks before deleting it.");
+          }
+          goals[machineId] = goals[machineId].filter((goal) => goal.id !== params.goalId);
+          return null;
         }
         case "goals.create": {
           const input = params.goal as HostGoalInput;
@@ -1155,6 +1228,57 @@ async function seedSprintHistory() {
 }
 void languageReady
   .then(() => seedSprintHistory())
+  .then(async () => {
+    if (!query.has("sharedServers") || !sprintFixture || !remoteSprintFixture) return;
+    tasks["machine-local"].find((task) => task.id === "docs-task")!.status = "running";
+    for (const [machineId, fixture, projectId, name] of [
+      ["machine-local", sprintFixture, "local-project", "Desktop sprint"],
+      ["machine-remote", remoteSprintFixture, "remote-project", "Mac sprint"],
+    ] as const) {
+      const machine = machines.find((entry) => entry.id === machineId)!;
+      const project = projects[machineId].find((entry) => entry.id === projectId)!;
+      await fixture.rpc("sprints.create", machineId, {
+        input: {
+          id: "shared-id",
+          requestId: `create-${machineId}`,
+          name,
+          projects: [
+            {
+              environmentId: machine.environmentId,
+              projectId,
+              cwd: project.cwd,
+              name: project.name,
+            },
+          ],
+          capacityPoints: null,
+          projectCapacities: {},
+        },
+      });
+      const snapshot = (await sprintFixture.rpc("tasks.snapshotWithCursor", machineId, {
+        projectIds: [projectId],
+      })) as { tasks: unknown[]; cursor: number };
+      await fixture.rpc("sprints.ingest", machineId, {
+        input: {
+          environmentId: machine.environmentId,
+          visibleProjectIds: [projectId],
+          snapshot,
+          cursor: snapshot.cursor,
+          caughtUp: true,
+        },
+      });
+      await fixture.rpc("sprints.plan", machineId, {
+        input: {
+          environmentId: machine.environmentId,
+          projectId,
+          taskId: machineId === "machine-local" ? "local-task" : "remote-task",
+          sprintId: "shared-id",
+          storyPoints: 3,
+          expectedRevision: 0,
+          requestId: `plan-${machineId}`,
+        },
+      });
+    }
+  })
   .then(() => setLanguagePreference(query.get("lang") === "tr" ? "tr" : "en"))
   .then(() =>
     createRoot(document.getElementById("root")!).render(

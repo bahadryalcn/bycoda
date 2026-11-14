@@ -142,13 +142,6 @@ export function AssistantMemoryPanel(props: Props) {
                     )}
                   </div>
                   <div className={styles.actions}>
-                    <Switch
-                      aria-label={t("Enable memory")}
-                      aria-describedby={`assistant-memory-${entry.id}`}
-                      checked={entry.active}
-                      disabled={props.pending}
-                      onCheckedChange={(active) => props.onToggle(entry, active)}
-                    />
                     <InlineAction
                       label={t("Edit")}
                       disabled={props.pending}
@@ -163,6 +156,13 @@ export function AssistantMemoryPanel(props: Props) {
                     >
                       <Trash2 className="icon-sm" />
                     </InlineAction>
+                    <Switch
+                      aria-label={t("Enable memory")}
+                      aria-describedby={`assistant-memory-${entry.id}`}
+                      checked={entry.active}
+                      disabled={props.pending}
+                      onCheckedChange={(active) => props.onToggle(entry, active)}
+                    />
                   </div>
                   <div className={styles.feedback}>{props.errorFor(entry.id)}</div>
                 </ActionHost>

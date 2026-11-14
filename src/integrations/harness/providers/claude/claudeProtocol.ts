@@ -249,6 +249,8 @@ export function buildClaudeSpawnArgs(input: ClaudeSpawnInput): string[] {
   if (input.includePartialMessages !== false) {
     args.push("--include-partial-messages");
   }
+  // Claude has no per-session "skills off" setting; this flag drops the skill listing.
+  if (input.leanContext) args.push("--disable-slash-commands");
   // Isolated spawns are Bycoda's own helper calls (titles, summaries); the
   // user's hooks have no business firing there. Interactive sessions inherit
   // whatever the caller decided so `~/.claude` hooks keep working.
@@ -258,6 +260,7 @@ export function buildClaudeSpawnArgs(input: ClaudeSpawnInput): string[] {
     env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = input.subagentPolicy === "force" ? "1" : "0";
   }
   if (input.advisor === "off") env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL = "1";
+  if (input.leanContext) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1";
   const settings: ClaudeCliSettings = {
     ...input.settings,
     ...(input.disabledSkills?.length

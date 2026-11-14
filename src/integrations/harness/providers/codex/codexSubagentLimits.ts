@@ -1,4 +1,13 @@
+import { leanContext } from "../../core/nativeToolLimits";
 import { codexAutoCompactConfig } from "./codexCompaction";
+
+/** Keys present in codex-cli 0.169 (`memories.*`, `features.memories`, `skills.include_instructions`). */
+const CODEX_LEAN_CONFIG = {
+  "features.memories": false,
+  "memories.use_memories": false,
+  "memories.generate_memories": false,
+  "skills.include_instructions": false,
+};
 
 /**
  * Thread config for thread/start and thread/resume. Codex's native subagents
@@ -12,11 +21,15 @@ export function codexThreadConfig(
   modelSettings: Readonly<Record<string, string>> | undefined,
 ): Record<string, unknown> | undefined {
   const policy = modelSettings?.nativeSubagents;
+  // A chat-only child needs neither provider memory nor the skill listing.
+  const lean = leanContext(modelSettings) ? CODEX_LEAN_CONFIG : undefined;
   const compact = codexAutoCompactConfig(modelSettings);
-  if (policy !== "off" && policy !== "on") return compact ? { ...base, ...compact } : base;
+  if (policy !== "off" && policy !== "on")
+    return compact || lean ? { ...base, ...compact, ...lean } : base;
   return {
     ...base,
     ...compact,
+    ...lean,
     "agents.enabled": policy === "on",
     "features.multi_agent": policy === "on",
     // Off by default in Codex: "on" restores the default tools, it never opts into v2.

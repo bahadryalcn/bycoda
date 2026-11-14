@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { forEachAsync } from "../async-collections";
 import { HostStore } from "../store";
-import { assertNotCrewManaged, crewManagedSession } from "./crew-managed-session";
+import { assertNotCrewManaged, crewManagedSession, crewSessionRuns } from "./crew-managed-session";
 import { initializeCrewSchedulerProjection } from "./crew-scheduler-projection";
 
 const stores: HostStore[] = [];
@@ -43,4 +43,24 @@ it("finds coordinator, member and reviewer sessions of unfinished runs only", as
     message: "This conversation is managed by a crew. Stop or delete the work from Crews.",
   });
   await expect(assertNotCrewManaged(f.store, "plain")).resolves.toBeUndefined();
+});
+it("lists every crew session of a project, finished runs included, for list summaries", async () => {
+  const f = await fixture();
+  await f.run("live", "paused", "lead");
+  await f.run("done", "finished", "old-lead");
+  await f.task("t1", { crewRunId: "live", sessionId: "worker", reviewer: { sessionId: "review" } });
+  await f.task("t2", { crewRunId: "done", sessionId: "old-worker" });
+  await f.task("t3", { sessionId: "plain" });
+  await f.store.db.prepare("INSERT INTO tasks(id,value) VALUES('broken','{')").run();
+  expect(Object.fromEntries(await crewSessionRuns(f.store, "p"))).toEqual({
+    lead: "live",
+    worker: "live",
+    review: "live",
+    "old-lead": "done",
+    "old-worker": "done",
+  });
+  expect((await crewSessionRuns(f.store, "other")).size).toBe(0);
+  const bare = new HostStore(":memory:");
+  stores.push(bare);
+  expect((await crewSessionRuns(bare, "p")).size).toBe(0);
 });

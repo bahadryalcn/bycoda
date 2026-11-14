@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/trycua/cua",
+  "releaseTag": "cua-driver-rs-v0.49.11",
+  "version": "0.49.11",
+  "license": "MIT",
+  "licenseSha256": "d0a32419a44fa38d5023d1431dfcbedd1457eb5e7b2e6c7c87ca064facb41b41"
+}

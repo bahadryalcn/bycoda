@@ -6,6 +6,16 @@ import { opencodeLaunchEnv } from "./externalMcpLaunch";
 export type BridgedLaunch = { launchArgs: string[]; launchEnv?: Record<string, string> };
 type BinaryProvider = Parameters<typeof socialSpawnArgs>[0];
 
+/**
+ * Claude then loads only the --mcp-config servers (the bycoda ones), not the owner's global,
+ * project or plugin servers. Their settings, hooks and permissions still apply.
+ */
+export function strictClaudeMcp(args: string[]): string[] {
+  return args[0]?.startsWith("-") && !args.includes("--strict-mcp-config")
+    ? ["--strict-mcp-config", ...args]
+    : args;
+}
+
 /** Providers whose launch goes through the Host tool bridges. */
 export function bridgedProvider(provider: BinaryProvider): boolean {
   return provider === "claude" || provider === "codex" || provider === "opencode";
@@ -22,11 +32,13 @@ export async function bridgedLaunch(
   sessionId: string,
   args: string[],
   autoCompact?: "on" | "off",
+  bycodaMcpOnly?: boolean,
 ): Promise<BridgedLaunch> {
   if (binaryProvider === "claude" || binaryProvider === "codex") {
+    // A child needs the conversation tools (agents.*) only; social and runtime logs stay with the owner's sessions.
     const [social, logs, conversation] = await Promise.all([
-      socialBridge(sessionId),
-      runtimeLogsBridge(sessionId),
+      bycodaMcpOnly ? null : socialBridge(sessionId),
+      bycodaMcpOnly ? null : runtimeLogsBridge(sessionId),
       conversationToolsBridge(sessionId),
     ]);
     const withLogs = runtimeLogsSpawnArgs(
@@ -34,7 +46,14 @@ export async function bridgedLaunch(
       socialSpawnArgs(binaryProvider, args, social),
       logs,
     );
-    return { launchArgs: conversationToolsSpawnArgs(binaryProvider, withLogs, conversation) };
+    // A child gets bycoda's own tools only, so the Host MCP hub's user servers are not wired in.
+    const scoped =
+      bycodaMcpOnly && conversation ? { ...conversation, externalMcp: undefined } : conversation;
+    const launchArgs = conversationToolsSpawnArgs(binaryProvider, withLogs, scoped);
+    return {
+      launchArgs:
+        bycodaMcpOnly && binaryProvider === "claude" ? strictClaudeMcp(launchArgs) : launchArgs,
+    };
   }
   if (binaryProvider === "opencode")
     return {

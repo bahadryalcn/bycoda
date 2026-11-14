@@ -61,9 +61,9 @@ it("uses direct copy for a delegated child: Send, Open conversation, and the dir
   expect(container.textContent).not.toContain("Via the main agent");
 });
 
-it("keeps the relay copy for native subagents, including Open main conversation", () => {
+it("keeps native relay controls without a redundant link to the already open main conversation", () => {
   render(relay({ onOpenConversation: vi.fn() }));
-  expect(buttonLabels()).toContain("Open main conversation");
+  expect(buttonLabels()).not.toContain("Open main conversation");
   expect(buttonLabels()).not.toContain("Open conversation");
   expect(buttonLabels()).toContain("Relay via main agent");
 });

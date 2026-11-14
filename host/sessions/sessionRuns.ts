@@ -13,13 +13,14 @@ import {
 import type { HostEngine } from "../engine";
 import type { HostStore } from "../store";
 import { confirmedRunProgress } from "../execution/run-duration";
+import { isSessionNotFound } from "./session-authority";
 import { newRequestId } from "../../src/shared/lib/id/requestId";
 
 export const STOPPED_BY_USER = "Stopped by you.";
 export const HOST_INTERRUPTED = "The host stopped during this run.";
 
 export type SessionRunEngine = Pick<HostEngine, "command" | "updateSession"> &
-  Partial<Pick<HostEngine, "withMessageAuthor" | "withCommandAdmission">>;
+  Partial<Pick<HostEngine, "withMessageAuthor" | "withCommandAdmission" | "sessionStoreWrite">>;
 
 /** What an unattended run needs to start: one prompt in a fresh session. */
 export type SessionRunSpec = {
@@ -48,6 +49,8 @@ export type SessionRunSpec = {
   workspaceMode?: "current" | "worktree";
   /** A worktree of the project to run in, instead of the project folder. */
   worktreeCwd?: string;
+  /** Host-created empty folder the new session runs in instead of the project (chat-only children). */
+  scratchCwd?: string;
 };
 
 /** The session turn an unattended run started, as its owner recorded it. */
@@ -60,7 +63,12 @@ export type SessionRun = {
 };
 
 export type SessionRunState =
-  | { state: "running"; needsInput: boolean; lastActivityAt?: number; durationUncertain?: boolean }
+  | {
+      state: "running";
+      needsInput: boolean;
+      lastActivityAt?: number;
+      durationUncertain?: boolean;
+    }
   /** Past its time limit: save `error`, then cancel the turn. */
   | { state: "overLimit"; error: string }
   | {
@@ -112,6 +120,12 @@ export async function launchSessionRun(
         })
       ).sessionId;
     if (!(await admitted())) return { sessionId, deferred: true };
+    if (spec.scratchCwd && !spec.resumeSessionId) {
+      if (!engine.sessionStoreWrite)
+        throw new Error("This Host cannot run a session in a scratch folder.");
+      const [id, cwd] = [sessionId, spec.scratchCwd];
+      await engine.sessionStoreWrite(id, () => store.setScratchCwd(id, cwd));
+    }
     await engine.updateSession(sessionId, { title: spec.title });
     if (!(await admitted())) return { sessionId, deferred: true };
     const send = () =>
@@ -127,7 +141,10 @@ export async function launchSessionRun(
       spec.author && engine.withMessageAuthor
         ? await engine.withMessageAuthor(spec.author, send)
         : await send();
-    return { sessionId, runId: receipt.runId ?? (await store.session(sessionId)).runId };
+    return {
+      sessionId,
+      runId: receipt.runId ?? (await store.session(sessionId)).runId,
+    };
   } catch (error) {
     return { sessionId, error: errorMessage(error) };
   }
@@ -143,7 +160,10 @@ export async function sessionRunState(
   let session;
   try {
     session = await store.session(run.sessionId ?? "");
-  } catch {
+  } catch (error) {
+    // Only a real not-found proves deletion; any other read error is transient and
+    // must not be recorded as the run's outcome, so the caller looks again next tick.
+    if (!isSessionNotFound(error)) throw error;
     return {
       state: "finished",
       status: "failed",

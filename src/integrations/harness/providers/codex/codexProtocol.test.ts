@@ -216,7 +216,7 @@ describe("buildThreadStartParams / buildTurnStartParams", () => {
     expect(turn.input).toEqual([
       {
         type: "text",
-        text: "hello\n\nAttachments: [image1] = shot.png (1st attached image)",
+        text: "hello\n\nAttachments: [Image\u00a01\u00a0·\u00a03\u00a0B] = shot.png (1st attached image)",
       },
       { type: "image", url: "data:image/png;base64,abc" },
     ]);

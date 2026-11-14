@@ -104,7 +104,13 @@ const render = async (props: Parameters<typeof Harness>[0] = {}) => {
   await act(() => root.render(createElement(Harness, props)));
 };
 const toggleProject = async (name = "Visible project") => {
-  await act(() => container.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!.click());
+  await act(() =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '[aria-haspopup="dialog"][aria-label*="Selected projects"]',
+      )!
+      .click(),
+  );
   await act(() => {
     const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((element) =>
       element.textContent?.includes(name),
@@ -221,7 +227,13 @@ it("distinguishes same-name projects by path and saves their exact IDs", async (
     ],
   });
   expect(container.querySelectorAll('[role="option"]')).toHaveLength(0);
-  await act(() => container.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!.click());
+  await act(() =>
+    container
+      .querySelector<HTMLButtonElement>(
+        '[aria-haspopup="dialog"][aria-label*="Selected projects"]',
+      )!
+      .click(),
+  );
   const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
   expect(options).toHaveLength(2);
   expect(options[0].textContent).toContain("/first/checkout");

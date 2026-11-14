@@ -55,6 +55,8 @@ pub(super) const MANAGEMENT_APPROVAL_ACTIONS: &[&str] = &[
     "workspaces.featureClaims.acquire",
     "workspaces.featureClaims.release",
     "sessions.configure",
+    "sessions.message",
+    "sessions.cancel",
     "sessions.contextual.create",
     "sessions.draft",
     "sprints.create",

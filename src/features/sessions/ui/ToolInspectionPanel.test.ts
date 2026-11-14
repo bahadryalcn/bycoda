@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ToolInspectionPanel, inspectionJson } from "./ToolInspectionPanel";
+import { ToolInspectionPanel, inspectionJson, hasToolInspection } from "./ToolInspectionPanel";
 import type { Block } from "../model/session";
 const clipboard = vi.hoisted(() => ({ copy: vi.fn(async (_text: string) => {}) }));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyMessage: clipboard.copy }));
@@ -24,6 +24,22 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
 });
+
+it.each(["  item: value\n  next: value\n", " \t\n"])(
+  "copies retained whitespace unchanged: %j",
+  async (output) => {
+    const block: Block = {
+      id: "whitespace",
+      role: "tool",
+      text: "Result",
+      tool: { output, status: "completed" },
+    };
+    expect(hasToolInspection(block)).toBe(true);
+    await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    expect(clipboard.copy).toHaveBeenCalledExactlyOnceWith(output);
+  },
+);
 
 it("keeps copy feedback local, blocks duplicates and permits retry after a failure", async () => {
   let reject!: (error: Error) => void;

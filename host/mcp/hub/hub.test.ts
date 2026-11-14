@@ -69,6 +69,7 @@ const hubWith = (
     inventory: async () => defs,
     files: noUserFiles(dir),
     accountDirs: noAccounts,
+    policy: async () => ({ version: 1, mode: "always", direct: [] }),
     ...extra,
   });
 
@@ -300,6 +301,7 @@ describe("MCP hub children", () => {
       sources: ["claude-project"],
     };
     const hub = new McpHub({
+      policy: async () => ({ version: 1, mode: "always", direct: [] }),
       dataDir: dir,
       files: noUserFiles(dir),
       accountDirs: noAccounts,
@@ -328,6 +330,7 @@ describe("MCP hub describe budget and warm-up", () => {
   it("answers without externalMcp when discovery is slower than the wait", async () => {
     const dir = tempDir();
     const hub = new McpHub({
+      policy: async () => ({ version: 1, mode: "always", direct: [] }),
       dataDir: dir,
       externalMcpWaitMs: 30,
       inventory: () => new Promise(() => undefined),
@@ -340,6 +343,7 @@ describe("MCP hub describe budget and warm-up", () => {
   it("includes externalMcp when discovery finishes within the wait", async () => {
     const dir = tempDir();
     const hub = new McpHub({
+      policy: async () => ({ version: 1, mode: "always", direct: [] }),
       dataDir: dir,
       externalMcpWaitMs: 1_000,
       inventory: async () => [definition("fake-a", dir)],
@@ -352,6 +356,7 @@ describe("MCP hub describe budget and warm-up", () => {
     const dir = tempDir();
     let calls = 0;
     const hub = new McpHub({
+      policy: async () => ({ version: 1, mode: "always", direct: [] }),
       dataDir: dir,
       externalMcpWaitMs: 30,
       inventory: () => {
@@ -375,6 +380,7 @@ describe("MCP hub describe budget and warm-up", () => {
     const dir = tempDir();
     let calls = 0;
     const hub = new McpHub({
+      policy: async () => ({ version: 1, mode: "always", direct: [] }),
       dataDir: dir,
       inventory: async () => {
         calls += 1;

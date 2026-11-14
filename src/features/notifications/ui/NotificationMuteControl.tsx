@@ -25,6 +25,13 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
   const t = useT();
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<"menu" | "custom" | null>(null);
+  const targetKey = JSON.stringify([...new Set(projectIds)].sort());
+  const [previousTargetKey, setPreviousTargetKey] = useState(targetKey);
+  if (previousTargetKey !== targetKey) {
+    setPreviousTargetKey(targetKey);
+    setOpen(null);
+    setError(null);
+  }
   const trigger = useRef<HTMLButtonElement>(null);
   const { preferences, muted: mutedIds, unavailable } = useNotificationPreferencesView();
   const muted = projectIds.filter((id) => mutedIds.has(id));

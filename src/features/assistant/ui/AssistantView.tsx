@@ -4,6 +4,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
   canRetryRoomPrivacyProjection,
+  isRoomPrivacyHostBusy,
   rebuildClosedRoomPrivacyProjection,
   recoverRoomPrivacyProjection,
   getRoomPrivacyStatus,
@@ -13,14 +14,12 @@ import {
 import { isAppQuitting } from "../../../app/model/appLifecycle";
 import { MemoryEditor } from "./MemoryEditor";
 import { useSyncExternalStore } from "react";
-import sessionStyles from "./AssistantSessions.module.css";
 import { AssistantSettings } from "./AssistantSettings";
-import historyStyles from "./AssistantHistory.module.css";
-import noteStyles from "./AssistantNoteCard.module.css";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
+import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
@@ -80,6 +79,7 @@ export function AssistantView(props: AssistantViewProps) {
   });
   // Retry only when the privacy projection can settle it; otherwise the reason stands alone.
   // A failed recovery republishes its reason through the privacy status store.
+  const hostBusy = !!roomPrivacy.error && isRoomPrivacyHostBusy(roomPrivacy.error);
   const retryPrivacy =
     roomPrivacy.error && canRetryRoomPrivacyProjection()
       ? () => void recoverRoomPrivacyProjection().catch(() => undefined)
@@ -305,17 +305,24 @@ export function AssistantView(props: AssistantViewProps) {
           <Alert
             className={shell.notice}
             tone="danger"
-            inline
             title={t("Room privacy protection could not be confirmed.")}
             action={
-              retryPrivacy && (
-                <Button variant="link" layout="text" onClick={retryPrivacy}>
-                  {t("Retry")}
-                </Button>
-              )
+              <div className={shell.noticeActions}>
+                {hostBusy && (
+                  <ErrorDetails
+                    title={t("Room privacy protection could not be confirmed.")}
+                    detail={roomPrivacy.error}
+                  />
+                )}
+                {retryPrivacy && (
+                  <Button size="sm" variant="secondary" onClick={retryPrivacy}>
+                    {t("Retry")}
+                  </Button>
+                )}
+              </div>
             }
           >
-            {t(roomPrivacy.error)}
+            {hostBusy ? t("The Host is busy. Try again in a moment.") : t(roomPrivacy.error)}
           </Alert>
         )}
         {roomPrivacy.error &&
@@ -435,7 +442,7 @@ export function AssistantView(props: AssistantViewProps) {
             </div>
             <section
               id="assistant-content"
-              className={`${styles.content} ${view === "Sessions" ? sessionStyles.workspace : ""} ${view === "History" ? historyStyles.workspace : ""} ${view === "Notes" ? noteStyles.page : ""}`}
+              className={styles.content}
               data-view={view}
               aria-label={t(view)}
             >
@@ -449,17 +456,6 @@ export function AssistantView(props: AssistantViewProps) {
                 >
                   {t("Outside working hours. Accepted turns can finish; new work waits.")}
                 </Text>
-              )}
-              {view === "History" && (
-                <header className={historyStyles.heading}>
-                  <Heading size="page">{t("What I did")}</Heading>
-                  <span>{snapshot.activity.length}</span>
-                </header>
-              )}
-              {view === "Sessions" && (
-                <div className={sessionStyles.pageHeading}>
-                  <Heading size="page">{t("Sessions")}</Heading>
-                </div>
               )}
               {!(view === "Notes" && room.noteEdit) && <CollectionToolbar snapshot={snapshot} />}
               {view === "Today" && (

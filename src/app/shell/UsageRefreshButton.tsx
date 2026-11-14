@@ -1,0 +1,34 @@
+import { useT } from "../../shared/i18n";
+import { Button } from "../../shared/ui/Button";
+import { RefreshCw } from "../../shared/ui/icons";
+
+/** Refresh belongs to the displayed quota account, including unavailable readings. */
+export function UsageRefreshButton({
+  accountId,
+  onRefresh,
+  refreshing,
+  disabled,
+}: {
+  accountId?: string;
+  onRefresh?: (accountId?: string) => Promise<void>;
+  refreshing: boolean;
+  disabled: boolean;
+}) {
+  const t = useT();
+  if (!onRefresh) return null;
+  return (
+    <div className="mb-2 flex justify-end">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label={t("Refresh usage")}
+        loading={refreshing}
+        disabled={disabled}
+        onClick={() => void onRefresh(accountId)}
+      >
+        <RefreshCw className="icon-sm" aria-hidden />
+        {t("Refresh usage")}
+      </Button>
+    </div>
+  );
+}

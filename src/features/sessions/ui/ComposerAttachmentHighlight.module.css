@@ -3,7 +3,3 @@
   --token-ink: var(--ui-attachment-ink, var(--ui-tone-accent-fg));
   color: var(--token-ink);
 }
-
-.bracket {
-  color: transparent;
-}

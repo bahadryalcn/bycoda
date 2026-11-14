@@ -49,7 +49,7 @@ export function projectScopeOptions({
 }) {
   const pathScope = projectFilter.startsWith("path:");
   return [
-    { value: "all", label: t("All projects") },
+    { value: "all", label: t("All projects"), pinned: true },
     ...(pathScope && !selectedProject
       ? [{ value: projectFilter, label: projectDisplayName(cwd || "") }]
       : []),
@@ -79,9 +79,7 @@ export type TaskToolbarProps = {
   section: TaskSection;
   showReports: boolean;
   onSection: (value: TaskSection) => void;
-  /** First use: only the section switch shows until there is something to scope. */
-  onboarding: boolean;
-  projectOptions: { value: string; label: string; description?: string }[];
+  projectOptions: { value: string; label: string; description?: string; pinned?: boolean }[];
   projectFilter: string;
   onProject: (value: string) => void;
   search: { visible: boolean; value: string; onChange: (value: string) => void };
@@ -144,17 +142,27 @@ export function TaskToolbar(props: TaskToolbarProps) {
         ]}
         onValueChange={props.onSection}
       />
-      {props.onboarding ? null : (
-        <div className="task-project-scope">
-          <SearchableSelect
-            hideLabel
-            label={t("Project")}
-            value={props.projectFilter}
-            options={props.projectOptions}
-            onChange={props.onProject}
-          />
-        </div>
-      )}
+      <div className="task-project-scope">
+        <SearchableSelect
+          hideLabel
+          label={t("Server")}
+          value={filters.values.machine}
+          onChange={filters.onMachine}
+          options={[
+            { value: "all", label: t("All servers"), pinned: true },
+            ...filters.machines.map((machine) => ({ value: machine.id, label: machine.name })),
+          ]}
+        />
+      </div>
+      <div className="task-project-scope">
+        <SearchableSelect
+          hideLabel
+          label={t("Project")}
+          value={props.projectFilter}
+          options={props.projectOptions}
+          onChange={props.onProject}
+        />
+      </div>
       {props.search.visible ? (
         <TextField
           fieldClassName="task-search-field"
@@ -210,11 +218,9 @@ export function TaskToolbar(props: TaskToolbarProps) {
           <TaskToolbarFilters
             values={filters.values}
             activeCount={filters.activeCount}
-            machines={filters.machines}
             goals={filters.goals}
             sprints={filters.sprints}
             onStatus={filters.onStatus}
-            onMachine={filters.onMachine}
             onGoal={filters.onGoal}
             onSprint={filters.onSprint}
             onReset={filters.onReset}

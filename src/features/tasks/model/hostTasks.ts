@@ -632,3 +632,29 @@ export function autoMergeBlocker(
     return "Not merged automatically: the reviewer did not pass it";
   return undefined;
 }
+
+/** Keep navigation available while old hosts omit the current session fields.
+ * A running review takes precedence over the previous verification result. */
+export function taskSessionIds(task: HostTask): {
+  worker?: string;
+  review?: string;
+} {
+  const available = (id: string | undefined) => (id?.trim() ? id : undefined);
+  const attempts = [...(task.attemptHistory ?? [])].reverse();
+  const latestNote = [...(task.reviewNotes ?? [])]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .find((note) => available(note.sessionId) || note.sessionIds?.some(available));
+  return {
+    worker:
+      available(task.sessionId) ??
+      available(task.blockedTakeover?.previousSessionId) ??
+      attempts.map((entry) => available(entry.workerSessionId)).find(Boolean),
+    review:
+      available(task.status === "verifying" ? task.reviewer?.sessionId : undefined) ??
+      available(task.verification?.review?.sessionId) ??
+      available(task.reviewer?.sessionId) ??
+      attempts.map((entry) => available(entry.reviewerSessionId)).find(Boolean) ??
+      available(latestNote?.sessionId) ??
+      [...(latestNote?.sessionIds ?? [])].reverse().map(available).find(Boolean),
+  };
+}

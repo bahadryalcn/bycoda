@@ -24,6 +24,7 @@ export type SoundCue =
   | "inboxUnseen"
   | "linkedActivity"
   | "updateAvailable"
+  | "voiceQuestion"
   | "switch"
   | "copy";
 
@@ -32,6 +33,7 @@ const CUES: Record<SoundCue, SoundName> = {
   inboxUnseen: "knock",
   linkedActivity: "thread",
   updateAvailable: "welcome",
+  voiceQuestion: "knock",
   switch: "touch",
   copy: "stamp",
 };

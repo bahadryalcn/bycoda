@@ -445,7 +445,7 @@ function AddRemoteProjectForm({
             variant="outline"
             padding="none"
             aria-label={t("Folders")}
-            className="h-[min(340px,45vh)] min-h-24 overflow-y-auto overscroll-contain"
+            className="h-[min(340px,45vh)] min-h-24 overflow-y-auto"
           >
             <div className="p-1">
               {directory?.parent ? (

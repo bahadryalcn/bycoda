@@ -34,7 +34,7 @@ describe("Hermes ACP protocol", () => {
     ).toEqual([
       {
         type: "text",
-        text: "inspect this\n\nAttachments: [image1] = screen.png (1st attached image)",
+        text: "inspect this\n\nAttachments: [Image\u00a01\u00a0·\u00a04\u00a0B] = screen.png (1st attached image)",
       },
       { type: "image", mimeType: "image/png", data: "AAAA" },
     ]);

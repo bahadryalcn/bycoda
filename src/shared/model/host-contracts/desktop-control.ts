@@ -3,6 +3,10 @@ import { z } from "zod";
 export const AGENT_DESKTOP_UPSTREAM_REF = "9eb9b296192fcb70bda25e918cd6dd66abfa3d0d";
 export const AGENT_DESKTOP_PROTOCOL = "2.5";
 export const DESKTOP_PERMISSION_MODES = ["ask", "auto", "full"] as const;
+/** Native helper behind the desktop tools; the owner picks one in Computer use settings. */
+export const DESKTOP_DRIVERS = ["agent-desktop", "cua-driver"] as const;
+export type DesktopDriver = (typeof DESKTOP_DRIVERS)[number];
+export const CUA_DRIVER_RELEASE = "cua-driver-rs-v0.49.11";
 /** These system shortcuts are unavailable even with a physical-input grant. */
 export function isForbiddenDesktopShortcut(value: string): boolean {
   const normalized = value.normalize("NFKC").toLowerCase();
@@ -38,6 +42,7 @@ function requestSchema(bounded: boolean) {
         allowPhysicalInput: z.boolean(),
         permissionMode: z.enum(DESKTOP_PERMISSION_MODES).optional(),
         allowAllApps: z.boolean().optional(),
+        driver: z.enum(DESKTOP_DRIVERS).optional(),
       }),
     }),
     z.strictObject({
@@ -126,6 +131,7 @@ export type DesktopControlConfiguration = {
   permissionMode: DesktopPermissionMode;
   /** Only honored in full access: any running app may be targeted. */
   allowAllApps: boolean;
+  driver: DesktopDriver;
   version: number;
 };
 export const DesktopControlConfigurationSchema = z.strictObject({
@@ -136,6 +142,7 @@ export const DesktopControlConfigurationSchema = z.strictObject({
   allowPhysicalInput: z.boolean(),
   permissionMode: z.enum(DESKTOP_PERMISSION_MODES),
   allowAllApps: z.boolean(),
+  driver: z.enum(DESKTOP_DRIVERS),
   version: z.number().int().nonnegative(),
 });
 export const DesktopControlOperationSchema = z.strictObject({
@@ -171,7 +178,7 @@ export const DesktopSystemPermissionsSchema = z.strictObject({
     "unknown",
   ]),
   elevated: z.boolean().optional(),
-  source: z.enum(["agent-desktop", "unavailable"]),
+  source: z.enum(["agent-desktop", "cua-driver", "unavailable"]),
   checkedAt: z.string(),
 });
 export type DesktopSystemPermissionsReport = z.infer<typeof DesktopSystemPermissionsSchema>;

@@ -258,7 +258,7 @@ it("takes a file URI back out when the webview inserted it and the file attached
 
   expect(event.defaultPrevented).toBe(true);
   // The URI is gone; the file is referenced by its token instead.
-  expect(field.value).toBe("keep [file1]");
+  expect(field.value).toBe("keep [File 1 · 4 KB]");
 });
 
 it("sends a screenshot that is still being read when the turn is sent", async () => {
@@ -289,7 +289,7 @@ it("sends a screenshot that is still being read when the turn is sent", async ()
   release?.();
   await settleUntil(() => submit.mock.calls.length === 1, "the turn to include the screenshot");
 
-  expect(submit.mock.calls[0][0]).toBe("look [image1]");
+  expect(submit.mock.calls[0][0]).toBe("look [Image 1 · 8 B]");
   expect(submit.mock.calls[0][1]).toEqual([
     expect.objectContaining({ name: "clipboard-image.png", kind: "image" }),
   ]);
@@ -360,7 +360,7 @@ it.each(["button", "keyboard", "parent"])(
     release();
     await waitForAttachments(1);
     expect(submit).not.toHaveBeenCalled();
-    expect(field.value).toBe("keep for review [image1]");
+    expect(field.value).toBe("keep for review [Image 1 · 8 B]");
     await send();
     expect(submit).toHaveBeenCalledOnce();
     expect(submit.mock.calls[0][1]).toHaveLength(1);
@@ -396,7 +396,7 @@ it("allows an explicit retry after Stop while the original attachment read is st
   act(() => pending.click());
   release();
   await settleUntil(() => submit.mock.calls.length === 1, "explicit retry with its image");
-  expect(submit.mock.calls[0][0]).toBe("retry explicitly [image1]");
+  expect(submit.mock.calls[0][0]).toBe("retry explicitly [Image 1 · 8 B]");
   expect(submit.mock.calls[0][1]).toHaveLength(1);
   expect(container.querySelector('.composer-send-controls [aria-busy="true"]')).toBeNull();
 });

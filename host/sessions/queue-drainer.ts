@@ -115,8 +115,12 @@ export class QueueDrainer {
     }
     try {
       const queue = await this.queues.get(id);
-      if (queue.messages.length && queue.status === "active")
-        await this.queues.hold(id, !outcome.interrupted && outcome.cancelled ? "stopped" : failure);
+      const stopped = !outcome.interrupted && outcome.cancelled;
+      // Only system notices are queued: nothing the owner wrote waits on their decision, and
+      // a notice (a child finished) is the reason to wake this conversation again.
+      const noticesOnly = queue.messages.every((row) => row.author?.kind === "delegation");
+      if (queue.messages.length && queue.status === "active" && !(stopped && noticesOnly))
+        await this.queues.hold(id, stopped ? "stopped" : failure);
     } catch (error) {
       console.warn("Host queue hold failed", error);
     }
@@ -369,5 +373,10 @@ export function queueRowCommands(
       ...(row.intent === "plan" || row.intent === "build" ? { intent: row.intent } : {}),
     });
   }
-  return commands;
+  return commands.map((command) => ({
+    ...command,
+    ...(row.authorityGeneration !== undefined
+      ? { authorityGeneration: row.authorityGeneration }
+      : {}),
+  }));
 }

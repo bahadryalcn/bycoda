@@ -44,19 +44,20 @@ function normalize(path: string): string {
   return normalizeProjectPath(path);
 }
 
-export function loadRecents(): RecentProject[] {
+export function loadRecents(strict = false): RecentProject[] {
   try {
-    return parseRecents(localStorage.getItem(KEY));
-  } catch {
+    return parseRecents(localStorage.getItem(KEY), strict);
+  } catch (error) {
+    if (strict) throw error;
     return [];
   }
 }
 
-function parseRecents(raw: string | null): RecentProject[] {
+function parseRecents(raw: string | null, strict = false): RecentProject[] {
   try {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) throw new Error("Could not read recent projects.");
     const out: RecentProject[] = [];
     for (const item of parsed) {
       if (!item || typeof item !== "object") continue;
@@ -67,7 +68,8 @@ function parseRecents(raw: string | null): RecentProject[] {
       out.push({ path: normalize(rec.path), openedAt });
     }
     return out;
-  } catch {
+  } catch (error) {
+    if (strict) throw error;
     return [];
   }
 }
@@ -110,14 +112,14 @@ export function rememberProject(path: string): Promise<RecentProject[]> {
 function rememberProjectNow(path: string): RecentProject[] {
   const normalized = normalize(path);
   if (normalized === "~") return loadRecents();
-  dropArchived(normalized);
-  if (loadArchivedProjects().some((item) => sameProjectPath(item.path, normalized)))
-    throw new Error("Could not restore the project from archive.");
-  const prev = loadRecents().filter((p) => !sameProjectPath(p.path, normalized));
+  const archived = requireArchivedProjects();
+  const prev = loadRecents(true).filter((p) => !sameProjectPath(p.path, normalized));
   const next = [{ path: normalized, openedAt: Date.now() }, ...prev].slice(0, MAX);
   save(next);
   if (localStorage.getItem(KEY) !== JSON.stringify(next))
     throw new Error("Could not save recent projects.");
+  // Keep the archived copy until the restored rail entry is durable.
+  if (archived.some((item) => sameProjectPath(item.path, normalized))) dropArchived(normalized);
   return next;
 }
 
@@ -223,8 +225,10 @@ export function subscribeProjectPathsChanged(onChange: () => void): () => void {
 /** Drops a project from the rail: its recent entry, saved order slot, and pin. */
 function dropFromRail(path: string): RecentProject[] {
   const normalized = normalize(path);
-  const next = loadRecents().filter((item) => !sameProjectPath(item.path, normalized));
+  const next = loadRecents(true).filter((item) => !sameProjectPath(item.path, normalized));
   save(next);
+  if (localStorage.getItem(KEY) !== JSON.stringify(next))
+    throw new Error("Could not save recent projects.");
   saveProjectRailOrder(
     loadProjectRailOrder().filter((entry) => !sameProjectPath(entry, normalized)),
   );
@@ -234,18 +238,21 @@ function dropFromRail(path: string): RecentProject[] {
 
 /** Removes a project from the rail and from the archive (Delete). */
 export function forgetProject(path: string): RecentProject[] {
-  dropArchived(path);
-  return dropFromRail(path);
+  const archived = requireArchivedProjects();
+  const remaining = dropFromRail(path);
+  // An archived deletion target remains retryable if rail persistence fails.
+  if (archived.some((item) => sameProjectPath(item.path, path))) dropArchived(path);
+  return remaining;
 }
 
 /** Removes a project from the rail and files it in the archive (Archive). */
 export function archiveProject(path: string): RecentProject[] {
   const normalized = normalize(path);
   if (!looksLikeProject(normalized)) return loadRecents();
-  const recents = dropFromRail(normalized);
-  const rest = loadArchivedProjects().filter((item) => !sameProjectPath(item.path, normalized));
+  const rest = requireArchivedProjects().filter((item) => !sameProjectPath(item.path, normalized));
+  // Save the destination before removing the only existing project entry.
   saveArchived([{ path: normalized, archivedAt: Date.now() }, ...rest]);
-  return recents;
+  return dropFromRail(normalized);
 }
 
 /**
@@ -285,6 +292,12 @@ export function loadArchivedProjects(): ArchivedProject[] {
   return readArchivedProjects().items;
 }
 
+function requireArchivedProjects(): ArchivedProject[] {
+  const read = readArchivedProjects();
+  if (read.state !== "ready") throw new Error("Could not read archived projects.");
+  return read.items;
+}
+
 export function subscribeArchivedProjects(onChange: () => void): () => void {
   if (typeof window === "undefined") return () => {};
   window.addEventListener(ARCHIVED_CHANGED, onChange);
@@ -292,12 +305,11 @@ export function subscribeArchivedProjects(onChange: () => void): () => void {
 }
 
 function saveArchived(next: ArchivedProject[]) {
-  try {
-    localStorage.setItem(ARCHIVED_KEY, JSON.stringify(next));
-    notifyProjectPathsChanged();
-  } catch {
-    // private mode / quota
-  }
+  const raw = JSON.stringify(next);
+  localStorage.setItem(ARCHIVED_KEY, JSON.stringify(next));
+  if (localStorage.getItem(ARCHIVED_KEY) !== raw)
+    throw new Error("Could not save archived projects.");
+  notifyProjectPathsChanged();
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(ARCHIVED_CHANGED));
   }
@@ -305,7 +317,7 @@ function saveArchived(next: ArchivedProject[]) {
 
 function dropArchived(path: string) {
   const normalized = normalize(path);
-  const prev = loadArchivedProjects();
+  const prev = requireArchivedProjects();
   const next = prev.filter((item) => !sameProjectPath(item.path, normalized));
   if (next.length === prev.length) return;
   saveArchived(next);

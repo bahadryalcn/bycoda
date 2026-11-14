@@ -16,7 +16,21 @@ export function codexGoalState(response: unknown): SessionGoal | null | undefine
     case "usageLimited":
     case "budgetLimited":
     case "complete":
-      return { provider: "codex", providerSessionId, objective, status };
+      return {
+        provider: "codex",
+        providerSessionId,
+        objective,
+        status,
+        ...Object.fromEntries(
+          ["tokensUsed", "tokenBudget", "timeUsedSeconds"].flatMap((key) => {
+            const value = goal?.[key];
+            return (key === "tokenBudget" && value === null) ||
+              (typeof value === "number" && Number.isSafeInteger(value) && value >= 0)
+              ? [[key, value]]
+              : [];
+          }),
+        ),
+      };
     default:
       return undefined;
   }

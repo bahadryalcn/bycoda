@@ -1,13 +1,3 @@
-.workspace {
-  min-inline-size: 0;
-}
-.pageHeading {
-  margin-block-end: 16px;
-}
-.pageHeading h2 {
-  margin: 0 0 4px;
-}
-.pageHeading p,
 .description {
   margin: 0;
   overflow-wrap: anywhere;

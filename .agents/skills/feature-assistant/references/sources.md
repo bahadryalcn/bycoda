@@ -63,7 +63,8 @@ Paths are repository-root relative. Follow only the lane affected by the change.
   `host/server.ts`; voice aliases and finite resolution:
   `src/features/voice/model/voiceProjectNames.ts`, `voiceWorkspaceActions.ts` there.
 - Desktop: `host/desktop/desktop-control-host.ts`, `host/conversation/conversation-desktop-control-tools.ts`,
-  `src-tauri/src/conversation_tools_bridge.rs`.
+  `src-tauri/src/conversation_tools_bridge.rs`. The optional cua-driver backend serves the same
+  commands through `host/desktop/cua-driver-runner.ts`; provenance in `vendor/cua-driver/README.md`.
 - Voice: `src/features/voice/model/realtimeVoice.ts`, `voiceOverlay.ts` there,
   `src/features/voice/ui/VoiceCompanion.tsx`.
 - Presence: `src-tauri/src/presence.rs`; Windows idle/lock, explicit unsupported elsewhere.

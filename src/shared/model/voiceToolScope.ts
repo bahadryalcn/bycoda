@@ -270,6 +270,8 @@ export function voiceThreadToolAllowed(family: string, action: string) {
     ].includes(action) ||
     [
       "sessions.configuration",
+      "sessions.message",
+      "sessions.cancel",
       "sessions.configure",
       "sessions.contextual.preview",
       "sessions.contextual.create",

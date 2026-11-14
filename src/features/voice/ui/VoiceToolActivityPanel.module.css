@@ -15,39 +15,47 @@
   pointer-events: none;
 }
 .popover {
-  padding: 8px 10px;
+  padding: 12px;
   min-inline-size: 0;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block-end: 10px;
 }
 .list {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 12px 0 0;
   display: grid;
-  gap: 2px;
+  gap: 14px;
   min-inline-size: 0;
 }
 .row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: start;
   column-gap: 8px;
-  padding-block: 2px;
   min-inline-size: 0;
 }
-.name {
-  min-width: 0;
+.marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block-start: 4px;
+}
+.details {
+  display: grid;
+  gap: 2px;
+  min-inline-size: 0;
 }
 .time {
   font-variant-numeric: tabular-nums;
 }
-.row[data-state="uncertain"] {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-.row[data-state="uncertain"] .status {
-  grid-column: 1 / -1;
-  grid-row: 2;
-}
-.row > :global(button) {
-  grid-column: 1 / -1;
+.stop {
+  grid-column: 2 / -1;
   justify-self: start;
+  margin-block-start: 4px;
 }

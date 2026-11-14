@@ -1,4 +1,54 @@
 import { expect, test } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
+
+for (const dark of [false, true]) {
+  for (const width of [1280, 800]) {
+    test(`native goal row wraps with owner actions, ${width}, ${dark ? "dark" : "light"}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/chat/chat-chrome.html?goal=blocked&tr${dark ? "&dark" : ""}`);
+      const row = page.locator("[data-provider-goal]");
+      await expect(row).toContainText("Hedef engellendi");
+      await expect(row).toContainText("12.400 / 50.000 token");
+      await expect(row).toContainText("Codex bu hedefin engellenme nedenini bildirmedi.");
+      await expect(
+        page.getByRole("button", { name: "Hedefe devam et", exact: true }),
+      ).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await mkdir("temp/verification/codex-goal-row", { recursive: true });
+      await page.screenshot({
+        path: `temp/verification/codex-goal-row/${dark ? "dark" : "light"}-${width}.png`,
+      });
+      await page.getByRole("button", { name: "Hedefe devam et", exact: true }).click();
+      await expect(row).toContainText("Hedef belirlendi");
+      await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue(
+        "Taslağım burada kalmalı.",
+      );
+      await page.getByRole("button", { name: "Hedefi kaldır", exact: true }).click();
+      await expect(row).toHaveCount(0);
+      await expect(page.getByRole("textbox", { name: "Message" })).toHaveValue(
+        "Taslağım burada kalmalı.",
+      );
+    });
+  }
+}
+
+test("goal commands stay locked during work and long objectives remain readable", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/chat/chat-chrome.html?goal=blocked&busy&long");
+  const row = page.locator("[data-provider-goal]");
+  await expect(row).toContainText("Goal blocked");
+  await expect(page.getByRole("button", { name: "Resume goal", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Clear goal", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Show more", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Show less", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
 
 for (const dark of [false, true]) {
   test(`prompt preview stays compact without duplicate tooltip, ${dark ? "dark" : "light"}`, async ({

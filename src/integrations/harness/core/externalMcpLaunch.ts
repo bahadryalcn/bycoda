@@ -1,3 +1,5 @@
+import { bycodaMcpOnly } from "./nativeToolLimits";
+
 /** Host "MCP hub" metadata: user MCP servers are exposed over HTTP by the Host, so a
  * Claude/Codex launch can stop spawning them locally. Absent or invalid metadata keeps
  * the previous launch exactly as it was (fail-closed to the old behavior). */
@@ -230,6 +232,39 @@ export function codexExternalMcpConfig(
       .filter((name) => BARE_KEY.test(name) && isRecord(servers[name]))
       .map((name) => [`mcp_servers.${name}.enabled`, false]),
   );
+}
+
+/**
+ * Thread overrides for a delegated child: every configured MCP server except bycoda's own is
+ * disabled for this thread only; no config file is touched. `shortcut`: names with a dot cannot
+ * be addressed (see BARE_KEY) and stay enabled, upgrade when Codex accepts quoted keys.
+ */
+export function codexBycodaOnlyMcpConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const servers = isRecord(config.mcp_servers) ? config.mcp_servers : {};
+  return Object.fromEntries(
+    Object.keys(servers)
+      .filter((name) => BARE_KEY.test(name) && name !== "bycoda-conversation")
+      .map((name) => [`mcp_servers.${name}.enabled`, false]),
+  );
+}
+
+type ModelSettings = Readonly<Record<string, string>> | undefined;
+
+/** Whether a Codex thread needs per-thread MCP overrides (hub disables or a delegated child). */
+export function codexThreadMcpNeeded(external: ExternalMcp | undefined, settings: ModelSettings) {
+  return bycodaMcpOnly(settings) || Boolean(external?.disable.codex.length);
+}
+
+/** Codex per-thread MCP overrides: hub disables, plus every non-bycoda server for a delegated child. */
+export function codexThreadMcpConfig(
+  external: ExternalMcp | undefined,
+  config: Record<string, unknown>,
+  settings: ModelSettings,
+): Record<string, unknown> {
+  return {
+    ...(external ? codexExternalMcpConfig(external, config) : {}),
+    ...(bycodaMcpOnly(settings) ? codexBycodaOnlyMcpConfig(config) : {}),
+  };
 }
 
 /** A member's MCP allowlist: other hub servers are dropped and disabled in the provider. */

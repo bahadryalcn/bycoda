@@ -9,6 +9,7 @@ import type { HarnessId, RuntimeMode } from "../../sessions/model/session";
 import type { SshRunStatus } from "../../connections/model/sshRunbooks";
 import {
   isScheduleKind,
+  latestOverdueOccurrence,
   nextAutomationRunAt,
   parseTime,
   type AutomationScheduleKind,
@@ -317,18 +318,11 @@ export function overdueTriggerOccurrences(
   firstRunAt: number,
   now: number,
 ): Array<{ scheduledFor: number; nextRunAt: number }> {
-  if (firstRunAt > now) return [];
-  // All supported schedules recur at least weekly. Start within nine days of
-  // now to bound work after a long offline period, including DST changes.
-  const anchor = Math.max(firstRunAt, now - 9 * 24 * 60 * 60 * 1000);
-  let scheduledFor = anchor === firstRunAt ? firstRunAt : nextTriggersRunAt(triggers, anchor);
-  let latest: { scheduledFor: number; nextRunAt: number } | undefined;
-  while (scheduledFor <= now) {
-    const nextRunAt = nextTriggersRunAt(triggers, scheduledFor);
-    if (!Number.isFinite(nextRunAt) || nextRunAt <= scheduledFor) break;
-    latest = { scheduledFor, nextRunAt };
-    scheduledFor = nextRunAt;
-  }
+  const latest = latestOverdueOccurrence(
+    (after) => nextTriggersRunAt(triggers, after),
+    firstRunAt,
+    now,
+  );
   return latest ? [latest] : [];
 }
 

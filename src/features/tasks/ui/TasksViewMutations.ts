@@ -177,24 +177,22 @@ export function useTaskMutations({
 
   const onDelete = async (task: BoardTask) => {
     const discard = hasUnmergedBranch(task);
-    if (
-      !(await confirm({
-        title: t("Delete task"),
-        message: discard
-          ? t(
-              "Delete “{p0}”? Its work on {p1} was never merged, and the branch will be discarded.",
-              { p0: task.title, p1: task.branch },
-            )
-          : t("Delete “{p0}”?", { p0: task.title }),
-        confirmLabel: t("Delete"),
-      }))
-    )
-      return;
-    act(
-      task,
-      () => deleteTask(task, discard),
-      () => removeTask(task),
-    ).catch(report);
+    await confirm({
+      title: t("Delete task"),
+      message: discard
+        ? t("Delete “{p0}”? Its work on {p1} was never merged, and the branch will be discarded.", {
+            p0: task.title,
+            p1: task.branch,
+          })
+        : t("Delete “{p0}”?", { p0: task.title }),
+      confirmLabel: t("Delete"),
+      onConfirm: async () => {
+        await deleteTask(task, discard);
+        removeTask(task);
+        setError(null);
+        refresh().catch(report);
+      },
+    });
   };
 
   const onEdit = (task: BoardTask) => {

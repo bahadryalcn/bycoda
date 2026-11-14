@@ -127,7 +127,7 @@ function RolesEditor({
           live="off"
           action={
             onOpenOrder ? (
-              <Button type="button" size="sm" variant="link" onClick={onOpenOrder}>
+              <Button type="button" layout="text" variant="link" onClick={onOpenOrder}>
                 {t("Add models")}
               </Button>
             ) : undefined

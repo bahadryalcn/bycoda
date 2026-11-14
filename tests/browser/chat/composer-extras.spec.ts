@@ -8,6 +8,66 @@ import {
   textDrag,
 } from "../support/external-drop";
 
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`workspace footer spacing and scoped refresh ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+      await page.goto(
+        `/tests/browser/chat/composer-extras.html?footer&workspace-footer-bar&accounts&theme=${theme}`,
+      );
+      const bar = page.locator("[data-workspace-footer]");
+      await expect(
+        bar.getByRole("button", { name: "Refresh current view", exact: true }),
+      ).toBeVisible();
+      await expect(bar.getByRole("button", { name: "Refresh usage", exact: true })).toHaveCount(0);
+      const actions = bar.locator(
+        'nav button, [data-usage-guide="terminal-toggle"], button[aria-label="Conversation tools"], button[aria-label="Notifications"]',
+      );
+      await expect(actions).toHaveCount(9);
+      const boxes = await actions.evaluateAll((buttons) =>
+        buttons
+          .map((button) => {
+            const box = button.getBoundingClientRect();
+            const icon = button.querySelector("svg")!.getBoundingClientRect();
+            return {
+              x: box.x,
+              width: box.width,
+              height: box.height,
+              iconWidth: icon.width,
+              iconHeight: icon.height,
+            };
+          })
+          .sort((a, b) => a.x - b.x),
+      );
+      for (const [index, box] of boxes.entries()) {
+        expect(box.width).toBe(28);
+        expect(box.height).toBe(28);
+        expect(box.iconWidth).toBe(14);
+        expect(box.iconHeight).toBe(14);
+        if (index > 0) expect(box.x - boxes[index - 1].x - boxes[index - 1].width).toBe(4);
+      }
+      expect(await bar.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      await page.screenshot({
+        path: `temp/verification/2026-11-15-workspace-footer/footer-${theme}-${width}.png`,
+      });
+      await bar.getByRole("button", { name: "Claude Code usage details", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Claude Code usage details", exact: true });
+      await expect(
+        dialog.getByRole("button", { name: "Refresh usage", exact: true }),
+      ).toBeVisible();
+      await dialog.getByRole("button", { name: "Refresh usage", exact: true }).click();
+      await expect(
+        dialog.getByRole("button", { name: "Refresh usage", exact: true }),
+      ).toBeEnabled();
+      await page.screenshot({
+        path: `temp/verification/2026-11-15-workspace-footer/details-${theme}-${width}.png`,
+      });
+    });
+  }
+}
+
 for (const theme of ["light", "dark"] as const) {
   for (const width of [1280, 800]) {
     test(`model panel compaction and agent order ${theme} ${width}`, async ({ page }) => {

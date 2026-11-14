@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { archiveProject, rememberProject } from "../../projects/model/recents";
 import { formatDate, ArchivePage } from "./ArchiveSettings";
 import { formatArchiveDate } from "../../../shared/i18n/format";
+import * as lockState from "../../group-lock/model/lockState";
+import * as projectData from "../../projects/model/projectData";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -19,6 +21,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -33,6 +36,60 @@ const button = (label: string) =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (item) => item.textContent === label,
   );
+
+it.each(["relocked", "removed", "unavailable"])(
+  "refuses a stale Restore after its project is %s before the next render",
+  async (change) => {
+    rememberProject("/work/stale");
+    archiveProject("/work/stale");
+    const restore = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ArchivePage, {
+          ...baseProps,
+          onRestoreProject: restore,
+          onDeleteProject: vi.fn(),
+        }),
+      ),
+    );
+    const restoreButton = button("Restore")!;
+    if (change === "relocked") vi.spyOn(lockState, "isProjectLockedIn").mockReturnValue(true);
+    else localStorage.setItem("bycoda.archivedProjects", change === "removed" ? "[]" : "{broken");
+    await act(async () => restoreButton.click());
+    expect(restore).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("The operation did not complete");
+  },
+);
+
+it.each(["removed", "unavailable"])(
+  "refuses a stale Delete confirmation after the archive becomes %s",
+  async (change) => {
+    vi.spyOn(projectData, "projectSessionCount").mockResolvedValue(0);
+    rememberProject("/work/stale");
+    archiveProject("/work/stale");
+    const remove = vi.fn();
+    await act(async () =>
+      root.render(
+        createElement(ArchivePage, {
+          ...baseProps,
+          onRestoreProject: vi.fn(),
+          onDeleteProject: remove,
+        }),
+      ),
+    );
+    await act(async () => button("Delete")!.click());
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog).not.toBeNull();
+    const confirm = [...dialog.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent === "Delete",
+    )!;
+    expect(confirm).toBeDefined();
+    localStorage.setItem("bycoda.archivedProjects", change === "removed" ? "[]" : "{broken");
+    await act(async () => confirm.click());
+    expect(remove).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("The operation did not complete");
+  },
+);
 
 it("keeps Archive date formatting aligned with shared i18n formatting", () => {
   expect(formatDate(0)).toBe("");

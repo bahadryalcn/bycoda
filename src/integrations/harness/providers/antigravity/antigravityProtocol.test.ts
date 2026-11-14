@@ -36,7 +36,7 @@ describe.each(providers)("$id ACP protocol", ({ id, protocol, mode, blocks, mode
     expect(blocks("", [image])).toEqual([
       {
         type: "text",
-        text: `${ATTACHMENT_ONLY_PROMPT}\n\nAttachments: [image1] = image.png (1st attached image)`,
+        text: `${ATTACHMENT_ONLY_PROMPT}\n\nAttachments: [Image\u00a01\u00a0·\u00a04\u00a0B] = image.png (1st attached image)`,
       },
       { type: "image", mimeType: "image/png", data: "aGV5" },
     ]);

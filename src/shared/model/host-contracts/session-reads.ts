@@ -168,6 +168,10 @@ export const SessionSummarySchema = z.strictObject({
   repo: z.string().optional(),
   draft: z.boolean().optional(),
   origin: z.literal("desktop").optional(),
+  /** Internal orchestration worker: the lead conversation that owns it. */
+  orchestrationLeadId: z.string().min(1).max(256).optional(),
+  /** Crew run that owns this conversation (coordinator, task worker or reviewer). */
+  crewRunId: z.string().min(1).max(256).optional(),
 });
 export const SessionsListResultSchema = z.union([
   z.array(SessionSummarySchema),

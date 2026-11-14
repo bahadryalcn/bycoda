@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   codexExternalMcpArgs,
+  codexBycodaOnlyMcpConfig,
   codexExternalMcpConfig,
   narrowExternalMcp,
   narrowPublishedMcp,
@@ -303,5 +304,25 @@ describe("narrowing to a member's MCP allowlist", () => {
     );
     const published = narrowPublishedMcp({ externalMcp: external }, ["arc"]);
     expect(parseExternalMcp(published.externalMcp)?.servers.map((s) => s.name)).toEqual(["arc"]);
+  });
+});
+
+describe("Codex bycoda-only MCP config for delegated children", () => {
+  it("disables every configured server except bycoda's own, bare names only", () => {
+    const config = {
+      mcp_servers: {
+        blender: { command: "uvx" },
+        mem0: { url: "https://mem0.example/mcp" },
+        "bycoda-conversation": { command: "node" },
+        "bycoda-social": { url: "http://127.0.0.1/mcp/social" },
+        "a.b": { command: "x" },
+      },
+    };
+    expect(codexBycodaOnlyMcpConfig(config)).toEqual({
+      "mcp_servers.blender.enabled": false,
+      "mcp_servers.mem0.enabled": false,
+      "mcp_servers.bycoda-social.enabled": false,
+    });
+    expect(codexBycodaOnlyMcpConfig({})).toEqual({});
   });
 });
