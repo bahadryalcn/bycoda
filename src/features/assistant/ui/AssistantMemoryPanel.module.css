@@ -95,7 +95,8 @@
     align-items: stretch;
   }
   .title,
-  .add {
+  .add,
+  .search {
     flex: 1 1 100%;
     margin-inline-start: 0;
   }

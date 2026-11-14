@@ -3,6 +3,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Select } from "./Select";
+import { SelectValue } from "./arc/select/select";
+
+it("replaces the selected label without overlapping outgoing text", async () => {
+  await act(async () => root.render(createElement(SelectValue, { value: "a", label: "Portal" })));
+  await act(async () => root.render(createElement(SelectValue, { value: "b", label: "Website" })));
+  expect(container.textContent).toBe("Website");
+});
 
 it("explains an empty list without offering a selectable value", async () => {
   await act(async () =>

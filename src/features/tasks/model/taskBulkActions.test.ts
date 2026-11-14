@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BoardTask } from "./taskClient";
-import { bulkTaskKey, runTaskBulkAction } from "./taskBulkActions";
+import { bulkTaskKey, groupTaskBulkResults, runTaskBulkAction } from "./taskBulkActions";
 
 const task = (id: string, patch: Partial<BoardTask> = {}): BoardTask => ({
   id,
@@ -22,6 +22,17 @@ const task = (id: string, patch: Partial<BoardTask> = {}): BoardTask => ({
 });
 
 describe("scoped bulk task operations", () => {
+  it("groups repeated reasons without hiding failed task identities", () => {
+    const groups = groupTaskBulkResults([
+      { task: task("a"), status: "skipped", reason: "Crew owns this task" },
+      { task: task("b"), status: "skipped", reason: "Crew owns this task" },
+      { task: task("c"), status: "failed", reason: "Offline" },
+      { task: task("d"), status: "succeeded" },
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].tasks.map((row) => row.id)).toEqual(["a", "b"]);
+    expect(groups[1]).toMatchObject({ status: "failed", reason: "Offline" });
+  });
   it("deletes selected dependents before prerequisites on their host", async () => {
     const removed: string[] = [];
     await runTaskBulkAction(
@@ -94,3 +105,8 @@ describe("scoped bulk task operations", () => {
     expect(results.map((row) => row.status)).toEqual(["succeeded", "failed", "succeeded"]);
   });
 });
+  it("allows deletion of inactive crew tasks while preserving active work", async () => {
+    const perform = vi.fn(async (_task: BoardTask) => {});
+    const results = await runTaskBulkAction([task("crew", { crewRunId: "run" }), task("active", { crewRunId: "run", status: "running" })], "delete", perform);
+    expect(results.map((row) => row.status)).toEqual(["succeeded", "skipped"]);
+  });

@@ -281,7 +281,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
         onCheckedChange={(enabled) => setDraft({ ...draft, hours: { ...draft.hours, enabled } })}
       />
       {draft.hours.enabled ? (
-        <div className="social-field-row">
+        <div className="social-working-hours">
           <TextField
             label={t("Time zone")}
             value={draft.hours.timeZone}

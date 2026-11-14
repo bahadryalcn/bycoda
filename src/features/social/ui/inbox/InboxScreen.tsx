@@ -97,7 +97,14 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
   return (
     <section className="inbox-screen" aria-label={t("Inbox")}>
       {settingsError ? <InlineError>{settingsError}</InlineError> : null}
-      <UnreadableNotice accounts={unreadable} names={names} />
+      {unreadable.length > 0 ? (
+        <div className="inbox-account-failures">
+          <UnreadableNotice accounts={unreadable} names={names} />
+          <Button variant="secondary" size="sm" onClick={() => onNavigate("accounts")}>
+            {t("Manage accounts")}
+          </Button>
+        </div>
+      ) : null}
       <InboxFilters value={filter} accounts={accountOptions} onChange={setFilter}>
         <Text
           as="div"

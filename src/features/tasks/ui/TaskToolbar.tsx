@@ -9,7 +9,6 @@ import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Spinner } from "../../../shared/ui/Spinner";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { TextField } from "../../../shared/ui/TextField";
 import {
@@ -297,17 +296,13 @@ export function TaskToolbar(props: TaskToolbarProps) {
           />
         ) : null}
         <div className="task-board-status" data-remote-data-state={status.phase}>
-          {status.problem || status.refreshing ? (
+          {status.problem ? (
             <Button
               variant="ghost"
               onClick={status.onDetails}
               tone={status.problem ? "warning" : "neutral"}
             >
-              {status.refreshing ? (
-                <Spinner size="xs" />
-              ) : (
-                <CircleHelp className="icon-sm" strokeWidth={1.75} />
-              )}
+              <CircleHelp className="icon-sm" strokeWidth={1.75} />
               <LiveText
                 text={
                   status.failed

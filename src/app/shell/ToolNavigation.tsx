@@ -166,15 +166,17 @@ export function ToolNavigation() {
     navigation.grouped === false
       ? [navigation.active]
       : TOOL_IDS.filter((id) =>
-          id === "notes"
-            ? navigation.notesEnabled
-            : id === "servers"
-              ? navigation.includeServers || navigation.active === "servers"
-              : id === "crews"
-                ? navigation.includeCrews || navigation.active === "crews"
-                : id === "terminal" || id === "conversation-tools" || id === "assistant"
-                  ? navigation.includeAuxiliaryTools
-                  : true,
+          id === "terminal"
+            ? false
+            : id === "notes"
+              ? navigation.notesEnabled
+              : id === "servers"
+                ? navigation.includeServers || navigation.active === "servers"
+                : id === "crews"
+                  ? navigation.includeCrews || navigation.active === "crews"
+                  : id === "conversation-tools" || id === "assistant"
+                    ? navigation.includeAuxiliaryTools
+                    : true,
         );
   const open = async (grouped: boolean) => {
     if (openingRef.current) return;

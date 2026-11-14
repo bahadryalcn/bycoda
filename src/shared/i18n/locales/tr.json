@@ -14264,5 +14264,6 @@
   "Add result to chat when finished": "Tamamlanınca sonucu sohbete ekle",
   "Only the latest terminal output is included.": "Yalnızca en son terminal çıktısı eklenir.",
   "Result added to chat. Review and send when ready.": "Sonuç sohbete eklendi. İnceleyip hazır olduğunuzda gönderin.",
-  "Could not add result to chat. Try again.": "Sonuç sohbete eklenemedi. Tekrar deneyin."
+  "Could not add result to chat. Try again.": "Sonuç sohbete eklenemedi. Tekrar deneyin.",
+  "Eligible tasks: {p0} of {p1}": "Uygun görevler: {p1} görevden {p0}"
 }

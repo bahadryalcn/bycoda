@@ -13,6 +13,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  max-inline-size: 80rem;
 }
 
 .audience-layout {
@@ -20,6 +21,7 @@
   grid-template-columns: minmax(10rem, 13rem) minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
+  max-inline-size: 80rem;
 }
 
 /* Below ~52rem of screen width the lists column narrows; below 42rem it stacks above the table. */
@@ -351,4 +353,12 @@
 
 .audience-triple {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+}
+
+/* Keep short rule and sequence rows readable in wide workspaces. */
+.audience-section,
+.audience-frame,
+.audience-stats {
+  inline-size: 100%;
+  max-inline-size: 56rem;
 }

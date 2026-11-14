@@ -18,6 +18,11 @@ Jira token entry offers the shared show/hide control. When searching Jira projec
 
 ## Inbox attachments
 
+Jira comment drafts offer **Source**, **Split** and **Preview**. Split shows the
+Markdown source beside its live preview and stacks them when space is limited.
+Switching views keeps the draft, editor history and attached images. Only
+**Comment** or Ctrl/Cmd+Enter publishes the comment.
+
 Jira, GitHub, GitLab, Azure DevOps and Linear descriptions and comments use the same
 attachment preview. Images appear inline and open in the zoomable image viewer;
 videos play inline. PDFs open in a dialog. Other files and failed previews open a

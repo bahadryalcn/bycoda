@@ -83,21 +83,23 @@ export function CrewMemberMeta({
   poolName?: string;
 }) {
   return (
-    <Text weight="regular" className="flex min-w-0 items-center gap-1.5">
+    <Text
+      size="secondary"
+      tone="muted"
+      weight="regular"
+      className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
+    >
       <span className="flex shrink-0 items-center gap-1">
         <CrewRoleIcon role={agent.role} />
         {roleLabel(agent.role)}
       </span>
-      <span aria-hidden="true">·</span>
-      <Text size="inherit" tone="inherit" truncate className="min-w-0">
-        {[
-          poolName && agent.modelChoice?.kind === "pool"
-            ? t("Automatic: {p0}", { p0: poolName })
-            : memberModelSummary(catalog, agent),
-          memberScopeLabel(agent, shortScope),
-          ...(agent.tools ? [crewToolProfileLabel(agent.tools)] : []),
-        ].join(" · ")}
+      <Text size="inherit" tone="inherit" className="min-w-0 break-words">
+        {poolName && agent.modelChoice?.kind === "pool"
+          ? t("Automatic: {p0}", { p0: poolName })
+          : memberModelSummary(catalog, agent)}
       </Text>
+      <span>{memberScopeLabel(agent, shortScope)}</span>
+      {agent.tools ? <span>{crewToolProfileLabel(agent.tools)}</span> : null}
     </Text>
   );
 }

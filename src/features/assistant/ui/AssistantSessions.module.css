@@ -169,3 +169,12 @@
     grid-row: 2;
   }
 }
+@container (max-width: 400px) {
+  .jobRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .jobStatus {
+    grid-column: 1;
+    justify-content: flex-start;
+  }
+}

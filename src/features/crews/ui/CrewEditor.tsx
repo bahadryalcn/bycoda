@@ -431,6 +431,7 @@ function ConnectedCrewEditor({
 
   const advanced = (
     <Disclosure
+      variant="row"
       summary={t("Advanced")}
       open={advancedOpen || !policyValid}
       onOpenChange={setAdvancedOpen}

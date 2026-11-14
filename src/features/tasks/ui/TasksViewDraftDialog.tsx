@@ -47,7 +47,7 @@ export function TasksViewDraftDialog({
       padding="none"
       title={draft.id ? t("Edit task") : t("New task")}
       context={!draft.id && sprintName ? `${t("Sprint")}: ${sprintName}` : undefined}
-      size="lg"
+      size="md"
       scroll="none"
       onClose={() => {
         if (!saving) onClose();

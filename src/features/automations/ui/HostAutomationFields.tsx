@@ -49,7 +49,7 @@ export function HostAutomationFields({
   const kind = draft.hostTrigger?.kind ?? "scheduled";
 
   return (
-    <div className="grid gap-2">
+    <div className="grid min-w-0 gap-3">
       <SearchableSelect
         label={t("Machine")}
         value={machine?.id ?? ""}

@@ -69,7 +69,7 @@ export function CrewBulkModelBar({
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <FieldGroup variant="bare" disabled={disabled || pending}>
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-end gap-3">
           {leading}
           <ModelChoiceField
             // oxlint-disable-next-line jsx-a11y/aria-role -- Routing role, never forwarded to the DOM.

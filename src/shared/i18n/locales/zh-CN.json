@@ -14264,5 +14264,6 @@
   "Add result to chat when finished": "完成后将结果添加到聊天",
   "Only the latest terminal output is included.": "仅包含最新的终端输出。",
   "Result added to chat. Review and send when ready.": "结果已添加到聊天。请检查后发送。",
-  "Could not add result to chat. Try again.": "无法将结果添加到聊天。请重试。"
+  "Could not add result to chat. Try again.": "无法将结果添加到聊天。请重试。",
+  "Eligible tasks: {p0} of {p1}": "符合条件的任务：{p0}/{p1}"
 }

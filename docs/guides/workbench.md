@@ -1,5 +1,10 @@
 # Workbench navigation
 
+Tools navigation omits the standalone Terminal tab and picker option, including
+the combined tools window. Open project terminals from the workspace terminal actions.
+Conversation tools hides the session sidebar while open. Returning to conversations
+restores the existing sidebar preference.
+
 Settings search opens the matching page and focuses an available control. When a
 setting is unavailable, search focuses its row so its label and disabled reason
 remain accessible. Restore default stays disabled while its row is unavailable

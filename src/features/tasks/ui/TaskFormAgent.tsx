@@ -36,11 +36,8 @@ export function TaskFormAgent({
   onChange,
   open,
   onOpenChange,
-  machine,
   target,
   routingSupported = false,
-  projectName,
-  hasProject,
   localAccounts,
   defaultAccountFor,
 }: {
@@ -49,11 +46,8 @@ export function TaskFormAgent({
   onChange: (draft: TaskDraft) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  machine?: string;
   target?: RemoteMachine;
   routingSupported?: boolean;
-  projectName: string;
-  hasProject: boolean;
   localAccounts: boolean;
   defaultAccountFor: (harness: HarnessId, machineId?: string) => string | undefined;
 }) {
@@ -86,11 +80,6 @@ export function TaskFormAgent({
     >
       {open ? (
         <div className="task-form-agent">
-          {machine && hasProject ? (
-            <Text as="p" size="micro" tone="secondary" leading="inherit" className="task-form-hint">
-              {t("Used when this task runs in {p0} on {p1}.", { p0: projectName, p1: machine })}
-            </Text>
-          ) : null}
           <div className="task-form-agent-picks">
             <TaskModelChoiceField
               machine={target}

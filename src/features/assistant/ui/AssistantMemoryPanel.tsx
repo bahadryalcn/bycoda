@@ -82,9 +82,7 @@ export function AssistantMemoryPanel(props: Props) {
             <SectionLabel as="h3" count={entries.length}>
               {t(label)}
             </SectionLabel>
-            <div
-              {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.list)}
-            >
+            <div className={styles.list}>
               {entries.map((entry) => (
                 <ActionHost
                   as="article"

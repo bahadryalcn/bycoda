@@ -114,6 +114,12 @@
 .task-bulk-results li {
   overflow-wrap: anywhere;
 }
+.task-bulk-result-group {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0.5rem;
+  min-inline-size: 0;
+}
 .task-planning {
   min-inline-size: 0;
 }

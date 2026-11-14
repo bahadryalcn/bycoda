@@ -94,7 +94,7 @@ export function CrewLibrary({
         ) : (
           <div
             {...surfaceAttributes(
-              { variant: "card", frame: "none", radius: "none" },
+              { variant: "canvas", frame: "none", radius: "none" },
               "settings-collection",
             )}
           >
@@ -189,7 +189,7 @@ export function CrewLibrary({
                   />
                   <div className="settings-collection-main">
                     {/* Identity is data, not help text: it stays visible in the row. */}
-                    <div className="flex min-w-0 items-center gap-1.5">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                       <Text
                         as="span"
                         size="secondary"
@@ -197,12 +197,12 @@ export function CrewLibrary({
                         weight="medium"
                         leading="normal"
                         truncate
-                        className="settings-collection-title min-w-0"
+                        className="settings-collection-title min-w-0 max-w-full"
                       >
                         <CrewMemberIdentity agent={agent} />
                       </Text>
                       {agent.groups?.length ? (
-                        <div className="max-w-[60%] min-w-0 shrink-0">
+                        <div className="min-w-0 max-w-full">
                           <BadgeList
                             label={t("Groups")}
                             items={agent.groups.map((name) => ({ id: name, label: name }))}

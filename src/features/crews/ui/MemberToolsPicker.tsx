@@ -93,14 +93,17 @@ export function MemberToolsPicker({
       </Heading>
       <RadioGroup
         label={t("Tool profile")}
-        compact
+        variant="inline"
         value={choice}
         options={CREW_TOOL_PROFILE_CHOICES.map((option) => ({
           value: option,
-          ...profileText(option),
+          label: profileText(option).label,
         }))}
         onValueChange={(next) => set(crewToolProfileFor(next as CrewToolProfileChoice, value))}
       />
+      <Text as="p" size="secondary" tone="muted">
+        {profileText(choice).description}
+      </Text>
       {custom ? (
         <div className="flex min-w-0 flex-col gap-2">
           {value && value.preset !== "custom" ? (

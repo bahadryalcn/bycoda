@@ -1858,7 +1858,7 @@ function SettingsRow({
   children: ReactNode;
 }) {
   useLocale();
-  // The shared settings Row keeps optional help behind its information control.
+  // Stacked controls leave the description room to wrap in the editor sidebar.
   return (
     <Row label={label} description={hint ? t(hint) : undefined}>
       {children}

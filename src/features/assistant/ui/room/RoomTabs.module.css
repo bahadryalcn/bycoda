@@ -43,3 +43,11 @@
     grid-template-columns: minmax(0, 1fr) auto;
   }
 }
+
+.primary,
+.secondary {
+  min-inline-size: 0;
+}
+.secondary {
+  padding-inline-start: 12px;
+}

@@ -144,7 +144,6 @@ export function AccountPermissions({
 
       <div className="social-field-row">
         <SearchableSelect
-          hideLabel
           disabled={locked || !projects.length}
           label={t("Project")}
           value={projectId}

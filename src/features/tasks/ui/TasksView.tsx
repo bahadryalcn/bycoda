@@ -752,7 +752,7 @@ function TasksContent({
         machineNotice={
           machines.length === 0 ? (loading ? t("Looking for machines…") : noMachineNotice) : null
         }
-        view={{ visible: section === "sprints", list: listView, onList: setListView }}
+        view={{ visible: section === "sprints" && Boolean(currentSprint), list: listView, onList: setListView }}
         newReviewNotes={newReviewNotes}
         filters={{
           visible:
@@ -774,7 +774,7 @@ function TasksContent({
           onReset: resetPopoverFilters,
         }}
         select={{
-          visible: visibleTasks.length > 0 && !selectMode,
+          visible: (section === "backlog" || Boolean(currentSprint)) && visibleTasks.length > 0 && !selectMode,
           active: selectMode,
           disabled: bulkBusy,
           onToggle: toggleSelectMode,
@@ -804,7 +804,7 @@ function TasksContent({
           onDetails: () => setStatusDetails(true),
           onRefresh: retryBoard,
         }}
-        create={{ visible: !showOnboarding, disabled: createDisabled, onCreate: beginCreate }}
+        create={{ visible: !showOnboarding && (section === "backlog" || Boolean(currentSprint)), disabled: createDisabled, onCreate: beginCreate }}
       />
       <TasksViewRecovery
         items={planningRecovery}
@@ -967,7 +967,7 @@ function TasksContent({
           now={now}
         />
       ) : null}
-      {section !== "reports" && goalList.length > 0 ? (
+      {(section === "backlog" || (section === "sprints" && currentSprint)) && goalList.length > 0 ? (
         <GoalList
           goals={goals}
           filter={goalFilter}
@@ -980,7 +980,7 @@ function TasksContent({
           }
         />
       ) : null}
-      {section !== "reports" && hasTasks && !loading ? (
+      {(section === "backlog" || (section === "sprints" && currentSprint)) && hasTasks && !loading ? (
         <p className="task-board-summary">
           <Text size="caption" tone="secondary" leading="inherit" className="task-scope-summary">
             {summaryLine}
@@ -988,7 +988,7 @@ function TasksContent({
         </p>
       ) : null}
       <div
-        className={`@container/task-area min-h-0 min-w-0 flex-1 ${section === "reports" ? "hidden" : "flex"}`}
+        className={`@container/task-area min-h-0 min-w-0 flex-1 ${section === "reports" || (section === "sprints" && !currentSprint) ? "hidden" : "flex"}`}
       >
         <GoalSessionsDialog goals={goals} tasks={visibleTasks} onOpenSession={onOpenSession} />
         <ScrollArea

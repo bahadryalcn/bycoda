@@ -90,6 +90,8 @@
 .automation-editor-header {
 }
 .automation-editor-grid {
+  max-inline-size: 72rem;
+  margin-inline: auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 24px;
@@ -103,9 +105,9 @@
   display: grid;
   gap: 20px;
 }
-@container automation-editor (min-width: 52rem) {
+@container automation-editor (min-width: 46rem) {
   .automation-editor-grid {
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
     gap: 32px;
   }
 }

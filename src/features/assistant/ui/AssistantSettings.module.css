@@ -75,10 +75,11 @@
 }
 .footerActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-inline-start: auto;
-  flex: none;
+  min-inline-size: 0;
 }
 @media (max-width: 640px) {
   .dialog {

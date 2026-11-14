@@ -3,6 +3,7 @@ import type { AssistantProfilePatch } from "../../../../shared/model/host-contra
 import { Select } from "../../../../shared/ui/Select";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Row } from "../../../settings/public/settingsControls";
+import styles from "./settings.module.css";
 
 export const DEFAULT_CRITICAL_EXCLUSIONS = [
   "pushMain",
@@ -59,43 +60,53 @@ export function AssistantStandingConsentFields({
           ]}
         />
       </Row>
-      {value.permissionLevel === "projects" &&
-        projects
-          .filter((project) => project.id)
-          .map((project) => (
-            <Checkbox
-              key={project.id}
-              label={project.name}
-              disabled={disabled}
-              checked={(value.permissionProjectIds ?? []).includes(project.id!)}
-              onChange={(event) =>
-                onChange({
-                  permissionProjectIds: event.target.checked
-                    ? [...(value.permissionProjectIds ?? []), project.id!]
-                    : (value.permissionProjectIds ?? []).filter((id) => id !== project.id),
-                })
-              }
-            />
-          ))}
-      {value.permissionLevel &&
-        exclusions.map(([key, label]) => (
-          <Checkbox
-            key={key}
-            label={t(label)}
-            description={t("Always ask for approval")}
-            disabled={disabled}
-            checked={(value.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS).includes(key)}
-            onChange={(event) =>
-              onChange({
-                criticalExclusions: event.target.checked
-                  ? [...(value.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS), key]
-                  : (value.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS).filter(
-                      (item) => item !== key,
-                    ),
-              })
-            }
-          />
-        ))}
+      {value.permissionLevel === "projects" && (
+        <Row label={t("Selected projects")} stacked>
+          <div className={styles.consentChoices}>
+            {projects
+              .filter((project) => project.id)
+              .map((project) => (
+                <Checkbox
+                  key={project.id}
+                  label={project.name}
+                  disabled={disabled}
+                  checked={(value.permissionProjectIds ?? []).includes(project.id!)}
+                  onChange={(event) =>
+                    onChange({
+                      permissionProjectIds: event.target.checked
+                        ? [...(value.permissionProjectIds ?? []), project.id!]
+                        : (value.permissionProjectIds ?? []).filter((id) => id !== project.id),
+                    })
+                  }
+                />
+              ))}
+          </div>
+        </Row>
+      )}
+      {value.permissionLevel && (
+        <Row label={t("Always ask for approval")} stacked>
+          <div className={styles.consentChoices}>
+            {exclusions.map(([key, label]) => (
+              <Checkbox
+                key={key}
+                label={t(label)}
+                description={t("Always ask for approval")}
+                disabled={disabled}
+                checked={(value.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS).includes(key)}
+                onChange={(event) =>
+                  onChange({
+                    criticalExclusions: event.target.checked
+                      ? [...(value.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS), key]
+                      : (value.criticalExclusions ?? DEFAULT_CRITICAL_EXCLUSIONS).filter(
+                          (item) => item !== key,
+                        ),
+                  })
+                }
+              />
+            ))}
+          </div>
+        </Row>
+      )}
     </>
   );
 }

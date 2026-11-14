@@ -130,7 +130,7 @@ export function CrewMemberForm({
               </Button>
             </div>
           ) : null}
-          <div className="min-w-48 flex-1">
+          <div className="min-w-0 flex-1 basis-48">
             <TextField
               label={t("Member name")}
               placeholder={t("e.g. Frontend developer")}
@@ -142,7 +142,7 @@ export function CrewMemberForm({
             />
           </div>
           {identity ? (
-            <div className="min-w-36 flex-1">
+            <div className="min-w-0 flex-1 basis-36">
               <MemberHandleField
                 value={agent.handle}
                 hostError={handleError}
@@ -154,13 +154,7 @@ export function CrewMemberForm({
         {suggestions.length ? (
           <div role="group" aria-label={t("Suggested roles")} className="flex flex-wrap gap-1">
             {suggestions.map((name) => (
-              <Button
-                key={name}
-                size="sm"
-                variant="secondary"
-                shape="pill"
-                onClick={() => onChange({ name })}
-              >
+              <Button key={name} size="sm" variant="ghost" onClick={() => onChange({ name })}>
                 {name}
               </Button>
             ))}
@@ -179,7 +173,7 @@ export function CrewMemberForm({
           {t("Work")}
         </Heading>
         {compact ? null : (
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-col items-start gap-2">
             <Text size="body" tone="inherit" weight="medium">
               {t("Responsibility in the crew")}
             </Text>

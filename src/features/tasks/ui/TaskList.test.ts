@@ -76,6 +76,7 @@ it("keeps bulk selection and active task through bounded scroll and appended row
 it("derives a one-line description and ignores missing or invalid update times", () => {
   expect(taskListDescription("\n  ## Fix login\nmore")).toBe("Fix login");
   expect(taskListDescription(undefined)).toBe("");
+  expect(taskListDescription("Responsibilities\nMaintain builds", true)).toBe("");
   const brief = JSON.stringify({
     schema: "bycoda.task.v1",
     objective: "Preserve drafts\nacross restarts",
@@ -85,7 +86,36 @@ it("derives a one-line description and ignores missing or invalid update times",
     verification: [],
   });
   expect(taskListDescription(brief)).toBe("Preserve drafts");
+  expect(taskListDescription(brief, true)).toBe("Preserve drafts");
   expect(taskListUpdatedAt({ updatedAt: 0 })).toBeNull();
   expect(taskListUpdatedAt({ updatedAt: Number.NaN })).toBeNull();
   expect(taskListUpdatedAt({ updatedAt: 1_700_000_000_000 })).toBe(1_700_000_000_000);
+});
+
+it("shows the assignment title without repeating crew role instructions", async () => {
+  const task = {
+    id: "crew-task",
+    projectId: "project",
+    title: "Repair standalone packaging",
+    prompt: "Responsibilities\nMaintain builds and CI.",
+    crewRunId: "crew-run",
+    status: "todo",
+    machineId: "machine",
+    machineName: "Workstation",
+    cwd: "/project",
+  } as BoardTask;
+  await act(async () =>
+    root.render(
+      createElement(TaskList, {
+        tasks: [task],
+        selection: false,
+        selected: new Set<string>(),
+        onOpen: vi.fn(),
+        onToggle: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Repair standalone packaging");
+  expect(container.textContent).not.toContain("Responsibilities");
+  expect(container.textContent).toContain("Workstation");
 });

@@ -63,7 +63,7 @@ export function TrashPanel({
           />
         )}
         {entries.length > 0 && (
-          <ul {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.list)}>
+          <ul className={styles.list}>
             {entries.map((entry) => (
               <ActionHost
                 as="li"

@@ -61,11 +61,15 @@ export function AssistantRetentionField({
           onValueChange={(next) => onChange(Number(next))}
         />
       </Row>
-      {usage && (
-        <Row label={t("Today's usage")} stacked>
+      <Row label={t("Today's usage")} stacked>
+        {usage ? (
           <AssistantUsageChips usage={usage} />
-        </Row>
-      )}
+        ) : (
+          <Text size="caption" tone="secondary">
+            {t("Unavailable")}
+          </Text>
+        )}
+      </Row>
     </>
   );
 }
@@ -103,7 +107,7 @@ export function AssistantUsageChips({ usage }: { usage: AssistantSnapshot["usage
         size="micro"
         tone="secondary"
         leading="inherit"
-        className={viewStyles.muted}
+        className={`${viewStyles.muted} ${styles.usageNote}`}
         text={
           usage.workerUsageIncomplete || !cache || !cache.complete
             ? t("Some usage is unavailable.")

@@ -87,10 +87,7 @@ export function AssistantFoldersSettings({
             />
           )}
           {draft.paths.map((path) => (
-            <div
-              key={path}
-              {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.item)}
-            >
+            <div key={path} {...surfaceAttributes({ separator: "pane-block" }, styles.item)}>
               <Text
                 as="span"
                 size="secondary"

@@ -154,6 +154,8 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
             <FilterTrigger
               label={t("Filter")}
               activeCount={activeFilters}
+              aria-haspopup="dialog"
+              aria-expanded={Boolean(filterAnchor)}
               onReset={() => {
                 setFilter("");
                 if (view === "Jobs") {
@@ -171,6 +173,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
           anchor={filterAnchor}
           onDismiss={() => setFilterAnchor(null)}
           kind="dialog"
+          flow="scroll"
           aria-label={t("Filter")}
         >
           <div className={toolbar.panel}>

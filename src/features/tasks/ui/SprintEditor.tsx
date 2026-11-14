@@ -7,7 +7,6 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import {
@@ -138,8 +137,7 @@ export function SprintEditor({
           }))}
           disabled={busy}
         />
-        <section className="sprint-form-section">
-          <SectionLabel>{t("Schedule")}</SectionLabel>
+        <div className="sprint-form-section">
           <div className="sprint-form-grid">
             <DatePicker
               label={t("Start date")}
@@ -155,9 +153,8 @@ export function SprintEditor({
               disabled={busy}
             />
           </div>
-        </section>
-        <section className="sprint-form-section">
-          <SectionLabel>{t("Capacity")}</SectionLabel>
+        </div>
+        <Disclosure summary={t("Capacity")} defaultOpen={Boolean(sprint?.capacityPoints != null || Object.keys(sprint?.projectCapacities ?? {}).length)}>
           <NumberField
             label={t("Sprint capacity (points)")}
             value={capacity}
@@ -191,7 +188,7 @@ export function SprintEditor({
                 })}
             </Disclosure>
           ) : null}
-        </section>
+        </Disclosure>
         {error ? <InlineError>{error}</InlineError> : null}
       </form>
     </Modal>

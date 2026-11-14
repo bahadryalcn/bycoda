@@ -52,7 +52,7 @@
 
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
   gap: 8px;
   min-inline-size: 0;
 }
@@ -78,7 +78,7 @@
 
 .charts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
   gap: 16px;
   min-inline-size: 0;
 }

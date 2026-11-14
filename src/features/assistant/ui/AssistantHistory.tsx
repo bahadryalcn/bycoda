@@ -82,7 +82,7 @@ export function AssistantHistory({
               year: "numeric",
             }).format(new Date(events[0].createdAt))}
           </SectionLabel>
-          <ol {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.events)}>
+          <ol className={styles.events}>
             {events.map((entry) => (
               <ActionHost
                 as="li"

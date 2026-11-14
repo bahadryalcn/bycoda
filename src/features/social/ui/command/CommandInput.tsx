@@ -25,7 +25,7 @@ export function CommandInput({ text, busy, onChange, onSubmit }: CommandInputPro
         label={t("Ask AI")}
         value={text}
         maxLength={2000}
-        minRows={2}
+        minRows={1}
         maxRows={6}
         placeholder={t("For example: reply to this week's pricing questions")}
         surface="raised"

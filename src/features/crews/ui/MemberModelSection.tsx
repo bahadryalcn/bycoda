@@ -1,4 +1,6 @@
 import { InlineError } from "../../../shared/ui/InlineError";
+import { Heading } from "../../../shared/ui/Heading";
+import { t } from "../../../shared/i18n";
 import type { HostModelCatalog } from "../../connections/public/protocol";
 import { ModelChoiceField } from "../../model-routing/public/choice";
 import { openModelsSettings } from "../../settings/public/modelsSettingsLink";
@@ -26,6 +28,9 @@ export function MemberModelSection({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
+      <Heading size="section" level={3}>
+        {t("Model")}
+      </Heading>
       <ModelChoiceField
         // oxlint-disable-next-line jsx-a11y/aria-role -- Routing role, never forwarded to the DOM.
         routingRole="crew.member"

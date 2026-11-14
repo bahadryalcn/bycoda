@@ -1,4 +1,55 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`Jira comment preview modes ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/tests/browser/inbox/jira-board.html?commentEditor");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const source = page.getByRole("textbox", { name: "Comment", exact: true });
+      await source.fill(
+        "**Ready for review**\n\n- Keep draft\n- Check preview\n\n`const value = 42;`",
+      );
+      const preview = page.getByRole("region", { name: "Preview", exact: true });
+      await expect(preview.getByText("Ready for review", { exact: true })).toBeVisible();
+      await expect(preview.locator("li")).toHaveCount(2);
+      await page.locator('input[type="file"]').setInputFiles({
+        name: "sample.png",
+        mimeType: "image/png",
+        buffer: Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jT1sAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      });
+      await expect(page.getByRole("img", { name: "sample.png" })).toBeVisible();
+      const picker = page.getByRole("button", { name: /^Choose project:/ });
+      await picker.click();
+      await page.getByRole("option", { name: /bycoda-website/ }).click();
+      await expect(picker).toContainText("bycoda-website");
+      await expect(picker).not.toContainText("pf-ui-portal");
+      for (const mode of ["Split", "Preview", "Source"]) {
+        await page.getByRole("tab", { name: mode, exact: true }).click();
+        await expect(page.getByRole("tab", { name: mode, exact: true })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        );
+        if (mode === "Preview") await expect(source).toBeHidden();
+        else await expect(source).toBeVisible();
+        if (mode === "Source") await expect(preview).toHaveCount(0);
+        else await expect(preview.getByText("Ready for review", { exact: true })).toBeVisible();
+        await expect(page.getByRole("img", { name: "sample.png" })).toBeVisible();
+        await page.screenshot({
+          path: `temp/verification/jira-comment-preview/${theme}-${width}-${mode.toLowerCase()}.png`,
+        });
+      }
+      await expect(source).toContainText("**Ready for review**");
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+    });
 async function drag(page: Page, source: Locator, target: Locator) {
   const from = await source.boundingBox();
   const to = await target.boundingBox();

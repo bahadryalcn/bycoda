@@ -106,7 +106,7 @@ function ScopedTaskWorkflowControls({
       ),
     });
   return (
-    <Disclosure summary={t("Workflow")}>
+    <Disclosure variant="row" summary={t("Workflow")}>
       <div className="task-form-section-body">
         <div className="task-workflow-pick">
           <div className="min-w-0 flex-1">

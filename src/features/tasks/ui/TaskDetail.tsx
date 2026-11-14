@@ -181,8 +181,7 @@ export function TaskDetail({
           {isEditing ? (
             <form aria-label={t("Edit details")} onSubmit={save} className="space-y-2">
               <TextField
-                hideLabel
-                label=""
+                label={t("Title")}
                 autoFocus
                 aria-label={t("Title")}
                 value={title}
@@ -193,8 +192,7 @@ export function TaskDetail({
                 fieldClassName="w-full"
               />
               <TextareaField
-                hideLabel
-                label=""
+                label={t("Description")}
                 aria-label={t("Description")}
                 value={prompt}
                 disabled={saving}

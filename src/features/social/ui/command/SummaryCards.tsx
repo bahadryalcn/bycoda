@@ -1,20 +1,9 @@
 import { Text } from "../../../../shared/ui/Text";
-import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { Meter } from "../../../../shared/ui/Meter";
-import { surfaceAttributes, Surface } from "../../../../shared/ui/Surface";
-import { Check, Clock, MessageSquare, UserRound } from "../../../../shared/ui/icons";
+import { Surface } from "../../../../shared/ui/Surface";
 import type { AiSummary } from "../../model/socialActions";
-import { summaryCards, type SummaryCard } from "./commandModel";
-
-const ICON_PROPS = { className: "icon-sm", strokeWidth: 1.75, "aria-hidden": true } as const;
-
-const ICONS: Record<SummaryCard["key"], ReactNode> = {
-  sent: <Check {...ICON_PROPS} />,
-  pending: <Clock {...ICON_PROPS} />,
-  people: <UserRound {...ICON_PROPS} />,
-  reply: <MessageSquare {...ICON_PROPS} />,
-};
+import { summaryCards } from "./commandModel";
 
 /** Four stat tiles: sent today, pending, new people and reply rate. */
 export function SummaryCards({
@@ -28,21 +17,14 @@ export function SummaryCards({
   return (
     <div className="command-cards">
       {summaryCards(summary).map((card) => (
-        <Surface key={card.key} variant="card" className="command-card">
-          <Text
-            size="inherit"
-            tone="secondary"
-            {...surfaceAttributes({ radius: "card", variant: "fill-subtle" }, "command-card-icon")}
-          >
-            {ICONS[card.key]}
-          </Text>
+        <Surface key={card.key} variant="canvas" padding="sm" className="command-card">
           <div className="command-card-body">
             <Text size="caption" tone="secondary" leading="inherit" className="command-card-label">
               {card.label}
             </Text>
             <Text
               as="span"
-              size="heading"
+              size="title"
               tone="primary"
               weight="medium"
               leading="inherit"

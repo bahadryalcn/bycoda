@@ -198,7 +198,7 @@ export function JobOwnerEditDialog({
           submit();
         }}
       >
-        <Text as="p" truncate leading="inherit" className={styles.subtitle}>
+        <Text as="p" leading="inherit" className={styles.subtitle}>
           {job.title}
         </Text>
         {mode === "replan" ? (
@@ -212,7 +212,6 @@ export function JobOwnerEditDialog({
           />
         ) : (
           <Select
-            hideLabel
             label={t("Priority")}
             value={draft.priority}
             disabled={pending || !!draft.intent}

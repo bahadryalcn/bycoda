@@ -14264,5 +14264,6 @@
   "Add result to chat when finished": "Add result to chat when finished",
   "Only the latest terminal output is included.": "Only the latest terminal output is included.",
   "Result added to chat. Review and send when ready.": "Result added to chat. Review and send when ready.",
-  "Could not add result to chat. Try again.": "Could not add result to chat. Try again."
+  "Could not add result to chat. Try again.": "Could not add result to chat. Try again.",
+  "Eligible tasks: {p0} of {p1}": "Eligible tasks: {p0} of {p1}"
 }

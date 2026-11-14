@@ -119,7 +119,6 @@ export function BrowserSettings({
       ) : null}
       <div className="social-field-row">
         <Select
-          hideLabel
           label={t("Browser window")}
           value={draft.visibility}
           disabled={disabled || is("browser")}
@@ -153,7 +152,6 @@ export function BrowserSettings({
       </Text>
       {draft.desktopControl.allowed ? (
         <Select
-          hideLabel
           label={t("Computer for desktop control")}
           value={draft.desktopControl.computerId ?? ""}
           disabled={disabled || is("browser")}

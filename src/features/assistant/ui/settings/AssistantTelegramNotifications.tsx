@@ -88,6 +88,7 @@ export function AssistantTelegramNotifications({
             type="button"
             size="sm"
             variant="ghost"
+            className="justify-self-start"
             loading={pending}
             onClick={() => void load()}
           >

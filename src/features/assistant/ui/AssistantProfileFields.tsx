@@ -46,7 +46,19 @@ export function AssistantProfileFields({
   onChange: (patch: AssistantProfilePatch) => void;
 }) {
   const rows = useProfileRows();
-  if (section === "identity")
+  if (section === "identity") {
+    const avatar = (
+      <AdvancedSettings title={t("Avatar")} keepMounted>
+        {rows ? (
+          <Row label={null} stacked>
+            <AssistantAvatarPicker value={value.avatar} hideLabel onChange={onChange} />
+          </Row>
+        ) : (
+          <AssistantAvatarPicker value={value.avatar} hideLabel={false} onChange={onChange} />
+        )}
+        <ShowTitle value={value} onChange={onChange} />
+      </AdvancedSettings>
+    );
     return (
       <>
         <ProfileRow label={t("Assistant name")}>
@@ -76,18 +88,10 @@ export function AssistantProfileFields({
           )}
         </ProfileRow>
         {!rows && <AddressFrequency value={value} onChange={onChange} />}
-        <AdvancedSettings title={t("Avatar")} keepMounted>
-          {rows ? (
-            <Row label={null} stacked>
-              <AssistantAvatarPicker value={value.avatar} hideLabel onChange={onChange} />
-            </Row>
-          ) : (
-            <AssistantAvatarPicker value={value.avatar} hideLabel={false} onChange={onChange} />
-          )}
-          <ShowTitle value={value} onChange={onChange} />
-        </AdvancedSettings>
+        {rows ? avatar : <div className={roleStyles.wide}>{avatar}</div>}
       </>
     );
+  }
   if (section === "language")
     return (
       <ProfileLanguage

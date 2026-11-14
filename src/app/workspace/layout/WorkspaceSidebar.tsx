@@ -72,13 +72,14 @@ export const WorkspaceSidebar = memo(
     onOpenNotes,
     ...props
   }: WorkspaceSidebarProps) {
-    // The Room is a full-window tool like Tasks and Automations: the session sidebar stays
-    // hidden while it is the active tool, and its open preference is left untouched.
+    // Full-window tools hide the session sidebar without changing its open preference.
     const assistantRoomOpen = automationsViewOpen && auxiliaryTool === "assistant";
+    const fullWindowToolOpen =
+      assistantRoomOpen || (automationsViewOpen && auxiliaryTool === "conversation-tools");
     return (
       <Sidebar
         {...props}
-        open={props.open && !assistantRoomOpen}
+        open={props.open && !fullWindowToolOpen}
         workspaceSwitchPending={workspaceNavigation.pending?.project === props.cwd}
         workspaceSwitchError={
           workspaceNavigation.error?.project === props.cwd

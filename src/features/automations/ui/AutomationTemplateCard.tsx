@@ -36,7 +36,7 @@ export function AutomationTemplateCard({
       className="automation-template"
       tooltip={t(template.description)}
     >
-      <span className="flex gap-3">
+      <span className="flex min-w-0 items-start gap-2">
         <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">
           <Icon className="icon-md" strokeWidth={1.75} />
         </Text>
@@ -68,7 +68,7 @@ export function AutomationTemplateCard({
       <Text
         size="micro"
         tone="muted"
-        className="mt-auto flex min-w-0 items-center gap-1.5 ps-10 pt-2"
+        className="mt-auto flex min-w-0 items-center gap-1.5 ps-8 pt-2"
       >
         <TriggerMark kind={template.trigger.kind} className="icon-xs shrink-0" />
         <Text size="inherit" tone="inherit" truncate className="min-w-0">

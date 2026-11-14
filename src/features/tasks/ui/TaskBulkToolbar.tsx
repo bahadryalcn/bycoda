@@ -3,6 +3,9 @@ import { useRef, useState } from "react";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { BadgeList } from "../../../shared/ui/BadgeList";
+import { Disclosure } from "../../../shared/ui/Disclosure";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Text } from "../../../shared/ui/Text";
@@ -10,6 +13,7 @@ import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { deleteTask, moveTask, startTask, type BoardTask } from "../model/taskClient";
 import {
   bulkTaskKey,
+  groupTaskBulkResults,
   runTaskBulkAction,
   taskBulkUnavailable,
   type TaskBulkAction,
@@ -54,6 +58,12 @@ export function TaskBulkToolbar({
   const report = (reason: unknown) =>
     onError(reason instanceof Error ? reason.message : String(reason));
   const failures = results.filter((row) => row.status === "failed");
+  const resultGroups = groupTaskBulkResults(results);
+  const eligibility = (action: TaskBulkAction) => chosen.filter((task) => !taskBulkUnavailable(task, action));
+  const unavailableReason = (action: TaskBulkAction) =>
+    chosen.length && !eligibility(action).length
+      ? t(taskBulkUnavailable(chosen[0], action) ?? "Unavailable")
+      : undefined;
 
   const run = async (action: TaskBulkAction, retry = false) => {
     if (pending.current || disabled) return;
@@ -63,7 +73,7 @@ export function TaskBulkToolbar({
           .map((row) => current.get(bulkTaskKey(row.task)))
           .filter((task): task is BoardTask => Boolean(task))
       : [...chosen];
-    if (!batch.length) return;
+    if (!batch.length || !batch.some((task) => !taskBulkUnavailable(task, action))) return;
     pending.current = true;
     setBusy(true);
     onBusy(true);
@@ -85,7 +95,7 @@ export function TaskBulkToolbar({
       setActiveAction(retry ? "retry-failed" : action);
       setResults([]);
       setProgress({ completed: 0, total: batch.length });
-      await runTaskBulkAction(
+      const completedResults = await runTaskBulkAction(
         batch,
         action,
         async (task, operation) => {
@@ -105,6 +115,13 @@ export function TaskBulkToolbar({
           setProgress({ completed, total });
         },
       );
+      if (action === "delete") {
+        const remaining = new Set(selected);
+        for (const result of completedResults) {
+          if (result.status === "succeeded") remaining.delete(bulkTaskKey(result.task));
+        }
+        onSelect(remaining);
+      }
     } finally {
       pending.current = false;
       setBusy(false);
@@ -139,24 +156,32 @@ export function TaskBulkToolbar({
           {t("{p0} selected", { p0: chosen.length })}
         </Badge>
         {(["start", "stop", "retry"] as const).map((action) => (
+          <Tooltip key={action} label={eligibility(action).length ? t("Eligible tasks: {p0} of {p1}", { p0: eligibility(action).length, p1: chosen.length }) : undefined}>
           <Button
             key={action}
+            aria-label={t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
             variant="secondary"
             loading={activeAction === action}
-            disabled={busy || disabled || !chosen.length}
+            disabled={busy || disabled || !eligibility(action).length}
+            disabledReason={unavailableReason(action)}
             onClick={() => run(action).catch(report)}
           >
             {t({ start: "Start", stop: "Stop", retry: "Retry" }[action])}
+            <Badge size="xs" variant="count" aria-hidden>{eligibility(action).length}</Badge>
           </Button>
+          </Tooltip>
         ))}
         <Button
           variant="secondary"
           tone="danger"
           loading={activeAction === "delete"}
-          disabled={busy || disabled || !chosen.length}
+          disabled={busy || disabled || !eligibility("delete").length}
+          disabledReason={unavailableReason("delete")}
+          aria-label={t("Delete")}
           onClick={() => run("delete").catch(report)}
         >
           {t("Delete")}
+          <Badge size="xs" variant="count" aria-hidden>{eligibility("delete").length}</Badge>
         </Button>
         <Button
           variant="ghost"
@@ -190,20 +215,20 @@ export function TaskBulkToolbar({
           }
         />
       ) : null}
-      {results.some((row) => row.status !== "succeeded") ? (
-        <div className="task-bulk-results">
-          <Text as="ul" size="caption" tone="inherit" leading="inherit">
-            {results
-              .filter((row) => row.status !== "succeeded")
-              .map((row) => (
-                <li key={bulkTaskKey(row.task)}>
-                  <strong>{row.task.title}</strong> · {row.task.machineName}:{" "}
-                  {t(row.status === "failed" ? "Failed" : "Skipped")}.{" "}
-                  {row.reason ? t(row.reason) : null}
-                </li>
-              ))}
-          </Text>
-        </div>
+      {resultGroups.length ? (
+        <Disclosure summary={t("Details")} defaultOpen={failures.length > 0} className="task-bulk-results">
+          {resultGroups.map((group, index) => (
+            <div key={index} className="task-bulk-result-group">
+              <Text as="p" size="caption" tone={group.status === "failed" ? "danger" : "secondary"}>
+                {t(group.status === "failed" ? "Failed" : "Skipped")}{": "}
+                {group.reason ? t(group.reason) : null}
+              </Text>
+              <BadgeList label={t("Tasks")} max={3} items={group.tasks.map((task) => ({
+                id: bulkTaskKey(task), label: task.title, title: `${task.title} / ${task.machineName}`,
+              }))} />
+            </div>
+          ))}
+        </Disclosure>
       ) : null}
       {failures.length || activeAction === "retry-failed" ? (
         <Button

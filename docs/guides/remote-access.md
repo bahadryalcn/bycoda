@@ -233,7 +233,10 @@ beside the catalog; **Recently used first** changes order without filtering entr
 Group shortcuts above the catalog narrow the existing search without clearing it.
 User-selected server colors appear on the identity tile, separately
 from the Host connection status. Selecting an entry opens a right-hand details sheet
-and leaves the catalog usable. Its header stays visible; connection actions and tool
+and reserves its own space, so the catalog reflows and other servers remain selectable.
+On narrow panes the details sit below the catalog. Escape closes details from anywhere
+in Servers and returns focus to the selected entry; an open menu closes first.
+Its header stays visible; connection actions and tool
 tabs stay together while scrolling. Switching tool tabs preserves unfinished drafts.
 SSH settings, server editing, Termius import and SFTP open in side sheets with their
 existing explicit save, import, connection and transfer approvals.

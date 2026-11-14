@@ -103,7 +103,9 @@ function TaskCardBody({
   useLocale();
   const [failureOpen, setFailureOpen] = useState(false);
   const model = resolveModel(task.harness, task.model);
-  const description = taskInstructionsSummary(task.prompt);
+  const description = taskInstructionsSummary(task.prompt, {
+    crewAssignment: Boolean(task.crewRunId || task.crewDefinitionId),
+  });
   const unread = unreadReviewNotes(task.reviewNotes);
   // Exceptional state leads the card; machine, model and branch are ambient.
   const status = taskStatusLine(task);

@@ -2,7 +2,7 @@
 
 import { forwardRef } from "react";
 import type { ComponentPropsWithoutRef } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import type { Variants } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./select.module.css";
@@ -24,16 +24,6 @@ const valueRoll: Variants = {
     y: `${direction * -0.3}em`,
     transition: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.standard] },
   }),
-};
-/** Reduced motion keeps a short crossfade; the resting state matches valueRoll so server and client markup agree. */
-const valueFade: Variants = {
-  enter: { opacity: 0 },
-  center: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: motionTokens.duration.instant },
-  },
-  exit: { opacity: 0, transition: { duration: motionTokens.duration.instant } },
 };
 
 /** Composable parts for bycoda's existing native/web overlay lifecycle. */
@@ -57,18 +47,10 @@ export function SelectValue({ value, label }: { value: string; label: string }) 
   if (reduced) return <span className={styles.valueText}>{label}</span>;
   return (
     <span className={styles.valueText}>
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
-          key={value}
-          variants={reduced ? valueFade : valueRoll}
-          custom={1}
-          initial="enter"
-          animate="center"
-          exit="exit"
-        >
-          {label}
-        </motion.span>
-      </AnimatePresence>
+      {/* Keep one label in the trigger, including during rapid value changes. */}
+      <motion.span key={value} variants={valueRoll} custom={1} initial="enter" animate="center">
+        {label}
+      </motion.span>
     </span>
   );
 }

@@ -2,14 +2,14 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
-  inline-size: 100%;
+  gap: 4px;
+  inline-size: fit-content;
+  max-inline-size: min(88%, 44rem);
   min-inline-size: 0;
 }
 .message[data-author="user"] {
   align-items: flex-end;
   align-self: flex-end;
-  max-inline-size: 88%;
 }
 .author {
   display: flex;
@@ -20,9 +20,6 @@
 .content {
   min-inline-size: 0;
   max-inline-size: 100%;
-  inline-size: 100%;
-}
-.message[data-author="user"] .content {
-  inline-size: auto;
   padding: 10px 14px;
+  overflow-wrap: anywhere;
 }

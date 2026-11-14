@@ -46,7 +46,7 @@ export function ReportPanel({ report, busy, onLoad }: ReportPanelProps) {
   return (
     <Surface
       as="section"
-      variant="card"
+      variant="canvas"
       padding="none"
       className="command-frame"
       aria-label={t("Report")}

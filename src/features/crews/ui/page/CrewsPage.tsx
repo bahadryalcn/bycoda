@@ -138,7 +138,7 @@ export function CrewsPage({
             items={crewsTabs(supported ? activeItems?.length : null)}
           />
         </div>
-        <TabPanel className="min-h-0 flex-1 overflow-y-auto">
+        <TabPanel className="min-h-0 w-full max-w-[84rem] flex-1 self-center overflow-y-auto">
           {tab === "active" ? (
             <>
               {active.error ? (

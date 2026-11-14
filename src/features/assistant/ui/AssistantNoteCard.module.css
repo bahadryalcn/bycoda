@@ -1,4 +1,7 @@
 .page {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 24px 16px;
 }
 .page > .toolbar {
@@ -37,6 +40,7 @@
 }
 
 .documentEditor {
-  block-size: max(24rem, calc(100dvh - 16rem));
+  flex: 1 1 auto;
+  min-block-size: 0;
   min-inline-size: 0;
 }

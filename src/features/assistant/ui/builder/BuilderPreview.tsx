@@ -61,7 +61,7 @@ export function BuilderPreview({
       )}
       {entries.length > 0 && <SectionLabel as="h3">{t("Proposed settings")}</SectionLabel>}
       {entries.length > 0 ? (
-        <Surface as="ul" variant="card" padding="none" className={styles.fields}>
+        <Surface as="ul" variant="transparent" padding="none" className={styles.fields}>
           {entries.map((entry) => (
             <li key={entry.key} {...surfaceAttributes({ separator: "block" }, styles.field)}>
               <Checkbox

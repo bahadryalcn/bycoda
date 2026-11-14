@@ -46,6 +46,15 @@ export function CapabilityList({ capabilities, onConnect, grouped = false }: Cap
       <div className="flex min-w-0 flex-col gap-2">
         {groups.map((group) => {
           const items = capabilities.filter((row) => groupFor(row) === group.id);
+          const reason =
+            items.length &&
+            items.every(
+              (row) =>
+                row.status !== "available" &&
+                capabilityReasonText(row) === capabilityReasonText(items[0]!),
+            )
+              ? capabilityReasonText(items[0]!)
+              : undefined;
           return items.length ? (
             <Disclosure
               key={group.id}
@@ -54,13 +63,26 @@ export function CapabilityList({ capabilities, onConnect, grouped = false }: Cap
               variant="row"
               size="sm"
             >
-              <CapabilityList capabilities={items} onConnect={onConnect} />
+              {reason && reason !== group.label ? (
+                <Text as="p" size="caption" tone="secondary">
+                  {reason}
+                </Text>
+              ) : null}
+              <CapabilityRows capabilities={items} onConnect={onConnect} sharedReason={reason} />
             </Disclosure>
           ) : null;
         })}
       </div>
     );
   }
+  return <CapabilityRows capabilities={capabilities} onConnect={onConnect} />;
+}
+
+function CapabilityRows({
+  capabilities,
+  onConnect,
+  sharedReason,
+}: CapabilityListProps & { sharedReason?: string }) {
   return (
     <ul className="social-capability-list" aria-label={t("What this account can do")}>
       {capabilities.map((row) => {
@@ -78,8 +100,10 @@ export function CapabilityList({ capabilities, onConnect, grouped = false }: Cap
             >
               {available ? <Check className="icon-sm" /> : <X className="icon-sm" />}
             </Text>
-            <span className="social-capability-name">{operationText(row.operation)}</span>
-            {available ? null : (
+            <Text as="span" size="secondary" leading="inherit" className="social-capability-name">
+              {operationText(row.operation)}
+            </Text>
+            {available || sharedReason ? null : (
               <Text
                 size="caption"
                 tone="secondary"

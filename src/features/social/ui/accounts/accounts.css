@@ -5,6 +5,7 @@
   flex-direction: column;
   gap: 1rem;
   min-width: 0;
+  max-inline-size: 68rem;
 }
 
 .social-accounts-section {
@@ -104,10 +105,11 @@
 
 .social-settings-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: var(--space-4);
   min-inline-size: 0;
+  max-inline-size: 52rem;
 }
 
 /* Section inside an account detail: a title above content, separated by spacing and a hairline. */
@@ -117,6 +119,7 @@
   gap: 0.75rem;
   min-width: 0;
   padding-block-start: 1rem;
+  align-items: stretch;
 }
 
 .social-card .social-card {
@@ -143,7 +146,7 @@
 .social-card-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
 }
@@ -165,6 +168,18 @@
   min-width: 0;
 }
 
+.social-working-hours {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  max-inline-size: 32rem;
+}
+
+.social-working-hours > :first-child,
+.social-working-hours > :last-child {
+  grid-column: 1 / -1;
+}
+
 .social-check {
   display: inline-flex;
   align-items: center;
@@ -174,7 +189,7 @@
 .social-autonomy-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 11rem) minmax(0, 8rem);
-  align-items: end;
+  align-items: center;
   gap: 0.5rem;
   min-width: 0;
   max-inline-size: 32rem;

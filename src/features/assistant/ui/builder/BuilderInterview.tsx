@@ -69,6 +69,7 @@ export function BuilderInterview({
   };
   return (
     <Text as="div" size="inherit" tone="inherit" leading="normal" className={styles.stage}>
+      {controls && <div className={styles.interviewControls}>{controls}</div>}
       <div className={styles.chat} role="log" aria-label={t("Interview")}>
         {transcript.map((turn, index) => (
           <Text
@@ -79,14 +80,8 @@ export function BuilderInterview({
             key={index}
             {...surfaceAttributes(
               {
-                frame: "pane",
                 radius: "card",
-                variant:
-                  turn.role === "assistant"
-                    ? "inset"
-                    : turn.role === "owner"
-                      ? "selected"
-                      : undefined,
+                variant: turn.role === "owner" ? "selected" : "transparent",
               },
               styles.bubble,
             )}
@@ -140,7 +135,6 @@ export function BuilderInterview({
         placeholder={t("Type your answer")}
         onChange={(event) => onDraftChange(event.currentTarget.value)}
         onKeyDown={onKeyDown}
-        toolbarLeading={controls}
         toolbarTrailing={
           <Button
             type="button"

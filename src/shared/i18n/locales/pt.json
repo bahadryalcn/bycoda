@@ -14264,5 +14264,6 @@
   "Add result to chat when finished": "Adicionar resultado ao chat ao terminar",
   "Only the latest terminal output is included.": "Apenas a saída mais recente do terminal é incluída.",
   "Result added to chat. Review and send when ready.": "Resultado adicionado ao chat. Revise e envie quando quiser.",
-  "Could not add result to chat. Try again.": "Não foi possível adicionar o resultado ao chat. Tente novamente."
+  "Could not add result to chat. Try again.": "Não foi possível adicionar o resultado ao chat. Tente novamente.",
+  "Eligible tasks: {p0} of {p1}": "Tarefas elegíveis: {p0} de {p1}"
 }

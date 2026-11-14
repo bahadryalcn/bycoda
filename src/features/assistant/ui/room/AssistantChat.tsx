@@ -32,19 +32,9 @@ export function AssistantChatMessage({
   const messageId = useId();
   return (
     <article className={styles.message} data-author={role}>
-      <Text as="div" size="caption" tone="secondary" className={styles.author}>
-        {author && (
-          <Text as="span" size="caption" weight="medium">
-            {author}
-          </Text>
-        )}
-        {metadata}
-      </Text>
       <div
         {...surfaceAttributes(
-          role === "user"
-            ? { variant: "fill-subtle", radius: "chat-end" }
-            : { variant: "canvas-chat" },
+          { variant: "fill-subtle", radius: role === "user" ? "chat-end" : "chat-start" },
           styles.content,
         )}
       >
@@ -59,6 +49,14 @@ export function AssistantChatMessage({
         )}
         {children}
       </div>
+      <Text as="div" size="caption" tone="secondary" className={styles.author}>
+        {author && (
+          <Text as="span" size="caption" weight="medium">
+            {author}
+          </Text>
+        )}
+        {metadata}
+      </Text>
       <TurnOutputActions getText={() => text} extraItems={actions} />
     </article>
   );

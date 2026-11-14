@@ -31,6 +31,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
           anchor={healthAnchor}
           onDismiss={() => setHealthAnchor(null)}
           kind="dialog"
+          flow="scroll"
           aria-label={t("Assistant status")}
         >
           <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
@@ -74,6 +75,7 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
           anchor={presenceAnchor}
           onDismiss={() => setPresenceAnchor(null)}
           kind="dialog"
+          flow="scroll"
           aria-label={t("Presence")}
         >
           <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>

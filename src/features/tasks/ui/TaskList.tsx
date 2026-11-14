@@ -2,7 +2,6 @@ import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { Badge } from "../../../shared/ui/Badge";
-import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -14,6 +13,7 @@ import { taskStatusLine, type TaskStatusTone } from "../model/taskStatusLine";
 import { resolveModel } from "../../sessions/public/models";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { projectDisplayName } from "../../projects/public/projectNames";
 import { AssistantTaskBadge } from "./AssistantTaskBadge";
 import "./task-list.css";
 
@@ -28,8 +28,8 @@ const STATUS_DETAIL_TONE: Record<TaskStatusTone, TextTone> = {
 };
 
 /** First non-empty line of the task prompt, shown as the one-line description caption. */
-export function taskListDescription(prompt: string | undefined): string {
-  for (const line of taskInstructionsSummary(prompt ?? "").split(/\r?\n/)) {
+export function taskListDescription(prompt: string | undefined, crewAssignment = false): string {
+  for (const line of taskInstructionsSummary(prompt ?? "", { crewAssignment }).split(/\r?\n/)) {
     const text = line.trim().replace(/^#+\s*/, "");
     if (text) return text;
   }
@@ -77,7 +77,10 @@ export function TaskList({
         estimateSize={72}
         renderItem={(task) => {
           const status = taskStatusLine(task);
-          const description = taskListDescription(task.prompt);
+          const description = taskListDescription(
+            task.prompt,
+            Boolean(task.crewRunId || task.crewDefinitionId),
+          );
           const planning = planningLabel?.(task);
           const updatedAt = taskListUpdatedAt(task);
           const model = task.harness ? resolveModel(task.harness, task.model) : null;
@@ -102,7 +105,6 @@ export function TaskList({
                   onChange={(event) => onToggle(task, event.currentTarget.checked)}
                 />
               ) : null}
-              <StatusDot tone={status.tone} className="task-list-dot" />
               <div className="task-management-identity">
                 <Button
                   variant="link"
@@ -139,7 +141,11 @@ export function TaskList({
                   leading="inherit"
                   className="task-list-caption"
                 >
-                  {task.machineName} · {task.cwd}
+                  <OverflowTooltip label={task.cwd}>
+                    <span>{projectDisplayName(task.cwd)}</span>
+                  </OverflowTooltip>
+                  {" / "}
+                  {task.machineName}
                 </Text>
                 {task.stale ? (
                   <Text as="p" size="caption" tone="warning" leading="inherit" wrap="anywhere">
@@ -166,7 +172,7 @@ export function TaskList({
                       size="caption"
                       tone={STATUS_DETAIL_TONE[status.tone]}
                       leading="inherit"
-                      wrap="anywhere"
+                      truncate
                       data-task-status-detail
                     >
                       {status.detail}
@@ -197,9 +203,16 @@ export function TaskList({
               >
                 {updatedAt ? <Timestamp value={updatedAt} /> : null}
               </Text>
-              <Badge tone={status.tone} data-task-status={status.kind} className="task-list-status">
-                {status.label}
-              </Badge>
+              <OverflowTooltip label={status.label}>
+                <Badge
+                  truncate
+                  tone={status.tone}
+                  data-task-status={status.kind}
+                  className="task-list-status"
+                >
+                  {status.label}
+                </Badge>
+              </OverflowTooltip>
             </ActionHost>
           );
         }}

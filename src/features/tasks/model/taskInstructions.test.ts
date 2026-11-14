@@ -15,6 +15,17 @@ const brief = {
   verification: ["Run audio tests"],
 };
 
+it("keeps crew role instructions in detail without repeating them as a task summary", () => {
+  const prompt =
+    "Responsibilities\nImprove builds and CI.\n\nCurrent working method\nKeep feedback fast.";
+  expect(taskInstructionsSummary(prompt, { crewAssignment: true })).toBe("");
+  expect(taskInstructionsMarkdown(prompt)).toBe(prompt);
+  expect(taskInstructionsSummary(JSON.stringify(brief), { crewAssignment: true })).toBe(
+    "Fix playback",
+  );
+  expect(taskInstructionsSummary("Fix the login redirect")).toBe("Fix the login redirect");
+});
+
 it("renders every structured condition without exposing JSON on the card", () => {
   const prompt = JSON.stringify(brief);
   expect(taskInstructionsSummary(prompt)).toBe("Fix playback");

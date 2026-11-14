@@ -25,6 +25,79 @@ vi.mock("../../../features/sessions/model/sessionsStore", () => ({
   },
 }));
 import { useSocialSessionPanel } from "./useSocialSessionPanel";
+import { SessionDiscussionPanel } from "../../../features/sessions/public/SessionDiscussionPanel";
+import { SessionSurface } from "../../../features/sessions/ui/SessionSurface";
+
+vi.mock("../../../shared/hooks/useDragResize", () => ({
+  useDragResize: () => ({ setPaneRef: () => {}, sashProps: {} }),
+}));
+
+it.each([false, true])(
+  "keeps the real discussion destination mounted through session creation and parent updates, narrow=%s",
+  async (narrow) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("matchMedia", () => ({
+      matches: narrow,
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    state.sessions = [];
+    state.persist.mockReset().mockResolvedValue({ id: "created-social-session" });
+    localStorage.clear();
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const close = vi.fn();
+    const scope = {
+      key: `test:real-social-destination:${narrow}`,
+      cwd: "/project",
+      title: "Social Media",
+    };
+    function Probe({ revision }: { revision: number }) {
+      const panel = useSocialSessionPanel();
+      return createElement(
+        "section",
+        { "data-revision": revision },
+        createElement(SessionDiscussionPanel, {
+          scopeKey: scope.key,
+          title: scope.title,
+          label: "AI chat",
+          onOpen: () => panel.open(scope),
+          onMount: panel.setPortal,
+          onClose: close,
+        }),
+        panel.portal
+          ? createElement(SessionSurface, {
+              host: panel.portal.host,
+              children: createElement("textarea", {
+                "aria-label": "Social draft",
+                defaultValue: "Keep this draft",
+              }),
+            })
+          : null,
+      );
+    }
+    try {
+      await act(async () => root.render(createElement(Probe, { revision: 0 })));
+      const draft = document.querySelector("textarea");
+      expect(draft).not.toBeNull();
+      expect(
+        document
+          .querySelector(narrow ? '[role="dialog"]' : '[aria-label="AI chat"]')
+          ?.contains(draft),
+      ).toBe(true);
+      await act(async () => root.render(createElement(Probe, { revision: 1 })));
+      expect(document.querySelector("textarea")).toBe(draft);
+      expect(draft?.value).toBe("Keep this draft");
+      expect(close).not.toHaveBeenCalled();
+      expect(state.persist).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 it("keeps the newest workspace target when an older registration releases the same DOM host", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

@@ -14264,5 +14264,6 @@
   "Add result to chat when finished": "終了時に結果をチャットに追加",
   "Only the latest terminal output is included.": "最新のターミナル出力のみが含まれます。",
   "Result added to chat. Review and send when ready.": "結果をチャットに追加しました。内容を確認してから送信してください。",
-  "Could not add result to chat. Try again.": "結果をチャットに追加できませんでした。もう一度お試しください。"
+  "Could not add result to chat. Try again.": "結果をチャットに追加できませんでした。もう一度お試しください。",
+  "Eligible tasks: {p0} of {p1}": "実行可能なタスク: {p1} 件中 {p0} 件"
 }

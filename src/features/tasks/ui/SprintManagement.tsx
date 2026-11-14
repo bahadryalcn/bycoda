@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
-import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
-import { Calendar, Plus } from "../../../shared/ui/icons";
+import { Plus } from "../../../shared/ui/icons";
 import { Progress } from "../../../shared/ui/Progress";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import {
@@ -148,16 +147,10 @@ export function SprintManagement({
     >
       {nothing ? (
         <>
-          <EmptyState
-            context="list"
-            kind="empty"
-            icon={<Calendar className="icon-lg" />}
-            title={t("Plan several tasks together as a sprint")}
-            description={t(
-              "Choose the projects and the tasks to work on together, then follow the progress.",
-            )}
-            action={newSprint}
-          />
+          <div className="sprint-heading">
+            <Heading size="section">{t("Sprints")}</Heading>
+            {newSprint}
+          </div>
           {hostBar}
         </>
       ) : (

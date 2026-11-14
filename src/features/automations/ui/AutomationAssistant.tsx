@@ -116,7 +116,7 @@ export function AutomationAssistant({
           placeholder={t("Describe the automation you want to create or change…")}
           onChange={(event) => setPrompt(event.target.value)}
         />
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <div className="grid min-w-0 gap-3">
           <RadioGroup
             variant="inline"
             label={t("Scope")}
@@ -127,22 +127,28 @@ export function AutomationAssistant({
               { value: "general", label: t("General") },
             ]}
           />
-          {scope === "project" ? (
-            <SearchableProjectPicker cwd={project} recents={recents} onSelectProject={setProject} />
-          ) : null}
-          <span className="ms-auto flex min-w-0 items-center">
-            <ModelPicker
-              harness={choice.harness}
-              model={choice.model}
-              project={scope === "project" ? project : ""}
-              values={settings}
-              onSettingsChange={setSettings}
-              onChange={(harness, model) => {
-                setChoice({ harness, model });
-                setSettings({});
-              }}
-            />
-          </span>
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            {scope === "project" ? (
+              <SearchableProjectPicker
+                cwd={project}
+                recents={recents}
+                onSelectProject={setProject}
+              />
+            ) : null}
+            <span className="flex min-w-0 items-center">
+              <ModelPicker
+                harness={choice.harness}
+                model={choice.model}
+                project={scope === "project" ? project : ""}
+                values={settings}
+                onSettingsChange={setSettings}
+                onChange={(harness, model) => {
+                  setChoice({ harness, model });
+                  setSettings({});
+                }}
+              />
+            </span>
+          </div>
         </div>
         {error ? <Alert tone="danger">{error}</Alert> : null}
       </div>

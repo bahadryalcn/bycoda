@@ -21,6 +21,25 @@ afterEach(() => {
 
 type Row = Pick<Capability, "operation" | "status" | "reasonCode">;
 
+it("states a shared connection reason once for grouped operations", () => {
+  act(() =>
+    root.render(
+      createElement(CapabilityList, {
+        grouped: true,
+        capabilities: [
+          { operation: "publish", status: "expired", reasonCode: "browser.reconnect" },
+          { operation: "reply", status: "expired", reasonCode: "browser.reconnect" },
+        ],
+      }),
+    ),
+  );
+  act(() => element.querySelector("button")?.click());
+  expect(element.querySelectorAll("li")).toHaveLength(2);
+  expect(element.querySelector("ul")?.textContent).not.toContain("Connection needed");
+  expect(element.textContent).toContain("Publishing");
+  expect(element.textContent).toContain("Replies");
+});
+
 it.each<[Row, string]>([
   [{ operation: "publish", status: "available", reasonCode: "api.ready" }, "Ready"],
   [

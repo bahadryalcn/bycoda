@@ -15,7 +15,6 @@ import { BuilderInterview } from "./BuilderInterview";
 import { BuilderModelStep } from "./BuilderModelStep";
 import { BuilderPreview } from "./BuilderPreview";
 import { useAssistantInterview } from "./useAssistantInterview";
-import styles from "./AssistantBuilder.module.css";
 
 /**
  * "Create with AI": choose a text model, answer its interview questions, review the proposed
@@ -105,7 +104,7 @@ export function AssistantBuilderDialog({
           }}
         />
       ) : (
-        <div className={styles.stage}>
+        <>
           {!available && (
             <InlineMessage tone="warning">
               {t("Choose a model that supports text actions to create an assistant.")}
@@ -113,10 +112,9 @@ export function AssistantBuilderDialog({
           )}
           <BuilderInterview
             controls={
-              <div className={styles.interviewControls}>
+              <>
                 <Select
                   label={t("Language")}
-                  hideLabel
                   fieldSize="sm"
                   value={interview.language}
                   disabled={interview.busy}
@@ -139,7 +137,7 @@ export function AssistantBuilderDialog({
                     setChoice(next);
                   }}
                 />
-              </div>
+              </>
             }
             transcript={interview.transcript}
             options={interview.options}
@@ -151,7 +149,7 @@ export function AssistantBuilderDialog({
             onRetry={interview.retry}
             disabled={!available}
           />
-        </div>
+        </>
       )}
     </Modal>
   );

@@ -18,7 +18,7 @@ export function WaitingForYou({ approvalCount, humanCount = 0, children }: Waiti
   return (
     <Surface
       as="section"
-      variant="card"
+      variant="canvas"
       padding="none"
       className="command-frame"
       aria-label={t("Waiting for you")}

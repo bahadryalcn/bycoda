@@ -22,7 +22,7 @@ export function TaskBudgetControls({
     );
   };
   return (
-    <Disclosure summary={t("Total run budget")}>
+    <Disclosure variant="row" summary={t("Total run budget")}>
       <div className="task-form-section-body">
         <div className="task-form-grid">
           <NumberField

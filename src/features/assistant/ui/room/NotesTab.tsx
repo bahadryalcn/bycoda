@@ -48,11 +48,12 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
   );
   // The selection follows search and deletion: a missing id falls back to the first visible note.
   const selected = visible.find((note) => note.id === selectedId) ?? visible[0];
-  // Checked notes are those still visible; search or deletion silently drops the rest.
+  // Keep selection across search; deleted notes leave it when the snapshot changes.
   const [checkedIds, setCheckedIds] = useState<ReadonlySet<string>>(new Set());
-  const checkedNotes = visible.filter((note) => checkedIds.has(note.id));
+  const checkedNotes = snapshot.notes.filter((note) => checkedIds.has(note.id));
   const checked = new Set(checkedNotes.map((note) => note.id));
-  const allChecked = checkedNotes.length > 0 && checkedNotes.length === visible.length;
+  const visibleChecked = visible.filter((note) => checked.has(note.id)).length;
+  const allChecked = visible.length > 0 && visibleChecked === visible.length;
   const setChecked = (id: string, value: boolean) => {
     const next = new Set(checked);
     if (value) next.add(id);
@@ -68,8 +69,12 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
         const outcome = await deleteNotesInOrder(notes, (note) =>
           assistantRequest({ op: "notes.delete", id: note.id, expectedUpdatedAt: note.updatedAt }),
         );
-        // On a failure the remaining notes stay checked; deleted ones drop out on their own.
-        if (!outcome.error) setCheckedIds(new Set());
+        // Confirmed deletions leave selection even if the next snapshot is delayed.
+        setCheckedIds((current) => {
+          const next = new Set(current);
+          for (const note of notes.slice(0, outcome.deleted)) next.delete(note.id);
+          return next;
+        });
         if (outcome.trashIds.length) {
           setUndo({
             id: outcome.trashIds[0]!,
@@ -187,7 +192,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
               {t("Global notes are unavailable on this Host.")}
             </Text>
           )}
-          {visible.length > 0 && (
+          {(visible.length > 0 || checkedNotes.length > 0) && (
             <div className={styles.layout}>
               <div
                 {...surfaceAttributes({ frame: "pane", edge: "responsive-end" }, styles.listPane)}
@@ -206,12 +211,19 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                         : t("Select all")
                     }
                     checked={allChecked}
-                    indeterminate={checkedNotes.length > 0 && !allChecked}
-                    onChange={(event) =>
-                      setCheckedIds(
-                        new Set(event.currentTarget.checked ? visible.map((note) => note.id) : []),
-                      )
-                    }
+                    disabled={visible.length === 0}
+                    indeterminate={visibleChecked > 0 && !allChecked}
+                    onChange={(event) => {
+                      const value = event.currentTarget.checked;
+                      setCheckedIds((current) => {
+                        const next = new Set(current);
+                        for (const note of visible) {
+                          if (value) next.add(note.id);
+                          else next.delete(note.id);
+                        }
+                        return next;
+                      });
+                    }}
                   />
                   {checkedNotes.length > 0 && (
                     <>
@@ -235,6 +247,8 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
                   onSelect={setSelectedId}
                   checked={checked}
                   onCheck={setChecked}
+                  onEdit={setNoteEdit}
+                  onDelete={confirmDelete}
                 />
               </div>
               {selected && (

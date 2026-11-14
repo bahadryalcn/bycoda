@@ -1,5 +1,6 @@
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
+import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { dateTimeFormat } from "../../../../shared/lib/intl";
 import { t } from "../../../../shared/i18n";
@@ -71,7 +72,9 @@ export function AccountsScreen({
         </InlineError>
       ) : null}
       {data.checkedAt ? (
-        <span>{t("Last checked: {p1}", { p1: dateTimeFormat().format(data.checkedAt) })}</span>
+        <Text size="caption" tone="secondary">
+          {t("Last checked: {p1}", { p1: dateTimeFormat().format(data.checkedAt) })}
+        </Text>
       ) : null}
       {snapshot && !hostOnline ? (
         <InlineMessage tone="warning" live="off">
@@ -123,7 +126,7 @@ export function AccountsScreen({
         />
       ) : null}
       {selected && snapshot ? (
-        <Sheet title={selected.name} onClose={() => setSelectedId(undefined)}>
+        <Sheet title={selected.name} size="42rem" onClose={() => setSelectedId(undefined)}>
           <AccountDetail
             key={selected.id}
             client={client}

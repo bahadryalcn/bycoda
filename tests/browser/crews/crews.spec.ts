@@ -151,6 +151,89 @@ test("project creation retains invalid and failed drafts then selects created pr
 
 type CrewsTab = "Active" | "Teams" | "Members" | "Work";
 
+for (const theme of ["light", "dark"] as const)
+  for (const width of [800, 1280]) {
+    test(`crew redesign complete forms ${theme} ${width}`, async ({ page }) => {
+      test.setTimeout(90_000);
+      await page.setViewportSize({ width, height: 720 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const capture = async (state: string) => {
+        await expect
+          .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+          .toBe(true);
+        await page.screenshot({
+          path: `temp/verification/2026-11-14-crews/${state}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      };
+      await page.goto(`/tests/browser/crews/crews.html?rich&work-model&theme=${theme}`);
+      await openCrewsTab(page, "Active");
+      await capture("active");
+      const content = await openCrewsTab(page, "Teams");
+      await capture("teams");
+      await content.getByRole("button", { name: "New work", exact: true }).first().click();
+      const task = page.getByRole("dialog", { name: "New task", exact: true });
+      await expect(task.getByRole("textbox", { name: "Task title", exact: true })).toBeVisible();
+      await capture("task");
+      await task
+        .locator("summary")
+        .filter({ hasText: /^Advanced$/ })
+        .click();
+      await task
+        .locator("summary")
+        .filter({ hasText: /^Workflow$/ })
+        .click();
+      await task
+        .getByRole("button", { name: "Apply workflow", exact: true })
+        .scrollIntoViewIfNeeded();
+      await capture("task-workflow");
+      await task
+        .locator("summary")
+        .filter({ hasText: /^Total run budget$/ })
+        .click();
+      await task
+        .getByRole("spinbutton", { name: "Agent minutes", exact: true })
+        .scrollIntoViewIfNeeded();
+      await capture("task-budget");
+      await expect(task.getByRole("button", { name: "Cancel", exact: true })).toBeVisible();
+      await task.getByRole("button", { name: "Cancel", exact: true }).click();
+      await editCrew(page);
+      const editor = page.getByRole("dialog", { name: "Website Crew", exact: true });
+      await capture("editor");
+      await editor
+        .locator("summary")
+        .filter({ hasText: /^Advanced$/ })
+        .click();
+      await editor
+        .locator("summary")
+        .filter({ hasText: /^Advanced$/ })
+        .scrollIntoViewIfNeeded();
+      await capture("editor-advanced");
+      await page.keyboard.press("Escape");
+      await openCrewsTab(page, "Members");
+      await capture("members");
+      await page.getByRole("button", { name: "New member", exact: true }).click();
+      const member = page.getByRole("dialog", { name: "New library member", exact: true });
+      await capture("member");
+      const custom = member.getByRole("radio", { name: "Custom", exact: true });
+      await custom.focus();
+      await custom.press("Space");
+      await member.getByRole("button", { name: /^Host tools:/ }).scrollIntoViewIfNeeded();
+      await expect(
+        member.getByText("Choose the Host tools, MCP servers and skills yourself.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await capture("member-custom-tools");
+      await member.getByRole("radio", { name: "Full access", exact: true }).focus();
+      await member.getByRole("radio", { name: "Full access", exact: true }).press("Space");
+      await expect(member.getByRole("button", { name: /^Host tools:/ })).toHaveCount(0);
+      await page.goto(`/tests/browser/crews/crews.html?rich&multiple&theme=${theme}`);
+      await openCrewsTab(page, "Work");
+      await capture("work");
+    });
+  }
+
 /** Opens the Crews page on a tab; the fixture has no app shell, so a button mounts the page. */
 async function openCrewsTab(page: Page, tab: CrewsTab) {
   await page.getByRole("button", { name: "Crews page", exact: true }).click();

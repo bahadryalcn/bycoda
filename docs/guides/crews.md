@@ -8,6 +8,11 @@ Bulk model Apply shows progress while applying a choice and blocks duplicate
 submissions. Controls in the bulk model bar stay disabled until it finishes;
 the existing crew and library save rules still apply.
 
+The member editor keeps tool profiles in a compact choice row. The selected
+profile's description appears below it. Choose Custom to reveal Host tools,
+MCP servers and skills. Model selection stays in its own section. Library rows
+keep the member's role, model and project scope visible when names or groups wrap.
+
 Crews connect a coordinator conversation to independently addressable specialist and reviewer conversations. The host task scheduler runs assignments and retains their state when a desktop window closes.
 
 ## Giving work to a Crew

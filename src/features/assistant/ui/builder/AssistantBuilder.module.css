@@ -6,7 +6,7 @@
 }
 .interviewControls {
   display: flex;
-  align-items: center;
+  align-items: end;
   flex-wrap: wrap;
   gap: 8px;
   min-inline-size: 0;
@@ -62,7 +62,7 @@
 .field {
   display: grid;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 12px 0;
   min-inline-size: 0;
 }
 .change {

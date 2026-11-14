@@ -7,6 +7,9 @@ import { createAutomationTrigger } from "../../../src/features/automations/model
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AutomationsView } from "../../../src/features/automations/ui/AutomationsView";
+import { AutomationProposalDialog } from "../../../src/features/automations/ui/AutomationProposalDialog";
+import { openAutomationProposal } from "../../../src/features/automations/model/automationProposalStore";
+import { newSession } from "../../../src/features/sessions/public/session";
 import {
   newAutomationDraft,
   type Automation,
@@ -253,6 +256,18 @@ Object.assign(window, {
             }));
           case "automations.preview":
             return { timeZone: "UTC", nextRunAt: at + 3600000 };
+          case "automations.propose":
+            return {
+              operationId: input.operationId,
+              projectId: hostProject.id,
+              name: "Project review",
+              instruction: "Review fixture activity and report findings",
+              schedule: { scheduleKind: "daily", minute: 0, time: "09:00", dayOfWeek: 1 },
+              timeZone: "Europe/Istanbul",
+              outputTarget: "projectTask",
+              confirmationRequired: true,
+              preview: { timeZone: "Europe/Istanbul", nextRunAt: at + 3600000 },
+            };
           case "automations.save": {
             const incoming = input.automation as Record<string, unknown>;
             if (
@@ -310,6 +325,7 @@ void languageReady
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
         <ModelSourceContext.Provider value={source}>
+          <AutomationProposalDialog />
           <div className="flex h-dvh min-h-0 min-w-0 flex-col bg-background-base text-content">
             {new URLSearchParams(location.search).has("triggerDensity") ? (
               <div className="p-3">
@@ -338,4 +354,10 @@ void languageReady
         </ModelSourceContext.Provider>
       </QueryClientProvider>,
     );
+    if (new URLSearchParams(location.search).has("proposal")) {
+      openAutomationProposal(
+        newSession("claude", "C:/fixture/project"),
+        "Review this project daily at 09:00",
+      );
+    }
   });

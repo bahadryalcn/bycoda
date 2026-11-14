@@ -2,7 +2,8 @@ import { InboxPrChecks } from "../../../src/features/inbox/ui/InboxPrChecks";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InboxView } from "../../../src/features/inbox/ui/InboxView";
 import { InboxPrChangesGlance } from "../../../src/features/inbox/ui/InboxPrOverview";
-import { InboxComments } from "../../../src/features/inbox/ui/InboxComments";
+import { InboxComments, InboxCommentForm } from "../../../src/features/inbox/ui/InboxComments";
+import { InboxProjectPicker } from "../../../src/features/inbox/ui/InboxPresentation";
 import { CheckEvidence } from "../../../src/features/inbox/ui/CheckEvidence";
 import { LinkedWorkItemUpdateNotice } from "../../../src/features/inbox/ui/LinkedWorkItemUpdateNotice";
 import { inboxLabelItems } from "../../../src/features/inbox/ui/InboxPresentation";
@@ -304,8 +305,49 @@ if (inbox) {
     JSON.stringify({ github: false, linear: false, jira: true, gitlab: false, azuredevops: false }),
   );
 }
+function CommentEditorFixture() {
+  const [project, setProject] = useState("G:/portal");
+  return (
+    <main className="mx-auto flex max-w-4xl flex-col gap-4 p-6">
+      <InboxProjectPicker
+        value={project}
+        onChange={setProject}
+        projects={[
+          {
+            path: "G:/portal",
+            name: "pf-ui-portal",
+            logoPath: null,
+            mascotName: null,
+            mascotColor: "",
+          },
+          {
+            path: "G:/website",
+            name: "bycoda-website",
+            logoPath: null,
+            mascotName: null,
+            mascotColor: "",
+          },
+        ]}
+      />
+      <InboxCommentForm
+        draftKey="offline-preview"
+        target="Jira"
+        replyTo={null}
+        posting={false}
+        error={null}
+        onCancelReply={() => {}}
+        onSubmit={async () => {
+          throw new Error("Offline fixture: no Jira writes");
+        }}
+      />
+    </main>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
-  new URLSearchParams(location.search).has("checks-fixture") ? (
+  new URLSearchParams(location.search).has("commentEditor") ? (
+    <CommentEditorFixture />
+  ) : new URLSearchParams(location.search).has("checks-fixture") ? (
     <main style={{ padding: 24, maxWidth: 720 }}>
       <InboxPrChecks
         view={{

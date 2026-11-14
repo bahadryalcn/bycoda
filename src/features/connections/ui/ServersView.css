@@ -57,6 +57,14 @@
 .server-connection-tools {
   container-type: inline-size;
 }
+.servers-detail-pane {
+  flex: 0 0 60%;
+}
+@container servers (min-width: 704px) {
+  .servers-detail-pane {
+    flex-basis: min(56%, 40rem);
+  }
+}
 @container servers (max-width: 600px) {
   .servers-search-actions {
     display: contents;

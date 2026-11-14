@@ -83,38 +83,48 @@ it("gives a stable delegate to an action key added after mount", async () => {
   }
 });
 
-it("hides the session sidebar while the Room tool is the full-window surface", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const base = { cwd: "/p", gitCwd: "/p", sessions: [], notesEnabled: false };
-  const navigation = { pending: null, error: null };
-  const render = (props: Partial<WorkspaceSidebarProps>) =>
-    createElement(WorkspaceSidebar, {
-      ...base,
-      open: true,
-      workspaceNavigation: navigation,
-      tabVisitNav: { canBack: false, canForward: false },
-      surfaceForward: { canForward: false },
-      ...props,
-    } as unknown as WorkspaceSidebarProps);
-  const host = document.createElement("div"),
-    root = createRoot(host);
-  try {
-    rendered.mockClear();
-    await act(async () =>
-      root.render(
-        render({ automationsViewOpen: true, auxiliaryTool: "assistant", taskBoardShown: false }),
-      ),
-    );
-    expect(rendered.mock.lastCall![0].open).toBe(false);
-    expect(rendered.mock.lastCall![0].assistantActive).toBe(true);
-    await act(async () =>
-      root.render(render({ automationsViewOpen: true, auxiliaryTool: "terminal" })),
-    );
-    expect(rendered.mock.lastCall![0].open).toBe(true);
-    await act(async () => root.render(render({ automationsViewOpen: false, auxiliaryTool: null })));
-    expect(rendered.mock.lastCall![0].open).toBe(true);
-  } finally {
-    await act(async () => root.unmount());
-    vi.unstubAllGlobals();
-  }
-});
+it.each([
+  { tool: "assistant", sidebarOpen: true },
+  { tool: "assistant", sidebarOpen: false },
+  { tool: "conversation-tools", sidebarOpen: true },
+  { tool: "conversation-tools", sidebarOpen: false },
+] as const)(
+  "hides the sidebar for $tool and preserves open=$sidebarOpen",
+  async ({ tool, sidebarOpen }) => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const base = { cwd: "/p", gitCwd: "/p", sessions: [], notesEnabled: false };
+    const navigation = { pending: null, error: null };
+    const render = (props: Partial<WorkspaceSidebarProps>) =>
+      createElement(WorkspaceSidebar, {
+        ...base,
+        open: sidebarOpen,
+        workspaceNavigation: navigation,
+        tabVisitNav: { canBack: false, canForward: false },
+        surfaceForward: { canForward: false },
+        ...props,
+      } as unknown as WorkspaceSidebarProps);
+    const host = document.createElement("div"),
+      root = createRoot(host);
+    try {
+      rendered.mockClear();
+      await act(async () =>
+        root.render(
+          render({ automationsViewOpen: true, auxiliaryTool: tool, taskBoardShown: false }),
+        ),
+      );
+      expect(rendered.mock.lastCall![0].open).toBe(false);
+      expect(rendered.mock.lastCall![0].assistantActive).toBe(tool === "assistant");
+      await act(async () =>
+        root.render(render({ automationsViewOpen: true, auxiliaryTool: "terminal" })),
+      );
+      expect(rendered.mock.lastCall![0].open).toBe(sidebarOpen);
+      await act(async () =>
+        root.render(render({ automationsViewOpen: false, auxiliaryTool: null })),
+      );
+      expect(rendered.mock.lastCall![0].open).toBe(sidebarOpen);
+    } finally {
+      await act(async () => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  },
+);

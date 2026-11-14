@@ -40,7 +40,7 @@ vi.mock("../surfaces/lazySurfaces", () => {
 });
 
 it.each([false, true])(
-  "switches every tool locally and preserves the terminal (detached: %s)",
+  "switches tools locally without offering or mounting a standalone terminal (detached: %s)",
   async (detached) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const rootNode = document.createElement("div");
@@ -95,7 +95,6 @@ it.each([false, true])(
         "Inbox",
         "Servers",
         "Conversation tools",
-        "Terminal",
         "Inbox",
       ]) {
         await act(async () =>
@@ -110,9 +109,8 @@ it.each([false, true])(
         ).toBe("true");
         expect(routeWindowDestination).not.toHaveBeenCalled();
       }
-      expect(rootNode.querySelector("[data-tool-terminal]")?.getAttribute("data-active")).toBe(
-        "false",
-      );
+      expect(tabs().some((tab) => tab.textContent === "Terminal")).toBe(false);
+      expect(rootNode.querySelector("[data-tool-terminal]")).toBeNull();
       expect(closeOverlay).toHaveBeenCalledWith(false);
       const popout = rootNode.querySelector<HTMLButtonElement>(
         '[aria-label="Open in new window"]',

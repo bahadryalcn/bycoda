@@ -90,6 +90,8 @@ export function ConversationHeader({
           <Button
             iconOnly
             label={t("Conversation actions")}
+            aria-haspopup="menu"
+            aria-expanded={Boolean(threadMenu)}
             disabled={pending || clearing || summaryRefreshing}
             loading={clearing || summaryRefreshing}
             onClick={(event) => setThreadMenu(event.currentTarget)}

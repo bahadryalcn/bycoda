@@ -1,6 +1,61 @@
 import { mkdir } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 
+for (const width of [800, 1280])
+  for (const theme of ["light", "dark"]) {
+    test(`automation redesigned advanced and proposal ${width} ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 720 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const capture = async (state: string) => {
+        await expect
+          .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+          .toBe(true);
+        await page.screenshot({
+          path: `temp/verification/2026-11-14-automations/${state}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      };
+      const setTheme = () =>
+        page.evaluate(
+          (light) => document.documentElement.classList.toggle("theme-light", light),
+          theme === "light",
+        );
+      await page.goto("/tests/browser/automations/automations.html");
+      await setTheme();
+      await capture("gallery");
+      await page.getByRole("button", { name: "Open Daily review", exact: true }).click();
+      await capture("editor");
+      await page
+        .locator("summary")
+        .filter({ hasText: /^Advanced/ })
+        .click();
+      const limit = page.getByRole("button", { name: /^Runs per day:/ });
+      await limit.scrollIntoViewIfNeeded();
+      await capture("advanced");
+      await page.getByRole("button", { name: "AI assistant", exact: true }).click();
+      await capture("assistant");
+      await page.keyboard.press("Escape");
+      await page.goto("/tests/browser/automations/automations.html?hostWork&proposal");
+      await setTheme();
+      const proposal = page.getByRole("dialog", { name: "Automation", exact: true });
+      await expect(
+        proposal.getByRole("textbox", { name: "Instructions", exact: true }),
+      ).toHaveValue("Review fixture activity and report findings");
+      await capture("proposal");
+      await proposal.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(proposal).toBeHidden();
+      const calls = await page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              automationFixtureCalls: { command: string; args: Record<string, unknown> }[];
+            }
+          ).automationFixtureCalls,
+      );
+      expect(calls.some(({ args }) => args.method === "automations.save")).toBe(false);
+    });
+  }
+
 for (const width of [1280, 800]) {
   test(`offline automation Host preserves creation and drafts through recovery at ${width}px`, async ({
     page,

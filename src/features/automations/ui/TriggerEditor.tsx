@@ -1,6 +1,7 @@
 import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useEffect, useState } from "react";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { TimePicker } from "../../../shared/ui/TimePicker";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CheckCircle, Clock, Inbox, X } from "../../../shared/ui/icons";
@@ -116,7 +117,7 @@ export function TriggerRow({
     <ActionHost
       controlMinHeight="large"
       padding={{ inline: "md", block: "xs" }}
-      className="-mx-2 gap-2.5"
+      className="-mx-2 min-w-0 items-start gap-2.5"
     >
       <TriggerMark kind={trigger.kind} className="icon-sm shrink-0" tone="muted" />
       <Text
@@ -198,11 +199,13 @@ export function TimeTriggerSentence<T extends AutomationSchedule>({
           onChange={(value) => onChange({ ...trigger, minute: Number(value) })}
         />
       ) : (
-        <TriggerPill
+        <TimePicker
           label={t("Time")}
+          hideLabel
           value={trigger.time}
-          options={timeOptions(trigger.time)}
-          onChange={(value) => onChange({ ...trigger, time: value })}
+          onChange={(value) => {
+            if (value) onChange({ ...trigger, time: value });
+          }}
         />
       )}
       <Text size="inherit" tone="muted">
@@ -328,18 +331,4 @@ function TriggerPill({
       searchable={label === t("Branch") || options.length > 8}
     />
   );
-}
-
-function timeOptions(current: string) {
-  const options = Array.from({ length: 24 }, (_, hour) => {
-    const prefix = String(hour).padStart(2, "0");
-    return [
-      { value: `${prefix}:00`, label: `${prefix}:00` },
-      { value: `${prefix}:30`, label: `${prefix}:30` },
-    ];
-  }).flat();
-  if (current && !options.some((option) => option.value === current)) {
-    options.unshift({ value: current, label: current });
-  }
-  return options;
 }

@@ -208,6 +208,13 @@ export function ServersView({
   mobileCatalog.current = { ready: loaded && !loading && !error, servers: filtered };
   useLayoutEffect(() => registerSshWorkspaceCatalog(() => mobileCatalog.current), []);
   const selected = servers.find((server) => server.id === selectedId);
+  const closeDetails = () => {
+    clearTimeout(detailOpenTimer.current);
+    setSelectedId(undefined);
+    Array.from(list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ?? [])
+      .find((row) => row.dataset.serverRow === selectedId)
+      ?.focus({ preventScroll: true });
+  };
   const menuServer = menu ? servers.find((server) => server.id === menu.serverId) : undefined;
   const colorServer = colorTarget
     ? servers.find((server) => server.id === colorTarget.serverId)
@@ -792,9 +799,10 @@ export function ServersView({
                 onSelect={(event) => {
                   clearTimeout(detailOpenTimer.current);
                   setSelectedId(server.id);
-                  // Select immediately; let a pointer double-click finish before the sheet covers its row.
+                  // Let the first pointer double-click finish before the catalog reflows.
                   // Keyboard and assistive activation open the details immediately.
-                  const defer = event.detail > 0 && canConnect(server);
+                  const defer =
+                    event.detail > 0 && canConnect(server) && !(selected && detailReady);
                   setDetailReady(!defer);
                   if (defer) detailOpenTimer.current = setTimeout(() => setDetailReady(true), 240);
                 }}
@@ -806,120 +814,115 @@ export function ServersView({
         </div>
         {selected && detailReady ? (
           <Activity mode={inventoryVisible ? "visible" : "hidden"}>
-            <Sheet
-              modal={false}
-              role="region"
-              anchor="container"
-              title={t("Server details")}
-              size="min(40rem, 100%)"
-              motion="none"
-              initialFocus={false}
-              dismissOnOutside={false}
-              padding="none"
-              onClose={() => setSelectedId(undefined)}
-              header={
-                <div
-                  {...surfaceAttributes(
-                    { frame: "stroke", edge: "bottom" },
-                    "flex min-w-0 shrink-0 items-center gap-2 px-4 py-3",
-                  )}
-                >
-                  <ServerIdentity accent={serverAccentColor(selected)} />
-                  <OverflowTooltip label={selected.name}>
-                    <Heading size="section" truncate className="min-w-0 flex-1">
-                      {selected.name}
-                    </Heading>
-                  </OverflowTooltip>
-                  {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
-                  <Button
-                    variant="ghost"
-                    iconOnly
-                    label={t("Server color")}
-                    aria-haspopup="dialog"
-                    onClick={(event) =>
-                      setColorTarget({ serverId: selected.id, at: event.currentTarget })
-                    }
+            <div className="servers-detail-pane relative min-h-0 min-w-0">
+              <Sheet
+                modal={false}
+                role="region"
+                anchor="container"
+                escapeScope="[data-app-servers]"
+                title={t("Server details")}
+                size="100%"
+                motion="none"
+                initialFocus={false}
+                dismissOnOutside={false}
+                padding="none"
+                onClose={closeDetails}
+                header={
+                  <div
+                    {...surfaceAttributes(
+                      { frame: "stroke", edge: "bottom" },
+                      "flex min-w-0 shrink-0 items-center gap-2 px-4 py-3",
+                    )}
                   >
-                    <Palette aria-hidden className="icon-sm" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    iconOnly
-                    label={t("Server actions")}
-                    aria-haspopup="menu"
-                    aria-expanded={menu?.serverId === selected.id}
-                    onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
-                  >
-                    <MoreHorizontal aria-hidden className="icon-sm" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    iconOnly
-                    label={t("Close server details")}
-                    onClick={() => {
-                      setSelectedId(undefined);
-                      Array.from(
-                        list.current?.querySelectorAll<HTMLButtonElement>("[data-server-row]") ??
-                          [],
-                      )
-                        .find((row) => row.dataset.serverRow === selected.id)
-                        ?.focus({ preventScroll: true });
-                    }}
-                  >
-                    <X aria-hidden className="icon-sm" />
-                  </Button>
-                </div>
-              }
-            >
-              <div className="min-w-0 p-4">
-                {selected.machine ? (
-                  <div className="mbe-3 flex items-start justify-between gap-2">
-                    <MachineStatus
-                      key={selected.id}
-                      machine={selected.machine}
-                      details
-                      showDiagnostics={false}
-                    />
-                    <div className="flex shrink-0 items-center">
-                      <ReconnectAction machine={selected.machine} />
-                    </div>
+                    <ServerIdentity accent={serverAccentColor(selected)} />
+                    <OverflowTooltip label={selected.name}>
+                      <Heading size="section" truncate className="min-w-0 flex-1">
+                        {selected.name}
+                      </Heading>
+                    </OverflowTooltip>
+                    {selected.kind === "ssh" ? <Badge size="sm">SSH</Badge> : null}
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      label={t("Server color")}
+                      aria-haspopup="dialog"
+                      onClick={(event) =>
+                        setColorTarget({ serverId: selected.id, at: event.currentTarget })
+                      }
+                    >
+                      <Palette aria-hidden className="icon-sm" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      label={t("Server actions")}
+                      aria-haspopup="menu"
+                      aria-expanded={menu?.serverId === selected.id}
+                      onClick={(event) => openServerMenu(selected.id, event.currentTarget)}
+                    >
+                      <MoreHorizontal aria-hidden className="icon-sm" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      iconOnly
+                      label={t("Close server details")}
+                      onClick={closeDetails}
+                    >
+                      <X aria-hidden className="icon-sm" />
+                    </Button>
                   </div>
-                ) : null}
-                <DescriptionList size="sm" className="mbe-4">
-                  <DescriptionItem term={t("Address")}>{address(selected)}</DescriptionItem>
-                  {selected.machine?.ssh || selected.sshEndpoint ? (
-                    <>
-                      <DescriptionItem term={t("SSH port")}>
-                        {selected.effectiveSshEndpoint?.port ??
-                          selected.sshEndpoint?.port ??
-                          selected.machine?.ssh?.port ??
-                          22}
-                      </DescriptionItem>
-                      {selected.machine?.ssh ? (
-                        <DescriptionItem term={t("Host service port")}>
-                          {selected.machine.ssh.remotePort}
-                        </DescriptionItem>
-                      ) : null}
-                    </>
+                }
+              >
+                <div className="min-w-0 p-4">
+                  {selected.machine ? (
+                    <div className="mbe-3 flex items-start justify-between gap-2">
+                      <MachineStatus
+                        key={selected.id}
+                        machine={selected.machine}
+                        details
+                        showDiagnostics={false}
+                      />
+                      <div className="flex shrink-0 items-center">
+                        <ReconnectAction machine={selected.machine} />
+                      </div>
+                    </div>
                   ) : null}
-                </DescriptionList>
-                <ServersConnectionTools
-                  key={selected.id}
-                  server={selected}
-                  servers={servers}
-                  onUseServer={setSelectedId}
-                  onEditServer={(existing) => {
-                    setSelectedId(existing.id);
-                    setEditor(existing);
-                  }}
-                />
-                {selected.machine ? (
-                  <Disclosure className="mbs-2" size="sm" summary={t("Diagnostics")}>
-                    <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
-                  </Disclosure>
-                ) : null}
-              </div>
-            </Sheet>
+                  <DescriptionList size="sm" className="mbe-4">
+                    <DescriptionItem term={t("Address")}>{address(selected)}</DescriptionItem>
+                    {selected.machine?.ssh || selected.sshEndpoint ? (
+                      <>
+                        <DescriptionItem term={t("SSH port")}>
+                          {selected.effectiveSshEndpoint?.port ??
+                            selected.sshEndpoint?.port ??
+                            selected.machine?.ssh?.port ??
+                            22}
+                        </DescriptionItem>
+                        {selected.machine?.ssh ? (
+                          <DescriptionItem term={t("Host service port")}>
+                            {selected.machine.ssh.remotePort}
+                          </DescriptionItem>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </DescriptionList>
+                  <ServersConnectionTools
+                    key={selected.id}
+                    server={selected}
+                    servers={servers}
+                    onUseServer={setSelectedId}
+                    onEditServer={(existing) => {
+                      setSelectedId(existing.id);
+                      setEditor(existing);
+                    }}
+                  />
+                  {selected.machine ? (
+                    <Disclosure className="mbs-2" size="sm" summary={t("Diagnostics")}>
+                      <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
+                    </Disclosure>
+                  ) : null}
+                </div>
+              </Sheet>
+            </div>
           </Activity>
         ) : null}
       </div>

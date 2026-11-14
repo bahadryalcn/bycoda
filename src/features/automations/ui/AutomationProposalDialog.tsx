@@ -62,35 +62,37 @@ export function AutomationProposalDialog() {
         {proposal ? (
           <>
             <TextField label={t("Name")} value={proposal.name} readOnly />
-            <TextField label={t("Host")} value={state.machine?.name ?? ""} readOnly />
-            <TextField label={t("Project")} value={state.session.cwd} readOnly />
-            <TextField
-              label={t("Schedule")}
-              value={automationScheduleLabel(proposal.schedule)}
-              readOnly
-            />
-            <TextField label={t("Time zone")} value={proposal.preview.timeZone} readOnly />
-            <TextField
-              label={t("Next run")}
-              value={dateTimeFormat(undefined, {
-                timeZone: proposal.preview.timeZone,
-                dateStyle: "medium",
-                timeStyle: "short",
-              }).format(state.saved?.nextRunAt ?? proposal.preview.nextRunAt)}
-              readOnly
-            />
-            <TextField
-              label={t("Output")}
-              value={proposal.outputTarget === "room" ? t("Assistant Room") : t("Task")}
-              readOnly
-            />
-            <TextField
-              label={t("Model")}
-              value={`${execution.harness} · ${execution.model}`}
-              readOnly
-            />
-            <TextField label={t("Mode")} value={execution.runtimeMode} readOnly />
             <TextareaField label={t("Instructions")} value={proposal.instruction} readOnly />
+            <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
+              <TextField label={t("Host")} value={state.machine?.name ?? ""} readOnly />
+              <TextField label={t("Project")} value={state.session.cwd} readOnly />
+              <TextField
+                label={t("Schedule")}
+                value={automationScheduleLabel(proposal.schedule)}
+                readOnly
+              />
+              <TextField label={t("Time zone")} value={proposal.preview.timeZone} readOnly />
+              <TextField
+                label={t("Next run")}
+                value={dateTimeFormat(undefined, {
+                  timeZone: proposal.preview.timeZone,
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }).format(state.saved?.nextRunAt ?? proposal.preview.nextRunAt)}
+                readOnly
+              />
+              <TextField
+                label={t("Output")}
+                value={proposal.outputTarget === "room" ? t("Assistant Room") : t("Task")}
+                readOnly
+              />
+              <TextField
+                label={t("Model")}
+                value={`${execution.harness} · ${execution.model}`}
+                readOnly
+              />
+              <TextField label={t("Mode")} value={execution.runtimeMode} readOnly />
+            </div>
           </>
         ) : null}
       </div>

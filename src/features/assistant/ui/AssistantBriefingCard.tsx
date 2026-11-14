@@ -188,8 +188,8 @@ export function AssistantBriefingCard({
   return (
     <Surface
       as="section"
-      variant="card"
-      padding="md"
+      variant="canvas"
+      padding="none"
       className={briefingStyles.briefing}
       aria-label={t("While you were away")}
     >

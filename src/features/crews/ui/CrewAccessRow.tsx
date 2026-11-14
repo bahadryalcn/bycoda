@@ -22,10 +22,10 @@ export function CrewAccessRow({
   return (
     <section
       aria-label={t("Access for every member")}
-      className="grid min-w-0 grid-cols-1 items-center gap-x-6 gap-y-1.5 @min-[44rem]/crew-editor:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)]"
+      className="grid min-w-0 grid-cols-1 items-start gap-3 @min-[44rem]/crew-editor:grid-cols-3"
     >
-      <div className="flex min-w-0 items-center justify-between gap-1">
-        <Text size="body" tone="inherit" weight="medium" className="whitespace-nowrap">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <Text size="body" tone="inherit" weight="medium">
           {t("Access for every member")}
         </Text>
         {accessSupported ? (

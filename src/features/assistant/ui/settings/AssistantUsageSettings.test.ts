@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
-import { AssistantUsageChips } from "./AssistantUsageSettings";
+import { AssistantRetentionField, AssistantUsageChips } from "./AssistantUsageSettings";
 
 let root: Root | undefined, container: HTMLDivElement;
 async function mount(usage: Partial<AssistantSnapshot["usage"]>) {
@@ -35,6 +35,20 @@ const cache = (over: object) => ({
   cacheHitPercent: 90,
   complete: true,
   ...over,
+});
+
+it("shows unavailable usage when no snapshot usage was received", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+  await act(async () =>
+    root!.render(
+      createElement(AssistantRetentionField, { value: 30, disabled: false, onChange: vi.fn() }),
+    ),
+  );
+  expect(container.textContent).toContain("Today's usage");
+  expect(container.textContent).toContain("Unavailable");
 });
 
 it("shows budget-counted worker tokens and raw cache reads as separate facts", async () => {

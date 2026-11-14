@@ -60,6 +60,7 @@
 /* Settings dialog: the range and its switch share the row's control column. */
 .hoursControl {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
@@ -70,7 +71,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1 1 auto;
+  flex: 1 1 14rem;
   min-inline-size: 0;
 }
 .rangeRow > :not(.dash) {

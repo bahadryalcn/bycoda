@@ -63,8 +63,12 @@ export function CrewTeamItem({
   return (
     <Surface
       as="li"
-      variant="outline"
-      className={layout === "list" ? "flex items-center gap-3" : "flex min-w-0 flex-col gap-3"}
+      variant="canvas"
+      className={
+        layout === "list"
+          ? "flex min-w-0 flex-wrap items-center gap-3"
+          : "flex min-w-0 flex-col gap-3"
+      }
     >
       {layout === "cards" ? (
         <CrewTablePortrait

@@ -33,6 +33,10 @@ vi.mock("../../sessions/model/attachments", async (importOriginal) => ({
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("../../sessions/ui/AgentMarkdown", () => ({
+  AgentMarkdown: ({ text }: { text: string }) =>
+    createElement("div", { "data-comment-preview": "" }, text),
+}));
 vi.mock("../../notes/ui/NoteMarkdownEditor", () => ({
   NoteMarkdownEditor: ({
     value,
@@ -53,6 +57,57 @@ vi.mock("../../notes/ui/NoteMarkdownEditor", () => ({
     }),
   runMarkdownCommand: vi.fn(),
 }));
+
+it("switches source, split and preview without losing the draft or submitting", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onSubmit = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(InboxCommentForm, {
+        draftKey: "jira-preview-modes",
+        target: "Jira",
+        replyTo: null,
+        posting: false,
+        error: null,
+        onCancelReply: vi.fn(),
+        onSubmit,
+      }),
+    ),
+  );
+  const editor = container.querySelector("textarea")!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      editor,
+      "**preview draft**",
+    );
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const select = async (label: string) => {
+    const tab = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(
+      (tab) => tab.textContent === label,
+    )!;
+    expect(tab).toBeDefined();
+    await act(async () => tab.click());
+    expect(tab.getAttribute("aria-selected")).toBe("true");
+  };
+  expect(container.querySelector("[data-comment-preview]")?.textContent).toBe("**preview draft**");
+  await select("Preview");
+  expect(editor.closest("[hidden]")).not.toBeNull();
+  expect(container.querySelector("[data-comment-preview]")?.textContent).toBe("**preview draft**");
+  await select("Source");
+  expect(editor.closest("[hidden]")).toBeNull();
+  expect(container.querySelector("[data-comment-preview]")).toBeNull();
+  await select("Split");
+  expect(editor.value).toBe("**preview draft**");
+  expect(editor.closest("[hidden]")).toBeNull();
+  expect(container.querySelector("[data-comment-preview]")?.textContent).toBe(editor.value);
+  expect(onSubmit).not.toHaveBeenCalled();
+  act(() => root.unmount());
+  container.remove();
+});
 
 it("retains text and images after failed submission and remount, then clears after success", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

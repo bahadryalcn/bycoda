@@ -9,7 +9,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
-  padding-inline-start: 8px;
+  padding-block: 6px;
   min-inline-size: 0;
 }
 .path {

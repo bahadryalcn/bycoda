@@ -108,7 +108,9 @@ export function AssistantView(props: AssistantViewProps) {
     setTrash,
     menu,
     setMenu,
+    healthAnchor,
     setHealthAnchor,
+    presenceAnchor,
     setPresenceAnchor,
     query,
     setQuery,
@@ -195,6 +197,8 @@ export function AssistantView(props: AssistantViewProps) {
                 className={shell.mode}
                 variant="ghost"
                 label={t("Assistant status")}
+                aria-haspopup="dialog"
+                aria-expanded={Boolean(healthAnchor)}
                 onClick={(event) => setHealthAnchor(event.currentTarget)}
               >
                 <StatusDot tone={mode.tone} />
@@ -210,6 +214,8 @@ export function AssistantView(props: AssistantViewProps) {
                   className={shell.presence}
                   variant="ghost"
                   label={t("Presence")}
+                  aria-haspopup="dialog"
+                  aria-expanded={Boolean(presenceAnchor)}
                   onClick={(event) => setPresenceAnchor(event.currentTarget)}
                 >
                   <AssistantPresenceStatus

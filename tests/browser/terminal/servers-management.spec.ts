@@ -3,6 +3,63 @@ import { mkdir } from "node:fs/promises";
 
 const evidence = "temp/verification/2026-10-24-servers/browser";
 
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280])
+    test(`details keep catalog usable ${theme} ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/tests/browser/terminal/servers.html?terminalWorkspace&theme=${theme}`);
+      await page.getByRole("radio", { name: "Card view", exact: true }).click();
+      const first = page.locator('[data-server-row="fixture-0"]');
+      const second = page.locator('[data-server-row="fixture-1"]');
+      await first.click();
+      const details = page.getByRole("region", { name: "Server details", exact: true });
+      await expect(details).toBeVisible();
+      const folder = "temp/verification/2026-11-14-servers-sheet";
+      await mkdir(folder, { recursive: true });
+      await page.screenshot({ path: `${folder}/${theme}-${width}.png` });
+      const catalog = page.getByRole("list", { name: "Servers", exact: true });
+      const bounds = await catalog.boundingBox();
+      const panel = await details.boundingBox();
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(panel!.x);
+      await second.click();
+      await expect(details.getByRole("heading", { name: "Server 01", exact: true })).toBeVisible();
+      await page.getByRole("textbox", { name: "Search servers", exact: true }).focus();
+      await page.keyboard.press("Escape");
+      await expect(details).toHaveCount(0);
+      await first.click();
+      await details.getByRole("button", { name: "Server actions", exact: true }).click();
+      await expect(page.getByRole("menu")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("menu")).toHaveCount(0);
+      await expect(details).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(details).toHaveCount(0);
+      await page.getByRole("radio", { name: "List view", exact: true }).click();
+      await first.click();
+      await second.click();
+      await expect(details.getByRole("heading", { name: "Server 01", exact: true })).toBeVisible();
+      await details.getByRole("button", { name: "Close server details", exact: true }).click();
+      await expect(details).toHaveCount(0);
+      await expect(second).toBeFocused();
+    });
+
+test("narrow details leave catalog above available", async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 900 });
+  await page.goto("/tests/browser/terminal/servers.html?terminalWorkspace");
+  await page.locator('[data-server-row="fixture-0"]').click();
+  const details = page.getByRole("region", { name: "Server details", exact: true });
+  await expect(details).toBeVisible();
+  const catalog = page.getByRole("list", { name: "Servers", exact: true });
+  const panel = await details.boundingBox();
+  const bounds = await catalog.boundingBox();
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(600);
+  expect(panel!.y).toBeGreaterThan(bounds!.y);
+  await page.locator('[data-server-row="fixture-1"]').click();
+  await expect(details.getByRole("heading", { name: "Server 01", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(details).toHaveCount(0);
+});
+
 test.describe("touch selection", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   test("touch hold selects and release keeps the selection without opening details", async ({

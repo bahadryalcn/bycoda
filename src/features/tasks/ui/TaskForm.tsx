@@ -166,8 +166,7 @@ export function TaskForm({
         <FieldGroup variant="bare" disabled={saving} inert={saving}>
           <div {...surfaceAttributes({ frame: "none" }, "task-form-fields")}>
             <TextField
-              hideLabel
-              label=""
+              label={t("Task title")}
               autoFocus
               aria-label={t("Task title")}
               value={draft.title}
@@ -178,8 +177,6 @@ export function TaskForm({
               <div className="task-form-targets-row">
                 {!draft.id ? (
                   <SearchableSelect
-                    hideLabel
-                    variant="pill"
                     label={t("Machine")}
                     value={targetId}
                     options={machineOptions}
@@ -203,8 +200,6 @@ export function TaskForm({
                   </Text>
                 ) : (
                   <SearchableSelect
-                    hideLabel
-                    variant="pill"
                     label={t("Project")}
                     placeholder={t("Choose project")}
                     value={draft.cwd}
@@ -237,16 +232,16 @@ export function TaskForm({
               >
                 {target && !looksLikeProject(draft.cwd) ? (
                   <span>{t("Choose project")}</span>
-                ) : machine ? (
+                ) : machine && draft.id ? (
                   <Text truncate size="inherit" tone="inherit">
                     {t("Runs on ")}
                     {machine}
                   </Text>
-                ) : (
+                ) : !machine ? (
                   <InlineMessage tone="warning" live="assertive">
                     {TASK_MACHINE_ERROR}
                   </InlineMessage>
-                )}
+                ) : null}
                 {!draft.id && todoUnsupported ? (
                   <InlineMessage tone="warning">{todoUnsupported}</InlineMessage>
                 ) : null}
@@ -306,15 +301,12 @@ export function TaskForm({
                 onChange={onChange}
                 open={agentOpen}
                 onOpenChange={setAgentOpen}
-                machine={machine}
-                projectName={projectName}
-                hasProject={looksLikeProject(draft.cwd)}
                 localAccounts={localAccounts}
                 defaultAccountFor={defaultAccountFor}
               />
             )}
             <Disclosure
-              variant="card"
+              variant="row"
               className="task-form-advanced"
               bodyDividers="pane"
               open={advancedOpen}

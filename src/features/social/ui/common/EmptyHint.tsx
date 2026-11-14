@@ -43,5 +43,5 @@ export function EmptyHint({ message, action, fillWithAi }: EmptyHintProps) {
         ) : null}
       </span>
     ) : undefined;
-  return <EmptyState context="list" description={message} action={buttons} />;
+  return <EmptyState size="inline" kind="empty" description={message} action={buttons} />;
 }

@@ -255,45 +255,47 @@ export function ContentEditor(props: ContentEditorProps) {
       }}
       footer={footer}
     >
-      {locked ? <InlineMessage tone="info">{locked}</InlineMessage> : null}
-      {error ? <InlineError>{error}</InlineError> : null}
-      {blocked.length ? (
-        <InlineError>
-          <ul className="content-blocked">
-            {blocked.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </InlineError>
-      ) : null}
-      <ContentEditorFields
-        client={client}
-        editor={editor}
-        snapshot={snapshot}
-        projectId={projectId}
-        draft={draft}
-        onDraft={changeDraft}
-        locked={
-          locked ?? (submissionBusy ? t("Wait for the current action to finish.") : undefined)
-        }
-        onMediaBusyChange={mediaBusyChanged}
-        aiStopped={shell.aiStopped}
-        creators={creators}
-        onNavigate={onNavigate}
-      />
-      <PlatformPreviews
-        accounts={selected}
-        draft={draft}
-        policies={snapshot?.policies}
-        problems={problems}
-      />
-      <EditorAdvanced
-        draft={draft}
-        onDraft={changeDraft}
-        snapshot={snapshot}
-        projectId={projectId}
-        disabled={!!locked || busy}
-      />
+      <div className="content-editor-body">
+        {locked ? <InlineMessage tone="info">{locked}</InlineMessage> : null}
+        {error ? <InlineError>{error}</InlineError> : null}
+        {blocked.length ? (
+          <InlineError>
+            <ul className="content-blocked">
+              {blocked.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </InlineError>
+        ) : null}
+        <ContentEditorFields
+          client={client}
+          editor={editor}
+          snapshot={snapshot}
+          projectId={projectId}
+          draft={draft}
+          onDraft={changeDraft}
+          locked={
+            locked ?? (submissionBusy ? t("Wait for the current action to finish.") : undefined)
+          }
+          onMediaBusyChange={mediaBusyChanged}
+          aiStopped={shell.aiStopped}
+          creators={creators}
+          onNavigate={onNavigate}
+        />
+        <PlatformPreviews
+          accounts={selected}
+          draft={draft}
+          policies={snapshot?.policies}
+          problems={problems}
+        />
+        <EditorAdvanced
+          draft={draft}
+          onDraft={changeDraft}
+          snapshot={snapshot}
+          projectId={projectId}
+          disabled={!!locked || busy}
+        />
+      </div>
     </Sheet>
   );
 }

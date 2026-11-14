@@ -1,18 +1,11 @@
-import {
-  Play,
-  CheckList,
-  Square,
-  Trash2,
-  RotateCcw,
-  ListBullet,
-} from "../../../../shared/ui/icons";
+import { Play, CheckList, Square, Trash2, ListBullet } from "../../../../shared/ui/icons";
 import { Text } from "../../../../shared/ui/Text";
 import { errorText } from "../../../../shared/lib/errors";
 import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
 import { isImeComposition } from "../../../../shared/lib/keyboard";
 import { Button } from "../../../../shared/ui/Button";
-import { Heading } from "../../../../shared/ui/Heading";
+import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { PromptField } from "../../../../shared/ui/PromptField";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
@@ -140,7 +133,11 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
       )}
       {!jobReview && errorFor("jobs.create")}
       <div className={styles.listHead}>
-        {view === "Today" && allJobs.length > 0 && <SectionLabel>{t("Active jobs")}</SectionLabel>}
+        {(view === "Jobs" || allJobs.length > 0) && (
+          <SectionLabel as="h2" count={view === "Jobs" ? allJobs.length : undefined}>
+            {t(view === "Today" ? "Active jobs" : "Jobs")}
+          </SectionLabel>
+        )}
         {visibleSelectedCount > 0 && (
           <Text as="div" size="caption" tone="secondary" leading="inherit" className={styles.bulk}>
             <span>{t("{p0} selected", { p0: visibleSelectedCount })}</span>
@@ -205,25 +202,22 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           ))}
         </div>
       ) : view === "Jobs" ? (
-        <Text as="div" size="inherit" tone="secondary" className={styles.empty}>
-          <Heading size="item" level={3}>
-            {t(filtered ? "No matching jobs" : "No jobs yet")}
-          </Heading>
-          {filtered ? (
-            <Button
-              startIcon={<RotateCcw className="icon-sm" />}
-              variant="secondary"
-              onClick={() => {
-                setQuery("");
-                setFilter("");
-                setJobProjectFilter("");
-                setJobDateFilter("all");
-              }}
-            >
-              {t("Reset")}
-            </Button>
-          ) : null}
-        </Text>
+        <EmptyState
+          context="list"
+          kind={filtered ? "filtered" : "empty"}
+          title={t(filtered ? "No matching jobs" : "No jobs yet")}
+          resetLabel={t("Reset")}
+          onReset={
+            filtered
+              ? () => {
+                  setQuery("");
+                  setFilter("");
+                  setJobProjectFilter("");
+                  setJobDateFilter("all");
+                }
+              : undefined
+          }
+        />
       ) : null}
       {errorFor("bulk")}
     </section>

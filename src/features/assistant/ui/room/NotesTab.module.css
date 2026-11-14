@@ -3,12 +3,18 @@
 .container {
   container-type: inline-size;
   min-inline-size: 0;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
 }
 .layout {
   display: grid;
   grid-template-columns: clamp(220px, 28%, 300px) minmax(0, 1fr);
   gap: 24px;
-  align-items: start;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-block-size: 0;
   min-inline-size: 0;
 }
 .layout > .listPane {
@@ -17,6 +23,7 @@
 @container (max-width: 640px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
     gap: 16px;
   }
   .layout > .listPane {
@@ -31,6 +38,7 @@
   flex-direction: column;
   gap: 4px;
   min-inline-size: 0;
+  min-block-size: 0;
 }
 .listHead {
   display: flex;
@@ -51,6 +59,8 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  overflow-y: auto;
+  min-block-size: 0;
 }
 .item {
   gap: 0;
@@ -96,6 +106,8 @@
   gap: 16px;
   min-inline-size: 0;
   max-inline-size: 48rem;
+  min-block-size: 0;
+  overflow-y: auto;
   padding-block-start: 4px;
 }
 .readerHeader {

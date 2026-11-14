@@ -61,7 +61,11 @@
 
 @media (max-width: 720px) {
   .header {
+    flex-wrap: wrap;
     padding-inline: 12px;
+  }
+  .actions {
+    margin-inline-start: auto;
   }
 }
 
@@ -69,6 +73,9 @@
 .tabRow {
   flex: none;
   padding-inline: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   overflow-x: auto;
 }
 

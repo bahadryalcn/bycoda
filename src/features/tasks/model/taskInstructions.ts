@@ -54,6 +54,11 @@ export function taskInstructionsMarkdown(prompt: string): string {
   ].join("\n\n");
 }
 
-export function taskInstructionsSummary(prompt: string): string {
-  return readTaskInstructions(prompt)?.objective ?? prompt.trim();
+export function taskInstructionsSummary(
+  prompt: string,
+  { crewAssignment = false }: { crewAssignment?: boolean } = {},
+): string {
+  // Legacy crew prompts describe a member's role, not this assignment's objective.
+  // Full instructions remain available in the task detail and editor.
+  return readTaskInstructions(prompt)?.objective ?? (crewAssignment ? "" : prompt.trim());
 }

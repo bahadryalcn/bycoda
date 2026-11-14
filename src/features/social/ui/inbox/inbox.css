@@ -36,6 +36,13 @@
   gap: 0.5rem;
 }
 
+.inbox-account-failures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .inbox-notices {
   display: flex;
   flex-direction: column;
@@ -72,6 +79,13 @@
 }
 
 /* Conversation list */
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: var(--space-2);
+}
+
 .inbox-rows {
   display: flex;
   flex-direction: column;

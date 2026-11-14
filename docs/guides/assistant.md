@@ -1,5 +1,11 @@
 # Personal assistant
 
+In Automations, instructions and scheduling settings share a bounded editor.
+Session options and Advanced limits use stacked fields so descriptions remain
+readable in narrow windows. Scheduled times use the shared time picker. The AI
+assistant keeps scope above its project and model controls; the automation review
+shows instructions before the schedule and execution details.
+
 The Room opens on **Today**, with owner questions and current work before activity
 charts. **Work** contains Jobs and Sessions. **Conversations** keeps the typed
 history available alongside the voice assistant. **Records** contains Notes,
