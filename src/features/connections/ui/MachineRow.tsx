@@ -7,7 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Switch } from "../../../shared/ui/Switch";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { ChevronRight, Laptop, MoreHorizontal, Server } from "../../../shared/ui/icons";
+import { Laptop, MoreHorizontal, Server } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { buildIdentity } from "../../../shared/model/build-info";
@@ -194,12 +194,12 @@ export function MachineRow({
               <Button
                 variant="link"
                 size="sm"
-                aria-expanded={showDetails}
+                expanded={showDetails}
+                chevron="end"
                 onClick={onToggleDetails}
                 type="button"
               >
                 {summary.routes}
-                <ChevronRight aria-hidden className="icon-sm" />
               </Button>
             </span>
           ) : null}
