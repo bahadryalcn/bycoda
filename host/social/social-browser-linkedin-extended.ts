@@ -1,6 +1,11 @@
 import { open } from "node:fs/promises";
 import type { SocialJob, SocialMedia } from "../../src/features/social/model/social";
 import { SocialPlatformError, type SocialSendResult } from "../../src/integrations/social/adapter";
+import {
+  LINKEDIN_CAPTURE_FILE_INPUT,
+  LINKEDIN_COMPOSER_EDITOR,
+  LINKEDIN_POST_LABELS,
+} from "./social-browser-linkedin-composer";
 import type { BrowserRecipeContext } from "./social-browser-recipe";
 
 const origin = "https://www.linkedin.com";
@@ -44,6 +49,36 @@ async function click(
   labels?: readonly string[],
 ) {
   const target = await unique(ctx, selector, token, labels);
+  await ctx.verifyIdentity();
+  await ctx.page.click(target);
+}
+
+const DOCUMENT_LABELS = ["Document", "Belge"] as const;
+const SELECT_FILE_LABELS = ["Choose file", "Select file", "Choose a file", "Dosya seçin"] as const;
+const DONE_LABELS = ["Done", "Bitti"] as const;
+
+/** `data-view-name` is only an optional first choice: LinkedIn A/B serves a variant without it. */
+async function uniquePreferred(
+  ctx: BrowserRecipeContext,
+  preferred: string,
+  fallback: string,
+  token: string,
+  labels?: readonly string[],
+): Promise<string> {
+  const has = await ctx.page.evaluate<boolean>(
+    `[...document.querySelectorAll(${json(preferred)})].some(el=>el.getClientRects().length)`,
+  );
+  return unique(ctx, has ? preferred : fallback, token, has ? undefined : labels);
+}
+
+async function clickPreferred(
+  ctx: BrowserRecipeContext,
+  preferred: string,
+  fallback: string,
+  token: string,
+  labels?: readonly string[],
+) {
+  const target = await uniquePreferred(ctx, preferred, fallback, token, labels);
   await ctx.verifyIdentity();
   await ctx.page.click(target);
 }
@@ -180,14 +215,25 @@ export async function linkedInPublishDocument(
   )
     throw unsupported();
   await validateLinkedInPdf(ctx.files[0].path);
-  await ctx.page.goto(own.home);
+  // A member's composer opens by LinkedIn's own `shareActive` link, which needs no feed markup.
+  await ctx.page.goto(own.path.startsWith("/in/") ? `${origin}/feed/?shareActive=true` : own.home);
   await ctx.verifyIdentity();
-  await click(ctx, '[data-view-name="share-sharebox-focus"]', "post-open");
+  if (!own.path.startsWith("/in/"))
+    await clickPreferred(
+      ctx,
+      '[data-view-name="share-sharebox-focus"]',
+      "button.share-box-feed-entry__trigger",
+      "post-open",
+    );
   // Document is an additional sharing option behind the expand control, not an image attachment.
-  const visibleDocument = await ctx.page.evaluate<boolean>(
-    String.raw`!![...document.querySelectorAll('dialog[open] [data-view-name="share-sharebox-bottom-bar-document"]')].some(el=>el.getClientRects().length)`,
-  );
-  if (!visibleDocument)
+  const documentSelector = "dialog[open] [aria-label]";
+  const documentVisible = String.raw`(() => {
+    const labels=${json(DOCUMENT_LABELS)};
+    return [...document.querySelectorAll('dialog[open] [data-view-name="share-sharebox-bottom-bar-document"],dialog[open] [aria-label]')].some(el=>
+      el.getClientRects().length&&(el.hasAttribute('data-view-name')||labels.includes(el.getAttribute('aria-label')||'')));
+  })()`;
+  await ctx.waitFor<boolean>(`!!document.querySelector('dialog[open]')`, 20_000);
+  if (!(await ctx.page.evaluate<boolean>(documentVisible)))
     await click(ctx, "dialog[open] button", "post-more", [
       "Expand content types",
       "More",
@@ -196,27 +242,24 @@ export async function linkedInPublishDocument(
       "Diğer",
       "Diğer seçenekler",
     ]);
-  await click(
+  await clickPreferred(
     ctx,
     'dialog[open] [data-view-name="share-sharebox-bottom-bar-document"]',
+    documentSelector,
     "document-open",
+    DOCUMENT_LABELS,
   );
-  // The file input only exists after the select-file button runs, and its click would open a native
-  // chooser the CDP driver cannot answer. Park that one input in the page instead of opening it.
-  await ctx.page.evaluate(
-    String.raw`(() => {
-    const click=HTMLInputElement.prototype.click;
-    HTMLInputElement.prototype.click=function(){if(this.type==='file'){if(!this.isConnected)document.body.appendChild(this);return;}return click.call(this);};
-  })()`,
-  );
-  await click(
+  await ctx.page.evaluate(LINKEDIN_CAPTURE_FILE_INPUT);
+  await clickPreferred(
     ctx,
     'dialog[open] [data-view-name="media-document-share-select-file"]',
+    "dialog[open] button",
     "document-select",
+    SELECT_FILE_LABELS,
   );
   const upload = await unique(
     ctx,
-    'input[type="file"][accept*="pdf"]',
+    'input[type="file"][data-bycoda-li-file][accept*="pdf"]',
     "document-upload",
     undefined,
     true,
@@ -229,26 +272,43 @@ export async function linkedInPublishDocument(
   const ready = await ctx.waitFor<boolean>(
     String.raw`(() => {
     const dialog=document.querySelector('dialog[open]'),input=document.querySelector(${json(titleField)});
-    const done=dialog&&dialog.querySelector('[data-view-name="media-document-share-confirm"]');
-    return !!dialog&&input?.value===${json(title)}&&!dialog.querySelector('[role="progressbar"],progress')&&
-      !!dialog.querySelector('[data-view-name="media-document-share-remove-preview"]')&&!!done&&!done.disabled;
+    const labels=${json(DONE_LABELS)};
+    const done=dialog&&([...dialog.querySelectorAll('[data-view-name="media-document-share-confirm"],button')].find(el=>
+      el.hasAttribute('data-view-name')||labels.includes((el.getAttribute('aria-label')||el.textContent||'').trim())));
+    return !!dialog&&input?.value===${json(title)}&&!dialog.querySelector('[role="progressbar"],progress')&&!!done&&!done.disabled;
   })()`,
     120_000,
   );
   if (!ready) throw unsupported();
-  await click(ctx, 'dialog[open] [data-view-name="media-document-share-confirm"]', "document-done");
-  const editor = await unique(
+  await clickPreferred(
     ctx,
-    'dialog[open] [contenteditable="true"][role="textbox"]',
-    "post-text",
+    'dialog[open] [data-view-name="media-document-share-confirm"]',
+    "dialog[open] button",
+    "document-done",
+    DONE_LABELS,
   );
+  // The document dialog is gone once the composer shows the attachment and its editor.
+  if (
+    !(await ctx.waitFor<boolean>(
+      String.raw`document.querySelectorAll('dialog[open]').length===1&&!document.querySelector('dialog[open] input[type="text"]')&&!!document.querySelector(${json(LINKEDIN_COMPOSER_EDITOR)})`,
+      20_000,
+    ))
+  )
+    throw unsupported();
+  const editor = await unique(ctx, LINKEDIN_COMPOSER_EDITOR, "post-text");
   const previous = await ctx.page.evaluate<string>(
     `document.querySelector(${json(editor)})?.textContent??''`,
   );
   if (previous.trim()) throw denied();
   await ctx.verifyIdentity();
   await ctx.page.fill(editor, content(job));
-  const submit = await unique(ctx, 'dialog[open] [data-view-name="share-post"]', "document-post");
+  const submit = await uniquePreferred(
+    ctx,
+    'dialog[open] [data-view-name="share-post"]',
+    "dialog[open] button",
+    "document-post",
+    LINKEDIN_POST_LABELS,
+  );
   const watcher = ctx.page.watchResponse(
     /\/(?:voyager\/api\/)?(?:contentcreation\/normShares|graphql)/,
     (raw) => !!createdId(raw),

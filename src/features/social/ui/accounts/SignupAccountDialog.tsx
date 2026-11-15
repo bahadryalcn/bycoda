@@ -40,6 +40,8 @@ export type SignupAccountDialogProps = {
   projectIds: string[];
   /** An account record the Host already created (an approved account request); the dialog then creates none and hides the name. */
   existingAccountId?: string;
+  /** A signup the caller already began for `existingAccountId`, so the dialog opens on its progress. */
+  initialWorkflow?: SocialBrowserWorkflow;
   onClose(): void;
   /** Called with the account id once the record exists; the screen opens its detail to sign in. */
   onCreated(accountId: string): void;
@@ -59,13 +61,14 @@ export function SignupAccountDialog({
   initialName,
   projectIds,
   existingAccountId,
+  initialWorkflow,
   onClose,
   onCreated,
 }: SignupAccountDialogProps) {
   const formId = useId();
   const [name, setName] = useState(initialName);
   const [accountId, setAccountId] = useState<string | undefined>(existingAccountId);
-  const [workflow, setWorkflow] = useState<SocialBrowserWorkflow>();
+  const [workflow, setWorkflow] = useState<SocialBrowserWorkflow | undefined>(initialWorkflow);
   const [draft, setDraft] = useState<Partial<Record<SocialRegistrationField, string>>>({});
   const [pollError, setPollError] = useState("");
   const { error, is, write } = useAccountWrite(t("The signup could not be started. Try again."));

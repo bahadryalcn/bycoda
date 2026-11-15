@@ -2,6 +2,7 @@ import type { HostSessionSummary } from "../../src/features/connections/model/pr
 import { ApprovalRegistry } from "../approvals/approval-registry";
 import { ApprovalStore } from "../approvals/approval-store";
 import { AssistantPushLedger } from "../push/push-assistant";
+import { createSocialPushSource, SocialPushLedger } from "../push/push-social";
 import { PushNotifications } from "../push/push-service";
 import { PushDeviceStore } from "../push/push-store";
 import { tickAssistantTelegram } from "../push/push-telegram";
@@ -27,10 +28,16 @@ export function createPushRuntime(
   assistantLedger
     .prepare()
     .catch((error) => console.error("Assistant push ledger is unavailable:", error));
+  const socialLedger = new SocialPushLedger(dependencies.engine.store.db);
+  socialLedger
+    .prepare()
+    .catch((error) => console.error("Social push ledger is unavailable:", error));
   const approvals = new ApprovalRegistry(Date.now, new ApprovalStore(dependencies.engine.store.db));
   const pushNotifications = new PushNotifications({
     store,
     assistantLedger,
+    social: createSocialPushSource(dependencies.social),
+    socialLedger,
     approvals,
     telegram: () =>
       tickAssistantTelegram({

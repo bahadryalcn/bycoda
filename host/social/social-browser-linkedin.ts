@@ -22,6 +22,11 @@ import {
 } from "../../src/integrations/social/adapter";
 import type { BrowserPage } from "./social-browser";
 import {
+  LINKEDIN_CAPTURE_FILE_INPUT,
+  LINKEDIN_COMPOSER_EDITOR,
+  LINKEDIN_POST_LABELS,
+} from "./social-browser-linkedin-composer";
+import {
   linkedInApplyImageAlt,
   linkedInImageAltEvidence,
   linkedInPublishDocument,
@@ -181,20 +186,7 @@ async function linkedInIdentity(
   }
 }
 
-// The composer is a native `dialog[open]`. Hashed classes and `data-view-name` attributes come and go
-// between LinkedIn front-end variants, so controls are found by role, state and (EN/TR) label.
-const LINKEDIN_COMPOSER_EDITOR = 'dialog[open] [role="textbox"][contenteditable="true"]';
-const LINKEDIN_POST_LABELS = ["Post", "Yayınla"] as const;
 const LINKEDIN_MEDIA_LABELS = ["Media", "Medya"] as const;
-const LINKEDIN_CAPTURE_FILE_INPUT = String.raw`(() => {
-  const click = HTMLInputElement.prototype.click;
-  HTMLInputElement.prototype.click = function () {
-    if (this.type !== 'file') return click.call(this);
-    document.querySelectorAll('[data-bycoda-li-file]').forEach(el => el.removeAttribute('data-bycoda-li-file'));
-    this.setAttribute('data-bycoda-li-file', 'true');
-  };
-  return true;
-})()`;
 /** The stacked media editor is closed and the composer itself shows the attachment. */
 const LINKEDIN_MEDIA_ATTACHED = `(() => { const open=document.querySelectorAll('dialog[open]'); return open.length===1&&!!open[0].querySelector('video,img[src^="blob:"]'); })()`;
 
@@ -330,7 +322,12 @@ function linkedInCommentSnapshot(postId: string): string {
   return String.raw`(() => {
     const list=document.querySelector('.comments-comments-list,.comments-comment-list');if(!list)return;
     const elements=[...list.querySelectorAll(${json(LINKEDIN_COMMENT_ROW)})].slice(0,100);
-    if(!elements.length&&!list.querySelector('.comments-comments-list__empty-state,.comments-empty-state,.comments-comment-list__empty-state'))return;
+    // A post with no comments has no explicit marker. The positive signal is a loaded comment box next to a
+    // content-free list and no comments item in the social counts (that item exists only when the count is above zero).
+    const empty=()=>!!document.querySelector('[class*="comments-comment-box"]')&&!list.textContent.trim()&&
+      !list.querySelector('a,button,img,article,[data-id],[class*="loader"],[class*="skeleton"]')&&
+      !document.querySelector('.social-details-social-counts__comments');
+    if(!elements.length&&!list.querySelector('.comments-comments-list__empty-state,.comments-empty-state,.comments-comment-list__empty-state')&&!empty())return;
     // The page shows only relative times; a comment ID is a LinkedIn snowflake whose upper bits are the creation time in ms.
     const stamp=(id,row)=>{
       const time=row.querySelector('time[datetime]'),iso=time&&Date.parse(time.getAttribute('datetime'));

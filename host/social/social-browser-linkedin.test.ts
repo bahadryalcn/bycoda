@@ -408,6 +408,37 @@ describe("LinkedIn ordinary browser post", () => {
       });
     }
   });
+  it("reports a loaded comment box with a content-free list as a read, empty comments section", async () => {
+    const f = fixture(
+      recipe("linkedin"),
+      account("linkedin", "web:linkedin:in:bycoda-owner"),
+      liIdentity +
+        '<div class="social-details-social-counts"><li class="social-details-social-counts__reactions">3</li></div><div class="comments-comments-list"><div class="comments-comment-list__container"><div></div></div></div>' +
+        liCommentForm(),
+    );
+    const result = await recipe("linkedin").poll(f.ctx, [liId]);
+    expect(result.events).toEqual([]);
+    expect(result.coverage).toContainEqual({ channel: "comments", status: "read" });
+  });
+  it("keeps an empty-looking list unavailable when the counts show comments, a loader or no comment box", async () => {
+    const list =
+      '<div class="comments-comments-list"><div class="comments-comment-list__container">';
+    for (const markup of [
+      `<li class="social-details-social-counts__comments">5</li>${list}</div></div>${liCommentForm()}`,
+      `${list}<div class="artdeco-loader"></div></div></div>${liCommentForm()}`,
+      `${list}<button>Load more</button></div></div>${liCommentForm()}`,
+      `${list}</div></div>`,
+    ]) {
+      const f = fixture(
+        recipe("linkedin"),
+        account("linkedin", "web:linkedin:in:bycoda-owner"),
+        liIdentity + markup,
+      );
+      await expect(recipe("linkedin").poll(f.ctx, [liId])).rejects.toMatchObject({
+        code: "unsupported",
+      });
+    }
+  });
   it("accepts a recognized empty comment state while reporting unavailable message coverage", async () => {
     const f = fixture(
       recipe("linkedin"),

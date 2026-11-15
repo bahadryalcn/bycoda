@@ -16,6 +16,13 @@ import {
   type PushEventKind,
   type PushSnapshot,
 } from "./push-events";
+import {
+  SOCIAL_PUSH_MAX_AGE_MS,
+  socialPushAllowed,
+  socialPushMessage,
+  type SocialPushLedger,
+  type SocialPushSource,
+} from "./push-social";
 import type { ApprovalRegistry } from "../approvals/approval-registry";
 import type { PushDeviceStore, PushRecipient } from "./push-store";
 
@@ -33,6 +40,9 @@ type Dependencies = {
   /** Pending Assistant notifications with the Host's own delivery verdicts; absent disables that channel. */
   assistant?: AssistantPushSource;
   assistantLedger?: AssistantPushLedger;
+  /** Social items that wait for the owner (requests, NEEDS_HUMAN, expired sign-ins); absent disables that channel. */
+  social?: SocialPushSource;
+  socialLedger?: SocialPushLedger;
   /** Native-authorized configured Telegram channel; runs even when no phone is paired. */
   telegram?: () => Promise<void>;
   /** Remote-answerable owner approvals; absent disables that channel. */
@@ -161,7 +171,34 @@ export class PushNotifications {
         ),
       );
     await this.tickAssistant(recipients);
-    if (away) await this.tickApprovals(recipients);
+    if (away) {
+      await this.tickApprovals(recipients);
+      await this.tickSocial(recipients);
+    }
+  }
+
+  /**
+   * A Social item that waits while nobody uses the desktop reaches each phone that wants "needs your
+   * input" once. The claim is written before sending, so a failed send is not replayed.
+   */
+  private async tickSocial(recipients: PushRecipient[]): Promise<void> {
+    const { social, socialLedger: ledger } = this.deps;
+    const interested = recipients.filter(socialPushAllowed);
+    if (!social || !ledger || interested.length === 0) return;
+    const wall = (this.deps.wallNow ?? Date.now)();
+    const waiting = (await social()).filter((item) => wall - item.at <= SOCIAL_PUSH_MAX_AGE_MS);
+    const messages: ExpoPushMessage[] = [];
+    for (const recipient of interested) {
+      let sent = 0;
+      for (const item of waiting) {
+        if (sent >= MAX_PER_TICK) break;
+        if (await ledger.sent(recipient.deviceHash, item.id)) continue;
+        if (!(await ledger.claim(recipient.deviceHash, item.id, wall))) continue;
+        messages.push(socialPushMessage(recipient, item, this.deps.environmentId));
+        sent++;
+      }
+    }
+    await this.deliver(messages);
   }
 
   /**

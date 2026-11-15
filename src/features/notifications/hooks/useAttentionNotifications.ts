@@ -14,6 +14,7 @@ import {
   type SessionPhase,
 } from "../model/attention";
 import { attentionRulesFor, subscribeAttentionRules } from "../model/attentionRules";
+import { socialWaitingCount, subscribeSocialWaiting } from "../model/socialWaiting";
 import {
   announceBackgroundFinish,
   announceSessionIssue,
@@ -57,13 +58,20 @@ export function useAttentionNotifications(
 
   const syncAttention = useEffectEvent(() => {
     const focused = isWindowFocused();
-    const next = taskbarAttention(
+    const rules = attentionRulesFor("taskbar");
+    const sessionsWaiting = taskbarAttention(
       sessions,
       unseenFinishedSnapshot(),
       activeSessionId,
       focused,
-      attentionRulesFor("taskbar"),
+      rules,
     );
+    // Social items that wait for the owner count like a session that needs input.
+    const social = rules.input ? socialWaitingCount() : 0;
+    const next = {
+      count: sessionsWaiting.count + social,
+      hasInput: sessionsWaiting.hasInput || social > 0,
+    };
     const flash = flashFor(shownCount.current, next, focused);
     if (next.count === shownCount.current && flash === "none" && !nativeRetry.current) return;
     const previousCount = shownCount.current;
@@ -88,6 +96,7 @@ export function useAttentionNotifications(
       subscribeAttention(sync),
       subscribeAttentionRules(sync),
       subscribeUnseenFinished(sync),
+      subscribeSocialWaiting(sync),
     ];
     return () => unsubscribe.forEach((off) => off());
   }, []);

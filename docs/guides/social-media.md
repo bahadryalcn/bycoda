@@ -6,6 +6,10 @@ Social Media keeps accounts on the selected computer. Choose the computer and pr
 
 For a browser account on LinkedIn, TikTok, Instagram, Facebook, YouTube or Reddit, choose **Connect account**, then **Create a new account instead**. Bycoda saves the account, opens the platform's signup window and shows which steps you must finish there: password, verification code, terms or a security check. It asks only for non-secret details such as email, name, username or birth date, and never for a password or code. Bycoda does not solve security checks. When the signup window closes, choose **Continue to sign-in** to sign in and let the Host verify the identity. Closing the window does not prove the account was created.
 
+## Accounts requested by a project
+
+When a project's work needs a social account it does not have, the AI can ask for one. The request appears under **Waiting for you** on the Command screen with the platform and project; choose the info icon to read why it is needed. Choose **Create account** to open the platform's signup window (the steps above), **I already have one** to sign in to an account you already own, or **Dismiss** to decline. Nothing is created on a platform before you choose, and approving grants the project only read and draft access to the new account. When notifications are on, a new request, or a job that needs you (a security check, a verification code, a sign-in or an unexpected page), also appears in the notification history and as a desktop alert while the app is in the background; clicking it opens Command. The same applies when an account needs you to sign in again; clicking it opens Accounts on that account. While the desktop is away, a paired phone gets a push for each of these too if its "needs your input" setting is on. Muting the project or turning off "Needs your input" silences the desktop alert.
+
 ## Connect a browser account
 
 In **Accounts & Settings**, connect an account using a supported browser account type. Choose the account and open its Connection section.

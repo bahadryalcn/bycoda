@@ -6,8 +6,10 @@ import { InlineError } from "../../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import type { AccountRequestMode, SocialAccountRequest } from "../../model/accountRequests";
+import type { SocialBrowserWorkflow } from "../../model/socialBrowser";
 import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
 import { SignupAccountDialog } from "../accounts/SignupAccountDialog";
+import { registrationProfile } from "../accounts/signupModel";
 import { useAccountWrite } from "../accounts/useAccountWrite";
 import { PlatformMark } from "../common/PlatformIcon";
 import type { SocialScreenProps } from "../shell/screens";
@@ -36,7 +38,12 @@ export function AccountRequestList({
 }: AccountRequestListProps) {
   const [items, setItems] = useState<SocialAccountRequest[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [signup, setSignup] = useState<{ request: SocialAccountRequest; accountId: string }>();
+  const [signup, setSignup] = useState<{
+    request: SocialAccountRequest;
+    accountId: string;
+    workflow?: SocialBrowserWorkflow;
+  }>();
+  const [signinFailed, setSigninFailed] = useState<string>();
   const { error, is, write } = useAccountWrite(t("The request could not be updated. Try again."));
 
   const count = items.length;
@@ -76,11 +83,29 @@ export function AccountRequestList({
       const result = await client.accountRequests.approve({ id: request.id, mode });
       await refresh();
       if (mode === "create") {
-        setSignup({ request: result.request, accountId: result.accountId });
+        // The owner already chose to create the account, so its window opens now; if that fails the
+        // dialog still offers to open it.
+        const workflow = await client
+          .browserWorkflowBegin(
+            result.accountId,
+            "signup",
+            undefined,
+            registrationProfile(result.request.accountType, {}),
+          )
+          .catch(() => undefined);
+        setSignup({ request: result.request, accountId: result.accountId, workflow });
         return;
       }
-      // The sign-in window opens through the existing flow; the account screen shows its state.
-      await client.browserBegin(result.accountId).catch(() => undefined);
+      // The request is now approved and leaves this list, so a failed window start keeps a way to its
+      // account (where sign-in can be retried) instead of only an error.
+      const opened = await client.browserBegin(result.accountId).then(
+        () => true,
+        () => false,
+      );
+      if (!opened) {
+        setSigninFailed(result.accountId);
+        return;
+      }
       onNavigate("accounts", { accountId: result.accountId });
     }).catch(() => undefined);
 
@@ -102,6 +127,19 @@ export function AccountRequestList({
         </InlineError>
       ) : null}
       {error ? <InlineError>{error}</InlineError> : null}
+      {signinFailed ? (
+        <InlineError
+          retry={{
+            onRetry: () => {
+              setSigninFailed(undefined);
+              onNavigate("accounts", { accountId: signinFailed });
+            },
+            label: t("Open account"),
+          }}
+        >
+          {t("The sign-in window could not be opened.")}
+        </InlineError>
+      ) : null}
       {items.length ? (
         <ul className="account-request-list">
           {items.map((item, index) => (
@@ -176,6 +214,7 @@ export function AccountRequestList({
           initialName=""
           projectIds={[signup.request.projectId]}
           existingAccountId={signup.accountId}
+          initialWorkflow={signup.workflow}
           onClose={() => setSignup(undefined)}
           onCreated={(accountId) => {
             setSignup(undefined);

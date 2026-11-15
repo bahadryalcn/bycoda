@@ -43,6 +43,7 @@ import {
   type SocialWorkspaceResponse,
 } from "../../../src/features/social/model/social";
 import { DEFAULT_AUTONOMY, type AiAction } from "../../../src/features/social/model/autonomy";
+import type { SocialAccountRequest } from "../../../src/features/social/model/accountRequests";
 import type { SocialList } from "../../../src/features/social/model/audience";
 import "../../../src/styles/index.css";
 import type { SocialProgram } from "../../../src/features/social/model/socialProgram";
@@ -320,8 +321,63 @@ if (new URLSearchParams(location.search).has("automatic-list")) {
     createdAt: 1,
   });
 }
+// Project account requests (?requests): the AI asked for accounts the project lacks.
+const accountRequests: SocialAccountRequest[] = [
+  {
+    id: "request-linkedin",
+    projectId: "demo",
+    projectName: "Demo project",
+    platform: "linkedin",
+    accountType: "organization",
+    reason: "Launch announcements need a company Page the project does not have yet.",
+    suggestedName: "Demo Labs",
+    requestedBy: { provider: "codex", actorId: "session:fixture" },
+    status: "pending",
+    createdAt: 2,
+    updatedAt: 2,
+  },
+  {
+    id: "request-x",
+    projectId: "demo",
+    projectName: "Demo project",
+    platform: "x",
+    accountType: "member",
+    reason: "Product updates are announced on X.",
+    suggestedUsername: "demolabs",
+    requestedBy: { provider: "claude", actorId: "session:fixture-2" },
+    status: "pending",
+    createdAt: 1,
+    updatedAt: 1,
+  },
+];
 // Owner writes of the redesigned shell. None reaches a platform; each only changes fixture state.
 const shellWrites: Record<string, (input: Record<string, unknown>) => unknown> = {
+  "accounts.requests.approve": (input) => {
+    const request = accountRequests.find((item) => item.id === input.id)!;
+    request.status = "approved";
+    const accountId = `fixture-account-${snapshot.accounts.length}`;
+    snapshot.accounts.push({
+      id: accountId,
+      platform: request.platform,
+      platformId: "",
+      name: request.suggestedName ?? request.platform,
+      accountType: request.accountType,
+      connection: "browser",
+      scopes: [],
+      connected: false,
+      accessApproved: false,
+      paused: false,
+      executorId: "fixture",
+      grants: { [request.projectId]: ["read", "draft"] },
+      createdAt: Date.now(),
+    });
+    return { request: structuredClone(request), accountId };
+  },
+  "accounts.requests.dismiss": (input) => {
+    const request = accountRequests.find((item) => item.id === input.id)!;
+    request.status = "dismissed";
+    return structuredClone(request);
+  },
   "ai.command": (input) => ({
     planId: "fixture-plan",
     steps: [
@@ -389,6 +445,11 @@ const shellReads: Record<string, (input: Record<string, unknown>) => unknown> = 
     new URLSearchParams(location.search).has("extra-empty")
       ? { done: [], results: [], suggestions: [] }
       : { done: ["Demo görev tamamlandı"], results: ["Demo sonuç"], suggestions: ["Demo öneri"] },
+  "accounts.requests.list": () => ({
+    items: new URLSearchParams(location.search).has("requests")
+      ? structuredClone(accountRequests)
+      : [],
+  }),
   "browser.needsHuman.list": () => {
     if (new URLSearchParams(location.search).has("extra-error"))
       throw new Error("Fixture read failure");

@@ -122,6 +122,7 @@ export function TaskBulkToolbar({
           setResults((rows) => [...rows, result]);
           setProgress({ completed, total });
         },
+        (error) => presentRemoteError(error, { explicit: true }),
       );
       if (action === "delete") {
         const remaining = new Set(selected);

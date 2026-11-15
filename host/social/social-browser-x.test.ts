@@ -58,7 +58,10 @@ function pageAt(url: string, body: string, cookies: Cookie[] = []) {
     fill: vi.fn(async () => undefined),
     insertText: vi.fn(async () => undefined),
     setFiles: vi.fn(async () => undefined),
-    watchResponse: vi.fn(() => ({ body: async () => undefined, stop: () => undefined })),
+    watchResponse: vi.fn((_path: RegExp) => ({
+      body: async (): Promise<string | undefined> => undefined,
+      stop: () => undefined,
+    })),
     cookies: vi.fn(async () => cookies),
     evaluate: vi.fn(async <T>(expression: string): Promise<T> => window.eval(expression) as T),
   };
@@ -316,7 +319,7 @@ describe("X browser monitoring", () => {
     const directory = await scratch();
     const page = pageAt("https://x.com/notifications/mentions", "", LOGGED_IN);
     page.watchResponse = vi.fn((path: RegExp) => ({
-      body: async () =>
+      body: async (): Promise<string | undefined> =>
         path.test("/NotificationsTimeline")
           ? '{"data":{"timeline":{"instructions":[]}}}'
           : undefined,

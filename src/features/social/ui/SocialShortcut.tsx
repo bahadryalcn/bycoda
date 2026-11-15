@@ -4,9 +4,10 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Globe } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
+import { SOCIAL_PANEL_EVENT } from "../model/socialNavigation";
 import { useWorkspaceFeature } from "../../settings/model/workspaceFeatures";
 
-export const SOCIAL_PANEL_EVENT = "bycoda:open-social-panel";
+export { SOCIAL_PANEL_EVENT } from "../model/socialNavigation";
 /** Compact access from the global navigation or a session's tool area. */
 export function SocialShortcut({
   cwd,

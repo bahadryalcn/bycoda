@@ -214,6 +214,12 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   Documents API (title 200, 100 MB API limit in source), and browser PDFs up to 5 MiB.
 - Browser connection requests, acceptance and personal chat use the same verification and
   challenge handling as other browser recipes.
+- Browser member posts and PDF documents open the composer through `/feed/?shareActive=true`
+  and find controls by role and EN/TR label inside `dialog[open]`; `data-view-name` is only an
+  optional first choice, because LinkedIn serves variants without it.
+- A post with no comments reports `comments` as read only on a positive signal: the comment box
+  is loaded, the comment list holds no content, and the social counts have no comments item.
+  Anything else stays unavailable.
 - **AI exclusion:** the current rule code still blocks LinkedIn inbound third-party
   content from automatic reply rules. See Autonomy policy and Open questions.
 
@@ -475,8 +481,8 @@ Otherwise the job becomes NEEDS_HUMAN.
 **NEEDS_HUMAN.** A captcha, a verification step, a suspicious-login screen, a login prompt
 or an unexpected screen stops automation for that account. The job waits as NEEDS_HUMAN
 and the owner is notified. The Command screen lists these items with a live view and an
-"I'm done" action. The owner is alerted through this list; the desktop notification
-planned as a desktop notification is not verified. Automation never clicks, types or solves a captcha,
+"I'm done" action. The desktop also alerts the owner (see "Owner notifications" below).
+Automation never clicks, types or solves a captcha,
 verification or suspicious-login screen. The decision layer treats these states as
 human-only, and the desktop layer refuses them. A challenge is recognized and reported only.
 
@@ -576,6 +582,24 @@ dispatched content is not edited in place.
   dispatch as autonomous. Source supports this path. End-to-end use is not verified.
 - LinkedIn program content still requires final publication review in the current code. This differs from the owner decision that LinkedIn follows the same autonomy policy. See Open questions.
 
+## Project account requests
+
+When a project's social work needs a platform account the project does not have, the AI calls the `accounts.request` tool (`projectId`, `platform`, optional `accountType`, `reason`, optional suggested name and username). The tool only asks the owner: it creates nothing on any platform and has no external effect, so it is not an autonomy action. The Host validates that the caller owns the project, that the platform has a browser route and a supported browser account type, and that the project has no connected account for the platform granted to it. An open request for the same project, platform and account type is returned instead of a duplicate. Records are stored as `account-request` rows in the audience store with status `pending`, `approved`, `dismissed` or `fulfilled`.
+
+The owner-only methods `accounts.requests.list`, `accounts.requests.approve` and `accounts.requests.dismiss` are never tools. `approve` takes `id`, `mode` (`create` or `signin`) and an optional `name`. It creates the browser account through `accounts.create`, grants the requesting project `read` and `draft`, records the `accountId` and returns it; the Social Command screen then opens the existing signup window (`create`) or starts the existing browser sign-in (`signin`). Approval grants no send authority. A request becomes `fulfilled` when `accounts.requests.list` finds its account connected.
+
+## Owner notifications
+
+Items that wait for the owner reach the owner through the existing notification model, whether or not the Social screen is open. Three kinds: a new pending project account request, a job or account in NEEDS_HUMAN, and a connected, unpaused account that needs a new sign-in. A sign-in is signalled by `expiresAt <= now`, which the Host sets when a poll or send fails with an expired session; API accounts count only 15 minutes after the expiry, so the Host's due-refresh sweep has had its chance, and browser accounts count at once. The item id carries the expiry value, so a later expiry notifies again and a reconnect clears the item.
+
+**Desktop.** The lead workspace window reads `accounts.requests.list`, `browser.needsHuman.list` and the accounts snapshot from the Social authority Host (this computer when none is set) about once a minute, announces each item id once and remembers announced ids on this computer (`bycoda.notifications.social.announced.v1`, newest 300), so a poll or a restart never repeats one. An announcement follows the "Needs your input" event setting, the master switch, the per-project "Agent approvals and questions" mute and the unfocused-window rule: it adds a Notifications history entry (muted projects excepted), sends one desktop banner per poll (a summary when several are new) and adds to the taskbar and Dock count while the item waits. A waiting browser task or an account belongs to every project it is granted to; it is muted only when all of them are muted. A locked project is logged with the masked wording and never bannered or counted. Clicking opens Social on Command, or on Accounts focused on that account for a sign-in.
+
+**Phone.** While the desktop is away, the Host reads the same three kinds straight from the Social service and sends one push per item id and phone (ledger table `push_social_sent`, written before sending, so a failed send is not replayed). It follows the phone's "needs your input" choice; there is no separate Social setting. Items older than a day are not sent, and at most three per phone per read. The push uses `kind: "input"` with no session, so the current phone app opens without a deep link into Social.
+
+**Privacy.** Text names the platform and the reason only, never the project, the account name or the AI's request text; the phone body is its own "needs your input" text.
+
+**Not covered.** Signup workflows awaiting the owner, Telegram (its delivery sends only Assistant notifications through a Native-authorized effect), and a deep link into Social on the phone (needs a mobile app change). Real OS and phone delivery are not verified by automated tests.
+
 ## Session tools
 
 AI tools are the registry actions marked for AI use. The MCP tool names use underscores
@@ -584,7 +608,7 @@ in the Social tool registry. Tools call the same Host operations as the UI, so e
 applies to them.
 
 ```text
-policy.get            accounts.list           capabilities.get
+policy.get            accounts.list           accounts.request       capabilities.get
 campaigns.create      campaigns.preview       campaigns.schedule     campaigns.status
 inbox.list            inbox.unified           inbox.setStatus        inbox.timeline
 inbox.replyOptions    thread.read             replies.draft          replies.send
@@ -610,6 +634,7 @@ Rules for every tool:
 
 - A tool cannot exceed the account's autonomy level, suppression, limits, working hours,
   the AI stop or the global stop. Tools read these facts; they do not hold authority.
+- `accounts.request` only files an owner request; approving, dismissing and listing requests are owner-only.
 - A tool cannot change owner-only state. Owner-only operations, including `people.delete`,
   `people.export`, `audience.import`, `autonomy.set`, policy saves, program activation and
   browser workflow methods, are not tools.

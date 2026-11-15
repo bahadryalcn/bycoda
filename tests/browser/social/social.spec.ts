@@ -976,3 +976,56 @@ for (const theme of ["light", "dark"])
         expect(await requests(page, action)).toEqual([]);
     });
   }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`social project account requests ${theme} ${width}`, async ({ page }) => {
+      const shot = (name: string) =>
+        page.screenshot({
+          path: `temp/verification/2026-11-15-social-account-requests/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?requests");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const rows = page.locator(".account-request-row");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.getByText("Demo project")).toHaveCount(2);
+      await shot("waiting");
+      await rows.first().getByRole("button", { name: "Hesap oluştur", exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await shot("approve-create");
+      expect(await requests(page, "accounts.requests.approve")).toEqual([
+        { id: "request-linkedin", mode: "create" },
+      ]);
+      // The approved account is reused: the dialog never creates a second record.
+      expect(await requests(page, "accounts.create")).toEqual([]);
+      // Approving opens the signup window at once; leaving cancels it and opens the new account.
+      await page
+        .getByRole("dialog")
+        .getByRole("button", { name: "Kaydı iptal et", exact: true })
+        .click();
+      await expect(
+        page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      await shot("account-opened");
+      await page.keyboard.press("Escape");
+      await sections(page).getByRole("tab", { name: "Komut", exact: true }).click();
+      await expect(rows).toHaveCount(1);
+      await rows
+        .first()
+        .getByRole("button", { name: "Zaten bir hesabım var", exact: true })
+        .click();
+      await expect(
+        page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(await requests(page, "accounts.requests.approve")).toEqual([
+        { id: "request-linkedin", mode: "create" },
+        { id: "request-x", mode: "signin" },
+      ]);
+      await shot("approve-signin");
+    });
+  }

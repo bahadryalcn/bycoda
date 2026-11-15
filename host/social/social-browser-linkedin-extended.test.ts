@@ -349,39 +349,45 @@ describe("LinkedIn document upload", () => {
       code: "unsupported",
     });
   });
-  it.each(["success", "unknown-receipt", "different-title", "identity-change"])(
-    "requires exact reopened actor/text/document title after submit: %s",
-    async (outcome) => {
+  it.each(
+    ["view", "plain"].flatMap((variant) =>
+      ["success", "unknown-receipt", "different-title", "identity-change"].map(
+        (outcome) => [variant, outcome] as const,
+      ),
+    ),
+  )(
+    "requires exact reopened actor/text/document title after submit: %s %s",
+    async (variant, outcome) => {
       const file = await pdf();
       let stage = "initial";
       const id = "urn:li:activity:123456",
         title = "Bycoda guide";
+      // The `plain` variant is LinkedIn's A/B markup without any data-view-name attribute.
+      const view = (name: string) => (variant === "view" ? ` data-view-name="${name}"` : "");
       const initial = () =>
-        `${identity}<div data-view-name="share-sharebox-focus">Start a post</div><dialog open><button aria-label="İçerik türlerini genişlet"></button></dialog>`;
+        `${identity}<dialog open><button aria-label="İçerik türlerini genişlet"></button></dialog>`;
       const expanded = () =>
-        `${identity}<dialog open><button aria-label="İçerik türlerini daralt"></button><a data-view-name="share-sharebox-bottom-bar-document">Belge</a></dialog>`;
+        `${identity}<dialog open><button aria-label="İçerik türlerini daralt"></button><a${view("share-sharebox-bottom-bar-document")} aria-label="Belge">Belge</a></dialog>`;
       const picker = () =>
-        `${identity}<dialog open><button data-view-name="media-document-share-select-file">Dosya seçin</button></dialog>`;
+        `${identity}<dialog open><button${view("media-document-share-select-file")}>Dosya seçin</button></dialog>`;
       const document = () =>
-        `${identity}<input type="file" accept="application/pdf,application/msword"><dialog open><input type="text" placeholder="Belgenize açıklayıcı bir başlık ekleyin"><div data-view-name="media-document-share-remove-preview"></div><button data-view-name="media-document-share-confirm">Bitti</button></dialog>`;
+        `${identity}<input type="file" data-bycoda-li-file="true" accept="application/pdf,application/msword"><dialog open><input type="text" placeholder="Belgenize açıklayıcı bir başlık ekleyin"><button>Geri</button><button${view("media-document-share-confirm")}>Bitti</button></dialog>`;
       const editor = () =>
-        `${identity}<dialog open><div contenteditable="true" role="textbox"></div><button data-view-name="share-post">Yayınla</button></dialog>`;
+        `${identity}<dialog open><div contenteditable="true" role="textbox"></div><button${view("share-post")}>Yayınla</button></dialog>`;
       const persisted = () =>
         `${outcome === "identity-change" ? identity.replace("/in/owner/", "/in/stranger/") : identity}<article data-urn="${id}"><a class="update-components-actor__meta-link" href="/in/owner/">Owner</a><div class="update-components-text">Hello</div><iframe title="${outcome === "different-title" ? "Other guide" : title}"></iframe></article>`;
       const f = fixture(initial(), {
         response: outcome === "unknown-receipt" ? "{}" : JSON.stringify({ value: id }),
         render: (url) => (url.includes("/feed/update/") ? persisted() : initial()),
         click: (el) => {
-          const view = el.closest("[data-view-name]")?.getAttribute("data-view-name");
-          if (el.getAttribute("aria-label") === "İçerik türlerini genişlet")
-            f.window.document.body.innerHTML = expanded();
-          if (view === "share-sharebox-bottom-bar-document")
-            f.window.document.body.innerHTML = picker();
-          if (view === "media-document-share-select-file") {
+          const label = (el.getAttribute("aria-label") || el.textContent || "").trim();
+          if (label === "İçerik türlerini genişlet") f.window.document.body.innerHTML = expanded();
+          if (label === "Belge") f.window.document.body.innerHTML = picker();
+          if (label === "Dosya seçin") {
             stage = "document";
             f.window.document.body.innerHTML = document();
           }
-          if (view === "media-document-share-confirm") {
+          if (label === "Bitti") {
             stage = "editor";
             f.window.document.body.innerHTML = editor();
           }

@@ -53,7 +53,8 @@ export function useAppWindowEvents({
         setInboxViewOpen(false);
         setServersViewOpen(false);
         setNotesViewOpen(false);
-        setSocialPanelCwd(detail.cwd);
+        // A notification click names no project; the panel keeps its own or the active one.
+        if (detail.cwd) setSocialPanelCwd(detail.cwd);
         setSocialBoardShown(true);
         setTaskBoardShown(false);
         setAutomationsViewOpen(true);

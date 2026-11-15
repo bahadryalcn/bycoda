@@ -52,7 +52,7 @@ function setup(items: SocialAccountRequest[] = [request]) {
       dismiss: vi.fn(async () => ({ ...request, status: "dismissed" })),
     },
     browserBegin: vi.fn(async () => ({ status: "waiting", expiresAt: 1 })),
-    browserWorkflowBegin: vi.fn(),
+    browserWorkflowBegin: vi.fn(async () => undefined),
     browserWorkflowStatus: vi.fn(async () => ({ available: true, reason: "", workflows: [] })),
   };
   return client;
@@ -89,16 +89,16 @@ it("lists only pending requests with platform and project and reports the count"
   expect(onCountChange).toHaveBeenLastCalledWith(1);
 });
 
-it("approves as create and opens signup bound to the new account", async () => {
+it("approves as create and opens the signup window at once, bound to the new account", async () => {
   const client = setup();
   await render(client);
-  await act(async () => button("Create account")?.click());
+  await act(async () => {
+    button("Create account")?.click();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  });
   expect(client.accountRequests.approve).toHaveBeenCalledWith({ id: "r1", mode: "create" });
   expect(element.querySelector('[role="dialog"]')).not.toBeNull();
-  const open = [...element.querySelectorAll("button")].find((node) =>
-    node.textContent?.includes("Open sign-up window"),
-  );
-  await act(async () => open?.click());
+  expect(client.browserWorkflowBegin).toHaveBeenCalledTimes(1);
   expect(client.browserWorkflowBegin).toHaveBeenCalledWith(
     "acc-1",
     "signup",
@@ -124,4 +124,20 @@ it("dismisses a request and shows a Host failure", async () => {
   client.accountRequests.dismiss.mockRejectedValueOnce(new Error("Request is gone."));
   await act(async () => button("Dismiss")?.click());
   expect(element.textContent).toContain("Request is gone.");
+});
+
+it("keeps a way to the approved account when the sign-in window cannot open", async () => {
+  const client = setup();
+  client.browserBegin = vi.fn(async () => {
+    throw new Error("Install Chrome or Edge");
+  });
+  const { onNavigate } = await render(client);
+  await act(async () => {
+    button("I already have one")?.click();
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  });
+  expect(onNavigate).not.toHaveBeenCalled();
+  expect(element.textContent).toContain("The sign-in window could not be opened.");
+  await act(async () => button("Open account")?.click());
+  expect(onNavigate).toHaveBeenCalledWith("accounts", { accountId: "acc-1" });
 });

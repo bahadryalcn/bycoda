@@ -1,4 +1,10 @@
 import { Window } from "happy-dom";
+import type {
+  HTMLButtonElement,
+  HTMLElement,
+  HTMLInputElement,
+  HTMLSelectElement,
+} from "happy-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { BrowserPage } from "./social-browser";
 import {
@@ -208,7 +214,9 @@ function fixture(url: string, html: string) {
     }
   });
   const page: BrowserPage = {
-    evaluate: vi.fn(async <T>(expression: string) => window.eval(expression) as T),
+    evaluate: vi.fn(
+      async <T>(expression: string) => window.eval(expression) as T,
+    ) as BrowserPage["evaluate"],
     click,
     fill,
     goto: vi.fn(async (target) => {
@@ -1326,5 +1334,158 @@ describe("X owner-assisted registration contracts", () => {
     expect((await inspectSocialRegistration(other.page, "x", {})).status).toBe("unsupported");
     const foreign = fixture("https://example.com/i/flow/signup", profileForm);
     expect((await inspectSocialRegistration(foreign.page, "x", {})).status).toBe("unsupported");
+  });
+});
+
+describe("Google account creation for a YouTube signup", () => {
+  // Markup observed live on 2026-11-15 (tr-TR, signed out); the reCAPTCHA anchor is always present
+  // but hidden with visibility:hidden.
+  const recaptcha =
+    '<iframe src="https://www.google.com/recaptcha/enterprise/anchor?k=x" style="visibility:hidden"></iframe>';
+  const signin = `<h1>Oturum açın</h1><input type="email" name="identifier" id="identifierId"><button>Sonraki</button>${recaptcha}`;
+  const name = `<h1>Bir Google Hesabı Oluşturun</h1><input name="firstName" id="firstName"><input name="lastName" id="lastName"><button>Sonraki</button>${recaptcha}`;
+  const months = [
+    "Ocak",
+    "Şubat",
+    "Mart",
+    "Nisan",
+    "Mayıs",
+    "Haziran",
+    "Temmuz",
+    "Ağustos",
+    "Eylül",
+    "Ekim",
+    "Kasım",
+    "Aralık",
+  ];
+  const birthday = `<h1>Temel bilgiler</h1><input type="tel" name="day" id="day"><input type="tel" name="year" id="year">
+    <span id="c3">Ay</span><div role="combobox" aria-labelledby="c3 c4" aria-expanded="false" aria-controls="c6"></div>
+    <ul role="listbox" aria-label="Ay" hidden>${months.map((month, index) => `<li role="option" data-value="${index + 1}" aria-selected="false">${month}</li>`).join("")}</ul>
+    <span id="c9">Cinsiyet</span><div role="combobox" aria-labelledby="c9 c10"></div><button>Sonraki</button>${recaptcha}`;
+  const owner = {
+    accountKind: "brand" as const,
+    givenName: "Fixture",
+    familyName: "Owner",
+    birthdate: "1990-03-05",
+    email: "bycoda@example.com",
+  };
+  const googleFixture = (path: string, html: string) => {
+    const f = fixture(`https://accounts.google.com${path}`, html);
+    f.page.goto = vi.fn(async (target: string) => {
+      expect(target).toMatch(
+        /^https:\/\/accounts\.google\.com\/signup\/v2\/createaccount\?service=youtube&/,
+      );
+      f.window.location.href = "https://accounts.google.com/lifecycle/steps/signup/name";
+      f.window.document.body.innerHTML = name;
+    });
+    f.click.mockImplementation(async (selector: string) => {
+      const element = f.window.document.querySelector(selector)!;
+      if (element.getAttribute("role") === "combobox") {
+        f.window.document.querySelector<HTMLElement>('[role="listbox"]')!.hidden = false;
+        return;
+      }
+      if (element.getAttribute("role") === "option") {
+        element.setAttribute("aria-selected", "true");
+        f.window.document.querySelector<HTMLElement>('[role="listbox"]')!.hidden = true;
+        return;
+      }
+      throw new Error("Next or another control was clicked.");
+    });
+    return f;
+  };
+
+  it("never starts a new Google account until the owner entered its name", async () => {
+    const f = googleFixture("/v3/signin/identifier", signin);
+    const state = await advanceSocialRegistration(f.page, "youtube", { accountKind: "brand" });
+    expect(state).toMatchObject({
+      status: "needs_fields",
+      requiredFields: ["givenName", "familyName"],
+      blockers: [],
+      canAdvance: false,
+    });
+    expect(f.page.goto).not.toHaveBeenCalled();
+    expect(f.fill).not.toHaveBeenCalled();
+  });
+  it("opens Google signup on Continue and fills only the name step", async () => {
+    const f = googleFixture("/v3/signin/identifier", signin);
+    const state = await advanceSocialRegistration(f.page, "youtube", owner);
+    expect(f.page.goto).toHaveBeenCalledTimes(1);
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      filledFields: ["givenName", "familyName"],
+      canAdvance: false,
+    });
+    expect(f.window.document.querySelector<HTMLInputElement>("#firstName")!.value).toBe("Fixture");
+    expect(f.window.document.querySelector<HTMLInputElement>("#lastName")!.value).toBe("Owner");
+    expect(f.click).not.toHaveBeenCalled();
+  });
+  it("fills day, year and the month option, leaves gender and Next to the owner", async () => {
+    const f = googleFixture("/lifecycle/steps/signup/birthdaygender", birthday);
+    const state = await advanceSocialRegistration(f.page, "youtube", owner);
+    expect(state).toMatchObject({
+      status: "awaiting_owner",
+      step: "birthdate",
+      filledFields: ["birthdate"],
+    });
+    expect(f.window.document.querySelector<HTMLInputElement>("#day")!.value).toBe("5");
+    expect(f.window.document.querySelector<HTMLInputElement>("#year")!.value).toBe("1990");
+    expect(
+      f.window.document
+        .querySelector('[role="option"][aria-selected="true"]')!
+        .getAttribute("data-value"),
+    ).toBe("3");
+    expect(f.click).toHaveBeenCalledTimes(2);
+  });
+  it("does not overwrite a different owner birth month", async () => {
+    const f = googleFixture("/lifecycle/steps/signup/birthdaygender", birthday);
+    f.window.document.querySelector('[data-value="9"]')!.setAttribute("aria-selected", "true");
+    expect(await advanceSocialRegistration(f.page, "youtube", owner)).toMatchObject({
+      status: "changed",
+      step: "birthdate",
+    });
+    expect(f.click).not.toHaveBeenCalled();
+  });
+  it("fills the owner's existing email and leaves the Gmail choice, password and codes in the window", async () => {
+    const email = googleFixture(
+      "/lifecycle/steps/signup/emailsignup",
+      `<input type="email" name="Username" id="identifierId"><button>Sonraki</button>${recaptcha}`,
+    );
+    expect(await advanceSocialRegistration(email.page, "youtube", owner)).toMatchObject({
+      status: "awaiting_owner",
+      filledFields: ["email"],
+    });
+    expect(email.window.document.querySelector<HTMLInputElement>("#identifierId")!.value).toBe(
+      "bycoda@example.com",
+    );
+    const gmail = googleFixture(
+      "/lifecycle/steps/signup/username",
+      '<input type="radio" name="usernameRadio" value="custom"><button>Sonraki</button>',
+    );
+    expect(await advanceSocialRegistration(gmail.page, "youtube", owner)).toMatchObject({
+      status: "awaiting_owner",
+      blockers: [],
+      filledFields: [],
+    });
+    const password = googleFixture(
+      "/lifecycle/steps/signup/password",
+      '<input type="password" name="Passwd">',
+    );
+    expect(await advanceSocialRegistration(password.page, "youtube", owner)).toMatchObject({
+      status: "awaiting_owner",
+      step: "password",
+    });
+    expect(gmail.fill).not.toHaveBeenCalled();
+    expect(password.fill).not.toHaveBeenCalled();
+  });
+  it("still reports a visible reCAPTCHA as a challenge", async () => {
+    const f = googleFixture(
+      "/lifecycle/steps/signup/name",
+      name.replace('style="visibility:hidden"', ""),
+    );
+    expect(await advanceSocialRegistration(f.page, "youtube", owner)).toMatchObject({
+      status: "awaiting_owner",
+      step: "challenge",
+    });
+    expect(f.fill).not.toHaveBeenCalled();
   });
 });

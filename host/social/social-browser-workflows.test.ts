@@ -13,6 +13,12 @@ import {
   type BrowserPage,
 } from "./social-browser";
 import { Window } from "happy-dom";
+import type {
+  HTMLButtonElement,
+  HTMLElement,
+  HTMLInputElement,
+  HTMLSelectElement,
+} from "happy-dom";
 import {
   SOCIAL_ACCOUNT_TYPES,
   SOCIAL_PLATFORMS,
@@ -57,7 +63,7 @@ async function fixture(
   })) as SocialAccount;
   let now = 1000;
   const windows: {
-    close: ReturnType<typeof vi.fn>;
+    close: () => Promise<void>;
     closed: Promise<void>;
   }[] = [];
   const plain = vi.fn<PlainBrowserLauncher>(async () => {
@@ -151,7 +157,7 @@ async function registrationFixture(
       const value = window.eval(expression) as T;
       hooks.afterEvaluate?.(expression);
       return value;
-    }),
+    }) as <T>(expression: string) => Promise<T>,
     fill,
     click: vi.fn(async () => {
       throw new Error("No registration submit is authorized in this fixture.");
@@ -941,7 +947,10 @@ async function unresolvedPageRecoveryFixture(keepActive = false, loginWaiting = 
     close: vi.fn(async () => finish()),
   };
   const launcher = vi.fn<BrowserLauncher>(async () => session);
-  const exclusive = vi.fn(async <T>(_id: string, action: () => Promise<T>) => action());
+  const exclusive = vi.fn(async <T>(_id: string, action: () => Promise<T>) => action()) as <T>(
+    _id: string,
+    action: () => Promise<T>,
+  ) => Promise<T>;
   const manager = keepActive
     ? s.f.manager
     : new SocialBrowserWorkflows(
