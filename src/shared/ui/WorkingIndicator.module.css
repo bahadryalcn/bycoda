@@ -67,7 +67,7 @@
    37 with steps), so the GPU process idles between steps. */
 @media (prefers-reduced-motion: no-preference) {
   .indicator {
-    animation: working-signal 1.25s steps(8, jump-none) infinite;
+    animation: working-signal var(--motion-pulse-duration) steps(8, jump-none) infinite;
   }
 }
 
@@ -79,7 +79,7 @@
 }
 @media (prefers-reduced-motion: no-preference) {
   .indicator[data-working-variant="dot"] {
-    animation: working-dot-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    animation: working-dot-pulse var(--motion-pulse-duration) var(--motion-ease-standard) infinite;
   }
 }
 @keyframes working-dot-pulse {

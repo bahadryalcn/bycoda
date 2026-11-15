@@ -70,10 +70,12 @@
     background: var(--ui-surface-hover);
   }
 }
-/* Selected comes after hover so a committed row keeps its fill under the pointer. */
+/* Selected comes after hover so a committed row keeps its fill under the pointer. A keyboard-active option
+   (aria-selected for aria-activedescendant, no committed selection) keeps the hover fill above. */
 .row:is([aria-selected="true"], [aria-checked="true"], [data-selected="true"]):not(
     :disabled,
-    [aria-disabled="true"]
+    [aria-disabled="true"],
+    [data-active]:not([data-selected="true"])
   ) {
   background: var(--ui-surface-selected);
 }

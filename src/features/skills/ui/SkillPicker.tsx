@@ -210,6 +210,7 @@ function SkillList({
               ref={highlighted ? activeRef : undefined}
               role="option"
               aria-selected={highlighted}
+              active={highlighted}
               onMouseDown={(e) => e.preventDefault()}
               onMouseEnter={() => onRowEnter(index)}
               onClick={() => onPick(skill)}

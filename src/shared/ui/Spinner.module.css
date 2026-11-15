@@ -11,7 +11,7 @@
   border-inline-end-color: transparent;
   border-radius: 50%;
   vertical-align: middle;
-  animation: rotate 0.7s linear infinite;
+  animation: rotate var(--motion-spin-duration) linear infinite;
 }
 .spinner[data-size="xs"] {
   --spinner-size: var(--ui-icon-xs, 0.75rem);
@@ -40,7 +40,7 @@
 /* Reduced motion keeps the pending state visible without rotation. */
 @media (prefers-reduced-motion: reduce) {
   .spinner {
-    animation: pulse 1.6s ease-in-out infinite;
+    animation: pulse var(--motion-pulse-duration) var(--motion-ease-standard) infinite;
   }
 }
 @media (forced-colors: active) {

@@ -234,11 +234,11 @@ it("keeps one prompt corner radius whatever the pane width", () => {
   const bubble = () => container.querySelector(".user-message-bubble")!;
 
   show(true);
-  expect(bubble().classList).toContain("rounded-xl");
+  expect(bubble().classList).toContain("rounded-(--ui-radius-popup)");
   expect(bubble().classList).not.toContain("rounded-full");
   show(false);
   show(true);
-  expect(bubble().classList).toContain("rounded-xl");
+  expect(bubble().classList).toContain("rounded-(--ui-radius-popup)");
 });
 
 it("shows a copy error instead of success and allows retry", async () => {

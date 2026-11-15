@@ -14,6 +14,8 @@ export type NoticeAction = {
   disabled?: boolean;
   /** Accessible name when the visible label alone is ambiguous (a bare "Copy" beside an address). */
   ariaLabel?: string;
+  /** Tooltip shown while `disabled`, naming why the action is unavailable. */
+  disabledReason?: string;
 };
 
 /** One glyph per tone for every notice, so tone never rides on colour alone. */
@@ -125,6 +127,7 @@ export function NoticeLink({ action }: { action: NoticeAction }) {
       loading={action.pending ?? false}
       disabled={action.disabled}
       aria-label={action.ariaLabel}
+      tooltip={action.disabled ? action.disabledReason : undefined}
       onClick={action.onClick}
     >
       {action.label}
@@ -147,6 +150,7 @@ export function NoticeButton({ action }: { action: NoticeAction }) {
       loading={action.pending ?? false}
       disabled={action.disabled}
       aria-label={action.ariaLabel}
+      tooltip={action.disabled ? action.disabledReason : undefined}
       onClick={action.onClick}
     >
       {action.label}

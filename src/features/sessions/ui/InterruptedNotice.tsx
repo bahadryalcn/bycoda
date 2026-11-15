@@ -1,9 +1,8 @@
 import { memo } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { Pause, Play } from "../../../shared/ui/icons";
+import { Pause } from "../../../shared/ui/icons";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { Button } from "../../../shared/ui/Button";
 import { claimAutoContinue } from "../model/autoContinue";
 import { canAutoContinue } from "../model/inFlight";
 import type { Session } from "../model/session";
@@ -39,31 +38,25 @@ export const InterruptedNotice = memo(function InterruptedNotice({
   )
     return null;
   return (
-    <div className="flex items-center gap-3 px-4 py-1" data-interrupted-turn>
-      <InlineMessage
-        className="min-w-0 flex-1"
-        tone="warning"
-        icon={<Pause className="icon-sm" aria-hidden />}
-      >
-        <strong>{t("Interrupted")} </strong>
-        {message
-          ? t(message)
-          : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })}
-      </InlineMessage>
-      <Button
-        variant="secondary"
-        className="shrink-0"
-        disabled={!!blockedReason}
-        tooltip={blockedReason}
-        startIcon={<Play className="icon-sm" />}
-        onClick={() => {
+    <InlineMessage
+      data-interrupted-turn
+      tone="warning"
+      icon={<Pause className="icon-sm" aria-hidden />}
+      action={{
+        label: t("Continue"),
+        disabled: !!blockedReason,
+        disabledReason: blockedReason,
+        onClick: () => {
           // Consume the pending automatic send before submitting manually.
           claimAutoContinue(session.id);
           onContinue();
-        }}
-      >
-        {t("Continue")}
-      </Button>
-    </div>
+        },
+      }}
+    >
+      <strong>{t("Interrupted")} </strong>
+      {message
+        ? t(message)
+        : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })}
+    </InlineMessage>
   );
 });

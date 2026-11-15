@@ -108,6 +108,7 @@ import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { ActivityDock } from "./ActivityDock";
 import { sessionSubagents } from "../model/sessionSubagents";
 import { InterruptedNotice } from "./InterruptedNotice";
+import { ComposerNoticeStack } from "./ComposerNoticeStack";
 import { CONTINUE_PROMPT } from "../model/inFlight";
 import { useSubagentSheet } from "./SubagentSheet";
 import { SessionSubagentSheet, useDockActions } from "./SessionSubagentSheet";
@@ -1248,13 +1249,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composerChildren = (
     <>
       {/* Stable order above the writing box: question/approval and blocker, then activity, queue, input. */}
-      <InterruptedNotice
-        session={stableSession}
-        interruptedTurn={interruptedTurn}
-        blockedReason={sendBlockedReason}
-        message={remote ? "The host stopped this turn before it finished." : undefined}
-        onContinue={continueInterruptedTurn}
-      />
+      <ComposerNoticeStack>
+        <InterruptedNotice
+          session={stableSession}
+          interruptedTurn={interruptedTurn}
+          blockedReason={sendBlockedReason}
+          message={remote ? "The host stopped this turn before it finished." : undefined}
+          onContinue={continueInterruptedTurn}
+        />
+      </ComposerNoticeStack>
       {/* Above the queue and the input, below any blocker. */}
       <ActivityDock
         sessionId={session.id}
@@ -1705,17 +1708,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
             />
           ) : null}
           {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
-            <ProviderRetryNotice
-              key={session.id}
-              provider={HARNESS_TITLE[session.harness]}
-              message={session.retryMessage}
-              onStop={() => onStop(session.id)}
-              onRefresh={
-                session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
-                  ? () => onRefreshAdoptedSession(session.id)
-                  : undefined
-              }
-            />
+            <ComposerNoticeStack>
+              <ProviderRetryNotice
+                key={session.id}
+                provider={HARNESS_TITLE[session.harness]}
+                message={session.retryMessage}
+                onStop={() => onStop(session.id)}
+                onRefresh={
+                  session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
+                    ? () => onRefreshAdoptedSession(session.id)
+                    : undefined
+                }
+              />
+            </ComposerNoticeStack>
           ) : null}
           {savedDraftProjection.failed ? (
             <Alert

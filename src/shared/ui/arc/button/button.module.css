@@ -177,7 +177,7 @@
   border: 1.5px solid currentColor;
   border-right-color: transparent;
   border-radius: 50%;
-  animation: spin 0.7s linear infinite;
+  animation: spin var(--motion-spin-duration) linear infinite;
 }
 .loadingLabel {
   opacity: 0;

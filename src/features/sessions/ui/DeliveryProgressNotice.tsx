@@ -189,7 +189,7 @@ export function DeliveryProgressNotice({
     finish();
   };
   return (
-    <Text as="div" className={`${embedded ? "px-1" : "px-4"} py-1`} data-delivery-progress={stage}>
+    <Text as="div" className={embedded ? "px-1 py-1" : undefined} data-delivery-progress={stage}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <LiveText
           className="min-w-0 flex-1 [overflow-wrap:anywhere]"

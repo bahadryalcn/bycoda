@@ -896,13 +896,13 @@ function ResultList({
               </Text>
             ) : null}
             <ListRow
-              selected={highlighted}
+              active={highlighted}
+              aria-selected={highlighted}
               {...actionContentScopeAttributes()}
               className="app-search-result"
               id={`${listId}-option-${index}`}
               ref={highlighted ? activeRef : undefined}
               role="option"
-              aria-selected={highlighted}
               tabIndex={-1}
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => onRowEnter(index)}

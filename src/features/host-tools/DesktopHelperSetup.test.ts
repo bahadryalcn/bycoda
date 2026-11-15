@@ -40,7 +40,9 @@ it("only discovers on mount and prepares only after an owner click", async () =>
   await render();
   expect(mock.request).toHaveBeenCalledExactlyOnceWith({ op: "status" });
   mock.request.mockResolvedValueOnce({ phase: "preparing", stage: "building" });
-  await act(async () => container.querySelector("button")!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')!.click(),
+  );
   expect(mock.request).toHaveBeenLastCalledWith({ op: "prepare" });
   expect(container.textContent).toContain("Preparing…");
 });
@@ -49,7 +51,9 @@ it("keeps verified helper selection explicit and never enables control", async (
   const use = await render();
   expect(use).not.toHaveBeenCalled();
   expect(container.textContent).toContain("Ready");
-  await act(async () => container.querySelector("button")!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')!.click(),
+  );
   expect(use).toHaveBeenCalledExactlyOnceWith(helper);
   expect(mock.request).toHaveBeenCalledExactlyOnceWith({ op: "status" });
 });
@@ -89,7 +93,9 @@ it("leaves a custom helper selection alone during automatic preparation", async 
   const use = await render({ autoPrepare: true, selectedPath: "/custom/helper.exe" });
   expect(prepares()).toBe(0);
   expect(use).not.toHaveBeenCalled();
-  expect(container.querySelector("button")?.textContent).toBe("Use verified helper");
+  expect(
+    container.querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')?.textContent,
+  ).toBe("Use verified helper");
 });
 it("shows an error with Retry after a failed automatic preparation instead of looping", async () => {
   mock.request.mockImplementation(async (input) => {
@@ -100,6 +106,8 @@ it("shows an error with Retry after a failed automatic preparation instead of lo
   expect(prepares()).toBe(1);
   expect(container.textContent).toContain("Helper checksum did not match.");
   expect(container.textContent).toContain("Error");
-  await act(async () => container.querySelector("button")!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')!.click(),
+  );
   expect(prepares()).toBe(2);
 });

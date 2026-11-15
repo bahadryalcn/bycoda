@@ -408,7 +408,9 @@ describe("settings pages", () => {
         .find((row) =>
           row.querySelector(".settings-row-label")?.textContent?.includes("Delivery time"),
         )
-        ?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]');
+        ?.querySelector<HTMLButtonElement>(
+          'button[aria-haspopup="dialog"]:not([aria-label="Help"])',
+        );
     const mountedControl = control();
     expect(mountedControl).toBeInstanceOf(HTMLButtonElement);
     expect(mountedControl?.textContent).toBe("9:00 AM");

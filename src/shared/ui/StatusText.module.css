@@ -1,0 +1,35 @@
+/* Icon plus one word in the tone ink; no fill, border or pill. */
+.status {
+  display: inline-flex;
+  min-inline-size: 0;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+  white-space: nowrap;
+  color: var(--ui-text-secondary);
+}
+.status[data-tone="running"] {
+  color: var(--ui-tone-accent-fg);
+}
+.status[data-tone="needs-you"] {
+  color: var(--ui-tone-warning-fg);
+}
+.status[data-tone="failed"] {
+  color: var(--ui-tone-danger-fg);
+}
+.status[data-tone="done"] {
+  color: var(--ui-tone-success-fg);
+}
+.icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+}
+.icon > svg {
+  inline-size: 100%;
+  block-size: 100%;
+}

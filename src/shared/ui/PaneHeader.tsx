@@ -69,6 +69,7 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
 
 /**
  * Title row of a pane or tool view: slots leading, icon, title, meta, children (tabs/search), actions, trailing.
+ * Pane header contract: one 40px row (`--ui-pane-header-height`, density-aware), caption-role title, 24px tabs in the body, at most 4 actions.
  * Owns height (`--ui-pane-header-height`), bottom hairline, and optional window drag region plus macOS traffic-light inset.
  * Heading levels: PaneHeader = pane title row; PanelHeader = dialog/sheet/popover header; SectionLabel = caption over a group inside either.
  * @group layout

@@ -15,7 +15,7 @@ export type ListRowProps = ComponentPropsWithRef<"button"> & {
   size?: "sm" | "md";
   /** Committed selection fill. Option and tree rows still pass `aria-selected` themselves. */
   selected?: boolean;
-  /** Keyboard-active row (`aria-activedescendant`); paints like hover. */
+  /** Keyboard-active row (`aria-activedescendant`); paints like hover. On `role="option"` it also sets `aria-selected` unless passed. */
   active?: boolean;
   /** Destructive item: danger text. */
   danger?: boolean;

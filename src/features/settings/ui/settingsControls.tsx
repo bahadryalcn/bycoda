@@ -397,8 +397,8 @@ export function SettingsPageHelp({
  * rows are separated by hairline dividers (owner decision 2026-10-31, V3-013; no gray fill).
  * Children should be `Row`s and a closing `AdvancedSettings`; wrap other content in a stacked Row.
  *
- * - `description`: one short muted line under the title (default). Long detail goes in `info`.
- *   `descriptionVisible={false}` keeps the old behavior of hiding it behind an info popover.
+ * - `description`: behind the info (ⓘ) affordance by default. `descriptionVisible` shows it as a
+ *   muted subline, only for scope, dependency or consequence.
  * - `modified` + `onReset`: small reset icon next to the title while the group differs from default.
  * - `variant`: kept for existing callers; `"box"` hints an ownership/editing unit and uses the
  *   same frame.
@@ -410,7 +410,7 @@ export function Group({
   action,
   layout = "columns",
   variant = "open",
-  descriptionVisible = true,
+  descriptionVisible = false,
   info,
   modified,
   onReset,
@@ -429,7 +429,7 @@ export function Group({
   /** Kept for existing callers; the frame no longer changes with it. */
   layout?: "columns" | "full";
   variant?: "open" | "box";
-  /** One short muted line under the title (default `true`); `false` moves it into an info popover. */
+  /** Show `description` as a muted subline (default `false`: behind the info popover). */
   descriptionVisible?: boolean;
   /** Longer explanation for an information popover beside the title. */
   info?: ReactNode;
@@ -532,7 +532,8 @@ export function Group({
  * One setting: title + one short muted `description` on the left, control on the right at one
  * compact height and one right edge. Put long or rare detail in `info` (ⓘ), not in `description`.
  *
- * - `descriptionVisible={false}`: old behavior, hide `description` behind an info popover.
+ * - `description` sits behind the info (ⓘ) popover; `descriptionVisible` opts into a visible muted
+ *   subline, only for scope, dependency or consequence.
  * - `modified` + `onReset`: small reset icon next to the title while the value differs from its
  *   default, e.g. `<Row modified={size !== 14} onReset={() => setSize(14)} …>`.
  * - `dependsOn`: marks a dependent sub-row (indented). Pass the parent's state, e.g.
@@ -553,7 +554,7 @@ export function Row({
   feedback,
   controlId,
   stacked = false,
-  descriptionVisible = true,
+  descriptionVisible = false,
   info,
   dependsOn,
   disabled = false,
@@ -572,7 +573,7 @@ export function Row({
   controlId?: string;
   /** Wide controls (text fields, editors, lists) sit under the label at full width. */
   stacked?: boolean;
-  /** One short muted line under the label (default `true`); `false` moves it into an info popover. */
+  /** Show `description` as a muted subline (default `false`: behind the info popover). */
   descriptionVisible?: boolean;
   /** Longer explanation for an information popover beside the label. */
   info?: ReactNode;

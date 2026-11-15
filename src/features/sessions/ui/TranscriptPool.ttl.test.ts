@@ -132,7 +132,7 @@ it("retains nested disclosure state outside the released tree", () => {
       ),
     );
   render();
-  act(() => host.querySelector<HTMLButtonElement>("button")!.click());
+  act(() => host.querySelector<HTMLElement>("summary")!.click());
   const entry = pool.getSnapshot()[0];
   expect(entry.uiState.disclosures?.["ActivityThinkingRow:thought"]).toBe(true);
   // Drive the same host visibility transition used by a SessionPane.
@@ -145,9 +145,9 @@ it("retains nested disclosure state outside the released tree", () => {
     );
     vi.advanceTimersByTime(100);
   });
-  expect(host.querySelector("button")).toBeNull();
+  expect(host.querySelector("summary")).toBeNull();
   render();
-  expect(host.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+  expect(host.querySelector("summary")?.getAttribute("aria-expanded")).toBe("true");
 });
 
 it("protects parked running sessions beyond the cache budget, then uses live idle state to release them", () => {

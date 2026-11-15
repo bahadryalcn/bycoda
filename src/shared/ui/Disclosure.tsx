@@ -4,6 +4,7 @@ import {
   type ComponentPropsWithRef,
   type MouseEvent,
   type ReactNode,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -33,8 +34,14 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   /** Initial open state when uncontrolled. */
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
-  /** `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="outline"`. */
-  variant?: "plain" | "row" | "card";
+  /**
+   * `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="outline"`,
+   * `step` one 24px line for a transcript step: the whole row toggles, the label may lead with an
+   * icon, the body opens below. Mount the body only while `open` to keep long lists cheap.
+   */
+  variant?: "plain" | "row" | "card" | "step";
+  /** Accessible name for the summary row when the visible label is truncated or an icon. */
+  summaryLabel?: string;
   size?: "sm" | "md";
   /** Summary text size; independent of row size. */
   textSize?: TextSize;
@@ -74,6 +81,7 @@ export function Disclosure({
   defaultOpen,
   onOpenChange,
   variant = "plain",
+  summaryLabel,
   size = "md",
   textSize,
   tone,
@@ -103,6 +111,7 @@ export function Disclosure({
     if (typeof ref === "function") ref(el);
     else if (ref) ref.current = el;
   };
+  const bodyId = useId();
   const hasCount = count !== null && count !== undefined;
   // A click on the summary toggles the details. Buttons and links inside the actions slot have
   // their own activation behavior, so the toggle is skipped for them; anything else (the slot's
@@ -141,7 +150,13 @@ export function Disclosure({
       data-chevron={chevron}
       className={[styles.root, className].filter(Boolean).join(" ")}
     >
-      <summary className={styles.summary} onClick={guardActions}>
+      <summary
+        className={styles.summary}
+        onClick={guardActions}
+        aria-label={summaryLabel}
+        aria-expanded={controlled ? open : undefined}
+        aria-controls={controlled ? bodyId : undefined}
+      >
         {chevron === "start" ? mark : null}
         <span
           {...optionalTextAttributes(
@@ -163,7 +178,9 @@ export function Disclosure({
         ) : null}
         {chevron === "end" ? mark : null}
       </summary>
-      <div {...surfaceAttributes({ dividers: bodyDividers }, styles.body)}>{children}</div>
+      <div id={bodyId} {...surfaceAttributes({ dividers: bodyDividers }, styles.body)}>
+        {children}
+      </div>
     </details>
   );
 }

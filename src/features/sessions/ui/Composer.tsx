@@ -209,6 +209,7 @@ import {
 import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
 import { useResolvedTabGroupLogo } from "../../workspace/model/tabGroups";
 import { UsageLimitNotice } from "./UsageLimitNotice";
+import { ComposerNoticeStack } from "./ComposerNoticeStack";
 import {
   supportsProviderAccounts,
   type ProviderAccountProvider,
@@ -3070,47 +3071,49 @@ export const Composer = memo(function Composer({
           }}
         />
       ) : null}
-      {usageLimit ? (
-        <UsageLimitNotice
-          limit={usageLimit}
-          provider={accountProvider}
-          accountId={providerAccountId}
-          onResume={
-            onUsageLimitResume
-              ? () => {
-                  mutateParentInput(parentChanged, onUsageLimitResume);
-                }
-              : undefined
-          }
-          onResumeAtReset={
-            onUsageLimitResumeAtReset
-              ? (...args) => {
-                  mutateParentInput(parentChanged, () => onUsageLimitResumeAtReset(...args));
-                }
-              : undefined
-          }
-          onSwitchAccount={
-            accountProvider && onSelectProviderAccount
-              ? (accountId) => {
-                  mutateParentInput(parentChanged, () =>
-                    onSelectProviderAccount(accountProvider, accountId),
-                  );
-                }
-              : undefined
-          }
-          onSwitchModel={() => setModelPickerRequest((count) => count + 1)}
-          onDismiss={
-            onUsageLimitDismiss
-              ? () => {
-                  mutateParentInput(parentChanged, onUsageLimitDismiss);
-                }
-              : undefined
-          }
-        />
-      ) : null}
-      {queuedMessages.length === 0 ? (
-        <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
-      ) : null}
+      <ComposerNoticeStack>
+        {usageLimit ? (
+          <UsageLimitNotice
+            limit={usageLimit}
+            provider={accountProvider}
+            accountId={providerAccountId}
+            onResume={
+              onUsageLimitResume
+                ? () => {
+                    mutateParentInput(parentChanged, onUsageLimitResume);
+                  }
+                : undefined
+            }
+            onResumeAtReset={
+              onUsageLimitResumeAtReset
+                ? (...args) => {
+                    mutateParentInput(parentChanged, () => onUsageLimitResumeAtReset(...args));
+                  }
+                : undefined
+            }
+            onSwitchAccount={
+              accountProvider && onSelectProviderAccount
+                ? (accountId) => {
+                    mutateParentInput(parentChanged, () =>
+                      onSelectProviderAccount(accountProvider, accountId),
+                    );
+                  }
+                : undefined
+            }
+            onSwitchModel={() => setModelPickerRequest((count) => count + 1)}
+            onDismiss={
+              onUsageLimitDismiss
+                ? () => {
+                    mutateParentInput(parentChanged, onUsageLimitDismiss);
+                  }
+                : undefined
+            }
+          />
+        ) : null}
+        {queuedMessages.length === 0 ? (
+          <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
+        ) : null}
+      </ComposerNoticeStack>
       <MessageQueue
         parentSessionId={logicalParentSessionId}
         key={sessionId}

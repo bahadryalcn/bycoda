@@ -156,7 +156,9 @@ describe("model action recovery", () => {
     await render();
     await click("Download", host);
     expect(host.textContent).toContain("Whisper turbo: Downloading");
-    const initiating = host.querySelector('[data-setting-id="dictation-local-turbo"] button')!;
+    const initiating = host.querySelector(
+      '[data-setting-id="dictation-local-turbo"] button:not([aria-label="Help"])',
+    )!;
     expect(initiating.getAttribute("aria-label")).toContain("Downloading");
     expect(initiating.getAttribute("aria-disabled")).toBe("true");
     await act(async () => (initiating as HTMLButtonElement).click());

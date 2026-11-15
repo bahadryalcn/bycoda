@@ -64,10 +64,10 @@
 }
 @media (prefers-reduced-motion: no-preference) {
   .layer:not([data-held]) > .card {
-    animation: loading-card-enter 220ms var(--ease-in-out) both;
+    animation: loading-card-enter var(--motion-duration-standard) var(--motion-ease-standard) both;
   }
   .actions {
-    animation: loading-card-enter 220ms var(--ease-in-out) both;
+    animation: loading-card-enter var(--motion-duration-standard) var(--motion-ease-standard) both;
   }
   :global(html[data-decorative-motion="off"]) :is(.card, .actions) {
     animation: none;

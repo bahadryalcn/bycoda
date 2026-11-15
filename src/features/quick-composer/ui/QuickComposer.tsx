@@ -973,6 +973,7 @@ export function QuickComposer({
                     id={`quick-command-${command.invocation}`}
                     role="option"
                     aria-selected={index === highlight}
+                    active={index === highlight}
                     tabIndex={-1}
                     onMouseEnter={() => setHighlight(index)}
                     onMouseDown={(event) => event.preventDefault()}
@@ -1057,6 +1058,7 @@ export function QuickComposer({
                       key={path}
                       role="option"
                       aria-selected={index === highlight}
+                      active={index === highlight}
                       tabIndex={-1}
                       onMouseEnter={() => setHighlight(index)}
                       onMouseDown={(event) => event.preventDefault()}

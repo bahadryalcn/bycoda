@@ -702,7 +702,9 @@ it.each([
   );
   const row = container.querySelector(`[data-setting-id="${target}"]`)!;
   expect(row.textContent).toContain("Enable dictation to use this setting");
-  await act(async () => row.querySelector<HTMLButtonElement>("button")!.click());
+  await act(async () =>
+    row.querySelector<HTMLButtonElement>(`button:not([aria-label="Help"])`)!.click(),
+  );
   expect(document.activeElement?.getAttribute("aria-label")).toBe("Enable dictation");
   expect(loadVoiceSettings()).toEqual(before);
   expect(backend.setup).not.toHaveBeenCalled();
@@ -727,7 +729,9 @@ it("reveals local-model engine prerequisite under cloud recognition without chan
   );
   const row = container.querySelector('[data-setting-id="dictation-local-models"]')!;
   expect(row.textContent).toContain("Choose This computer");
-  await act(async () => row.querySelector<HTMLButtonElement>("button")!.click());
+  await act(async () =>
+    row.querySelector<HTMLButtonElement>(`button:not([aria-label="Help"])`)!.click(),
+  );
   expect(document.activeElement?.getAttribute("aria-label")).toContain("Dictation recognition");
   expect(loadVoiceSettings().dictationEngine).toBe("openai");
   expect(backend.setup).not.toHaveBeenCalled();

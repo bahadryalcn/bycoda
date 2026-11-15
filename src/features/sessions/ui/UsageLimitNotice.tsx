@@ -61,41 +61,40 @@ export function UsageLimitNotice({
     : undefined;
 
   return (
-    <div className="px-4 py-1" data-usage-limit>
-      <InlineMessage
-        tone="warning"
-        icon={<Gauge className="icon-sm" aria-hidden />}
-        action={resume ?? switchModel}
-        secondaryAction={resume ? switchModel : undefined}
-        extra={
-          <>
-            {provider && onSwitchAccount ? (
-              <ProviderAccountMenu
-                variant="notice"
-                provider={provider}
-                accountId={accountId}
-                onSelect={onSwitchAccount}
-              />
-            ) : null}
-            <Button
-              iconOnly
-              label={t("Dismiss usage limit notice")}
-              variant="ghost"
-              type="button"
-              tooltip={t("Dismiss")}
-              aria-label={t("Dismiss usage limit notice")}
-              onClick={onDismiss}
-              className="shrink-0"
-            >
-              <X className="icon-sm" />
-            </Button>
-          </>
-        }
-      >
-        <strong>{t("Usage limit reached")} </strong>
-        {resetText}
-        {!waiting && !onResume ? <> {t("Send a message to continue.")}</> : null}
-      </InlineMessage>
-    </div>
+    <InlineMessage
+      data-usage-limit
+      tone="warning"
+      icon={<Gauge className="icon-sm" aria-hidden />}
+      action={resume ?? switchModel}
+      secondaryAction={resume ? switchModel : undefined}
+      extra={
+        <>
+          {provider && onSwitchAccount ? (
+            <ProviderAccountMenu
+              variant="notice"
+              provider={provider}
+              accountId={accountId}
+              onSelect={onSwitchAccount}
+            />
+          ) : null}
+          <Button
+            iconOnly
+            label={t("Dismiss usage limit notice")}
+            variant="ghost"
+            type="button"
+            tooltip={t("Dismiss")}
+            aria-label={t("Dismiss usage limit notice")}
+            onClick={onDismiss}
+            className="shrink-0"
+          >
+            <X className="icon-sm" />
+          </Button>
+        </>
+      }
+    >
+      <strong>{t("Usage limit reached")} </strong>
+      {resetText}
+      {!waiting && !onResume ? <> {t("Send a message to continue.")}</> : null}
+    </InlineMessage>
   );
 }

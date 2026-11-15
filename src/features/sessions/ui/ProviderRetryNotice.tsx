@@ -46,7 +46,7 @@ export function ProviderRetryNotice({
     return runRefresh(onRefresh, pending, setRefreshing, setRefreshFailed);
   };
   return (
-    <Text as="div" size="caption" tone="inherit" className="shrink-0 px-4 py-1.5">
+    <div className="flex flex-col gap-1">
       <InlineMessage
         tone="warning"
         action={
@@ -75,12 +75,12 @@ export function ProviderRetryNotice({
         </span>
       </InlineMessage>
       {refreshFailed ? (
-        <InlineError className="mt-1">
+        <InlineError>
           {t(
             "Could not refresh the conversation. Check the host connection and try Refresh status again.",
           )}
         </InlineError>
       ) : null}
-    </Text>
+    </div>
   );
 }

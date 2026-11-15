@@ -36,6 +36,7 @@ import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { SubagentRow } from "./SubagentCards";
 import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -90,13 +91,6 @@ const STEP_ENTRANCE_MS = 480;
 const STEP_ENTRANCE_MIN_MS = 160;
 const STEP_QUEUE_CALM_MS = 960;
 const STEP_QUEUE_MS = 2000;
-/**
- * Notes and thinking lines sit in the trail like tool rows: no extra inset, the
- * normal weight a sentence reads at, and the same minimum row height.
- */
-const ACTIVITY_LINE_BUTTON =
-  "min-h-7 w-full min-w-0 justify-start px-0 py-0.5 text-left font-normal whitespace-normal";
-
 /**
  * The turn's work as phases. Related reasoning and calls stay together while
  * assistant prose remains outside as full-size transcript text. The phase the
@@ -320,109 +314,103 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
         "transcript-activity-group flex min-w-0 flex-col",
       )}
     >
-      <Button
-        motion="none"
-        fullWidth
-        variant="item"
-        type="button"
-        selected={open}
-        aria-expanded={open}
-        tooltip={title}
-        tooltipWhen="overflow"
-        aria-label={
+      <Disclosure
+        variant="step"
+        chevron="end"
+        open={open}
+        onOpenChange={setOverride}
+        summaryLabel={
           open
             ? t("Hide the steps for {p0}", { p0: title })
             : t("Show the steps for {p0}", { p0: title })
         }
-        onClick={() => setOverride(!open)}
-        className="w-full min-w-0 text-left"
-      >
-        {/*
-         * The two icons share one 14px box, so the swap is instant: fading
-         * between them leaves both half-drawn on top of each other.
-         */}
-        <span className="relative flex size-3.5 shrink-0 items-center justify-center">
-          {bycodaPhase ? (
-            <BycodaMark className="size-3.5" />
-          ) : (
-            <ActivityPhaseIcon kind={phase.kind} />
-          )}
-        </span>
-        {label}
-        <ChevronRight
-          className={`icon-sm shrink-0 text-(--ui-text-secondary) ${open ? "rotate-90" : ""}`}
-          strokeWidth={1.75}
-        />
-      </Button>
-      <div className="zen-phase-body" data-open={open}>
-        {open ? (
+        summary={
           <>
-            {compactCommand ? (
-              <div className="flex min-w-0 items-start gap-1.5 px-2 pt-1 pb-1.5 text-ui-caption text-(--ui-text-secondary)">
-                <Terminal className="mt-0.5 icon-xs shrink-0" aria-hidden="true" />
-                <OverflowTooltip label={toolCallLabel(compactCommand, cwd)}>
-                  <span className="line-clamp-1 break-all font-mono">
-                    {toolCallLabel(compactCommand, cwd)}
-                  </span>
-                </OverflowTooltip>
-              </div>
-            ) : null}
-            <div
-              ref={setLiveScroller}
-              className={
-                active && override !== true && !revealed && !needsAttention
-                  ? "zen-phase-live zen-phase-summary"
-                  : undefined
-              }
-            >
-              <div className="flex min-w-0 flex-col">
-                {headline ? (
-                  <div className="zen-phase-step py-1">
-                    <AgentMarkdown
-                      className={headline.role === "reasoning" ? "agent-reasoning" : undefined}
-                      text={headline.text}
-                      cwd={cwd}
-                      onOpenFile={onOpenFile}
-                    />
-                  </div>
-                ) : null}
-                <TranscriptVirtualRows
-                  listId={`steps:${phase.id}`}
-                  rows={phase.steps.map((block, index) => {
-                    const arriving = active && !settled.current?.has(block.id);
-                    const render = (virtual?: TranscriptVirtualElement) => (
-                      <PhaseStep
-                        virtual={virtual}
-                        live={active}
-                        turn={arriving ? turnFor(block.id) : undefined}
-                      >
-                        <ActivityRow
-                          block={block}
-                          cwd={cwd}
-                          live={active}
-                          onApproval={onApproval}
-                          onOpenFile={onOpenFile}
-                          onOpenDiff={onOpenDiff}
-                        />
-                      </PhaseStep>
-                    );
-                    return {
-                      id: block.id,
-                      blockIds: [block.id],
-                      pinned:
-                        needsApproval(block) ||
-                        (active && index === phase.steps.length - 1) ||
-                        !!block.streaming,
-                      render: () => render(),
-                      renderElement: render,
-                    };
-                  })}
-                />
-              </div>
-            </div>
+            {/*
+             * The two icons share one 14px box, so the swap is instant: fading
+             * between them leaves both half-drawn on top of each other.
+             */}
+            <span className="relative flex size-3.5 shrink-0 items-center justify-center">
+              {bycodaPhase ? (
+                <BycodaMark className="size-3.5" />
+              ) : (
+                <ActivityPhaseIcon kind={phase.kind} />
+              )}
+            </span>
+            {label}
           </>
-        ) : null}
-      </div>
+        }
+      >
+        <div className="zen-phase-body" data-open={open}>
+          {open ? (
+            <>
+              {compactCommand ? (
+                <div className="flex min-w-0 items-start gap-1.5 px-2 pt-1 pb-1.5 text-ui-caption text-(--ui-text-secondary)">
+                  <Terminal className="mt-0.5 icon-xs shrink-0" aria-hidden="true" />
+                  <OverflowTooltip label={toolCallLabel(compactCommand, cwd)}>
+                    <span className="line-clamp-1 break-all font-mono">
+                      {toolCallLabel(compactCommand, cwd)}
+                    </span>
+                  </OverflowTooltip>
+                </div>
+              ) : null}
+              <div
+                ref={setLiveScroller}
+                className={
+                  active && override !== true && !revealed && !needsAttention
+                    ? "zen-phase-live zen-phase-summary"
+                    : undefined
+                }
+              >
+                <div className="flex min-w-0 flex-col">
+                  {headline ? (
+                    <div className="zen-phase-step py-1">
+                      <AgentMarkdown
+                        className={headline.role === "reasoning" ? "agent-reasoning" : undefined}
+                        text={headline.text}
+                        cwd={cwd}
+                        onOpenFile={onOpenFile}
+                      />
+                    </div>
+                  ) : null}
+                  <TranscriptVirtualRows
+                    listId={`steps:${phase.id}`}
+                    rows={phase.steps.map((block, index) => {
+                      const arriving = active && !settled.current?.has(block.id);
+                      const render = (virtual?: TranscriptVirtualElement) => (
+                        <PhaseStep
+                          virtual={virtual}
+                          live={active}
+                          turn={arriving ? turnFor(block.id) : undefined}
+                        >
+                          <ActivityRow
+                            block={block}
+                            cwd={cwd}
+                            live={active}
+                            onApproval={onApproval}
+                            onOpenFile={onOpenFile}
+                            onOpenDiff={onOpenDiff}
+                          />
+                        </PhaseStep>
+                      );
+                      return {
+                        id: block.id,
+                        blockIds: [block.id],
+                        pinned:
+                          needsApproval(block) ||
+                          (active && index === phase.steps.length - 1) ||
+                          !!block.streaming,
+                        render: () => render(),
+                        renderElement: render,
+                      };
+                    })}
+                  />
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </Disclosure>
       {open &&
       active &&
       override !== true &&
@@ -683,27 +671,22 @@ function ActivityInterjectionRow({ block }: { block: Block }) {
   }
 
   return (
-    <div className="flex min-w-0 flex-col">
-      <Button
-        motion="none"
-        variant="ghost"
-        type="button"
-        selected={open}
-        aria-expanded={open}
-        aria-label={
-          open ? t("Hide the {p0} note", { p0: chrome.label }) : `${chrome.label}: ${summary}`
-        }
-        onClick={() => setOpen((value) => !value)}
-        className="min-w-0 text-left"
-      >
-        {label}
-      </Button>
+    <Disclosure
+      variant="step"
+      chevron="end"
+      open={open}
+      onOpenChange={setOpen}
+      summaryLabel={
+        open ? t("Hide the {p0} note", { p0: chrome.label }) : `${chrome.label}: ${summary}`
+      }
+      summary={label}
+    >
       {open ? (
         <div className="min-w-0 pb-2">
           <pre className={INTERJECTION_BODY}>{block.text}</pre>
         </div>
       ) : null}
-    </div>
+    </Disclosure>
   );
 }
 
@@ -755,26 +738,25 @@ export function ActivityThinkingRow({
   }
 
   return (
-    <div className="flex min-w-0 flex-col">
-      <Button
-        motion="none"
-        variant="ghost"
-        type="button"
-        selected={open}
-        aria-expanded={open}
-        aria-label={open ? t("Hide thinking") : t("Show thinking: {p0}", { p0: text })}
-        onClick={() => setOpen((value) => !value)}
-        className={ACTIVITY_LINE_BUTTON}
-      >
-        {icon}
-        <span
-          className={`min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary) ${
-            bare ? pulse : ""
-          }`}
-        >
-          {text}
-        </span>
-      </Button>
+    <Disclosure
+      variant="step"
+      chevron="end"
+      open={open}
+      onOpenChange={setOpen}
+      summaryLabel={open ? t("Hide thinking") : t("Show thinking: {p0}", { p0: text })}
+      summary={
+        <>
+          {icon}
+          <span
+            className={`min-w-0 flex-1 truncate font-sans text-ui-body font-normal text-(--ui-text-secondary) ${
+              bare ? pulse : ""
+            }`}
+          >
+            {text}
+          </span>
+        </>
+      }
+    >
       {open ? (
         <div className={`min-w-0 pb-2 ${bare ? "" : "pl-5"}`}>
           <AgentMarkdown
@@ -785,7 +767,7 @@ export function ActivityThinkingRow({
           />
         </div>
       ) : null}
-    </div>
+    </Disclosure>
   );
 }
 
@@ -828,28 +810,27 @@ function ActivityNoteRow({
   }
 
   return (
-    <div className="flex min-w-0 flex-col">
-      <Button
-        motion="none"
-        variant="ghost"
-        type="button"
-        selected={open}
-        aria-expanded={open}
-        aria-label={open ? t("Hide the full note") : t("Agent said: {p0}", { p0: text })}
-        onClick={() => setOpen((value) => !value)}
-        className={ACTIVITY_LINE_BUTTON}
-      >
-        {icon}
-        <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-ui-body font-normal text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-tone-neutral-fg)">
-          {text}
-        </span>
-      </Button>
+    <Disclosure
+      variant="step"
+      chevron="end"
+      open={open}
+      onOpenChange={setOpen}
+      summaryLabel={open ? t("Hide the full note") : t("Agent said: {p0}", { p0: text })}
+      summary={
+        <>
+          {icon}
+          <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-ui-body font-normal text-(--ui-text-secondary)">
+            {text}
+          </span>
+        </>
+      }
+    >
       {open ? (
         <div className="min-w-0 pb-2">
           <AgentMarkdown text={block.text} cwd={cwd} onOpenFile={onOpenFile} />
         </div>
       ) : null}
-    </div>
+    </Disclosure>
   );
 }
 
@@ -1221,31 +1202,28 @@ export function ToolCall({
   return (
     <div className={frame}>
       {expandable ? (
-        <Button
-          motion="none"
-          fullWidth
-          variant="item"
-          type="button"
-          selected={open}
-          aria-expanded={open}
-          aria-label={t("{p0} tool call: {p1}", { p0: stateLabel, p1: label })}
-          onClick={() => setOpen((value) => !value)}
-          className="w-full min-w-0 text-left"
+        <Disclosure
+          variant="step"
+          chevron="end"
+          open={open}
+          onOpenChange={setOpen}
+          summaryLabel={t("{p0} tool call: {p1}", { p0: stateLabel, p1: label })}
+          summary={
+            <>
+              <ToolCallIcon state={state} />
+              <ToolCallSummary
+                label={label}
+                wrap={block.tool?.kind === "shell"}
+                preview={preview}
+                cwd={cwd}
+                failed={state === "rejected"}
+                onOpenFile={onOpenFile}
+              />
+            </>
+          }
         >
-          <ToolCallIcon state={state} />
-          <ToolCallSummary
-            label={label}
-            wrap={block.tool?.kind === "shell"}
-            preview={preview}
-            cwd={cwd}
-            failed={state === "rejected"}
-            onOpenFile={onOpenFile}
-          />
-          <ChevronRight
-            className={`icon-sm shrink-0 text-(--ui-text-secondary) transition-transform ${open ? "rotate-90" : ""}`}
-            strokeWidth={1.75}
-          />
-        </Button>
+          {open ? <OutputBlock className="mt-1.5 min-w-0 px-2.5">{expanded}</OutputBlock> : null}
+        </Disclosure>
       ) : (
         <div
           aria-label={t("{p0} tool call: {p1}", { p0: stateLabel, p1: label })}
@@ -1262,9 +1240,6 @@ export function ToolCall({
           />
         </div>
       )}
-      {open && expandable ? (
-        <OutputBlock className="mt-1.5 min-w-0 px-2.5">{expanded}</OutputBlock>
-      ) : null}
       <ApprovalControls block={block} onApproval={onApproval} />
     </div>
   );

@@ -67,7 +67,7 @@ it("interpolates permission consumers and helper state using supported locale sl
 it("shows only the badge once access is ready", async () => {
   state.entry = { id: "microphone", state: "granted", canRequest: false, canOpenSettings: true };
   const host = await render();
-  expect(host.querySelectorAll("button")).toHaveLength(0);
+  expect(host.querySelectorAll('button:not([aria-label="Help"])')).toHaveLength(0);
   expect(host.textContent).toContain("Allowed");
 });
 

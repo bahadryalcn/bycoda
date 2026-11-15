@@ -18,7 +18,7 @@ it("shows a localized generic heading when reasoning is open and restores its co
         }),
       ),
     );
-    const button = container.querySelector("button")!;
+    const button = container.querySelector("summary")!;
     expect(button.textContent).toContain("First paragraph.");
     await act(async () => button.click());
     expect(button.textContent).toContain(t("Thinking…"));

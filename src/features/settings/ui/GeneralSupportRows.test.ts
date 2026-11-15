@@ -43,9 +43,17 @@ const row = (id: string) => container.querySelector<HTMLElement>(`[data-setting-
 
 it("General settings offer Send feedback and the GitHub link, and search finds them", async () => {
   await act(async () => root.render(createElement(GeneralPage, { onOpenWhatsNew: vi.fn() })));
-  await act(async () => row("send-feedback")!.querySelector("button")!.click());
+  await act(async () =>
+    row("send-feedback")!
+      .querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')!
+      .click(),
+  );
   expect(mocks.openFeedbackDialog).toHaveBeenCalledOnce();
-  await act(async () => row("star-github")!.querySelector("button")!.click());
+  await act(async () =>
+    row("star-github")!
+      .querySelector<HTMLButtonElement>('button:not([aria-label="Help"])')!
+      .click(),
+  );
   expect(mocks.openExternal).toHaveBeenCalledWith("https://github.com/example/bycoda");
   expect(row("contribute")).not.toBeNull();
   const ids = SETTINGS_INDEX.filter((entry) => entry.section === "general").map((e) => e.id);

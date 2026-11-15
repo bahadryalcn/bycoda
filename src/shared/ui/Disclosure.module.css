@@ -129,3 +129,23 @@
 .root[data-chevron="end"] > .summary > .chevron {
   order: 1;
 }
+
+/* step: one 24px transcript line, the whole row toggles, persistent chevron. */
+.root[data-variant="step"] > .summary {
+  min-block-size: var(--ui-control-height-xs);
+  padding-inline: 0.5rem;
+  border-radius: var(--ui-radius-control);
+}
+.root[data-variant="step"] > .summary > .label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+@media (hover: hover) and (pointer: fine) {
+  .root[data-variant="step"] > .summary:hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.root[data-variant="step"] > .body {
+  padding-block-start: 0;
+}

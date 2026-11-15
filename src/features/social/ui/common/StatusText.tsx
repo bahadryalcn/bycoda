@@ -1,5 +1,8 @@
 import { t } from "../../../../shared/i18n";
-import { Badge, type BadgeTone } from "../../../../shared/ui/Badge";
+import {
+  StatusText as SharedStatusText,
+  type StatusTextTone,
+} from "../../../../shared/ui/StatusText";
 
 export type StatusTextStatus =
   | "queued"
@@ -34,31 +37,30 @@ function statusWord(status: StatusTextStatus): string {
   }
 }
 
-function statusTone(status: StatusTextStatus): BadgeTone {
+function statusTone(status: StatusTextStatus): StatusTextTone {
   switch (status) {
     case "succeeded":
     case "completed":
-      return "success";
-    case "queued":
-      return "info";
+      return "done";
     case "running":
-      return "accent";
+      return "running";
     case "failed":
-      return "danger";
+      return "failed";
     case "review":
     case "delivery":
     case "needs_human":
-      return "warning";
+      return "needs-you";
+    case "queued":
     case "cancelled":
-      return "neutral";
+      return "idle";
   }
 }
 
 /** Plain-language status of a job or delivery. Raw status codes are never shown. */
 export function StatusText({ status }: { status: StatusTextStatus }) {
   return (
-    <Badge tone={statusTone(status)} size="sm" className="social-status-text" data-status={status}>
+    <SharedStatusText tone={statusTone(status)} data-status={status}>
       {statusWord(status)}
-    </Badge>
+    </SharedStatusText>
   );
 }

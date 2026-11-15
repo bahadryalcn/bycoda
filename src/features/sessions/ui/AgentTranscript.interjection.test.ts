@@ -110,7 +110,7 @@ describe("AgentTranscript interjection preview", () => {
     // No divider, no clamped body: one line in the trail, named and
     // severity-marked, that opens on a click.
     expect(container.querySelector('[role="separator"]')).toBeNull();
-    const button = container.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')!;
+    const button = container.querySelector<HTMLElement>('summary[aria-expanded="false"]')!;
     expect(button).not.toBeNull();
     expect(button.textContent).toContain("Advisor");
     expect(button.textContent).toContain("Concern");

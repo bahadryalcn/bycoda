@@ -44,10 +44,8 @@ import { collapseTranscriptErrors } from "../model/transcriptErrors";
 import { SessionErrorNotice } from "./SessionErrorNotice";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
-  ArrowUp,
   Check,
   ChevronRight,
-  CircleDashed,
   Copy,
   FilePlusCorner,
   MessageMultiple,
@@ -56,7 +54,6 @@ import {
   Pencil,
   ChartBreakoutSquare,
   Terminal,
-  Trash2,
   X,
   MessageSquare,
 } from "../../../shared/ui/icons";
@@ -100,6 +97,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { Popover } from "../../../shared/ui/Popover";
 import { Surface } from "../../../shared/ui/Surface";
 import { Button } from "../../../shared/ui/Button";
+import { UserDraftFooter } from "./UserDraftFooter";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { CollectionFooter } from "../../../shared/ui/ContinuousList";
@@ -2240,7 +2238,9 @@ const TranscriptBlock = memo(function TranscriptBlock({
         role={isSessionErrorBlock(block) ? "alert" : undefined}
         className={`${embedded ? "" : "px-4"} py-2 ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : isSessionErrorBlock(block) ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
-        <pre className="min-w-0 whitespace-pre-wrap break-words">{text}</pre>
+        <OutputBlock face="sans" size="inherit" tone="inherit">
+          {text}
+        </OutputBlock>
       </div>
     );
   }
@@ -2304,9 +2304,13 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
           ) : null}
         </div>
         {run.output.trim() ? (
-          <pre className="max-h-80 min-w-0 overflow-auto whitespace-pre-wrap break-words border-t border-(--ui-tone-neutral-border) px-3 py-2 text-(--ui-text-secondary)">
+          <OutputBlock
+            size="inherit"
+            scroll
+            className="max-h-80 border-t border-(--ui-tone-neutral-border) px-3 py-2"
+          >
             {run.output.trimEnd()}
-          </pre>
+          </OutputBlock>
         ) : null}
       </Surface>
     </div>
@@ -2480,11 +2484,7 @@ function UserMessageBlock({
           data-draft={block.draft ? "true" : undefined}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 border border-(--color-stroke) px-3 py-2 font-sans text-(--ui-tone-neutral-fg) transition-[background-color] duration-200 ${
-            block.draft
-              ? "border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
-              : "bg-(--ui-workspace-reading)"
-          } ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-xl`}
+          className={`user-message-bubble relative min-w-0 bg-(--ui-surface-muted) px-3 py-2 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
         >
           <ChatCitationList citations={citations} text={text} />
           {block.turnOutcome === "stopped" ? (
@@ -2586,57 +2586,17 @@ function UserMessageBlock({
             </Disclosure>
           ) : null}
           {block.draft ? (
-            <div className="mt-2 flex items-center justify-between gap-4 border-t border-(--color-stroke) pt-2">
-              <Tooltip label={deliveryDescription} asChild>
-                <span
-                  className="flex items-center gap-1.5 text-ui-caption text-(--ui-text-secondary)"
-                  role={delivery ? "status" : undefined}
-                >
-                  <CircleDashed className="icon-sm" strokeWidth={1.75} />
-                  {deliveryLabel}
-                </span>
-              </Tooltip>
-              <span className="flex items-center gap-1">
-                {onEditDraft ? (
-                  <Button
-                    motion="none"
-                    variant="ghost"
-                    type="button"
-                    tooltip={deliveryActive ? heldActionTitle : undefined}
-                    aria-label={t("Edit draft")}
-                    disabled={deliveryActive}
-                    onClick={() => onEditDraft(block)}
-                  >
-                    <Pencil className="icon-sm" strokeWidth={1.75} />
-                    {t("Edit")}
-                  </Button>
-                ) : null}
-                <Button
-                  motion="none"
-                  variant="ghost"
-                  type="button"
-                  tooltip={deliveryActive ? heldActionTitle : undefined}
-                  aria-label={t("Remove draft")}
-                  disabled={deliveryActive}
-                  onClick={() => onRemoveDraft?.(block)}
-                >
-                  <Trash2 className="icon-sm" strokeWidth={1.75} />
-                  {t("Remove")}
-                </Button>
-                <Button
-                  motion="none"
-                  variant="ghost"
-                  type="button"
-                  tooltip={deliveryActive ? heldActionTitle : undefined}
-                  aria-label={t("Send draft")}
-                  disabled={deliveryActive}
-                  onClick={() => onSendDraft?.(block)}
-                >
-                  {t("Send")}
-                  <ArrowUp className="icon-sm" strokeWidth={2} />
-                </Button>
-              </span>
-            </div>
+            <UserDraftFooter
+              block={block}
+              delivery={delivery}
+              deliveryLabel={deliveryLabel}
+              deliveryDescription={deliveryDescription}
+              deliveryActive={deliveryActive}
+              heldActionTitle={heldActionTitle}
+              onEditDraft={onEditDraft}
+              onRemoveDraft={onRemoveDraft}
+              onSendDraft={onSendDraft}
+            />
           ) : null}
           {bycoda ? (
             <BycodaSparkles blockId={block.id} startedAt={block.startedAt} />

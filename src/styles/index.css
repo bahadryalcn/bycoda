@@ -824,6 +824,9 @@ html.theme-light {
   --motion-duration-fast: 120ms;
   --motion-duration-standard: 160ms;
   --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Loading loops: one spinner rotation and one pulse period (skeleton, waiting dot, reduced-motion spinner). */
+  --motion-spin-duration: 700ms;
+  --motion-pulse-duration: 1800ms;
   /* @deprecated durations: use fast or standard. */
   --motion-duration-instant: var(--motion-duration-fast);
   --motion-duration-slow: var(--motion-duration-standard);
@@ -1853,8 +1856,7 @@ html.chat-background-layer-off .gradient-blur-background-strong {
 
 /* Neutral reading surface: the accent never paints message bodies. */
 html.has-user-accent .user-message-bubble {
-  background: var(--ui-workspace-reading);
-  border-color: var(--color-stroke);
+  background: var(--ui-surface-muted);
 }
 
 /*
