@@ -655,10 +655,10 @@ pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
 }
 
 /// Seconds between ssh's keepalive probes on a tunnel; three unanswered probes
-/// end the link, so a silent network is noticed in about 15 seconds.
-const TUNNEL_KEEPALIVE_SECS: u32 = 5;
+/// end the link, allowing about 45 seconds for short sleep/network interruptions.
+const TUNNEL_KEEPALIVE_SECS: u32 = 15;
 /// How often a tunnel's ssh process is checked for having exited. Keepalives
-/// take ~15 s to notice a dead link anyway; 1 s keeps idle tunnels cheap.
+/// take ~45 s to notice a dead link anyway; 1 s keeps idle tunnels cheap.
 const WATCH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A tunnel whose ssh process ended without the app closing it.
@@ -852,6 +852,7 @@ pub struct Tunnel {
     /// The address ssh actually dialed, one of the target's `candidates`.
     dialed: Option<SshTarget>,
     started: Instant,
+    close_reason: &'static str,
 }
 impl Drop for Tunnel {
     fn drop(&mut self) {
@@ -861,6 +862,12 @@ impl Drop for Tunnel {
         if matches!(child.try_wait(), Ok(None)) {
             self.settled.store(true, Ordering::SeqCst);
         }
+        log::info!(
+            "ssh tunnel closed route=ssh-forward:{} reason={} elapsed_ms={}",
+            self.port,
+            self.close_reason,
+            self.started.elapsed().as_millis()
+        );
         stop(&mut child);
     }
 }
@@ -900,6 +907,7 @@ impl Tunnel {
             target: None,
             dialed: None,
             started: Instant::now(),
+            close_reason: "released",
         }
     }
     /// Reports through `sink`, once, if ssh exits on its own. A tunnel dropped
@@ -907,6 +915,7 @@ impl Tunnel {
     /// ends with the tunnel.
     fn watch(&self, environment_id: String, sink: ExitSink) {
         let (child, stderr) = (self.child.clone(), self.stderr.clone());
+        let port = self.port;
         let (stderr_done, settled) = (self.stderr_done.clone(), self.settled.clone());
         std::thread::spawn(move || loop {
             if settled.load(Ordering::SeqCst) {
@@ -922,6 +931,8 @@ impl Tunnel {
                     wait_for_stderr(&stderr_done);
                     if !settled.swap(true, Ordering::SeqCst) {
                         let text = stderr.lock().unwrap_or_else(PoisonError::into_inner);
+                        log::info!("ssh tunnel process exited environment={} route=ssh-forward:{port} reason=process-exit exit_code={:?}",
+                            crate::host_ws::diagnostics::identifier(&environment_id), status.code());
                         sink(TunnelExit {
                             environment_id,
                             exit_code: status.code(),
@@ -1046,6 +1057,7 @@ impl Tunnel {
                 // it does not close it.
                 std::thread::sleep(Duration::from_millis(150));
                 if tunnel.alive() {
+                    log::info!("ssh tunnel started route=ssh-forward:{port} reason=connected");
                     return Ok(tunnel);
                 }
                 continue;
@@ -1247,18 +1259,54 @@ impl Tunnels {
         };
         slot.lock().unwrap_or_else(PoisonError::into_inner).failure = None;
     }
-    pub fn invalidate(&self, id: &str, lease: &TunnelLease) {
+    /// A single request failure is not proof that ssh died. Probe through the
+    /// forward, not just its listening socket (ssh can accept while Host is down).
+    /// Any HTTP response proves the forward works; no credential or RPC is sent.
+    pub fn invalidate(&self, id: &str, lease: &TunnelLease) -> bool {
+        self.invalidate_after_probe(id, lease, |endpoint| {
+            matches!(
+                ureq::AgentBuilder::new()
+                    .timeout(Duration::from_secs(2))
+                    .redirects(0)
+                    .build()
+                    .get(endpoint)
+                    .call(),
+                Ok(_) | Err(ureq::Error::Status(_, _))
+            )
+        })
+    }
+
+    fn invalidate_after_probe(
+        &self,
+        id: &str,
+        lease: &TunnelLease,
+        probe: impl FnOnce(&str) -> bool,
+    ) -> bool {
         let Some(slot) = self.slots().get(id).cloned() else {
-            return;
+            return false;
         };
         if !Arc::ptr_eq(&slot, &lease.slot) {
-            return;
+            return false;
         }
         let mut current = slot.lock().unwrap_or_else(PoisonError::into_inner);
-        if current.generation == lease.generation {
-            current.tunnel = None;
-            current.failure = None;
+        if current.generation != lease.generation {
+            return false;
         }
+        // Coalesce probes under the machine's slot; other machines remain free.
+        if current.tunnel.as_ref().is_some_and(Tunnel::alive) && probe(&lease.endpoint) {
+            return false;
+        }
+        log::info!(
+            "ssh tunnel invalidated machine={} generation={} reason=health-probe-failed",
+            crate::host_ws::diagnostics::identifier(id),
+            current.generation
+        );
+        if let Some(tunnel) = current.tunnel.as_mut() {
+            tunnel.close_reason = "health-probe-failed";
+        }
+        current.tunnel = None;
+        current.failure = None;
+        true
     }
     pub fn clear(&self) {
         let old = std::mem::take(&mut *self.slots());
@@ -1341,7 +1389,10 @@ impl Tunnels {
         self.watch(&environment_id, &tunnel);
         current.generation = current.generation.wrapping_add(1);
         current.failure = None;
-        let old = current.tunnel.replace(tunnel);
+        let mut old = current.tunnel.replace(tunnel);
+        if let Some(tunnel) = old.as_mut() {
+            tunnel.close_reason = "better-route";
+        }
         drop(current);
         drop(old);
         true

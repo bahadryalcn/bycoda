@@ -1116,8 +1116,9 @@ fn machine_rpc_for_consumer(
             .is_some_and(|error| error.starts_with("Machine is unreachable"))
         {
             if let Some(lease) = &lease {
-                state.invalidate_ws(&machine.id);
-                state.tunnels.invalidate(&machine.id, lease);
+                if state.tunnels.invalidate(&machine.id, lease) {
+                    state.invalidate_ws(&machine.id);
+                }
             }
         }
         response

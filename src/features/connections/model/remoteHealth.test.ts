@@ -19,7 +19,11 @@ import {
   reportRemoteConnection,
 } from "./remoteHealth";
 import { blocksSending, connectionIndicator, shouldAutoRetry } from "./remoteConnection";
-import { adoptRemoteMachineInventory, reportRemoteMachineStatus } from "./connections";
+import {
+  adoptRemoteMachineInventory,
+  reportRemoteMachineStatus,
+  remoteRequest,
+} from "./connections";
 import type { RemoteMachine } from "./protocol";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -215,4 +219,19 @@ it("forgets a removed machine's connection, failure and backoff", () => {
   forgetRemoteConnection("env");
   expect(readRemoteConnection("env")).toEqual({ status: "connecting" });
   expect(remotePollDue(project)).toBe(true);
+});
+
+it("records RPC transport failures and recovery without requiring a pane reporter", async () => {
+  const { invoke } = await import("@tauri-apps/api/core");
+  adoptRemoteMachineInventory([{ id: "rpc-health", environmentId: "rpc-env" } as RemoteMachine]);
+  vi.mocked(invoke).mockRejectedValueOnce({
+    message: "The host request did not complete [RPC_HOST_UNAVAILABLE] (environment.describe).",
+  });
+  await expect(remoteRequest("rpc-health", "environment.describe")).rejects.toMatchObject({
+    message: expect.stringContaining("RPC_HOST_UNAVAILABLE"),
+  });
+  expect(readRemoteConnection("rpc-env").status).toBe("unreachable");
+  vi.mocked(invoke).mockResolvedValueOnce({ environmentId: "rpc-env" });
+  await remoteRequest("rpc-health", "environment.describe");
+  expect(readRemoteConnection("rpc-env").status).toBe("connected");
 });
