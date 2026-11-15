@@ -686,8 +686,8 @@ async function claudePluginRootsAsync(
 // desktop's Tauri commands (src-tauri skills.rs).
 
 const MAX_TRANSFER_FILES = 200;
-const MAX_TRANSFER_FILE_BYTES = 2 * 1024 * 1024;
-const MAX_TRANSFER_TOTAL_BYTES = 8 * 1024 * 1024;
+const MAX_TRANSFER_FILE_BYTES = 32 * 1024 * 1024;
+const MAX_TRANSFER_TOTAL_BYTES = 64 * 1024 * 1024;
 const MAX_TRANSFER_PATH_LEN = 240;
 const MAX_TRANSFER_DEPTH = 16;
 const WINDOWS_DEVICE_NAMES = new Set([
@@ -719,9 +719,9 @@ export type SkillFile = { path: string; data: string };
 export type SkillBundle = { name: string; files: SkillFile[] };
 
 const tooLargeFile = (path: string) =>
-  `${path} is larger than 2 MiB, which is the most one file can be when copying a skill.`;
+  `${path} is larger than 32 MiB, which is the most one file can be when copying a skill.`;
 const TOO_LARGE_TOTAL =
-  "This skill is more than 8 MiB in total, which is the most that can be copied.";
+  "This skill is more than 64 MiB in total, which is the most that can be copied.";
 const TOO_MANY_FILES = `This skill has more than ${MAX_TRANSFER_FILES} files, which is the most that can be copied.`;
 
 /** A relative, `/`-separated path that stays inside the skill folder on every
