@@ -48,6 +48,7 @@ export function buildRemoteModelSource({
           label: t("Current Host account"),
         },
       ],
+      ...(catalog?.accounts?.grok ? { grok: catalog.accounts.grok } : {}),
     },
     modelsFor: models,
     resolve: (harness, id = "") => {

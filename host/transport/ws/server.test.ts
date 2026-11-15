@@ -385,11 +385,19 @@ describe("WebSocket read admission and safe disclosure", () => {
   );
 
   it("keeps typed method result validation before delivery", async () => {
-    const host = await fixture({ dispatch: async () => [{ id: "project", name: "bad", cwd: 42 }] });
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const host = await fixture({
+      dispatch: async () => [{ id: "project", name: "secret-name", cwd: 42 }],
+    });
     const client = await host.ready();
     expect(await client.request("invalid-project", "projects.list")).toMatchObject({
       error: { code: RPC_ERROR_CODES.internalError },
     });
+    // The rejection is logged by field path so contract drift is findable, never by value.
+    const log = stderr.mock.calls.map(([line]) => String(line)).join("");
+    stderr.mockRestore();
+    expect(log).toMatch(/\[host\.ws\] result rejected by contract method=projects\.list .*0\.cwd/);
+    expect(log).not.toContain("secret-name");
   });
 
   it("sends the bulk descriptor rather than reusing offloaded result bytes", async () => {

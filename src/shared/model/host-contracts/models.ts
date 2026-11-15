@@ -41,6 +41,7 @@ const account = z.strictObject({
 export const HostModelAccountsSchema = z.strictObject({
   codex: z.array(account).optional(),
   claude: z.array(account).optional(),
+  grok: z.array(account).optional(),
 });
 export const ModelsListResultSchema = z.strictObject({
   models: z.record(z.string(), z.array(CatalogModelSchema)),

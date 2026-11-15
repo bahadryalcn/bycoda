@@ -31,6 +31,7 @@ import {
   type RpcError,
 } from "../../../src/shared/model/host-contracts";
 import { HostDispatchError, type HostDispatchContext } from "../dispatch";
+import { createLogger } from "../../diagnostics/logger";
 import { effectFailureDelivery } from "./effect-failure-delivery";
 import { HostReadWorkBudget } from "../read-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
@@ -40,6 +41,7 @@ import { authorizeWith, invalidRequestMessage, type AuthMode } from "./server-he
 
 export const HOST_WS_READ_CAPABILITY = "transport.ws.read.v2";
 const READ_METHODS = ["environment.describe", "projects.list"] as const;
+const resultLog = createLogger("host.ws");
 
 export type HostWsPrincipal = {
   id: string;
@@ -442,7 +444,20 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           for (const check of resultAuthorities)
             if (!(await check())) throw new HostBulkError(409, "Result authority expired.");
           const initial = normalizeJsonWire(result);
-          const validated = definition.resultSchema.parse(readNormalizedJsonWire(initial).wire);
+          const checked = definition.resultSchema.safeParse(readNormalizedJsonWire(initial).wire);
+          if (!checked.success) {
+            // The caller only sees "Host read failed."; name the rejected fields (never values)
+            // so a Host/contract drift is findable from the log.
+            resultLog.warn("result rejected by contract", {
+              method: request.method,
+              paths: checked.error.issues
+                .slice(0, 5)
+                .map((issue) => [...issue.path, ...("keys" in issue ? issue.keys : [])].join("."))
+                .join(","),
+            });
+            throw checked.error;
+          }
+          const validated = checked.data;
           // Keep the pre-toJSON JSON check for bulk exactly where it was. Typed
           // transforms may strip fields or construct new values; normalize that
           // output with its real enclosing result key before reusing bytes.

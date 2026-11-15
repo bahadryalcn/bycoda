@@ -7,6 +7,7 @@ import {
   hostProviderAccounts,
   assertHostProviderAccount,
 } from "./provider-accounts";
+import { ModelsListResultSchema } from "../../src/shared/model/host-contracts/models";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -145,6 +146,16 @@ it("exposes only safe metadata for real Host profiles and validates the exact la
     "Invalid provider account",
   );
   expect(() => lstatSync(join(codex, "agents"))).toThrow();
+});
+
+it("publishes an account catalog every client accepts in models.list", async () => {
+  const root = temp();
+  for (const provider of ["codex", "claude", "grok"])
+    mkdirSync(join(root, "provider-accounts", provider, "account-work"), { recursive: true });
+  const catalog = await hostProviderAccounts([root]);
+  // A Host-only provider here once failed every WS models.list with "Host read failed".
+  const result = ModelsListResultSchema.safeParse({ models: {}, errors: {}, accounts: catalog });
+  expect(result.error?.issues).toBeUndefined();
 });
 
 it("bounds named Host account inventory and ignores malformed terminal metadata", async () => {

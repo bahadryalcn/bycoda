@@ -32614,6 +32614,23 @@
                   "type": "object"
                 },
                 "type": "array"
+              },
+              "grok": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "color": { "type": "string" },
+                    "derivedKind": { "enum": ["personal", "work"], "type": "string" },
+                    "id": { "type": "string" },
+                    "isDefault": { "type": "boolean" },
+                    "kind": { "enum": ["personal", "work"], "type": "string" },
+                    "label": { "type": "string" },
+                    "status": { "enum": ["ready", "signed-out", "unknown"], "type": "string" }
+                  },
+                  "required": ["id", "label"],
+                  "type": "object"
+                },
+                "type": "array"
               }
             },
             "type": "object"
@@ -79026,5 +79043,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "2870331271f918ad122102db40aa103d9c82c742d5fee3b33dec697571c8be54"
+  "schemaHash": "f762637f28087d0ea405d26288f02c6325909b5d4df33e55a731f51bf2c3135f"
 }
