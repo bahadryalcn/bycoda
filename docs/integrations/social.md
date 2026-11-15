@@ -176,9 +176,12 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   `BYCODA_SOCIAL_BROWSER_HEADED=1` shows the window for debugging.
 - Legacy browser DM sends require an exact numeric recipient, an observed conversation
   with that recipient and a matching delivery acknowledgement. Missing evidence goes to
-  review. Encrypted X Chat and browser DM attachments are unavailable.
+  review. Encrypted X Chat and browser DM attachments are unavailable: X now redirects
+  `/messages` and `/messages/compose` to `/i/chat`, where a key-recovery passcode prompt is
+  reported as `chat_setup_required` (otherwise `encrypted_chat_unsupported`) and a DM send
+  fails fast as unsupported before any submit marker or pacing slot.
 - A missing mentions response counts as empty only when the authenticated page shows the
-  mentions tab and its known empty state. Redirects into `/i/chat` report unsupported
+  mentions tab and its empty-state container (any UI language). Redirects into `/i/chat` report unsupported
   encrypted Chat, not an empty inbox.
 
 #### Instagram, Facebook and Meta

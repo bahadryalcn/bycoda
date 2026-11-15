@@ -895,7 +895,7 @@ it("never shows or stores a secret value, only its title and outcome", async () 
   expect(await answer).toBe(OWNER_SECRET);
   expect(document.body.innerHTML).not.toContain(OWNER_SECRET);
   expect(JSON.stringify({ ...localStorage })).not.toContain(OWNER_SECRET);
-  expect(ownerOutcomes()).toEqual(["Secret sec-1:Closed"]);
+  expect(ownerOutcomes()).toEqual(["Secret sec-1:Submitted"]);
 });
 
 it("records each owner outcome once: approved, denied, expired and an expired secret", async () => {

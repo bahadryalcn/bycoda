@@ -68,6 +68,10 @@ export function desktopDatabasePaths(
       .split(delimiter)
       .filter(Boolean)
       .filter((p) => existsSync(p));
+  // An isolated development run keeps its desktop data under its own identifier. Its Host
+  // reads that database only: never the installed app's, and not another run's.
+  const isolated = env.BYCODA_DESKTOP_DATA_DIR;
+  if (isolated) return [join(isolated, DATABASE)].filter((p) => existsSync(p));
   const base =
     platform === "win32"
       ? env.APPDATA || join(home, "AppData", "Roaming")
@@ -89,6 +93,7 @@ let pathsCache: { key: string; at: number; value: string[] } | undefined;
 function cachedDesktopDatabasePaths(): string[] {
   const key = [
     process.env.BYCODA_DESKTOP_DB,
+    process.env.BYCODA_DESKTOP_DATA_DIR,
     process.env.APPDATA,
     process.env.XDG_DATA_HOME,
     devHostKey(process.env),

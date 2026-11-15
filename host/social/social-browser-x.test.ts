@@ -13,6 +13,7 @@ import { publishX } from "./social-browser-x-compose";
 import { pollX } from "./social-browser-x-inbox";
 import {
   parseCreateTweet,
+  xChatBlockReason,
   xIdentity,
   xScreenSummary,
   type XBrowserDeps,
@@ -209,6 +210,71 @@ describe("X browser publishing gates", () => {
   });
 });
 
+describe("X encrypted chat gate", () => {
+  const PIN_SHELL = '<div data-testid="xchatEmbedRoute"></div><div id="host"></div>';
+  const withPrompt = (page: ReturnType<typeof pageAt>, prompt: boolean) => {
+    if (!prompt) return;
+    page.evaluate(`(() => {
+      const shadow = document.getElementById("host").attachShadow({ mode: "open" });
+      shadow.innerHTML = '<div data-testid="pin-title">x</div><div data-testid="pin-code-input-container"></div>';
+    })()`);
+  };
+  const liveDeps = (directory: string, page: ReturnType<typeof pageAt>) => {
+    const session = {
+      page,
+      closed: new Promise<void>(() => undefined),
+      close: vi.fn(async () => undefined),
+    } as unknown as BrowserSession;
+    const deps = depsFor(directory, session);
+    deps.readSession = vi.fn(async () => session);
+    deps.until = (async (target: BrowserPage, expression: string) =>
+      (await target.evaluate(expression)) || undefined) as XBrowserDeps["until"];
+    return deps;
+  };
+
+  it("reports the passcode prompt inside the XChat shadow root as chat_setup_required", async () => {
+    const page = pageAt("https://x.com/i/chat", PIN_SHELL, LOGGED_IN);
+    withPrompt(page, true);
+    const reason = await xChatBlockReason(
+      liveDeps(await scratch(), page),
+      page as unknown as BrowserPage,
+    );
+    expect(reason).toBe("chat_setup_required");
+    expect(page.click).not.toHaveBeenCalled();
+    expect(page.insertText).not.toHaveBeenCalled();
+  });
+
+  it("keeps the generic encrypted_chat_unsupported reason when no passcode prompt is mounted", async () => {
+    const page = pageAt("https://x.com/i/chat", PIN_SHELL, LOGGED_IN);
+    expect(
+      await xChatBlockReason(liveDeps(await scratch(), page), page as unknown as BrowserPage),
+    ).toBe("encrypted_chat_unsupported");
+  });
+
+  it("fails a DM send fast as unsupported when /messages/compose lands on XChat", async () => {
+    const page = pageAt("https://x.com/i/chat", PIN_SHELL, LOGGED_IN);
+    withPrompt(page, true);
+    const deps = liveDeps(await scratch(), page);
+    const beforeSubmit = vi.fn(async () => undefined);
+    const error = await publishX(
+      deps,
+      account(),
+      job({ recipientId: "77" }, "message"),
+      async () => new Uint8Array(),
+      beforeSubmit,
+    ).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({
+      code: "unsupported",
+      detail: { reasonCode: "chat_setup_required" },
+    });
+    expect(page.goto).toHaveBeenCalledWith("https://x.com/messages/compose?recipient_id=77");
+    expect(beforeSubmit).not.toHaveBeenCalled();
+    expect(deps.limiter.record).not.toHaveBeenCalled();
+    expect(page.click).not.toHaveBeenCalled();
+    expect(page.insertText).not.toHaveBeenCalled();
+  });
+});
+
 describe("X browser monitoring", () => {
   it("reads the messages channel for a legacy browser account that has no DM scope", async () => {
     const directory = await scratch();
@@ -227,6 +293,48 @@ describe("X browser monitoring", () => {
       code: "unsupported",
     });
     expect(page.goto).toHaveBeenCalledWith("https://x.com/messages");
+  });
+  it("accepts a localized empty mentions page as a read channel", async () => {
+    const directory = await scratch();
+    const page = pageAt(
+      "https://x.com/notifications/mentions",
+      `<a role="tab" aria-selected="true" href="/notifications/mentions">Bahsetmeler</a><div data-testid="emptyState"><span data-testid="empty_state_header_text">Burada görecek bir şey yok — henüz</span><span data-testid="empty_state_body_text">Biri senden bahsettiğinde burada bulacaksın.</span></div>`,
+      LOGGED_IN,
+    );
+    const session = {
+      page,
+      closed: new Promise<void>(() => undefined),
+      close: vi.fn(async () => undefined),
+    };
+    const deps = depsFor(directory, session as unknown as BrowserSession);
+    deps.readSession = vi.fn(async () => session as unknown as BrowserSession);
+    deps.until = vi.fn(async () => "/i/chat") as XBrowserDeps["until"];
+    const result = await pollX(deps, account(), [], undefined);
+    expect(result.coverage[0]).toEqual({ channel: "mentions", status: "read" });
+  });
+  it("waits for the delayed encrypted-chat redirect instead of timing out on the previous page", async () => {
+    const directory = await scratch();
+    const page = pageAt("https://x.com/notifications/mentions", "", LOGGED_IN);
+    page.watchResponse = vi.fn((path: RegExp) => ({
+      body: async () =>
+        path.test("/NotificationsTimeline")
+          ? '{"data":{"timeline":{"instructions":[]}}}'
+          : undefined,
+      stop: () => undefined,
+    }));
+    const session = {
+      page,
+      closed: new Promise<void>(() => undefined),
+      close: vi.fn(async () => undefined),
+    };
+    const deps = depsFor(directory, session as unknown as BrowserSession);
+    deps.readSession = vi.fn(async () => session as unknown as BrowserSession);
+    deps.until = vi.fn(async () => "/i/chat") as XBrowserDeps["until"];
+    const result = await pollX(deps, account(), [], undefined);
+    expect(result.coverage).toEqual([
+      { channel: "mentions", status: "read" },
+      { channel: "messages", status: "unavailable", reason: "encrypted_chat_unsupported" },
+    ]);
   });
 });
 

@@ -12,7 +12,13 @@ function record(entry: NotificationHistoryEntry) {
   void recordNotificationHistory(entry).catch(() => undefined);
 }
 
-export type OwnerRequestOutcome = "approved" | "denied" | "expired" | "closed";
+export type OwnerRequestOutcome =
+  | "approved"
+  | "denied"
+  | "expired"
+  | "submitted"
+  | "cancelled"
+  | "closed";
 
 function ownerOutcomeLabel(outcome: OwnerRequestOutcome): string {
   switch (outcome) {
@@ -22,6 +28,10 @@ function ownerOutcomeLabel(outcome: OwnerRequestOutcome): string {
       return t("Denied");
     case "expired":
       return t("Expired");
+    case "submitted":
+      return t("Submitted");
+    case "cancelled":
+      return t("Cancelled");
     default:
       return t("Closed");
   }

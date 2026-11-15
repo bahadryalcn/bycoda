@@ -10,7 +10,7 @@ import type { OwnerRequestRow as Row } from "./useOwnerNotifications";
 /** Remaining milliseconds, re-read every second until the deadline. */
 function useRemaining(deadline: number): number {
   const [now, setNow] = useState(Date.now);
-  // Reason: the deadline is wall-clock time, so the label needs a ticking clock.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- one-second timer: the deadline is wall-clock time, so the label needs a ticking clock while mounted
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);

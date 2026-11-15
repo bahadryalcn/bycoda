@@ -48,7 +48,7 @@ export function useUnseenFinishedSessions(
     sessionsForDoneRef.current = sessions;
   }
   const unseen = unseenFinishedRef.current;
-  // Publishes to the shared store so the taskbar reads the same set as the sidebar.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the shared unseen store (read by the taskbar outside this tree) in step with the committed set; publishing during render would update other components mid-render
   useEffect(() => {
     publishUnseenFinished(unseen);
   }, [unseen]);

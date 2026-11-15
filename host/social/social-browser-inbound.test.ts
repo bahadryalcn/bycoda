@@ -57,6 +57,15 @@ describe("bounded X browser inbound decoding", () => {
   });
   it("distinguishes recognized empty timelines from encrypted or changed schemas", () => {
     expect(parseXBrowserMentions('{"global_objects":{"tweets":{}}}', "42", [], now)).toEqual([]);
+    // TweetDetail for a post with no readable replies (or a deleted post) is still a read channel.
+    expect(
+      parseXBrowserMentions(
+        '{"data":{"threaded_conversation_with_injections_v2":{"instructions":[]}}}',
+        "42",
+        ["100"],
+        now,
+      ),
+    ).toEqual([]);
     expect(() => parseXBrowserMentions('{"data":{"encrypted":true}}', "42", [], now)).toThrowError(
       expect.objectContaining({ code: "unsupported" }),
     );
