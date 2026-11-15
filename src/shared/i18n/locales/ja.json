@@ -14372,5 +14372,7 @@
   "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "このアプリの再起動時にデスクトップ側の作業が停止する可能性があります。Host 側の作業は Host が稼働している間は継続します。",
   "Running sessions and shells on the updated Host are interrupted.": "更新する Host 上で実行中のセッションとシェルは中断されます。",
   "Session history is kept. Interrupted work may require resuming.": "セッション履歴は保持されます。中断した作業は再開が必要な場合があります。",
-  "Denied": "拒否しました"
+  "Denied": "拒否しました",
+  "About smart setup": "スマート設定について",
+  "Effort follows the job: Low for simple jobs, Medium for most work, High for reviews and planning. Smart setup never goes above High; choose higher levels yourself.": "推論の強さは作業に合わせて決まります。簡単な作業は Low、ほとんどの作業は Medium、レビューと計画は High です。スマート設定は High を超えません。それ以上のレベルはご自身で選んでください。"
 }

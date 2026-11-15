@@ -16,6 +16,7 @@ import { dirname, join, relative } from "node:path";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 import { safeGitPath } from "../workspaces/workspace";
 import { writeFileAtomic } from "../storage/atomic-write";
+import { pathKey } from "../../src/shared/lib/paths";
 import { IdentifierSchema } from "../../src/shared/model/host-contracts/schemas";
 import type { HarnessFileChange } from "../../src/integrations/harness/core/types";
 
@@ -475,7 +476,11 @@ export class SessionFileRevert {
     };
   }
   /** Called only after writer retirement while the checkpoint session queue is held. */
-  async retireDeletedSession(session: string, cwd: string): Promise<{ retainedUnknown: boolean }> {
+  async retireDeletedSession(
+    session: string,
+    cwd: string,
+    checkoutRemoved = false,
+  ): Promise<{ retainedUnknown: boolean }> {
     if (this.active.has(session)) throw new Error("File history capture is still active");
     const marker = join(this.root, validId(session), "file-history-retirement.json");
     const pendingRetirement = await lstat(marker).then(
@@ -494,6 +499,11 @@ export class SessionFileRevert {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { retainedUnknown: true };
       throw error;
     }
+    // A removed checkout cannot be canonicalized again; its recorded canonical path
+    // is the same checkout when the comparison key matches.
+    const recorded = (JSON.parse(raw) as { cwd?: unknown }).cwd;
+    if (checkoutRemoved && typeof recorded === "string" && pathKey(recorded) === pathKey(cwd))
+      cwd = recorded;
     if ((JSON.parse(raw) as { version?: number }).version === 2) {
       await this.readIndex(session, cwd);
       raw = await readFile(this.indexPath(session), "utf8");

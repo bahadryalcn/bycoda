@@ -29,9 +29,12 @@ type Window = {
   minimized?: boolean;
   is_on_screen?: boolean;
   z_index?: number | null;
+  bounds?: Frame;
 };
+type Frame = { x: number; y: number; width?: number; height?: number; w?: number; h?: number };
 type Element = {
   element_token?: string;
+  element_index?: number;
   depth?: number;
   role?: string;
   label?: string;
@@ -39,19 +42,21 @@ type Element = {
   enabled?: boolean;
   selected?: boolean;
   actions?: string[];
+  frame?: Frame | null;
 };
+/** What an earlier snapshot saw, so ref actions can read state without a new read (which would retire its tokens). */
+type SeenSnapshot = { pid: number; windowId: number; bounds?: Frame; rows: Map<string, Element> };
 
 const SNAPSHOT_MAX_ELEMENTS = 600;
 const SCREENSHOT_MAX_DIMENSION = 1280;
-const UNSUPPORTED = new Set([
-  "check",
-  "uncheck",
-  "collapse",
-  "scroll-to",
-  "focus",
-  "hover",
-  "drag",
-]);
+const SEEN_SNAPSHOTS = 16;
+/** cua-driver 0.49.11 has no Windows primitive for these: SetFocus is a no-op, `click action` only knows "expand", and scroll-into-view is internal. */
+const UNSUPPORTED: Record<string, string> = {
+  focus: "cua-driver cannot move keyboard focus on Windows yet; click a text field instead.",
+  collapse: "cua-driver can only expand; press Escape or click the control to close it.",
+  "scroll-to":
+    "cua-driver scrolls an element into view on its own when acting on it; use scroll for manual scrolling.",
+};
 const KEY_ALIASES: Record<string, string> = {
   enter: "return",
   esc: "escape",
@@ -206,6 +211,32 @@ export function createCuaDriverRunner(
       );
     return `${match[2]}:${match[3]}`;
   };
+  const seen = new Map<string, SeenSnapshot>();
+  const remember = (id: string, window: Window, bounds: unknown, elements: Element[]) => {
+    seen.delete(id);
+    seen.set(id, {
+      pid: window.pid,
+      windowId: window.window_id,
+      bounds: (bounds as Frame | undefined) ?? window.bounds,
+      rows: new Map(
+        elements.flatMap((element) => {
+          const row = element.element_token?.split(":")[1];
+          return row ? [[row, element] as const] : [];
+        }),
+      ),
+    });
+    for (const key of seen.keys()) if (seen.size > SEEN_SNAPSHOTS) seen.delete(key);
+  };
+  /** The element and window a ref came from; refs are only granted from snapshots this runner served. */
+  const located = (ref: string) => {
+    const element_token = token(ref);
+    const [snapshot, row] = ref.slice(1).split(":");
+    const state = seen.get(snapshot);
+    const element = state?.rows.get(row);
+    if (!state || !element)
+      throw new CommandError("stale_element_token", "Take a fresh snapshot before this action.");
+    return { element_token, element, row: Number(row), ...state };
+  };
 
   return async (binary, rawArgs, options) => {
     const signal = AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs)]);
@@ -296,8 +327,73 @@ export function createCuaDriverRunner(
         elements: (content.elements ?? []) as Element[],
         complete: content.elements_complete === true && content.truncated !== true,
         title: String(content.window_title ?? window.title),
+        bounds: content.window_bounds,
       };
     };
+    /** Bounded predicate check on the element a ref names; reads state without retiring tokens. */
+    const verify = async (
+      target: ReturnType<typeof located>,
+      expect: Record<string, boolean>,
+      timeoutMs: number,
+    ) => {
+      const result = await observe("verify_state", {
+        pid: target.pid,
+        window_id: target.windowId,
+        timeout_ms: timeoutMs,
+        stable_samples: 1,
+        expect: [
+          {
+            element: {
+              selector: {
+                ...(target.element.role ? { role: target.element.role } : {}),
+                ...(target.element.label ? { label_contains: target.element.label } : {}),
+              },
+              ...expect,
+            },
+          },
+        ],
+      });
+      const predicate = (
+        result.structuredContent?.predicates as { observed_json?: string }[] | undefined
+      )?.[0];
+      let index: number | undefined;
+      try {
+        index = (JSON.parse(predicate?.observed_json ?? "{}") as Element).element_index;
+      } catch {
+        index = undefined;
+      }
+      return { status: String(result.structuredContent?.status ?? "unknown"), index };
+    };
+    /** Screen point at the element's centre, only while its window has not moved and on a 1x primary display. */
+    const screenPoint = async (target: ReturnType<typeof located>) => {
+      const frame = target.element.frame;
+      const bounds = target.bounds;
+      const current = (await windowsOfPid(target.pid)).find(
+        (window) => window.window_id === target.windowId,
+      )?.bounds;
+      if (!frame || !bounds || !current)
+        throw new CommandError("element_not_located", "The element has no screen position.");
+      if (current.x !== bounds.x || current.y !== bounds.y)
+        throw new CommandError("stale_element_token", "The window moved; take a fresh snapshot.");
+      const x = Math.round(frame.x + (frame.w ?? 0) / 2);
+      const y = Math.round(frame.y + (frame.h ?? 0) / 2);
+      const screen = (await observe("get_screen_size", {})).structuredContent ?? {};
+      // shortcut: frames are verified in physical pixels on a 1x primary display only; map scaled or secondary displays when a probe proves their coordinate space.
+      const inside = (left: number, top: number, width: number, height: number) =>
+        x >= left && y >= top && x < left + width && y < top + height;
+      if (
+        screen.scale_factor !== 1 ||
+        !inside(bounds.x, bounds.y, bounds.width ?? 0, bounds.height ?? 0) ||
+        !inside(0, 0, Number(screen.width), Number(screen.height))
+      )
+        throw new CommandError(
+          "element_not_located",
+          "The element is not on the primary 100% scaled display.",
+        );
+      return { x, y };
+    };
+    const windowsOfPid = async (pid: number) =>
+      ((await observe("list_windows", { pid })).structuredContent?.windows ?? []) as Window[];
 
     const args = rawArgs[0] === "--session" ? rawArgs.slice(2) : rawArgs;
     const headed = args[0] === "--headed";
@@ -331,6 +427,7 @@ export function createCuaDriverRunner(
           const window = await windowOf(flag(rest, "app")!, flag(rest, "window-id"));
           const state = await elementsOf(window);
           const id = publicId(state.snapshotId);
+          remember(id, window, state.bounds, state.elements);
           return envelope({
             app: window.app_name,
             window: { id: String(window.window_id) },
@@ -350,6 +447,7 @@ export function createCuaDriverRunner(
             (exact ? value === wanted : value.toLowerCase().includes(wanted.toLowerCase()));
           const state = await elementsOf(window, name ?? search);
           const id = publicId(state.snapshotId);
+          remember(id, window, state.bounds, state.elements);
           const matches = state.elements.filter(
             (element) =>
               (!role || element.role?.toLowerCase() === role) &&
@@ -389,11 +487,21 @@ export function createCuaDriverRunner(
             throw new CommandError("invalid_image", "cua-driver returned no PNG screenshot.");
           return envelope({ data: image.data, format: "png", ...pngSize(image.data) });
         }
-        case "wait":
-          throw new CommandError(
-            "unsupported",
-            "Waiting on an element is not available with cua-driver; take a fresh snapshot instead.",
-          );
+        case "wait": {
+          const target = located(flag(rest, "element") ?? "");
+          const predicate = flag(rest, "predicate");
+          // shortcut: the driver has no on-screen predicate, so "visible" waits for existence; add one when verify_state gains it.
+          const expect: Record<string, boolean> =
+            predicate === "enabled" ? { enabled: true } : { exists: true };
+          const timeout = Math.min(10000, Math.max(0, Number(flag(rest, "timeout")) || 0));
+          const { status } = await verify(target, expect, timeout);
+          if (status !== "satisfied")
+            throw new CommandError(
+              "timeout",
+              `The element did not become ${predicate} within ${timeout} ms (${status}).`,
+            );
+          return envelope({ found: true, predicate });
+        }
         case "launch": {
           const target = positional(rest)[0];
           const absolute = /^[a-z]:[\\/]/i.test(target) || target.startsWith("\\\\");
@@ -439,15 +547,75 @@ export function createCuaDriverRunner(
           );
         }
       }
-      if (UNSUPPORTED.has(command))
-        throw new CommandError(
-          "unsupported_action",
-          `"${command}" is not available with cua-driver.`,
+      if (UNSUPPORTED[command]) throw new CommandError("unsupported_action", UNSUPPORTED[command]);
+      const mode = headed ? { delivery_mode: "foreground" } : {};
+      if (command === "drag") {
+        const from = located(flag(rest, "from") ?? "");
+        const to = located(flag(rest, "to") ?? "");
+        if (from.pid !== to.pid || from.windowId !== to.windowId)
+          throw new CommandError("cross_window_drag", "Both drag ends must be in one window.");
+        const [start, end] = [await screenPoint(from), await screenPoint(to)];
+        const front = await call("bring_to_front", { pid: from.pid, window_id: from.windowId });
+        if (front.isError) return cuaActionEnvelope(command, front);
+        return cuaActionEnvelope(
+          command,
+          await call("drag", {
+            scope: "desktop",
+            from_x: start.x,
+            from_y: start.y,
+            to_x: end.x,
+            to_y: end.y,
+            delivery_mode: "foreground",
+          }),
         );
+      }
       const [ref, value] = positional(rest);
       const element_token = token(ref);
-      const mode = headed ? { delivery_mode: "foreground" } : {};
       switch (command) {
+        case "hover": {
+          const target = located(ref);
+          const point = await screenPoint(target);
+          const front = await call("bring_to_front", {
+            pid: target.pid,
+            window_id: target.windowId,
+          });
+          if (front.isError) return cuaActionEnvelope(command, front);
+          return cuaActionEnvelope(
+            command,
+            await call("move_cursor", { scope: "desktop", ...point }),
+          );
+        }
+        case "check":
+        case "uncheck": {
+          const target = located(ref);
+          if (!target.element.actions?.includes("toggle"))
+            throw new CommandError("not_toggleable", "The element is not a checkbox or toggle.");
+          const wanted = { selected: command === "check" };
+          const before = await verify(target, wanted, 0);
+          // The selector matches by role and label; act only when it resolved to this exact row.
+          if (before.index !== target.row || before.status === "unknown")
+            throw new CommandError(
+              "state_unknown",
+              "The toggle state could not be read for this exact element.",
+            );
+          if (before.status === "satisfied")
+            return envelope({
+              summary: `Already ${command === "check" ? "checked" : "unchecked"}.`,
+              disposition: { delivery: "not_delivered", retry: "safe" },
+            });
+          const clicked = cuaActionEnvelope(
+            command,
+            await call("click", { element_token, ...mode }),
+          );
+          if (!clicked.ok) return clicked;
+          const after = await verify(target, wanted, 3000);
+          return after.status === "satisfied" && after.index === target.row
+            ? envelope({
+                summary: command === "check" ? "Checked." : "Unchecked.",
+                disposition: { delivery: "delivered_verified", retry: "unsafe" },
+              })
+            : clicked;
+        }
         case "click":
         case "toggle":
           return cuaActionEnvelope(command, await call("click", { element_token, ...mode }));

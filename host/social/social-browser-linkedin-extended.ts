@@ -103,14 +103,17 @@ export async function linkedInApplyImageAlt(
   if (description.length > 1000) throw unsupported();
   const image = await ctx.waitFor<boolean>(
     String.raw`(() => {
-    const dialog=document.querySelector('[role="dialog"]');
-    return !!dialog&&dialog.querySelectorAll('img[src^="blob:"]').length===1&&!dialog.querySelector('[role="progressbar"],.uploading');
+    const dialogs=[...document.querySelectorAll('dialog[open]')],dialog=dialogs[dialogs.length-1];
+    if(!dialog||dialog.querySelector('[role="progressbar"],progress'))return false;
+    const blobs=[...dialog.querySelectorAll('img[src^="blob:"]')],thumbs=blobs.filter(img=>/^image \d+$/i.test(img.getAttribute('alt')||''));
+    return thumbs.length?thumbs.length===1:blobs.length===1;
   })()`,
     30_000,
   );
   if (!image) throw unsupported();
   const openEditor = async () =>
-    click(ctx, '[role="dialog"] button,[role="dialog"] [role="button"]', "alt-open", [
+    click(ctx, "dialog[open] button", "alt-open", [
+      "Alt text",
       "Alt.text",
       "Alt. text",
       "Add alt text",
@@ -120,7 +123,7 @@ export async function linkedInApplyImageAlt(
   await openEditor();
   const field = await unique(
     ctx,
-    '[role="dialog"] textarea,[role="dialog"] input[type="text"]',
+    "dialog[open] textarea",
     "alt-field",
   );
   await ctx.verifyIdentity();
@@ -129,7 +132,7 @@ export async function linkedInApplyImageAlt(
     `String(document.querySelector(${json(field)})?.value??'')`,
   );
   if (value !== description) throw denied();
-  await click(ctx, '[role="dialog"] button', "alt-save", [
+  await click(ctx, "dialog[open] button", "alt-save", [
     "Save",
     "Add",
     "Done",
@@ -141,21 +144,15 @@ export async function linkedInApplyImageAlt(
   await openEditor();
   const savedField = await unique(
     ctx,
-    '[role="dialog"] textarea,[role="dialog"] input[type="text"]',
+    "dialog[open] textarea",
     "alt-readback",
   );
   const saved = await ctx.page.evaluate<string>(
     `String(document.querySelector(${json(savedField)})?.value??'')`,
   );
   if (saved !== description) throw denied();
-  await click(ctx, '[role="dialog"] button', "alt-close", [
-    "Save",
-    "Add",
-    "Done",
-    "Kaydet",
-    "Ekle",
-    "Bitti",
-  ]);
+  // A reopened, unchanged description leaves Update disabled, so leave through the back arrow (unsaved text is the saved text).
+  await click(ctx, "dialog[open] button[aria-label]", "alt-close", ["Back", "Geri"]);
 }
 
 /** Call after reopening a persisted post when a described image was submitted. */
@@ -193,53 +190,60 @@ export async function linkedInPublishDocument(
   await validateLinkedInPdf(ctx.files[0].path);
   await ctx.page.goto(own.home);
   await ctx.verifyIdentity();
-  await click(ctx, "button.share-box-feed-entry__trigger", "post-open");
-  // Document is an additional sharing option, not an image attachment.
+  await click(ctx, '[data-view-name="share-sharebox-focus"]', "post-open");
+  // Document is an additional sharing option behind the expand control, not an image attachment.
   const visibleDocument = await ctx.page.evaluate<boolean>(
-    String.raw`[...document.querySelectorAll('[role="dialog"] button')].some(el=>['Add a document','Document','Belge ekle','Belge'].includes((el.getAttribute('aria-label')||el.textContent||'').trim())&&el.getClientRects().length)`,
+    String.raw`!![...document.querySelectorAll('dialog[open] [data-view-name="share-sharebox-bottom-bar-document"]')].some(el=>el.getClientRects().length)`,
   );
   if (!visibleDocument)
-    await click(ctx, '[role="dialog"] button', "post-more", [
+    await click(ctx, "dialog[open] button", "post-more", [
+      "Expand content types",
       "More",
       "More options",
+      "İçerik türlerini genişlet",
       "Diğer",
       "Diğer seçenekler",
     ]);
-  await click(ctx, '[role="dialog"] button', "document-open", [
-    "Add a document",
-    "Document",
-    "Belge ekle",
-    "Belge",
-  ]);
+  await click(
+    ctx,
+    'dialog[open] [data-view-name="share-sharebox-bottom-bar-document"]',
+    "document-open",
+  );
+  // The file input only exists after the select-file button runs, and its click would open a native
+  // chooser the CDP driver cannot answer. Park that one input in the page instead of opening it.
+  await ctx.page.evaluate(
+    String.raw`(() => {
+    const click=HTMLInputElement.prototype.click;
+    HTMLInputElement.prototype.click=function(){if(this.type==='file'){if(!this.isConnected)document.body.appendChild(this);return;}return click.call(this);};
+  })()`,
+  );
+  await click(ctx, 'dialog[open] [data-view-name="media-document-share-select-file"]', "document-select");
   const upload = await unique(
     ctx,
-    '[role="dialog"] input[type="file"][accept*="pdf"],[role="dialog"] input[type="file"][accept*="application"]',
+    'input[type="file"][accept*="pdf"]',
     "document-upload",
     undefined,
     true,
   );
   await ctx.verifyIdentity();
   await ctx.page.setFiles(upload, [ctx.files[0].path]);
-  const titleField = await unique(
-    ctx,
-    '[role="dialog"] input[aria-label="Document title"],[role="dialog"] input[placeholder="Document title"],[role="dialog"] input[aria-label="Belge başlığı"]',
-    "document-title",
-  );
+  const titleField = await unique(ctx, 'dialog[open] input[type="text"]', "document-title");
   await ctx.verifyIdentity();
   await ctx.page.fill(titleField, title);
   const ready = await ctx.waitFor<boolean>(
     String.raw`(() => {
-    const dialog=document.querySelector('[role="dialog"]'),input=document.querySelector(${json(titleField)});
-    return !!dialog&&input?.value===${json(title)}&&!dialog.querySelector('[role="progressbar"],.uploading,.processing')&&
-      !!dialog.querySelector('iframe,object[type="application/pdf"],[role="document"]');
+    const dialog=document.querySelector('dialog[open]'),input=document.querySelector(${json(titleField)});
+    const done=dialog&&dialog.querySelector('[data-view-name="media-document-share-confirm"]');
+    return !!dialog&&input?.value===${json(title)}&&!dialog.querySelector('[role="progressbar"],progress')&&
+      !!dialog.querySelector('[data-view-name="media-document-share-remove-preview"]')&&!!done&&!done.disabled;
   })()`,
     120_000,
   );
   if (!ready) throw unsupported();
-  await click(ctx, '[role="dialog"] button', "document-done", ["Done", "Bitti"]);
+  await click(ctx, 'dialog[open] [data-view-name="media-document-share-confirm"]', "document-done");
   const editor = await unique(
     ctx,
-    '[role="dialog"] .ql-editor[contenteditable="true"]',
+    'dialog[open] [contenteditable="true"][role="textbox"]',
     "post-text",
   );
   const previous = await ctx.page.evaluate<string>(
@@ -248,11 +252,7 @@ export async function linkedInPublishDocument(
   if (previous.trim()) throw denied();
   await ctx.verifyIdentity();
   await ctx.page.fill(editor, content(job));
-  const submit = await unique(ctx, "button.share-actions__primary-action", "document-post", [
-    "Post",
-    "Yayınla",
-    "Paylaş",
-  ]);
+  const submit = await unique(ctx, 'dialog[open] [data-view-name="share-post"]', "document-post");
   const watcher = ctx.page.watchResponse(
     /\/(?:voyager\/api\/)?(?:contentcreation\/normShares|graphql)/,
     (raw) => !!createdId(raw),
@@ -311,29 +311,31 @@ function createdId(raw: string): string | undefined {
 type Conversation = {
   recipient: string;
   href: string;
-  rows: { id: string; sender: string; text: string; at: number }[];
+  rows: { id: string; sender: string; text: string; at: number; last: boolean }[];
 };
+/** The messaging UI keeps its legacy msg-* classes; only the sender link and timestamps changed. */
 function conversationExpression(): string {
   return String.raw`(() => {
     if(location.origin!==${json(origin)})return;
     const threads=[...document.querySelectorAll('.msg-thread,.msg-overlay-conversation-bubble')].filter(el=>el.getClientRects().length);
     if(threads.length!==1)return;const thread=threads[0];
-    if(thread.querySelector('input[name="subject"],[aria-label="Subject"],.msg-inmail-credit-count'))return;
-    const profiles=[...thread.querySelectorAll('.msg-thread__link-to-profile[href],.msg-entity-lockup__link[href]')].map(el=>{try{
+    if(thread.querySelector('input[name="subject"],[aria-label="Subject"],[aria-label="Konu"],.msg-inmail-credit-count'))return;
+    const slugOf=el=>{try{
       const url=new URL(el.getAttribute('href'),location.origin),slug=/^\/in\/([\w-]+)\/?$/.exec(url.pathname)?.[1];
       return url.origin===${json(origin)}&&slug?'web:linkedin:in:'+slug.toLowerCase():null;
-    }catch{return null;}}).filter(Boolean);
+    }catch{return null;}};
+    const profiles=[...thread.querySelectorAll('a[href*="/in/"]')].filter(el=>!el.closest('[data-event-urn]')).map(slugOf).filter(Boolean);
     const recipients=[...new Set(profiles)];if(recipients.length!==1)return;
     const hrefs=[...thread.querySelectorAll('a[href*="/messaging/thread/"]')].map(el=>{try{const url=new URL(el.getAttribute('href'),location.origin);return url.origin===${json(origin)}&&/^\/messaging\/thread\/[\w:(),-]+\/?$/.test(url.pathname)?url.origin+url.pathname:null;}catch{return null;}}).filter(Boolean);
     const current=/^\/messaging\/thread\/[\w:(),-]+\/?$/.test(location.pathname)?location.origin+location.pathname:null;
     const href=[...new Set([current,...hrefs].filter(Boolean))];if(href.length>1)return;
-    const list=thread.querySelector('.msg-s-message-list');if(!list)return;
-    const rows=[...list.querySelectorAll('[data-event-urn]')].slice(-100).map(el=>{
+    const events=[...thread.querySelectorAll('[data-event-urn]')];
+    const rows=events.slice(-100).map(el=>{
       const id=el.getAttribute('data-event-urn'),body=el.querySelector('.msg-s-event-listitem__body'),group=el.closest('.msg-s-message-group')||el;
-      const actor=group.querySelector('a.msg-s-message-group__profile-link[href]'),time=el.querySelector('time[datetime]')||group.querySelector('time[datetime]');
-      if(!/^urn:li:(?:msg_message|fsd_message):[\w:(),-]+$/.test(id||'')||!body||!actor||!time||el.querySelector('.msg-s-event-listitem--pending'))return null;
-      try{const url=new URL(actor.getAttribute('href'),location.origin),slug=/^\/in\/([\w-]+)\/?$/.exec(url.pathname)?.[1],at=Date.parse(time.getAttribute('datetime'));
-      return url.origin===${json(origin)}&&slug&&Number.isFinite(at)?{id,sender:'web:linkedin:in:'+slug.toLowerCase(),text:body.textContent.trim(),at}:null;}catch{return null;}
+      const actor=el.querySelector('a.msg-s-event-listitem__link[href]')||group.querySelector('a.msg-s-message-group__profile-link[href]'),time=el.querySelector('time[datetime]')||group.querySelector('time[datetime]');
+      if(!/^urn:li:(?:msg_message|fsd_message):[\w:(),-]+$/.test(id||'')||!body||!actor||el.querySelector('.msg-s-event-listitem--pending'))return null;
+      const sender=slugOf(actor),at=time?Date.parse(time.getAttribute('datetime')):0;
+      return sender&&Number.isFinite(at)?{id,sender,text:body.textContent.trim(),at,last:el===events[events.length-1]}:null;
     }).filter(Boolean);
     return {recipient:recipients[0],href:href[0]||'',rows};
   })()`;
@@ -361,20 +363,26 @@ export async function linkedInStartMessage(
   const recipient = `web:linkedin:in:${match[1].toLowerCase()}`;
   await ctx.page.goto(`${origin}/in/${match[1]}/`);
   await ctx.verifyIdentity();
-  const eligible = await ctx.waitFor<boolean>(
+  // The profile top card has no h1 and no distance class: the degree is the first "· 1." text before
+  // the Message link. That link carries the compose URL; its overlay lives in a shadow root the CDP
+  // click cannot reach, so the same URL is opened as a page.
+  const composeUrl = await ctx.waitFor<string | false>(
     String.raw`(() => {
     if(location.origin!==${json(origin)}||location.pathname.replace(/\/$/,'').toLowerCase()!==${json(`/in/${match[1].toLowerCase()}`)})return false;
-    const main=document.querySelector('main');if(!main||!main.querySelector('h1'))return false;
-    const first=[...main.querySelectorAll('.distance-badge,.dist-value')].some(el=>/^(1st|1\.|1\. derece)$/.test((el.textContent||'').trim()));
-    const buttons=[...main.querySelectorAll('button,a[role="button"]')].filter(el=>el.getClientRects().length&&!el.disabled&&
-      ['Message','Mesaj'].includes((el.getAttribute('aria-label')||el.textContent||'').trim()));
-    if(!first||buttons.length!==1)return false;buttons[0].setAttribute('data-bycoda-linkedin-new-message','true');return true;
+    const main=document.querySelector('main');if(!main)return false;
+    const links=[...main.querySelectorAll('[data-view-name="profile-primary-message"] a[href],[data-view-name="profile-secondary-message"] a[href]')].filter(el=>el.getClientRects().length&&el.getAttribute('aria-disabled')!=='true'&&
+      ['Message','Mesaj','Mesaj gönder'].includes((el.getAttribute('aria-label')||el.textContent||'').trim()));
+    if(links.length!==1)return false;
+    const degree=[...main.querySelectorAll('p,span,.distance-badge,.dist-value')].find(el=>el.getClientRects().length&&!el.children.length&&/^(·\s*)?\d(st|nd|rd|th|\.)?(\s*derece)?$/.test((el.textContent||'').trim()));
+    if(!degree||!/^(·\s*)?(1st|1\.?(\s*derece)?)$/.test(degree.textContent.trim())||!(degree.compareDocumentPosition(links[0])&Node.DOCUMENT_POSITION_FOLLOWING))return false;
+    try{const url=new URL(links[0].getAttribute('href'),location.origin),recipient=url.searchParams.get('recipient');
+      return url.origin===${json(origin)}&&url.pathname==='/messaging/compose/'&&/^[\w-]{10,}$/.test(recipient||'')?url.href:false;}catch{return false;}
   })()`,
     20_000,
   );
-  if (!eligible) throw denied();
+  if (!composeUrl) throw denied();
   await ctx.verifyIdentity();
-  await ctx.page.click('[data-bycoda-linkedin-new-message="true"]');
+  await ctx.page.goto(composeUrl);
   const before = await ctx.waitFor<Conversation>(conversationExpression(), 20_000);
   if (before?.recipient !== recipient) throw denied();
   const editor = await unique(
@@ -413,7 +421,8 @@ export async function linkedInStartMessage(
       (row) =>
         row.sender === ctx.account.platformId &&
         row.text === job.payload.text &&
-        row.at >= at - 5000 &&
+        row.last &&
+        (!row.at || row.at >= at - 5000) &&
         !before.rows.some((old) => old.id === row.id),
     );
     if (matches.length !== 1) throw unknown();

@@ -1,4 +1,13 @@
-import { Fragment, memo, useEffect, useState, type ReactNode, type RefObject } from "react";
+import {
+  Fragment,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { ExternalLink, Server, SkillGroupIcon, StickyNote } from "../../../shared/ui/icons";
 import { DraftToken } from "../../../shared/ui/DraftToken";
 import { UserLinkIcon } from "./UserLinkIcon";
@@ -9,9 +18,10 @@ import { fileMentionParts } from "../../files/public/fileMentions";
 import { isNoteMentionPath } from "../../notes";
 import type { Attachment } from "../model/session";
 import { mcpTagParts, type McpTag } from "../model/mcpPicker";
-import { userLinkRanges } from "../model/linkPreview";
+import { userLinkRanges, type UserLinkRange } from "../model/linkPreview";
 import { ComposerAttachmentHighlight } from "./ComposerAttachmentHighlight";
 import { openExternal } from "../../../platform/tauri/openExternal";
+import { observeResize } from "../../../shared/lib/observeResize";
 import styles from "./ComposerHighlight.module.css";
 import { ModeCommandText, type ModeCommandToken } from "./modeCommands";
 import { workItemMentionParts } from "./ChatCitationText";
@@ -57,6 +67,7 @@ export const ComposerHighlight = memo(function ComposerHighlight({
 }) {
   useLocale();
   const edited = useEditedLink(text, field);
+  const draft = text;
   const rest = mode ? text.slice(mode.end) : text;
   const groups = new Map<string, ComposerSkillGroup>(
     skillGroups.map((group) => [group.invocation, group]),
@@ -79,7 +90,9 @@ export const ComposerHighlight = memo(function ComposerHighlight({
         renderText={(text) => (
           <LinkRuns
             text={text}
+            draft={draft}
             edited={edited}
+            field={field}
             renderText={(plain) =>
               skillParts(plain, names).map((part, index) => {
                 const name = part.text.slice(1);
@@ -152,18 +165,22 @@ function useEditedLink(text: string, field?: RefObject<HTMLTextAreaElement | nul
 /**
  * Boxes each web link with an open badge at its end. The textarea underneath keeps the
  * raw text, so the box only rearranges its own characters: the hidden `https://` gives
- * the box its padding and the badge its room. A link being edited shows in full, so the
- * caret stays on the character it sits before.
- * shortcut: a link that wraps may break a few characters apart from the textarea;
- * measure the wrapped fragments if long wrapped links need exact alignment.
+ * the box its padding and the badge its room. A link being edited, or one that wraps
+ * across lines, shows in source order: a rearranged link would break at a different
+ * character than the textarea and push the caret off every character after it.
  */
 function LinkRuns({
   text,
+  draft,
   edited,
+  field,
   renderText,
 }: {
   text: string;
+  /** The whole draft: any edit before a link can move it onto a line break. */
+  draft: string;
   edited: string | null;
+  field?: RefObject<HTMLTextAreaElement | null>;
   renderText: (text: string) => ReactNode;
 }) {
   const parts: ReactNode[] = [];
@@ -171,48 +188,87 @@ function LinkRuns({
   for (const range of userLinkRanges(text)) {
     parts.push(<Fragment key={`t${last}`}>{renderText(text.slice(last, range.start))}</Fragment>);
     const link = text.slice(range.start, range.end);
-    const scheme = link.indexOf("://") + 3;
     parts.push(
-      link === edited ? (
-        <span key={`l${range.start}`} className={styles.link} data-composer-link-token="">
-          {link}
-        </span>
-      ) : (
-        <Fragment key={`l${range.start}`}>
-          <span className={styles.link} data-composer-link-token="">
-            <span className={styles.linkPrefix}>
-              <span className={styles.hidden}>{link[0]}</span>
-              <span className={styles.linkMark} data-composer-link-icon="" aria-hidden="true">
-                <UserLinkIcon link={range.link} />
-              </span>
-            </span>
-            {link.slice(scheme)}
-            <span className={styles.badge}>
-              {link.slice(1, scheme - 1)}
-              {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Pointer shortcut in the aria-hidden overlay; the link stays editable text in the textarea. */}
-              <span
-                className={styles.open}
-                data-composer-link-open=""
-                // Keeps focus, and so the caret, in the message box.
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() =>
-                  openExternal(range.link.url).catch((error: unknown) =>
-                    console.error("Failed to open composer link:", error),
-                  )
-                }
-              >
-                <ExternalLink className={styles.openIcon} strokeWidth={2} />
-              </span>
-            </span>
-          </span>
-          <span className={styles.hidden}>{link[scheme - 1]}</span>
-        </Fragment>
-      ),
+      <LinkToken
+        key={`l${range.start}`}
+        link={link}
+        url={range.link}
+        editing={link === edited}
+        draft={draft}
+        field={field}
+      />,
     );
     last = range.end;
   }
   parts.push(<Fragment key={`t${last}`}>{renderText(text.slice(last))}</Fragment>);
   return parts;
+}
+
+function LinkToken({
+  link,
+  url,
+  editing,
+  draft,
+  field,
+}: {
+  link: string;
+  url: UserLinkRange["link"];
+  editing: boolean;
+  draft: string;
+  field?: RefObject<HTMLTextAreaElement | null>;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [wrapped, setWrapped] = useState(false);
+  // Both orders hold the same characters, so they wrap alike; measuring whichever is
+  // shown after each draft edit and field resize keeps the choice stable.
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = ref.current;
+      if (el) setWrapped(el.getClientRects().length > 1);
+    };
+    measure();
+    const el = field?.current;
+    return el ? observeResize(el, measure) : undefined;
+  }, [draft, field]);
+  if (editing || wrapped) {
+    return (
+      <span ref={ref} className={styles.link} data-composer-link-token="">
+        {link}
+      </span>
+    );
+  }
+  const scheme = link.indexOf("://") + 3;
+  return (
+    <>
+      <span ref={ref} className={styles.link} data-composer-link-token="">
+        <span className={styles.linkPrefix}>
+          <span className={styles.hidden}>{link[0]}</span>
+          <span className={styles.linkMark} data-composer-link-icon="" aria-hidden="true">
+            <UserLinkIcon link={url} />
+          </span>
+        </span>
+        {link.slice(scheme)}
+        <span className={styles.badge}>
+          {link.slice(1, scheme - 1)}
+          {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- Pointer shortcut in the aria-hidden overlay; the link stays editable text in the textarea. */}
+          <span
+            className={styles.open}
+            data-composer-link-open=""
+            // Keeps focus, and so the caret, in the message box.
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() =>
+              openExternal(url.url).catch((error: unknown) =>
+                console.error("Failed to open composer link:", error),
+              )
+            }
+          >
+            <ExternalLink className={styles.openIcon} strokeWidth={2} />
+          </span>
+        </span>
+      </span>
+      <span className={styles.hidden}>{link[scheme - 1]}</span>
+    </>
+  );
 }
 
 function MentionRuns({

@@ -88,6 +88,15 @@ export function linkedInBrowserConnectionUrl(account: SocialAccount, target?: st
   return `${LI}/company/${page}/admin/page-posts/published/`;
 }
 
+/**
+ * Create-post responses. The feed composer now submits through its server-driven UI request
+ * (`CreatePost` on `/flagship-web/rsc-action/actions/server-request`); the Voyager paths remain for
+ * Page admin surfaces. Only the response ID matters, and it is never the delivery evidence.
+ */
+export const LINKEDIN_CREATE_RESPONSE =
+  /\/(?:voyager\/api\/(?:contentcreation\/normShares|graphql)|flagship-web\/rsc-action\/actions\/server-request)$/;
+const LINKEDIN_POST_URN = /urn:li:(?:activity|share|ugcPost):\d+/g;
+
 /** A recognized response's ID is only a candidate; send paths separately re-read persisted owner/text evidence. */
 export function linkedInCreatedId(raw: string): string | undefined {
   const value = readJson(raw);
@@ -96,9 +105,10 @@ export function linkedInCreatedId(raw: string): string | undefined {
     typeof created === "string"
       ? created
       : (created?.entityUrn ?? created?.updateUrn ?? created?.activityUrn);
-  return typeof id === "string" && /^urn:li:(?:activity|share|ugcPost):\d+$/.test(id)
-    ? id
-    : undefined;
+  if (typeof id === "string" && /^urn:li:(?:activity|share|ugcPost):\d+$/.test(id)) return id;
+  // The server-driven response is not a Voyager object: accept it only when it names exactly one post.
+  const urns = new Set(raw.slice(0, 200_000).match(LINKEDIN_POST_URN));
+  return urns.size === 1 ? [...urns][0] : undefined;
 }
 
 /**
@@ -171,6 +181,23 @@ async function linkedInIdentity(
   }
 }
 
+// The composer is a native `dialog[open]`. Hashed classes and `data-view-name` attributes come and go
+// between LinkedIn front-end variants, so controls are found by role, state and (EN/TR) label.
+const LINKEDIN_COMPOSER_EDITOR = 'dialog[open] [role="textbox"][contenteditable="true"]';
+const LINKEDIN_POST_LABELS = ["Post", "Yayınla"] as const;
+const LINKEDIN_MEDIA_LABELS = ["Media", "Medya"] as const;
+const LINKEDIN_CAPTURE_FILE_INPUT = String.raw`(() => {
+  const click = HTMLInputElement.prototype.click;
+  HTMLInputElement.prototype.click = function () {
+    if (this.type !== 'file') return click.call(this);
+    document.querySelectorAll('[data-bycoda-li-file]').forEach(el => el.removeAttribute('data-bycoda-li-file'));
+    this.setAttribute('data-bycoda-li-file', 'true');
+  };
+  return true;
+})()`;
+/** The stacked media editor is closed and the composer itself shows the attachment. */
+const LINKEDIN_MEDIA_ATTACHED = `(() => { const open=document.querySelectorAll('dialog[open]'); return open.length===1&&!!open[0].querySelector('video,img[src^="blob:"]'); })()`;
+
 async function linkedInPost(ctx: BrowserRecipeContext, job: SocialJob): Promise<SocialSendResult> {
   if (job.payload.media.some((item) => item.kind === "document"))
     return linkedInPublishDocument(ctx, job, job.payload.media[0]?.title ?? "");
@@ -186,50 +213,57 @@ async function linkedInPost(ctx: BrowserRecipeContext, job: SocialJob): Promise<
   )
     throw unsupported();
   const company = /^web:linkedin:company:([\w-]+)$/.exec(ctx.account.platformId)?.[1];
+  // A member's composer opens by LinkedIn's own `shareActive` link, which needs no feed markup.
   await ctx.page.goto(
-    company ? `${LI}/company/${company}/admin/page-posts/published/` : `${LI}/feed/`,
+    company
+      ? `${LI}/company/${company}/admin/page-posts/published/`
+      : `${LI}/feed/?shareActive=true`,
   );
   await ctx.verifyIdentity();
-  await click(ctx, "button.share-box-feed-entry__trigger", "compose");
+  if (company) await click(ctx, "button.share-box-feed-entry__trigger", "compose");
   if (ctx.files.length) {
+    // The media button builds its file input on click and opens the native chooser through
+    // `input.click()`; capture that input instead so no OS dialog appears, then fill it directly.
+    await ctx.page.evaluate(LINKEDIN_CAPTURE_FILE_INPUT);
+    await click(
+      ctx,
+      'dialog[open] button[aria-haspopup="dialog"]',
+      "media-open",
+      LINKEDIN_MEDIA_LABELS,
+    );
     await files(
       ctx,
-      ctx.files[0].kind === "video"
-        ? '[role="dialog"] input[type="file"][accept*="video"]'
-        : '[role="dialog"] input[type="file"][accept*="image"]',
+      `input[type="file"][data-bycoda-li-file][accept*="${ctx.files[0].kind === "video" ? "video" : "image"}"]`,
     );
     await linkedInApplyImageAlt(ctx, job.payload.media);
+    // The media editor is a second dialog stacked on the composer; it is gone once the composer
+    // shows the attachment preview.
     for (let step = 0; step < 2; step++) {
-      if (
-        await ctx.page.evaluate<boolean>(
-          `!!document.querySelector('[role="dialog"] .ql-editor[contenteditable="true"]')`,
-        )
-      )
-        break;
-      await click(ctx, '[role="dialog"] button.artdeco-button--primary', "media-next", [
-        "Next",
-        "Done",
-        "İleri",
-        "Bitti",
-      ]);
+      if (await ctx.page.evaluate<boolean>(LINKEDIN_MEDIA_ATTACHED)) break;
+      await click(ctx, "dialog[open] button", "media-next", ["Next", "Done", "İleri", "Bitti"]);
+      // The editor closes asynchronously; a second step is only needed when it stays open.
+      if (await ctx.waitFor<boolean>(LINKEDIN_MEDIA_ATTACHED, 10_000)) break;
     }
     const ready = await ctx.waitFor<boolean>(
       String.raw`(() => {
-      const dialog=document.querySelector('[role="dialog"]');
-      if(!dialog || dialog.querySelector('[role="progressbar"],.uploading,.processing')) return false;
+      const labels=${json(LINKEDIN_POST_LABELS)};
+      const submit=[...document.querySelectorAll('dialog[open] button')].find(el=>labels.includes((el.getAttribute('aria-label')||el.textContent||'').trim()));
+      const dialog=submit&&submit.closest('dialog');
+      if(!dialog || submit.disabled || document.querySelectorAll('dialog[open]').length!==1 || dialog.querySelector('[role="progressbar"],progress,.uploading,.processing')) return false;
       return [...dialog.querySelectorAll(${json(ctx.files[0].kind === "video" ? "video" : 'img[src^="blob:"]')})].length >= ${ctx.files.length};
     })()`,
       120_000,
     );
     if (!ready) throw unsupported();
   }
-  await fill(ctx, '[role="dialog"] .ql-editor[contenteditable="true"]', "post-text", content(job));
+  await fill(ctx, LINKEDIN_COMPOSER_EDITOR, "post-text", content(job));
   const id = await submitResponse(
     ctx,
-    /\/voyager\/api\/(?:contentcreation\/normShares|graphql)$/,
+    LINKEDIN_CREATE_RESPONSE,
     linkedInCreatedId,
-    '[role="dialog"] button.share-actions__primary-action',
+    "dialog[open] button",
     "publish",
+    LINKEDIN_POST_LABELS,
   );
   // Reload the exact created resource: the composer and transient feed card are not delivery evidence.
   const url = `${LI}/feed/update/${encodeURIComponent(id)}/`;
@@ -270,7 +304,10 @@ function linkedInPostEvidence(
     .replace(/^web:linkedin:in:/, "/in/")
     .replace(/^web:linkedin:company:/, "/company/");
   return String.raw`(() => {
-    const rows = [...document.querySelectorAll('[data-urn],article')].filter(row => row.getAttribute('data-urn') === ${json(id)});
+    const all = [...document.querySelectorAll('[data-urn]')].filter(row => /^urn:li:(?:activity|share|ugcPost):\d+$/.test(row.getAttribute('data-urn') || ''));
+    // A share/ugcPost ID renders under its activity URN; the detail page of that exact URL holds one update.
+    let path = ''; try { path = decodeURIComponent(location.pathname); } catch {}
+    const rows = all.filter(row => row.getAttribute('data-urn') === ${json(id)}).concat(all.length === 1 && path.replace(/\/$/, '') === '/feed/update/' + ${json(id)} ? all : []);
     return rows.some(row => {
       const actor = row.querySelector('.update-components-actor__meta-link,.feed-shared-actor__container-link');
       const body = row.querySelector('.update-components-text,.feed-shared-update-v2__description');
@@ -278,7 +315,7 @@ function linkedInPostEvidence(
       try {
         if(new URL(actor.getAttribute('href'), location.origin).pathname.replace(/\/$/,'').toLowerCase() !== ${json(path)}) return false;
         const kinds=${json(media)};
-        if(kinds.includes('video')) return [...row.querySelectorAll('video')].some(el=>{try{const url=new URL(el.currentSrc||el.getAttribute('src'));return /(^|\.)licdn.com$/.test(url.hostname) && el.readyState>=2;}catch{return false;}});
+        if(kinds.includes('video')) return [...row.querySelectorAll('video')].some(el=>{try{const url=new URL(el.currentSrc||el.getAttribute('src'));return (url.protocol==='blob:'||/(^|\.)licdn.com$/.test(url.hostname)) && el.readyState>=2;}catch{return false;}});
         if(kinds.length) return [...row.querySelectorAll('.update-components-image img,.feed-shared-image img')].filter(el=>{try{return /(^|\.)licdn.com$/.test(new URL(el.getAttribute('src')).hostname);}catch{return false;}}).length===kinds.length;
         return true;
       } catch { return false; }
@@ -286,23 +323,37 @@ function linkedInPostEvidence(
   })()`;
 }
 
+/** Comment rows are `article[data-id]` (replies nest inside their parent); the legacy item class stays as an alternative. */
+const LINKEDIN_COMMENT_ROW = 'article[data-id^="urn:li:comment:"],.comments-comment-item';
+
 function linkedInCommentSnapshot(postId: string): string {
   return String.raw`(() => {
     const list=document.querySelector('.comments-comments-list,.comments-comment-list');if(!list)return;
-    const elements=[...list.querySelectorAll('.comments-comment-item')].slice(0,100);
+    const elements=[...list.querySelectorAll(${json(LINKEDIN_COMMENT_ROW)})].slice(0,100);
     if(!elements.length&&!list.querySelector('.comments-comments-list__empty-state,.comments-empty-state,.comments-comment-list__empty-state'))return;
+    // The page shows only relative times; a comment ID is a LinkedIn snowflake whose upper bits are the creation time in ms.
+    const stamp=(id,row)=>{
+      const time=row.querySelector('time[datetime]'),iso=time&&Date.parse(time.getAttribute('datetime'));
+      if(Number.isFinite(iso)&&iso>0) return iso;
+      const raw=/,(\d{15,})\)$/.exec(id)?.[1]; if(!raw) return NaN;
+      try{const at=Number(BigInt(raw)>>22n);return at>1e12&&at<Date.now()+864e5?at:NaN;}catch{return NaN;}
+    };
     const rows=elements.map(row => {
       const id = row.getAttribute('data-id') || row.getAttribute('data-comment-urn');
-      const actor = row.querySelector('.comments-post-meta__profile-link[href*="/in/"]');
+      // Document order puts a comment's own header and body before its nested replies.
+      // A Page or school comment has no member contact to attribute; it is skipped, not a parse failure.
+      const first = row.querySelector('a[href*="/in/"],a[href*="/company/"],a[href*="/school/"],a[href*="/showcase/"]');
+      try { if (first && /^\/(?:company|school|showcase)\//.test(new URL(first.getAttribute('href'),location.origin).pathname)) return 0; } catch { return null; }
+      const actor = row.querySelector('.comments-post-meta__profile-link[href*="/in/"],a[href*="/in/"]');
       const text = row.querySelector('.comments-comment-item__main-content,.comments-comment-item-content-body');
-      const time = row.querySelector('time[datetime]');
-      if (!/^urn:li:comment:/.test(id || '') || !actor || !text || !time) return null;
+      const at = stamp(id || '', row);
+      if (!/^urn:li:comment:/.test(id || '') || !actor || !text || !Number.isFinite(at)) return null;
       let url; try { url = new URL(actor.getAttribute('href'),location.origin); } catch { return null; }
       const profile = /^\/in\/([\w-]+)\/?$/.exec(url.pathname);
-      const at=Date.parse(time.getAttribute('datetime'));
-      return profile && url.origin === ${json(LI)} && Number.isFinite(at) && at>0 ? { id, postId: ${json(postId)}, contactId:'web:linkedin:in:' + profile[1].toLowerCase(), name:actor.textContent.trim(), text:text.textContent.trim(), at } : null;
+      const name = (row.querySelector('.comments-comment-meta__description-title')?.textContent || actor.textContent || '').trim();
+      return profile && url.origin === ${json(LI)} && at>0 ? { id, postId: ${json(postId)}, contactId:'web:linkedin:in:' + profile[1].toLowerCase(), name:name||profile[1], text:text.textContent.trim(), at } : null;
     });
-    return rows.some(row=>!row)?undefined:rows;
+    return rows.some(row=>row===null)?undefined:rows.filter(Boolean);
   })()`;
 }
 
@@ -353,12 +404,14 @@ async function linkedInComment(
   if (job.kind === "reply") inputId(job.payload.threadId, /^urn:li:comment:[\w:(),-]+$/);
   await ctx.page.goto(`${LI}/feed/update/${encodeURIComponent(post)}/`);
   await ctx.verifyIdentity();
-  if (job.kind === "reply") {
+  const reply = job.kind === "reply";
+  if (reply) {
     const marked = await ctx.waitFor<boolean>(
       String.raw`(() => {
-      const rows = [...document.querySelectorAll('.comments-comment-item')].filter(el => [el.getAttribute('data-id'),el.getAttribute('data-comment-urn')].includes(${json(job.payload.threadId)}));
+      const rows = [...document.querySelectorAll(${json(LINKEDIN_COMMENT_ROW)})].filter(el => [el.getAttribute('data-id'),el.getAttribute('data-comment-urn')].includes(${json(job.payload.threadId)}));
       if(rows.length !== 1) return false;
-      const button = rows[0].querySelector('button.comments-comment-social-bar__reply-action-button');
+      // The comment's own social bar precedes its nested replies' bars.
+      const button = [...rows[0].querySelectorAll('button[class*="reply-action-button"]')].find(el => el.closest(${json(LINKEDIN_COMMENT_ROW)}) === rows[0]);
       if(!button) return false; button.setAttribute('data-bycoda-li-reply','true'); return true;
     })()`,
       20_000,
@@ -366,16 +419,33 @@ async function linkedInComment(
     if (!marked) throw denied();
     await click(ctx, '[data-bycoda-li-reply="true"]', "reply");
   }
+  // The reply box opens inside its comment; the post's own box is the only form outside every comment.
+  const form = await ctx.waitFor<boolean>(
+    String.raw`(() => {
+    const mine = [...document.querySelectorAll('form.comments-comment-box__form')].filter(el => ${reply} ? el.closest(${json(LINKEDIN_COMMENT_ROW)})?.getAttribute('data-id') === ${json(job.payload.threadId ?? "")} : !el.closest(${json(LINKEDIN_COMMENT_ROW)}));
+    if(mine.length !== 1) return false;
+    document.querySelectorAll('[data-bycoda-li-form]').forEach(el => el.removeAttribute('data-bycoda-li-form'));
+    mine[0].setAttribute('data-bycoda-li-form','true'); return true;
+  })()`,
+    20_000,
+  );
+  if (!form) throw unsupported();
+  // A fresh reply box starts with the generated @mention of the parent author, which the reply replaces.
   await fill(
     ctx,
-    '.comments-comment-box .ql-editor[contenteditable="true"]',
+    '[data-bycoda-li-form] .ql-editor[contenteditable="true"]',
     "comment-text",
     content(job),
+    reply,
   );
   const before = await ctx.page.evaluate<string[]>(
-    `[...document.querySelectorAll('.comments-comment-item')].map(el => el.getAttribute('data-id') || el.getAttribute('data-comment-urn')).filter(Boolean)`,
+    `[...document.querySelectorAll(${json(LINKEDIN_COMMENT_ROW)})].map(el => el.getAttribute('data-id') || el.getAttribute('data-comment-urn')).filter(Boolean)`,
   );
-  const submit = await control(ctx, "button.comments-comment-box__submit-button", "comment-submit");
+  const submit = await control(
+    ctx,
+    '[data-bycoda-li-form] button:not([type="button"])',
+    "comment-submit",
+  );
   await ctx.verifyIdentity();
   ctx.markSubmitted?.();
   try {
@@ -405,16 +475,50 @@ type WebChat = { id: string; href: string };
 type WebChatMessage = { id: string; sender: string; text: string; at: number };
 type WebConversation = { recipient: string; rows: WebChatMessage[] };
 
-function linkedInChatsExpression(): string {
+/** The inbox rows are click targets without hrefs; the thread ID only exists in the URL after opening one. */
+const LINKEDIN_CHAT_LINKS =
+  ".msg-conversations-container__conversations-list .msg-conversation-listitem__link";
+
+function linkedInChatCountExpression(): string {
   return String.raw`(() => {
-    const list=document.querySelector('.msg-conversations-container__conversations-list,.msg-conversations-container');
+    const list=document.querySelector('.msg-conversations-container__conversations-list');
     if(!list) return;
-    const chats=[...list.querySelectorAll('a.msg-conversation-listitem__link[href]')].slice(0,100).map(el=>{try{
-      const url=new URL(el.getAttribute('href'),location.origin),id=/^\/messaging\/thread\/([\w:(),-]+)\/?$/.exec(url.pathname)?.[1];
-      return url.origin===${json(LI)} && id ? {id,href:url.origin+url.pathname} : null;
-    }catch{return null;}}).filter(Boolean);
-    return chats.length || list.querySelector('.msg-conversations-container__empty-state') ? chats : undefined;
+    const count=[...list.querySelectorAll('.msg-conversation-listitem__link')].filter(el=>el.getClientRects().length).slice(0,100).length;
+    return count || list.querySelector('.msg-conversations-container__empty-state') ? {count} : undefined;
   })()`;
+}
+
+const linkedInThreadUrl = (id: string) => `${LI}/messaging/thread/${id}/`;
+
+/** Opens the inbox row at `index` and returns the thread it selected. The caller reloads that URL before reading. */
+async function linkedInOpenChat(ctx: BrowserRecipeContext, index: number): Promise<WebChat> {
+  const marked = await ctx.waitFor<boolean>(
+    String.raw`(() => {
+    const el=[...document.querySelectorAll(${json(LINKEDIN_CHAT_LINKS)})].filter(el=>el.getClientRects().length)[${index}];
+    if(!el) return false;
+    document.querySelectorAll('[data-bycoda-li-chat]').forEach(old=>old.removeAttribute('data-bycoda-li-chat'));
+    el.setAttribute('data-bycoda-li-chat','true'); return true;
+  })()`,
+    20_000,
+  );
+  if (!marked) throw unsupported();
+  await click(ctx, '[data-bycoda-li-chat="true"]', "chat");
+  const id = await ctx.waitFor<string>(
+    String.raw`(() => {
+    const el=document.querySelector('[data-bycoda-li-chat="true"]');
+    if(!el||!/--active/.test(el.className)) return;
+    try{return /^\/messaging\/thread\/([\w:(),=%-]+)\/?$/.exec(location.pathname)?.[1];}catch{return;}
+  })()`,
+    20_000,
+  );
+  let thread: string | undefined;
+  try {
+    thread = id && decodeURIComponent(id);
+  } catch {
+    // An undecodable ID is treated as an unrecognized screen below.
+  }
+  if (!thread || !/^[\w:(),=-]{4,200}$/.test(thread)) throw unsupported();
+  return { id: thread, href: linkedInThreadUrl(thread) };
 }
 
 function linkedInConversationExpression(): string {
@@ -429,16 +533,27 @@ function linkedInConversationExpression(): string {
     const list=thread.querySelector('.msg-s-message-list'); if(!list) return;
     const elements=[...list.querySelectorAll('[data-event-urn]')].slice(-100);
     if(!elements.length && !list.querySelector('.msg-s-message-list__empty-state')) return;
+    // The thread shows only clock times; the message ID embeds its creation time in ms.
+    const stamp=(id,el)=>{
+      const time=el.querySelector('time[datetime]'),iso=time&&Date.parse(time.getAttribute('datetime'));
+      if(Number.isFinite(iso)&&iso>0) return iso;
+      const raw=/,2-([\w+/=-]+)\)$/.exec(id)?.[1]; if(!raw) return NaN;
+      try{const at=Number(/^\d{13}/.exec(atob(raw.replace(/-/g,'+').replace(/_/g,'/')))?.[0]);return at>1e12?at:NaN;}catch{return NaN;}
+    };
+    // Consecutive messages of one sender omit the profile link after the first.
+    let lastSender;
     const rows=elements.map(el=>{
       const id=el.getAttribute('data-event-urn'),body=el.querySelector('.msg-s-event-listitem__body');
-      const group=el.closest('.msg-s-message-group')||el;
-      const actor=group.querySelector('a.msg-s-message-group__profile-link[href]');
-      const time=el.querySelector('time[datetime]')||group.querySelector('time[datetime]');
-      if(!/^urn:li:(?:msg_message|fsd_message):[\w:(),-]+$/.test(id||'')||!body||!actor||!time||el.querySelector('.msg-s-event-listitem--pending'))return null;
-      try{
+      const actor=el.querySelector('a[href*="/in/"]');
+      let sender=lastSender;
+      if(actor){try{
         const url=new URL(actor.getAttribute('href'),location.origin),slug=/^\/in\/([\w-]+)\/?$/.exec(url.pathname)?.[1];
-        return url.origin===${json(LI)} && slug ? {id,sender:'web:linkedin:in:'+slug.toLowerCase(),text:body.textContent.trim(),at:Date.parse(time.getAttribute('datetime'))} : null;
-      }catch{return null;}
+        sender=url.origin===${json(LI)} && slug ? 'web:linkedin:in:'+slug.toLowerCase() : undefined;
+      }catch{sender=undefined;}}
+      lastSender=sender;
+      const at=stamp(id||'',el);
+      if(!/^urn:li:(?:msg_message|fsd_message):[\w:(),=+/-]+$/.test(id||'')||!body||!sender||!Number.isFinite(at)||el.querySelector('.msg-s-event-listitem--pending'))return null;
+      return {id,sender,text:body.textContent.trim(),at};
     }).filter(Boolean);
     return {recipient:recipients[0],rows};
   })()`;
@@ -451,14 +566,20 @@ async function linkedInMessages(
   if (ctx.account.accountType !== "member") throw unsupported();
   await ctx.page.goto(`${LI}/messaging/`);
   await ctx.verifyIdentity();
-  const chats = await ctx.waitFor<WebChat[]>(linkedInChatsExpression(), 30_000);
-  if (!chats) throw unsupported();
-  if (!chats.length) return { events: [], coverage: [{ channel: "messages", status: "read" }] };
-  const start = /^\d+$/.test(cursor ?? "") ? Number(cursor) % chats.length : 0,
-    count = Math.min(2, chats.length),
+  const total = (await ctx.waitFor<{ count: number }>(linkedInChatCountExpression(), 30_000))
+    ?.count;
+  if (total === undefined) throw unsupported();
+  if (!total) return { events: [], coverage: [{ channel: "messages", status: "read" }] };
+  const start = /^\d+$/.test(cursor ?? "") ? Number(cursor) % total : 0,
+    count = Math.min(2, total),
     events: SocialInbound[] = [];
   for (let i = 0; i < count; i++) {
-    const chat = chats[(start + i) % chats.length];
+    if (i) {
+      await ctx.page.goto(`${LI}/messaging/`);
+      await ctx.verifyIdentity();
+      if (!(await ctx.waitFor(linkedInChatCountExpression(), 30_000))) throw unsupported();
+    }
+    const chat = await linkedInOpenChat(ctx, (start + i) % total);
     await ctx.page.goto(chat.href);
     await ctx.verifyIdentity();
     const conversation = await ctx.waitFor<WebConversation>(
@@ -488,10 +609,10 @@ async function linkedInMessages(
   }
   // shortcut: coverage has no "partial" channel status yet; a bounded window is reported as
   // unavailable so the monitor status is "partial". Upgrade when the coverage model adds "partial".
-  const complete = chats.length <= count;
+  const complete = total <= count;
   return {
     events,
-    cursor: String((start + count) % chats.length),
+    cursor: String((start + count) % total),
     coverage: [
       complete
         ? { channel: "messages", status: "read" }
@@ -511,14 +632,11 @@ async function linkedInSendMessage(
     !job.payload.text.trim()
   )
     throw unsupported();
-  const thread = inputId(job.payload.threadId, /^[\w:(),-]{4,200}$/),
-    recipient = inputId(job.payload.recipientId, /^web:linkedin:in:[\w-]+$/);
-  await ctx.page.goto(`${LI}/messaging/`);
-  await ctx.verifyIdentity();
-  const chats = await ctx.waitFor<WebChat[]>(linkedInChatsExpression(), 30_000),
-    matching = chats?.filter((chat) => chat.id === thread);
-  if (matching?.length !== 1) throw denied();
-  await ctx.page.goto(matching[0].href);
+  const thread = inputId(job.payload.threadId, /^[\w:(),=-]{4,200}$/),
+    recipient = inputId(job.payload.recipientId, /^web:linkedin:in:[\w-]+$/),
+    href = linkedInThreadUrl(thread);
+  // The inbox rows carry no thread links; the validated ID addresses the conversation directly.
+  await ctx.page.goto(href);
   await ctx.verifyIdentity();
   const before = await ctx.waitFor<WebConversation>(linkedInConversationExpression(), 20_000);
   if (before?.recipient !== recipient) throw denied();
@@ -539,7 +657,7 @@ async function linkedInSendMessage(
   try {
     ctx.markSubmitted?.();
     await ctx.page.click(button);
-    await ctx.page.goto(matching[0].href);
+    await ctx.page.goto(href);
     const after = await ctx.waitFor<WebConversation>(linkedInConversationExpression(), 30_000);
     await ctx.verifyIdentity();
     if (after?.recipient !== recipient) throw unknown();
@@ -547,11 +665,11 @@ async function linkedInSendMessage(
       (row) =>
         row.sender === ctx.account.platformId &&
         row.text === job.payload.text &&
-        row.at >= at - 5000 &&
+        row.at >= at - 60_000 &&
         !before.rows.some((old) => old.id === row.id),
     );
     if (rows.length !== 1) throw unknown();
-    return { platformId: rows[0].id, url: matching[0].href };
+    return { platformId: rows[0].id, url: href };
   } catch {
     throw unknown();
   }

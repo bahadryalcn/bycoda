@@ -14372,5 +14372,7 @@
   "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "Von der Desktop-App ausgeführte Arbeit kann beim Neustart stoppen. Vom Host ausgeführte Arbeit läuft weiter, solange der Host läuft.",
   "Running sessions and shells on the updated Host are interrupted.": "Laufende Sitzungen und Shells auf dem aktualisierten Host werden unterbrochen.",
   "Session history is kept. Interrupted work may require resuming.": "Der Sitzungsverlauf bleibt erhalten. Unterbrochene Arbeit muss möglicherweise fortgesetzt werden.",
-  "Denied": "Abgelehnt"
+  "Denied": "Abgelehnt",
+  "About smart setup": "Über die intelligente Einrichtung",
+  "Effort follows the job: Low for simple jobs, Medium for most work, High for reviews and planning. Smart setup never goes above High; choose higher levels yourself.": "Der Aufwand richtet sich nach der Aufgabe: Low für einfache Aufgaben, Medium für die meiste Arbeit, High für Reviews und Planung. Die intelligente Einrichtung geht nie über High; höhere Stufen wählst du selbst."
 }

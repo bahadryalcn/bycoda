@@ -145,6 +145,8 @@ export function buildSetupPrompt(candidates: SetupCandidate[], names: SetupPoolN
     "Every job runs on a model suited to it: roles with need light (titles, commit text, translation, quick and spoken replies) must use a pool " +
     "whose first models are cheap and fast (cost 1, intelligence 3 or less); need heavy (reviews, planning, coordination) the strongest models; " +
     "need standard the best benefit per cost among capable models, never the most expensive first. Create role-specific pools when a role needs its own mix. " +
+    "Each pool runs at the reasoning effort of the roles bound to it (light only: low, any heavy: high, otherwise medium; never above high), " +
+    "so keep light roles in their own pools. " +
     "Fill models only for profile estimated ones, accounts only for kind unknown ones. " +
     'Return ONLY strict JSON: {"accounts":[{"ref":"a1","kind":"work"|"personal"|"shared"}],"models":[{"key":0,"intelligence":1-5,"cost":1-4}],' +
     '"order":[keys...],"pools":[{"name":"...","members":[keys...],"includes":["pool name"]}],"roles":{"task.worker":{"pool":"name"}|"order"}}. ' +

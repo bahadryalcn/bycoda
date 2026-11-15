@@ -14372,5 +14372,7 @@
   "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "此应用重启时，由桌面端执行的任务可能停止。只要 Host 保持运行，由 Host 执行的任务就会继续。",
   "Running sessions and shells on the updated Host are interrupted.": "更新的 Host 上运行中的会话和终端将中断。",
   "Session history is kept. Interrupted work may require resuming.": "会话历史会保留。中断的任务可能需要手动恢复。",
-  "Denied": "已拒绝"
+  "Denied": "已拒绝",
+  "About smart setup": "关于智能设置",
+  "Effort follows the job: Low for simple jobs, Medium for most work, High for reviews and planning. Smart setup never goes above High; choose higher levels yourself.": "推理强度随任务而定：简单任务用 Low，大多数工作用 Medium，审查和规划用 High。智能设置不会超过 High；更高的级别请自行选择。"
 }

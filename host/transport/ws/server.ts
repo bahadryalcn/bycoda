@@ -70,8 +70,9 @@ export type HostWebSocketOptions = {
     method: string,
     params: Record<string, unknown>,
   ) => readonly string[] | Promise<readonly string[]>;
-  /** Exact reverse-proxy Host values require deliberate composition. No wildcards. */
-  allowedHosts?: readonly string[];
+  /** Exact reverse-proxy Host values require deliberate composition. No wildcards.
+   * A function is read on every upgrade so a learned proxy name (Tailscale Serve) applies live. */
+  allowedHosts?: readonly string[] | (() => readonly string[]);
   limits?: Partial<
     Pick<
       typeof WS_LIMITS,
@@ -690,7 +691,9 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       `127.0.0.1:${address.port}`,
       `localhost:${address.port}`,
       `[::1]:${address.port}`,
-      ...(options.allowedHosts ?? []),
+      ...((typeof options.allowedHosts === "function"
+        ? options.allowedHosts()
+        : options.allowedHosts) ?? []),
     ];
     const host = request.headers.host;
     if (typeof host !== "string") return false;

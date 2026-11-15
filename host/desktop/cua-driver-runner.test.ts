@@ -78,17 +78,21 @@ function fakeClient(
   };
   return client;
 }
+/** One runner per client, as HostDesktopControl holds one for the driver process. */
+const runners = new WeakMap<object, ReturnType<typeof createCuaDriverRunner>>();
+const runnerOf = (client: ReturnType<typeof fakeClient>) => {
+  const runner =
+    runners.get(client) ?? createCuaDriverRunner(client as unknown as CuaDriverClient, "win32");
+  runners.set(client, runner);
+  return runner;
+};
 const run = (client: ReturnType<typeof fakeClient>, args: string[]) =>
-  createCuaDriverRunner(client as unknown as CuaDriverClient, "win32")(
-    "C:\\cua-driver.exe",
-    ["--session", "ns", ...args],
-    {
-      signal: new AbortController().signal,
-      timeoutMs: 5000,
-      maxBuffer: 1024 * 1024,
-      env: {},
-    },
-  ).then((result) => ({ ...result, envelope: JSON.parse(result.stdout) }));
+  runnerOf(client)("C:\\cua-driver.exe", ["--session", "ns", ...args], {
+    signal: new AbortController().signal,
+    timeoutMs: 5000,
+    maxBuffer: 1024 * 1024,
+    env: {},
+  }).then((result) => ({ ...result, envelope: JSON.parse(result.stdout) }));
 
 it("lists only the exact app's titled windows and one app per process", async () => {
   const client = fakeClient();
@@ -158,8 +162,7 @@ it("acts on the driver token and refuses refs from an earlier driver run", async
 it("refuses unmapped actions without dispatching anything", async () => {
   const client = fakeClient();
   const { envelope } = await run(client, [
-    "--headed",
-    "hover",
+    "focus",
     "--timeout-ms",
     "5000",
     "--",
@@ -293,6 +296,116 @@ it("routes HostDesktopControl through cua-driver when the owner selects it", asy
       (call) => call.name === "set_value" && call.args.element_token === "s0000000a:0",
     ),
   ).toBe(true);
+});
+
+const toggleClient = (selected: { value: boolean }, index = 3) =>
+  fakeClient({
+    list_windows: () => ({
+      structuredContent: {
+        windows: [{ ...notepad, bounds: { x: 100, y: 50, width: 400, height: 300 } }],
+      },
+    }),
+    get_window_state: () => ({
+      structuredContent: {
+        snapshot_id: "s0000000b",
+        window_bounds: { x: 100, y: 50, width: 400, height: 300 },
+        elements: [
+          { ...elements[0], element_token: "s0000000b:0", frame: { x: 110, y: 60, w: 20, h: 10 } },
+          {
+            element_token: "s0000000b:3",
+            element_index: 3,
+            depth: 1,
+            role: "CheckBox",
+            label: "Word wrap",
+            actions: ["invoke", "toggle"],
+            frame: { x: 200, y: 100, w: 40, h: 20 },
+          },
+        ],
+      },
+    }),
+    verify_state: (args) => {
+      const expect = (args.expect as { element: { selected?: boolean } }[])[0].element;
+      const satisfied = expect.selected === undefined || expect.selected === selected.value;
+      return {
+        structuredContent: {
+          status: satisfied ? "satisfied" : "unsatisfied",
+          predicates: [{ observed_json: JSON.stringify({ element_index: index }) }],
+        },
+      };
+    },
+    click: () => {
+      selected.value = !selected.value;
+      return { structuredContent: { effect: "unverifiable" } };
+    },
+    get_screen_size: () => ({ structuredContent: { width: 1920, height: 1080, scale_factor: 1 } }),
+  });
+
+it("checks a toggle only when its read state differs, and verifies the result", async () => {
+  const selected = { value: false };
+  const client = toggleClient(selected);
+  await run(client, ["snapshot", "--app", "notepad"]);
+  const checked = await run(client, ["check", "--timeout-ms", "5000", "--", "@c1-s0000000b:3"]);
+  expect(selected.value).toBe(true);
+  expect(checked.envelope.data.disposition).toEqual({
+    delivery: "delivered_verified",
+    retry: "unsafe",
+  });
+  const again = await run(client, ["check", "--timeout-ms", "5000", "--", "@c1-s0000000b:3"]);
+  expect(selected.value).toBe(true);
+  expect(again.envelope.data.disposition.delivery).toBe("not_delivered");
+  // A selector that resolved to another row never dispatches a click.
+  const other = toggleClient({ value: false }, 9);
+  await run(other, ["snapshot", "--app", "notepad"]);
+  const refused = await run(other, ["check", "--timeout-ms", "5000", "--", "@c1-s0000000b:3"]);
+  expect(refused.envelope.error.code).toBe("state_unknown");
+  expect(other.calls.some((call) => call.name === "click")).toBe(false);
+});
+
+it("waits through verify_state and drags or hovers at element centres", async () => {
+  const client = toggleClient({ value: false });
+  await run(client, ["snapshot", "--app", "notepad"]);
+  const waited = await run(client, [
+    "wait",
+    "--element=@c1-s0000000b:3",
+    "--app=notepad",
+    "--predicate=enabled",
+    "--timeout",
+    "4000",
+  ]);
+  expect(waited.envelope.ok).toBe(true);
+  expect(client.calls.at(-1)?.args).toMatchObject({
+    timeout_ms: 4000,
+    expect: [
+      { element: { selector: { role: "CheckBox", label_contains: "Word wrap" }, enabled: true } },
+    ],
+  });
+  await run(client, ["--headed", "hover", "--timeout-ms", "5000", "--", "@c1-s0000000b:3"]);
+  expect(client.calls.at(-1)).toEqual({
+    name: "move_cursor",
+    args: { scope: "desktop", x: 220, y: 110 },
+  });
+  await run(client, [
+    "--headed",
+    "drag",
+    "--timeout-ms",
+    "5000",
+    "--from",
+    "@c1-s0000000b:0",
+    "--to",
+    "@c1-s0000000b:3",
+  ]);
+  expect(client.calls.at(-1)).toEqual({
+    name: "drag",
+    args: {
+      scope: "desktop",
+      from_x: 120,
+      from_y: 65,
+      to_x: 220,
+      to_y: 110,
+      delivery_mode: "foreground",
+    },
+  });
+  expect(client.calls.at(-2)?.name).toBe("bring_to_front");
 });
 
 it("launches a bare name only when exactly one installed app matches it", async () => {

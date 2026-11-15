@@ -166,3 +166,30 @@ it("shows the link holding the caret in full, so editing lines up with the texta
   expect(host.querySelector("[data-composer-link-open]")).not.toBeNull();
   field.remove();
 });
+
+it("shows a link that wraps across lines in source order, so the caret after it lines up", () => {
+  const text = "https://example.com/a/very/long/path?clinicId=1 then more words";
+  const rects = vi
+    .spyOn(HTMLElement.prototype, "getClientRects")
+    .mockImplementation(function (this: HTMLElement) {
+      const lines = this.hasAttribute("data-composer-link-token") ? 2 : 1;
+      return Array.from({ length: lines }, () => new DOMRect()) as unknown as DOMRectList;
+    });
+  act(() =>
+    root.render(
+      createElement(ComposerHighlight, {
+        text,
+        mode: null,
+        names: new Set<string>(),
+        skillParts: (value: string) => [{ text: value }],
+        mentions: new Map(),
+        mcpTags: [],
+        attachments: [],
+        citations: 0,
+      }),
+    ),
+  );
+  expect(host.textContent).toBe(text);
+  expect(host.querySelector("[data-composer-link-open]")).toBeNull();
+  rects.mockRestore();
+});

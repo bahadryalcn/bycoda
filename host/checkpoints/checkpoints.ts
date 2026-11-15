@@ -204,7 +204,12 @@ export class HostCheckpoints {
       const record = await this.load(session);
       if (record?.active || record?.error)
         throw new Error("Checkpoint outcome is unresolved; file history retained");
-      return this.fileHistory.retireDeletedSession(session, await realpath(cwd));
+      // A session usually outlives its worktree; a removed checkout keeps its recorded path.
+      const checkout = await realpath(cwd).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      return this.fileHistory.retireDeletedSession(session, checkout ?? resolve(cwd), !checkout);
     });
   }
   /** Lightweight default turn hooks: no private Git index, tree or refs. Call

@@ -853,9 +853,10 @@ the default. **Cua Driver** (Windows) is downloaded once from its pinned release
 checked against the release checksum; it reads and acts through UI Automation in the
 background, so the target app does not take focus and needs no OS grant. If an app ignores
 background input, the action reports that delivery failed; with the physical-input grant
-the assistant can repeat it in the foreground. Cua Driver does not support waiting on an
-element, hover, drag, check, uncheck, collapse, scroll-to or focus; those return an
-unsupported refusal without touching the app. Every permission mode, app approval, Stop
+the assistant can repeat it in the foreground. Check and uncheck read the toggle first and
+leave an already-correct one alone; hover and drag move the real pointer (physical-input
+grant, 100% scaled primary display). Collapse, scroll-to and focus have no Cua Driver
+primitive on Windows and return an unsupported refusal without touching the app. Every permission mode, app approval, Stop
 and History record work the same with either driver. Changing the driver takes effect
 after saving and starts with that driver's own verified helper. Observations and element refs belong to the captured
 conversation and expire after five minutes. App content remains untrusted data.

@@ -1,11 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { linkedInBrowserConnectionUrl } from "./social-browser-publishing";
+import { linkedInCreatedId } from "./social-browser-linkedin";
 import { account, fixture, job, now, recipe } from "./social-browser-publishing-test-support";
 const liIdentity = `<div class="feed-identity-module__actor-meta"><a href="/in/bycoda-owner/">Owner</a></div>`;
-const liEditor = `${liIdentity}<button class="share-box-feed-entry__trigger">Start a post</button><div role="dialog"><div class="ql-editor" contenteditable="true"></div><button class="share-actions__primary-action">Post</button></div>`;
+// The composer is a native dialog opened by LinkedIn's `shareActive` link; controls carry no stable class.
+const liEditor = `${liIdentity}<dialog open><div role="textbox" contenteditable="true"></div><button type="button" aria-label="Media" aria-haspopup="dialog"></button><button type="button">Post</button></dialog>`;
 const liId = "urn:li:activity:123456789";
-const liPersisted = (owner = "bycoda-owner", text = "A Bycoda update") =>
-  `${liIdentity}<article data-urn="${liId}"><a class="update-components-actor__meta-link" href="/in/${owner}/">Author</a><div class="update-components-text">${text}</div></article>`;
+const liPersisted = (owner = "bycoda-owner", text = "A Bycoda update", urn = liId, extra = "") =>
+  `${liIdentity}<div role="article" data-urn="${urn}"><a class="update-components-actor__meta-link" href="/in/${owner}/?miniProfileUrn=x">Author</a><div class="update-components-text">${text}</div>${extra}</div>`;
+/** LinkedIn IDs are snowflakes: the upper bits are the creation time in ms. */
+const snowflake = (ms: number) => (BigInt(ms) << 22n).toString();
+const liComment = (ms: number, owner: string, text: string, tail = "") =>
+  `<article data-id="urn:li:comment:(ugcPost:123456789,${snowflake(ms)})"><div><a href="/in/${owner}"><img alt=""></a><a href="/in/${owner}"><span class="comments-comment-meta__description-title">${owner}</span></a></div><section><span class="comments-comment-item__main-content">${text}</span></section><div><button class="comments-comment-social-bar__reply-action-button--cr">Reply</button></div>${tail}</article>`;
+const liCommentForm = (text = "") =>
+  `<form class="comments-comment-box__form"><div class="ql-editor" role="textbox" contenteditable="true">${text}</div><button type="button">Emoji</button><button class="comments-comment-box__submit-button--cr">Comment</button></form>`;
 
 describe("explicit LinkedIn Page connection target", () => {
   const fresh = () => account("linkedin", "", "organization");
@@ -139,9 +147,84 @@ describe("LinkedIn ordinary browser post", () => {
       platformId: liId,
       url: `https://www.linkedin.com/feed/update/${encodeURIComponent(liId)}/`,
     });
-    expect(f.page.click).toHaveBeenCalledTimes(2);
+    expect(f.page.goto).toHaveBeenCalledWith("https://www.linkedin.com/feed/?shareActive=true");
+    expect(f.page.click).toHaveBeenCalledOnce();
     expect(f.ctx.verifyIdentity).toHaveBeenCalled();
     expect(f.page.cookies).not.toHaveBeenCalled();
+  });
+  it("accepts a share ID that LinkedIn renders under its activity URN on the exact detail URL", async () => {
+    const share = "urn:li:share:7051450356165181440";
+    const f = fixture(
+      recipe("linkedin"),
+      account("linkedin", "web:linkedin:in:bycoda-owner"),
+      liEditor,
+      {
+        response: JSON.stringify({ value: { entityUrn: share } }),
+        render: (url) =>
+          url.includes("/feed/update/")
+            ? liPersisted("bycoda-owner", "A Bycoda update", "urn:li:activity:7051450356693663744")
+            : liEditor,
+      },
+    );
+    await expect(recipe("linkedin").send(f.ctx, job())).resolves.toMatchObject({
+      platformId: share,
+    });
+  });
+  it("reads the server-driven create response and rejects an ambiguous one", () => {
+    const share = "urn:li:share:7051450356165181440";
+    expect(linkedInCreatedId(`0:{"x":"${share}"}\n1:"${share}"`)).toBe(share);
+    expect(
+      linkedInCreatedId(
+        `"urn:li:activity:7051450356165181440" "urn:li:activity:7051450356165181441"`,
+      ),
+    ).toBeUndefined();
+    expect(linkedInCreatedId('{"toast":"hello"}')).toBeUndefined();
+  });
+  it("attaches media through the captured file input, steps the editor to the composer, then publishes", async () => {
+    let stepped = false;
+    const composer = liEditor.replace(
+      "</dialog>",
+      '<img src="blob:https://www.linkedin.com/1"></dialog>',
+    );
+    const editor = `<dialog open><button type="button">Back</button><button type="button">İleri</button></dialog>`;
+    const f = fixture(
+      recipe("linkedin"),
+      account("linkedin", "web:linkedin:in:bycoda-owner"),
+      liEditor,
+      {
+        response: JSON.stringify({ value: { entityUrn: liId } }),
+        render: (url) =>
+          url.includes("/feed/update/")
+            ? liPersisted(
+                "bycoda-owner",
+                "A Bycoda update",
+                liId,
+                '<div class="update-components-image"><img src="https://media.licdn.com/dms/image/x.png"></div>',
+              )
+            : liEditor,
+        click: (el) => {
+          if (el.getAttribute("aria-label") === "Media") {
+            const input = f.window.document.createElement("input");
+            input.type = "file";
+            input.accept = "image/png,video/*";
+            input.setAttribute("data-bycoda-li-file", "true");
+            f.window.document.body.append(input);
+            f.window.document.body.insertAdjacentHTML("beforeend", editor);
+          } else if (el.textContent === "İleri") {
+            stepped = true;
+            f.window.document.body.innerHTML = composer;
+          }
+        },
+      },
+    );
+    f.ctx.files = [{ path: "/tmp/a.png", kind: "image" }];
+    await expect(
+      recipe("linkedin").send(f.ctx, job("publish", { media: [{ kind: "image" }] as never })),
+    ).resolves.toMatchObject({ platformId: liId });
+    expect(stepped).toBe(true);
+    expect(f.page.setFiles).toHaveBeenCalledWith('[data-bycoda-web-control="media"]', [
+      "/tmp/a.png",
+    ]);
   });
   it("holds an acknowledged ID whose persisted author is different", async () => {
     const f = fixture(
@@ -154,7 +237,7 @@ describe("LinkedIn ordinary browser post", () => {
       },
     );
     await expect(recipe("linkedin").send(f.ctx, job())).rejects.toMatchObject({ code: "unknown" });
-    expect(f.page.click).toHaveBeenCalledTimes(2);
+    expect(f.page.click).toHaveBeenCalledOnce();
   });
   it("marks the final Post only and holds an account switch during acknowledged-post readback", async () => {
     let submitted = false;
@@ -169,7 +252,7 @@ describe("LinkedIn ordinary browser post", () => {
             ? liPersisted().replace("/in/bycoda-owner/", "/in/switched-owner/")
             : liEditor,
         click: (el) => {
-          if (el.matches(".share-actions__primary-action")) {
+          if (el.textContent === "Post") {
             expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
             submitted = true;
           } else expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
@@ -179,13 +262,13 @@ describe("LinkedIn ordinary browser post", () => {
     await expect(recipe("linkedin").send(f.ctx, job())).rejects.toMatchObject({ code: "unknown" });
     expect(submitted).toBe(true);
     expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
-    expect(f.page.click).toHaveBeenCalledTimes(2);
+    expect(f.page.click).toHaveBeenCalledOnce();
   });
   it("marks comment submission before clicking and holds an identity failure during comment readback", async () => {
     let submitted = false;
-    const row = `<div class="comments-comment-item" data-id="urn:li:comment:(123,456)"><a class="comments-post-meta__profile-link" href="/in/bycoda-owner/">Owner</a><div class="comments-comment-item__main-content">A Bycoda update</div><time datetime="${new Date(now).toISOString()}"></time></div>`;
+    const row = liComment(now, "bycoda-owner", "A Bycoda update");
     const html = () =>
-      `${submitted ? liIdentity.replace("/in/bycoda-owner/", "/in/switched-owner/") : liIdentity}<div class="comments-comments-list">${submitted ? row : '<div class="comments-empty-state">No comments yet</div>'}</div><div class="comments-comment-box"><div class="ql-editor" contenteditable="true"></div><button class="comments-comment-box__submit-button">Comment</button></div>`;
+      `${submitted ? liIdentity.replace("/in/bycoda-owner/", "/in/switched-owner/") : liIdentity}<div class="comments-comments-list">${submitted ? row : '<div class="comments-empty-state">No comments yet</div>'}</div>${liCommentForm()}`;
     const f = fixture(
       recipe("linkedin"),
       account("linkedin", "web:linkedin:in:bycoda-owner"),
@@ -193,7 +276,7 @@ describe("LinkedIn ordinary browser post", () => {
       {
         render: html,
         click: (el) => {
-          if (el.matches(".comments-comment-box__submit-button")) {
+          if (el.matches(".comments-comment-box__submit-button--cr")) {
             expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
             submitted = true;
           }
@@ -207,6 +290,89 @@ describe("LinkedIn ordinary browser post", () => {
     expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
     expect(f.page.click).toHaveBeenCalledOnce();
   });
+  it("returns a persisted comment whose snowflake ID dates it and whose author is the owner", async () => {
+    let submitted = false;
+    const html = () =>
+      `${liIdentity}<div class="comments-comments-list">${submitted ? liComment(now, "bycoda-owner", "A Bycoda update") : '<div class="comments-empty-state">No comments yet</div>'}</div>${liCommentForm()}`;
+    const f = fixture(
+      recipe("linkedin"),
+      account("linkedin", "web:linkedin:in:bycoda-owner"),
+      html(),
+      {
+        render: html,
+        click: (el) => {
+          if (el.matches(".comments-comment-box__submit-button--cr")) submitted = true;
+        },
+      },
+    );
+    await expect(
+      recipe("linkedin").send(f.ctx, job("comment", { postId: liId })),
+    ).resolves.toMatchObject({
+      platformId: `urn:li:comment:(ugcPost:123456789,${snowflake(now)})`,
+    });
+  });
+  it("replies inside the target comment, replacing the generated mention, and never uses the post box", async () => {
+    const parent = `urn:li:comment:(ugcPost:123456789,${snowflake(now - 3_600_000)})`;
+    let replied = false;
+    let open = false;
+    const mention = '<span class="ql-mention">@Friend</span>';
+    const html = () =>
+      `${liIdentity}<div class="comments-comments-list">${liComment(now - 3_600_000, "friend", "Hello", open ? liCommentForm(mention) : "")}${replied ? liComment(now, "bycoda-owner", "A Bycoda update") : ""}</div>${liCommentForm()}`;
+    const f = fixture(
+      recipe("linkedin"),
+      account("linkedin", "web:linkedin:in:bycoda-owner"),
+      html(),
+      {
+        render: html,
+        click: (el) => {
+          if (el.matches('[class*="reply-action-button"]')) {
+            open = true;
+            f.window.document.body.innerHTML = html();
+          } else if (el.matches(".comments-comment-box__submit-button--cr")) {
+            expect(el.closest("article")).not.toBeNull();
+            replied = true;
+          }
+        },
+      },
+    );
+    await expect(
+      recipe("linkedin").send(f.ctx, job("reply", { postId: liId, threadId: parent })),
+    ).resolves.toMatchObject({ platformId: expect.stringContaining("urn:li:comment:") });
+    expect(f.page.fill).toHaveBeenCalledOnce();
+    expect(f.ctx.markSubmitted).toHaveBeenCalledOnce();
+  });
+  it("refuses a reply whose target comment is not on the page", async () => {
+    const f = fixture(
+      recipe("linkedin"),
+      account("linkedin", "web:linkedin:in:bycoda-owner"),
+      `${liIdentity}<div class="comments-comments-list">${liComment(now, "friend", "Hello")}</div>${liCommentForm()}`,
+    );
+    await expect(
+      recipe("linkedin").send(
+        f.ctx,
+        job("reply", { postId: liId, threadId: "urn:li:comment:(ugcPost:1,2)" }),
+      ),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(f.page.click).not.toHaveBeenCalled();
+  });
+  it("reads dated comments, skips Page comments and drops the owner's own", async () => {
+    const page = `<article data-id="urn:li:comment:(ugcPost:123456789,${snowflake(now - 5000)})"><a href="https://www.linkedin.com/company/firisbe/posts"><img></a><span class="comments-comment-item__main-content">From a Page</span></article>`;
+    const f = fixture(
+      recipe("linkedin"),
+      account("linkedin", "web:linkedin:in:bycoda-owner"),
+      `${liIdentity}<div class="comments-comments-list">${liComment(now - 9000, "friend", "Hello")}${page}${liComment(now - 1000, "bycoda-owner", "Mine")}</div>`,
+    );
+    const result = await recipe("linkedin").poll(f.ctx, [liId]);
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        kind: "comment",
+        contactId: "web:linkedin:in:friend",
+        text: "Hello",
+        at: now - 9000,
+        postId: liId,
+      }),
+    ]);
+  });
   it("never accepts an optimistic composer echo without an acknowledged platform ID", async () => {
     const f = fixture(
       recipe("linkedin"),
@@ -215,7 +381,7 @@ describe("LinkedIn ordinary browser post", () => {
       { response: JSON.stringify({ value: { text: "A Bycoda update" } }), render: () => liEditor },
     );
     await expect(recipe("linkedin").send(f.ctx, job())).rejects.toMatchObject({ code: "unknown" });
-    expect(f.page.click).toHaveBeenCalledTimes(2);
+    expect(f.page.click).toHaveBeenCalledOnce();
   });
   it("does not call a missing comment list an empty inbox", async () => {
     const f = fixture(
@@ -263,13 +429,13 @@ describe("LinkedIn ordinary browser post", () => {
       recipe("linkedin"),
       account("linkedin", "web:linkedin:in:bycoda-owner"),
       liEditor.replace(
-        '<div class="ql-editor" contenteditable="true"></div>',
-        '<div class="ql-editor" contenteditable="true">An unfinished owner draft</div>',
+        '<div role="textbox" contenteditable="true"></div>',
+        '<div role="textbox" contenteditable="true">An unfinished owner draft</div>',
       ),
     );
     await expect(recipe("linkedin").send(f.ctx, job())).rejects.toMatchObject({ code: "denied" });
     expect(f.page.fill).not.toHaveBeenCalled();
-    expect(f.page.click).toHaveBeenCalledTimes(1);
+    expect(f.page.click).not.toHaveBeenCalled();
   });
   it("will not imply complete comment discovery when no saved posts exist", async () => {
     const f = fixture(
@@ -293,15 +459,23 @@ describe("LinkedIn ordinary browser post", () => {
 });
 
 describe("LinkedIn existing member chats", () => {
+  const threadId = "2-Yjkx=";
+  const threadUrl = `https://www.linkedin.com/messaging/thread/${threadId}/`;
+  /** Message IDs end in `2-<base64 of the creation time in ms>`; the thread shows only clock times. */
+  const msgId = (ms: number, tag: string) =>
+    `urn:li:msg_message:(urn:li:fsd_profile:ACo1,2-${Buffer.from(`${ms}-${tag}`).toString("base64")})`;
+  const oldId = msgId(now - 3_600_000, "old");
+  const newId = msgId(now, "new");
+  const row = (id: string, text: string, owner: string | null) =>
+    `<li><div data-event-urn="${id}">${owner ? `<a href="/in/${owner}/">${owner}</a>` : ""}<div class="msg-s-event-listitem__body">${text}</div></div></li>`;
   function chat(
     options: { wrongRecipient?: boolean; oldDraft?: boolean; disappear?: boolean } = {},
   ) {
     let sent = false;
-    const row = (id: string, text: string) =>
-      `<div class="msg-s-message-group"><a class="msg-s-message-group__profile-link" href="/in/bycoda-owner/">Owner</a><div data-event-urn="urn:li:fsd_message:${id}"><div class="msg-s-event-listitem__body">${text}</div><time datetime="${new Date(now).toISOString()}"></time></div></div>`;
+    let active = false;
     const html =
-      () => `${liIdentity}<div class="msg-conversations-container"><a class="msg-conversation-listitem__link" href="/messaging/thread/thread-1234/">Friend</a></div>
-      <div class="msg-thread"><a class="msg-thread__link-to-profile" href="/in/${options.wrongRecipient ? "other" : "friend"}/">Friend</a><div class="msg-s-message-list">${row("old_12345", "Earlier")}${sent && !options.disappear ? row("new_67890", "A Bycoda update") : ""}</div>
+      () => `${liIdentity}<ul class="msg-conversations-container__conversations-list"><li><div class="msg-conversation-listitem__link msg-conversations-container__convo-item-link${active ? " msg-conversations-container__convo-item-link--active" : ""}">Friend</div></li></ul>
+      <div class="msg-thread"><a class="msg-thread__link-to-profile" href="/in/${options.wrongRecipient ? "other" : "friend"}/">Friend</a><ul class="msg-s-message-list">${row(oldId, "Earlier", "friend")}${sent && !options.disappear ? row(newId, "A Bycoda update", "bycoda-owner") : ""}</ul>
       <div class="msg-form__contenteditable" contenteditable="true">${options.oldDraft ? "Unfinished personal draft" : ""}</div><button class="msg-form__send-button">Send</button></div>`;
     let submissions = 0;
     const f = fixture(
@@ -314,6 +488,11 @@ describe("LinkedIn existing member chats", () => {
           if (el.matches(".msg-form__send-button")) {
             sent = true;
             submissions++;
+          } else if (el.matches(".msg-conversation-listitem__link")) {
+            // Inbox rows have no href: opening one selects the thread in the address bar.
+            active = true;
+            f.window.location.href = threadUrl;
+            el.classList.add("msg-conversations-container__convo-item-link--active");
           }
         },
       },
@@ -321,9 +500,34 @@ describe("LinkedIn existing member chats", () => {
     return {
       ...f,
       submissions: () => submissions,
-      message: job("message", { threadId: "thread-1234", recipientId: "web:linkedin:in:friend" }),
+      message: job("message", { threadId, recipientId: "web:linkedin:in:friend" }),
     };
   }
+  it("reads the inbox by opening each row and decoding message times from their IDs", async () => {
+    const f = chat();
+    const result = await recipe("linkedin").poll(f.ctx, []);
+    expect(result.events).toEqual([
+      {
+        eventId: oldId,
+        threadId,
+        contactId: "web:linkedin:in:friend",
+        contactName: "friend",
+        text: "Earlier",
+        at: now - 3_600_000,
+        kind: "message",
+      },
+    ]);
+    expect(result.coverage).toContainEqual({ channel: "messages", status: "read" });
+    expect(f.submissions()).toBe(0);
+  });
+  it("attributes a follow-up message without its own profile link to the previous sender", async () => {
+    const f = chat();
+    f.window.document.querySelector(".msg-s-message-list")!.innerHTML =
+      row(oldId, "Earlier", "friend") + row(msgId(now - 1000, "next"), "Second", null);
+    f.page.goto = vi.fn(async () => {});
+    const result = await recipe("linkedin").poll(f.ctx, []);
+    expect(result.events.map((event) => event.text)).toEqual(["Earlier", "Second"]);
+  });
   it("checks the opened one-to-one participant before filling or sending", async () => {
     const f = chat({ wrongRecipient: true });
     await expect(recipe("linkedin").send(f.ctx, f.message)).rejects.toMatchObject({
@@ -343,16 +547,17 @@ describe("LinkedIn existing member chats", () => {
   it("confirms a new remotely persisted message after reopening the exact conversation", async () => {
     const f = chat();
     await expect(recipe("linkedin").send(f.ctx, f.message)).resolves.toEqual({
-      platformId: "urn:li:fsd_message:new_67890",
-      url: "https://www.linkedin.com/messaging/thread/thread-1234/",
+      platformId: newId,
+      url: threadUrl,
     });
+    expect(f.page.goto).toHaveBeenCalledWith(threadUrl);
     expect(f.submissions()).toBe(1);
   });
   it("routes a host DM reply job to its conversation rather than a post-comment editor", async () => {
     const f = chat();
     f.message.kind = "reply";
     await expect(recipe("linkedin").send(f.ctx, f.message)).resolves.toMatchObject({
-      platformId: "urn:li:fsd_message:new_67890",
+      platformId: newId,
     });
     expect(f.submissions()).toBe(1);
   });

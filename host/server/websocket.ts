@@ -4,6 +4,7 @@ import { attachHostWebSocketTransport } from "../transport/ws/server";
 import { requestingDeviceName } from "../desktop/remoteActivity";
 import { memoized } from "../desktop/requester-name";
 import type { ServerBindings } from "./bindings";
+import { createTailnetServeHosts } from "../mobile/tailnet-serve-hosts";
 export function createWebsocketRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -21,9 +22,14 @@ export function createWebsocketRuntime(
     | "withWorkspaceOwner"
     | "tasks"
     | "attachmentOwnership"
+    | "mobileAccess"
   >,
 ) {
+  const tailnetHosts = createTailnetServeHosts(() => dependencies.mobileAccess.status());
   const websocket = attachHostWebSocketTransport({
+    // Phones away from home reach /ws through this Host's own Tailscale Serve name;
+    // the proxy connects from loopback and the bearer credential still authenticates.
+    allowedHosts: tailnetHosts.current,
     server: dependencies.server,
     environmentId: dependencies.engine.store.environmentId,
     mobileIngressSecret: dependencies.mobileIngressSecret,

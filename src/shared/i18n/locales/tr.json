@@ -14372,5 +14372,7 @@
   "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "Bu uygulama yeniden başladığında masaüstünün yürüttüğü işler durabilir. Host’un yürüttüğü işler, Host çalıştığı sürece devam eder.",
   "Running sessions and shells on the updated Host are interrupted.": "Güncellenen Host üzerindeki çalışan oturumlar ve terminaller kesintiye uğrar.",
   "Session history is kept. Interrupted work may require resuming.": "Oturum geçmişi korunur. Kesilen işleri devam ettirmeniz gerekebilir.",
-  "Denied": "Reddedildi"
+  "Denied": "Reddedildi",
+  "About smart setup": "Akıllı kurulum hakkında",
+  "Effort follows the job: Low for simple jobs, Medium for most work, High for reviews and planning. Smart setup never goes above High; choose higher levels yourself.": "Effort işe göre seçilir: basit işler için Low, çoğu iş için Medium, review ve planlama için High. Akıllı kurulum High'ın üstüne çıkmaz; daha yüksek seviyeleri kendin seç."
 }
