@@ -565,6 +565,24 @@ export async function launch(
       throw new Error("The task was stopped or changed before worker dispatch.");
     return current;
   };
+  // The accepted run becomes the task's run before any provider dispatch check reads it.
+  const associateAccepted = async (receipt: { sessionId: string; runId?: string }) => {
+    if (!receipt.runId) return;
+    await context.store.transaction(async () => {
+      const current = await launchCurrent();
+      associated = await context.write({
+        ...current,
+        awaitingOwnerRestart: undefined,
+        sessionId: receipt.sessionId,
+        runId: receipt.runId,
+        startedAt: now,
+        status: "running",
+        modelRoutingWait: undefined,
+        updatedAt: now,
+      });
+      launchExpected = await context.taskValue(ready.id);
+    }, "critical");
+  };
   const ordinaryAdmission: Parameters<NonNullable<HostEngine["withCommandAdmission"]>>[0] = {
     check: async (stage) => {
       const current = await launchCurrent();
@@ -594,23 +612,7 @@ export async function launch(
           throw new Error("The worker launch no longer owns its exact task and session.");
       }
     },
-    onAccepted: async (receipt) => {
-      if (!receipt.runId) return;
-      await context.store.transaction(async () => {
-        const current = await launchCurrent();
-        associated = await context.write({
-          ...current,
-          awaitingOwnerRestart: undefined,
-          sessionId: receipt.sessionId,
-          runId: receipt.runId,
-          startedAt: now,
-          status: "running",
-          modelRoutingWait: undefined,
-          updatedAt: now,
-        });
-        launchExpected = await context.taskValue(ready.id);
-      }, "critical");
-    },
+    onAccepted: associateAccepted,
   };
   if (recovering) {
     if (!context.admitCommand || !context.assistantRecoveryAdmission)
@@ -722,6 +724,7 @@ export async function launch(
               launchedAuthorityGeneration: receipt.authorityGeneration,
               updatedAt: context.now(),
             });
+            await associateAccepted(receipt);
           },
         },
         launch,

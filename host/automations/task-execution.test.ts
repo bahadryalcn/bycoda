@@ -54,6 +54,38 @@ it("creates one canonical Task per occurrence and replays without editing owner 
   await automations.close();
 });
 
+it("starts a scheduled automation Task through the Task scheduler without explicit start calls", async () => {
+  const f = await setup();
+  const tasks = new HostTasks(f.store, f.engine);
+  const automations = new HostAutomations(f.store, f.engine);
+  automations.bindTasks(tasks);
+  const definition = await automations.save({
+    id: "scheduled",
+    name: "Scheduled",
+    projectId: f.project.id,
+    prompt: "Inspect source",
+    harness: "codex",
+    model: "codex:test",
+    modelSettings: {},
+    runtimeMode: "supervised",
+    scheduleKind: "daily",
+    minute: 0,
+    time: "09:00",
+    dayOfWeek: 1,
+    isolate: false,
+    enabled: false,
+  });
+  const run = await automations.runNow(definition.id);
+  // The Task is created queued, so the production tick loop (tasks.start) admits it.
+  expect((await tasks.get(run.taskId!))?.status).toBe("queued");
+  await tasks.tick();
+  await tasks.idle();
+  const started = (await tasks.get(run.taskId!))!;
+  expect(started.status).not.toBe("queued");
+  expect(started.sessionId).toBeTruthy();
+  await automations.close();
+});
+
 it("rolls back occurrence link when Task persistence fails", async () => {
   const f = await setup();
   const tasks = new HostTasks(f.store, f.engine);

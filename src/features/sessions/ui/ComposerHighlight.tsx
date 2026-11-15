@@ -222,6 +222,7 @@ function LinkToken({
   const [wrapped, setWrapped] = useState(false);
   // Both orders hold the same characters, so they wrap alike; measuring whichever is
   // shown after each draft edit and field resize keeps the choice stable.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- measures the rendered link span and observes the textarea's size while mounted
   useLayoutEffect(() => {
     const measure = () => {
       const el = ref.current;

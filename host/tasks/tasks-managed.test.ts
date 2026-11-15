@@ -146,7 +146,8 @@ it("previews leftovers without staging or committing and completes only a clean 
 it("suspends legacy automatic delivery across restart and refuses a board move as merge approval", async () => {
   const f = await fixture();
   const task = await f.internal.workingCopy(await f.tasks.save({ ...f.input(), autoMerge: true }));
-  expect(task.autoMerge).toBeUndefined();
+  // Suspension keeps the owner's opt-in; only the approval requirement blocks delivery.
+  expect(task.autoMerge).toBe(true);
   expect(task.deliveryApprovalRequired).toBe(true);
   await f.store.db
     .prepare(
@@ -159,7 +160,7 @@ it("suspends legacy automatic delivery across restart and refuses a board move a
     deliveryApprovalRequired: true,
     deliveryState: "awaitingOwner",
   });
-  expect((await restarted.get(task.id))?.autoMerge).toBeUndefined();
+  expect((await restarted.get(task.id))?.autoMerge).toBe(true);
   await expect(restarted.move(task.id, "done")).rejects.toThrow("does not authorize delivery");
   expect(f.services.delivery.merge).not.toHaveBeenCalled();
   await restarted.close();

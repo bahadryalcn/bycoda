@@ -133,6 +133,37 @@ const metadataFields = {
     .strictObject({ reason: z.string(), retryAt: SafeCounterSchema.optional() })
     .optional(),
   reviewerTarget: ModelRoutingTargetSchema.optional(),
+  crewWorkWait: z.strictObject({ reason: z.string(), unstarted: z.boolean() }).optional(),
+  conflictRecovery: z
+    .strictObject({
+      childId: z.string(),
+      sourceHead: z.string(),
+      targetHead: z.string(),
+      targetDirectory: z.string(),
+      targetBranch: z.string(),
+      peer: z
+        .strictObject({
+          taskId: z.string(),
+          createdAt: z.number(),
+          workInvocationId: z.string(),
+          sessionId: z.string(),
+          runId: z.string(),
+          commandId: z.string(),
+        })
+        .optional(),
+    })
+    .optional(),
+  conflictParent: z
+    .strictObject({
+      id: z.string(),
+      createdAt: z.number(),
+      workInvocationId: z.string().optional(),
+      sourceHead: z.string(),
+      targetHead: z.string(),
+      targetDirectory: z.string(),
+      targetBranch: z.string(),
+    })
+    .optional(),
   workspaceId: z.string().optional(),
   workspaceGenerationId: z.string().optional(),
   workspaceActivityId: z.string().optional(),

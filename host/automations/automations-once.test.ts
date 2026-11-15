@@ -7,6 +7,7 @@ import type { HostProvider } from "../providers/providers";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
 import { HostAutomations } from "./automations";
+import { HostTasks } from "../tasks/service";
 
 if (process.platform === "win32") vi.setConfig({ testTimeout: 60000 });
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -47,7 +48,24 @@ async function setup() {
   vi.spyOn(engine.checkpoints, "finish").mockResolvedValue();
   const clock = { now: new Date("2026-10-05T08:00:00").getTime() };
   const automations = new HostAutomations(store, engine, () => clock.now);
+  // Automation runs execute as canonical Tasks, so a tick also has to admit them.
+  const tasks = new HostTasks(store, engine, () => clock.now);
+  automations.bindTasks(tasks);
+  const tickAutomations = automations.tick.bind(automations);
+  automations.tick = async () => {
+    await tickAutomations();
+    for (const run of await automations.runs("once")) {
+      if (!run.taskId || run.status !== "pending") continue;
+      const task = await tasks.get(run.taskId);
+      if (task?.status === "todo") await tasks.startTask(task.id);
+    }
+    await tasks.tick();
+    await tasks.idle();
+    await tickAutomations();
+  };
   cleanups.push(async () => {
+    await automations.close();
+    await tasks.close();
     await engine.close();
     await store.close();
     rmSync(directory, { recursive: true, force: true });

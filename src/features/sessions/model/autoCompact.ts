@@ -1,10 +1,7 @@
 import type { AgentModel, ModelSetting } from "./models";
 
 /** 200K through 1M in 50K steps; smaller windows compact too often to be useful. */
-export const AUTO_COMPACT_WINDOWS = Array.from(
-  { length: 17 },
-  (_, index) => (index + 4) * 50_000,
-);
+export const AUTO_COMPACT_WINDOWS = Array.from({ length: 17 }, (_, index) => (index + 4) * 50_000);
 
 /**
  * The window the provider compacts at when the session leaves it at Default: the model's
@@ -15,8 +12,7 @@ export function defaultAutoCompactWindow(
   values: Record<string, string>,
 ): number | undefined {
   const context =
-    values.context ??
-    model.settings?.find((setting) => setting.id === "context")?.value;
+    values.context ?? model.settings?.find((setting) => setting.id === "context")?.value;
   if (context === "1m") return 1_000_000;
   if (context === "200k") return 200_000;
   return model.contextWindow;
@@ -24,8 +20,7 @@ export function defaultAutoCompactWindow(
 
 /** Catalog owners call this only after verifying isolated native support. */
 export function withAutoCompactToggle(model: AgentModel): AgentModel {
-  if (model.settings?.some((setting) => setting.id === "autoCompact"))
-    return model;
+  if (model.settings?.some((setting) => setting.id === "autoCompact")) return model;
   return {
     ...model,
     settings: [

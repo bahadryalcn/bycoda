@@ -66,6 +66,8 @@ export type StewardRun = {
 };
 
 export type HostSteward = HostStewardInput & {
+  /** Runtime admission hold; the owner configuration parser never accepts it. */
+  modelRoutingWait?: { reason: string; retryAt?: number };
   deliveryApprovalRequired?: boolean;
   nextRunAt: number;
   lastRunAt?: number;

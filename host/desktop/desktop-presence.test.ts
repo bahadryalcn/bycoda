@@ -127,7 +127,8 @@ it("reads macOS idle time and the console lock flag for owner availability", asy
   const hid = '    | |     "HIDIdleTime" = 149833583\n';
   const users = (extra: string) =>
     `      "IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=Yes,"kCGSSessionUserNameKey"="owner"${extra}})\n`;
-  const run = (root: string) => async (args: string[]) => (args.includes("IOHIDSystem") ? hid : root);
+  const run = (root: string) => async (args: string[]) =>
+    args.includes("IOHIDSystem") ? hid : root;
   expect(await readMacDesktopPresence(run(users("")), vi.fn())).toEqual({
     supported: true,
     locked: false,

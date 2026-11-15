@@ -456,7 +456,11 @@ it("rolls back worker run rebinding and only caches budget registration after th
   expect((await f.tasks.get("worker"))?.runId).toBe(f.first.runId);
   expect(f.turns).toHaveLength(1);
   await f.store.db.exec("DROP TRIGGER fixture_refuse_receipt;");
-  const receipt = await f.tasks.managedSessionCommand(input, command);
+  // The failed dispatch keeps its Work identity; the owner retries as a new command.
+  const receipt = await f.tasks.managedSessionCommand(input, {
+    ...command,
+    commandId: "atomic-managed-retry",
+  });
   await vi.waitFor(() => expect(f.turns).toHaveLength(2));
   expect(
     await f.store.db
@@ -544,7 +548,7 @@ it("continues the real task in fresh provider history while retaining its transc
   await f.engine.waitForRun(f.id, receipt.runId);
 });
 
-it("refuses owner drafts, active turns, model changes and paused goals without rotating provider history", async () => {
+it("refuses owner drafts, model changes and paused goals without rotating provider history", async () => {
   const f = await setup();
   const original = await f.store.session(f.id);
   await f.save({
@@ -566,6 +570,15 @@ it("refuses owner drafts, active turns, model changes and paused goals without r
   await f.tasks.setGoalPaused("assistant-job", false);
   await f.save({ ...original, session: { ...original.session, model: "changed-model" } });
   await expect(f.tasks.continueManagedSession(f.input)).rejects.toThrow("model");
+  expect(f.turns).toHaveLength(1);
+  expect((await f.tasks.get("worker"))?.runId).toBe(f.first.runId);
+});
+
+// A refusal raised at the engine boundary leaves its Work dispatch in doubt and holds the task's
+// Work root, so this refusal needs a task of its own instead of following the draft refusal.
+it("refuses an active turn without rotating provider history", async () => {
+  const f = await setup();
+  const original = await f.store.session(f.id);
   await f.save({ ...original, status: "running" });
   await expect(f.tasks.continueManagedSession(f.input)).rejects.toThrow("execution identity");
   expect(f.turns).toHaveLength(1);

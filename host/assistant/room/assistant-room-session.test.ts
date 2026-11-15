@@ -157,7 +157,7 @@ it("creates unsent Host sessions and transfers one reviewed submit to the exact 
       sessionId: created.sessionId,
       runId: "different",
     }),
-  ).rejects.toThrow("run changed");
+  ).rejects.toThrow("finished or replaced turn");
   await f.call("sessions.stop", {
     requestId: "stop",
     sessionId: created.sessionId,
@@ -193,7 +193,12 @@ it("rejects changed revisions, drafts, native ownership and revoked Room authori
   });
   const drafted = await f.store.session(created.sessionId);
   await expect(
-    f.call("sessions.submit", { ...submit, expectedRevision: drafted.revision }),
+    // A requestId is an idempotency key: the rejected first attempt already consumed "submit".
+    f.call("sessions.submit", {
+      ...submit,
+      requestId: "draft-submit",
+      expectedRevision: drafted.revision,
+    }),
   ).rejects.toThrow("unsent draft");
   await f.store.save(
     { ...drafted, revision: drafted.revision + 1, executionOwner: "desktop" },

@@ -146,6 +146,7 @@ export const HostGoalSchema = HostGoalInputSchema.extend({
   plannerSessionId: z.string().optional(),
   plannerRunId: z.string().optional(),
   plannerStartedAt: SafeCounterSchema.optional(),
+  plannerRequestId: z.string().optional(),
   plannerRepairAttempts: SafeCounterSchema.optional(),
   plannerRecoveryPending: z.boolean().optional(),
   taskIds: z.array(z.string()),

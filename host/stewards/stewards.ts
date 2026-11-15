@@ -539,7 +539,7 @@ export class HostStewards {
     }
     this.starting.add(steward.id);
     let owned: ManagedStewardRun | undefined;
-    let accepted = false;
+    let accepted: { sessionId: string; runId?: string } | undefined;
     try {
       if ((await this.find(steward.id))?.run) {
         await this.skip(steward, PREVIOUS_RUN_SKIP, now);
@@ -669,15 +669,26 @@ export class HostStewards {
         await this.finish(steward, "cancelled", "Host is stopping.", now);
         return;
       }
-      await this.launchPrepared(steward, owned, prompt, () => {
-        accepted = true;
-      });
+      await this.launchPrepared(
+        steward,
+        owned,
+        prompt,
+        (receipt) => {
+          accepted = receipt;
+        },
+        (run) => {
+          owned = run;
+        },
+      );
     } catch (error) {
-      if (owned && !accepted) {
+      if (owned) {
         // SQL bookkeeping only: retain already allocated identities for a later
-        // system-owned tick. A denied request cannot perform cleanup effects.
+        // system-owned tick. A denied request cannot perform cleanup effects. A
+        // durable send receipt still owns the run despite a lost creator grant.
         try {
-          await this.retainOwnedRun(steward, owned, { error: errorMessage(error) }, false, true);
+          await (accepted
+            ? this.retainOwnedRun(steward, owned, accepted, true)
+            : this.retainOwnedRun(steward, owned, { error: errorMessage(error) }, false, true));
         } catch {
           // A deleted/replaced run is never resurrected to record an old error.
         }
@@ -692,7 +703,8 @@ export class HostStewards {
     steward: HostSteward,
     initial: ManagedStewardRun,
     prompt: string,
-    onAccepted?: () => void,
+    onAccepted?: (receipt: { sessionId: string; runId?: string }) => void,
+    onOwned?: (run: ManagedStewardRun) => void,
   ): Promise<void> {
     let owned = initial;
     let accepted: { sessionId: string; runId?: string } | undefined;
@@ -707,11 +719,14 @@ export class HostStewards {
           await this.assertOwnedRun(steward, owned!);
           const receipt = await this.engine.command(command);
           const type = (command as { type?: unknown }).type;
-          if (type === "create")
+          if (type === "create") {
             owned = await this.retainOwnedRun(steward, owned!, { sessionId: receipt.sessionId });
+            // The caller needs the latest identity to record a later failure against it.
+            onOwned?.(owned);
+          }
           if (type === "send") {
             accepted = { sessionId: receipt.sessionId, runId: receipt.runId };
-            onAccepted?.();
+            onAccepted?.(accepted);
           }
           return receipt;
         },
@@ -865,6 +880,13 @@ export class HostStewards {
   private async settle(steward: HostSteward, now: number): Promise<void> {
     const run = steward.run! as ManagedStewardRun;
     if (this.starting.has(steward.id)) return;
+    if (!run.runId && run.error) {
+      // Preparation failed before any send (e.g. the creator grant was revoked): this system
+      // tick performs the cleanup the denied request could not, instead of launching again.
+      await this.removeWorktree(steward.projectId, run);
+      await this.finish(steward, "failed", run.error, now);
+      return;
+    }
     if (!run.runId) {
       const project = await this.store.project(steward.projectId);
       await this.launchPrepared(

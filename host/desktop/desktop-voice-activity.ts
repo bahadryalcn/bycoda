@@ -1,5 +1,9 @@
 import { elapsedSince, monotonicNow } from "../../src/shared/lib/time/timestamps";
-import { readDesktopPresence, readMacDesktopPresence, type DesktopPresence } from "./desktop-presence";
+import {
+  readDesktopPresence,
+  readMacDesktopPresence,
+  type DesktopPresence,
+} from "./desktop-presence";
 
 /** Accepted owner speech this recent counts as input activity. */
 export const VOICE_ACTIVITY_WINDOW_MS = 2 * 60_000;
@@ -52,7 +56,12 @@ export class OwnerDeviceActivity {
     if (this.at === undefined) return reading;
     const age = elapsedSince(this.at, this.now());
     if (age >= DEVICE_ACTIVITY_WINDOW_MS) return reading;
-    if (reading.supported && !reading.locked && reading.idleMs !== undefined && reading.idleMs <= age)
+    if (
+      reading.supported &&
+      !reading.locked &&
+      reading.idleMs !== undefined &&
+      reading.idleMs <= age
+    )
       return reading;
     return { supported: true, locked: false, idleMs: age };
   }

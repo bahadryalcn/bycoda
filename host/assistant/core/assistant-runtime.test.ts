@@ -27,10 +27,15 @@ function fixture() {
   const goals = { create, list } as unknown as HostGoals;
   const store = {
     ready: Promise.resolve(),
+    transaction: async (fn: () => unknown) => fn(),
     db: {
       scope: async (fn: () => unknown) => fn(),
       exec: async () => undefined,
-      prepare: () => ({ get: async () => undefined }),
+      prepare: () => ({
+        get: async () => undefined,
+        run: async () => ({ changes: 0 }),
+        all: async () => [],
+      }),
     },
     attachmentDir: "test/attachments",
     projects: vi.fn(async () => [{ id: "p1" }]),

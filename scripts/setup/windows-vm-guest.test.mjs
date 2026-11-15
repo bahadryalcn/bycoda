@@ -477,7 +477,8 @@ test(
       );
       assert.ifError(result.error);
       assert.notEqual(result.status, 0);
-      assert.match(result.stderr, /Guest bootstrap denied before writes\/network/);
+      // PowerShell hard-wraps redirected error text at the console width, even mid-word.
+      assert.match(result.stderr.replace(/\s+/g, ""), /Guestbootstrapdeniedbeforewrites\/network/);
     }
     assert.equal(existsSync(bootstrap), before);
   },

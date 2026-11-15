@@ -1,8 +1,5 @@
 import { expect, it } from "vitest";
-import {
-  defaultAutoCompactWindow,
-  withAutoCompactSettings,
-} from "./autoCompact";
+import { defaultAutoCompactWindow, withAutoCompactSettings } from "./autoCompact";
 import type { AgentModel } from "./models";
 import { CLAUDE_COMPACT_SETTINGS } from "./claudeCompact";
 
@@ -75,9 +72,7 @@ it("offers every 50K step through the supported window", () => {
     contextWindow: 400_000,
   };
   expect(
-    withAutoCompactSettings(model).settings?.[0].options.map(
-      (option) => option.value,
-    ),
+    withAutoCompactSettings(model).settings?.[0].options.map((option) => option.value),
   ).toEqual(["default", "200000", "250000", "300000", "350000", "400000"]);
 });
 
