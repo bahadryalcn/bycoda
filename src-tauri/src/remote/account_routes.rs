@@ -20,9 +20,16 @@ pub(super) fn with_routes(
         {
             continue;
         }
+        if response.is_ok() {
+            crate::remote_routes::note_account_route(&machine.environment_id, Some(&endpoint));
+        }
         return response;
     }
-    send(None)
+    let response = send(None);
+    if response.is_ok() {
+        crate::remote_routes::note_account_route(&machine.environment_id, None);
+    }
+    response
 }
 
 #[cfg(test)]

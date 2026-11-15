@@ -91,7 +91,7 @@ export function ConnectionsSettings() {
   const [error, setError] = useState("");
   const [retryMachine, setRetryMachine] = useState<RemoteMachine>();
   const [notice, setNotice] = useState("");
-  const { status, setStatus, needsUpdate } = useMachineProbes(machines, busy);
+  const { status, setStatus, needsUpdate, versions } = useMachineProbes(machines, busy);
   const [updatingMachine, setUpdatingMachine] = useState<string>();
   const [removing, setRemoving] = useState<string>();
   const [revoking, setRevoking] = useState(false);
@@ -521,6 +521,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   machine={machine}
                   machines={machines}
                   probed={status[machine.id]}
+                  version={versions[machine.id]}
                   needsUpdate={Boolean(needsUpdate[machine.id])}
                   showDetails={
                     detailMachine === machine.id ||
@@ -534,6 +535,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   onUpdateHost={() => void begin(machine, true)}
                   onReconnect={() => void begin(machine)}
                   onSyncNow={() => void syncNow(machine.id)}
+                  onToggleDetails={() =>
+                    setDetailMachine((current) => (current === machine.id ? undefined : machine.id))
+                  }
                   onToggleMenu={(anchor) =>
                     setRowMenu(rowMenu?.machine.id === machine.id ? undefined : { machine, anchor })
                   }

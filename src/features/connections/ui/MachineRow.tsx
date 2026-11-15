@@ -1,66 +1,103 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
-import { useSyncExternalStore } from "react";
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Switch } from "../../../shared/ui/Switch";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { Laptop, MoreHorizontal, Server } from "../../../shared/ui/icons";
+import { ChevronRight, Laptop, MoreHorizontal, Server } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { buildIdentity } from "../../../shared/model/build-info";
+import {
+  loadRemoteAutoReconnect,
+  subscribeRemoteAutoReconnect,
+} from "../../settings/public/settings";
 import { ConnectionSyncLine } from "./ConnectionSyncLine";
 import { MachineRoutesLine } from "./MachineRoutesLine";
 import type { MachineProbe } from "./useMachineProbes";
+import { useMachineRouteSummary } from "./useMachineRouteSummary";
 import { isLocalSyncMachine } from "../model/localSync";
+import {
+  isMachineEnabled,
+  setMachineEnabled,
+  subscribeDisabledMachines,
+} from "../model/machineEnabled";
+import {
+  MACHINE_STATUS_TONE,
+  machineStatus,
+  machineSummary,
+  machineSummaryText,
+  reconnectingEndsIn,
+  type MachineStatus,
+} from "../model/machineSummary";
 import { readRemoteConnection, subscribeChanges } from "../model/remoteHealth";
-import { connectionIndicator } from "../model/remoteConnection";
+import { isReconnecting, subscribeReconnecting } from "../model/remoteReconnect";
 import { machineContext, machineLabel } from "../model/machineIdentity";
 import type { RemoteMachine } from "../model/protocol";
-
-const PROBE_DETAIL: Record<MachineProbe, string> = {
-  connected: "Connected",
-  provider: "Connected · install a supported provider on the host",
-  update: "Connected · host update needed for Explorer and Changes",
-  offline: "Offline · reconnect to check access",
-};
-const PROBE_LABEL: Record<MachineProbe, string> = {
-  connected: "Connected",
-  provider: "Provider needed",
-  update: "Update needed",
-  offline: "Offline",
-};
-const PROBE_TONE: Record<MachineProbe, BadgeTone> = {
-  connected: "success",
-  provider: "warning",
-  update: "warning",
-  offline: "warning",
-};
 
 /** A machine's connection state. Until this page's own check returns, it shows
  * what the rest of the app (the project rail) last learned about the machine,
  * so the two never disagree. */
-function useMachineConnection(environmentId: string, probed?: MachineProbe) {
+function useMachineConnection(machine: RemoteMachine, probed?: MachineProbe) {
+  const environmentId = machine.environmentId;
   const shared = useSyncExternalStore(
     subscribeChanges,
     () => readRemoteConnection(environmentId),
     () => readRemoteConnection(environmentId),
   );
-  const indicator = connectionIndicator(shared, false);
-  const kind: MachineProbe | undefined =
-    indicator.tone === "down"
-      ? "offline"
-      : (probed ?? (indicator.tone === "connected" ? "connected" : undefined));
-  return {
-    label: kind ? PROBE_LABEL[kind] : "Checking connection…",
-    tone: (kind ? PROBE_TONE[kind] : "neutral") as BadgeTone,
-    detail: kind && kind !== "connected" ? t(PROBE_DETAIL[kind]) : undefined,
-  };
+  const enabled = useSyncExternalStore(
+    subscribeDisabledMachines,
+    () => isMachineEnabled(environmentId),
+    () => true,
+  );
+  const reconnecting = useSyncExternalStore(
+    subscribeReconnecting,
+    () => isReconnecting(environmentId),
+    () => false,
+  );
+  const autoReconnect = useSyncExternalStore(
+    subscribeRemoteAutoReconnect,
+    loadRemoteAutoReconnect,
+    () => true,
+  );
+  const [now, setNow] = useState(Date.now);
+  const endsIn = reconnectingEndsIn(shared, now);
+  // The shared grace elapses with no event of its own; re-render when it does so
+  // "Reconnecting" turns into "Offline" without waiting for the next probe.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- A timer cannot be computed in render: it wakes the row when the shared grace ends and cancels on cleanup.
+  useEffect(() => {
+    if (endsIn === undefined) return;
+    const timer = setTimeout(() => setNow(Date.now()), endsIn + 50);
+    return () => clearTimeout(timer);
+  }, [endsIn]);
+  const status = machineStatus({
+    enabled: enabled || isLocalSyncMachine(machine),
+    connection: shared,
+    reconnecting,
+    autoReconnect,
+    probed,
+    now,
+  });
+  return { status, enabled, error: shared.error };
+}
+
+/** Why a status deserves a word more than its label gives; shown behind an info icon. */
+function statusReason(status: MachineStatus, probed?: MachineProbe, error?: string) {
+  if (status === "update") return t("The host needs an update for Explorer and Changes.");
+  if (status === "connected" && probed === "provider")
+    return t("Install a supported provider on the host.");
+  if ((status === "offline" || status === "reconnecting") && error) return error;
+  return undefined;
 }
 
 export function MachineRow({
   machine,
   machines,
   probed,
+  version,
   needsUpdate,
   showDetails,
   editing,
@@ -70,13 +107,16 @@ export function MachineRow({
   onUpdateHost,
   onReconnect,
   onToggleMenu,
+  onToggleDetails,
   onSyncNow,
 }: {
   machine: RemoteMachine;
   machines: RemoteMachine[];
   probed?: MachineProbe;
+  /** The build the machine reported on its latest check. */
+  version?: string;
   needsUpdate: boolean;
-  /** The connection details are shown: asked for in the row menu, offline, or an update is needed. */
+  /** The routes panel is open: asked for by the routes button or the row menu, offline, or an update is needed. */
   showDetails: boolean;
   editing: boolean;
   busy: boolean;
@@ -85,11 +125,21 @@ export function MachineRow({
   onUpdateHost: () => void;
   onReconnect: () => void;
   onToggleMenu: (anchor: HTMLElement) => void;
+  onToggleDetails: () => void;
   onSyncNow: () => void;
 }) {
   const local = isLocalSyncMachine(machine);
   const context = machineContext(machines, machine);
-  const connection = useMachineConnection(machine.environmentId, probed);
+  const connection = useMachineConnection(machine, probed);
+  const routes = useMachineRouteSummary(machine, probed);
+  const summary = machineSummary({
+    routeKind: local ? undefined : routes.kind,
+    status: connection.status,
+    version,
+    desktopVersion: buildIdentity?.buildId,
+    routeCount: local ? 0 : routes.count,
+  });
+  const reason = statusReason(connection.status, probed, connection.error);
   const Icon = local ? Laptop : Server;
   return (
     <div
@@ -113,17 +163,47 @@ export function MachineRow({
               </Text>
             </OverflowTooltip>
           ) : null}
-          {!local ? (
-            <Text tone="muted" className="shrink-0">
-              {machine.ssh ? t("SSH") : t("Host URL")}
-            </Text>
-          ) : null}
         </div>
-        {connection.detail ? (
-          <Text as="div" tone="muted">
-            {connection.detail}
-          </Text>
-        ) : null}
+        <Text
+          as="div"
+          tone="muted"
+          className="flex min-w-0 flex-wrap items-center gap-x-1.5"
+          data-machine-summary
+          aria-label={machineSummaryText(summary)}
+        >
+          {summary.parts.map((part, index) => (
+            <span key={part.id} className="inline-flex items-center gap-x-1.5">
+              {index > 0 ? <span aria-hidden>·</span> : null}
+              {part.id === "status" ? (
+                <Badge variant="dot" size="sm" tone={MACHINE_STATUS_TONE[connection.status]}>
+                  {part.text}
+                </Badge>
+              ) : (
+                part.text
+              )}
+            </span>
+          ))}
+          {reason ? (
+            <InfoPopover label={t("About this status")} className="shrink-0">
+              <Text as="p">{reason}</Text>
+            </InfoPopover>
+          ) : null}
+          {summary.routes && !local ? (
+            <span className="inline-flex items-center gap-x-1.5 whitespace-nowrap">
+              <span aria-hidden>·</span>
+              <Button
+                variant="link"
+                size="sm"
+                aria-expanded={showDetails}
+                onClick={onToggleDetails}
+                type="button"
+              >
+                {summary.routes}
+                <ChevronRight aria-hidden className="icon-sm" />
+              </Button>
+            </span>
+          ) : null}
+        </Text>
         <ConnectionSyncLine machineId={machine.id} onSyncNow={onSyncNow} />
         {showDetails ? (
           <Text
@@ -161,17 +241,9 @@ export function MachineRow({
             ) : null}
           </Text>
         ) : null}
-        {machine.ssh && needsUpdate ? (
-          <Text as="div" size="micro" tone="muted" className="mt-1">
-            {t("Updating restarts the host and interrupts active agent turns.")}
-          </Text>
-        ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <Badge variant="dot" size="sm" tone={connection.tone}>
-          {t(connection.label)}
-        </Badge>
-        {machine.ssh && needsUpdate ? (
+        {machine.ssh && needsUpdate && connection.enabled ? (
           <Button
             stableWidth
             disabled={busy}
@@ -185,7 +257,7 @@ export function MachineRow({
           >
             {t("Update Host")}
           </Button>
-        ) : machine.ssh && probed === "offline" ? (
+        ) : machine.ssh && probed === "offline" && connection.enabled ? (
           <Button
             stableWidth
             disabled={busy}
@@ -196,6 +268,14 @@ export function MachineRow({
           >
             {t("Reconnect")}
           </Button>
+        ) : null}
+        {!local ? (
+          <Switch
+            aria-label={t("Use {p0}", { p0: machineLabel(machines, machine) })}
+            checked={connection.enabled}
+            disabled={busy || revoking}
+            onCheckedChange={(on) => setMachineEnabled(machine.environmentId, on)}
+          />
         ) : null}
         <Button
           stableWidth

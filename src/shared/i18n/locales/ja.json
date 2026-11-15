@@ -14399,5 +14399,15 @@
   "Advanced: add manually": "詳細設定：手動で追加",
   "Add manually": "手動で追加",
   "Pick one of the machines found above to get started.": "上に見つかったマシンから1台選んで始めましょう。",
-  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "接続済みのマシンはまだありません。設定でアカウント内のマシンを選び、ここでそのフォルダを開いてください。"
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "接続済みのマシンはまだありません。設定でアカウント内のマシンを選び、ここでそのフォルダを開いてください。",
+  "Update required": "更新が必要",
+  "LAN": "LAN",
+  "1 route": "1 件の経路",
+  "{p0} routes": "{p0} 件の経路",
+  "Tunnel": "トンネル",
+  "Found automatically": "自動で検出",
+  "About addresses": "アドレスについて",
+  "The host needs an update for Explorer and Changes.": "エクスプローラーと変更を使うにはホストの更新が必要です。",
+  "Install a supported provider on the host.": "対応するプロバイダーをホストにインストールしてください。",
+  "About this status": "このステータスについて"
 }

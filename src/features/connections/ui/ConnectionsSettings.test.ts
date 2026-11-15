@@ -448,8 +448,9 @@ async function openRemove() {
 it("offers an explicit host update for an SSH machine missing workspace methods", async () => {
   machines = [machine];
   await render();
-  expect(container.textContent).toContain("host update needed for Explorer and Changes");
-  expect(container.textContent).toContain("interrupts active agent turns");
+  expect(container.querySelector("[data-machine-summary]")?.textContent).toContain(
+    "Update required",
+  );
   await act(async () => button("Update Host").click());
   expect(approveUpdate).toHaveBeenCalledWith(
     expect.objectContaining({
@@ -462,6 +463,35 @@ it("offers an explicit host update for an SSH machine missing workspace methods"
     machineId: machine.id,
     upgrade: true,
   });
+});
+
+it("turns a machine off without deleting its connection and keeps Remove in the menu", async () => {
+  localStorage.removeItem("bycoda.disabledMachines");
+  machines = [machine];
+  await render();
+  const toggle = container.querySelector(
+    '[role="switch"][aria-label="Use Home Mac"]',
+  ) as HTMLElement;
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  vi.mocked(invoke).mockClear();
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(container.querySelector("[data-machine-summary]")?.textContent).toContain("Disabled");
+  expect(localStorage.getItem("bycoda.disabledMachines")).toBe('["env"]');
+  // Nothing was removed or revoked: the credential, routes and cache stay.
+  const commands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+  expect(commands).not.toContain("remote_disconnect");
+  expect(commands.some((command) => /revoke|forget|remove|delete/i.test(command))).toBe(false);
+  expect(container.textContent).toContain("Home Mac");
+  await act(async () =>
+    (container.querySelector('[aria-label="Actions for Home Mac"]') as HTMLElement).click(),
+  );
+  expect(document.querySelector('[role="menuitem"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Remove connection…");
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(localStorage.getItem("bycoda.disabledMachines")).toBe("[]");
+  localStorage.removeItem("bycoda.disabledMachines");
 });
 
 it("does not restart an SSH Host when interruption approval is cancelled", async () => {
@@ -800,5 +830,7 @@ it.each([
   machines = [machine];
   await render();
   // A busy host (for example while this computer builds) keeps its last status.
-  expect(container.textContent?.includes("Offline · reconnect to check access")).toBe(offline);
+  expect(container.querySelector("[data-machine-summary]")?.textContent?.includes("Offline")).toBe(
+    offline,
+  );
 });

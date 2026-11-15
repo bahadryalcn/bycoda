@@ -14399,5 +14399,15 @@
   "Advanced: add manually": "高级：手动添加",
   "Add manually": "手动添加",
   "Pick one of the machines found above to get started.": "从上方发现的机器中选择一台开始。",
-  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "尚未连接任何机器。请在设置中选择账户里的一台，然后在这里打开其上的文件夹。"
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "尚未连接任何机器。请在设置中选择账户里的一台，然后在这里打开其上的文件夹。",
+  "Update required": "需要更新",
+  "LAN": "局域网",
+  "1 route": "1 条路由",
+  "{p0} routes": "{p0} 条路由",
+  "Tunnel": "隧道",
+  "Found automatically": "自动发现",
+  "About addresses": "关于地址",
+  "The host needs an update for Explorer and Changes.": "主机需要更新才能使用资源管理器和更改。",
+  "Install a supported provider on the host.": "请在主机上安装受支持的提供商。",
+  "About this status": "关于此状态"
 }

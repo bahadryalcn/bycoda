@@ -433,7 +433,7 @@
     {
       "id": "connections",
       "config": "tests/browser/connections/playwright.connections.config.ts",
-      "files": ["connections.e2e.ts"],
+      "files": ["connections.e2e.ts", "machine-rows.e2e.ts"],
       "fixture": {
         "config": "tests/browser/connections/vite.connections.config.ts",
         "mode": "preview",
@@ -443,7 +443,7 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["connections.e2e.ts"]
+          "files": ["connections.e2e.ts", "machine-rows.e2e.ts"]
         }
       ]
     },
@@ -1858,7 +1858,7 @@
     },
     {
       "config": "tests/browser/connections/playwright.connections.config.ts",
-      "files": ["connections.e2e.ts"],
+      "files": ["connections.e2e.ts", "machine-rows.e2e.ts"],
       "browsers": ["chromium"]
     },
     {

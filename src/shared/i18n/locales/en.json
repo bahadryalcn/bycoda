@@ -14399,5 +14399,15 @@
   "Advanced: add manually": "Advanced: add manually",
   "Add manually": "Add manually",
   "Pick one of the machines found above to get started.": "Pick one of the machines found above to get started.",
-  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here."
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.",
+  "Update required": "Update required",
+  "LAN": "LAN",
+  "1 route": "1 route",
+  "{p0} routes": "{p0} routes",
+  "Tunnel": "Tunnel",
+  "Found automatically": "Found automatically",
+  "About addresses": "About addresses",
+  "The host needs an update for Explorer and Changes.": "The host needs an update for Explorer and Changes.",
+  "Install a supported provider on the host.": "Install a supported provider on the host.",
+  "About this status": "About this status"
 }

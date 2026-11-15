@@ -114,6 +114,7 @@ it("lists every address with its kind, source, whether it responds and the one i
   expect(invoke).toHaveBeenCalledWith("remote_machine_routes", {
     machineId: "m1",
     target: machine.ssh,
+    environmentId: "env",
   });
   expect(invoke).toHaveBeenCalledWith("remote_machine_route_check", { target: machine.ssh });
   expect(row("100.97.82.0")).toContain("Tailscale · SSH address");
@@ -162,4 +163,24 @@ it("shows only the saved other address when the desktop cannot answer", async ()
   invoke.mockRejectedValue(new Error("no desktop"));
   await render();
   expect(container.textContent).toBe("Other address · me@192.168.2.145");
+});
+
+it("lists an account Quick Tunnel as a Tunnel route found automatically, and marks it in use", async () => {
+  const withTunnel = {
+    ...ROUTES,
+    routes: [
+      ...ROUTES.routes,
+      { address: "calm-river.trycloudflare.com", kind: "tunnel", source: "account", enabled: true },
+    ],
+    active: "calm-river.trycloudflare.com",
+  };
+  invoke.mockImplementation(answer(withTunnel));
+  await render();
+  expect(row("calm-river.trycloudflare.com")).toContain("Tunnel · Found automatically");
+  expect(row("calm-river.trycloudflare.com")).toContain("In use");
+  expect(row("192.168.2.145")).not.toContain("In use");
+  // What the account taught cannot be switched off; the host's own addresses keep their switches.
+  expect(
+    container.querySelector('[data-route="calm-river.trycloudflare.com"] [role="switch"]'),
+  ).toBeNull();
 });
