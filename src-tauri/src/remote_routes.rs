@@ -82,6 +82,27 @@ struct Store {
 }
 
 static STORE: Mutex<Option<Store>> = Mutex::new(None);
+/// The account tunnel each environment's latest `environment.describe` answered
+/// over, `None` once the saved route answered instead. Memory only.
+static ACCOUNT_IN_USE: Mutex<Vec<(String, Option<String>)>> = Mutex::new(Vec::new());
+
+pub(crate) fn note_account_route(environment_id: &str, endpoint: Option<&str>) {
+    let mut guard = ACCOUNT_IN_USE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    guard.retain(|(id, _)| id != environment_id);
+    guard.push((environment_id.to_string(), endpoint.map(str::to_string)));
+}
+
+fn account_in_use(environment_id: &str) -> Option<String> {
+    let guard = ACCOUNT_IN_USE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    guard
+        .iter()
+        .find(|(id, _)| id == environment_id)
+        .and_then(|(_, endpoint)| endpoint.clone())
+}
 
 pub(crate) fn account_tunnel(value: &str) -> Option<String> {
     if value.len() > 256 {
@@ -470,9 +491,11 @@ pub fn watch_better_routes(app: tauri::AppHandle) {
 #[serde(rename_all = "camelCase")]
 pub struct RouteView {
     address: String,
-    /// `tailscale`, `lan`, or `name` for an ssh-config alias or host name.
+    /// `tailscale`, `lan`, `tunnel` (a Quick Tunnel from the account), or `name`
+    /// for an ssh-config alias or host name.
     kind: &'static str,
-    /// `saved`, `other` (the saved other address) or `reported` by the Host.
+    /// `saved`, `other` (the saved other address), `reported` by the Host or
+    /// `account` (learned from the signed-in account).
     source: &'static str,
     /// Turned on; the saved address always is.
     enabled: bool,
@@ -535,36 +558,76 @@ fn route_list(
     routes
 }
 
+/// Quick Tunnel addresses learned from the account, after the dialed ones. The
+/// tunnel the latest answer came over is the one in use.
+fn tunnel_views(environment_id: &str) -> (Vec<RouteView>, Option<String>) {
+    let in_use = account_in_use(environment_id).and_then(|endpoint| account_tunnel(&endpoint));
+    let views = account_endpoints(environment_id)
+        .into_iter()
+        .filter_map(|endpoint| {
+            let host = url::Url::parse(&endpoint).ok()?.host_str()?.to_string();
+            Some(RouteView {
+                address: host,
+                kind: "tunnel",
+                source: "account",
+                enabled: true,
+            })
+        })
+        .collect();
+    let active = in_use
+        .and_then(|origin| url::Url::parse(&origin).ok())
+        .and_then(|url| url.host_str().map(str::to_string));
+    (views, active)
+}
+
 fn machine_routes(
     machine_id: &str,
-    target: &SshTarget,
+    target: Option<&SshTarget>,
+    environment_id: Option<&str>,
     state: &RemoteConnections,
 ) -> MachineRoutes {
-    let (disabled, prefer) = with_store(|store| {
-        store
-            .machines
-            .get(&key(target))
-            .map(|entry| (entry.disabled.clone(), entry.prefer))
-            .unwrap_or_default()
-    });
-    let reported: Vec<String> = learned(target)
-        .iter()
-        .map(|route| host_of(&route.target))
-        .collect();
-    let other = target.alternate.as_deref().map(host_of);
+    let (mut routes, prefer, mut active) = match target {
+        Some(target) => {
+            let (disabled, prefer) = with_store(|store| {
+                store
+                    .machines
+                    .get(&key(target))
+                    .map(|entry| (entry.disabled.clone(), entry.prefer))
+                    .unwrap_or_default()
+            });
+            let reported: Vec<String> = learned(target)
+                .iter()
+                .map(|route| host_of(&route.target))
+                .collect();
+            let other = target.alternate.as_deref().map(host_of);
+            (
+                route_list(
+                    &host_of(&target.target),
+                    other.as_deref(),
+                    &reported,
+                    &disabled,
+                    prefer,
+                ),
+                prefer,
+                state
+                    .tunnels
+                    .dialed(machine_id)
+                    .map(|dial| host_of(&dial.target)),
+            )
+        }
+        None => (Vec::new(), Prefer::default(), None),
+    };
+    if let Some(environment_id) = environment_id {
+        let (tunnels, in_use) = tunnel_views(environment_id);
+        routes.extend(tunnels);
+        if in_use.is_some() {
+            active = in_use;
+        }
+    }
     MachineRoutes {
-        routes: route_list(
-            &host_of(&target.target),
-            other.as_deref(),
-            &reported,
-            &disabled,
-            prefer,
-        ),
+        routes,
         prefer,
-        active: state
-            .tunnels
-            .dialed(machine_id)
-            .map(|dial| host_of(&dial.target)),
+        active,
     }
 }
 
@@ -575,11 +638,17 @@ fn machine_routes(
 pub async fn remote_machine_routes(
     app: tauri::AppHandle,
     machine_id: String,
-    target: SshTarget,
+    target: Option<SshTarget>,
+    environment_id: Option<String>,
 ) -> Result<MachineRoutes, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<RemoteConnections>();
-        machine_routes(&machine_id, &target, &state)
+        machine_routes(
+            &machine_id,
+            target.as_ref(),
+            environment_id.as_deref(),
+            &state,
+        )
     })
     .await
     .map_err(|error| error.to_string())
@@ -672,7 +741,7 @@ pub async fn remote_machine_route_settings(
         entry.prefer = prefer;
         persist(store);
     });
-    remote_machine_routes(app, machine_id, target).await
+    remote_machine_routes(app, machine_id, Some(target), None).await
 }
 
 /// The port a `connection-info` result reports (the script's last line).
@@ -884,6 +953,26 @@ mod tests {
             hosts(&arrange(&saved, candidates())),
             ["100.97.82.0", "macbook", "192.168.2.145", "10.0.0.4"]
         );
+    }
+
+    #[test]
+    fn account_tunnels_are_listed_as_tunnel_routes_and_the_answering_one_is_in_use() {
+        let environment = "tunnel-view-env";
+        learn_account_endpoint(environment, "https://abc-123.trycloudflare.com".into());
+        let (views, active) = tunnel_views(environment);
+        assert_eq!(active, None);
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            (views[0].address.as_str(), views[0].kind, views[0].source),
+            ("abc-123.trycloudflare.com", "tunnel", "account")
+        );
+        note_account_route(environment, Some("https://abc-123.trycloudflare.com"));
+        assert_eq!(
+            tunnel_views(environment).1.as_deref(),
+            Some("abc-123.trycloudflare.com")
+        );
+        note_account_route(environment, None);
+        assert_eq!(tunnel_views(environment).1, None);
     }
 
     #[test]

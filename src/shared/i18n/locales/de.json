@@ -14386,5 +14386,15 @@
   "Advanced: add manually": "Erweitert: manuell hinzufügen",
   "Add manually": "Manuell hinzufügen",
   "Pick one of the machines found above to get started.": "Wähle oben einen der gefundenen Computer, um zu beginnen.",
-  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "Noch keine Computer verbunden. Wähle in den Einstellungen einen aus deinem Konto und öffne dann hier einen Ordner darauf."
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "Noch keine Computer verbunden. Wähle in den Einstellungen einen aus deinem Konto und öffne dann hier einen Ordner darauf.",
+  "Update required": "Update erforderlich",
+  "LAN": "LAN",
+  "1 route": "1 Route",
+  "{p0} routes": "{p0} Routen",
+  "Tunnel": "Tunnel",
+  "Found automatically": "Automatisch gefunden",
+  "About addresses": "Über Adressen",
+  "The host needs an update for Explorer and Changes.": "Der Host braucht ein Update für Explorer und Änderungen.",
+  "Install a supported provider on the host.": "Installiere einen unterstützten Anbieter auf dem Host.",
+  "About this status": "Über diesen Status"
 }

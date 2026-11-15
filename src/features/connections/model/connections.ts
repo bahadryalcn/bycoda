@@ -20,6 +20,7 @@ import { subscribeRemoteMachineChannel } from "./remoteMachineChannel";
 import { remoteProjectFor } from "./remoteProjects";
 import { railSessions, type RemoteRailSession } from "./remoteRailSessions";
 import { blocksSending } from "./remoteConnection";
+import { isMachineEnabled } from "./machineEnabled";
 import {
   bindMachineEnvironment,
   captureConnectionGeneration,
@@ -333,8 +334,10 @@ export {
  * background polls fail fast instead. A machine not known to be down (nothing
  * has failed yet, such as at startup) is still connected on first use. */
 export function mayStartTunnel(machineId: string, fresh: boolean, userInitiated: boolean): boolean {
-  if (fresh || userInitiated) return true;
   const environmentId = cachedMachines.find((entry) => entry.id === machineId)?.environmentId;
+  // A machine the owner turned off is only dialed when the owner asks.
+  if (environmentId && !isMachineEnabled(environmentId) && !userInitiated) return false;
+  if (fresh || userInitiated) return true;
   if (environmentId && readRemoteLifecycle(environmentId).paused) return false;
   if (loadRemoteAutoReconnect()) return true;
   return !environmentId || !blocksSending(readRemoteConnection(environmentId).status);

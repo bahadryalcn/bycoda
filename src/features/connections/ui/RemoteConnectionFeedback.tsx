@@ -9,7 +9,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { connectionOutcome } from "../model/remoteConnection";
+import { connectionOutcome, RECONNECT_GRACE_MS } from "../model/remoteConnection";
 import { isConnectionFailure, type RemoteFailure } from "../model/remoteFailure";
 import { parseRemotePath } from "../model/remoteProjects";
 import { useRemoteConnection } from "../model/useRemoteConnection";
@@ -19,7 +19,7 @@ import {
 } from "../../settings/public/settings";
 import { RemoteLoadError } from "./RemoteLoadError";
 
-const TRANSIENT_NOTICE_DELAY_MS = 45_000;
+const TRANSIENT_NOTICE_DELAY_MS = RECONNECT_GRACE_MS;
 type Registration = { environmentId: string; failure?: RemoteFailure };
 type Feedback = {
   entries: ReadonlyMap<symbol, Registration>;

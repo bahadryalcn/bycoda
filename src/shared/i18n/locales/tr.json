@@ -14386,5 +14386,15 @@
   "Advanced: add manually": "Gelişmiş: elle ekle",
   "Add manually": "Elle ekle",
   "Pick one of the machines found above to get started.": "Başlamak için yukarıda bulunan makinelerden birini seç.",
-  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "Henüz bağlı makine yok. Ayarlar'da hesabında bulunan birini seç, sonra burada üzerinde bir klasör aç."
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "Henüz bağlı makine yok. Ayarlar'da hesabında bulunan birini seç, sonra burada üzerinde bir klasör aç.",
+  "Update required": "Güncelleme gerekli",
+  "LAN": "Yerel ağ",
+  "1 route": "1 rota",
+  "{p0} routes": "{p0} rota",
+  "Tunnel": "Tünel",
+  "Found automatically": "Otomatik bulundu",
+  "About addresses": "Adresler hakkında",
+  "The host needs an update for Explorer and Changes.": "Gezgin ve Değişiklikler için ana makinenin güncellenmesi gerekiyor.",
+  "Install a supported provider on the host.": "Ana makineye desteklenen bir sağlayıcı kurun.",
+  "About this status": "Bu durum hakkında"
 }
