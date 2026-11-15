@@ -103,13 +103,15 @@ function AccountDot({ account }: { account: PanelAccount }) {
   ) : null;
 }
 
-function Percent({ value }: { value: number | null }) {
+/** Share of the account's limit used; `bare` drops the word where the control's name says it. */
+function Percent({ value, bare = false }: { value: number | null; bare?: boolean }) {
   const { formatNumber } = useFormat();
   const t = useT();
   if (value == null) return null;
+  const percent = formatNumber(value / 100, { style: "percent", maximumFractionDigits: 0 });
   return (
     <span className="shrink-0 tabular-nums ui-caption-text">
-      {formatNumber(value / 100, { style: "percent", maximumFractionDigits: 0 })} {t("used")}
+      {bare ? percent : `${percent} ${t("used")}`}
     </span>
   );
 }
@@ -185,15 +187,19 @@ export function ModelAccountControl({
     defaultAccountId && defaultAccountId !== accountId
       ? accounts.find((account) => account.id === defaultAccountId)
       : undefined;
+  const used =
+    current?.usedPercent != null
+      ? ` · ${formatNumber(current.usedPercent / 100, { style: "percent", maximumFractionDigits: 0 })} ${t("used")}`
+      : "";
   const name = elsewhere
-    ? `${t("Account: {p0}", { p0: label })} · ${t("Default: {p0}", { p0: elsewhere.label })}`
-    : t("Account: {p0}", { p0: label });
+    ? `${t("Account: {p0}", { p0: label })}${used} · ${t("Default: {p0}", { p0: elsewhere.label })}`
+    : `${t("Account: {p0}", { p0: label })}${used}`;
   return (
     <Button
       variant="ghost"
       size="sm"
       type="button"
-      className="min-w-0 max-w-[65%]"
+      className="min-w-0 max-w-full"
       data-model-account-menu
       aria-haspopup="listbox"
       expanded={listOpen}
@@ -206,7 +212,7 @@ export function ModelAccountControl({
       <Text size="inherit" tone="inherit" truncate className="min-w-0">
         {label}
       </Text>
-      <Percent value={current?.usedPercent ?? null} />
+      <Percent bare value={current?.usedPercent ?? null} />
       {current && current.id === defaultAccountId ? <DefaultMark /> : null}
       <span
         {...surfaceAttributes(
