@@ -71,25 +71,31 @@ describe("AgentMarkdown inline code", () => {
 });
 
 describe("AgentMarkdown code fence highlighting", () => {
-  it("falls back to JS highlighting for a fence tagged text", () => {
+  it("keeps a fence tagged text plain", () => {
     const markup = renderToStaticMarkup(
       createElement(AgentMarkdown, {
         text: "```text\nconst x = 1;\n```",
       }),
     );
 
-    expect(markup).toContain('data-language="js"');
-    expect(markup).not.toContain('data-language="text"');
+    expect(markup).toContain('data-language="text"');
   });
 
-  it("falls back to JS highlighting for an untagged fence", () => {
-    const markup = renderToStaticMarkup(
-      createElement(AgentMarkdown, {
-        text: "```\nconst x = 1;\n```",
-      }),
+  it("detects the language of an untagged fence", () => {
+    const script = renderToStaticMarkup(
+      createElement(AgentMarkdown, { text: "```\nconst x = 1;\n```" }),
     );
+    expect(script).toContain('data-language="javascript"');
 
-    expect(markup).toContain('data-language="js"');
+    const shell = renderToStaticMarkup(
+      createElement(AgentMarkdown, { text: "```\nrm -rf build/*\n```" }),
+    );
+    expect(shell).toContain('data-language="bash"');
+
+    const prose = renderToStaticMarkup(
+      createElement(AgentMarkdown, { text: "```\nsrc/\n  index.ts\n```" }),
+    );
+    expect(prose).toContain('data-language="text"');
   });
 
   it("leaves an explicit real language alone", () => {
@@ -102,14 +108,14 @@ describe("AgentMarkdown code fence highlighting", () => {
     expect(markup).toContain('data-language="python"');
   });
 
-  it("keeps a text fence labeled text despite the JS highlighting fallback", () => {
+  it("keeps a text fence labeled text", () => {
     const markup = renderToStaticMarkup(
       createElement(AgentMarkdown, {
         text: "```text\nconst x = 1;\n```",
       }),
     );
 
-    expect(markup).toContain('data-language="js"');
+    expect(markup).toContain('data-language="text"');
     expect(markup).toMatch(/class="markdown-code-fallback-label"[^>]*>text<\/span>/);
   });
 
@@ -129,7 +135,7 @@ describe("AgentMarkdown code fence highlighting", () => {
         text: "```plaintext\nconst x = 1;\n```",
       }),
     );
-    expect(plaintextMarkup).toContain('data-language="js"');
+    expect(plaintextMarkup).toContain('data-language="text"');
     expect(plaintextMarkup).toMatch(/class="markdown-code-fallback-label"[^>]*>plaintext<\/span>/);
 
     const txtMarkup = renderToStaticMarkup(
@@ -137,7 +143,7 @@ describe("AgentMarkdown code fence highlighting", () => {
         text: "```txt\nconst x = 1;\n```",
       }),
     );
-    expect(txtMarkup).toContain('data-language="js"');
+    expect(txtMarkup).toContain('data-language="text"');
     expect(txtMarkup).toMatch(/class="markdown-code-fallback-label"[^>]*>txt<\/span>/);
   });
 

@@ -3798,19 +3798,15 @@ function ConnectedRemoteSession({
       }
     }
   };
-  const loadLargeRemoteBlock = async (blockId: string, revision: number) => {
+  const loadLargeRemoteBlock = async (blockId: string, previewRevision: number) => {
     const current = snapshotRef.current;
-    if (
-      !sessionId ||
-      !current ||
-      current.revision !== revision ||
-      loadingRemoteBlocks.current.has(blockId)
-    )
-      return;
+    if (!sessionId || !current || loadingRemoteBlocks.current.has(blockId)) return;
+    // The preview keeps its own revision across deltas; the read pins the session's.
+    const revision = current.revision;
     const token = bindingGen.capture(remoteBindingKey, sessionId);
     const ownerSessionId = current.session.id;
     const stub = current.session.blocks.find((block) => block.id === blockId);
-    if (!stub?.remoteContent || stub.remoteContent.revision !== revision) return;
+    if (!stub?.remoteContent || stub.remoteContent.revision !== previewRevision) return;
     loadingRemoteBlocks.current.add(blockId);
     try {
       const full = await loadRemoteBlock(machine.id, sessionId, blockId, revision, executionClient);

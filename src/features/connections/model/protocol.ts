@@ -331,20 +331,13 @@ export function applySessionSync(known: HostSession | undefined, sync: SessionSy
     ...sync.value,
     session: {
       ...sync.value.session,
+      // A block the delta did not resend keeps its object, so identity caches
+      // downstream skip it. `remoteContent.revision` names the preview's own
+      // revision; the full-content read pins the session's current revision.
       blocks: sync.blockIds.map((id) => {
         const block = blocks.get(id);
         if (!block) throw new Error("Session sync is missing a block");
-        // The full-content endpoint pins the whole session revision, including
-        // status-only changes that did not replace this block's preview.
-        return block.remoteContent && block.remoteContent.revision !== sync.value.revision
-          ? {
-              ...block,
-              remoteContent: {
-                ...block.remoteContent,
-                revision: sync.value.revision,
-              },
-            }
-          : block;
+        return block;
       }),
     },
   };

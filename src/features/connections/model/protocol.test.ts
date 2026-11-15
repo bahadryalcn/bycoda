@@ -117,12 +117,12 @@ it("keeps an unchanged preview expandable after a status-only revision", () => {
     blockIds: ["user", "reply"],
     blocks: [],
   });
-  expect(next.session.blocks[1]?.remoteContent).toEqual({
-    revision: 5,
-    bytes: 200000,
-  });
+  // The unchanged preview keeps its object; the full-content read pins the
+  // session's current revision (RemoteSession `loadLargeRemoteBlock`).
+  expect(next.session.blocks[1]).toBe(preview);
   expect(next.session.blocks[0]).toBe(partial.session.blocks[0]);
   expect(preview.remoteContent.revision).toBe(4);
+  expect(next.revision).toBe(5);
 });
 
 it("rejects deltas that do not apply, so the caller loads a snapshot", () => {

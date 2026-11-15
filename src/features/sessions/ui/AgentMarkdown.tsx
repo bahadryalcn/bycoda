@@ -13,6 +13,7 @@ import { useLocale, useT } from "../../../shared/i18n";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { resolveNoteImagePath } from "../../notes/notes";
 import { openWorkspaceUrl } from "../../connections/public/workspaceUrls";
+import { openExternal } from "../../../platform/tauri/openExternal";
 import {
   createContext,
   isValidElement,
@@ -278,9 +279,20 @@ function MarkdownLink({
             return;
           }
           event.preventDefault();
-          if (href && /^https?:\/\//i.test(href)) {
+          if (href?.startsWith("#")) {
+            scrollToMessageAnchor(event.currentTarget, href.slice(1));
+            return;
+          }
+          const open = !href
+            ? undefined
+            : /^https?:\/\//i.test(href)
+              ? () => openWorkspaceUrl(cwd, href)
+              : /^mailto:/i.test(href)
+                ? () => openExternal(href)
+                : undefined;
+          if (open) {
             setLinkError(undefined);
-            void openWorkspaceUrl(cwd, href).catch((error) => {
+            void open().catch((error: unknown) => {
               setLinkError(error instanceof Error ? error.message : String(error));
             });
           }
@@ -321,6 +333,23 @@ function MarkdownLink({
     );
   }
   return link;
+}
+
+/**
+ * Scroll to an in-message anchor such as a footnote. Every reply numbers its footnotes
+ * from 1, so the target is looked up inside the link's own message, not the document.
+ */
+function scrollToMessageAnchor(link: Element, id: string) {
+  if (!id) return;
+  let target: Element | null = null;
+  try {
+    target = (link.closest(".agent-markdown") ?? link.ownerDocument).querySelector(
+      `[id="${CSS.escape(decodeURIComponent(id))}"]`,
+    );
+  } catch {
+    // A malformed escape in the fragment names no element.
+  }
+  target?.scrollIntoView({ block: "nearest" });
 }
 
 function FileRevealButton({ path }: { path: string }) {
@@ -482,12 +511,12 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
   const iconName = fence.fileName ?? (fence.language ? fileNameForLanguage(fence.language) : "");
   const lineNumbers = !/\bnoLineNumbers\b/.test(meta);
   const code = textContent(children);
-  // highlightLanguageFor swaps the fence language for "js" so Shiki still
-  // colors plaintext fences, but Streamdown's CodeBlock reuses that same
-  // value for the header label. Without this, a `text` fence would show a
-  // "js" header, and an untagged fence would gain a header it never had.
-  // Render our own label with the original language instead, and hide
-  // Streamdown's via CSS (see .markdown-code-fallback-label in index.css).
+  // highlightLanguageFor picks a grammar for plaintext fences (a detected one
+  // for untagged fences), but Streamdown's CodeBlock reuses that same value
+  // for the header label. Without this, an untagged fence would gain a header
+  // naming a language it never declared. Render our own label with the
+  // original language instead, and hide Streamdown's via CSS (see
+  // .markdown-code-fallback-label in index.css).
   const isPlaintextFallback = PLAINTEXT_FENCE_LANGUAGES.has(fence.language.toLowerCase());
 
   return (
@@ -508,7 +537,7 @@ function MarkdownCode({ children, className, node, onContextMenu, ...props }: Ma
         className={className}
         code={code}
         isIncomplete={incomplete}
-        language={highlightLanguageFor(fence.language)}
+        language={highlightLanguageFor(fence.language, code)}
         lineNumbers={lineNumbers}
         startLine={fence.startLine}
       />

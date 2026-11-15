@@ -58,3 +58,40 @@ it("commits once per text update, then again only when async highlighting change
     plugin.highlight.mockReset();
   }
 });
+
+it("shows every streamed line when highlighting a later version fails", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  let complete: (result: HighlightResult) => void = () => {};
+  plugin.highlight.mockImplementation((_args, callback) => {
+    complete = callback;
+    return null;
+  });
+  // What the highlighter reports on failure: the given code as untokenized lines.
+  const plain = (code: string) =>
+    ({ tokens: code.split("\n").map((content) => [{ content }]) }) as unknown as HighlightResult;
+  const render = (code: string) =>
+    act(() =>
+      root.render(
+        createElement(HighlightedCodeBlock, {
+          code,
+          language: "ts",
+          isIncomplete: true,
+          lineNumbers: false,
+        }),
+      ),
+    );
+  try {
+    render("first");
+    act(() => complete(plain("first")));
+    render("first\nlater line");
+    expect(container.textContent).not.toContain("later line");
+    act(() => complete(plain("first\nlater line")));
+    expect(container.textContent).toContain("later line");
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+    plugin.highlight.mockReset();
+  }
+});

@@ -27,6 +27,14 @@ const MAX_CACHED_CHARS = 500_000;
 const TOKEN_WEIGHT_CHARS = 8;
 /** Streams resumed independently: replies, panes and subagents can stream fences at once. */
 const MAX_CHECKPOINTS = 8;
+/**
+ * Larger blocks render as plain text: tokenizing runs on the main thread, and 2,000
+ * lines already froze the window for about half a second.
+ */
+export const MAX_HIGHLIGHT_LINES = 2_000;
+export const MAX_HIGHLIGHT_CHARS = 200_000;
+/** Languages without a grammar; tokenizing them only splits lines. */
+const PLAIN_LANGUAGES = new Set(["text", "plaintext", "txt", "plain", ""]);
 
 type Highlighter = Awaited<ReturnType<typeof createHighlighter>>;
 type HighlightCallback = (result: HighlightResult) => void;
@@ -45,6 +53,29 @@ const supported = new Set(Object.keys(bundledLanguages));
 function normalizeLanguage(language: string): string {
   const lower = language.trim().toLowerCase();
   return aliases[lower] ?? lower;
+}
+
+/** Untokenized lines of `code`, in the shape of a highlight result. */
+export function plainHighlightResult(code: string): HighlightResult {
+  let offset = 0;
+  const tokens = code.split("\n").map((line) => {
+    const start = offset;
+    offset += line.length + 1;
+    const content = line.endsWith("\r") ? line.slice(0, -1) : line;
+    return [{ content, offset: start }];
+  });
+  return { tokens } as HighlightResult;
+}
+
+/** Whether `code` is past the size Shiki may tokenize on the main thread. */
+function exceedsHighlightLimit(code: string): boolean {
+  if (code.length > MAX_HIGHLIGHT_CHARS) return true;
+  let lines = 1;
+  for (let index = code.indexOf("\n"); index !== -1; index = code.indexOf("\n", index + 1)) {
+    lines += 1;
+    if (lines > MAX_HIGHLIGHT_LINES) return true;
+  }
+  return false;
 }
 
 function themeName(theme: ThemeInput): string {
@@ -128,6 +159,8 @@ export function createBoundedCodePlugin(
     cachedResults: () => results.size,
     highlight({ code, language, themes: pair }, callback) {
       const lang = normalizeLanguage(language);
+      if (PLAIN_LANGUAGES.has(lang) || exceedsHighlightLimit(code))
+        return plainHighlightResult(code);
       const names = [themeName(pair[0]), themeName(pair[1])] as const;
       const config = `${lang}\u0000${themeKey(pair[0])}\u0000${themeKey(pair[1])}`;
       const key = `${config}\u0000${code}`;
@@ -209,8 +242,13 @@ export function createBoundedCodePlugin(
           callbacks?.forEach((notify) => notify(result));
         })
         .catch((error: unknown) => {
+          const callbacks = pending.get(key);
           pending.delete(key);
           console.error("[Code highlight] Failed to highlight code:", error);
+          // Waiting blocks still show the whole current code; a streaming block would
+          // otherwise keep its last, shorter highlight and never show later lines.
+          const plain = plainHighlightResult(code);
+          callbacks?.forEach((notify) => notify(plain));
         });
       return null;
     },

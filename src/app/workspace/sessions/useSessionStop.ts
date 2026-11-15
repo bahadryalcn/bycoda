@@ -195,6 +195,10 @@ export function useSessionStop(deps: SessionStopDeps) {
             );
             throw new Error(`Stop failed: ${detail}. Try Stop again.`);
           }
+          // Output emitted while cancellation was in flight is still queued for
+          // this generation; apply it now so a later flush cannot reopen a
+          // streaming block after the turn is marked stopped.
+          flushHarnessEvents();
           turnGen.current.set(sessionId, generation + 1);
           setSessions((prev) =>
             prev.map((s) => {

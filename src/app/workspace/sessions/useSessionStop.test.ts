@@ -149,6 +149,42 @@ it("does not cancel a replacement turn after flushing pending events", () => {
   expect(cancel).not.toHaveBeenCalled();
 });
 
+it("applies output queued while cancellation was in flight before marking the turn stopped", async () => {
+  let release!: () => void;
+  cancel.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  // The queue applies whatever arrived since its last flush.
+  let pending = false;
+  vi.mocked(deps.flushHarnessEvents).mockImplementation(() => {
+    if (!pending) return;
+    pending = false;
+    deps.setSessions((sessions) =>
+      sessions.map((session) => ({
+        ...session,
+        blocks: [
+          ...session.blocks,
+          { id: "late", role: "assistant", text: "late delta", streaming: true },
+        ],
+      })),
+    );
+  });
+  stop(current().id);
+  await vi.waitFor(() => expect(cancel).toHaveBeenCalled());
+  // The provider emits one more delta before it acknowledges Stop.
+  pending = true;
+  release();
+  await vi.waitFor(() => expect(current().busy).toBe(false));
+  expect(current().blocks.find((block) => block.id === "late")?.text).toBe("late delta");
+  expect(current().blocks.some((block) => block.streaming)).toBe(false);
+  // A later flush has nothing left to reopen the stopped turn with.
+  deps.flushHarnessEvents();
+  expect(current().blocks.some((block) => block.streaming)).toBe(false);
+});
+
 it("does not redirect a guarded desktop stop to a new remote or orchestration owner", () => {
   const guard = () => true;
   remoteProject.mockReturnValue({ id: "remote" });
