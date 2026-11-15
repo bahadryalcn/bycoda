@@ -96,7 +96,7 @@ export function VoiceMemoryDialog({ onClose }: { onClose: () => void }) {
           <ul className={styles.list} aria-label={t("Saved notes")}>
             {[...memory.notes].reverse().map((note) => (
               <li
-                {...surfaceAttributes({ variant: "plain", radius: "card" }, styles.note)}
+                {...surfaceAttributes({ variant: "card", radius: "card" }, styles.note)}
                 key={note.id}
               >
                 <Text size="body" tone="primary" className={styles.text}>

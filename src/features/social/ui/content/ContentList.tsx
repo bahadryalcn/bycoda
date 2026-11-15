@@ -132,7 +132,12 @@ export function ContentList({
         ) : null}
       </div>
       {rows.length ? (
-        <ul {...surfaceAttributes({ frame: "pane", edge: "all", radius: "card" }, "content-rows")}>
+        <ul
+          {...surfaceAttributes(
+            { variant: "card", frame: "pane", edge: "all", radius: "card" },
+            "content-rows",
+          )}
+        >
           {rows.map(({ campaign, state }, index) => {
             const platforms = [
               ...new Set(
@@ -246,7 +251,10 @@ export function ContentList({
             {t("Repeating programs")}
           </SectionLabel>
           <ul
-            {...surfaceAttributes({ frame: "pane", edge: "all", radius: "card" }, "content-rows")}
+            {...surfaceAttributes(
+              { variant: "card", frame: "pane", edge: "all", radius: "card" },
+              "content-rows",
+            )}
           >
             {programs.map((program) => (
               <li key={program.id} className="content-row-static">

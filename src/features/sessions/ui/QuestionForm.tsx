@@ -388,7 +388,7 @@ function QuestionFormContent({
             frame: "card",
             edge: "all",
             radius: "card",
-            variant: docked ? "composer-glass" : "transparent",
+            variant: docked ? "floating" : "page",
           },
           `bycoda-arc ${styles.form}`,
         )}

@@ -67,7 +67,7 @@ export function NoteEditorPane({
           ...(readingPane && split
             ? { frame: "editor" as const, edge: "inline-start" as const }
             : {}),
-          ...(readingPane ? { variant: "transparent" as const } : {}),
+          ...(readingPane ? { variant: "page" as const } : {}),
         },
         hidden ? "hidden" : "note-editor-pane",
       )}

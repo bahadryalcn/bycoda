@@ -312,7 +312,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
   };
   return (
     <Surface
-      variant="quiet"
+      variant="card"
       padding="none"
       className="mb-2 overflow-hidden font-sans"
       aria-label={t("Orchestration proposal")}

@@ -168,7 +168,7 @@ export function MessagesPanel({
       <div
         ref={setPaneRef}
         {...surfaceAttributes(
-          { variant: "transparent", frame: "pane", edge: "right" },
+          { variant: "page", frame: "pane", edge: "right" },
           "inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col",
         )}
       >

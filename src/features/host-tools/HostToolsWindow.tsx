@@ -519,7 +519,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
       size="inherit"
       tone="primary"
       {...surfaceAttributes(
-        { variant: "canvas-surface" },
+        { variant: "canvas" },
         "host-tools-window body-glass tools-hub font-sans",
       )}
     >

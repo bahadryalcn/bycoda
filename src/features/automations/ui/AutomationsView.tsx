@@ -1781,7 +1781,7 @@ function AutomationEditor({
                 </InlineError>
               ) : null}
               {runs.length > 0 ? (
-                <Surface variant="outline" padding="none" className="mt-3 overflow-x-auto">
+                <Surface variant="card" padding="none" className="mt-3 overflow-x-auto">
                   <Text
                     as="div"
                     size="micro"

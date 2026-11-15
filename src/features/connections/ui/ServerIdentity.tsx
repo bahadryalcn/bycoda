@@ -8,7 +8,7 @@ export function ServerIdentity({ accent }: { accent?: string }) {
     <span
       aria-hidden
       {...surfaceAttributes(
-        { radius: "control", variant: accent ? "user-color-tint" : "fill-subtle" },
+        { radius: "control", variant: accent ? "user-color-tint" : "inset" },
         "flex size-8 shrink-0 items-center justify-center",
       )}
       style={{ "--surface-user-color": accent } as CSSProperties}

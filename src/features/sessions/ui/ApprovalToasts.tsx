@@ -467,7 +467,7 @@ export function ApprovalToasts({
                 >
                   {t("Waiting for you")}
                 </SectionLabel>
-                <Surface variant="outline" padding="none" className="notification-pending-card">
+                <Surface variant="card" padding="none" className="notification-pending-card">
                   {pendingRows.map((row, index) => (
                     <Fragment key={row.key}>
                       {index > 0 ? <Divider decorative /> : null}

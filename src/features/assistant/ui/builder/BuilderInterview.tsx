@@ -81,7 +81,7 @@ export function BuilderInterview({
             {...surfaceAttributes(
               {
                 radius: "card",
-                variant: turn.role === "owner" ? "selected" : "transparent",
+                variant: turn.role === "owner" ? "selected" : "page",
               },
               styles.bubble,
             )}

@@ -126,7 +126,7 @@ function SlackAccountForm({ account, onSaved, onCancel, onSavingChange }: Accoun
             size="caption"
             tone="secondary"
             leading="inherit"
-            {...surfaceAttributes({ radius: "card", variant: "plain" }, "integration-code")}
+            {...surfaceAttributes({ radius: "card", variant: "card" }, "integration-code")}
           >
             {SLACK_BOT_SCOPES.join(" ")}
           </Text>

@@ -3098,7 +3098,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       aria-label={t("Voice companion")}
       {...surfaceAttributes(
         {
-          variant: shownError ? "danger-floating" : "floating",
+          variant: "floating",
           frame: detaching ? "focus" : shownError ? "danger" : "neutral",
           radius: compact ? "pill" : "panel",
         },

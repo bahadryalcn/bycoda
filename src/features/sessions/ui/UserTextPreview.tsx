@@ -117,7 +117,7 @@ function TextCard({
             tone="neutral"
             face={part.kind === "json" ? "mono" : "sans"}
             {...surfaceAttributes(
-              { variant: "raised", radius: "card" },
+              { variant: "card", radius: "card" },
               "m-4 max-h-[65dvh] overflow-auto p-4",
             )}
           >

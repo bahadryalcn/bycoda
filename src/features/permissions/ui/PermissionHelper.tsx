@@ -33,7 +33,7 @@ export function PermissionHelper() {
     void revealPermissionApp().catch(() => setError(true));
   };
   return (
-    <Surface variant="raised" frame="card" className="m-1 flex flex-col gap-3 p-4">
+    <Surface variant="card" frame="card" className="m-1 flex flex-col gap-3 p-4">
       <div className="flex items-center justify-between gap-2">
         <Text weight="medium">{t("Add bycoda from Finder")}</Text>
         <Button

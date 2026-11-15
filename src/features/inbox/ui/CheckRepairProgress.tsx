@@ -333,7 +333,7 @@ function RepairCard({
       (check) => check.name === single.check.name && check.workflow === single.check.workflow,
     ).length === 1;
   return (
-    <Surface variant="outline" padding="none" className="overflow-hidden">
+    <Surface variant="card" padding="none" className="overflow-hidden">
       <Disclosure
         variant="row"
         chevron="end"
@@ -426,7 +426,7 @@ function RepairCard({
                   tone="secondary"
 
                   {...surfaceAttributes(
-                    { radius: "sm", variant: "raised" },
+                    { radius: "sm", variant: "card" },
                     "max-w-full break-words px-2 py-1",
                   )}
                 >

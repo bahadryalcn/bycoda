@@ -510,7 +510,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
             </div>
 
             <Surface
-              variant="outline"
+              variant="card"
               padding="none"
               className="flex min-h-0 flex-col overflow-hidden"
             >

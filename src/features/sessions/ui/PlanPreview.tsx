@@ -50,7 +50,7 @@ export function PlanPreview({
         : t("Build");
 
   return (
-    <Surface variant="quiet" padding="none" className="mb-2 overflow-hidden">
+    <Surface variant="card" padding="none" className="mb-2 overflow-hidden">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {streaming ? (
           <CircleDashed className="mt-0.5 icon-md shrink-0" tone="secondary" strokeWidth={1.75} />

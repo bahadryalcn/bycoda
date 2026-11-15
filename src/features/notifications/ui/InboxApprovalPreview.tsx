@@ -98,7 +98,7 @@ export function InboxApprovalPreview({
             <Surface
               key={`${comment.path}:${comment.line}:${index}`}
               as="article"
-              variant="outline"
+              variant="card"
               padding="none"
               className="min-w-0 overflow-hidden"
             >

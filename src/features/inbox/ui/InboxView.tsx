@@ -734,7 +734,7 @@ export function InboxView({
     <div
       ref={resize.setPaneRef}
       {...surfaceAttributes(
-        { frame: "pane", edge: "responsive-end", variant: "transparent" },
+        { frame: "pane", edge: "responsive-end", variant: "page" },
         "inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col",
       )}
     >
@@ -1057,7 +1057,7 @@ export function InboxView({
         <>
           <div
             {...surfaceAttributes(
-              { variant: "transparent" },
+              { variant: "page" },
               "inbox-board-band flex shrink-0 flex-wrap items-center",
             )}
           >

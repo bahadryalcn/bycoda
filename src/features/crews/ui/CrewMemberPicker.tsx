@@ -144,7 +144,7 @@ export function CrewMemberPicker({
                 role="group"
                 aria-label={t("Selected members")}
                 {...surfaceAttributes(
-                  { variant: "transparent" },
+                  { variant: "page" },
                   "flex min-w-0 flex-col gap-1.5 rounded-(--ui-radius-card) p-2",
                 )}
               >
@@ -259,7 +259,7 @@ export function CrewMemberPicker({
             autoFocus
           />
           <Surface
-            variant="outline"
+            variant="card"
             padding="sm"
             className="flex min-w-0 flex-wrap items-center gap-3"
           >

@@ -35,7 +35,7 @@ export type DisclosureProps = Omit<ComponentPropsWithRef<"details">, "children" 
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   /**
-   * `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="outline"`,
+   * `plain` inline text-level, `row` list-row height, `card` framed like `Surface variant="card"`,
    * `step` one 24px line for a transcript step: the whole row toggles, the label may lead with an
    * icon, the body opens below. Mount the body only while `open` to keep long lists cheap.
    */

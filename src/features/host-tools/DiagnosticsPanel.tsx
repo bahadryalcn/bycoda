@@ -295,7 +295,7 @@ function ProjectDiagnosticsPanel({
       {sample ? (
         <>
           <div className="resource-cards">
-            <Surface as="article" variant="outline" className="resource-card">
+            <Surface as="article" variant="card" className="resource-card">
               <SectionLabel as="h3">{t("bycoda host CPU")}</SectionLabel>
               <strong className="resource-value">
                 {sample?.process.cpuPercent != null
@@ -304,7 +304,7 @@ function ProjectDiagnosticsPanel({
               </strong>
               <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
             </Surface>
-            <Surface as="article" variant="outline" className="resource-card">
+            <Surface as="article" variant="card" className="resource-card">
               <SectionLabel as="h3">{t("bycoda host memory")}</SectionLabel>
               <strong className="resource-value">
                 {sample ? mib(sample.process.rssBytes) : "—"}
@@ -312,7 +312,7 @@ function ProjectDiagnosticsPanel({
               <ResourceChart samples={samples} metric="memory" label={t("bycoda host memory")} />
             </Surface>
           </div>
-          <Surface as="article" variant="outline" className="resource-card resource-system-memory">
+          <Surface as="article" variant="card" className="resource-card resource-system-memory">
             <Text
               size="caption"
               tone="inherit"

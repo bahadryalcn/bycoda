@@ -307,7 +307,7 @@ export function RecommendedSkills({
                           "Runs the public installer, then applies your selected scope and provider.",
                         )}
                       </p>
-                      <Code {...surfaceAttributes({ variant: "plain", radius: "control" })}>
+                      <Code {...surfaceAttributes({ variant: "card", radius: "control" })}>
                         {officialSkillInstallCommand(skill)}
                       </Code>
                       <div>

@@ -395,7 +395,7 @@ export function TaskDetail({
               frame="none"
               scroll
               wrap={false}
-              {...surfaceAttributes({ radius: "sm", variant: "raised" }, "max-h-48 px-2 py-1.5")}
+              {...surfaceAttributes({ radius: "sm", variant: "card" }, "max-h-48 px-2 py-1.5")}
             >
               {task.diffStat}
             </OutputBlock>

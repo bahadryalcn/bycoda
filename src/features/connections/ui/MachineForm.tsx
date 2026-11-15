@@ -239,7 +239,7 @@ export function MachineForm({
         onSubmit();
       }}
     >
-      <Surface variant="outline" padding="lg" className="flex flex-col gap-4">
+      <Surface variant="card" padding="lg" className="flex flex-col gap-4">
         <div className="flex items-center justify-between gap-2">
           <Heading size="item">{title}</Heading>
           {ssh ? (

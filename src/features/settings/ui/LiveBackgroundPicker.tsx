@@ -90,7 +90,7 @@ function LiveBackgroundTileContent({
       <span
         ref={ref}
         {...surfaceAttributes(
-          { radius: "row", variant: "base" },
+          { radius: "row", variant: "canvas" },
           "relative block aspect-square w-full overflow-hidden",
         )}
       >

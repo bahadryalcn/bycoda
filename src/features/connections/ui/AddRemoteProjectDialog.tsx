@@ -442,7 +442,7 @@ function AddRemoteProjectForm({
             </InlineMessage>
           ) : null}
           <Surface
-            variant="outline"
+            variant="card"
             padding="none"
             aria-label={t("Folders")}
             className="h-[min(340px,45vh)] min-h-24 overflow-y-auto"

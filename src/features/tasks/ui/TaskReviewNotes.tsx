@@ -67,7 +67,7 @@ export function TaskReviewNotes({
             return (
               <Surface
                 as="li"
-                variant="outline"
+                variant="card"
                 padding="sm"
                 key={note.id}
                 data-review-note={note.id}

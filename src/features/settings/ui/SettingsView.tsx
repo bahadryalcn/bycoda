@@ -308,7 +308,7 @@ export function SettingsView({
   // One header row per page: identity on the left, 28px ghost icon actions on the right.
   const pageBar = (
     <header
-      {...surfaceAttributes({ variant: "base" }, "settings-page-bar bycoda-settings-toolbar")}
+      {...surfaceAttributes({ variant: "canvas" }, "settings-page-bar bycoda-settings-toolbar")}
     >
       <div className="settings-page-bar-inner">
         <div className="bycoda-settings-category-picker">

@@ -106,7 +106,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
       {models.length > 5 || query.length > 0 ? (
         <div
           {...surfaceAttributes(
-            { variant: "base", frame: "settings", edge: "block-end" },
+            { variant: "canvas", frame: "settings", edge: "block-end" },
             "provider-models-search",
           )}
         >

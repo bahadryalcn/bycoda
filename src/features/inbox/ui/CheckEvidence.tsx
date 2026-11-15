@@ -126,14 +126,14 @@ function CheckAnnotation({
         : annotation.level;
   const Mark = annotation.level === "failure" ? CircleX : AlertCircle;
   return (
-    <Surface variant="outline" padding="none" className="overflow-hidden">
+    <Surface variant="card" padding="none" className="overflow-hidden">
       {annotation.path ? (
         <Text
           as="div"
           size="caption"
           tone="secondary"
           {...surfaceAttributes(
-            { frame: "neutral", edge: "bottom", variant: "fill-subtle" },
+            { frame: "neutral", edge: "bottom", variant: "inset" },
             "flex min-w-0 items-center gap-1.5 px-3 py-2",
           )}
         >

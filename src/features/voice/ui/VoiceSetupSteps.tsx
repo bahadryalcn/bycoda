@@ -343,7 +343,7 @@ export function VoiceSetupSteps({
           <LiveText
             {...surfaceAttributes(
               {
-                variant: transcript ? "plain" : undefined,
+                variant: transcript ? "card" : undefined,
               },
               transcript ? styles.transcript : "sr-only",
             )}

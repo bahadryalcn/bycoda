@@ -332,7 +332,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                     size="micro"
                     tone="secondary"
                     {...surfaceAttributes(
-                      { radius: "sm", variant: "plain" },
+                      { radius: "sm", variant: "card" },
                       "self-start px-2 py-0.5",
                     )}
                   >

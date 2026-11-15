@@ -140,7 +140,10 @@ export function StewardForm({
       aria-label={draft.id ? t("Edit steward") : t("New steward")}
       aria-busy={saving}
       onSubmit={(event) => onSubmit(event, draft)}
-      {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, "task-ops-form")}
+      {...surfaceAttributes(
+        { variant: "card", frame: "card", edge: "all", radius: "card" },
+        "task-ops-form",
+      )}
     >
       <FieldGroup variant="bare" disabled={saving} inert={saving}>
         <div {...surfaceAttributes({ frame: "none" }, "task-ops-fields")}>

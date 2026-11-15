@@ -44,7 +44,7 @@ export function AngleDial({
         aria-disabled={disabled || undefined}
         tabIndex={disabled ? -1 : 0}
         {...surfaceAttributes(
-          { frame: "pane", radius: "circle", variant: "plain", focusRing: "outer" },
+          { frame: "pane", radius: "circle", variant: "card", focusRing: "outer" },
           styles.dial,
         )}
         onKeyDown={onKeyDown}

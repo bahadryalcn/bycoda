@@ -394,7 +394,7 @@ export function FilePreviewSearch({
           size="inherit"
           tone="primary"
           {...surfaceAttributes(
-            { frame: "pane", edge: "bottom", variant: "reading-panel" },
+            { frame: "pane", edge: "bottom", variant: "workspace-panel" },
             "relative z-1 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 px-2 py-1",
           )}
           onKeyDown={onKeyDown}

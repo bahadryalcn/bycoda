@@ -2,31 +2,18 @@ import type { ComponentPropsWithoutRef, Ref } from "react";
 import styles from "./Surface.module.css";
 
 export type SurfaceVariant =
-  | "composer-glass"
-  | "reading-panel"
+  /** Page role: no fill or frame; the content sits on its host ground. */
+  | "page"
   | "transparency-grid"
-  | "activity-dock"
-  | "neutral-metadata"
-  | "fill-faint"
   | "card"
-  | "plain"
-  | "raised"
-  | "outline"
   | "inset"
-  | "quiet"
   | "canvas"
   | "workspace-panel"
   | "canvas-chat"
-  | "canvas-surface"
   | "reading-base"
   | "selected"
-  | "transparent"
   | "danger"
-  | "danger-floating"
-  | "base"
-  | "panel"
   | "floating"
-  | "fill-subtle"
   /** Static neutral-hover ground for a transcript bubble. */
   | "neutral-hover"
   /** Foreground-strength info fill for a compact activity count. */
@@ -46,8 +33,7 @@ export type SurfaceVariant =
   | "drop-line"
   | "drop-blocked"
   | "diff-add"
-  | "diff-delete"
-  | "adaptive-base";
+  | "diff-delete";
 /**
  * The four container roles of the component system. Frames are none/pane/card; radii control 8,
  * row 6, popup 12.
@@ -59,31 +45,16 @@ export type SurfaceVariant =
  */
 export type SurfaceRole = "page" | "card" | "inset" | "floating";
 
-/** Compat aliases: every legacy variant maps to a role (or to none for a data or domain ground). */
+/** Role of each container and shell ground; tone, identity and diff grounds have none. */
 const VARIANT_ROLE: Partial<Record<SurfaceVariant, SurfaceRole>> = {
+  page: "page",
   canvas: "page",
-  base: "page",
   "canvas-chat": "page",
-  "canvas-surface": "page",
   "reading-base": "page",
-  "adaptive-base": "page",
   "workspace-panel": "page",
-  "reading-panel": "page",
-  transparent: "page",
   card: "card",
-  plain: "card",
-  raised: "card",
-  outline: "card",
-  quiet: "card",
-  panel: "card",
   inset: "inset",
-  "fill-subtle": "inset",
-  "fill-faint": "inset",
-  "neutral-metadata": "inset",
   floating: "floating",
-  "danger-floating": "floating",
-  "composer-glass": "floating",
-  "activity-dock": "floating",
 };
 
 /** The role a variant resolves to; unset for tone, identity and diff grounds. */
@@ -248,14 +219,14 @@ export function surfaceAttributes(appearance: SurfaceAppearance, className?: str
 export type SurfaceProps = ComponentPropsWithoutRef<"div"> & {
   ref?: Ref<HTMLElement>;
   /**
-   * - `card`: the grouped card (`--ui-card-surface` fill, `--ui-card-border` frame); the same role
-   *   as a settings group, so cards look alike on every screen and follow Surface contrast.
-   * - `plain`: `--ui-surface` fill, the standard panel/card surface.
-   * - `raised`: `--ui-surface-raised` with a `--ui-pane-border` frame (paper white in light themes).
-   * - `outline`: no fill, a `--ui-pane-border` frame.
-   * - `inset`: `--ui-surface-muted`, a recessed well.
-   * - `quiet`: `--ui-surface-quiet` (one near-canvas step, the composer's tone) with a frame;
-   *   cards inside the chat transcript, so they don't glare on a pure black/white canvas.
+   * Container role (default `page`):
+   * - `page`: no fill or frame; content sits on its host ground.
+   * - `card`: `--ui-card-surface` fill and `--ui-card-border` frame, the one card on every screen.
+   * - `inset`: `--ui-surface-muted`, a recessed well (code, output, metadata).
+   * - `floating`: `--ui-surface-floating`, popups and docks.
+   * Shell pane roots only: `canvas`, `workspace-panel`, `canvas-chat`, `reading-base` (follow
+   * workspace artwork and transparency). Domain grounds: selected, danger, diff, attachment,
+   * identity and marker variants.
    */
   variant?: SurfaceVariant;
   /** Inner spacing: none, sm 8px, md 12px (default), lg 16px. */
@@ -265,32 +236,29 @@ export type SurfaceProps = ComponentPropsWithoutRef<"div"> & {
 } & Omit<SurfaceAppearance, "variant">;
 
 /**
- * Static container in one of four roles (page, card, inset, floating; see `SurfaceRole`). The
- * legacy variants stay as compat aliases mapped to a role in `VARIANT_ROLE` (deprecated
- * for new code): pick `card`, `inset`, `floating` or the page ground and express the rest with
- * `tone`, `frame` (none, pane, card) and `radius` (control, row, popup).
+ * Static container in one of four roles (page, card, inset, floating; see `SurfaceRole`);
+ * express the rest with `tone`, `frame` (none, pane, card) and `radius` (control, row, popup).
  *
  * Static container with the shared card radius (`--ui-radius-card`). Not interactive: rows
  * and cards that act use Button/ActionHost.
  *
  * Nesting: a Surface inside a Surface of the same role paints no second fill or frame, so
  * there is never a card inside a card. Separate nested groups with spacing or `Divider`.
- * Workspace grounds: canvas, workspace-panel, canvas-chat, canvas-surface, reading-base
- * use their existing theme roles. selected is a static highlight, never an action.
- * danger/danger-floating tint error-bearing reading/floating panels.
+ * Shell grounds: canvas, workspace-panel, canvas-chat, reading-base use the workspace theme
+ * roles. selected is a static highlight, never an action. danger tints error-bearing panels.
  * Explicit frame/radius overrides are opt-in; omitted props retain the established render.
  *
  * @group layout
  * @use The one static card or panel container: fill, frame, radius and padding from tokens.
  * @avoid Card in a card (nested frames drop; use spacing or Divider). Collapsible card: Disclosure variant="card". Clickable card or row: Button.
  * @example
- * <Surface variant="outline" padding="md" as="section" aria-labelledby={titleId}>
+ * <Surface variant="card" padding="md" as="section" aria-labelledby={titleId}>
  *   <SectionLabel labelId={titleId}>{t("Memory")}</SectionLabel>
  *   <Meter label={t("Computer memory")} value={used} warning={75} danger={90} />
  * </Surface>
  */
 export function Surface({
-  variant = "plain",
+  variant = "page",
   padding = "md",
   as = "div",
   className,

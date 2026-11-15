@@ -44,7 +44,7 @@ export function InlineVisual({ snapshot }: { snapshot: InlineVisualValue }) {
   return (
     <Surface
       as="section"
-      variant="outline"
+      variant="card"
       padding="none"
       aria-label={snapshot.title}
       aria-busy
@@ -151,7 +151,7 @@ function InlineVisualFrame({ valid }: { valid: InlineVisualSource }) {
     <Surface
       ref={root}
       as="section"
-      variant="outline"
+      variant="card"
       padding="none"
       aria-label={valid.title}
       className="my-2 min-w-0 overflow-hidden font-sans"

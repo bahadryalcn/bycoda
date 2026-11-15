@@ -41,7 +41,7 @@ export function ProviderSignInPanel({
         size="inherit"
         tone="neutral"
         {...surfaceAttributes(
-          { variant: "raised", ring: "stroke", radius: "well" },
+          { variant: "card", ring: "stroke", radius: "well" },
           "grid size-16 place-items-center",
         )}
       >

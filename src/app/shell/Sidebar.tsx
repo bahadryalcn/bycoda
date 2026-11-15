@@ -3369,7 +3369,7 @@ function SidebarComponent({
       ref={resize.setPaneRef}
       data-side-pane="workspace"
       {...surfaceAttributes(
-        { frame: "pane", edge: "right", variant: "panel" },
+        { frame: "pane", edge: "right", variant: "workspace-panel" },
         `bycoda-sidebar body-glass sidebar-pane ${styles.pane} relative flex h-full min-h-0 shrink-0 flex-col pe-1.5`,
       )}
     >

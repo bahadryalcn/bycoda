@@ -20,7 +20,7 @@ export function TaskListPreview({ items, explanation }: Props) {
   return (
     <Surface
       as="section"
-      variant="quiet"
+      variant="card"
       padding="none"
       aria-label={t("Task progress")}
       className="mb-2 overflow-hidden"

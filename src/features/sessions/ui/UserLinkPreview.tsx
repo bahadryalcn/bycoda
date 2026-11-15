@@ -100,7 +100,7 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
           size="micro"
           weight="medium"
           {...surfaceAttributes(
-            { radius: "sm", variant: "plain" },
+            { radius: "sm", variant: "card" },
             "mr-1 inline-flex size-4 items-center justify-center overflow-hidden   align-[-0.125em] uppercase",
           )}
         >
@@ -355,7 +355,7 @@ function GithubWorkItemCard({
           size="caption"
           tone="secondary"
           {...surfaceAttributes(
-            { radius: "row", variant: "neutral-metadata" },
+            { radius: "row", variant: "inset" },
             "mt-2 flex min-w-0 items-center gap-1.5 px-2 py-1.5",
           )}
         >
@@ -460,7 +460,7 @@ function GithubAvatar({
         weight="medium"
         aria-hidden="true"
         {...surfaceAttributes(
-          { radius: "pill", frame: "neutral", edge: "all", variant: "raised" },
+          { radius: "pill", frame: "neutral", edge: "all", variant: "card" },
           "grid shrink-0 place-items-center size-(--avatar-size) border-(--ui-tone-neutral-border)",
         )}
         style={
@@ -484,7 +484,7 @@ function GithubAvatar({
       draggable={false}
       onError={() => setFailed(true)}
       {...surfaceAttributes(
-        { radius: "circle", frame: "neutral", variant: "raised" },
+        { radius: "circle", frame: "neutral", variant: "card" },
         "shrink-0 object-cover [width:var(--layout-width)] [height:var(--layout-height)]",
       )}
       style={

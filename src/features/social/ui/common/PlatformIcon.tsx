@@ -86,7 +86,7 @@ export function PlatformMark({
   const mark = (
     <span
       {...surfaceAttributes(
-        { radius: size === "xs" ? "field" : "control", variant: "fill-subtle" },
+        { radius: size === "xs" ? "field" : "control", variant: "inset" },
         "social-platform-mark",
       )}
       data-size={size}

@@ -190,7 +190,7 @@ export function HostShellRow({
       ) : null}
       <div
         id={detailPanel}
-        {...surfaceAttributes({ radius: "control", variant: "panel" }, "terminal-host-detail")}
+        {...surfaceAttributes({ radius: "control", variant: "card" }, "terminal-host-detail")}
         hidden={!expanded}
       >
         {expanded && listed ? (

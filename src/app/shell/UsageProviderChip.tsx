@@ -763,7 +763,7 @@ function SwitchSuggestion({
   const t = useT();
   const format = useFormat();
   return (
-    <Surface variant="outline" padding="md" as="section" className="mt-2 flex items-center gap-2.5">
+    <Surface variant="card" padding="md" as="section" className="mt-2 flex items-center gap-2.5">
       <div className="min-w-0 flex-1">
         <Text as="p" size="caption" tone="secondary">
           {exhausted ? t("Out of usage") : t("Running low")}
@@ -940,7 +940,7 @@ function UsageWindowCard({
 function EmptyUsageState({ limits, loading }: { limits: ProviderRateLimits; loading: boolean }) {
   const t = useT();
   return (
-    <Surface variant="outline" className="flex flex-col gap-2" role="status">
+    <Surface variant="card" className="flex flex-col gap-2" role="status">
       <Text size="micro" tone="inherit" weight="medium">
         {loading
           ? t("Loading usage…")

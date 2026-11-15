@@ -555,7 +555,7 @@ const MemoMenuBar = memo(function MenuBar({
       size="caption"
       tone="inherit"
       {...surfaceAttributes(
-        { frame: "pane", edge: "bottom", variant: "panel" },
+        { frame: "pane", edge: "bottom", variant: "workspace-panel" },
         "flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-0.5 px-2",
       )}
       data-tauri-drag-region="deep"

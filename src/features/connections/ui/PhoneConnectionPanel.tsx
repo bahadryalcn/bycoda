@@ -47,7 +47,7 @@ export function PhoneConnectionPanel({
   return (
     <Surface
       as="section"
-      variant="outline"
+      variant="card"
       padding="lg"
       className="flex flex-col gap-3"
       aria-label={t("Connect your phone")}

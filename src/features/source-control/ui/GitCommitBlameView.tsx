@@ -72,7 +72,7 @@ export function GitCommitBlameView({
                   tone="secondary"
                   truncate
                   {...surfaceAttributes(
-                    { variant: "base" },
+                    { variant: "canvas" },
                     "sticky left-0 w-44 shrink-0 px-2 font-sans",
                   )}
                 >

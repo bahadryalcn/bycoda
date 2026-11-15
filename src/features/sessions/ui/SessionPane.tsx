@@ -1615,7 +1615,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               {...surfaceAttributes(
                 {
                   radius: "pill",
-                  variant: focused ? undefined : "transparent",
+                  variant: focused ? undefined : "page",
                   tone: focused ? "accent" : undefined,
                 },
                 "size-2 shrink-0",

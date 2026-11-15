@@ -40,7 +40,7 @@ export function RoutingSaveBar({
   return (
     <div
       {...surfaceAttributes(
-        { variant: "base", frame: "settings", edge: "block-start" },
+        { variant: "canvas", frame: "settings", edge: "block-start" },
         styles.bar,
       )}
     >

@@ -360,7 +360,7 @@ function OwnerQuestionCard({
       leading="normal"
       {...surfaceAttributes(
         ready && !snoozed && !stale
-          ? { variant: "transparent", frame: "none", radius: "none" }
+          ? { variant: "page", frame: "none", radius: "none" }
           : { variant: "card", frame: "card", radius: "card" },
         styles.card,
       )}

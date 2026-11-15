@@ -180,7 +180,7 @@ export function SessionDiscussionPanel({
         {
           frame: "pane",
           edge: "inline-start",
-          variant: adaptiveBase ? "adaptive-base" : undefined,
+          variant: adaptiveBase ? "canvas" : undefined,
         },
         `${className ?? ""} relative flex min-h-0 min-w-0 shrink-0 flex-col`,
       )}

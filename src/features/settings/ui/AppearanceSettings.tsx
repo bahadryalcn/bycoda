@@ -127,7 +127,7 @@ export function AppearancePage({
           data-stuck={stuck ? "" : undefined}
           {...surfaceAttributes(
             {
-              variant: "base",
+              variant: "canvas",
               frame: stuck ? "pane" : "transparent",
               edge: "block-end",
               elevation: "sticky-mask",

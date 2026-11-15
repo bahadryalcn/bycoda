@@ -61,7 +61,7 @@ export function BuilderPreview({
       )}
       {entries.length > 0 && <SectionLabel as="h3">{t("What would change")}</SectionLabel>}
       {entries.length > 0 ? (
-        <Surface as="ul" variant="transparent" padding="none" className={styles.fields}>
+        <Surface as="ul" variant="page" padding="none" className={styles.fields}>
           {entries.map((entry) => (
             <li key={entry.key} {...surfaceAttributes({ separator: "block" }, styles.field)}>
               <Checkbox

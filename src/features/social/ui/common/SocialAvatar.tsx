@@ -68,7 +68,7 @@ export function SocialAvatar({
           tone="primary"
           leading="inherit"
           {...surfaceAttributes(
-            { radius: "pill", variant: "raised", frame: "base-cutout" },
+            { radius: "pill", variant: "card", frame: "base-cutout" },
             "social-avatar-platform",
           )}
         >

@@ -327,7 +327,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       data-notes-panel
       onKeyDown={onKeyDown}
       {...surfaceAttributes(
-        { frame: "pane-stroke", edge: "responsive-left", variant: "transparent" },
+        { frame: "pane-stroke", edge: "responsive-left", variant: "page" },
         "relative flex h-full min-h-0 min-w-0 shrink-0 flex-col",
       )}
     >

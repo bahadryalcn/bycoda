@@ -1004,7 +1004,7 @@ export function JiraBoardView({
       ) : null}
       {pick ? (
         <Surface
-          variant="outline"
+          variant="card"
           padding="sm"
           className="jira-board-transition"
           role="group"
@@ -1086,7 +1086,7 @@ export function JiraBoardView({
               >
                 <header
                   {...surfaceAttributes(
-                    { variant: "base" },
+                    { variant: "canvas" },
                     "sticky top-0 z-1 mb-2 flex min-w-0 items-center gap-2 px-1 py-2",
                   )}
                 >
@@ -1134,7 +1134,7 @@ export function JiraBoardView({
               aria-label={t("Unmapped statuses")}
             >
               <header
-                {...surfaceAttributes({ variant: "base" }, "sticky top-0 z-1 mb-2 px-1 py-2")}
+                {...surfaceAttributes({ variant: "canvas" }, "sticky top-0 z-1 mb-2 px-1 py-2")}
               >
                 <Heading size="item" level={2}>
                   {t("Unmapped statuses")}
@@ -1162,7 +1162,7 @@ export function JiraBoardView({
             return (
               <Surface
                 as="section"
-                variant="transparent"
+                variant="page"
                 frame="neutral"
                 edge="top"
                 radius="none"

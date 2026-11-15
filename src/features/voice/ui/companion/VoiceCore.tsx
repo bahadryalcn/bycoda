@@ -189,7 +189,7 @@ export function VoiceCore({
       </svg>
       {name ? (
         <AssistantAvatarMark
-          {...surfaceAttributes({ variant: "fill-subtle", radius: "pill" }, styles.avatar)}
+          {...surfaceAttributes({ variant: "inset", radius: "pill" }, styles.avatar)}
           value={avatar}
           name={name}
           size="secondary"

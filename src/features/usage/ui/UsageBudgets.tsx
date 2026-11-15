@@ -243,7 +243,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 maximumFractionDigits: 1,
               });
         return (
-          <Surface key={budget.id} variant="outline" padding="md" className="space-y-1.5">
+          <Surface key={budget.id} variant="card" padding="md" className="space-y-1.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
                 <SectionLabel as="h3" classNames={{ label: "usage-budget-title" }}>

@@ -485,7 +485,7 @@ export function ProjectNotificationSettings({
                       id={panelId}
                       hidden={!isExpanded}
                       {...surfaceAttributes(
-                        { radius: "control", variant: "transparent" },
+                        { radius: "control", variant: "page" },
                         "project-notification-categories",
                       )}
                     >

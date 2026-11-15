@@ -3376,7 +3376,7 @@ export const Composer = memo(function Composer({
           data-composer-editing={resendEdited ? "" : undefined}
           // z-10: in-pane stacking above sibling layers; no in-pane layer scale exists, so the literal stays.
           {...surfaceAttributes(
-            { variant: "composer-glass" },
+            { variant: "floating" },
             `relative z-(--layer-pane-sheet) rounded-xl border ${resendEdited ? "edit-last-turn-composer" : ""}`,
           )}
         >

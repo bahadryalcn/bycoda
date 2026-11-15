@@ -141,7 +141,7 @@ export function CodeTerminalDialog({
         <OutputBlock frame="filled" scroll className="max-h-32">
           {options.command}
         </OutputBlock>
-        <Surface variant="raised" padding="none" className="h-80 min-w-0 overflow-hidden">
+        <Surface variant="card" padding="none" className="h-80 min-w-0 overflow-hidden">
           {options.native && state.profile ? (
             <TerminalView
               id={state.id}

@@ -17,7 +17,7 @@ export function CrewWorkSummary({ run }: { run: CrewRunView }) {
   const doers = run.definition.agents.filter((agent) => summary.memberIds.includes(agent.id));
   return (
     <Surface
-      variant="outline"
+      variant="card"
       padding="md"
       as="section"
       aria-label={t("Work summary")}

@@ -335,7 +335,7 @@ export function ServerItem({
   return cards ? (
     <Surface
       as="li"
-      variant="outline"
+      variant="card"
       padding="none"
       className="server-card min-w-0 overflow-hidden"
       {...rootProps}

@@ -566,7 +566,7 @@ export function ExternalTunnelsPanel({
   const machineKey = machine ? `${machine.id}:${machine.environmentId}` : "";
   if (machineKey && !visited.includes(machineKey)) setVisited([...visited, machineKey]);
   return (
-    <Surface as="section" variant="outline" padding="lg" aria-label={t("External tunnels")}>
+    <Surface as="section" variant="card" padding="lg" aria-label={t("External tunnels")}>
       <Text
         as="div"
         size="secondary"

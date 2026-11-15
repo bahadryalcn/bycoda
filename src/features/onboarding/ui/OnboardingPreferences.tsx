@@ -295,7 +295,7 @@ export function OnboardingAppearance() {
                   {value === "none" ? (
                     <span
                       {...surfaceAttributes(
-                        { variant: "transparent", frame: "card", borderStyle: "dashed" },
+                        { variant: "page", frame: "card", borderStyle: "dashed" },
                         "onboarding-crew-preview onboarding-crew-none",
                       )}
                       aria-hidden="true"

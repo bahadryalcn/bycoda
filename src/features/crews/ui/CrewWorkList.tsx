@@ -68,7 +68,7 @@ export function CrewWorkList({
   return (
     <nav
       aria-label={t("Crew work")}
-      {...surfaceAttributes({ variant: "transparent" }, "flex min-w-0 flex-col")}
+      {...surfaceAttributes({ variant: "page" }, "flex min-w-0 flex-col")}
     >
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
         <SegmentedControl

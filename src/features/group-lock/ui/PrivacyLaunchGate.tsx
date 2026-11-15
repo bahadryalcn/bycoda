@@ -34,7 +34,7 @@ export function PrivacyLaunchGate({ children }: { children: ReactNode }) {
       as="main"
       size="inherit"
       tone="primary"
-      {...surfaceAttributes({ variant: "base" }, "flex h-dvh flex-col")}
+      {...surfaceAttributes({ variant: "canvas" }, "flex h-dvh flex-col")}
     >
       <div data-tauri-drag-region className="h-10 shrink-0" />
       <div className="flex flex-1 items-center justify-center px-6 pb-10">

@@ -215,7 +215,7 @@ function InboxAvatarImage({
       draggable={false}
       onError={() => setFailedUrl(avatarUrl)}
       {...surfaceAttributes(
-        { radius: "pill", variant: "raised" },
+        { radius: "pill", variant: "card" },
         "shrink-0 object-cover [width:var(--layout-width)] [height:var(--layout-height)]",
       )}
       style={
@@ -232,7 +232,7 @@ function InboxAvatarImage({
       weight="medium"
       aria-hidden
       {...surfaceAttributes(
-        { radius: "pill", variant: "raised" },
+        { radius: "pill", variant: "card" },
         "inbox-avatar grid shrink-0 place-items-center",
       )}
       style={

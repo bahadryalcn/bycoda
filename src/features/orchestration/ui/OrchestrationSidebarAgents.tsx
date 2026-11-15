@@ -122,7 +122,7 @@ export function OrchestrationSidebarAgents({
               key={task.sessionId}
               data-orchestration-agent={task.sessionId}
               // Expanding lights the whole row, header and detail together.
-              {...surfaceAttributes({ radius: "row", variant: open ? "selection" : "transparent" })}
+              {...surfaceAttributes({ radius: "row", variant: open ? "selection" : "page" })}
             >
               <Button
                 variant="item"

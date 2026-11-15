@@ -48,7 +48,6 @@
     inset: 0;
     z-index: 10;
     width: auto !important;
-    --surface-base-visible: 1;
   }
   .inbox-discussion-resizer {
     display: none;

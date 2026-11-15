@@ -818,7 +818,7 @@ export function NotesView({
     <div
       ref={resize.setPaneRef}
       {...surfaceAttributes(
-        { frame: "pane", edge: "right", variant: "transparent" },
+        { frame: "pane", edge: "right", variant: "page" },
         "note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col",
       )}
     >

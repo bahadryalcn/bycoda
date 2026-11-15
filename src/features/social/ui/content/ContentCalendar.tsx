@@ -45,7 +45,10 @@ export function ContentCalendar({
   const month = new Date(anchor).getMonth();
   return (
     <div
-      {...surfaceAttributes({ frame: "pane", edge: "all", radius: "card" }, "content-calendar")}
+      {...surfaceAttributes(
+        { variant: "card", frame: "pane", edge: "all", radius: "card" },
+        "content-calendar",
+      )}
       data-view={view}
     >
       {view === "month" ? (
@@ -80,7 +83,7 @@ export function ContentCalendar({
                 {
                   frame: index ? "pane" : undefined,
                   edge: index >= 7 ? (index % 7 ? "start" : "block-start") : "inline-start",
-                  variant: today ? "fill-faint" : undefined,
+                  variant: today ? "inset" : undefined,
                 },
                 "content-day",
               )}

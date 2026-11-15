@@ -124,7 +124,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
                       size="inherit"
                       tone="secondary"
                       leading="inherit"
-                      {...surfaceAttributes({ radius: "pill", variant: "plain" }, styles.badge)}
+                      {...surfaceAttributes({ radius: "pill", variant: "card" }, styles.badge)}
                       aria-hidden="true"
                     >
                       <Sparkles className="icon-xs" />

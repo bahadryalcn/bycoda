@@ -216,7 +216,7 @@ export function GitGraphList({
               as="div"
               weight={workspace ? "regular" : "medium"}
               {...surfaceAttributes(
-                { variant: "panel", frame: "pane", edge: "bottom" },
+                { variant: "card", frame: "pane", edge: "bottom" },
                 `sticky top-0 z-1 grid items-center ${styles.graphHeader} ${workspace ? styles.workspaceHeader : ""}`,
               )}
               style={

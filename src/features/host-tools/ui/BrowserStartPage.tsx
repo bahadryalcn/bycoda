@@ -19,7 +19,7 @@ export function BrowserStartPage({
 }) {
   const [recents, setRecents] = useState(readBrowserRecents);
   return (
-    <div {...surfaceAttributes({ variant: "canvas-surface" }, "host-browser-start")}>
+    <div {...surfaceAttributes({ variant: "canvas" }, "host-browser-start")}>
       <div className="host-browser-start-body">
         <Globe className="host-browser-start-icon" tone="secondary" aria-hidden />
         <Text

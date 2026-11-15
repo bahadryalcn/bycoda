@@ -41,7 +41,7 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
   const inner = (
     <Surface
       data-note-card
-      variant="outline"
+      variant="card"
       padding="sm"
       className="note-mini-card flex items-start gap-2"
     >

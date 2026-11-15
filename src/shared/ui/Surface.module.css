@@ -18,68 +18,6 @@
   color: inherit;
 }
 /* Adjacent rows keep one shared hairline, including mixed semantic/interactive owners. */
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  html:not([data-performance-no-blur])
-    :is(
-      .surface[data-variant="composer-glass"],
-      .appearance[data-surface-variant="composer-glass"]
-    ) {
-    background: var(--ui-activity-dock-glass);
-    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
-    backdrop-filter: var(--ui-activity-dock-filter);
-  }
-}
-html
-  [data-session-streaming="true"]
-  :is(.surface[data-variant="composer-glass"], .appearance[data-surface-variant="composer-glass"]) {
-  background: var(--ui-composer-surface);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  html:not([data-performance-no-blur])
-    :is(
-      .surface[data-variant="composer-glass"],
-      .appearance[data-surface-variant="composer-glass"]
-    ) {
-    background: var(--ui-composer-surface);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-html
-  :is(.surface[data-variant="activity-dock"], .appearance[data-surface-variant="activity-dock"]) {
-  background: var(--ui-composer-surface);
-}
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  html
-    :is(.surface[data-variant="activity-dock"], .appearance[data-surface-variant="activity-dock"]) {
-    background: var(--ui-activity-dock-glass);
-    box-shadow: var(--ui-activity-dock-edge);
-    -webkit-backdrop-filter: var(--ui-activity-dock-filter);
-    backdrop-filter: var(--ui-activity-dock-filter);
-  }
-}
-/* Streaming avoids sampling the repainted transcript through a backdrop filter. */
-html[data-performance-no-blur]
-  :is(.surface[data-variant="activity-dock"], .appearance[data-surface-variant="activity-dock"]),
-html
-  [data-session-streaming="true"]
-  :is(.surface[data-variant="activity-dock"], .appearance[data-surface-variant="activity-dock"]) {
-  background: var(--ui-composer-surface);
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
-  html
-    :is(.surface[data-variant="activity-dock"], .appearance[data-surface-variant="activity-dock"]) {
-    background: var(--ui-composer-surface);
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
 .surface[data-surface-focus-ring="inset"]:focus-visible,
 .appearance[data-surface-focus-ring="inset"]:focus-visible {
   outline: 2px solid var(--ui-focus-ring-color);
@@ -182,22 +120,6 @@ html
   background: var(--ui-card-surface);
   border-color: var(--ui-card-border);
 }
-.surface[data-variant="plain"] {
-  background: var(--ui-surface);
-}
-.surface[data-variant="raised"] {
-  /* Light themes draw the raised step as paper white, so it keeps a frame to stay a surface. */
-  background: var(--ui-surface-raised);
-  border-color: var(--ui-pane-border);
-}
-.surface[data-variant="outline"] {
-  background: transparent;
-  border-color: var(--ui-pane-border);
-}
-.surface[data-variant="quiet"] {
-  background: var(--ui-surface-quiet);
-  border-color: var(--ui-pane-border);
-}
 .surface[data-variant="inset"] {
   /* --ui-surface-inset is a requested theme role (a well below the canvas in light themes);
      until it exists the muted field tone is used. */
@@ -235,29 +157,9 @@ html
 }
 
 /* Partial presentation never introduces layout or spacing on an existing element. */
-.surface[data-variant="base"],
-.appearance[data-surface-variant="base"] {
-  background: var(--color-background-base);
-}
-.surface[data-variant="panel"],
-.appearance[data-surface-variant="panel"] {
-  background: var(--ui-surface-panel);
-}
 .surface[data-variant="floating"],
 .appearance[data-surface-variant="floating"] {
   background: var(--ui-surface-floating);
-}
-.surface[data-variant="fill-subtle"],
-.appearance[data-surface-variant="fill-subtle"] {
-  background: var(--ui-fill-subtle);
-}
-.surface[data-variant="fill-faint"],
-.appearance[data-surface-variant="fill-faint"] {
-  background: var(--ui-fill-faint);
-}
-.surface[data-variant="reading-panel"],
-.appearance[data-surface-variant="reading-panel"] {
-  background: var(--ui-workspace-reading-panel);
 }
 .surface[data-variant="transparency-grid"],
 .appearance[data-surface-variant="transparency-grid"] {
@@ -266,10 +168,6 @@ html
   background-position:
     0 0,
     8px 8px;
-}
-.surface[data-variant="neutral-metadata"],
-.appearance[data-surface-variant="neutral-metadata"] {
-  background: color-mix(in oklab, var(--ui-tone-neutral-solid) 4.5%, transparent);
 }
 .surface[data-surface-frame="neutral-metadata"],
 .appearance[data-surface-frame="neutral-metadata"] {
@@ -352,20 +250,8 @@ html
 .appearance[data-surface-variant="card"] {
   background: var(--ui-card-surface);
 }
-.appearance[data-surface-variant="plain"] {
-  background: var(--ui-surface);
-}
-.appearance[data-surface-variant="raised"] {
-  background: var(--ui-surface-raised);
-}
-.appearance[data-surface-variant="outline"] {
-  background: transparent;
-}
 .appearance[data-surface-variant="inset"] {
   background: var(--ui-surface-inset, var(--ui-surface-muted));
-}
-.appearance[data-surface-variant="quiet"] {
-  background: var(--ui-surface-quiet);
 }
 .surface[data-variant="canvas"],
 .appearance[data-surface-variant="canvas"] {
@@ -379,10 +265,6 @@ html
 .appearance[data-surface-variant="canvas-chat"] {
   background: var(--ui-workspace-canvas-chat);
 }
-.surface[data-variant="canvas-surface"],
-.appearance[data-surface-variant="canvas-surface"] {
-  background: var(--ui-workspace-canvas-surface);
-}
 .surface[data-variant="reading-base"],
 .appearance[data-surface-variant="reading-base"] {
   background: var(--ui-workspace-reading-base);
@@ -391,17 +273,13 @@ html
 .appearance[data-surface-variant="selected"] {
   background: var(--ui-surface-selected);
 }
-.surface[data-variant="transparent"],
-.appearance[data-surface-variant="transparent"] {
+.surface[data-variant="page"],
+.appearance[data-surface-variant="page"] {
   background: transparent;
 }
 .surface[data-variant="danger"],
 .appearance[data-surface-variant="danger"] {
   background: var(--ui-surface-danger);
-}
-.surface[data-variant="danger-floating"],
-.appearance[data-surface-variant="danger-floating"] {
-  background: var(--ui-surface-danger-floating);
 }
 .surface[data-surface-frame="none"],
 .appearance[data-surface-frame="none"] {
@@ -758,14 +636,6 @@ button.appearance[data-surface-frame="card"] {
 .surface[data-surface-variant="diff-delete"],
 .appearance[data-surface-variant="diff-delete"] {
   background: var(--color-diff-del);
-}
-.surface[data-surface-variant="adaptive-base"],
-.appearance[data-surface-variant="adaptive-base"] {
-  background: color-mix(
-    in srgb,
-    var(--color-background-base) calc(var(--surface-base-visible, 0) * 100%),
-    transparent
-  );
 }
 
 .surface[data-surface-ring="panel-outer"],

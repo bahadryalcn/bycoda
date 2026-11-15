@@ -165,7 +165,7 @@ export function SheetGridView({
             size="inherit"
             tone="secondary"
             {...surfaceAttributes(
-              { frame: "stroke", edge: "bottom", variant: "base" },
+              { frame: "stroke", edge: "bottom", variant: "canvas" },
               "sheet-document-header sticky top-0 z-2 flex",
             )}
           >
@@ -174,7 +174,7 @@ export function SheetGridView({
               aria-colindex={1}
               aria-label={t("Row")}
               {...surfaceAttributes(
-                { frame: "stroke", edge: "right", variant: "base" },
+                { frame: "stroke", edge: "right", variant: "canvas" },
                 "sticky left-0 z-1 shrink-0 [width:var(--layout-width)]",
               )}
               style={
@@ -233,7 +233,7 @@ export function SheetGridView({
                     size="inherit"
                     tone="secondary"
                     {...surfaceAttributes(
-                      { frame: "stroke", edge: "right", variant: "base" },
+                      { frame: "stroke", edge: "right", variant: "canvas" },
                       "sheet-document-row-header sticky left-0 z-1 shrink-0 text-right tabular-nums",
                     )}
                   >

@@ -43,7 +43,7 @@ const roles = readFileSync("src/styles/surface-roles.css", "utf8").replace(/\s+/
 
 it("keeps the existing default markup and adds no opt-in attributes", () => {
   expect(renderToStaticMarkup(createElement(Surface, null, "body"))).toBe(
-    `<div data-variant="plain" data-surface-role="card" data-padding="md" class="${styles.surface}">body</div>`,
+    `<div data-variant="page" data-surface-role="page" data-padding="md" class="${styles.surface}">body</div>`,
   );
   expect(css).toContain("border: 1px solid transparent");
   expect(css).toContain("border-radius: var(--ui-radius-card)");
@@ -63,16 +63,13 @@ const variants: [SurfaceVariant, string][] = [
   ["canvas", "--ui-workspace-canvas"],
   ["workspace-panel", "--ui-workspace-panel"],
   ["canvas-chat", "--ui-workspace-canvas-chat"],
-  ["canvas-surface", "--ui-workspace-canvas-surface"],
   ["reading-base", "--ui-workspace-reading-base"],
   ["selected", "--ui-surface-selected"],
-  ["transparent", "transparent"],
+  ["page", "transparent"],
+  ["card", "--ui-card-surface"],
+  ["inset", "--ui-surface-muted"],
   ["danger", "--ui-surface-danger"],
-  ["danger-floating", "--ui-surface-danger-floating"],
-  ["base", "--color-background-base"],
-  ["panel", "--ui-surface-panel"],
   ["floating", "--ui-surface-floating"],
-  ["fill-subtle", "--ui-fill-subtle"],
 ];
 it.each(variants)("paints %s through the existing semantic ground", (variant, token) => {
   expect(surfaceAttributes({ variant })["data-surface-variant"]).toBe(variant);
@@ -299,22 +296,10 @@ it("supports a combined logical start corner frame", () => {
   );
 });
 
-it("provides the faint fill without changing other surface variants", () => {
-  expect(surfaceAttributes({ variant: "fill-faint" })["data-surface-variant"]).toBe("fill-faint");
-  expect(css).toMatch(
-    /\[data-surface-variant="fill-faint"\][^{]*\{[^}]*background: var\(--ui-fill-faint\)/,
-  );
-});
-
-it("preserves subtle work item metadata fill and divider", () => {
+it("preserves the subtle work item metadata divider", () => {
   expect(
-    surfaceAttributes({ variant: "neutral-metadata", frame: "neutral-metadata" })[
-      "data-surface-variant"
-    ],
+    surfaceAttributes({ variant: "inset", frame: "neutral-metadata" })["data-surface-frame"],
   ).toBe("neutral-metadata");
-  expect(css.replace(/\s/g, "")).toContain(
-    "background:color-mix(inoklab,var(--ui-tone-neutral-solid)4.5%,transparent)",
-  );
   expect(css.replace(/\s/g, "")).toContain(
     "border:1pxsolidcolor-mix(inoklab,var(--ui-tone-neutral-border)7%,transparent)",
   );
@@ -339,17 +324,6 @@ it("supports an inset keyboard focus ring on a scrollable surface", () => {
   expect(css).toMatch(
     /\[data-surface-focus-ring="inset"\]:focus-visible[^{}]*\{[^}]*outline: 2px solid var\(--ui-focus-ring-color\);[^}]*outline-offset: -2px/s,
   );
-});
-
-it("keeps activity dock glass and opaque accessibility fallbacks", () => {
-  expect(surfaceAttributes({ variant: "activity-dock" })["data-surface-variant"]).toBe(
-    "activity-dock",
-  );
-  expect(css).toContain("var(--ui-activity-dock-glass)");
-  expect(css).toContain("var(--ui-activity-dock-filter)");
-  expect(css).toContain("[data-performance-no-blur]");
-  expect(css).toContain('[data-session-streaming="true"]');
-  expect(css).toContain("(prefers-reduced-transparency: reduce)");
 });
 
 it("keeps an explicit card frame on button surfaces", () => {
@@ -377,26 +351,13 @@ it("supports pane-to-stroke responsive physical left boundaries", () => {
   expect(css).toContain('[data-surface-edge="responsive-left"]');
 });
 
-it("supports workspace reading panels and transparency checkerboards", () => {
-  expect(surfaceAttributes({ variant: "reading-panel" })["data-surface-variant"]).toBe(
-    "reading-panel",
-  );
+it("supports transparency checkerboards", () => {
   expect(surfaceAttributes({ variant: "transparency-grid" })["data-surface-variant"]).toBe(
     "transparency-grid",
   );
-  expect(css).toContain("background: var(--ui-workspace-reading-panel)");
   expect(css).toContain("background-image: var(--ui-transparency-grid-image)");
   expect(css).toContain("background-size: 16px 16px");
   expect(css.replace(/\s/g, "")).toContain("background-position:00,8px8px");
-});
-
-it("preserves composer glass and forced-colors opaque fallback", () => {
-  expect(surfaceAttributes({ variant: "composer-glass" })["data-surface-variant"]).toBe(
-    "composer-glass",
-  );
-  expect(css).toContain('data-surface-variant="composer-glass"');
-  expect(css).toContain("var(--ui-composer-surface)");
-  expect(css).toContain("(forced-colors: active)");
 });
 
 it("outlines a selected document cell without altering focus state", () => {
@@ -601,22 +562,16 @@ it.each([
   expect(surfaceAttributes({ variant })["data-surface-variant"]).toBe(variant);
   expect(css).toContain(`background: var(${token});`);
 });
-it("uses base ground only while layout requests an overlay", () => {
-  expect(surfaceAttributes({ variant: "adaptive-base" })["data-surface-variant"]).toBe(
-    "adaptive-base",
-  );
-  expect(css).toContain("--surface-base-visible");
-});
-
 it("preserves the panel-colored two-pixel face cutout", () => {
   expect(surfaceAttributes({ ring: "panel-outer" })["data-surface-ring"]).toBe("panel-outer");
   expect(css).toContain("box-shadow: 0 0 0 2px var(--ui-surface-panel)");
 });
 
-it("maps legacy variants onto four roles and drops a same-role nested paint", () => {
-  expect(surfaceRole("plain")).toBe("card");
-  expect(surfaceRole("fill-subtle")).toBe("inset");
-  expect(surfaceRole("danger-floating")).toBe("floating");
+it("maps containers onto four roles and drops a same-role nested paint", () => {
+  expect(surfaceRole("page")).toBe("page");
+  expect(surfaceRole("card")).toBe("card");
+  expect(surfaceRole("inset")).toBe("inset");
+  expect(surfaceRole("floating")).toBe("floating");
   expect(surfaceRole("canvas")).toBe("page");
   expect(surfaceRole("diff-add")).toBeUndefined();
   expect(surfaceAttributes({ variant: "inset" })["data-surface-role"]).toBe("inset");

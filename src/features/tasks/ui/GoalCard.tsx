@@ -92,7 +92,7 @@ export function GoalCard({
       >
         <span
           aria-hidden
-          {...surfaceAttributes({ radius: "control", variant: "fill-subtle" }, "goal-card-well")}
+          {...surfaceAttributes({ radius: "control", variant: "inset" }, "goal-card-well")}
         >
           <Sparkles className="icon-sm" tone="secondary" />
         </span>

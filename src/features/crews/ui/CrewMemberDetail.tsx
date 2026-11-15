@@ -80,7 +80,7 @@ export function CrewMemberDetail({
   const definitionId = data.definitions.find((d) => d.agents.some((a) => a.id === agent.id))?.id;
   const updatesProfile = !!source && source.projectId === projectId;
   return (
-    <Surface variant="outline" padding="md" className="mt-1 mb-3 flex min-w-0 flex-col gap-4">
+    <Surface variant="card" padding="md" className="mt-1 mb-3 flex min-w-0 flex-col gap-4">
       <section
         aria-label={t("Member library")}
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2"

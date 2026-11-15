@@ -398,7 +398,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           )}
           {busy && jobId && (
             <Surface
-              variant="outline"
+              variant="card"
               padding="lg"
               className="flex flex-col gap-3"
               role="status"
@@ -448,7 +448,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           ) : null}
           {notice && <InlineMessage tone="success">{notice}</InlineMessage>}
           {machines.length > 0 ? (
-            <Surface variant="outline" padding="none" dividers="card" className="overflow-hidden">
+            <Surface variant="card" padding="none" dividers="card" className="overflow-hidden">
               {machines.map((machine) => (
                 <MachineRow
                   key={machine.id}

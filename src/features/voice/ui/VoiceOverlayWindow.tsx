@@ -327,7 +327,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         leading="inherit"
         {...surfaceAttributes(
           {
-            variant: state?.error ? "danger" : "plain",
+            variant: state?.error ? "danger" : "card",
             frame: state?.error ? "danger" : "neutral",
             radius: compact ? "pill" : "panel",
           },
@@ -608,7 +608,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           ref={sideScroller}
           aria-label={t("Question")}
           {...surfaceAttributes(
-            { frame: "neutral", edge: "all", radius: "panel", variant: "plain" },
+            { frame: "neutral", edge: "all", radius: "panel", variant: "card" },
             styles.side,
           )}
         >

@@ -74,7 +74,7 @@ export function OutreachSequenceCard({
     <li
       {...surfaceAttributes(
         {
-          variant: selected ? "selected" : "transparent",
+          variant: selected ? "selected" : "page",
           frame: separated ? "pane" : undefined,
           edge: "block-start",
         },

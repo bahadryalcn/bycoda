@@ -75,7 +75,7 @@ export function CrewFaces({
             key={member.id}
             aria-hidden
             {...surfaceAttributes(
-              { radius: "pill", variant: "raised", ring: "panel-outer" },
+              { radius: "pill", variant: "card", ring: "panel-outer" },
               "relative grid place-items-center overflow-hidden",
             )}
             style={faceStyle(index)}

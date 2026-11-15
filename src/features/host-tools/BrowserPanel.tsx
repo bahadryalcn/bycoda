@@ -1082,7 +1082,7 @@ function ProjectBrowserPanel({
               leading="inherit"
               as="div"
               {...surfaceAttributes(
-                { variant: "raised", radius: "popup" },
+                { variant: "card", radius: "popup" },
                 "host-browser-selection-mode",
               )}
             >
@@ -1487,7 +1487,7 @@ function ProjectBrowserPanel({
           />
           <section
             {...surfaceAttributes(
-              { variant: "transparent", radius: "none" },
+              { variant: "page", radius: "none" },
               "host-browser-side-section host-browser-selection",
             )}
             aria-label={t("Selected browser element")}

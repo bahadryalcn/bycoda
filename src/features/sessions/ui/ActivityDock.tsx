@@ -259,7 +259,7 @@ function DockBody({
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
       {...surfaceAttributes(
-        { radius: "card", variant: "activity-dock" },
+        { radius: "card", variant: "floating" },
         `activity-dock mb-1.5 overflow-hidden  font-sans ${
           dock.state === "done" ? "activity-dock-done" : ""
         }`,

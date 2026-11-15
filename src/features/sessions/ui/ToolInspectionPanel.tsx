@@ -171,7 +171,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   // single icon group (Copy, Wrap) lives on the first heading instead of a bar of its own.
   return (
     <Surface
-      variant="quiet"
+      variant="card"
       padding="none"
       data-tool-inspection
       className="flex min-w-0 flex-col gap-2 overflow-clip pb-2"

@@ -1313,7 +1313,7 @@ function DevicePanelSurface({
             </InlineMessage>
           )}
           <div
-            {...surfaceAttributes({ variant: "canvas-surface" }, "device-panel-stage")}
+            {...surfaceAttributes({ variant: "canvas" }, "device-panel-stage")}
             data-rail={device ? true : undefined}
           >
             <div className="device-panel-viewport">
@@ -1595,7 +1595,7 @@ function DevicePanelSurface({
                       tone="info"
                       leading="inherit"
                       {...surfaceAttributes(
-                        { radius: "popup", variant: "raised" },
+                        { radius: "popup", variant: "card" },
                         "device-panel-node-caption",
                       )}
                     >

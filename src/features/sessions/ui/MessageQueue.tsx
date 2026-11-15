@@ -357,7 +357,7 @@ export function MessageQueue({
       ) : null}
       <div
         {...surfaceAttributes(
-          { radius: "dock-top", variant: "activity-dock" },
+          { radius: "dock-top", variant: "floating" },
           "relative z-0 px-2 py-1",
         )}
         data-message-queue-card

@@ -65,7 +65,7 @@ export function Avatar({
       {...surfaceAttributes(
         {
           radius: shape === "circle" ? "circle" : "control",
-          variant: showsGround && tone === "neutral" ? "fill-subtle" : undefined,
+          variant: showsGround && tone === "neutral" ? "inset" : undefined,
           tone: showsGround && tone === "accent" ? "accent" : undefined,
           toneFill: showsGround && tone === "accent" ? "solid" : undefined,
         },
@@ -96,7 +96,7 @@ export function Avatar({
         )}
       </span>
       {badge ? (
-        <span {...surfaceAttributes({ variant: "panel", radius: "circle" }, styles.badge)}>
+        <span {...surfaceAttributes({ variant: "card", radius: "circle" }, styles.badge)}>
           {badge}
         </span>
       ) : null}

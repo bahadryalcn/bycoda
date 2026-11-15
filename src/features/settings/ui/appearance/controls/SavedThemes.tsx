@@ -121,7 +121,7 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
             "theme-saved-card",
           );
           const actionSurface = surfaceAttributes(
-            { radius: "row", variant: "base" },
+            { radius: "row", variant: "canvas" },
             "theme-saved-actions",
           );
           return (

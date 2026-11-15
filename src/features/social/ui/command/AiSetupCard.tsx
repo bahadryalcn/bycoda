@@ -34,7 +34,7 @@ export function AiSetupCard({ busy, onSave }: AiSetupCardProps) {
       <Text
         size="inherit"
         tone="secondary"
-        {...surfaceAttributes({ radius: "card", variant: "fill-subtle" }, "command-card-icon")}
+        {...surfaceAttributes({ radius: "card", variant: "inset" }, "command-card-icon")}
       >
         <Sparkles className="icon-sm" strokeWidth={1.75} aria-hidden />
       </Text>

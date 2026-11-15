@@ -109,6 +109,7 @@ export function FileMentionPicker({
   });
   return (
     <Surface
+      variant="card"
       padding="none"
       data-mention-picker
       radius="card"

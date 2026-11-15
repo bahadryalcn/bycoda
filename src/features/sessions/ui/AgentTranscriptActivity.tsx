@@ -310,7 +310,7 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   return (
     <div
       {...surfaceAttributes(
-        { frame: "none", radius: "none", variant: "transparent" },
+        { frame: "none", radius: "none", variant: "page" },
         "transcript-activity-group flex min-w-0 flex-col",
       )}
     >

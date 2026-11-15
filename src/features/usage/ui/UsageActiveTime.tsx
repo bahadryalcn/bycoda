@@ -19,7 +19,7 @@ export function UsageActiveTime() {
   const value = (minutes: number | undefined) =>
     minutes == null ? "—" : formatActiveMinutes(minutes);
   return (
-    <Surface variant="outline" padding="sm" className="usage-active-time">
+    <Surface variant="card" padding="sm" className="usage-active-time">
       <div className="usage-active-heading">
         <SectionLabel>{t("Active time")}</SectionLabel>
         <Text size="caption" tone="muted" leading="inherit" className="usage-active-source">

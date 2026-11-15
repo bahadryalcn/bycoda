@@ -65,7 +65,7 @@ export function CrewTablePortrait({
       role="img"
       aria-label={label}
       {...surfaceAttributes(
-        { radius: "row", variant: "raised" },
+        { radius: "row", variant: "card" },
         ["flex h-24 w-full items-end justify-center overflow-hidden", className]
           .filter(Boolean)
           .join(" "),
@@ -104,7 +104,7 @@ export function CrewTablePortrait({
           <Text
             tone="muted"
             weight="medium"
-            {...surfaceAttributes({ radius: "sm", variant: "panel" }, "absolute px-1")}
+            {...surfaceAttributes({ radius: "sm", variant: "card" }, "absolute px-1")}
             style={SIGN_STYLE}
           >
             {`+${hidden}`}

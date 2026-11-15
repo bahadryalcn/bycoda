@@ -642,7 +642,7 @@ function ProjectDevServersPanel({
         </>
       ) : null}
       {intent === "restart" && !current.server.managed ? (
-        <Surface variant="outline" className="dev-server-form">
+        <Surface variant="card" className="dev-server-form">
           <p className="host-tool-muted">
             {t("Define the exact command and working directory to restart this external server.")}
           </p>
@@ -1055,7 +1055,7 @@ function ProjectDevServersPanel({
       ) : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
       {showStart ? (
-        <Surface as="section" variant="plain" padding="none">
+        <Surface as="section" variant="card" padding="none">
           <form
             ref={startForm}
             tabIndex={-1}
@@ -1136,7 +1136,7 @@ function ProjectDevServersPanel({
       {startResult?.conflict ? (
         <Surface
           as="section"
-          variant="outline"
+          variant="card"
           className="dev-server-conflict"
           aria-label={t("Port conflict")}
         >

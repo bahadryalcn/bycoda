@@ -25,7 +25,7 @@ export function ExternalEditorIcon({ id }: { id: string }) {
         tone="primary"
         weight="medium"
         {...surfaceAttributes(
-          { radius: "sm", frame: "pane", edge: "all", variant: "fill-subtle" },
+          { radius: "sm", frame: "pane", edge: "all", variant: "inset" },
           "grid size-4 place-items-center",
         )}
       >

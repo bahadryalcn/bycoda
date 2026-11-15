@@ -48,7 +48,7 @@ export function RewoundHistoryDisclosure({
               .map((block, index) => (
                 <Surface
                   as="article"
-                  variant="outline"
+                  variant="card"
                   padding="sm"
                   key={`${block.id}:${index}`}
                   className="min-w-0"

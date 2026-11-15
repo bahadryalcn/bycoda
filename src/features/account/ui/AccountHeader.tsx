@@ -44,7 +44,7 @@ export function AccountHeader({
 
   return (
     <header className={styles.header}>
-      <Surface variant="outline" padding="md" className={styles.identityCard}>
+      <Surface variant="card" padding="md" className={styles.identityCard}>
         <AccountAvatar user={user} size="lg" />
         <div className={styles.identity}>
           <Heading size="page" truncate>
