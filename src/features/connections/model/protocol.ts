@@ -356,6 +356,56 @@ export function applySessionSync(known: HostSession | undefined, sync: SessionSy
     },
   };
 }
+/**
+ * Applies a streamed delta. A tail stream's window starts at its own first block,
+ * which may differ from the one this client holds (it can have paged older history
+ * or only a later window), so a partial delta is rebased onto `known`'s window.
+ * Throws when the two windows do not overlap; read the session again then.
+ */
+export function applyStreamSync(known: HostSession | undefined, sync: SessionSync): HostSession {
+  if (sync.kind !== "delta" || !sync.partial) return applySessionSync(known, sync);
+  if (!known || known.sourceEpoch !== sync.value.sourceEpoch)
+    throw new Error("Session sync source changed");
+  if (known.revision !== sync.base) throw new Error("Session sync base does not match");
+  const streamIds = sync.blockIds;
+  const knownIds = known.session.blocks.map((block) => block.id);
+  const streamFirst = streamIds.length ? knownIds.indexOf(streamIds[0]!) : -1;
+  let ids: string[];
+  let before: number | undefined;
+  if (streamFirst >= 0) {
+    // This client holds older blocks than the stream window: keep them.
+    ids = [...knownIds.slice(0, streamFirst), ...streamIds];
+    before = known.history?.before;
+  } else {
+    const knownFirst = knownIds.length ? streamIds.indexOf(knownIds[0]!) : -1;
+    if (knownFirst < 0) throw new Error("Session sync window does not overlap the loaded blocks");
+    ids = streamIds.slice(knownFirst);
+    before = (sync.value.history?.before ?? 0) + knownFirst;
+  }
+  const blocks = new Map(known.session.blocks.map((block) => [block.id, block]));
+  for (const block of sync.blocks) blocks.set(block.id, block);
+  const { history: _history, ...value } = sync.value;
+  return {
+    ...value,
+    ...(known.history || streamFirst < 0
+      ? {
+          history: {
+            before: before ? before : undefined,
+            revision: sync.value.revision,
+            totalBlocks: sync.value.history?.totalBlocks ?? ids.length,
+          },
+        }
+      : {}),
+    session: {
+      ...sync.value.session,
+      blocks: ids.map((id) => {
+        const block = blocks.get(id);
+        if (!block) throw new Error("Session sync is missing a block");
+        return block;
+      }),
+    },
+  };
+}
 /** Machine-level invalidations share one authenticated control lane. Revisions
  * recover state through sessions.sync; notifications need no unbounded replay log. */
 export type MachineChangesRequest = {

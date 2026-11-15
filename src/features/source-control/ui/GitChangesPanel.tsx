@@ -99,6 +99,7 @@ import {
 } from "../../connections/public/remoteCapabilities";
 import { remotePollDue, useRemoteLoadFailure } from "../../connections/public/remoteHealth";
 import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { CommitMenuOptions } from "../model/gitActionsMenu";
 import {
   commitBlockedMessage,
@@ -296,7 +297,8 @@ export function GitChangesPanel({
         },
         (error) => {
           if (cancelled) return;
-          setFetchError(error instanceof Error ? error.message : String(error));
+          // A dropped link is covered by the shared connection notice; the next poll retries.
+          setFetchError(presentRemoteError(error) ?? null);
         },
       );
     }, AUTO_FETCH_MS);

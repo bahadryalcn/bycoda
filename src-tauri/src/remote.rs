@@ -1116,8 +1116,11 @@ fn machine_rpc_for_consumer(
             .is_some_and(|error| error.starts_with("Machine is unreachable"))
         {
             if let Some(lease) = &lease {
-                state.invalidate_ws(&machine.id);
-                state.tunnels.invalidate(&machine.id, lease);
+                // Probe first: a failed request on a live tunnel (a sleep gap, a
+                // slow Host) must not rebuild it.
+                if state.tunnels.invalidate_unless_healthy(&machine.id, lease) {
+                    state.invalidate_ws(&machine.id);
+                }
             }
         }
         response

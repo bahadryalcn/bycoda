@@ -97,14 +97,14 @@ it("shares one delayed notice and does not restart its deadline for repeated pan
   expect(container.querySelectorAll("[data-pane]")).toHaveLength(2);
   expect(container.textContent).toBe("sharedshared");
   expect(notices()).toHaveLength(0);
-  await advance(4_000);
+  await advance(1_000);
   await render(
     consumers.map((consumer) => ({
       ...consumer,
       failure: { ...outage, message: "SSH timed out connecting to the machine." },
     })),
   );
-  await advance(3_999);
+  await advance(999);
   expect(notices()).toHaveLength(0);
   await advance(1);
   expect(notices()).toHaveLength(1);
@@ -116,10 +116,10 @@ it("shares one delayed notice and does not restart its deadline for repeated pan
 it("does not flash a notice when the active pane recovers within the grace period", async () => {
   state.machines.set("env", { status: "unreachable" });
   await render([{ id: "session", cwd: "env", failure: outage }]);
-  await advance(3_000);
+  await advance(1_000);
   state.machines.set("env", { status: "connected" });
   await render([{ id: "session", cwd: "env" }]);
-  await advance(10_000);
+  await advance(5_000);
   expect(notices()).toHaveLength(0);
 });
 
@@ -127,7 +127,7 @@ it("retains a pane's reported failure when a sibling request alone reports the m
   const consumers = [{ id: "files", cwd: "remote://env/repo", failure: outage }];
   state.machines.set("env", { status: "unreachable" });
   await render(consumers);
-  await advance(8_000);
+  await advance(2_000);
   expect(notices()).toHaveLength(1);
   state.machines.set("env", { status: "connected" });
   await render(consumers);
@@ -179,7 +179,7 @@ it("hands feedback back to panes when the actual common outlet is absent", async
   expect(container.querySelector("[data-pane]")?.textContent).toBe("local");
   await render(consumers);
   expect(container.querySelector("[data-pane]")?.textContent).toBe("shared");
-  await advance(8_000);
+  await advance(2_000);
   expect(notices()).toHaveLength(1);
   await render(consumers, true, false);
   expect(notices()).toHaveLength(0);

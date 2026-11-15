@@ -18,6 +18,7 @@ import {
   undoSessionChanges,
   type CheckpointFile,
 } from "../model/checkpoint";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { invalidateProjectFiles } from "../../files/public/fileIndex";
 import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { basename, notifyGitChanged, subscribeGitChanged } from "../../../platform/tauri/fs";
@@ -220,8 +221,7 @@ function SessionReviewContent({
         if (generation === request.current) setFiles(status.files);
       })
       .catch((cause: unknown) => {
-        if (generation === request.current)
-          setError(cause instanceof Error ? cause.message : String(cause));
+        if (generation === request.current) setError(presentRemoteError(cause, { explicit: true }));
       })
       .finally(() => {
         actingRef.current = false;

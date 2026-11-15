@@ -19,7 +19,7 @@ import {
 } from "../../settings/public/settings";
 import { RemoteLoadError } from "./RemoteLoadError";
 
-const TRANSIENT_NOTICE_DELAY_MS = 8_000;
+const TRANSIENT_NOTICE_DELAY_MS = 2_000;
 type Registration = { environmentId: string; failure?: RemoteFailure };
 type Feedback = {
   entries: ReadonlyMap<symbol, Registration>;

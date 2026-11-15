@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { TimeoutError } from "../../../shared/lib/withTimeout";
-import { classifyRemoteError, isConnectionFailure, unreachablePollDelay } from "./remoteFailure";
+import {
+  classifyRemoteError,
+  isConnectionFailure,
+  isTransientTransportError,
+  presentRemoteError,
+  unreachablePollDelay,
+} from "./remoteFailure";
 import { delegatedDiscoveryFailure } from "./useDelegatedRunDiscovery";
 
 describe("classifyRemoteError", () => {
@@ -125,5 +131,36 @@ describe("classifyRemoteError", () => {
 
   it("slows polling to 15 then 30 seconds", () => {
     expect([1, 2, 5].map(unreachablePollDelay)).toEqual([15_000, 30_000, 30_000]);
+  });
+});
+
+describe("presentRemoteError", () => {
+  it.each([
+    "RPC_WS_INTERRUPTED: Host connection was interrupted",
+    "Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.",
+    "ConnectionReset: os error 10054",
+    "ConnectionAborted",
+    "TimedOut",
+    "RPC_WS_DEADLINE: late",
+    "RPC_WS_OVERLOAD: busy",
+  ])("hides transient transport error %s on background reads", (text) => {
+    expect(isTransientTransportError(text)).toBe(true);
+    expect(presentRemoteError(text)).toBeUndefined();
+    expect(presentRemoteError(text, { explicit: true })).toBeTruthy();
+  });
+
+  it.each([
+    "Not a Git repository",
+    "RPC_WS_BLOCKED: Owner sign-in is required",
+    "RPC_WS_TLS: refused",
+    "RPC_WS_IDENTITY: changed",
+    "Unsupported host method",
+  ])("keeps real failure %s visible", (text) => {
+    expect(isTransientTransportError(text)).toBe(false);
+    expect(presentRemoteError(text)).toBe(text);
+  });
+
+  it("strips the host prefix", () => {
+    expect(presentRemoteError("Host rejected request: bad path")).toBe("bad path");
   });
 });

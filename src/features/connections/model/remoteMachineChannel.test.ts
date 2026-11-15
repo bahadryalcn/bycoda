@@ -872,7 +872,7 @@ it("uses committed revision receipts for ordered canonical deltas while rendered
   emit("session", "s", streamDelta(6, 7), 3, "delta");
   await flushNative();
   expect(listener).toHaveBeenCalledTimes(3);
-  expect(listener.mock.calls[2]?.[0].sessions[0].sync).toEqual(streamDelta(6, 7));
+  expect(listener.mock.calls[2]![0].sessions[0].sync).toEqual(streamDelta(6, 7));
   expect(calls("subscriptions.ack")).toHaveLength(3);
   // An independent read advanced beyond the stream's committed baseline.
   observedRevision = 9;
@@ -883,7 +883,7 @@ it("uses committed revision receipts for ordered canonical deltas while rendered
   expect(calls("subscriptions.open")).toHaveLength(2);
   emit("session", "s", streamView(10), 5);
   await flushNative();
-  expect(listener.mock.calls[3]?.[0].sessions[0].sync).toMatchObject({
+  expect(listener.mock.calls[3]![0].sessions[0].sync).toMatchObject({
     kind: "delta",
     base: 9,
     value: { revision: 10 },
@@ -928,5 +928,117 @@ it("awaits a guarded hydration receipt before committing its stream cursor", asy
   release();
   await flushNative();
   expect(calls("subscriptions.ack")).toHaveLength(1);
+  stop();
+});
+
+it("acknowledges a delta whose transcript read is still in flight as deferred without a resync", async () => {
+  const { emit, calls } = nativeFixture("ws-deferred");
+  const stop = subscribeRemoteMachineChannel(
+    "ws-deferred",
+    { inlineSync: true, sessions: [{ sessionId: "s", revision: 4 }] },
+    () => ({ deferred: true }),
+  );
+  await flushNative();
+  emit("session", "s", streamView(5));
+  await flushNative();
+  expect(calls("subscriptions.ack")).toHaveLength(1);
+  expect(calls("subscriptions.open")).toHaveLength(1);
+  stop();
+});
+
+it("opens a tail stream only on a capable host and rebuilds its compact deltas", async () => {
+  const { emit, calls } = nativeFixture("ws-tail");
+  vi.mocked(cachedRemoteCapabilities).mockReturnValue([
+    "transport.ws.sessions.v2",
+    "transport.ws.bulk.v2",
+    "transport.ws.sessions.tail.v1",
+  ]);
+  const listener = vi.fn((changes: import("./protocol").MachineChanges) => ({
+    appliedRevision: changes.sessions[0].revision,
+  }));
+  const stop = subscribeRemoteMachineChannel(
+    "ws-tail",
+    { inlineSync: true, sessions: [{ sessionId: "s", revision: 4 }] },
+    listener,
+  );
+  await flushNative();
+  expect(calls("subscriptions.open")[0]?.[1]).toMatchObject({
+    target: { kind: "session", sessionId: "s", tail: true },
+  });
+  const long = "x".repeat(2000);
+  const windowed = streamView(5);
+  windowed.session.blocks = [{ id: "a", role: "assistant", text: long }];
+  emit("session", "s", { ...windowed, history: { before: 3, revision: 5, totalBlocks: 9 } });
+  await flushNative();
+  // A tail snapshot reaches the consumer as a window, not as the whole transcript.
+  expect(listener.mock.calls[0]![0].sessions[0].sync).toMatchObject({
+    kind: "delta",
+    partial: true,
+  });
+  const {
+    session: { blocks: _blocks, ...session },
+    ...metadata
+  } = streamView(6);
+  emit(
+    "session",
+    "s",
+    {
+      kind: "delta",
+      partial: true,
+      base: 5,
+      value: { ...metadata, session, history: { before: 3, revision: 6, totalBlocks: 9 } },
+      blocks: [{ id: "a", role: "assistant", text: "" }],
+      textAppends: [{ id: "a", baseLength: 2000, text: " more" }],
+    },
+    2,
+    "delta",
+  );
+  await flushNative();
+  expect(calls("subscriptions.ack")).toHaveLength(2);
+  expect(listener.mock.calls[1]![0].sessions[0].sync).toMatchObject({
+    kind: "delta",
+    blockIds: ["a"],
+    blocks: [{ id: "a", text: `${long} more` }],
+  });
+  stop();
+});
+
+it("keeps the other WebSocket streams when one consumer fails with a non-transport error", async () => {
+  const { port, emit, calls } = nativeFixture("ws-isolated");
+  const errors = vi.fn();
+  const stop = subscribeRemoteMachineChannel(
+    "ws-isolated",
+    {
+      inlineSync: true,
+      projects: [{ projectId: "p" }],
+      sessions: [{ sessionId: "s", revision: 4 }],
+    },
+    (changes) => {
+      if (changes.sessions.length) throw new Error("Application rejected");
+    },
+    errors,
+  );
+  await flushNative();
+  emit("session", "s", streamView(5));
+  await flushNative();
+  emit("session", "s", streamView(5), 2);
+  await flushNative();
+  emit("session", "s", streamView(5), 3);
+  await flushNative();
+  expect(errors).toHaveBeenCalledOnce();
+  const projectOpens = calls("subscriptions.open").filter(
+    ([, params]) => (params as { target: { kind: string } }).target.kind === "project",
+  );
+  expect(projectOpens).toHaveLength(1);
+  const projectId = (projectOpens[0]?.[1] as { subscriptionId: string }).subscriptionId;
+  expect(
+    calls("subscriptions.close").some(
+      ([, params]) => (params as { subscriptionId: string }).subscriptionId === projectId,
+    ),
+  ).toBe(false);
+  emit("project", "p", { etag: "e", sessions: [] });
+  await flushNative();
+  expect(calls("subscriptions.ack").length).toBeGreaterThan(0);
+  expect(port.detach).not.toHaveBeenCalled();
   stop();
 });

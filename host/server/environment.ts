@@ -66,6 +66,7 @@ export function createEnvironmentRuntime(
         "desktop.control.v1",
         HOST_WS_READ_CAPABILITY,
         "transport.ws.sessions.v2",
+        "transport.ws.sessions.tail.v1",
         "sessions.approvalOccurrence.v1",
         "sessions.desktopControlReceipts.v1",
         "transport.ws.queue.v2",

@@ -11,6 +11,7 @@ import {
   type SetStateAction,
 } from "react";
 import { flushSync } from "react-dom";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { Block } from "../model/session";
 import { pinToBottom, syncTranscriptViewport } from "./transcriptScroll";
 import { TranscriptRetentionContext } from "./TranscriptPool";
@@ -36,7 +37,7 @@ type Options = {
 };
 
 /** The remote history request and what must run however it ends; kept out of the hook for the compiler. */
-async function runRemoteLoad({
+export async function runRemoteLoad({
   load,
   stale,
   apply,
@@ -56,7 +57,8 @@ async function runRemoteLoad({
     if (stale()) return;
     apply();
   } catch (error) {
-    setPagingError(error instanceof Error ? error.message : String(error));
+    // A dropped link is covered by the shared connection notice; the page can be requested again.
+    setPagingError(presentRemoteError(error) ?? null);
   } finally {
     loadingRef.current = false;
     setPagingLoading(false);

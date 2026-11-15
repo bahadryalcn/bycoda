@@ -655,8 +655,9 @@ pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
 }
 
 /// Seconds between ssh's keepalive probes on a tunnel; three unanswered probes
-/// end the link, so a silent network is noticed in about 15 seconds.
-const TUNNEL_KEEPALIVE_SECS: u32 = 5;
+/// end the link, so a silent network is noticed in about 45 seconds. A shorter
+/// window drops the tunnel in every short sleep and wake cycle of a laptop.
+const TUNNEL_KEEPALIVE_SECS: u32 = 15;
 /// How often a tunnel's ssh process is checked for having exited. Keepalives
 /// take ~15 s to notice a dead link anyway; 1 s keeps idle tunnels cheap.
 const WATCH_INTERVAL: Duration = Duration::from_secs(1);
@@ -852,6 +853,8 @@ pub struct Tunnel {
     /// The address ssh actually dialed, one of the target's `candidates`.
     dialed: Option<SshTarget>,
     started: Instant,
+    /// When the watcher last saw the computer wake from sleep.
+    woke: Arc<Mutex<Option<Instant>>>,
 }
 impl Drop for Tunnel {
     fn drop(&mut self) {
@@ -900,7 +903,14 @@ impl Tunnel {
             target: None,
             dialed: None,
             started: Instant::now(),
+            woke: Arc::new(Mutex::new(None)),
         }
+    }
+    fn recently_woke(&self) -> bool {
+        self.woke
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some_and(|at| at.elapsed() < tunnel_probe::WAKE_GRACE)
     }
     /// Reports through `sink`, once, if ssh exits on its own. A tunnel dropped
     /// by the app (disconnect, quit, replacement) is never reported. The thread
@@ -908,29 +918,44 @@ impl Tunnel {
     fn watch(&self, environment_id: String, sink: ExitSink) {
         let (child, stderr) = (self.child.clone(), self.stderr.clone());
         let (stderr_done, settled) = (self.stderr_done.clone(), self.settled.clone());
-        std::thread::spawn(move || loop {
-            if settled.load(Ordering::SeqCst) {
-                return;
-            }
-            let status = child
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .try_wait();
-            match status {
-                Ok(None) => std::thread::sleep(WATCH_INTERVAL),
-                Ok(Some(status)) => {
-                    wait_for_stderr(&stderr_done);
-                    if !settled.swap(true, Ordering::SeqCst) {
-                        let text = stderr.lock().unwrap_or_else(PoisonError::into_inner);
-                        sink(TunnelExit {
-                            environment_id,
-                            exit_code: status.code(),
-                            stderr: stderr_tail(&text),
-                        });
-                    }
+        let woke = self.woke.clone();
+        std::thread::spawn(move || {
+            let mut clock = tunnel_probe::WakeClock::new(WATCH_INTERVAL);
+            loop {
+                if settled.load(Ordering::SeqCst) {
                     return;
                 }
-                Err(_) => return,
+                // A tick far later than scheduled is a sleep, not a silent link: ssh's
+                // own keepalive clock is not charged for it, and a request that fails
+                // right after probes the tunnel for longer before giving up on it.
+                if let Some(gap) = clock.tick() {
+                    *woke.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
+                    log::info!("ssh tunnel: wake detected after {}s", gap.as_secs());
+                }
+                let status = child
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .try_wait();
+                match status {
+                    Ok(None) => std::thread::sleep(WATCH_INTERVAL),
+                    Ok(Some(status)) => {
+                        wait_for_stderr(&stderr_done);
+                        if !settled.swap(true, Ordering::SeqCst) {
+                            log::warn!(
+                                "ssh tunnel: ssh exited on its own (code {:?})",
+                                status.code()
+                            );
+                            let text = stderr.lock().unwrap_or_else(PoisonError::into_inner);
+                            sink(TunnelExit {
+                                environment_id,
+                                exit_code: status.code(),
+                                stderr: stderr_tail(&text),
+                            });
+                        }
+                        return;
+                    }
+                    Err(_) => return,
+                }
             }
         });
     }
@@ -1046,6 +1071,7 @@ impl Tunnel {
                 // it does not close it.
                 std::thread::sleep(Duration::from_millis(150));
                 if tunnel.alive() {
+                    log::info!("ssh tunnel: opened on local port {port}");
                     return Ok(tunnel);
                 }
                 continue;
@@ -1247,6 +1273,43 @@ impl Tunnels {
         };
         slot.lock().unwrap_or_else(PoisonError::into_inner).failure = None;
     }
+    /// Closes the leased tunnel after a request failed, unless the tunnel still
+    /// carries traffic: its ssh must have exited, or a probe through the
+    /// forwarded port must fail. Returns whether it was closed. Blocks for the
+    /// probe, so call it off any lock.
+    pub fn invalidate_unless_healthy(&self, id: &str, lease: &TunnelLease) -> bool {
+        let Some(slot) = self.slots().get(id).cloned() else {
+            return false;
+        };
+        if !Arc::ptr_eq(&slot, &lease.slot) {
+            return false;
+        }
+        // A tunnel start holds the slot for seconds; this lease is stale then.
+        let (alive, port, recent_wake) = match slot.try_lock() {
+            Ok(current) if current.generation == lease.generation => {
+                match current.tunnel.as_ref() {
+                    Some(tunnel) => (tunnel.alive(), tunnel.port, tunnel.recently_woke()),
+                    None => return false,
+                }
+            }
+            _ => return false,
+        };
+        let probe = alive.then(|| tunnel_probe::probe(port, recent_wake));
+        match tunnel_probe::verdict(alive, probe) {
+            tunnel_probe::Verdict::Keep => {
+                log::info!("ssh tunnel: probe ok, keeping the tunnel");
+                false
+            }
+            tunnel_probe::Verdict::Teardown(reason) => {
+                if probe.is_some() {
+                    log::warn!("ssh tunnel: probe failed");
+                }
+                log::warn!("ssh tunnel: teardown, reason: {reason}");
+                self.invalidate(id, lease);
+                true
+            }
+        }
+    }
     pub fn invalidate(&self, id: &str, lease: &TunnelLease) {
         let Some(slot) = self.slots().get(id).cloned() else {
             return;
@@ -1392,6 +1455,9 @@ pub fn device_name() -> String {
         format!("bycoda on {name}")
     }
 }
+
+#[path = "remote_ssh/tunnel_probe.rs"]
+mod tunnel_probe;
 
 #[cfg(test)]
 #[path = "remote_ssh_tests.rs"]

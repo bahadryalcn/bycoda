@@ -824,6 +824,41 @@ describe("environment logical runtime", () => {
       }),
     ).toEqual({ commandId: "c", sessionId: "s", revision: 3 });
   });
+  it("retries an interrupted query once after the connection is ready again", async () => {
+    const f = fixture();
+    const interrupted = Object.assign(new Error("Connection changed"), {
+      code: "RPC_WS_INTERRUPTED",
+      uncertain: false,
+    });
+    vi.mocked(f.port.request).mockRejectedValueOnce(interrupted);
+    const result = await f.runtime.request("commands.status", { commandId: "c" });
+    expect(result).toBeNull();
+    expect(f.calls("commands.status")).toHaveLength(2);
+  });
+  it("waits for the connection before replaying an interrupted query and then gives up", async () => {
+    const clock = new TestClock();
+    const f = fixture(clock);
+    await f.runtime.start();
+    f.receive({ kind: "state", phase: "connecting", environmentId: "env", generation: 2 } as never);
+    vi.mocked(f.port.request).mockRejectedValue(
+      Object.assign(new Error("Connection changed"), { code: "RPC_WS_INTERRUPTED" }),
+    );
+    const pending = f.runtime.request("commands.status", { commandId: "c" }).catch((e) => e);
+    await flush();
+    clock.advance(10_000);
+    expect(await pending).toMatchObject({ code: "RPC_WS_INTERRUPTED" });
+    expect(f.calls("commands.status")).toHaveLength(1);
+  });
+  it("never replays an interrupted command or effectful request", async () => {
+    const f = fixture();
+    vi.mocked(f.port.request).mockRejectedValue(
+      Object.assign(new Error("Connection changed"), { code: "RPC_WS_INTERRUPTED" }),
+    );
+    await expect(f.runtime.request("goals.list", {})).rejects.toMatchObject({
+      name: "HostRpcUncertainError",
+    });
+    expect(f.calls("goals.list")).toHaveLength(1);
+  });
   it("cancels outstanding queries and ignores late replies on scope release", async () => {
     const { runtime, port } = fixture();
     let release!: (value: { generation: number; result: unknown }) => void;
