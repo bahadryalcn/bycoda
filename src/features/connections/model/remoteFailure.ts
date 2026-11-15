@@ -29,7 +29,9 @@ const TEMPORARY =
 
 export function remoteErrorText(error: unknown): string {
   if (typeof error === "string") return error;
-  return error instanceof Error ? error.message : String(error);
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string")
+    return error.message;
+  return String(error);
 }
 
 /** Native failures retain a code; persisted view errors may retain only its prefix. */
@@ -64,6 +66,13 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
     return { kind: "unreachable", message };
   if (/Host identity changed\. Add this machine again before continuing\./i.test(text))
     return { kind: "identity", message };
+  // A Host rejection proves transport worked. Its operation may mention SSH or
+  // another service being unreachable; that is not this machine's connection.
+  if (/^Host rejected request:/i.test(text)) {
+    if (OUTDATED.test(text)) return { kind: "outdated", message };
+    if (TEMPORARY.test(text)) return { kind: "temporary", message };
+    return { kind: "other", message };
+  }
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
   if (OUTDATED.test(text)) return { kind: "outdated", message };
   if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };

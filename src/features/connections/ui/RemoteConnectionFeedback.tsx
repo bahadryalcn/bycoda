@@ -19,7 +19,7 @@ import {
 } from "../../settings/public/settings";
 import { RemoteLoadError } from "./RemoteLoadError";
 
-const TRANSIENT_NOTICE_DELAY_MS = 8_000;
+const TRANSIENT_NOTICE_DELAY_MS = 45_000;
 type Registration = { environmentId: string; failure?: RemoteFailure };
 type Feedback = {
   entries: ReadonlyMap<symbol, Registration>;
@@ -142,6 +142,7 @@ function MachineConnectionNotice({
   );
   const [now, setNow] = useState(Date.now);
   const [dismissed, setDismissed] = useState(false);
+  // Start one outage clock per mounted machine, retaining it across pane failures.
   useEffect(() => {
     const timer = setTimeout(() => {
       setFirstFailureAt((previous) => (active ? (previous ?? Date.now()) : undefined));
@@ -149,6 +150,7 @@ function MachineConnectionNotice({
     }, 0);
     return () => clearTimeout(timer);
   }, [active]);
+  // Escalate a sustained outage once, after the Host restart window.
   useEffect(() => {
     if (!active || !transient || !autoReconnect || reconnecting || firstFailureAt === undefined)
       return;
@@ -156,15 +158,13 @@ function MachineConnectionNotice({
     const timer = setTimeout(() => setNow(Date.now()), Math.max(0, remaining));
     return () => clearTimeout(timer);
   }, [active, transient, autoReconnect, reconnecting, firstFailureAt]);
-  if (
-    !active ||
-    (dismissed && transient) ||
-    (transient &&
-      autoReconnect &&
-      !reconnecting &&
-      (firstFailureAt === undefined || now < firstFailureAt + TRANSIENT_NOTICE_DELAY_MS))
-  )
-    return null;
+  if (!active || (dismissed && transient)) return null;
+  const recovering =
+    transient &&
+    autoReconnect &&
+    (reconnecting ||
+      firstFailureAt === undefined ||
+      now < firstFailureAt + TRANSIENT_NOTICE_DELAY_MS);
   const hardState =
     status !== "connected" &&
     status !== "connecting" &&
@@ -187,7 +187,8 @@ function MachineConnectionNotice({
         failure={displayedFailure}
         compact
         coordinated={false}
-        onDismiss={transient ? () => setDismissed(true) : undefined}
+        recovering={recovering}
+        onDismiss={transient && !recovering ? () => setDismissed(true) : undefined}
       />
     </div>
   );

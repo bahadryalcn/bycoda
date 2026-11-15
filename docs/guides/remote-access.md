@@ -574,3 +574,15 @@ Host CI runs on Windows, macOS, and Linux. Windows-specific tests cover ACL inhe
 Required approvals appear inside the source conversation when it is visible, or in an application confirmation when it is not. SSH, desktop actions, management, Inbox, Room delegation, file access, privacy recovery and quit confirmations use this flow. The exact target and operation remain visible. Expired requests, closed source windows and changed privacy scope cannot authorize work. Application-owned approvals never fall back to an operating-system or browser confirmation dialog; system permission prompts and file pickers remain platform-owned.
 
 Full access reuses execution permission for saved SSH commands in the original coding session. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.
+
+### Short connection interruptions
+
+During sleep, network changes or a Host restart, mounted workspace panes share one
+**Reconnecting…** notice per machine for up to 45 seconds. Loaded content and drafts
+stay available; authentication, identity and protocol refusals still need immediate
+attention. A longer outage exposes the existing reconnect controls and details.
+Automatic reconnect disabled keeps manual recovery available immediately.
+
+A failed request does not close an SSH forward that still answers a bounded HTTP
+probe. SSH keepalives tolerate three missed replies at 15-second intervals. Recovery
+never replays an operation whose outcome is unknown.
