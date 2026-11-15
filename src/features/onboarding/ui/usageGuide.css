@@ -52,7 +52,7 @@
   inline-size: clamp(72px, 18vw, 104px);
   block-size: 132px;
   object-fit: contain;
-  filter: saturate(0.25);
+  filter: saturate(0.25) var(--crew-figure-rim);
 }
 .usage-guide-content p {
   margin: 0;

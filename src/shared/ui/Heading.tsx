@@ -14,10 +14,13 @@ export type HeadingProps = ComponentPropsWithRef<"h2"> & {
    * - `section`: a section inside a page (14px). Default.
    * - `item`: the title of a card, row or list entry (13px).
    * - `caption`: the title of a compact window, popover or dense tool header (12px).
-   * - `heading`: a prominent introduction title (20px), default outline level 1.
+   * - `heading`: a prominent introduction title (20px), default outline level 2.
    */
   size?: HeadingSize;
-  /** Document outline level. Default: page 1, section 2, item 3. Size never follows the level. */
+  /**
+   * Document outline level. Default: page 2, section 3, item 4, caption 4. The one h1 of a screen is the
+   * route title (NavigationBoundary), pane titles are h2 (PaneHeader). Size never follows the level.
+   */
   level?: 1 | 2 | 3 | 4 | 5 | 6;
   /** Explicit shared line height; unset keeps the title role. */
   leading?: TextLeading;
@@ -29,7 +32,7 @@ export type HeadingProps = ComponentPropsWithRef<"h2"> & {
   tone?: TextTone;
 };
 
-const DEFAULT_LEVEL = { page: 1, section: 2, item: 3, caption: 3, heading: 1 } as const;
+const DEFAULT_LEVEL = { page: 2, section: 3, item: 4, caption: 4, heading: 2 } as const;
 
 /**
  * The one title: size comes from the role (`page`, `section`, `item`, `caption`), never from the tag or a

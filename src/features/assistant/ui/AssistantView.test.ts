@@ -202,7 +202,7 @@ it("shows the Host's working-hours hold without changing the saved job or autono
 });
 it("keeps one compact identity and reveals health metadata only on owner request", async () => {
   await render();
-  expect(container.querySelectorAll("header h1")).toHaveLength(1);
+  expect(container.querySelectorAll("header h2")).toHaveLength(1);
   expect(container.querySelector("header")?.textContent).not.toContain("Room ·");
   expect(container.textContent).not.toContain("Last checked:");
   expect(container.textContent).not.toContain("Work tracking continues while voice is off.");

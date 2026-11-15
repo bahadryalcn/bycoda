@@ -42,7 +42,7 @@ export const SETTINGS_GROUPS: { id: SettingsGroupId; label: string }[] = [
   {
     id: "connections",
     get label() {
-      return t("Connections");
+      return t("Machines");
     },
   },
   {

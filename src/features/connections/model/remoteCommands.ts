@@ -129,13 +129,13 @@ const PATH_RESULTS = new Set([
 const ENTRY_RESULTS = new Set(["list_dir", "list_project_files", "stat_files", "list_skills"]);
 
 const UNAVAILABLE = "This isn’t available for projects on another machine yet.";
-const OUTDATED = "Update bycoda Host in Connections settings to use this project’s files.";
+const OUTDATED = "Update bycoda Host in Machines settings to use this project’s files.";
 const OUTDATED_FOLDERS =
-  "Update bycoda Host in Connections settings to browse folders outside projects.";
+  "Update bycoda Host in Machines settings to browse folders outside projects.";
 const OUTDATED_SKILLS =
-  "The other machine’s bycoda Host needs updating to copy skills. Update it in Connections settings.";
+  "The other machine’s bycoda Host needs updating to copy skills. Update it in Machines settings.";
 const OUTDATED_SKILL_DELETE =
-  "The other machine’s bycoda Host needs updating to delete skills. Update it in Connections settings.";
+  "The other machine’s bycoda Host needs updating to delete skills. Update it in Machines settings.";
 
 /** Runs a file command whose paths are `remote://` paths on the machine that
  * owns them, translating paths both ways so callers never see host paths. */

@@ -42,8 +42,8 @@ describe("classifyRemoteError", () => {
   });
   it.each([
     "Machine is unreachable. Check the host and SSH tunnel, then reconnect.",
-    "SSH connection failed: Permission denied. Open Settings → Connections and reconnect to check access.",
-    "SSH timed out. Open Settings → Connections and reconnect to authenticate.",
+    "SSH connection failed: Permission denied. Open Settings → Machines and reconnect to check access.",
+    "SSH timed out. Open Settings → Machines and reconnect to authenticate.",
     "Could not start OpenSSH: not found",
     "The host request did not complete [RPC_HOST_UNAVAILABLE] (workspace.run:read_text_file).",
     "The host request did not complete [RPC_CONNECTION_INTERRUPTED] (workspace.run).",
@@ -83,18 +83,18 @@ describe("classifyRemoteError", () => {
       "Host rejected request: Unsupported workspace command",
       "Host rejected request: Unsupported host method",
       "Unsupported remote operation",
-      "Update Bycoda Host in Connections settings to use this project’s files.",
-      "Update bycoda Host in Connections settings to use this project’s files.",
+      "Update Bycoda Host in Machines settings to use this project’s files.",
+      "Update bycoda Host in Machines settings to use this project’s files.",
     ])
       expect(classifyRemoteError(text).kind).toBe("outdated");
   });
 
   it("strips the host's own prefix from the message", () => {
     expect(
-      classifyRemoteError("Host rejected request: Update bycoda Host in Connections settings."),
+      classifyRemoteError("Host rejected request: Update bycoda Host in Machines settings."),
     ).toEqual({
       kind: "outdated",
-      message: "Update bycoda Host in Connections settings.",
+      message: "Update bycoda Host in Machines settings.",
     });
   });
 

@@ -116,7 +116,7 @@ export function SshJumpChainEditor({
       </Button>
       {value.length > 1 ? (
         <Text as="p" tone="muted">
-          {t("Connections follow this order. Each hop requires its own trusted host key.")}
+          {t("Hops follow this order. Each hop requires its own trusted host key.")}
         </Text>
       ) : null}
     </div>

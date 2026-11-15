@@ -977,13 +977,13 @@ pub fn start(app: &AppHandle) {
     });
 }
 
-/// The latest result, for Settings → Connections.
+/// The latest result, for Settings → Machines.
 #[tauri::command]
 pub fn local_host_bundle_status() -> Option<BundledHostStatus> {
     STATUS.lock().ok().and_then(|slot| slot.clone())
 }
 
-/// Updates this computer's host now, from Settings → Connections. The caller
+/// Updates this computer's host now, from Settings → Machines. The caller
 /// has shown the owner that running sessions and shells are interrupted.
 #[tauri::command]
 pub async fn local_host_bundle_update(app: AppHandle) -> Result<Option<BundledHostStatus>, String> {

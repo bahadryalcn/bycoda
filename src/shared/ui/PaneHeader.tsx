@@ -44,7 +44,7 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
   /** The pane's name. Plain text truncates with an ellipsis; a node (picker, breadcrumb) is placed as is. */
   title?: ReactNode;
   /** Element for the title. Default `h2`; use `div` when the pane already has a heading. */
-  titleAs?: "h1" | "h2" | "h3" | "div";
+  titleAs?: "h2" | "h3" | "div";
   titleId?: string;
   /** Before the title: back/navigation controls. */
   leading?: ReactNode;

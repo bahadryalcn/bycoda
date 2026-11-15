@@ -27,7 +27,7 @@ export function RemoteReconnectGroup() {
         )}
       >
         <Toggle
-          label={t("Automatically reconnect to remote machines")}
+          label={t("Automatically reconnect to machines")}
           on={on}
           onChange={saveRemoteAutoReconnect}
         />

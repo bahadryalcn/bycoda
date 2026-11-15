@@ -1,6 +1,6 @@
 # External tunnels
 
-Manage ngrok and Cloudflare Quick Tunnels from **Settings → Connections → External
+Manage ngrok and Cloudflare Quick Tunnels from **Settings → Machines → External
 tunnels**, or from the development server tool's **Share server** action. Choose
 the computer, provider and target. A project action resolves that project's
 existing host connection; it does not fall back to this computer when a remote

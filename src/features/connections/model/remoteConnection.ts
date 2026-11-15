@@ -51,7 +51,7 @@ export function sanitizeConnectionError(text: string): string {
     .replace(/Bearer\s+[\w.~+/=-]+/gi, "Bearer …")
     .replace(/\b(token|password|passphrase|secret)\s*[=:]\s*\S+/gi, "$1 …")
     .replace(/\bssh(?:\.exe)?\s+-\S.*/gi, "")
-    .replace(/\s*Open Settings → Connections and reconnect[^.]*\.?/gi, "")
+    .replace(/\s*Open Settings → (?:Machines|Connections) and reconnect[^.]*\.?/gi, "")
     .replace(/\s+/g, " ")
     .trim();
   return cleaned.length > 200 ? `${cleaned.slice(0, 197)}…` : cleaned;

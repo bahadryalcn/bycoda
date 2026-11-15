@@ -1263,7 +1263,7 @@ fn connect_host(
         descriptor
             .get("name")
             .and_then(Value::as_str)
-            .unwrap_or("Remote machine")
+            .unwrap_or("Machine")
             .to_string()
     } else {
         name.trim().chars().take(100).collect()

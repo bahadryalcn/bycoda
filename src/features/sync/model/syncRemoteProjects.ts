@@ -93,7 +93,7 @@ export function remoteOnlyProjectHint(
   match: RemoteOpenMatch | undefined,
 ): string {
   if (match) return `${match.path} on ${match.target.name}. Click to open it there.`;
-  return `${project.path} is on a machine that is not connected to this one. Add that machine under Connections to open it.`;
+  return `${project.path} is on a machine that is not connected to this one. Add that machine under Machines to open it.`;
 }
 
 const RETRY_BASE_MS = 60_000;

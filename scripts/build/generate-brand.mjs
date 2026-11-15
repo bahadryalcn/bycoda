@@ -146,18 +146,23 @@ assets["mark-tea-red-animated"] = svg(80, 80, teaStyle + animatedMark());
 assets["mark-tea-red-animated-dark"] = svg(80, 80, teaStyle + animatedMark(silver));
 // White logo with exactly one red drop advancing clockwise every 240ms.
 // The previous drop returns to white, and reduced motion retains the white mark.
-const loadingWhite = "#FFFFFF";
-const teaLoadingStyle = `<style>.tea-drop{stroke:${loadingWhite};animation:tea-loading 1.44s steps(1,end) infinite}@keyframes tea-loading{0%{stroke:${teaRed}}16.6666667%,100%{stroke:${loadingWhite}}}@media(prefers-reduced-motion:reduce){.tea-drop{animation:none;stroke:${loadingWhite}}}</style>`;
-let loadingDrop = 0;
-assets["mark-tea-red-loading"] = svg(
-  80,
-  80,
-  teaLoadingStyle +
-    animatedMark(loadingWhite).replace(
-      /animation-delay:[\d.]+s/g,
-      () => `animation-delay:${(-1.44 + loadingDrop++ * 0.24).toFixed(2)}s`,
-    ),
-);
+const loadingGraphite = "#2B2F36";
+function loadingMark(ink) {
+  const style = `<style>.tea-drop{stroke:${ink};animation:tea-loading 1.44s steps(1,end) infinite}@keyframes tea-loading{0%{stroke:${teaRed}}16.6666667%,100%{stroke:${ink}}}@media(prefers-reduced-motion:reduce){.tea-drop{animation:none;stroke:${ink}}}</style>`;
+  let drop = 0;
+  return svg(
+    80,
+    80,
+    style +
+      animatedMark(ink).replace(
+        /animation-delay:[\d.]+s/g,
+        () => `animation-delay:${(-1.44 + drop++ * 0.24).toFixed(2)}s`,
+      ),
+  );
+}
+// Startup loop on dark grounds (white ink) and on light grounds (graphite ink, same geometry).
+assets["mark-tea-red-loading"] = loadingMark("#FFFFFF");
+assets["mark-tea-red-loading-light"] = loadingMark(loadingGraphite);
 assets["logo-horizontal-tea-red-animated"] = svg(
   390,
   80,
@@ -194,6 +199,7 @@ const letteringOnly = process.argv.includes("--wordmarks-only");
 // Updating the startup loop must not regenerate unrelated marks or native icons.
 if (process.argv.includes("--loading-only")) {
   await writeFile(`${root}/mark-tea-red-loading.svg`, assets["mark-tea-red-loading"]);
+  await writeFile(`${root}/mark-tea-red-loading-light.svg`, assets["mark-tea-red-loading-light"]);
   process.exit(0);
 }
 const isLettering = (name) => /^(wordmark|logo-horizontal|logo-stacked)(-|$)/.test(name);
@@ -209,7 +215,10 @@ try {
     await page.setContent(
       `<style>html,body{margin:0;background:transparent}svg{display:block;width:100%;height:100%}</style>${name.startsWith("favicon") ? renderBrandIcon(geometry, width, name.includes("full-dark") ? { foreground: "#000000", background: "none" } : {}) : assets[name]}`,
     );
-    await page.screenshot({ path: `${root}/${output}.png`, omitBackground: true });
+    await page.screenshot({
+      path: `${root}/${output}.png`,
+      omitBackground: true,
+    });
   }
   if (letteringOnly) {
     for (const name of Object.keys(assets).filter(isLettering)) {
@@ -298,7 +307,12 @@ await writeFile(
           purpose: "any",
         }))
         .concat([
-          { src: "icon-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          {
+            src: "icon-maskable.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
         ]),
     },
     null,

@@ -423,7 +423,7 @@ pub fn detect_platform(
     job: &Arc<Job>,
     askpass: &Askpass,
 ) -> Result<(HostPlatform, SshTarget), String> {
-    job.message("Checking the remote machine…");
+    job.message("Checking the machine…");
     detect_platform_from_dials(dial_order(target), job, |dial| {
         run_remote_command(
             dial,
@@ -1030,7 +1030,7 @@ impl Tunnel {
                 };
                 wait_for_stderr(&tunnel.stderr_done);
                 return Err(format!(
-                    "SSH connection failed{}: {}. Open Settings → Connections and reconnect to check access.",
+                    "SSH connection failed{}: {}. Open Settings → Machines and reconnect to check access.",
                     failure_tag(exit, reachable),
                     tunnel.stderr.lock().unwrap_or_else(PoisonError::into_inner).trim()
                 ));

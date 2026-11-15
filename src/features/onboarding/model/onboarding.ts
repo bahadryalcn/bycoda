@@ -51,7 +51,7 @@ export type OnboardingStepId =
   | "Workspace"
   | "Appearance"
   | "Agents"
-  | "Connections"
+  | "Machines"
   | "Projects";
 
 /**
@@ -59,13 +59,7 @@ export type OnboardingStepId =
  * was already seen. The statistics question follows it until the user has answered.
  */
 export function onboardingSteps(showAccount: boolean, showStatistics = false): OnboardingStepId[] {
-  const steps: OnboardingStepId[] = [
-    "Workspace",
-    "Appearance",
-    "Agents",
-    "Connections",
-    "Projects",
-  ];
+  const steps: OnboardingStepId[] = ["Workspace", "Appearance", "Agents", "Machines", "Projects"];
   const leading: OnboardingStepId[] = [];
   if (showAccount) leading.push("Account");
   if (showStatistics) leading.push("Statistics");

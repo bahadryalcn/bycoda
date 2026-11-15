@@ -689,7 +689,7 @@ export function ServersView({
                   }}
                 />
               ) : null}
-              <Heading level={1} size="section" className="min-w-0">
+              <Heading size="section" level={2} className="min-w-0">
                 {t("Servers")}{" "}
                 <Text size="inherit" tone="muted" className="tabular-nums">
                   {loaded
@@ -936,7 +936,7 @@ export function ServersView({
           request={{
             title: t("Delete {p0} servers?", { p0: bulkTargets.length }),
             message: t(
-              "Removes saved connections from bycoda. Remote machines and their running sessions are not deleted.",
+              "Removes saved connections from bycoda. Machines and their running sessions are not deleted.",
             ),
             confirmLabel: t("Delete selected"),
             confirmDisabled: bulkBusy,
@@ -982,7 +982,7 @@ export function ServersView({
             </Text>
             <Text as="p" tone="muted">
               {deleteTarget.server.kind === "ssh"
-                ? t("Removes this SSH server from bycoda. The remote machine is not changed.")
+                ? t("Removes this SSH server from bycoda. The machine is not changed.")
                 : t(
                     "Removes this machine from this desktop only. The host and its sessions keep running.",
                   )}

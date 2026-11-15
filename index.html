@@ -40,6 +40,11 @@
           if (scheme === "light") {
             root.classList.add("theme-light");
           }
+          // Light grounds need the graphite-ink loader; the white one vanishes on them.
+          window.__bootLogo =
+            scheme === "light"
+              ? "/brand/bycoda/mark-tea-red-loading-light.svg"
+              : "/brand/bycoda/mark-tea-red-loading.svg";
           var bodyGlass = localStorage.getItem("bycoda.bodyGlass");
           if (bodyGlass == null || bodyGlass === "1" || bodyGlass === "true") {
             root.classList.add("glass-body");
@@ -102,8 +107,11 @@
   </head>
   <body>
     <div id="boot-splash" aria-hidden="true">
-      <img src="/brand/bycoda/mark-tea-red-loading.svg" alt="" />
+      <img id="boot-logo" src="/brand/bycoda/mark-tea-red-loading.svg" alt="" />
     </div>
+    <script>
+      if (window.__bootLogo) document.getElementById("boot-logo").src = window.__bootLogo;
+    </script>
     <div id="root"></div>
     <script type="module" src="/apps/desktop/src/main.ts"></script>
   </body>

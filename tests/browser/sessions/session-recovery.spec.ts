@@ -192,7 +192,7 @@ test("compact navigation keeps tabs reachable and recovery count above its icon"
   });
   for (const [label, tab] of [
     ["Explorer", "files"],
-    ["Changes", "changes"],
+    ["Source Control", "changes"],
     ["Sessions", "sessions"],
   ]) {
     const button = pane.getByRole("tab", { name: label, exact: true });

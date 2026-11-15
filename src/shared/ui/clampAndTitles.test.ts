@@ -29,7 +29,7 @@ it("renders silent clamps on the requested element with text roles", () => {
 
 it("keeps default heading attributes and exposes optional title roles", () => {
   const normal = renderToStaticMarkup(createElement(Heading, { children: "Title" }));
-  expect(normal).toMatch(/^<h2 data-size="section" class="[^"]+">Title<\/h2>$/);
+  expect(normal).toMatch(/^<h3 data-size="section" class="[^"]+">Title<\/h3>$/);
   const custom = renderToStaticMarkup(
     createElement(Heading, {
       size: "caption",

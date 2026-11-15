@@ -2135,7 +2135,7 @@ export const Composer = memo(function Composer({
         setPasteError(
           remote
             ? t(
-                "Importing terminal conversations from a remote machine is not available yet. Open {p0} on that machine to import them.",
+                "Importing terminal conversations from another machine is not available yet. Open {p0} on that machine to import them.",
                 { p0: PRODUCT_IDENTITY.displayName },
               )
             : t("Terminal conversation import is not available in this composer."),

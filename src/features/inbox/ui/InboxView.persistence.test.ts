@@ -358,7 +358,7 @@ it("offers the pull-request mode inside Inbox and keeps the all-items route reac
   expect(change).toHaveBeenLastCalledWith(true);
   await show("/work/project", undefined, change, true);
   expect(toggle().getAttribute("aria-pressed")).toBe("true");
-  expect(container.querySelector("h1")?.textContent).toBe("Inbox");
+  expect(container.querySelector("h2")?.textContent).toBe("Inbox");
   await act(async () => toggle().click());
   expect(change).toHaveBeenLastCalledWith(false);
 });

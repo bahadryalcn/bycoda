@@ -995,6 +995,18 @@ html {
   color-scheme: dark;
 }
 
+/* Dark ink figures (Nazgul, Sauron, Vader, Agent Smith, Neo) vanish on dark grounds; a faint light rim
+   keeps every figure readable. Light themes need none. */
+:root {
+  --crew-figure-rim: drop-shadow(
+      0 0 1px color-mix(in srgb, var(--palette-oklch_1_0_none) 60%, transparent)
+    )
+    drop-shadow(0 0 4px color-mix(in srgb, var(--palette-oklch_1_0_none) 20%, transparent));
+}
+html.theme-light {
+  --crew-figure-rim: drop-shadow(0 0 0 transparent);
+}
+
 html.theme-light {
   --ui-text-on-active: var(--palette-oklch_1_0_none);
   /* Light is a white, neutral workspace rather than the dark theme painted grey.

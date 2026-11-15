@@ -16,7 +16,7 @@ import {
 
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 const denied =
-  "SSH connection failed: user@host: Permission denied (publickey). Open Settings → Connections and reconnect to check access.";
+  "SSH connection failed: user@host: Permission denied (publickey). Open Settings → Machines and reconnect to check access.";
 const timedOut = "SSH timed out connecting to the machine.";
 
 describe("connectionOutcome", () => {
@@ -92,7 +92,7 @@ describe("sanitizeConnectionError", () => {
   it("drops the settings hint, collapses whitespace and bounds the length", () => {
     expect(
       sanitizeConnectionError(
-        "No route\n to host. Open Settings → Connections and reconnect to check access.",
+        "No route\n to host. Open Settings → Machines and reconnect to check access.",
       ),
     ).toBe("No route to host.");
     expect(sanitizeConnectionError("x".repeat(500)).length).toBe(198);

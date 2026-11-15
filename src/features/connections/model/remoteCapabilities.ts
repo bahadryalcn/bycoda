@@ -20,7 +20,7 @@ export const SESSION_REWIND = "sessions.rewind";
 
 /** Shown where a feature stays off because the machine's host predates it. */
 export const HOST_UPDATE_NOTICE =
-  "Update bycoda Host in Connections settings to use this on projects on another machine.";
+  "Update bycoda Host in Machines settings to use this on projects on another machine.";
 
 /** Whether the machine behind `cwd` advertises `capability`: always true for a
  * project on this computer, and undefined until a remote machine has answered. */

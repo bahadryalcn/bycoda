@@ -111,6 +111,35 @@ it("explains a slow load and clears its timer when the page arrives", async () =
   await act(async () => back.click());
   expect(onBack).toHaveBeenCalledOnce();
   await act(async () => finish({ default: () => createElement("main", null, "Task board") }));
-  expect(container.textContent).toBe("Task board");
+  expect(container.querySelector("main")!.textContent).toBe("Task board");
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("names the routed screen with its one h1 and keeps inner titles below it", async () => {
+  const { Heading } = await import("../../shared/ui/Heading");
+  const { PaneHeader } = await import("../../shared/ui/PaneHeader");
+  await act(async () =>
+    root.render(
+      createElement(NavigationBoundary, {
+        name: "Tasks",
+        onBack: vi.fn(),
+        children: createElement(
+          "main",
+          null,
+          createElement(PaneHeader, { title: "Board" }),
+          createElement(Heading, { size: "page" }, "Page title"),
+          createElement(Heading, { size: "section" }, "Section"),
+          createElement(Heading, { size: "item" }, "Item"),
+        ),
+      }),
+    ),
+  );
+  expect(container.querySelectorAll("h1")).toHaveLength(1);
+  expect(container.querySelector("h1")!.textContent).toBe("Tasks");
+  expect([...container.querySelectorAll("h2,h3,h4")].map((node) => node.tagName)).toEqual([
+    "H2",
+    "H2",
+    "H3",
+    "H4",
+  ]);
 });

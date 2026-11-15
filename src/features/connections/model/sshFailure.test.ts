@@ -213,7 +213,7 @@ describe("parseSshStartFailure", () => {
   it("reads the exit status and port check the desktop adds", () => {
     expect(
       parseSshStartFailure(
-        "SSH connection failed (exit 255, host reachable): Permission denied. Open Settings → Connections",
+        "SSH connection failed (exit 255, host reachable): Permission denied. Open Settings → Machines",
       ),
     ).toMatchObject({ exitCode: 255, reachable: true });
     expect(

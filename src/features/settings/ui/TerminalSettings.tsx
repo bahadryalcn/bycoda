@@ -217,7 +217,7 @@ export function RemoteMachineShells() {
           size="inline"
           className="settings-collection-empty"
           descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
-          description={t("Connect a machine in Connections to configure its default shell here.")}
+          description={t("Add a machine under Machines to configure its default shell here.")}
         />
       ) : null}
       {remoteMachines.map((machine) => (

@@ -62,7 +62,7 @@ function Workbench({ children }: { children?: ReactNode }) {
           ))}
         </section>
         <aside className="border-stroke bg-(--ui-surface) border-s p-3 max-[700px]:hidden">
-          <p className="text-ui-caption">Source control</p>
+          <p className="text-ui-caption">Source Control</p>
           {Array.from({ length: 10 }, (_, index) => (
             <p key={index} className="text-ui-secondary py-1">
               M src/feature-{index}.tsx

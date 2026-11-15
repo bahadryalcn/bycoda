@@ -78,7 +78,7 @@ export function SurfaceLoading({
         data-slow={slow || undefined}
         data-content={Boolean(heading || children || slowAction) || undefined}
       >
-        {heading ? <h1 className={styles.heading}>{heading}</h1> : null}
+        {heading ? <h2 className={styles.heading}>{heading}</h2> : null}
         <div className={styles.status}>
           {visible ? (
             <LoadingText delay={false} description={slow ? slowDescription : undefined}>

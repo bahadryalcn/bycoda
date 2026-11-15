@@ -25,7 +25,7 @@ export const COMPOSER_TIPS = [
   "Stop pauses the message queue too. Review pending messages and use Resume when ready.",
   "Stopping the agent leaves existing file edits in place; review them in Changes before continuing.",
   "Send steers the active turn. Use the queue button to send after it finishes. If steering is unavailable, the message waits in the queue.",
-  "Use Connections to set up another machine, then select its project to work remotely.",
+  "Use Machines to set up another machine, then select its project to work remotely.",
   "When creating a task, check its machine, branch and worktree to choose where the work runs.",
   "Use Goals to plan a larger job as tasks; review the proposed plan before approving it.",
   "In Social Media, review drafts before publishing; saving a draft does not authorize sending it.",

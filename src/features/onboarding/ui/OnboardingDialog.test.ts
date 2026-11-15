@@ -325,7 +325,7 @@ describe("onboarding workflow", () => {
     expect(isPickerProviderVisible("codex")).toBe(false);
     expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
     expect(container.textContent).not.toContain("Cursor");
-    await click("Connections");
+    await click("Machines");
     await click("Agents");
     expect(container.textContent).not.toContain("Cursor");
     await act(async () =>
@@ -374,7 +374,7 @@ describe("onboarding workflow", () => {
     await click("Save fixture path");
     expect(container.querySelectorAll(".onboarding-agent")).toHaveLength(1);
     expect(container.textContent).toContain("Cursor");
-    await click("Connections");
+    await click("Machines");
     await click("Agents");
     expect(container.textContent).toContain("Cursor");
   });
@@ -416,7 +416,7 @@ describe("onboarding workflow", () => {
 
   it("opens the existing connection editor without scanning history", async () => {
     await render();
-    await click("Connections");
+    await click("Machines");
     await click("Manage connections");
     expect(container.textContent).toContain("Connection editor");
     expect(mock.discover).not.toHaveBeenCalled();

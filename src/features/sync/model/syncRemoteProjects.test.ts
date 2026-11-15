@@ -104,7 +104,7 @@ describe("remoteOpenMatch and remoteOnlyProjectHint", () => {
     const { hostEnvironmentId: _host, ...hostless } = project;
     expect(remoteOpenMatch(hostless, [target("env-2").value])).toBeUndefined();
     expect(remoteOnlyProjectHint(project, undefined)).toBe(
-      "C:/code/app is on a machine that is not connected to this one. Add that machine under Connections to open it.",
+      "C:/code/app is on a machine that is not connected to this one. Add that machine under Machines to open it.",
     );
   });
 });

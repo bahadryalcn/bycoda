@@ -185,7 +185,7 @@ export function AssistantView(props: AssistantViewProps) {
               value={snapshot?.profile.avatar}
               name={identity.name}
             />
-            <Heading size="page" level={1} className={shell.name}>
+            <Heading size="page" className={shell.name}>
               {identity.name || identity.title}
             </Heading>
             {snapshot?.profile.setupComplete && (

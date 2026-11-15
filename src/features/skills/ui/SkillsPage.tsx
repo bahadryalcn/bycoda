@@ -872,13 +872,7 @@ export function SkillsPage({
         <header className={styles.libraryHeader}>
           <div className={styles.headingRow}>
             {/* Embedded in Settings the frame header already names the page: no second title row. */}
-            {header ? (
-              header
-            ) : (
-              <Heading size="page" level={1}>
-                {t("Skills")}
-              </Heading>
-            )}
+            {header ? header : <Heading size="page">{t("Skills")}</Heading>}
             {header ? <div className={styles.filter}>{filterField}</div> : null}
             <Button
               variant="ghost"

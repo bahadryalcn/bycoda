@@ -328,7 +328,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           setVisited((previous) => (previous.includes(next) ? previous : [...previous, next]));
         }}
       >
-        <TabList label={t("Connections")}>
+        <TabList label={t("Machines")}>
           <Tab value="machines">{t("Machines")}</Tab>
           <Tab value="phone">{t("Phone")}</Tab>
           <Tab value="tunnels">{t("Sharing")}</Tab>

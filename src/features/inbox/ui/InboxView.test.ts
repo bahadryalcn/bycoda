@@ -143,7 +143,7 @@ describe("InboxDetail layout", () => {
 
     expect(headerIndex).toBeGreaterThan(-1);
     expect(scrollIndex).toBeGreaterThan(headerIndex);
-    expect(header).toContain(">A long inbox issue</h1>");
+    expect(header).toContain(">A long inbox issue</h2>");
     expect(header).toContain("Send to agent");
     expect(header).toContain("Ask");
     expect(header).toContain("Open on GitHub");

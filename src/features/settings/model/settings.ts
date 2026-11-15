@@ -198,7 +198,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "connections",
     group: "connections",
     get label() {
-      return t("Connections");
+      return t("Machines");
     },
     get description() {
       return t("Manage your computers, phone access, and tunnels.");
@@ -209,7 +209,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     id: "worktrees",
     group: "code",
     get label() {
-      return t("Source control");
+      return t("Source Control");
     },
     get description() {
       return t("Commit and pull request generation, code review and project worktrees.");
@@ -491,7 +491,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "remote-machines",
     section: "connections",
     get label() {
-      return t("Your machines");
+      return t("Machines");
     },
     keywords: "ssh remote connect host server environment",
   },
@@ -499,7 +499,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     id: "remote-auto-reconnect",
     section: "connections",
     get label() {
-      return t("Automatically reconnect to remote machines");
+      return t("Automatically reconnect to machines");
     },
     keywords: "ssh remote retry reconnect drop offline background",
   },

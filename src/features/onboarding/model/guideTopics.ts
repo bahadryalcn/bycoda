@@ -559,7 +559,7 @@ export function guideTopics(): GuideTopic[] {
         {
           id: "machines.add",
           title: t("Add a machine"),
-          text: t("Add a machine in Settings → Connections."),
+          text: t("Add a machine in Settings → Machines."),
         },
         {
           id: "machines.projects",
@@ -579,7 +579,7 @@ export function guideTopics(): GuideTopic[] {
         t("iOS simulators run on a connected Mac."),
       ],
       shortcuts: [],
-      action: { id: "connections", label: t("Open Connections"), step: "machines.add" },
+      action: { id: "connections", label: t("Open Machines"), step: "machines.add" },
     },
     {
       id: "settings",

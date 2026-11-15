@@ -24,7 +24,7 @@ it("keeps the known section title visible and announces one loading status", asy
   await act(async () =>
     root.render(createElement(SettingsLoadingSurface, { section: "appearance" })),
   );
-  expect(node.querySelector("h1")?.textContent).toBe("Appearance");
+  expect(node.querySelector("h2")?.textContent).toBe("Appearance");
   await act(async () => vi.advanceTimersByTime(500));
   const statuses = node.querySelectorAll('[role="status"]');
   expect(statuses).toHaveLength(1);

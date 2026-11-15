@@ -53,7 +53,7 @@ out the next time it connects. Signing out this computer from here also signs it
 
 ### Let phones find this computer
 
-In Settings → Connections → Phone, **Let my signed-in phones find this computer**
+In Settings → Machines → Phone, **Let my signed-in phones find this computer**
 (off by default) stores this computer's name, its Host environment id and its phone route
 addresses (a private local-network address with its public key, and a Tailscale address) in
 your account so your signed-in phones can ask to connect. These are new stored data: route

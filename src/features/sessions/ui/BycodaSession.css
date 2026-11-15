@@ -31,8 +31,7 @@
   max-inline-size: 100%;
   margin: 0;
 }
-.bycoda-empty .bycoda-task-brief h1 {
-  letter-spacing: -0.025em;
+.bycoda-empty .bycoda-task-brief h2 {
   max-inline-size: 100%;
   white-space: normal;
   overflow-wrap: anywhere;

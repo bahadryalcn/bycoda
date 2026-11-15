@@ -1332,7 +1332,7 @@ test("welcome and working labels stay readable in narrow panels and both themes"
   await expect(page.getByTestId("terminal-opened")).toHaveText("true");
   await page.screenshot({ path: testInfo.outputPath("footer-320.png") });
   await page.goto("/tests/browser/chat/composer-extras.html?welcome");
-  const title = page.getByRole("heading", { level: 1 });
+  const title = page.getByRole("heading", { level: 2 });
   await expect(title).toContainText("a-long-project-name");
   for (const theme of ["dark", "light"]) {
     await page.evaluate(

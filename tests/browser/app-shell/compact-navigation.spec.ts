@@ -362,7 +362,7 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
       // The collapsed rail is icon-only: the name lives in the accessible name and tooltip.
       expect((await projects.textContent())?.trim()).toBe("");
       await expect(projects).toHaveAttribute("aria-label", "Projects and groups");
-      for (const label of ["Sessions", "Explorer", "Changes"]) {
+      for (const label of ["Sessions", "Explorer", "Source Control"]) {
         const tab = tabNamed(label);
         await expect(tab).toBeVisible();
         // The same icon stays at every width; the label steps away before it could be clipped.
@@ -826,7 +826,7 @@ test("rail polish aligns sections and swaps row actions without losing identity"
       const triggerBounds = (await groupOptions.boundingBox())!;
       await groupOptions.click();
       await expect(page.getByRole("menuitem", { name: "Lock group", exact: true })).toBeVisible();
-      await page.getByRole("menuitem", { name: "Changes", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Source Control", exact: true }).click();
       const overview = page.getByRole("dialog", { name: "Product team git overview", exact: true });
       await expect(overview).toBeVisible();
       const overviewBounds = (await overview.boundingBox())!;

@@ -1546,7 +1546,7 @@ describe("Composer question focus", () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(textarea.value).toBe("/resume");
     expect(document.body.textContent).toContain(
-      "Importing terminal conversations from a remote machine is not available yet",
+      "Importing terminal conversations from another machine is not available yet",
     );
   });
 

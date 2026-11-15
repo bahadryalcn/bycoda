@@ -454,7 +454,7 @@ const MemoMenuBar = memo(function MenuBar({
           {
             kind: "item",
             id: "toggle_diff",
-            label: t("Toggle Changes"),
+            label: t("Toggle Source Control"),
           },
           ...(layout
             ? [

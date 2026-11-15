@@ -379,7 +379,6 @@
   "Toggle Sidebar": "Kenar çubuğunu aç/kapat",
   "Toggle Session Sidebar": "Oturum kenar çubuğunu aç/kapat",
   "Toggle Terminal": "Terminali aç/kapat",
-  "Toggle Changes": "Değişiklikler panelini aç/kapat",
   "{p0}\nThe group was left as it is.": "{p0}\nGrup olduğu gibi bırakıldı.",
   "{p0} agents": "{p0} ajan",
   "Harness session ID": "Ajan altyapısının oturum kimliği",

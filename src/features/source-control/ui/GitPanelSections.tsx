@@ -172,7 +172,7 @@ export function usePanelPreferencesMenu({
     <ContextMenu
       x={point.x}
       y={point.y}
-      ariaLabel={t("Source control")}
+      ariaLabel={t("Source Control")}
       items={[
         ...(Object.keys(SECTION_LABEL) as GitPanelSection[]).map((section) => ({
           kind: "item" as const,

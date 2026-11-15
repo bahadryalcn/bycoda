@@ -22,7 +22,7 @@ export function assertDesktopControlReceipts(
   const commandId = (command as { commandId?: unknown }).commandId;
   throw Object.assign(
     new Error(
-      "Host rejected request: Update bycoda Host in Connections settings before controlling this desktop turn.",
+      "Host rejected request: Update bycoda Host in Machines settings before controlling this desktop turn.",
     ),
     { code: "RPC_WS_UNSUPPORTED", uncertain: false, commandId },
   );

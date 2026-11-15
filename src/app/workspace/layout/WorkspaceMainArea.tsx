@@ -19,6 +19,9 @@ import { useShellSessionsSelector } from "../../../features/sessions/model/sessi
 import { LinkedWorkItemPanel } from "../surfaces/lazySurfaces";
 import type { LinkedWorkItemPanelState } from "../helpers/types";
 import { useTabHibernation } from "../tabs/useTabHibernation";
+import { useT } from "../../../shared/i18n";
+import { Heading } from "../../../shared/ui/Heading";
+import { useCrewsPageOpen } from "../../../features/crews/model/crewsPage";
 
 type DockProps = ComponentProps<typeof ProjectTerminalDock>;
 type PaneTreeProps = ComponentProps<typeof PaneTree>;
@@ -231,19 +234,26 @@ function WorkspaceMainAreaComponent({
     dirtyFileIds: dirtyFiles,
     movingTabIds: movingWindows,
   });
+  const t = useT();
+  const crewsOpen = useCrewsPageOpen();
+  const routeOpen =
+    crewsOpen ||
+    inboxViewOpen ||
+    searchViewOpen ||
+    settingsOpen ||
+    notesViewOpen ||
+    serversViewOpen ||
+    automationsViewOpen;
   return (
     <main className="relative flex min-h-0 min-w-0 flex-1">
+      {/* The session workspace's one h1; a routed screen brings its own (NavigationBoundary). */}
+      {routeOpen ? null : (
+        <Heading as="h1" size="heading" className="sr-only">
+          {t("Sessions")}
+        </Heading>
+      )}
       <ToolsWorkspace
-        followEligible={
-          !(
-            inboxViewOpen ||
-            searchViewOpen ||
-            settingsOpen ||
-            notesViewOpen ||
-            serversViewOpen ||
-            automationsViewOpen
-          )
-        }
+        followEligible={!routeOpen}
         activeConversation={activeToolsConversation}
         accessibleSessions={toolsSessions}
       >

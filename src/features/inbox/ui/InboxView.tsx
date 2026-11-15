@@ -983,7 +983,6 @@ export function InboxView({
               ? t("Pull Requests")
               : t("Inbox")
         }
-        titleAs="h1"
         trailing={
           <>
             {onPullRequestsOnlyChange ? (

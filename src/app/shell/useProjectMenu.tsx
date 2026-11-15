@@ -954,7 +954,7 @@ export function useProjectMenu({
               ]
             : []),
           ...(!locked && groupMenu.onOpenGitOverview
-            ? [{ id: "git-overview", label: t("Changes"), icon: GitBranch }]
+            ? [{ id: "git-overview", label: t("Source Control"), icon: GitBranch }]
             : []),
           ...groupItems.filter((item) => item.id === "fetch-all"),
           ...(!locked

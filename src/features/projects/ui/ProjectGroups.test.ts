@@ -176,10 +176,10 @@ it("opens the existing Git overview through group options and conceals it when l
   }
   await act(async () => root.render(createElement(MenuFixture)));
   await act(async () => button("Open menu").click());
-  await act(async () => button("Changes").click());
+  await act(async () => button("Source Control").click());
   expect(overview).toHaveBeenCalledTimes(1);
   await act(async () => button("Open menu").click());
-  const staleAction = button("Changes");
+  const staleAction = button("Source Control");
   const view = groupLock.getGroupLockView();
   const spy = vi
     .spyOn(groupLock, "getGroupLockView")
@@ -189,7 +189,9 @@ it("opens the existing Git overview through group options and conceals it when l
     expect(overview).toHaveBeenCalledTimes(1);
     await act(async () => button("Open menu").click());
     expect(
-      [...document.querySelectorAll("button")].some((item) => item.textContent === "Changes"),
+      [...document.querySelectorAll("button")].some(
+        (item) => item.textContent === "Source Control",
+      ),
     ).toBe(false);
     expect(overview).toHaveBeenCalledTimes(1);
   } finally {

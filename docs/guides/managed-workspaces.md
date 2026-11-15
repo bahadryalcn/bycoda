@@ -36,7 +36,7 @@ resolved committed SHA and does not copy another checkout's uncommitted work. To
 depend on another session, use its committed result and record that dependency.
 
 The composer offers workspace/base selection for a blank session. Settings →
-Workspace → Source control includes managed workspace policy, retention, storage,
+Workspace → Source Control includes managed workspace policy, retention, storage,
 pinning and directory management. **Current checkout** is selected unless an
 explicit choice or project policy selects **Worktree**. Current execution does
 not require managed-workspace admission. For a worktree, review the selected
@@ -169,7 +169,7 @@ pauses; it does not discard dirty work or unmerged branches. If storage cannot b
 measured, new worktrees also pause until a refresh succeeds.
 
 A managed folder deleted outside bycoda counts as 0 bytes and is listed as
-**Missing folder** in **Settings → Source control**. Its **Remove record** action
+**Missing folder** in **Settings → Source Control**. Its **Remove record** action
 retires the missing directory; the branch and conversation stay. A
 record still marked active whose folder is gone is closed first, after you
 confirm. The Host can retire that record without filesystem cleanup even when

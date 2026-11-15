@@ -145,7 +145,7 @@ function paletteActions(
           {
             id: "reconnect-remote",
             get label() {
-              return t("Reconnect Remote Machine");
+              return t("Reconnect Machine");
             },
           },
         ]

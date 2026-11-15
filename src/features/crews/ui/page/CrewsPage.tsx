@@ -111,7 +111,6 @@ export function CrewsPage({
     >
       <Tabs value={tab} onValueChange={setTab} panels="shared">
         <PaneHeader
-          titleAs="h1"
           dragRegion
           chromeInset={chromeInset}
           className="select-none"

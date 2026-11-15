@@ -1,4 +1,5 @@
 import { Text } from "../../shared/ui/Text";
+import { Heading } from "../../shared/ui/Heading";
 import { Button } from "../../shared/ui/Button";
 import { useLocale, useT } from "../../shared/i18n";
 import { Suspense, type ReactNode } from "react";
@@ -20,10 +21,17 @@ export function NavigationBoundary({
   children: ReactNode;
 }) {
   useLocale();
+  const t = useT();
+  // The one h1 of a routed screen: the route's name. Visible titles inside are h2 and below.
   return (
-    <RecoveryBoundary key={name} onBack={onBack}>
-      <Suspense fallback={<NavigationLoading name={name} onBack={onBack} />}>{children}</Suspense>
-    </RecoveryBoundary>
+    <>
+      <Heading as="h1" size="heading" className="sr-only">
+        {t(name)}
+      </Heading>
+      <RecoveryBoundary key={name} onBack={onBack}>
+        <Suspense fallback={<NavigationLoading name={name} onBack={onBack} />}>{children}</Suspense>
+      </RecoveryBoundary>
+    </>
   );
 }
 

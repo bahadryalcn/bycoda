@@ -236,7 +236,7 @@ For an existing profile it cannot prove all activity owners or distinguish an
 intentional stop from a failure, so it defers automatic repair and upgrades. The
 owner-directed update coordinator retains its separate admission and recovery checks.
 
-Settings → Connections offers **Update host now** on that deferred or failed notice.
+Settings → Machines offers **Update host now** on that deferred or failed notice.
 It asks the owner to confirm that running sessions and shells are interrupted, then
 runs the same verified bundled installer, which stops the old service through its
 lifecycle command and fails closed when it cannot. Nothing is interrupted without

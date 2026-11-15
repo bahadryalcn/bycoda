@@ -310,7 +310,7 @@ it("keeps workspace Changes reachable from the row menu when shortcuts cannot fi
       host.querySelector<HTMLButtonElement>('button[aria-label="Wallet group options"]')!.click(),
     );
     const changes = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === "Changes",
+      (button) => button.textContent?.trim() === "Source Control",
     )!;
     expect(changes).toBeDefined();
     await act(async () => changes.click());

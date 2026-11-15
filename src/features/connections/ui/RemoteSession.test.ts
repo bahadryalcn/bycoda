@@ -1280,7 +1280,9 @@ it("uses the normal composer with the host branch in its top row", async () => {
   expect(container.textContent).not.toContain("Home server");
   expect(byLabel("Branch main")).not.toBeNull();
   expect(
-    [...container.querySelectorAll("button")].some((button) => button.textContent === "Changes"),
+    [...container.querySelectorAll("button")].some(
+      (button) => button.textContent === "Source Control",
+    ),
   ).toBe(false);
   // The host's model, keeping the tab's effort where the model supports it.
   expect(byLabel("Codex GPT Test")?.getAttribute("aria-label")).toBe("Codex GPT Test, effort High");
