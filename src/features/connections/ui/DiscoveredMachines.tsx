@@ -150,7 +150,7 @@ export function DiscoveredMachines({
       <SectionLabel>{t("Machines found")}</SectionLabel>
       {signedOut ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Text tone="muted">{t("Sign in to see your other computers.")}</Text>
+          <Text tone="muted">{t("Sign in to also find computers on your account.")}</Text>
           <Button variant="secondary" onClick={() => void signIn().catch(() => undefined)}>
             {t("Sign in")}
           </Button>

@@ -14378,7 +14378,7 @@
   "About smart setup": "スマート設定について",
   "Effort follows the job: Low for simple jobs, Medium for most work, High for reviews and planning. Smart setup never goes above High; choose higher levels yourself.": "推論の強さは作業に合わせて決まります。簡単な作業は Low、ほとんどの作業は Medium、レビューと計画は High です。スマート設定は High を超えません。それ以上のレベルはご自身で選んでください。",
   "Machines found": "見つかったマシン",
-  "Sign in to see your other computers.": "他のコンピュータを表示するにはサインインしてください。",
+  "Sign in to also find computers on your account.": "サインインすると、アカウントのコンピュータも見つけられます。",
   "No new machines found": "新しいマシンは見つかりませんでした",
   "Shared with you": "共有されたマシン",
   "Phones and tablets": "スマートフォンとタブレット",

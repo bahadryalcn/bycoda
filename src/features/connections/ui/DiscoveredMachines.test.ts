@@ -71,7 +71,7 @@ it("lists a native candidate and adds it with its address prefilled", async () =
 
 it("shows the sign-in prompt and an empty state when nothing is found or the command is missing", async () => {
   await render("missing");
-  expect(container.textContent).toContain("Sign in to see your other computers.");
+  expect(container.textContent).toContain("Sign in to also find computers on your account.");
   expect(container.textContent).not.toContain("Add");
 });
 
