@@ -689,6 +689,29 @@ it("survives a cache-publication fault after a commit: logs, clears caches and k
   error.mockRestore();
 });
 
+it("attributes a full session save, including its event rows, to that session's project", async () => {
+  const { store, value } = await fixture();
+  const unattributed = store.unattributedChangeVersion;
+  const project = store.projectVersion(value.projectId);
+  await store.save(
+    { ...value, revision: 2, session: { ...value.session, title: "Saved" } },
+    {
+      type: "fixture",
+    },
+  );
+  expect(
+    (
+      await store.db
+        .prepare("SELECT count(*) AS count FROM events WHERE session_id=?")
+        .get("session")
+    )?.count,
+  ).toBeGreaterThan(0);
+  expect(store.projectVersion(value.projectId)).toBe(project + 1);
+  expect(store.unattributedChangeVersion).toBe(unattributed);
+  await store.db.exec("CREATE TABLE IF NOT EXISTS unattributed_fixture(value TEXT)");
+  expect(store.unattributedChangeVersion).toBe(unattributed + 1);
+});
+
 it("batches ordered writes atomically and keeps cached statements usable after eviction", async () => {
   const { store } = await fixture();
   await store.db.exec("CREATE TABLE batch_fixture(id INTEGER PRIMARY KEY, value TEXT)");

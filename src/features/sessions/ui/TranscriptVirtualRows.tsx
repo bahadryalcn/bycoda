@@ -210,6 +210,9 @@ function MeasuredTranscriptRows({
     if (!virtualized && rows.length > TRANSCRIPT_VIRTUAL_THRESHOLD) {
       const node = scroll && owner ? owner.firstVisibleRow(scroll) : null;
       if (node) transition.current = { node, top: node.getBoundingClientRect().top };
+      // The plain list never measured its rows: keep their real heights so the
+      // virtualized list does not place every row at its estimate.
+      if (root.current) seedRowSizes(root.current, id, rows, sizes);
       setVirtualized(true);
     } else if (transition.current) {
       const saved = transition.current;
@@ -222,7 +225,7 @@ function MeasuredTranscriptRows({
     }
     setOldCount(rows.length);
     anchor.current?.changed();
-  }, [virtualized, rows, scroll, owner]);
+  }, [virtualized, rows, scroll, owner, id, sizes]);
 
   const items: { index: number; key: Key; start: number; end: number }[] = virtualized
     ? virtual.items
@@ -415,6 +418,22 @@ function shiftScrollTop(scroll: HTMLElement, delta: number): void {
 }
 
 const noMeasure = (_node: HTMLDivElement | null) => {};
+
+/** Records the mounted rows' heights at the list's current width, which the switch commits. */
+function seedRowSizes(
+  element: HTMLElement,
+  ownerId: string,
+  rows: readonly TranscriptVirtualRow[],
+  sizes: Map<string, RowSize>,
+): void {
+  const width = element.getBoundingClientRect().width;
+  for (const node of element.querySelectorAll<HTMLElement>("[data-transcript-virtual-owner]")) {
+    if (node.dataset.transcriptVirtualOwner !== ownerId) continue;
+    const row = rows[Number(node.dataset.index)];
+    const height = node.getBoundingClientRect().height;
+    if (row && height > 0) sizes.set(row.id, { width, height });
+  }
+}
 
 function ownCodeShells(node: HTMLElement): HTMLElement[] {
   return [...node.querySelectorAll<HTMLElement>(".markdown-code-shell")].filter(

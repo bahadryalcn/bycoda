@@ -65,6 +65,16 @@ export class TranscriptVirtualization {
     this.target = target;
     for (const listener of this.listeners) listener();
   }
+  /** Ends a finished reveal of `target`; a newer target stays. Anchors are untouched. */
+  settleReveal(target: string | null | undefined): void {
+    if (!target || this.target !== target) return;
+    this.target = null;
+    for (const listener of this.listeners) listener();
+  }
+  /** Settles `target` once the navigating caller's own alignment frame has run. */
+  settleRevealAfterAlignment(target: string): void {
+    requestAnimationFrame(() => requestAnimationFrame(() => this.settleReveal(target)));
+  }
   anchorId(scroll: HTMLElement): string | undefined {
     return this.scrolls.get(scroll)?.anchor.blockId();
   }

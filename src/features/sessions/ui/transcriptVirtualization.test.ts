@@ -147,3 +147,17 @@ it("keeps the container as anchor when its children are above and below the view
   const { owner, scroll } = layout(specs, { scrollTop: 100 });
   expect(idOf(owner.firstVisibleRow(scroll))).toBe("p");
 });
+
+it("settles only the reveal it was given, so a newer target survives", () => {
+  const owner = new TranscriptVirtualization("restored");
+  let notified = 0;
+  owner.subscribe(() => notified++);
+  owner.settleReveal("other");
+  expect(owner.snapshot()).toBe("restored");
+  owner.settleReveal("restored");
+  expect(owner.snapshot()).toBeNull();
+  expect(notified).toBe(1);
+  owner.reveal("next");
+  owner.settleReveal("restored");
+  expect(owner.snapshot()).toBe("next");
+});

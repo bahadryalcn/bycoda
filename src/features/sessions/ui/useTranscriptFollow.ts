@@ -150,7 +150,11 @@ export function useTranscriptFollow({
         el.querySelectorAll<HTMLElement>("[data-transcript-turn]"),
         top,
       );
-      const candidate = virtualization?.firstVisibleRow(el);
+      // Only a row inside a virtualized turn is kept, so skip the per-row
+      // layout reads entirely while no turn is virtualized.
+      const candidate = el.querySelector('[data-transcript-virtualized-turn="true"]')
+        ? virtualization?.firstVisibleRow(el)
+        : undefined;
       const row = candidate?.closest('[data-transcript-virtualized-turn="true"]')
         ? candidate
         : undefined;
@@ -360,6 +364,8 @@ export function useTranscriptFollow({
 
   useLayoutEffect(() => {
     if (restoreCheckpoint.current && lastUserId === checkpointUserId.current) return;
+    // A dropped checkpoint's anchor must not stay a reveal target.
+    virtualization?.settleReveal(restoreCheckpoint.current?.virtualAnchorBlockId);
     restoreCheckpoint.current = undefined;
     restoringCheckpoint.current = false;
     stickToBottom.current = true;
@@ -368,7 +374,7 @@ export function useTranscriptFollow({
     syncTranscriptViewport(el);
     pinToBottom(el);
     if (el) rememberScroll(el);
-  }, [lastUserId, rememberScroll, setShowJump]);
+  }, [lastUserId, rememberScroll, setShowJump, virtualization]);
 
   // Only a new prompt starts the motion; later renders must not replay it.
   const introducedPromptMount = useRef(false);
@@ -461,6 +467,7 @@ export function useTranscriptFollow({
     setShowJump,
     restoreCheckpoint,
     restoringCheckpoint,
+    virtualization,
   };
 }
 
@@ -486,6 +493,7 @@ export function useTranscriptCheckpointRestore(
     setShowJump,
     restoreCheckpoint: restoreCheckpointRef,
     restoringCheckpoint: restoringCheckpointRef,
+    virtualization,
   } = follow;
   useLayoutEffect(() => {
     const checkpoint = restoreCheckpointRef.current;
@@ -530,6 +538,8 @@ export function useTranscriptCheckpointRestore(
       cancelAnimationFrame(frame);
     };
     const finish = () => {
+      // The restored row no longer needs to be forced mounted or its group open.
+      virtualization?.settleReveal(checkpoint.virtualAnchorBlockId);
       restoreCheckpointRef.current = undefined;
       restoringCheckpointRef.current = false;
       stop();
@@ -558,6 +568,7 @@ export function useTranscriptCheckpointRestore(
     distanceFromBottomRef,
     restoreCheckpointRef,
     restoringCheckpointRef,
+    virtualization,
     visible,
   ]);
 }

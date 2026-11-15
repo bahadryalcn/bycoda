@@ -126,7 +126,7 @@ export class StoreDatabase {
             this.dataMutationVersion++;
             if (
               request.mutation ||
-              !/^\s*(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+(?:sessions|session_state|session_journal|session_journal_blocks|session_events)\b/i.test(
+              !/^\s*(?:INSERT\s+(?:OR\s+\w+\s+)?INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+(?:sessions|session_state|session_journal|session_journal_blocks|events)\b/i.test(
                 request.sql,
               )
             )

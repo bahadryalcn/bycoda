@@ -128,6 +128,21 @@ it("retains exact historical IDs when saved history prepends or live output appe
   expect(api.findTurn("u-100")).toBeDefined();
 });
 
+it("keeps the window in place when its first turn disappears", () => {
+  render(history(1000));
+  act(() => api.revealBlock("u-500"));
+  const first = api.firstVisibleTurn;
+  const removed = api.visibleTurns[0][0].id;
+  render(history(1000).filter((turn) => turn[0].id !== removed));
+  expect(api.firstVisibleTurn).toBe(first);
+  expect(api.findTurn(removed)).toBeUndefined();
+  expect(scroller.querySelector('[data-transcript-turn="u-500"]')).not.toBeNull();
+  // Turns removed from the end, the first one included, leave the last page in view.
+  render(history(first));
+  expect(api.lastVisibleTurn).toBe(first);
+  expect(api.visibleTurns.length).toBe(MAX_TRANSCRIPT_WINDOW_TURNS);
+});
+
 it("keeps remote load errors visible and allows the same earlier page to retry", async () => {
   const load = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(0);
   render(history(10), load, true);

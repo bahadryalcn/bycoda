@@ -232,6 +232,12 @@ const ActivityPhaseGroup = memo(function ActivityPhaseGroup({
   const reveal = useTranscriptRevealTarget();
   const revealed =
     !!reveal && (phase.headline?.id === reveal || phase.steps.some((step) => step.id === reveal));
+  // A settled reveal leaves the group open, now under its header's control.
+  const [wasRevealed, setWasRevealed] = useState(revealed);
+  if (wasRevealed !== revealed) {
+    setWasRevealed(revealed);
+    if (!revealed && override !== true) setOverride(true);
+  }
   const open = waiting || revealed || (override ?? active);
   const [liveScroller, setLiveScroller] = useState<HTMLDivElement | null>(null);
   // A step's own growth is followed by the hook's resize observer; the layout
