@@ -479,7 +479,7 @@ export function SshRunbooks({
                         })
                       }
                     >
-                      {t("Cancel target")}
+                      {t("Stop target")}
                     </Button>
                   ) : null}
                 </div>
@@ -494,7 +494,7 @@ export function SshRunbooks({
                     })
                   }
                 >
-                  {t("Cancel run")}
+                  {t("Stop run")}
                 </Button>
               ) : null}
             </Text>

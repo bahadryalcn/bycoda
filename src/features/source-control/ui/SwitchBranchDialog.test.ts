@@ -49,7 +49,7 @@ it("lets the switch dialog cancel generation and ignores its late result", async
 
     await act(async () => {
       document
-        .querySelector<HTMLButtonElement>('[aria-label="Cancel commit message generation"]')!
+        .querySelector<HTMLButtonElement>('[aria-label="Stop commit message generation"]')!
         .click();
     });
     expect(signal?.aborted).toBe(true);

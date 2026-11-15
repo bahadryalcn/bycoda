@@ -145,7 +145,7 @@ it("hands over to the account sign-in once the window is closed", async () => {
 it("cancels a live window before leaving for the account", async () => {
   const { client, onCreated } = setup();
   await submit();
-  await act(async () => button("Cancel signup")?.click());
+  await act(async () => button("Stop signup")?.click());
   expect(client.browserWorkflowCancel).toHaveBeenCalledWith("acc-1");
   expect(onCreated).toHaveBeenCalledWith("acc-1");
 });

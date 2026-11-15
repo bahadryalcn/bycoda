@@ -224,7 +224,7 @@ it("retains install cancellation across a language change for the original opera
   );
   await vi.waitFor(() => expect(button("Install fixture-agent@1.2.3")).toBeDefined());
   await act(async () => button("Install fixture-agent@1.2.3").click());
-  expect(button("Cancel installation")).toBeDefined();
+  expect(button("Stop installation")).toBeDefined();
   try {
     await act(async () => {
       await setLanguagePreference("tr");

@@ -110,7 +110,7 @@ export function ReconnectAction({ machine }: { machine: RemoteMachine }) {
         <Button
           variant="ghost"
           iconOnly
-          label={t("Cancel reconnect")}
+          label={t("Stop reconnecting")}
           onClick={() => cancelRemoteReconnect(machine.environmentId)}
         >
           <X aria-hidden className="icon-sm" />

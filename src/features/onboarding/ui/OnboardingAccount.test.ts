@@ -138,7 +138,7 @@ describe("onboarding account step", () => {
   it("offers cancel while waiting for the browser", async () => {
     account.state = { phase: "signing-in" };
     await render();
-    await click("Cancel");
+    await click("Stop");
     expect(account.cancelSignIn).toHaveBeenCalledOnce();
   });
 

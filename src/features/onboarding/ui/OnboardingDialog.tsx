@@ -583,7 +583,7 @@ function Projects({
                 />
               </Text>
               <Button onClick={() => abort.current?.abort()} variant="secondary" type="button">
-                {t("Cancel import")}
+                {t("Stop import")}
               </Button>
             </div>
           ) : null}

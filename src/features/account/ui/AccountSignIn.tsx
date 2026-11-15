@@ -53,7 +53,7 @@ export function AccountSignIn({
       >
         <Row label={t("Waiting for your browser…")}>
           <Button variant="secondary" size="sm" onClick={onCancel}>
-            {t("Cancel")}
+            {t("Stop")}
           </Button>
         </Row>
       </Group>

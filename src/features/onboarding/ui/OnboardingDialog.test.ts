@@ -235,7 +235,7 @@ describe("onboarding workflow", () => {
     expect(button("Back").disabled).toBe(true);
     expect(button("Skip import").disabled).toBe(true);
     const signal = mock.run.mock.calls[0][0].signal as AbortSignal;
-    await click("Cancel import");
+    await click("Stop import");
     expect(signal.aborted).toBe(true);
     await act(async () =>
       resolve({

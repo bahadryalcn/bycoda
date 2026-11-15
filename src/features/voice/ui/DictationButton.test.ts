@@ -178,7 +178,7 @@ it("keeps preparation cancellable and lets a click cancel a stuck transcription"
   await act(async () => button()!.click());
   expect(mock.stop).toHaveBeenCalledOnce();
   await act(async () => mock.callbacks.state("finishing"));
-  expect(button()?.getAttribute("aria-label")).toBe("Cancel transcription");
+  expect(button()?.getAttribute("aria-label")).toBe("Stop transcription");
   expect(button()?.getAttribute("aria-disabled")).not.toBe("true");
   expect(mock.cancel).not.toHaveBeenCalled();
   await act(async () => button()!.click());

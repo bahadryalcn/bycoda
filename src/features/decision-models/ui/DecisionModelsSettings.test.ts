@@ -435,7 +435,7 @@ describe("DecisionModelsSettings found on this computer", () => {
 
     expect(bodyText()).toContain("Existing model");
 
-    clickButton("Cancel scan");
+    clickButton("Stop scan");
 
     await settleDecisionUi();
 
@@ -467,7 +467,7 @@ describe("DecisionModelsSettings found on this computer", () => {
       },
     });
 
-    clickButton("Cancel scan");
+    clickButton("Stop scan");
 
     await settleDecisionUi();
 

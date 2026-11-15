@@ -581,7 +581,7 @@ describe("GitChangesPanel commit message generation", () => {
 
     await act(async () => {
       container
-        .querySelector<HTMLButtonElement>('[aria-label="Cancel commit message generation"]')!
+        .querySelector<HTMLButtonElement>('[aria-label="Stop commit message generation"]')!
         .click();
     });
     expect(signal?.aborted).toBe(true);
@@ -1046,7 +1046,7 @@ describe("GitChangesPanel action feedback", () => {
     expect(container.querySelector("textarea")?.disabled).toBe(true);
     await act(async () => {
       container
-        .querySelector<HTMLButtonElement>('[aria-label="Cancel commit message generation"]')!
+        .querySelector<HTMLButtonElement>('[aria-label="Stop commit message generation"]')!
         .click();
     });
     // Staging is still running; the box is free to type in.
@@ -1237,19 +1237,17 @@ describe("GitChangesPanel navigation", () => {
     const signal = vi.mocked(generateCommitMessage).mock.calls[0][2];
     await renderPanel("/other-navigation");
     expect(signal?.aborted).toBe(false);
-    expect(container.querySelector('[aria-label="Cancel commit message generation"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Stop commit message generation"]')).toBeNull();
     await typeMessage("Other draft");
     await renderPanel(cwd);
-    expect(
-      container.querySelector('[aria-label="Cancel commit message generation"]'),
-    ).not.toBeNull();
+    expect(container.querySelector('[aria-label="Stop commit message generation"]')).not.toBeNull();
     await renderPanel("/other-navigation");
     await act(async () => finish("Generated for original project"));
     expect(container.querySelector("textarea")?.value).toBe("Other draft");
     await renderPanel(cwd);
     expect(container.querySelector("textarea")?.value).toBe("Generated for original project");
     expect(generateCommitMessage).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[aria-label="Cancel commit message generation"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Stop commit message generation"]')).toBeNull();
   });
 
   it("allows cancellation after remount and ignores the cancelled result", async () => {
@@ -1268,7 +1266,7 @@ describe("GitChangesPanel navigation", () => {
     await act(async () => root.render(null));
     expect(signal?.aborted).toBe(false);
     await renderPanel(cwd);
-    await click("Cancel commit message generation");
+    await click("Stop commit message generation");
     expect(signal?.aborted).toBe(true);
     await click("Generate commit message");
     await act(async () => finish("Cancelled result"));

@@ -189,7 +189,7 @@ export function AccountConnection({
               disabled={disabled}
               onClick={() => void cancelBrowser().catch(() => undefined)}
             >
-              {t("Cancel sign-in")}
+              {t("Stop")}
             </Button>
           ) : null}
           {browser?.source === "existing-chrome" ? (

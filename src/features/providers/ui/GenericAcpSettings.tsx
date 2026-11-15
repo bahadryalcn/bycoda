@@ -649,8 +649,8 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                             onClick={() => void cancelInstallation(entry.id)}
                           >
                             {cancelingInstallId === entry.id
-                              ? t("Cancelling installation…")
-                              : t("Cancel installation")}
+                              ? t("Stopping installation…")
+                              : t("Stop installation")}
                           </Button>
                         ) : null}
                       </div>

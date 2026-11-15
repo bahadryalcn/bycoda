@@ -81,6 +81,37 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
   return { kind: "other", message };
 }
 
+/** The fixed messages thrown in English (they are matched above) shown in the user's language. */
+function localizeRemoteMessage(message: string): string {
+  const text = message.replace(/^Host rejected request:s*/i, "");
+  const known: Record<string, string> = {
+    "Update bycoda Host in Machines settings to use this on projects on another machine.": t(
+      "Update bycoda Host in Machines settings to use this on projects on another machine.",
+    ),
+    "Update bycoda Host in Machines settings to use this project’s files.": t(
+      "Update bycoda Host in Machines settings to use this project’s files.",
+    ),
+    "Update bycoda Host in Machines settings to browse folders outside projects.": t(
+      "Update bycoda Host in Machines settings to browse folders outside projects.",
+    ),
+    "The other machine’s bycoda Host needs updating to copy skills. Update it in Machines settings.":
+      t(
+        "The other machine’s bycoda Host needs updating to copy skills. Update it in Machines settings.",
+      ),
+    "The other machine’s bycoda Host needs updating to delete skills. Update it in Machines settings.":
+      t(
+        "The other machine’s bycoda Host needs updating to delete skills. Update it in Machines settings.",
+      ),
+    "Update bycoda Host in Machines settings before controlling this desktop turn.": t(
+      "Update bycoda Host in Machines settings before controlling this desktop turn.",
+    ),
+    "This isn’t available for projects on another machine yet.": t(
+      "This isn’t available for projects on another machine yet.",
+    ),
+  };
+  return known[text] ?? message;
+}
+
 /** The machine itself cannot be asked right now, as opposed to one command failing. */
 export const isConnectionFailure = (failure: RemoteFailure) =>
   failure.kind === "unreachable" || failure.kind === "outdated" || failure.kind === "identity";
@@ -117,7 +148,10 @@ export function presentRemoteError(
 ): string | undefined {
   if (!isTransientTransportError(error))
     // An error with no text still needs a visible message.
-    return classifyRemoteError(error).message || t("Something went wrong. Try again.");
+    return (
+      localizeRemoteMessage(classifyRemoteError(error).message) ||
+      t("Something went wrong. Try again.")
+    );
   if (!options.explicit) return undefined;
   // An action is never replayed on its own, since it could apply twice: tell the
   // user to repeat it once the link is back instead of showing transport text.

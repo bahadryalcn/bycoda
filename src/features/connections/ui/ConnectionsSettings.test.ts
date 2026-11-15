@@ -556,7 +556,7 @@ it("explains why adding a new machine waits while a setup is in progress", async
   expect(container.textContent).toContain(
     "Finish or cancel the current connection before adding another machine.",
   );
-  await act(async () => button("Cancel connection").click());
+  await act(async () => button("Stop").click());
   expect(invoke).toHaveBeenCalledWith("remote_ssh_cancel", { jobId: "setup" });
   state = { ...state, done: true, error: "Connection cancelled" };
   await poll();

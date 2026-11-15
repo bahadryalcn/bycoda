@@ -169,7 +169,7 @@ export function SwitchBranchDialog({
               motion="none"
               type="button"
               label={
-                generating ? t("Cancel commit message generation") : t("Generate commit message")
+                generating ? t("Stop commit message generation") : t("Generate commit message")
               }
               disabled={Boolean(busy)}
               onClick={() => (generating ? cancelGenerate() : void generate())}

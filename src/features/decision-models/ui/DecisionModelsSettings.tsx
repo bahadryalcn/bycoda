@@ -166,7 +166,7 @@ export function DecisionModelsSettings({
       loading={model.isPending("scan-cancel")}
       onClick={() => void actions.cancelScan().catch(() => undefined)}
     >
-      {t("Cancel scan")}
+      {t("Stop scan")}
     </Button>
   ) : (
     <Button

@@ -1818,7 +1818,7 @@ for (const theme of ["light", "dark"]) {
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
     await expect(status).toContainText(String(runId));
     expect(await starts()).toHaveLength(1);
-    await status.getByRole("button", { name: "Cancel target", exact: true }).click();
+    await status.getByRole("button", { name: "Stop target", exact: true }).click();
     await expect(status).toContainText("Cancelled");
     await expect(status).toContainText("The remote script may still be running");
     await expect(

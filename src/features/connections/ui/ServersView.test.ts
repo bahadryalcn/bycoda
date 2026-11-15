@@ -228,7 +228,7 @@ it("shows real recovery progress and keeps degraded features visible after Host 
   expect(
     document.body.querySelector('button[aria-label="Reconnect"]')?.getAttribute("aria-busy"),
   ).toBe("true");
-  expect(document.body.querySelector('button[aria-label="Cancel reconnect"]')).toBeTruthy();
+  expect(document.body.querySelector('button[aria-label="Stop reconnecting"]')).toBeTruthy();
   await act(async () => {
     recordFeatureHealth(machine.environmentId, "files", false);
     finish({});

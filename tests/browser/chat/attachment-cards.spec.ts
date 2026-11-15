@@ -174,7 +174,9 @@ test("attachment surfaces retain native caret, insertion and removal", async ({ 
   await message.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(7, 7));
   await composer.getByRole("button", { name: /^Insert \[Image\s1\s·/ }).click();
   await expect(message).toBeFocused();
-  const token = /^Review (\[Image\u00a01\u00a0·[^\]]+\]) this$/.exec(await message.inputValue())?.[1];
+  const token = /^Review (\[Image\u00a01\u00a0·[^\]]+\]) this$/.exec(
+    await message.inputValue(),
+  )?.[1];
   expect(token).toBeDefined();
   expect(await message.evaluate((element: HTMLTextAreaElement) => element.selectionStart)).toBe(
     "Review ".length + token!.length + 1,

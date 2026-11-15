@@ -486,7 +486,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                 }}
                 variant="ghost"
               >
-                {t("Cancel connection")}
+                {t("Stop")}
               </Button>
             </Surface>
           )}

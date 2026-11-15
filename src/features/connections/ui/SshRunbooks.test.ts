@@ -250,7 +250,7 @@ it("retains ambiguous dispatch identity and recovers/cancels by status without r
   await act(async () => button("Refresh status").click());
   expect(native.status).toHaveBeenCalledWith(lastRun);
   native.status.mockResolvedValue(outcome(lastRun!, "cancelled"));
-  await act(async () => button("Cancel target").click());
+  await act(async () => button("Stop target").click());
   expect(native.cancel).toHaveBeenCalledWith(lastRun, server.id);
   expect(native.start).toHaveBeenCalledOnce();
   expect(document.body.textContent).toContain("Cancelled");

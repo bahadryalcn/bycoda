@@ -185,7 +185,7 @@ export function SignupAccountDialog({
       footer={
         <ModalActions>
           <Button variant="ghost" disabled={busy} onClick={leave}>
-            {live ? t("Cancel signup") : t("Close")}
+            {live ? t("Stop signup") : t("Close")}
           </Button>
           {canStart ? (
             <DisabledReason

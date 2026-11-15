@@ -18,7 +18,7 @@ for (const theme of ["light", "dark"]) {
         "aria-busy",
         "true",
       );
-      await expect(details.getByRole("button", { name: "Cancel reconnect" })).toBeVisible();
+      await expect(details.getByRole("button", { name: "Stop reconnecting" })).toBeVisible();
       await page.evaluate(() => {
         (window as any).serversFixtureFilesReady(false);
         (window as any).serversFixtureRecovery("ready");

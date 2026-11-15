@@ -149,7 +149,7 @@ export function DesktopHelperSetup({
       </Badge>
       {preparing ? (
         <Button type="button" loading={pending} onClick={() => void act("cancel")}>
-          {t("Cancel preparation")}
+          {t("Stop preparation")}
         </Button>
       ) : helper ? (
         selectedPath !== helper.binaryPath && (

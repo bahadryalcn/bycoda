@@ -179,7 +179,7 @@ export function DictationButton({
     state === "starting"
       ? t("Preparing dictation…")
       : state === "finishing"
-        ? t("Cancel transcription")
+        ? t("Stop transcription")
         : listening
           ? t("Stop dictation")
           : t("Dictate");

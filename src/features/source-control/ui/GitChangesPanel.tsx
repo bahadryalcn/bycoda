@@ -1312,7 +1312,7 @@ function ChangedFiles({
                     reveal="always"
                     label={
                       generating
-                        ? t("Cancel commit message generation")
+                        ? t("Stop commit message generation")
                         : t("Generate commit message")
                     }
                     disabled={!generating && !canGenerate}

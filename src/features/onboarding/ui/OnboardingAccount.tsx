@@ -40,7 +40,7 @@ export function OnboardingAccount() {
             </Text>
             <div className="onboarding-actions">
               <Button variant="secondary" onClick={() => cancelSignIn().catch(() => undefined)}>
-                {t("Cancel")}
+                {t("Stop")}
               </Button>
             </div>
           </>

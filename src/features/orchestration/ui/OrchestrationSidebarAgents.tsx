@@ -228,7 +228,7 @@ export function OrchestrationSidebarAgents({
                           )
                         }
                       >
-                        {t("Cancel task")}
+                        {t("Stop task")}
                       </Button>
                     )}
                   </div>
