@@ -17,8 +17,8 @@ import {
 import { leafIds, newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import { normalizeSessionPreview } from "../../../features/workspace/model/sessionPreview";
 import { useOpenSessionActions, type OpenSessionActionsDeps } from "./useOpenSessionActions";
-import { message } from "@tauri-apps/plugin-dialog";
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn(async () => undefined) }));
+import { toast } from "../../../shared/ui/ToastRegion";
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: vi.fn() } }));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -46,7 +46,7 @@ it("carries the Room privacy mutation through a history open", async () => {
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.mocked(message).mockClear();
+  vi.mocked(toast.show).mockClear();
   sessions = Array.from({ length: 12 }, (_, i) => session(`session-${i}`));
   resetSessionsStore(sessions);
   active = "";
@@ -212,10 +212,10 @@ it("opens side-by-side sessions as a kept composition", async () => {
 
 it("rejects an oversized composition explicitly before loading or changing any tabs", async () => {
   await actions.onOpenSessionsSideBySide(sessions.slice(0, 10).map((entry) => entry.id));
-  expect(message).toHaveBeenCalledWith(
-    "Select at most 9 conversations to open side by side.",
-    expect.objectContaining({ kind: "warning" }),
-  );
+  expect(toast.show).toHaveBeenCalledWith({
+    tone: "warning",
+    message: "Select at most 9 conversations to open side by side.",
+  });
   expect(deps.ensureOpenSession).not.toHaveBeenCalled();
   expect(deps.tabsRef.current).toEqual([]);
   expect(deps.workspaceNavigation.cancel).not.toHaveBeenCalled();
@@ -224,7 +224,7 @@ it("rejects an oversized composition explicitly before loading or changing any t
 it("opens all nine distinct requests and ignores duplicate IDs without dropping a session", async () => {
   const ids = sessions.slice(0, 9).map((entry) => entry.id);
   await actions.onOpenSessionsSideBySide([...ids, ids[0]]);
-  expect(message).not.toHaveBeenCalled();
+  expect(toast.show).not.toHaveBeenCalled();
   expect(deps.ensureOpenSession).toHaveBeenCalledTimes(9);
   expect(new Set(leafIds(deps.tabsRef.current[0].layout))).toEqual(new Set(ids));
 });

@@ -13,7 +13,15 @@ const crewWorkerSnapshot = () => canvasWorkerEnabled(CREW_RENDERER_ID);
 import { Button } from "../../../shared/ui/Button";
 import { valueHash } from "../../../shared/lib/valueHash";
 import { useT } from "../../../shared/i18n";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { shouldRunLoop } from "../../../shared/lib/animationGate";
 import {
   useDecorativeMotionEnabled,
@@ -53,6 +61,7 @@ import {
   applyIdleLife,
 } from "./crewMotion";
 import { crewLayout } from "./crewLayout";
+import { Meter } from "../../../shared/ui/Meter";
 import { starWarsLayout } from "./starWarsLayout";
 
 /** Six staggered tea sips, with long still intervals and no body movement. */
@@ -561,14 +570,16 @@ function CrewStage({
                         </span>
                       )}
                       {showCharge && (
-                        <span className="crew-scene__meter">
-                          <span
-                            style={{
-                              inlineSize: `${percent ?? 0}%`,
-                              backgroundColor: character?.accent ?? classicAccent(label.id),
-                            }}
-                          />
-                        </span>
+                        <Meter
+                          className="crew-scene__meter"
+                          value={percent ?? null}
+                          aria-hidden
+                          style={
+                            {
+                              "--meter-fill": character?.accent ?? classicAccent(label.id),
+                            } as CSSProperties
+                          }
+                        />
                       )}
                     </>
                   ) : (

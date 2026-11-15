@@ -13,6 +13,7 @@ import { useSkillGroupView, startSkillDrag } from "./useSkillGroupView";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { SkillList } from "./SkillList";
 import { TextField } from "../../../shared/ui/TextField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -781,14 +782,9 @@ export function SkillsPage({
     const failure = (list.machine ? list.error : null) ?? policyErrors[id];
     if (!failure) return [];
     return [
-      <Alert
-        key={id}
-        inline
-        tone="danger"
-        action={<Button onClick={() => requestRefresh(id)}>{t("Retry")}</Button>}
-      >
+      <InlineError key={id} action={{ label: t("Retry"), onClick: () => requestRefresh(id) }}>
         {failure}
-      </Alert>,
+      </InlineError>,
     ];
   });
   const feedbackBusy = busy
@@ -802,17 +798,18 @@ export function SkillsPage({
     actionError || actionResult || feedbackBusy ? (
       <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.feedback)}>
         {actionError ? (
-          <Alert inline tone="danger" onDismiss={clearFeedback}>
+          <InlineError secondaryAction={{ label: t("Dismiss"), onClick: clearFeedback }}>
             {actionError}
-          </Alert>
+          </InlineError>
         ) : feedbackBusy ? (
-          <Alert inline tone="info">
-            {feedbackBusy}
-          </Alert>
+          <InlineMessage tone="info">{feedbackBusy}</InlineMessage>
         ) : (
-          <Alert inline tone="success" onDismiss={clearFeedback}>
+          <InlineMessage
+            tone="success"
+            secondaryAction={{ label: t("Dismiss"), onClick: clearFeedback }}
+          >
             {actionResult}
-          </Alert>
+          </InlineMessage>
         )}
       </div>
     ) : null;
@@ -1172,17 +1169,14 @@ export function SkillsPage({
               <>
                 <div key={previewSkill.path} className={styles.document}>
                   {previewError ? (
-                    <Alert
-                      inline
-                      tone="danger"
-                      action={
-                        <Button onClick={() => setPreviewRead((value) => value + 1)}>
-                          {t("Retry")}
-                        </Button>
-                      }
+                    <InlineError
+                      action={{
+                        label: t("Retry"),
+                        onClick: () => setPreviewRead((value) => value + 1),
+                      }}
                     >
                       {previewError}
-                    </Alert>
+                    </InlineError>
                   ) : draft === null ? (
                     <LoadingText>{t("Loading skill…")}</LoadingText>
                   ) : editingSource || split ? (

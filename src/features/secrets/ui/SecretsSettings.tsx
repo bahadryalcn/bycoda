@@ -20,14 +20,7 @@ export function SecretsSettings() {
     return loading ? (
       <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
     ) : (
-      <SettingsFeedback
-        state="error"
-        action={
-          <Button size="sm" variant="ghost" onClick={refresh}>
-            {t("Retry")}
-          </Button>
-        }
-      >
+      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: refresh }}>
         {t("Could not load saved secrets.")}
       </SettingsFeedback>
     );
@@ -74,14 +67,7 @@ function OwnerSecretsInventory({ hostId }: { hostId: string }) {
     return <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>;
   if (state.status === "error")
     return (
-      <SettingsFeedback
-        state="error"
-        action={
-          <Button size="sm" variant="ghost" onClick={reload}>
-            {t("Retry")}
-          </Button>
-        }
-      >
+      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: reload }}>
         {t("Could not load saved secrets.")}
       </SettingsFeedback>
     );

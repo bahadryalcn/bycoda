@@ -4,6 +4,7 @@ import { t, useLocale } from "../../../../shared/i18n";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
+import { FailureState } from "../../../../shared/ui/FailureState";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { socialQueryScope } from "../../model/socialQuery";
 import { Switch } from "../../../../shared/ui/Switch";
@@ -177,11 +178,7 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
               <EmptyState
                 kind="empty"
                 description={t("Add an account to read messages and comments.")}
-                action={
-                  <Button variant="primary" size="sm" onClick={() => onNavigate("accounts")}>
-                    {t("Add account")}
-                  </Button>
-                }
+                action={{ label: t("Add account"), onClick: () => onNavigate("accounts") }}
               />
             ) : filtered ? (
               <EmptyState
@@ -191,26 +188,18 @@ function HostInboxScreen({ client, active, target, onNavigate }: SocialScreenPro
                 resetLabel={t("Clear filters")}
               />
             ) : unreadable.length > 0 ? (
-              <EmptyState
-                kind="unavailable"
+              <FailureState
+                context="panel"
                 description={t(
                   "Messages are unavailable for these accounts. Review their connection and inbox support.",
                 )}
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => onNavigate("accounts")}>
-                    {t("Manage accounts")}
-                  </Button>
-                }
+                action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
               />
             ) : !accounts.some((account) => account.connected) ? (
-              <EmptyState
-                kind="unavailable"
+              <FailureState
+                context="panel"
                 description={t("Connect an account to check for new conversations.")}
-                action={
-                  <Button variant="secondary" size="sm" onClick={() => onNavigate("accounts")}>
-                    {t("Manage accounts")}
-                  </Button>
-                }
+                action={{ label: t("Manage accounts"), onClick: () => onNavigate("accounts") }}
               />
             ) : (
               <EmptyState

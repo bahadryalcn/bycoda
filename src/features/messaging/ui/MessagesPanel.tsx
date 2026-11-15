@@ -126,11 +126,7 @@ export function MessagesPanel({
       <FailureState
         icon={<MessageMultiple aria-hidden="true" />}
         description={t("Reconnect a messaging account to read its conversations.")}
-        action={
-          <Button variant="secondary" type="button" onClick={openMessagingSettings}>
-            {t("Open settings")}
-          </Button>
-        }
+        action={{ label: t("Open settings"), onClick: openMessagingSettings }}
       />
     ) : threads.length === 0 && allFailed ? (
       <FailureState
@@ -236,11 +232,7 @@ export function MessagesPanel({
                 key={account.id}
                 tone="neutral"
                 live="off"
-                action={
-                  <Button variant="link" layout="text" onClick={openMessagingSettings}>
-                    {t("Open settings")}
-                  </Button>
-                }
+                action={{ label: t("Open settings"), onClick: openMessagingSettings }}
               >
                 {t("{p0} is not connected.", { p0: account.label || account.identity })}
               </InlineMessage>

@@ -256,13 +256,7 @@ export function SprintReports({
           kind="empty"
           icon={<Gauge className="icon-lg" />}
           description={t("No sprints yet. Create and start a sprint to see its progress here.")}
-          action={
-            onOpenSprints ? (
-              <Button variant="primary" onClick={onOpenSprints}>
-                {t("Go to Sprints")}
-              </Button>
-            ) : undefined
-          }
+          action={onOpenSprints ? { label: t("Go to Sprints"), onClick: onOpenSprints } : undefined}
         />
         {error ? <InlineError>{error}</InlineError> : null}
       </Text>

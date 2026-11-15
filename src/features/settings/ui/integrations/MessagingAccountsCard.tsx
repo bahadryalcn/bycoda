@@ -91,17 +91,13 @@ export function MessagingAccountsCard({
           error ? (
             <SettingsFeedback
               state="error"
-              action={
-                <Button
-                  stableWidth
-                  loading={loading}
-                  onClick={() => {
-                    reload().catch(() => undefined);
-                  }}
-                >
-                  {t("Retry")}
-                </Button>
-              }
+              action={{
+                label: t("Retry"),
+                pending: loading,
+                onClick: () => {
+                  reload().catch(() => undefined);
+                },
+              }}
             >
               {error}
             </SettingsFeedback>

@@ -7,9 +7,8 @@ import {
   type MutableRefObject,
   type SetStateAction,
 } from "react";
-import { message } from "@tauri-apps/plugin-dialog";
 import { t } from "../../../shared/i18n";
-import { appName } from "../../../shared/lib/appName";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { getSessions } from "../../../features/sessions/model/sessionsStore";
 import {
   delegationParentOf,
@@ -234,7 +233,7 @@ export function useOpenSessionActions({
         release = await reserveSessionWindow([session.id], inspectedWorkerId);
       } catch (error) {
         if (options?.privacyToken) throw error;
-        await message(String(error), { title: appName(), kind: "warning" });
+        toast.show({ tone: "warning", message: String(error) });
         return false;
       }
       if (!release) {
@@ -323,13 +322,12 @@ export function useOpenSessionActions({
     async (sessionIds: string[], options?: { isCurrent?: () => boolean }) => {
       const wanted = [...new Set(sessionIds)];
       if (wanted.length > SIDE_BY_SIDE_LIMIT) {
-        await message(
-          t("Select at most {p0} conversations to open side by side.", { p0: SIDE_BY_SIDE_LIMIT }),
-          {
-            title: appName(),
-            kind: "warning",
-          },
-        );
+        toast.show({
+          tone: "warning",
+          message: t("Select at most {p0} conversations to open side by side.", {
+            p0: SIDE_BY_SIDE_LIMIT,
+          }),
+        });
         return;
       }
       if (wanted.length === 0) return;
@@ -352,7 +350,7 @@ export function useOpenSessionActions({
       try {
         release = await reserveSessionWindow(opened.map((session) => session.id));
       } catch (error) {
-        await message(String(error), { title: appName(), kind: "warning" });
+        toast.show({ tone: "warning", message: String(error) });
         return;
       }
       if (!release) return;

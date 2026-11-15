@@ -5,6 +5,7 @@ import { elapsedSince, monotonicNow } from "../lib/time/timestamps";
 import { ToastStackCard, useToastStackItem } from "./arc/toast-stack/toast-stack";
 import { Button } from "./Button";
 import { X } from "./icons";
+import { NoticeButton, type NoticeAction } from "./Notice";
 import { Progress } from "./Progress";
 
 export type ToastTone = "neutral" | "info" | "success" | "warning" | "danger";
@@ -126,13 +127,7 @@ export function useAutoDismiss(
   }, [surface, durationMs, paused, resetKey, expire]);
 }
 
-export type ToastAction = {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  /** Shows progress and blocks a second activation; the caller owns the operation. */
-  pending?: boolean;
-};
+export type ToastAction = NoticeAction;
 
 export type ToastContentProps = {
   /** Primary text. With `title`, it is the body under the heading. */
@@ -144,8 +139,10 @@ export type ToastContentProps = {
   children?: ReactNode;
   /** One secondary action (Undo, Retry, Open), at the end of the row. */
   action?: ToastAction;
-  /** Additional actions under the message, such as "Update all". Use shared Button. */
-  actions?: ReactNode;
+  /** Additional structured actions under the message, such as "Update all" or Yes / Later / No. */
+  actions?: NoticeAction[];
+  /** Escape for one non-button control beside `actions` (an ErrorDetails trigger). */
+  extra?: ReactNode;
   /**
    * Where `actions` sit. `"header"` (default) for actions about a list below, such as
    * "Update all"; `"footer"` for answers to a question the message asks (Yes / Later / No).
@@ -178,12 +175,12 @@ function assignRef<T>(ref: Ref<T> | undefined, value: T | null) {
 }
 
 /**
- * The toast card without placement: floating surface, tone glyph, title, message, actions,
- * progress and dismiss, with auto-dismiss that pauses on hover, focus and an open stack.
- * `Toast` places it in a corner stack; TransientNotice can position it itself.
+ * The toast card without placement: floating surface, tone glyph, title, message, structured
+ * actions, progress and dismiss, with auto-dismiss that pauses on hover, focus and an open stack.
+ * `Toast` places it in a corner stack. Not public API: use Toast.
  * @group feedback
- * @use Card content inside Toast stacks or caller-positioned TransientNotice.
- * @avoid Queue placement: Toast. Inline feedback: InlineMessage.
+ * @use Card content inside the Toast stack and caller-positioned container notices (internal).
+ * @avoid Queue placement: Toast. Inline feedback: InlineMessage. Never import it from a feature.
  * @status internal
  * @arc toast-stack
  */
@@ -194,6 +191,7 @@ export function ToastCard({
   children,
   action,
   actions,
+  extra,
   actionsPlacement = "header",
   progress,
   onDismiss,
@@ -222,26 +220,19 @@ export function ToastCard({
     onExpire: () => onDismiss?.(),
     resetKey: `${title ?? ""}\n${typeof message === "string" ? message : ""}`,
   });
-  const actionButton = action ? (
-    <Button
-      variant="secondary"
-      size="sm"
-      shape="pill"
-      disabled={action.disabled}
-      loading={action.pending}
-      onClick={action.onClick}
-    >
-      {action.label}
-    </Button>
-  ) : null;
+  const actionButton = action ? <NoticeButton action={action} /> : null;
+  const hasActions = Boolean(actions?.length || extra);
   const actionRow = (placement: "header" | "footer") =>
-    actions && actionsPlacement === placement ? (
+    hasActions && actionsPlacement === placement ? (
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {actions}
+        {actions?.map((item) => (
+          <NoticeButton key={item.label} action={item} />
+        ))}
+        {extra}
         {actionButton}
       </div>
     ) : null;
-  const hasBody = Boolean(children || progress || (actions && actionsPlacement === "header"));
+  const hasBody = Boolean(children || progress || (hasActions && actionsPlacement === "header"));
   // The card is the announced region and the hover/focus timer surface in one element.
   return (
     <ToastStackCard
@@ -252,7 +243,7 @@ export function ToastCard({
       tone={tone}
       title={title}
       description={message}
-      action={actions ? null : actionButton}
+      action={hasActions ? null : actionButton}
       footer={actionRow("footer")}
       close={
         onDismiss ? (
@@ -260,13 +251,12 @@ export function ToastCard({
             type="button"
             variant="ghost"
             size="sm"
-            shape="pill"
             iconOnly
             label={t("Dismiss notice")}
             disabled={dismissDisabled}
             onClick={onDismiss}
           >
-            <X width={16} height={16} strokeWidth={1.75} aria-hidden />
+            <X className="icon-md" aria-hidden />
           </Button>
         ) : null
       }

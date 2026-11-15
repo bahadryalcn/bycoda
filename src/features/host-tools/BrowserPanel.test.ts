@@ -1095,7 +1095,7 @@ it("refreshes live view by default and pauses while disabled, hidden or unmounte
   await act(async () => root.render(createElement(BrowserPanel, { cwd: "remote://mac/repo" })));
   await act(async () => vi.advanceTimersByTimeAsync(1000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
-  const liveSwitch = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  const liveSwitch = container.querySelector<HTMLButtonElement>("[aria-pressed]")!;
   await act(async () => liveSwitch.click());
   await act(async () => vi.advanceTimersByTimeAsync(3000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
@@ -1243,7 +1243,7 @@ it("clears live frames and control on a target switch and ignores a late old-hos
   );
   expect(container.querySelector("img")).toBeNull();
   expect(
-    container.querySelector<HTMLButtonElement>('[role="switch"]')!.getAttribute("aria-checked"),
+    container.querySelector<HTMLButtonElement>("[aria-pressed]")!.getAttribute("aria-pressed"),
   ).toBe("true");
   expect(container.textContent).not.toContain("https://old.test");
   expect(button("Open website").matches(":disabled, [aria-disabled=true]")).toBe(false);

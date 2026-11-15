@@ -18,7 +18,7 @@
 .label {
   margin-bottom: var(--space-2);
   color: var(--foreground);
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-caption);
   font-weight: 500;
   line-height: var(--leading-body);
 }
@@ -26,12 +26,12 @@
 .input {
   min-height: var(--control-height-md);
   padding: 0 var(--space-3);
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--ui-field-border);
   border-radius: var(--radius-control);
-  background: var(--surface);
+  background: var(--ui-field-surface);
   color: var(--foreground);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-secondary);
   line-height: var(--leading-body);
   letter-spacing: var(--tracking-body);
   outline: none;
@@ -44,18 +44,18 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .input:hover:not(:disabled, :focus-visible, [aria-invalid="true"]) {
-    border-color: var(--ui-field-border-hover, var(--foreground));
+    border-color: var(--ui-field-border-hover);
   }
 }
 .input:focus-visible {
-  border-color: var(--ui-field-border-focus, var(--foreground));
+  border-color: var(--ui-field-border-focus);
 }
 .input[aria-invalid="true"] {
   border-color: var(--danger);
 }
 .input:disabled {
   cursor: not-allowed;
-  opacity: var(--ui-disabled-opacity, 0.5);
+  opacity: var(--ui-disabled-opacity);
   background: var(--surface-muted);
 }
 /* Read-only keeps normal ink and stays selectable, on a quiet transparent frame that keeps its resting
@@ -74,7 +74,7 @@
 .error {
   display: block;
   padding-top: var(--space-2);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
   line-height: var(--leading-body);
 }
 .description {
@@ -104,16 +104,11 @@
 }
 .srOnly {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  inline-size: 1px;
+  block-size: 1px;
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-@media (prefers-reduced-motion: reduce) {
-  .input {
-    transition-duration: 0.01ms;
-  }
 }
 
 .messageClip {
@@ -125,7 +120,7 @@
 .field[data-variant="compact"] .label {
   margin-bottom: var(--space-1);
   color: var(--text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
 }
 .field[data-variant="compact"] .input {
   min-height: var(--ui-field-height-sm);

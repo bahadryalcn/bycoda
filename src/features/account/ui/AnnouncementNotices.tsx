@@ -1,7 +1,6 @@
 import type { Announcement } from "@bycoda/account-contracts";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { Toast, type ToastTone } from "../../../shared/ui/ToastRegion";
 import { useAnnouncementFeed, useAnnouncementPolling } from "../hooks/useAnnouncements";
 import { announcementFeed, unseenAnnouncements } from "../model/announcementFeed";
@@ -34,16 +33,16 @@ export function AnnouncementNotices() {
         action={{ label: t("Dismiss"), onClick: () => announcementFeed.dismiss(item.id) }}
         actionsPlacement="footer"
         actions={
-          item.url ? (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                openExternal(item.url!).catch(() => undefined); // -- an unopenable link leaves the notice in place.
-              }}
-            >
-              {t("Read more")}
-            </Button>
-          ) : undefined
+          item.url
+            ? [
+                {
+                  label: t("Read more"),
+                  onClick: () => {
+                    openExternal(item.url!).catch(() => undefined); // -- an unopenable link leaves the notice in place.
+                  },
+                },
+              ]
+            : undefined
         }
         onDismiss={() => announcementFeed.dismiss(item.id)}
       />

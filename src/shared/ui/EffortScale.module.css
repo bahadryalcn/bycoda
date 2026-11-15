@@ -41,7 +41,7 @@ button.bar {
   inline-size: 100%;
   block-size: var(--effort-height);
   border-radius: inherit;
-  background: var(--ui-fill-subtle);
+  background: var(--control-track);
 }
 .bar[data-filled] > .fill {
   background: var(--ui-effort-fill);
@@ -51,11 +51,10 @@ button.bar {
 }
 button.bar[aria-checked="true"][data-button-selected] {
   background: var(--ui-surface-selected);
-  box-shadow: inset 0 0 0 1px var(--ui-control-border);
 }
 .bar:focus-visible {
-  outline: 2px solid var(--ui-tone-accent-border);
-  outline-offset: 2px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 .bar:active > .fill {
   opacity: 0.8;

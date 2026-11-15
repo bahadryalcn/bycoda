@@ -10,11 +10,11 @@
     align-items: center;
     gap: 2px;
     min-inline-size: 0;
-    border-radius: var(--ui-control-radius);
+    border-radius: var(--ui-radius-row, 6px);
   }
 
   .host[data-control-height="compact"] {
-    block-size: var(--ui-control-height-compact);
+    block-size: var(--ui-control-height-sm);
   }
 
   /* The row's own ink and size, the same roles as Text. They live in the components layer
@@ -92,9 +92,6 @@
   border-radius: var(--ui-radius-popup);
   background-color: var(--ui-surface-floating);
   box-shadow: var(--ui-elevation-floating);
-}
-.host[data-variant="row"] {
-  border-radius: var(--ui-radius-card);
 }
 /* A saved custom colour is the resting ground. States are solid layers painted above
    it as background images, so neither an inline colour nor the ground can mask them. */
@@ -235,7 +232,7 @@
     block-size: 100%;
   }
   .host[data-control-min-height="compact"] {
-    min-block-size: var(--ui-control-height-compact);
+    min-block-size: var(--ui-control-height-sm);
   }
   .host[data-control-min-height="control"] {
     min-block-size: var(--ui-control-height);

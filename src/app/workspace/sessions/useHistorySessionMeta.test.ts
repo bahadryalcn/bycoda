@@ -6,7 +6,7 @@ import { newSession } from "../../../features/sessions/model/session";
 import { useHistorySessionMeta, type HistorySessionMetaDeps } from "./useHistorySessionMeta";
 
 const storage = vi.hoisted(() => ({ pin: vi.fn(), save: vi.fn(), message: vi.fn() }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message: storage.message }));
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: storage.message } }));
 vi.mock("../../../features/sessions/data/sessionStore", () => ({
   setSessionPinned: storage.pin,
   upsertSession: storage.save,
@@ -66,8 +66,10 @@ it.each([true, false])(
     await actions.onPinHistorySession("one", pinned);
     expect(deps.history.find((entry) => entry.id === "one")?.pinned).toBe(!pinned);
     expect(storage.message).toHaveBeenCalledWith(
-      expect.stringContaining("Disk unavailable"),
-      expect.objectContaining({ kind: "error" }),
+      expect.objectContaining({
+        tone: "danger",
+        message: expect.stringContaining("Disk unavailable"),
+      }),
     );
     await actions.onPinHistorySession("one", pinned);
     expect(deps.history.find((entry) => entry.id === "one")?.pinned).toBe(pinned);

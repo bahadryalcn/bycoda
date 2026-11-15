@@ -15,20 +15,20 @@
 }
 .field label {
   margin-bottom: var(--space-2);
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-caption);
   font-weight: 500;
 }
 /* FieldControl owns the shared border and focus; the native textarea owns resizing. */
 .control {
-  min-height: 110px;
+  min-height: 7rem;
   resize: vertical;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--ui-field-border);
   border-radius: var(--radius-control);
   padding: var(--space-3);
-  background: var(--surface);
+  background: var(--ui-field-surface);
   color: var(--foreground);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-secondary);
   line-height: var(--leading-body);
   outline: none;
   transition:
@@ -43,11 +43,11 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .control:hover:not(:disabled, :focus-visible, [aria-invalid="true"]) {
-    border-color: var(--ui-field-border-hover, var(--foreground));
+    border-color: var(--ui-field-border-hover);
   }
 }
 .control:focus-visible {
-  border-color: var(--ui-field-border-focus, var(--foreground));
+  border-color: var(--ui-field-border-focus);
 }
 .control[aria-invalid="true"] {
   border-color: var(--danger);
@@ -55,7 +55,7 @@
 .control:disabled {
   cursor: not-allowed;
   background: var(--surface-muted);
-  opacity: var(--ui-disabled-opacity, 0.5);
+  opacity: var(--ui-disabled-opacity);
 }
 /* Read-only: normal ink on a quiet frame without hover cue (see Input). */
 .control[readonly]:not(:disabled) {
@@ -71,7 +71,7 @@
 .error {
   display: block;
   padding-top: var(--space-2);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
   line-height: var(--leading-body);
 }
 .hint {
@@ -107,11 +107,6 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-@media (prefers-reduced-motion: reduce) {
-  .control {
-    transition-duration: 0.01ms;
-  }
-}
 
 /* Fill: the frame and the editor stretch to the parent's height; the field scrolls inside. */
 .field[data-fill] {
@@ -139,7 +134,7 @@
 .field[data-variant="compact"] label {
   margin-bottom: var(--space-1);
   color: var(--text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
 }
 .field[data-variant="compact"] .control {
   min-height: 4.5rem;

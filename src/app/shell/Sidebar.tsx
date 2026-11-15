@@ -162,11 +162,11 @@ import {
   type SessionOrderList,
 } from "../../features/sessions/model/sessionOrder";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
+import { toast } from "../../shared/ui/ToastRegion";
 import "./sessionList.css";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
 import { MiddleTruncate } from "../../shared/ui/MiddleTruncate";
-import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
 import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
 import { orderedSessionActionIds } from "../../features/sessions/model/sessionSelection";
@@ -716,7 +716,10 @@ function SidebarComponent({
     },
   ) => {
     if (!remote.machine || !hostProject) {
-      window.alert("Connect this project's machine to change its sessions.");
+      toast.show({
+        tone: "warning",
+        message: "Connect this project's machine to change its sessions.",
+      });
       return;
     }
     try {
@@ -728,7 +731,7 @@ function SidebarComponent({
       });
       refreshRemoteProjectSessions();
     } catch (error) {
-      window.alert(`Could not update this session.\n\n${String(error)}`);
+      toast.show({ tone: "danger", message: `Could not update this session.\n\n${String(error)}` });
     }
   };
   const remoteDelete = async (sessionIds: readonly string[]) => {
@@ -737,7 +740,10 @@ function SidebarComponent({
       remote.sessions.map((entry) => [entry.id, entry.authorityGeneration]),
     );
     if (!remote.machine || !hostProject) {
-      window.alert("Connect this project's machine to delete its sessions.");
+      toast.show({
+        tone: "warning",
+        message: "Connect this project's machine to delete its sessions.",
+      });
       return;
     }
     if (
@@ -762,7 +768,7 @@ function SidebarComponent({
       }
       refreshRemoteProjectSessions();
     } catch (error) {
-      window.alert(`Could not delete this session.\n\n${String(error)}`);
+      toast.show({ tone: "danger", message: `Could not delete this session.\n\n${String(error)}` });
       refreshRemoteProjectSessions();
     }
   };
@@ -4014,41 +4020,40 @@ function SidebarComponent({
                 )
           }
           actions={
-            partialPinSagas.length ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  runSagaAction(async () => {
-                    for (const saga of partialPinSagas) {
-                      const acknowledged = await withRoomPrivacyMutation(() => {
-                        if (saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd)))
-                          throw new Error("Project is locked.");
-                        return acknowledgePartialPinSaga(saga.id);
+            partialPinSagas.length
+              ? [
+                  {
+                    label: t("Keep confirmed changes"),
+                    onClick: () => {
+                      runSagaAction(async () => {
+                        for (const saga of partialPinSagas) {
+                          const acknowledged = await withRoomPrivacyMutation(() => {
+                            if (saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd)))
+                              throw new Error("Project is locked.");
+                            return acknowledgePartialPinSaga(saga.id);
+                          });
+                          if (acknowledged !== "applied")
+                            throw new Error("Pin acknowledgement could not be confirmed.");
+                        }
+                        setPartialPinSagas([]);
+                        const remaining = (await listPinSagas()).filter(
+                          (saga) => saga.state !== "applied" && saga.state !== "accepted",
+                        );
+                        if (
+                          !remaining.length &&
+                          !(await unresolvedSessionOrganizationGestures()).length
+                        ) {
+                          await hydrateSessionOrganization();
+                          organizationUnresolved.current = false;
+                          setOrganizationNotice(
+                            t("Confirmed pin changes kept. Review the folder state."),
+                          );
+                        }
                       });
-                      if (acknowledged !== "applied")
-                        throw new Error("Pin acknowledgement could not be confirmed.");
-                    }
-                    setPartialPinSagas([]);
-                    const remaining = (await listPinSagas()).filter(
-                      (saga) => saga.state !== "applied" && saga.state !== "accepted",
-                    );
-                    if (
-                      !remaining.length &&
-                      !(await unresolvedSessionOrganizationGestures()).length
-                    ) {
-                      await hydrateSessionOrganization();
-                      organizationUnresolved.current = false;
-                      setOrganizationNotice(
-                        t("Confirmed pin changes kept. Review the folder state."),
-                      );
-                    }
-                  });
-                }}
-              >
-                {t("Keep confirmed changes")}
-              </Button>
-            ) : undefined
+                    },
+                  },
+                ]
+              : undefined
           }
           onDismiss={() => {
             if (!organizationUnresolved.current) setOrganizationNotice(null);
@@ -6175,14 +6180,18 @@ const SessionCard = memo(function SessionCard({
                   <MatchText text={title} positions={titleHit.positions} active />
                 </ClampText>
               ) : (
-                <ParticleText
-                  text={title}
+                <ClampText
+                  as="span"
+                  lines={1}
+                  expandable={false}
                   size="secondary"
                   tone="primary"
                   weight="medium"
                   leading="snug"
-                  lines={1}
-                />
+                  className="min-w-0 flex-1"
+                >
+                  {title}
+                </ClampText>
               )}
               <AssistantManagedBadge
                 management={session.managedBy}

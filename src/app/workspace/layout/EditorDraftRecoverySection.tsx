@@ -193,17 +193,11 @@ export function EditorDraftRecoverySection({
             kind="filtered"
             title={t("No matching file copies")}
             description={t("No file recovery copy matches “{p0}”.", { p0: query.trim() })}
-            action={
-              <>
-                <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
-                  {t("Clear search")}
-                </Button>
-                {mode === "unsaved" && candidates.length > unsaved.length ? (
-                  <Button variant="ghost" size="sm" onClick={() => setMode("all")}>
-                    {t("Search all copies")}
-                  </Button>
-                ) : null}
-              </>
+            action={{ label: t("Clear search"), onClick: () => setQuery("") }}
+            secondaryAction={
+              mode === "unsaved" && candidates.length > unsaved.length
+                ? { label: t("Search all copies"), onClick: () => setMode("all") }
+                : undefined
             }
           />
         ) : mode === "unsaved" && candidates.length > 0 ? (
@@ -214,11 +208,7 @@ export function EditorDraftRecoverySection({
             description={t("{p0} other recovery copies are available.", {
               p0: candidates.length,
             })}
-            action={
-              <Button variant="secondary" size="sm" onClick={() => setMode("all")}>
-                {t("Show all copies")}
-              </Button>
-            }
+            action={{ label: t("Show all copies"), onClick: () => setMode("all") }}
           />
         ) : (
           <EmptyState

@@ -5,7 +5,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { MessageSquare, Pause, Play, Square, Trash2 } from "../../../shared/ui/icons";
+import { Pause, Play, Square, Trash2 } from "../../../shared/ui/icons";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import { CREW_LIST_MESSAGE_LIMIT, type CrewDefinition } from "../model/crew";
 import type { CrewRunView } from "../model/crewClient";
@@ -93,17 +93,12 @@ export function CrewWorkDetail({
         : pendingAction === `delete:${run.id}`
           ? t("Deleting…")
           : "";
-  const openCoordinator = (key: string) => (
-    <Button
-      variant="link"
-      startIcon={<MessageSquare className="icon-sm" />}
-      disabled={!run.coordinatorSessionId || !canOpen || pending}
-      loading={pendingAction === `open:${key}`}
-      onClick={() => run.coordinatorSessionId && onOpen(run.coordinatorSessionId, key)}
-    >
-      {key.startsWith("answer:") ? t("Answer") : t("Open conversation")}
-    </Button>
-  );
+  const openCoordinator = (key: string) => ({
+    label: key.startsWith("answer:") ? t("Answer") : t("Open conversation"),
+    disabled: !run.coordinatorSessionId || !canOpen || pending,
+    pending: pendingAction === `open:${key}`,
+    onClick: () => run.coordinatorSessionId && onOpen(run.coordinatorSessionId, key),
+  });
   return (
     <section data-crew-run={run.id} aria-label={title} className="min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">

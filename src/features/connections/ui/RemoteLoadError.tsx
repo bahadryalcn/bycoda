@@ -1,8 +1,8 @@
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { NoticeButton, NoticeLink, type NoticeAction } from "../../../shared/ui/Notice";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
-import { RefreshCw } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState } from "react";
@@ -58,78 +58,76 @@ export function RemoteLoadError({
   };
   const openConnections = () => window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
   /** `after` closes the details popover before another surface opens. */
-  const secondaryActions = (after?: () => void) => (
-    <>
-      {failure.kind === "unreachable" && machine?.ssh ? (
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => {
-            after?.();
-            requestMachineEdit(machine.id);
-          }}
-        >
-          {t("Edit address…")}
-        </Button>
-      ) : null}
-      {failure.kind === "unreachable" ||
-      failure.kind === "outdated" ||
-      failure.kind === "identity" ? (
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() => {
-            after?.();
-            openConnections();
-          }}
-        >
-          {t("Connection settings")}
-        </Button>
-      ) : null}
-    </>
-  );
-  const actions = (
-    <>
-      {failure.kind === "unreachable" && machine ? (
-        <Button
-          type="button"
-          variant="primary"
-          startIcon={<RefreshCw className="icon-sm" aria-hidden />}
-          loading={reconnecting}
-          reserveLabels={[t("Reconnecting…")]}
-          onClick={startReconnect}
-        >
-          {reconnecting
+  const secondaryActions = (after?: () => void): NoticeAction[] => [
+    ...(failure.kind === "unreachable" && machine?.ssh
+      ? [
+          {
+            label: t("Edit address…"),
+            onClick: () => {
+              after?.();
+              requestMachineEdit(machine.id);
+            },
+          },
+        ]
+      : []),
+    ...(failure.kind === "unreachable" || failure.kind === "outdated" || failure.kind === "identity"
+      ? [
+          {
+            label: t("Connection settings"),
+            onClick: () => {
+              after?.();
+              openConnections();
+            },
+          },
+        ]
+      : []),
+  ];
+  const primary: NoticeAction | undefined =
+    failure.kind === "unreachable" && machine
+      ? {
+          label: reconnecting
             ? t("Reconnecting…")
             : needsAuth
               ? t("Sign in and reconnect")
-              : t("Reconnect")}
-        </Button>
-      ) : null}
-      {!compact ? secondaryActions() : null}
-      {failure.kind === "other" && onRetry ? (
-        <Button type="button" variant="secondary" onClick={onRetry}>
-          {t("Retry")}
-        </Button>
-      ) : null}
-    </>
-  );
+              : t("Reconnect"),
+          onClick: startReconnect,
+          pending: reconnecting,
+        }
+      : failure.kind === "other" && onRetry
+        ? { label: t("Retry"), onClick: onRetry }
+        : undefined;
   const reconnectFailed = reconnectError && reconnectError !== failure.message;
   if (compact) {
     // One stable row: the raw transport text stays behind Details, never in the bar.
+    const dismiss: NoticeAction | undefined = onDismiss
+      ? { label: t("Dismiss"), onClick: onDismiss }
+      : undefined;
+    const [first, second] = [primary, dismiss].filter((item) => item !== undefined);
     return (
-      <Alert tone="warning" inline onDismiss={onDismiss} dismissLabel={`${t("Dismiss")}: ${title}`}>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-remote-feedback-row>
-          <strong className="min-w-0">{title}</strong>
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
-          {failure.message ? (
-            <ErrorDetails title={title} detail={failure.message} actions={secondaryActions} />
+      <InlineMessage
+        tone="warning"
+        data-remote-feedback-row
+        action={first}
+        secondaryAction={second}
+        extra={
+          failure.message ? (
+            <ErrorDetails
+              title={title}
+              detail={failure.message}
+              actions={(close) => secondaryActions(close).map(renderButton)}
+            />
           ) : (
-            <div className="flex flex-wrap items-center gap-2">{secondaryActions()}</div>
-          )}
-        </div>
+            <>
+              {secondaryActions().map((item) => (
+                <NoticeLink key={item.label} action={item} />
+              ))}
+            </>
+          )
+        }
+      >
+        <strong>{title}</strong>
         {reconnectFailed ? (
-          <p className="mt-1 flex min-w-0 flex-wrap items-baseline gap-2">
+          <span className="mt-1 flex min-w-0 flex-wrap items-baseline gap-2">
             <Text size="inherit" tone="inherit" wrap="anywhere" className="min-w-0">
               {t("Reconnecting failed: ")}
               {reconnectError}
@@ -139,14 +137,25 @@ export function RemoteLoadError({
               title={t("Reconnecting failed: ")}
               detail={reconnectError}
             />
-          </p>
+          </span>
         ) : null}
-        {stale ? <p className="mt-1">{t("Showing what was last loaded.")}</p> : null}
-      </Alert>
+        {stale ? <span className="mt-1 block">{t("Showing what was last loaded.")}</span> : null}
+      </InlineMessage>
     );
   }
+  // Up to three follow-ups: two structured slots plus the third as a small button in `extra`.
+  const [first, second, third] = [primary, ...secondaryActions()].filter(
+    (item) => item !== undefined,
+  );
   return (
-    <Alert tone="warning" title={title} action={actions} onDismiss={onDismiss}>
+    <Alert
+      tone="warning"
+      title={title}
+      action={first}
+      secondaryAction={second}
+      extra={third ? <NoticeButton action={third} /> : undefined}
+      onDismiss={onDismiss}
+    >
       <p className="break-words">{failure.message}</p>
       {reconnectFailed ? (
         <p className="mt-1 break-words">
@@ -157,4 +166,8 @@ export function RemoteLoadError({
       {stale ? <p className="mt-1">{t("Showing what was last loaded.")}</p> : null}
     </Alert>
   );
+}
+
+function renderButton(item: NoticeAction) {
+  return <NoticeButton key={item.label} action={item} />;
 }

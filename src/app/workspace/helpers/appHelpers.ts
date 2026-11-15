@@ -1,11 +1,11 @@
 import { type RateLimitProvider } from "../../../features/providers/model/rateLimits";
 import { worktreeFocus } from "../../../features/source-control/model/worktreeFocus";
 import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { basename } from "../../../platform/tauri/fs";
 import { type ToolId } from "../../model/toolWindows";
 import { routeWindowDestination } from "../../model/windowNavigation";
-import { message } from "@tauri-apps/plugin-dialog";
 
 export function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
   if (a.size !== b.size) return false;
@@ -59,7 +59,7 @@ export async function revealExistingTool(tool: ToolId, cwd: string): Promise<boo
   try {
     return await routeWindowDestination({ kind: "tool", tool, cwd });
   } catch (cause) {
-    await message(String(cause), { title: t("Could not open window"), kind: "error" });
+    toast.show({ tone: "danger", title: t("Could not open window"), message: String(cause) });
     return true;
   }
 }

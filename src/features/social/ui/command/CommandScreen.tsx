@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Heading } from "../../../../shared/ui/Heading";
-import { InlineError } from "../../../../shared/ui/InlineError";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
-import { Button } from "../../../../shared/ui/Button";
+import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { CollectionFooter } from "../../../../shared/ui/ContinuousList";
 import type { SocialScreenProps } from "../shell/screens";
 import { NeedsHumanList } from "../browser/NeedsHumanList";
@@ -35,23 +33,13 @@ export function CommandScreen({ client, machineId, projectId, active, target }: 
         {navigation.prompt ? (
           <InlineMessage
             tone="neutral"
-            action={
-              <>
-                <Button
-                  variant="link"
-                  disabled={
-                    state.text.length + navigation.prompt.length + (state.text.trim() ? 2 : 0) >
-                    2000
-                  }
-                  onClick={navigation.apply}
-                >
-                  {t("Add to request")}
-                </Button>
-                <Button variant="link" onClick={navigation.dismiss}>
-                  {t("Dismiss")}
-                </Button>
-              </>
-            }
+            action={{
+              label: t("Add to request"),
+              disabled:
+                state.text.length + navigation.prompt.length + (state.text.trim() ? 2 : 0) > 2000,
+              onClick: navigation.apply,
+            }}
+            secondaryAction={{ label: t("Dismiss"), onClick: navigation.dismiss }}
           >
             {navigation.prompt}
           </InlineMessage>

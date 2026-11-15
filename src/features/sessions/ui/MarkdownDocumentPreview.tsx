@@ -3,6 +3,7 @@ import { splitMarkdownFrontmatter } from "../../../shared/lib/markdownFrontmatte
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import type { OpenFileFn } from "../../search/model/search";
 import { MarkdownPreview } from "./AgentMarkdown";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 
 export const MarkdownDocumentPreview = memo(function MarkdownDocumentPreview({
   text,
@@ -30,9 +31,9 @@ export const MarkdownDocumentPreview = memo(function MarkdownDocumentPreview({
       header={
         document.metadata !== null ? (
           <Disclosure size="sm" variant="card" summary={metadataLabel} className="mb-6">
-            <pre className="whitespace-pre-wrap break-words border-t border-(--ui-tone-neutral-border) px-3 py-2 font-mono text-ui-caption leading-5 text-(--ui-text-secondary)">
+            <OutputBlock className="border-t border-(--ui-tone-neutral-border) px-3 py-2">
               {document.metadata}
-            </pre>
+            </OutputBlock>
           </Disclosure>
         ) : null
       }

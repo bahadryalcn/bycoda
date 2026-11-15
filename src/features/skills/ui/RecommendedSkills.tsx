@@ -10,7 +10,7 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
 import { Select } from "../../../shared/ui/Select";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
@@ -241,20 +241,14 @@ export function RecommendedSkills({
           </Text>
         </div>
         {missingMachine ? (
-          <Alert tone="danger" inline>
-            {t("The selected computer is no longer connected.")}
-          </Alert>
+          <InlineError>{t("The selected computer is no longer connected.")}</InlineError>
         ) : null}
         {scope === "project" && !targetCwd ? (
-          <Alert tone="warning" inline>
+          <InlineMessage tone="warning">
             {t("Choose an open project on this computer to install a project skill.")}
-          </Alert>
+          </InlineMessage>
         ) : null}
-        {linkError ? (
-          <Alert inline tone="danger">
-            {linkError}
-          </Alert>
-        ) : null}
+        {linkError ? <InlineError>{linkError}</InlineError> : null}
         <TextField
           label={t("Search recommended skills")}
           hideLabel
@@ -359,7 +353,7 @@ export function RecommendedSkills({
                     {skill.repository.replace("https://github.com/", "")}
                   </Button>
                   {result?.status === "installed" ? (
-                    <Alert inline tone="success">
+                    <InlineMessage tone="success">
                       {t("Installed")}
                       {result.path ? (
                         <Text
@@ -371,17 +365,19 @@ export function RecommendedSkills({
                           {result.path}
                         </Text>
                       ) : null}
-                    </Alert>
+                    </InlineMessage>
                   ) : null}
                   {result?.error ? (
-                    <Alert inline tone={result.status === "unknown" ? "warning" : "danger"}>
-                      {result.error}
-                    </Alert>
+                    result.status === "unknown" ? (
+                      <InlineMessage tone="warning">{result.error}</InlineMessage>
+                    ) : (
+                      <InlineError>{result.error}</InlineError>
+                    )
                   ) : null}
                   {unresolved && busy !== skill.id ? (
-                    <Alert inline tone="warning">
+                    <InlineMessage tone="warning">
                       {t("Installation result is not confirmed. Check status before retrying.")}
-                    </Alert>
+                    </InlineMessage>
                   ) : null}
                   {result?.status === "failed" ? (
                     <Button

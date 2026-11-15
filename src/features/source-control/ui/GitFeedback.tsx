@@ -1,13 +1,10 @@
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
-import { OverflowTooltip } from "../../../shared/ui/Tooltip";
-import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
-import { X } from "../../../shared/ui/icons";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
 import { requestAddToChat } from "../../sessions/public/quoteDraft";
@@ -68,52 +65,27 @@ function GitFeedbackContent({
   const context = [title, cwd, detail].filter(Boolean).join("\n\n");
   const branchInWorktree =
     kind === "error" && !!detail && /cannot delete branch[\s\S]*used by worktree/i.test(detail);
+  const message = (
+    <>
+      {title}
+      {stale ? ` ${t("Showing what was last loaded.")}` : ""}
+    </>
+  );
+  const noticeProps = {
+    className: "mx-2 my-0.5 min-w-0 shrink-0",
+    action: detail ? { label: t("Details"), onClick: () => setOpen(true) } : undefined,
+    retry: onRetry ? { onRetry, label: t("Retry") } : undefined,
+    secondaryAction: onDismiss ? { label: t("Dismiss"), onClick: onDismiss } : undefined,
+  };
   return (
-    <Alert
-      tone={kind === "error" ? "danger" : kind}
-      inline
-      className="mx-2 my-0.5 min-w-0 shrink-0"
-    >
-      {/* One row: the title truncates so its actions never wrap below it. */}
-      <div className="flex min-w-0 items-center gap-x-2">
-        <OverflowTooltip label={title}>
-          <Text as="div" size="inherit" tone="primary" truncate className="min-w-0 flex-1">
-            {title}
-          </Text>
-        </OverflowTooltip>
-        {detail ? (
-          <Button
-            variant="link"
-            onClick={() => setOpen(true)}
-            aria-label={`${t("Details")}: ${title}`}
-            aria-haspopup="dialog"
-          >
-            {t("Details")}
-          </Button>
-        ) : null}
-        {onRetry ? (
-          <Button variant="ghost" size="sm" onClick={onRetry}>
-            {t("Retry")}
-          </Button>
-        ) : null}
-        {onDismiss ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            iconOnly
-            className="shrink-0"
-            label={t("Dismiss")}
-            onClick={onDismiss}
-          >
-            <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />
-          </Button>
-        ) : null}
-      </div>
-      {stale ? (
-        <Text as="p" size="inherit" tone="secondary" className="mt-1">
-          {t("Showing what was last loaded.")}
-        </Text>
-      ) : null}
+    <>
+      {kind === "error" ? (
+        <InlineError {...noticeProps}>{message}</InlineError>
+      ) : (
+        <InlineMessage tone={kind} {...noticeProps}>
+          {message}
+        </InlineMessage>
+      )}
       {open && detail ? (
         <Modal
           title={title}
@@ -211,6 +183,6 @@ function GitFeedbackContent({
           </div>
         </Modal>
       ) : null}
-    </Alert>
+    </>
   );
 }

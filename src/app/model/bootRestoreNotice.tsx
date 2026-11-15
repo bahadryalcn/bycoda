@@ -1,7 +1,6 @@
 import { createElement, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useT } from "../../shared/i18n";
-import { Button } from "../../shared/ui/Button";
 import { TransientNotice } from "../../shared/ui/TransientNotice";
 
 interface BootRestoreActions {
@@ -44,19 +43,16 @@ function BootRestoreNotice({
       }
       durationMs={null}
       action={{ label: t("Retry"), onClick: () => void retry(), pending }}
-      actions={
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={pending}
-          onClick={() => {
+      actions={[
+        {
+          label: t("Start fresh"),
+          disabled: pending,
+          onClick: () => {
             startFresh();
             onClose();
-          }}
-        >
-          {t("Start fresh")}
-        </Button>
-      }
+          },
+        },
+      ]}
       onDismiss={onClose}
     />
   );

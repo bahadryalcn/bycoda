@@ -25,21 +25,6 @@
   flex: 1 1 auto;
   min-inline-size: 0;
 }
-.avatar {
-  display: grid;
-  flex: none;
-  place-items: center;
-  inline-size: 32px;
-  block-size: 32px;
-  border-radius: var(--radius-pill);
-  background: var(--ui-fill-subtle);
-  overflow: clip;
-  user-select: none;
-}
-/* No avatar chosen: the first letter of the name, drawn from the attribute so it is not text. */
-.avatar:empty::before {
-  content: attr(data-initial);
-}
 .name {
   min-inline-size: 0;
   overflow: hidden;

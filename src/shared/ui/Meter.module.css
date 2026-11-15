@@ -13,26 +13,26 @@
   }
 }
 
-/* Tone is the measured state: neutral secondary ink until the warning/danger thresholds,
-   then the shared status ink. The track is the structural stroke role. */
+/* The one meter role (Meter, Progress, UsageMeter): a 4px pill track on the neutral subtle fill and a
+   `-solid` tone fill. Tone is the measured state: neutral until the warning/danger thresholds. */
 .meter {
-  --meter-fill: var(--ui-text-secondary);
-  color: var(--meter-fill);
+  --meter-fill: var(--ui-tone-neutral-solid);
+  color: var(--ui-text-secondary);
 }
 .meter[data-tone="accent"] {
-  --meter-fill: var(--ui-tone-accent-fg);
+  --meter-fill: var(--ui-tone-accent-solid);
 }
 .meter[data-tone="success"] {
-  --meter-fill: var(--ui-tone-success-fg);
+  --meter-fill: var(--ui-tone-success-solid);
 }
 .meter[data-tone="info"] {
-  --meter-fill: var(--ui-tone-info-fg);
+  --meter-fill: var(--ui-tone-info-solid);
 }
 .meter[data-tone="warning"] {
-  --meter-fill: var(--ui-tone-warning-fg);
+  --meter-fill: var(--ui-tone-warning-solid);
 }
 .meter[data-tone="danger"] {
-  --meter-fill: var(--ui-tone-danger-fg);
+  --meter-fill: var(--ui-tone-danger-solid);
 }
 
 .linear {
@@ -41,14 +41,14 @@
   block-size: var(--meter-thickness);
   overflow: clip;
   border-radius: var(--radius-pill);
-  background: var(--color-stroke);
+  background: var(--ui-tone-neutral-subtle);
 }
 .bar {
   display: block;
   block-size: 100%;
   border-radius: inherit;
   background: var(--meter-fill);
-  transition: inline-size var(--motion-feedback-duration, 120ms) var(--motion-ease-out, ease-out);
+  transition: inline-size var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .ring {
@@ -69,12 +69,11 @@
   overflow: visible;
 }
 .ringTrack {
-  stroke: var(--color-stroke);
+  stroke: var(--ui-tone-neutral-subtle);
 }
 .ringValue {
   stroke: var(--meter-fill);
-  transition: stroke-dashoffset var(--motion-feedback-duration, 120ms)
-    var(--motion-ease-out, ease-out);
+  transition: stroke-dashoffset var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .ringCenter {
   display: inline-flex;

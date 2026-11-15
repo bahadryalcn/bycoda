@@ -5,7 +5,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Link } from "../../../shared/ui/Link";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
@@ -113,6 +113,7 @@ import {
   LANGUAGE_FROM_EXT,
   PLAINTEXT_FENCE_LANGUAGES,
 } from "./agentMarkdownLanguages";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
   securityLevel: "strict",
@@ -1105,9 +1106,9 @@ export const AgentMarkdown = memo(function AgentMarkdown({
             <div ref={fadeRoot} className="min-w-0" aria-busy={markdownPending || undefined}>
               {sourceFallback ? (
                 <>
-                  <Alert tone="warning" inline>
+                  <InlineMessage tone="warning">
                     {t("Formatted preview unavailable. Showing source.")}
-                  </Alert>
+                  </InlineMessage>
                   <div className="whitespace-pre-wrap">{paced.text}</div>
                 </>
               ) : (
@@ -1225,9 +1226,9 @@ export const MarkdownSource = memo(function MarkdownSource({ text }: { text: str
       data-markdown-region="source"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-ui-secondary leading-5 text-(--ui-text-secondary)">
+      <OutputBlock size="secondary" className="min-h-full min-w-0 px-4 py-3">
         <MarkdownSourceHighlight text={text} />
-      </pre>
+      </OutputBlock>
     </div>
   );
 });

@@ -6,9 +6,9 @@ import {
   type SetStateAction,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { message } from "@tauri-apps/plugin-dialog";
 import { flushSync } from "react-dom";
 import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import type { Session } from "../../../features/sessions/model/session";
 import {
   findSurfacePane,
@@ -152,14 +152,11 @@ export function useWindowMoveActions(deps: WindowMoveActionDeps): {
           onCloseFile(paneId, fileId, { skipConfirm: true });
         }
       } catch (error) {
-        void message(
-          `Could not open the file in a new window. The original editor is still here.\n\n${error instanceof Error ? error.message : String(error)}`,
-          {
-            get title() {
-              return t("Open in new window");
-            },
-          },
-        );
+        toast.show({
+          tone: "danger",
+          title: t("Could not open the file in a new window. The original editor is still here."),
+          message: error instanceof Error ? error.message : String(error),
+        });
       } finally {
         openingFileWindowIds.current.delete(fileId);
         movingTabIds.current.delete(sourceTab.id);

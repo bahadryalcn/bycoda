@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 
 /** Keep each removal recoverable, including several quick removals and failed restores. */
@@ -34,26 +33,21 @@ export function QueueRemovalNotice({
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
       }}
-      action={
-        <Button
-          variant="link"
-          layout="text"
-          loading={pending}
-          disabled={disabled}
-          onClick={() => {
-            setPending(true);
-            void onUndo()
-              .then((restored) => {
-                if (restored) onDismiss(id);
-                else setFailed(true);
-              })
-              .catch(() => setFailed(true))
-              .finally(() => setPending(false));
-          }}
-        >
-          {t("Undo")}
-        </Button>
-      }
+      action={{
+        label: t("Undo"),
+        pending,
+        disabled,
+        onClick: () => {
+          setPending(true);
+          void onUndo()
+            .then((restored) => {
+              if (restored) onDismiss(id);
+              else setFailed(true);
+            })
+            .catch(() => setFailed(true))
+            .finally(() => setPending(false));
+        },
+      }}
     >
       {t("Message removed")}
     </InlineMessage>

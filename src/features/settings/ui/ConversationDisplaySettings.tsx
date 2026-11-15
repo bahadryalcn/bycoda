@@ -6,7 +6,6 @@ import {
   saveStreamingTextMode,
 } from "../model/settings";
 import { Row, Select, SettingsFeedback, Toggle } from "./settingsControls";
-import { Button } from "../../../shared/ui/Button";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 
 export function ConversationDisplaySettings({ appearance: a }: { appearance: AppearanceSettings }) {
@@ -82,7 +81,7 @@ export function ConversationDisplaySettings({ appearance: a }: { appearance: App
           failedMode ? (
             <SettingsFeedback
               state="error"
-              action={<Button onClick={() => saveMode(failedMode)}>{t("Retry")}</Button>}
+              action={{ label: t("Retry"), onClick: () => saveMode(failedMode) }}
             >
               {t("Could not save changes")}
             </SettingsFeedback>

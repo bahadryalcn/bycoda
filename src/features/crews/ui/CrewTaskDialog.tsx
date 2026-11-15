@@ -3,7 +3,6 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Modal } from "../../../shared/ui/Modal";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Button } from "../../../shared/ui/Button";
 import { HostModelSource } from "../../connections/public/HostModelSource";
 import type { BackgroundSessionTarget } from "../../tasks";
 import { newTaskDraft, saveTask, startTask, type TaskDraft } from "../../tasks/public/taskCreation";
@@ -123,11 +122,7 @@ function CrewTaskDraft({
         </Alert>
       ) : null}
       {created ? (
-        <Alert
-          tone="success"
-          className="m-4"
-          action={<Button onClick={onClose}>{t("Close")}</Button>}
-        >
+        <Alert tone="success" className="m-4" action={{ label: t("Close"), onClick: onClose }}>
           {t("Task created")}
         </Alert>
       ) : (

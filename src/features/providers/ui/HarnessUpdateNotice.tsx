@@ -110,13 +110,7 @@ export function HarnessUpdateNotice() {
       onDismiss={dismiss}
       actionsPlacement="footer"
       actions={
-        pending.length > 1 ? (
-          <div className="flex w-full justify-end">
-            <Button variant="primary" size="sm" type="button" onClick={() => start(pending)}>
-              {t("Update all")}
-            </Button>
-          </div>
-        ) : null
+        pending.length > 1 ? [{ label: t("Update all"), onClick: () => start(pending) }] : undefined
       }
     >
       <div {...surfaceAttributes({ dividers: "stroke" })}>

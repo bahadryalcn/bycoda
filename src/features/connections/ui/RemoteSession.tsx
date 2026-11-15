@@ -319,7 +319,7 @@ function DurableRemoteSessionGate(props: Parameters<typeof ConnectedRemoteSessio
             ) : (
               <Alert
                 tone="warning"
-                action={
+                extra={
                   fitsOneLine(state.error) ? undefined : (
                     <ErrorDetails title={review} detail={state.error} />
                   )
@@ -4115,16 +4115,13 @@ function ConnectedRemoteSession({
             <Alert
               tone={error ? "danger" : "warning"}
               action={
-                notice.action ? (
-                  <Button
-                    type="button"
-                    disabled={!online && !queue.error && notice.action.kind !== "dismiss"}
-                    onClick={notice.action.run}
-                    variant="secondary"
-                  >
-                    {notice.action.label}
-                  </Button>
-                ) : undefined
+                notice.action
+                  ? {
+                      label: notice.action.label,
+                      disabled: !online && !queue.error && notice.action.kind !== "dismiss",
+                      onClick: notice.action.run,
+                    }
+                  : undefined
               }
             >
               <span className="min-w-0 break-words">

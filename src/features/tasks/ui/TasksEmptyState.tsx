@@ -1,8 +1,6 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Plus } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 
 /** First use: what Tasks is for, the one way to start, and the three steps.
@@ -32,12 +30,7 @@ export function TasksEmptyState({
         description={t(
           "Give an agent a task. It works in the background and you follow its progress here.",
         )}
-        action={
-          <Button variant="primary" type="button" disabled={disabled} onClick={onCreate}>
-            <Plus className="icon-sm" strokeWidth={1.75} />
-            {t("New task")}
-          </Button>
-        }
+        action={{ label: t("New task"), disabled, onClick: onCreate }}
       />
       <ol className="task-onboarding-steps" aria-label={t("How it works")}>
         {steps.map((step, index) => (

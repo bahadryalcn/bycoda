@@ -1296,59 +1296,42 @@ export function FileEditor({
         </UiText>
       ) : null}
       {draftActionError || (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
-        <Alert
-          tone="danger"
-          inline
+        <InlineError
           className="shrink-0"
           action={
             !draftPersistence?.initializationDecisionRequired &&
-            draftPersistence?.phase !== "stale-owner" ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                loading={draftAction !== null}
-                onClick={() => void retryDraft()}
-              >
-                {t("Retry draft copy")}
-              </Button>
-            ) : undefined
+            draftPersistence?.phase !== "stale-owner"
+              ? {
+                  label: t("Retry draft copy"),
+                  pending: draftAction !== null,
+                  onClick: () => void retryDraft(),
+                }
+              : undefined
           }
         >
           {draftActionError ??
             t("Draft recovery copy could not be confirmed. Keep this editor open.")}
-        </Alert>
+        </InlineError>
       ) : null}
       {diskConflict && (
         <Alert
           tone="warning"
           className="shrink-0"
-          action={
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                tone="danger"
-                disabled={saveState.status === "saving"}
-                onClick={() => void reloadFromDisk(true)}
-              >
-                {t("Reload from disk")}
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                tone="danger"
-                disabled={saveState.status === "saving"}
-                onClick={() => {
-                  overwriteVersion.current = diskChangeVersion.current;
-                  void requestSave().finally(() => {
-                    overwriteVersion.current = null;
-                  });
-                }}
-              >
-                {t("Overwrite disk version")}
-              </Button>
-            </>
-          }
+          action={{
+            label: t("Reload from disk"),
+            disabled: saveState.status === "saving",
+            onClick: () => void reloadFromDisk(true),
+          }}
+          secondaryAction={{
+            label: t("Overwrite disk version"),
+            disabled: saveState.status === "saving",
+            onClick: () => {
+              overwriteVersion.current = diskChangeVersion.current;
+              void requestSave().finally(() => {
+                overwriteVersion.current = null;
+              });
+            },
+          }}
         >
           {diskVerificationError
             ? t(

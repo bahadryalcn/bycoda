@@ -2,7 +2,6 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useContext, useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
-import { Button } from "../../../shared/ui/Button";
 import { RevealedSetting, settingDomId, SettingsFeedback } from "./settingsControls";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 import { ThemeSection } from "./appearance/sections/ThemeSection";
@@ -102,7 +101,7 @@ export function AppearancePage({
       {appearance.preferencesUnavailable ? (
         <SettingsFeedback
           state="warning"
-          action={<Button onClick={appearance.retryPreferenceRead}>{t("Retry")}</Button>}
+          action={{ label: t("Retry"), onClick: appearance.retryPreferenceRead }}
         >
           {t(
             "Appearance preferences are unavailable. Retry reading before replacing saved choices.",
@@ -112,11 +111,10 @@ export function AppearancePage({
       {appearance.preferencesDirty ? (
         <SettingsFeedback
           state="error"
-          action={
-            <Button onClick={() => appearance.onPreferences(appearance.preferences)}>
-              {t("Retry save")}
-            </Button>
-          }
+          action={{
+            label: t("Retry save"),
+            onClick: () => appearance.onPreferences(appearance.preferences),
+          }}
         >
           {t("Could not save changes. Your previous appearance remains active.")}
         </SettingsFeedback>

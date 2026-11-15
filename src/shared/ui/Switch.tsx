@@ -20,7 +20,6 @@ export type SwitchProps = ArcSwitchProps & {
  */
 export function Switch({
   className,
-  compact = true,
   type = "button",
   padding,
   appearance,
@@ -32,7 +31,6 @@ export function Switch({
       {...props}
       data-choice-appearance={appearance}
       type={type}
-      compact={compact}
       style={{ ...style, ...controlPaddingStyle(props.label ? padding : undefined) }}
       className={["bycoda-arc bycoda-arc-switch", className].filter(Boolean).join(" ")}
     />

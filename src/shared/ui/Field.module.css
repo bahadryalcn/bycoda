@@ -12,7 +12,7 @@
 .label {
   margin-block-end: var(--space-2);
   color: var(--foreground);
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-caption);
   font-weight: 500;
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
@@ -21,7 +21,7 @@
 .error {
   display: block;
   padding-block-start: var(--space-2);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
@@ -35,7 +35,7 @@
 .field[data-variant="compact"] .label {
   margin-block-end: var(--space-1);
   color: var(--text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
 }
 .field[data-variant="compact"] :is(.description, .error) {
   padding-block-start: var(--space-1);
@@ -47,7 +47,7 @@
   min-inline-size: 0;
   border: 1px solid var(--ui-field-border);
   border-radius: var(--ui-field-radius);
-  background: var(--ui-surface-muted);
+  background: var(--ui-field-surface);
 }
 .editor {
   display: flex;
@@ -92,8 +92,8 @@
   display: flex;
   align-items: center;
   flex: none;
-  gap: 2px;
-  padding: 3px;
+  gap: var(--space-1);
+  padding: var(--space-1);
 }
 .control:has(textarea) {
   align-items: flex-start;

@@ -102,7 +102,7 @@ export function SessionFolderGroup() {
           error ? (
             <SettingsFeedback
               state="error"
-              action={<Button onClick={() => void reload()}>{t("Retry")}</Button>}
+              action={{ label: t("Retry"), onClick: () => void reload() }}
             >
               {error}
             </SettingsFeedback>

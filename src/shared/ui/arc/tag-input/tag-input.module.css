@@ -12,7 +12,7 @@
 }
 .field label {
   margin-block-end: var(--space-2);
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-caption);
   font-weight: 500;
 }
 /* The frame matches the text fields: resting boundary, hover, invalid, disabled and read-only share their roles. The group
@@ -22,7 +22,7 @@
   overflow: clip;
   border: 1px solid var(--ui-field-border);
   border-radius: var(--ui-field-radius);
-  background: var(--ui-surface-muted);
+  background: var(--ui-field-surface);
   transition: border-color var(--duration-fast) var(--ease-standard);
 }
 @media (hover: hover) and (pointer: fine) {
@@ -64,12 +64,7 @@
   gap: var(--space-1);
   min-inline-size: 0;
   max-inline-size: 100%;
-  padding-inline: var(--space-2) 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--ui-field-radius);
-  background: var(--surface-muted);
-  color: var(--foreground);
-  font-size: var(--text-sm);
+  composes: chip from "../../Badge.module.css";
 }
 .tagLabel {
   overflow-wrap: anywhere;
@@ -84,7 +79,7 @@
   background: transparent;
   color: var(--foreground);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-secondary);
 }
 .content input:disabled {
   color: var(--ui-control-disabled-fg);
@@ -105,7 +100,7 @@
 .field[data-variant="compact"] label {
   margin-block-end: var(--space-1);
   color: var(--text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
 }
 .field[data-variant="compact"] :is(.hint, .error) {
   padding-block-start: var(--space-1);
@@ -119,9 +114,9 @@
   inset-inline-start: 0;
   z-index: 1;
   box-sizing: border-box;
-  border: 1px solid var(--color-active);
-  border-radius: var(--ui-field-radius);
-  background: var(--color-selection-subtle);
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-inset);
+  background: var(--ui-surface-selected);
   opacity: 0;
   pointer-events: none;
 }
@@ -138,7 +133,7 @@
 .error {
   display: block;
   padding-block-start: var(--space-2);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
   line-height: var(--leading-body);
 }
 .hint {

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
-import { message } from "@tauri-apps/plugin-dialog";
+import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { loadNotificationEvents, subscribeNotificationEvents } from "../model/notificationEvents";
 import { loadNotificationsEnabled, subscribeNotificationsEnabled } from "../model/notifications";
@@ -98,7 +99,7 @@ export function useSessionReminders(
   }, [configure]);
 
   const report = (error: unknown) => {
-    void message(String(error), { title: "Reminder", kind: "error" });
+    toast.show({ tone: "danger", title: t("Reminder"), message: String(error) });
   };
 
   const schedule = useCallback(

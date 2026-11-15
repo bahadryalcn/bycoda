@@ -13,6 +13,7 @@ import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Button } from "../../../shared/ui/Button";
+import { ListRow } from "../../../shared/ui/ListRow";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { motionAttributes } from "../../../shared/ui/Motion";
@@ -173,7 +174,10 @@ export function SearchView({
     error: string;
   } | null>(null);
   const [fileRetry, setFileRetry] = useState(0);
-  const [resultCapacity, setResultCapacity] = useState({ context: "", rows: 0 });
+  const [resultCapacity, setResultCapacity] = useState({
+    context: "",
+    rows: 0,
+  });
   const files = fileIndex.cwd === cwd ? fileIndex.files : [];
   const [chatFilters, setChatFilters] = useRetainedState<ChatFilters>(
     `${stateKey}:filters`,
@@ -622,7 +626,10 @@ export function SearchView({
               label={t("Search in")}
               value={scope}
               onValueChange={(value) => setScope(value as SearchScope)}
-              options={SCOPES.map((item) => ({ value: item.id, label: item.label }))}
+              options={SCOPES.map((item) => ({
+                value: item.id,
+                label: item.label,
+              }))}
             />
           </div>
           {chatMode ? (
@@ -888,17 +895,12 @@ function ResultList({
                 </span>
               </Text>
             ) : null}
-            <Button
-              variant="item"
-              tone="accent"
-              motion="none"
-              fullWidth
+            <ListRow
               selected={highlighted}
               {...actionContentScopeAttributes()}
               className="app-search-result"
               id={`${listId}-option-${index}`}
               ref={highlighted ? activeRef : undefined}
-              type="button"
               role="option"
               aria-selected={highlighted}
               tabIndex={-1}
@@ -929,7 +931,10 @@ function ResultList({
                     size="inherit"
                     tone="secondary"
                     leading="inherit"
-                    {...actionContentAttributes({ phase: "always", reveal: "preview" })}
+                    {...actionContentAttributes({
+                      phase: "always",
+                      reveal: "preview",
+                    })}
                     {...motionAttributes(
                       { transition: "size", duration: "standard" },
                       actionContentAttributes(
@@ -980,7 +985,7 @@ function ResultList({
                         : "File",
                 )}
               </Text>
-            </Button>
+            </ListRow>
           </div>
         );
       })}

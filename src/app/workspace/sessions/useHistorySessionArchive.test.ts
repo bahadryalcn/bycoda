@@ -10,7 +10,7 @@ import {
 
 const { archive, message } = vi.hoisted(() => ({ archive: vi.fn(), message: vi.fn() }));
 vi.mock("../../../features/sessions/data/sessionStore", () => ({ setSessionArchived: archive }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message }));
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: message } }));
 
 let root: Root;
 let deps: HistorySessionArchiveDeps;

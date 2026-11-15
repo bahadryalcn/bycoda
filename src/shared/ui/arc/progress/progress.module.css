@@ -54,7 +54,7 @@
   overflow: hidden;
   border: 0;
   border-radius: var(--radius-pill);
-  background: var(--color-stroke);
+  background: var(--ui-tone-neutral-subtle);
 }
 .fill {
   display: block;

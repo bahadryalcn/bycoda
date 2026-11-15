@@ -1,11 +1,8 @@
 "use client";
 
-import { forwardRef, useEffect, useId, useRef, useState } from "react";
+import { forwardRef, useId, useState } from "react";
 import type { ComponentPropsWithoutRef, ElementRef, ReactNode } from "react";
 import * as SwitchPrimitive from "@radix-ui/react-switch";
-import { animate, motion, useMotionValue, useReducedMotion } from "motion/react";
-import type { Transition } from "motion/react";
-import { motionTokens } from "../lib/motion-tokens";
 import { optionalTextAttributes, type TextRoles } from "../../Text";
 import styles from "./switch.module.css";
 
@@ -17,15 +14,9 @@ export interface SwitchProps extends ComponentPropsWithoutRef<typeof SwitchPrimi
   labelPosition?: "end" | "start";
   /** Secondary line under the label. Needs `label`. */
   description?: ReactNode;
-  /** Compact settings geometry; the hit area remains 28px high. */
+  /** @deprecated One geometry now (36x20, thumb 16); the prop has no effect. */
   compact?: boolean;
 }
-
-/** Track inner width (42 - 6 padding) minus the 18px thumb; keep in sync with switch.module.css. */
-/** How far the thumb widens toward the other side while pressed. */
-const stretch = 5;
-/** Critically damped: the thumb lands on its end without overshooting the state it reports. */
-const glide: Transition = { ...motionTokens.spring.snappy, bounce: 0 };
 
 export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, SwitchProps>(
   function Switch(
@@ -34,7 +25,7 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
       labelText,
       labelPosition = "end",
       description,
-      compact = false,
+      compact,
       className,
       checked,
       defaultChecked,
@@ -50,30 +41,9 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
     },
     ref,
   ) {
-    const reduceMotion = useReducedMotion();
-    const size = compact ? 16 : 18;
-    const travel = compact ? 16 : 18;
     const [internal, setInternal] = useState(defaultChecked ?? false);
     const [pressed, setPressed] = useState(false);
     const on = checked ?? internal;
-    // A brief stretch along the travel, so the thumb reads as moving mass rather than a sliding dot.
-    const scaleX = useMotionValue(1);
-    const shown = useRef(on);
-    // A pointer or Space press already stretched the thumb, so its release should not add a second stretch on top.
-    const releasedAt = useRef(-Infinity);
-    useEffect(() => {
-      if (shown.current === on) return;
-      shown.current = on;
-      const fromPress = performance.now() - releasedAt.current < 250;
-      if (reduceMotion || fromPress) return;
-      const controls = animate(scaleX, [1, 1.08, 1], {
-        duration: motionTokens.duration.standard,
-        times: [0, 0.4, 1],
-        ease: ["easeOut", "easeInOut"],
-      });
-      return () => controls.stop();
-    }, [on, reduceMotion, scaleX]);
-    const extra = pressed && !reduceMotion && !props.disabled ? stretch : 0;
     const descriptionId = useId();
     const hasDescription = label != null && label !== false && description != null;
     const classes = [styles.switch, className].filter(Boolean).join(" ");
@@ -105,7 +75,6 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
         }}
         onPointerUp={(event) => {
           onPointerUp?.(event);
-          if (pressed && !props.disabled) releasedAt.current = performance.now();
           setPressed(false);
         }}
         onPointerLeave={(event) => {
@@ -122,7 +91,6 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
         }}
         onKeyUp={(event) => {
           onKeyUp?.(event);
-          if (pressed && !props.disabled) releasedAt.current = performance.now();
           setPressed(false);
         }}
         onBlur={(event) => {
@@ -131,6 +99,7 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
         }}
         className={classes}
         data-compact={compact || undefined}
+        data-pressed={pressed && !props.disabled ? "" : undefined}
         aria-label={props["aria-label"] ?? (typeof label === "string" ? label : undefined)}
         aria-describedby={
           hasDescription
@@ -141,16 +110,7 @@ export const Switch = forwardRef<ElementRef<typeof SwitchPrimitive.Root>, Switch
       >
         {labelPosition === "start" ? textNode : null}
         <span className={styles.track}>
-          {/* The thumb stretches like a held finger and keeps its far edge anchored, then travels on a spring. */}
-          <motion.span
-            className={styles.thumb}
-            style={{ scaleX }}
-            initial={false}
-            animate={{ x: on ? travel - extra : 0, width: size + extra }}
-            transition={
-              reduceMotion ? { duration: 0 } : { x: glide, width: motionTokens.spring.snappy }
-            }
-          />
+          <span className={styles.thumb} />
         </span>
         {labelPosition === "end" ? textNode : null}
       </SwitchPrimitive.Root>

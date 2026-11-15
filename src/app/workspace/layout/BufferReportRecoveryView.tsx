@@ -311,11 +311,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             kind="filtered"
             title={t("No matching reports")}
             description={t("No loaded report matches “{p0}”.", { p0: query.trim() })}
-            action={
-              <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
-                {t("Clear search")}
-              </Button>
-            }
+            action={{ label: t("Clear search"), onClick: () => setQuery("") }}
           />
         ) : filter === "held" && recovery.records.length > 0 ? (
           <EmptyState
@@ -325,11 +321,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             description={t("{p0} other loaded reports are available.", {
               p0: recovery.records.length,
             })}
-            action={
-              <Button variant="secondary" size="sm" onClick={() => setFilter("all")}>
-                {t("Show all reports")}
-              </Button>
-            }
+            action={{ label: t("Show all reports"), onClick: () => setFilter("all") }}
           />
         ) : (
           <EmptyState

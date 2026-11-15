@@ -409,11 +409,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
           {listOutcome?.state === "unsaved" ? (
             <SettingsFeedback
               state="error"
-              action={
-                <Button size="sm" variant="ghost" onClick={listOutcome.retry}>
-                  {t("Retry")}
-                </Button>
-              }
+              action={{ label: t("Retry"), onClick: listOutcome.retry }}
             >
               {t("Not saved. The choice applies until this window closes. {p0}", {
                 p0: listOutcome.message,

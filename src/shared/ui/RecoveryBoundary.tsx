@@ -1,6 +1,5 @@
 import { Component, Fragment, type ErrorInfo, type ReactNode } from "react";
 import { t } from "../i18n";
-import { Button } from "./Button";
 import { FailureState, isModuleLoadError } from "./FailureState";
 
 export const LAST_RENDER_ERROR_KEY = "bycoda.diagnostics.lastRenderError";
@@ -104,15 +103,11 @@ Component stack:${componentStack}`)
         retryLabel={moduleError ? t("Reload app") : t("Try again")}
         onRetry={() => (moduleError ? window.location.reload() : this.reset())}
         secondaryAction={
-          this.props.onBack ? (
-            <Button motion="none" onClick={this.props.onBack}>
-              {t("Back to workspace")}
-            </Button>
-          ) : !moduleError ? (
-            <Button motion="none" onClick={() => window.location.reload()}>
-              {t("Reload app")}
-            </Button>
-          ) : undefined
+          this.props.onBack
+            ? { label: t("Back to workspace"), onClick: this.props.onBack }
+            : !moduleError
+              ? { label: t("Reload app"), onClick: () => window.location.reload() }
+              : undefined
         }
       />
     );

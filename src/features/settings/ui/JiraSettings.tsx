@@ -425,11 +425,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               {projectScope.error ? (
                 <SettingsFeedback
                   state="error"
-                  action={
-                    <Button stableWidth onClick={projectScope.retry}>
-                      {t("Retry")}
-                    </Button>
-                  }
+                  action={{ label: t("Retry"), onClick: projectScope.retry }}
                 >
                   {t("Saved Inbox scope is unavailable. Retry before changing it.")}
                 </SettingsFeedback>
@@ -483,11 +479,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
               {boardScope.error ? (
                 <SettingsFeedback
                   state="error"
-                  action={
-                    <Button stableWidth onClick={boardScope.retry}>
-                      {t("Retry")}
-                    </Button>
-                  }
+                  action={{ label: t("Retry"), onClick: boardScope.retry }}
                 >
                   {t("Saved Inbox scope is unavailable. Retry before changing it.")}
                 </SettingsFeedback>
@@ -545,11 +537,10 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
             !backgroundState.available ? (
               <SettingsFeedback
                 state="error"
-                action={
-                  <Button stableWidth onClick={() => setBackgroundState(readBackgroundSync())}>
-                    {t("Retry")}
-                  </Button>
-                }
+                action={{
+                  label: t("Retry"),
+                  onClick: () => setBackgroundState(readBackgroundSync()),
+                }}
               >
                 {t("Saved Inbox scope is unavailable. Retry before changing it.")}
               </SettingsFeedback>

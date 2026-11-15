@@ -50,24 +50,24 @@ it("confirms only acknowledged metadata saves and clears the action on edits or 
   await act(async () => root.render(createElement(ServerOrganization, { server, expanded: true })));
   await input("Production");
   await submit();
-  expect(container.querySelector("button")?.getAttribute("aria-busy")).toBe("true");
-  expect(container.querySelector("button")?.textContent).not.toBe("Saved");
+  expect(container.querySelector('button[type="submit"]')?.getAttribute("aria-busy")).toBe("true");
+  expect(container.querySelector('button[type="submit"]')?.textContent).not.toBe("Saved");
   await submit();
   expect(updateServerMetadata).toHaveBeenCalledTimes(1);
   await act(async () => finish());
-  expect(container.querySelector("button")?.textContent).toBe("Saved");
+  expect(container.querySelector('button[type="submit"]')?.textContent).toBe("Saved");
   expect(
     [...container.querySelectorAll('[role="status"]')].filter(
       (status) => !status.classList.contains("sr-only"),
     ),
   ).toHaveLength(0);
   await input("Edited draft");
-  expect(container.querySelector("button")?.textContent).toBe("Save");
+  expect(container.querySelector('button[type="submit"]')?.textContent).toBe("Save");
   vi.mocked(updateServerMetadata).mockRejectedValue(new Error("write failed"));
   await submit();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Couldn’t save server organization.",
   );
-  expect(container.querySelector("button")?.textContent).toBe("Save");
+  expect(container.querySelector('button[type="submit"]')?.textContent).toBe("Save");
   expect(container.querySelector("input")?.value).toBe("Edited draft");
 });

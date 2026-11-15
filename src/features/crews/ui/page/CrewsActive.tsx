@@ -6,7 +6,6 @@ import { Badge } from "../../../../shared/ui/Badge";
 import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../shared/ui/InlineError";
-import { Plus } from "../../../../shared/ui/icons";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import type { ActiveCrewMemberView } from "../../model/crewActive";
 import {
@@ -64,11 +63,7 @@ export function CrewsActive({
         context="page"
         title={t("No crew member is working right now")}
         description={t("Start new work and its members show up here while they work.")}
-        action={
-          <Button variant="primary" startIcon={<Plus className="icon-sm" />} onClick={onNewWork}>
-            {t("New work")}
-          </Button>
-        }
+        action={{ label: t("New work"), onClick: onNewWork }}
       />
     );
   const currentKey = known ? activeProjectKey(known) : undefined;

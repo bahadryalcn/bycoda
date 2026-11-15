@@ -63,7 +63,7 @@ export function SharedQueueRecoveryNotice({ sessionId }: { sessionId: string }) 
     }
   };
   return (
-    <Alert tone="warning" inline className="shrink-0">
+    <Alert tone="warning" className="shrink-0">
       <Text as="div" tone="inherit">
         {t("Queued delivery is unknown. Sending is held for review.")}
       </Text>

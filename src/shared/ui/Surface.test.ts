@@ -3,7 +3,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { Surface, surfaceAttributes, type SurfaceAppearance, type SurfaceVariant } from "./Surface";
+import {
+  Surface,
+  surfaceAttributes,
+  surfaceRole,
+  type SurfaceAppearance,
+  type SurfaceVariant,
+} from "./Surface";
 import styles from "./Surface.module.css";
 
 const css = readFileSync("src/shared/ui/Surface.module.css", "utf8");
@@ -37,7 +43,7 @@ const roles = readFileSync("src/styles/surface-roles.css", "utf8").replace(/\s+/
 
 it("keeps the existing default markup and adds no opt-in attributes", () => {
   expect(renderToStaticMarkup(createElement(Surface, null, "body"))).toBe(
-    `<div data-variant="plain" data-padding="md" class="${styles.surface}">body</div>`,
+    `<div data-variant="plain" data-surface-role="card" data-padding="md" class="${styles.surface}">body</div>`,
   );
   expect(css).toContain("border: 1px solid transparent");
   expect(css).toContain("border-radius: var(--ui-radius-card)");
@@ -176,9 +182,11 @@ it.each(["solid", "dashed"] as const)(
 );
 
 it("keeps theme recipes exact and derives them from existing grounds", () => {
-  expect(roles).toContain("color-mix(insrgb,var(--ui-tone-danger-subtle)45%,var(--ui-surface))");
   expect(roles).toContain(
-    "color-mix(insrgb,var(--ui-tone-danger-subtle)45%,var(--ui-surface-floating))",
+    "color-mix(insrgb,var(--ui-tone-danger-fg)calc(var(--ui-tone-subtle-strength)*0.45),var(--ui-surface))",
+  );
+  expect(roles).toContain(
+    "color-mix(insrgb,var(--ui-tone-danger-fg)calc(var(--ui-tone-subtle-strength)*0.45),var(--ui-surface-floating))",
   );
   expect(roles).toContain("color-mix(inoklab,var(--color-background-base)45%,transparent)");
   expect(roles).not.toMatch(/#[0-9a-f]|rgba?\(/i);
@@ -256,26 +264,9 @@ it("draws a pane outer ring without adding frame geometry", () => {
   expect(block).not.toMatch(/border:|padding|height|width/);
 });
 
-const bars = [
-  ["pane", "--ui-pane-border"],
-  ["neutral", "--ui-tone-neutral-border"],
-  ["accent", "--ui-border-accent"],
-  ["info", "--ui-tone-info-fg"],
-  ["success", "--ui-tone-success-border"],
-] as const;
-it.each(bars)("draws the %s bar on the inline-start edge only", (bar, token) => {
-  expect(surfaceAttributes({ bar })["data-surface-bar"]).toBe(bar);
-  expect(renderToStaticMarkup(createElement(Surface, { bar }))).toContain(
-    `data-surface-bar="${bar}"`,
-  );
-  const block = css.slice(css.indexOf(`[data-surface-bar="${bar}"]`)).split("}")[0];
-  expect(block).toContain(`border-inline-start: 2px solid var(${token})`);
-  expect(block).not.toMatch(/border-(block|top|bottom|left|right|inline-end)|border: /);
-});
-
 it("keeps the new roles out of the default render", () => {
   expect(renderToStaticMarkup(createElement(Surface, null, "body"))).not.toMatch(
-    /data-surface-(tone|elevation|ring|bar)/,
+    /data-surface-(tone|elevation|ring)/,
   );
 });
 
@@ -487,12 +478,9 @@ it("supports responsive end frames and muted marker frames", () => {
   expect(block).toContain("--surface-frame-stacked");
 });
 
-it("supports an example quote's user-accent bar and right control corners", () => {
-  const attrs = surfaceAttributes({ bar: "user-accent", radius: "right-control" });
-  expect(attrs["data-surface-bar"]).toBe("user-accent");
-  expect(attrs["data-surface-radius"]).toBe("right-control");
-  expect(css).toMatch(
-    /\[data-surface-bar="user-accent"\][^{]*\{[^}]*border-inline-start: 2px solid var\(--accent\)/,
+it("supports right control corners", () => {
+  expect(surfaceAttributes({ radius: "right-control" })["data-surface-radius"]).toBe(
+    "right-control",
   );
   expect(css).toMatch(
     /\[data-surface-radius="right-control"\][^{]*\{[^}]*border-radius: 0 var\(--radius-control\) var\(--radius-control\) 0/,
@@ -592,19 +580,13 @@ it("divides neutral evidence rows using the neutral boundary token", () => {
   );
 });
 
-it("supports evidence rails and marked source lines", () => {
-  expect(
-    surfaceAttributes({
-      variant: "neutral-boundary",
-      frame: "neutral-marker",
-      bar: "diagnostic-danger",
-    }),
-  ).toMatchObject({
-    "data-surface-variant": "neutral-boundary",
-    "data-surface-frame": "neutral-marker",
-    "data-surface-bar": "diagnostic-danger",
-  });
-  expect(css).toContain("border-left: 2px solid var(--ui-tone-danger-border)");
+it("supports evidence rails and marked frames", () => {
+  expect(surfaceAttributes({ variant: "neutral-boundary", frame: "neutral-marker" })).toMatchObject(
+    {
+      "data-surface-variant": "neutral-boundary",
+      "data-surface-frame": "neutral-marker",
+    },
+  );
   expect(css).toContain("border: 1.5px solid var(--ui-tone-neutral-border)");
 });
 
@@ -633,4 +615,16 @@ it("uses base ground only while layout requests an overlay", () => {
 it("preserves the panel-colored two-pixel face cutout", () => {
   expect(surfaceAttributes({ ring: "panel-outer" })["data-surface-ring"]).toBe("panel-outer");
   expect(css).toContain("box-shadow: 0 0 0 2px var(--ui-surface-panel)");
+});
+
+it("maps legacy variants onto four roles and drops a same-role nested paint", () => {
+  expect(surfaceRole("plain")).toBe("card");
+  expect(surfaceRole("fill-subtle")).toBe("inset");
+  expect(surfaceRole("danger-floating")).toBe("floating");
+  expect(surfaceRole("canvas")).toBe("page");
+  expect(surfaceRole("diff-add")).toBeUndefined();
+  expect(surfaceAttributes({ variant: "inset" })["data-surface-role"]).toBe("inset");
+  expect(css).toMatch(
+    /\.surface\[data-surface-role="card"\] :is\(\.surface, \.appearance\)\[data-surface-role="card"\][^{]*\{[^}]*background: transparent/,
+  );
 });

@@ -408,11 +408,10 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
             {metadataError ? (
               <SettingsFeedback
                 state="error"
-                action={
-                  <Button onClick={() => setMetadataAttempt((attempt) => attempt + 1)}>
-                    {t("Retry")}
-                  </Button>
-                }
+                action={{
+                  label: t("Retry"),
+                  onClick: () => setMetadataAttempt((attempt) => attempt + 1),
+                }}
               >
                 {t("Could not read update information. Retry to check this build.")}
               </SettingsFeedback>

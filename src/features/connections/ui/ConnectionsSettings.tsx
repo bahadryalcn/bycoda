@@ -478,11 +478,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             <EmptyState
               icon={<Internet aria-hidden className="icon-lg" />}
               description={t("Add your always-on Windows, Mac, or Linux machine to get started.")}
-              action={
-                <Button stableWidth variant="primary" disabled={busy} onClick={startAdd}>
-                  {t("Add machine")}
-                </Button>
-              }
+              action={{ label: t("Add machine"), disabled: busy, onClick: startAdd }}
             />
           ) : null}
           {rowMenu ? (

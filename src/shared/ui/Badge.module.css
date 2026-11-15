@@ -3,8 +3,8 @@
 .xs.xs {
   min-block-size: 1rem;
   padding-block: 0;
-  padding-inline: 0.25rem;
-  font-size: var(--ui-font-micro);
+  padding-inline: var(--space-1);
+  font-size: var(--ui-font-caption);
   line-height: 1rem;
   vertical-align: middle;
 }
@@ -16,6 +16,25 @@
 }
 .xs.xs[data-variant="dot"] {
   padding-inline: 0;
+}
+/* The one removable chip (values in a field, selected tags). Translucent neutral fill, inset radius,
+   secondary type, xs height; the remove action is an InlineAction. TagInput composes this class. */
+.chip,
+.chip.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  min-block-size: var(--ui-control-height-xs);
+  max-inline-size: 100%;
+  padding-block: 0;
+  padding-inline: var(--space-2) var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-inset);
+  background: var(--ui-tone-neutral-subtle);
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-secondary);
+  font-weight: 400;
 }
 .status {
   flex: none;

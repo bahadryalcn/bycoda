@@ -5,9 +5,8 @@ import { t } from "../../../shared/i18n/git";
 import { prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { Heading } from "../../../shared/ui/Heading";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { FolderOpen, Trash2 } from "../../../shared/ui/icons";
@@ -121,7 +120,7 @@ export function WorktreeRow({
           </Text>
         </Tooltip>
         {warning && <InlineMessage tone="warning">{warning}</InlineMessage>}
-        {revealError && <DetailedInlineError error={revealError} retry={{ onRetry: onReveal }} />}
+        {revealError && <InlineError details={revealError} retry={{ onRetry: onReveal }} />}
       </div>
       <div
         {...actionContentAttributes(

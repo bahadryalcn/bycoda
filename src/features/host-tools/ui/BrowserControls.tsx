@@ -3,7 +3,7 @@ import type { RefObject } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Popover } from "../../../shared/ui/Popover";
 import { TextField } from "../../../shared/ui/TextField";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -55,9 +55,7 @@ export function BrowserLiveToggle({
       label={t("Live view")}
       tooltip={live ? t("Pause live view") : t("Resume live view")}
       tooltipDetails={[t("Viewing never takes control of the browser.")]}
-      role="switch"
-      aria-checked={live}
-      selected={live}
+      pressed={live}
       disabled={busy || !open || selecting}
       disabledReason={
         busy ? t("Working on the host…") : selecting ? t("Cancel selection") : t("Open a website")
@@ -367,7 +365,7 @@ export function BrowserControlsPopover({
           <p className="host-tool-muted">{t("View only · take control to interact")}</p>
         ) : null}
       </section>
-      {error ? <DetailedInlineError summary={errorSummary} error={error} /> : null}
+      {error ? <InlineError details={error}>{errorSummary}</InlineError> : null}
       {busy ? <Alert tone="info">{t("Working on the host…")}</Alert> : null}
       <section className="host-browser-control-section" aria-label={t("Browser")}>
         <SectionLabel>{t("Browser")}</SectionLabel>

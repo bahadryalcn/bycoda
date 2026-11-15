@@ -97,16 +97,12 @@ function ExpandableWarning({ children }: { children: ReactNode }) {
     <SettingsFeedback
       state="warning"
       action={
-        overflowing || expanded ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-expanded={expanded}
-            onClick={() => setExpanded((open) => !open)}
-          >
-            {expanded ? t("Show less") : t("Show more")}
-          </Button>
-        ) : undefined
+        overflowing || expanded
+          ? {
+              label: expanded ? t("Show less") : t("Show more"),
+              onClick: () => setExpanded((open) => !open),
+            }
+          : undefined
       }
     >
       <Text
@@ -583,18 +579,17 @@ function McpConnections({
           state="empty"
           action={
             servers.length > 0 &&
-            (query.trim() || effectiveFilter !== "all" || scopeFilter !== "all") ? (
-              <Button
-                onClick={() => {
-                  setFilter("all");
-                  setScopeFilter("all");
-                  setQuery("");
-                  setShowAllProviders(false);
-                }}
-              >
-                {t("Reset filters")}
-              </Button>
-            ) : undefined
+            (query.trim() || effectiveFilter !== "all" || scopeFilter !== "all")
+              ? {
+                  label: t("Reset filters"),
+                  onClick: () => {
+                    setFilter("all");
+                    setScopeFilter("all");
+                    setQuery("");
+                    setShowAllProviders(false);
+                  },
+                }
+              : undefined
           }
         >
           {query.trim()
@@ -720,11 +715,7 @@ function McpConnections({
       {error ? (
         <SettingsFeedback
           state="error"
-          action={
-            <Button loading={loading} onClick={() => void refresh()}>
-              {t("Retry")}
-            </Button>
-          }
+          action={{ label: t("Retry"), pending: loading, onClick: () => void refresh() }}
         >
           {servers.length ? `${t("Showing the last successful result.")} ` : ""}
           {error}

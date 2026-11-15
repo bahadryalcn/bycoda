@@ -132,11 +132,7 @@ export function AssistantMemoryPanel(props: Props) {
                       <Timestamp className={styles.time} value={entry.createdAt} />
                     </Text>
                     {entry.quote && entry.quote !== entry.text && (
-                      <Text
-                        as="blockquote"
-                        leading="normal"
-                        {...surfaceAttributes({ bar: "pane" }, styles.quote)}
-                      >
+                      <Text as="blockquote" leading="normal" className={styles.quote}>
                         {entry.quote}
                       </Text>
                     )}

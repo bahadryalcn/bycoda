@@ -20,7 +20,7 @@ import {
 import { ArrowDown, Check, Copy, CornerDownRight, Square } from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { AnsiText } from "../../../shared/ui/AnsiText";
 import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
 import { blockLifecycle } from "../model/activityDock";
@@ -244,9 +244,9 @@ export function SubagentSheet({
     >
       {showFailed ? (
         <div className="shrink-0 px-4 pt-2">
-          <Alert tone="warning" inline>
+          <InlineMessage tone="warning">
             {t("Could not find this item in the transcript. It stays open here.")}
-          </Alert>
+          </InlineMessage>
         </div>
       ) : null}
       {command ? (

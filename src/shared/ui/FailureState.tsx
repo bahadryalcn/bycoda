@@ -5,6 +5,7 @@ import {
   type EmptyStateProps as ArcEmptyStateProps,
 } from "./arc/empty-state/empty-state";
 import { InlineError } from "./InlineError";
+import { NoticeButton, type NoticeAction } from "./Notice";
 import { CircleAlert } from "./icons";
 import { Button } from "./Button";
 import { useCopyFeedback } from "../hooks/useCopyFeedback";
@@ -47,13 +48,15 @@ async function settled(promise: Promise<unknown>) {
 export const FAILURE_PREVIEW_CHARS = 8000;
 
 /**
- * Alert-role recovery surface for a region or whole screen that failed to load: title, description,
- * Try again (promise-aware, blocks double press), optional secondary action and a Show/Copy details
- * area for the error text (preview capped, copy always complete). `fullScreen` makes the title an h1.
+ * Alert-role recovery surface for a region or whole screen that failed to load: title, one sentence,
+ * Try again (promise-aware, blocks double press), structured `action` / `secondaryAction` and a
+ * Show/Copy details area for the error text (preview capped, copy always complete). `fullScreen`
+ * makes the title an h1. Inline form is an InlineError with the same structured actions.
  * @group feedback
  * @use Replaces EmptyState kind="unavailable". An unavailable pane, route or app boot. Optional error adds copyable diagnostics; promise-aware retry blocks double activation.
  * @replaces EmptyState
- * @avoid Nothing to show or filtered list: EmptyState. Inline failure: InlineError. One-line message: InlineError. Boxed notice with a title: Alert.
+ * @avoid Nothing to show or filtered list: EmptyState. Inline failure: InlineError. One-line message: InlineError. Boxed notice with a title: Alert. Never a Button in `action`.
+ * @action Pass `action={{ label, onClick }}` and `onRetry`; the component renders them.
  */
 export function FailureState({
   title = "",
@@ -68,13 +71,14 @@ export function FailureState({
   context = "panel",
   size = "block",
   action,
+  extra,
   icon,
   className,
   label,
   descriptionText,
   role,
   ...props
-}: Omit<ArcEmptyStateProps, "onRetry"> & {
+}: Omit<ArcEmptyStateProps, "onRetry" | "action" | "help"> & {
   /** Technical diagnostic; omitted for an unavailable region with only plain copy. */
   error?: unknown;
   /** Inline failures use InlineError; block failures use the shared region layout. */
@@ -84,7 +88,11 @@ export function FailureState({
   /** Marks a retry the caller already runs, for example one started elsewhere. */
   retrying?: boolean;
   retryLabel?: string;
-  secondaryAction?: ReactNode;
+  /** Another recovery step (Open settings), rendered by the component. */
+  action?: NoticeAction;
+  secondaryAction?: NoticeAction;
+  /** Escape for one non-button control beside the actions. */
+  extra?: ReactNode;
   fullScreen?: boolean;
   /** Decorative identity shown above the message, outside the alert, for a whole-app failure. */
   brand?: ReactNode;
@@ -145,16 +153,7 @@ export function FailureState({
     selection.addRange(range);
   }, [copy]);
 
-  const recovery = onRetry ? (
-    <Button
-      variant={size === "inline" ? "link" : "secondary"}
-      size="sm"
-      loading={retryBusy}
-      onClick={() => void retry()}
-    >
-      {retryLabel ?? t("Retry")}
-    </Button>
-  ) : null;
+  const retryText = retryLabel ?? t("Retry");
   if (size === "inline") {
     return (
       <InlineError
@@ -164,11 +163,13 @@ export function FailureState({
         className={className}
         live={role === "status" ? "polite" : role ? "off" : undefined}
         icon={icon}
-        action={
-          <>
-            {action}
-            {recovery}
-          </>
+        action={action}
+        secondaryAction={secondaryAction}
+        extra={extra}
+        retry={
+          onRetry
+            ? { onRetry: () => void retry(), label: retryText, pending: retryBusy }
+            : undefined
         }
       >
         {title ? <strong>{title} </strong> : null}
@@ -187,13 +188,19 @@ export function FailureState({
         context={context}
         role={role ?? "alert"}
         data-kind="unavailable"
-        icon={icon === undefined ? <CircleAlert width={24} height={24} strokeWidth={1.5} /> : icon}
+        icon={icon === undefined ? <CircleAlert aria-hidden /> : icon}
         className={["bycoda-arc", className].filter(Boolean).join(" ")}
         action={
-          action || recovery ? (
+          action || secondaryAction || extra || onRetry ? (
             <>
-              {action}
-              {recovery}
+              {action ? <NoticeButton action={action} /> : null}
+              {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
+              {extra}
+              {onRetry ? (
+                <NoticeButton
+                  action={{ label: retryText, onClick: () => void retry(), pending: retryBusy }}
+                />
+              ) : null}
             </>
           ) : undefined
         }
@@ -226,8 +233,9 @@ export function FailureState({
               {retryLabel ?? t("Try again")}
             </Button>
           ) : null}
-          {action}
-          {secondaryAction}
+          {action ? <NoticeButton action={action} /> : null}
+          {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
+          {extra}
           <Button
             variant="ghost"
             motion="none"

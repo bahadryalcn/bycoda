@@ -73,12 +73,6 @@
 .help {
   padding: 12px;
 }
-.help pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  min-inline-size: 0;
-  user-select: text;
-}
 .scope > span {
   flex: 1 1 120px;
 }

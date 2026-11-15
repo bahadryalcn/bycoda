@@ -26,6 +26,11 @@
     padding: 0;
     aspect-ratio: 1;
   }
+  .control.iconOnly[data-button-size="xs"] {
+    inline-size: var(--ui-control-height-xs);
+    block-size: var(--ui-control-height-xs);
+    min-block-size: var(--ui-control-height-xs);
+  }
   .control.iconOnly[data-button-size="md"] {
     inline-size: var(--control-height-md);
     block-size: var(--control-height-md);
@@ -125,7 +130,7 @@
   --button-fg: var(--ui-tone-neutral-fg);
   --button-solid: var(--ui-tone-neutral-solid);
   --button-on-solid: var(--ui-tone-neutral-on-solid);
-  --button-subtle: var(--ui-tone-neutral-subtle);
+  --button-subtle: var(--ui-surface-selected);
   --button-border: var(--ui-tone-neutral-border);
   --button-solid-hover: var(--ui-tone-neutral-solid-hover);
   --button-solid-pressed: var(--ui-tone-neutral-solid-pressed);
@@ -248,6 +253,9 @@
   --button-reveal-height: var(--control-height-sm);
   --button-icon-size: var(--ui-icon-md);
   padding-inline: calc((var(--button-reveal-height) - var(--button-icon-size)) / 2 - 1px);
+}
+.control[data-button-reveal-label][data-button-size="xs"] {
+  --button-reveal-height: var(--ui-control-height-xs);
 }
 .control[data-button-reveal-label][data-button-size="md"] {
   --button-reveal-height: var(--control-height-md);
@@ -401,16 +409,8 @@
   color: var(--text-secondary);
 }
 .control[data-button-selected][data-button-tone="neutral"] {
-  background: var(--accent-subtle);
+  background: var(--ui-surface-selected);
   color: var(--foreground);
-}
-/* The neutral selected fill is only a step above hover, so a toggle carries a second cue: a quiet hairline.
-   Rows, items and tabs keep the fill alone. */
-.control[data-button-selected][data-button-tone="neutral"]:is(
-    [data-button-hierarchy="ghost"],
-    [data-button-hierarchy="secondary"]
-  ) {
-  border-color: var(--ui-pane-border);
 }
 .control[data-button-selected]:not([data-button-tone="neutral"]) {
   background: var(--button-subtle);
@@ -437,7 +437,7 @@
     border-color: var(--button-border);
   }
   .control[data-button-selected][data-button-tone="neutral"]:hover:not([aria-disabled="true"]) {
-    background: var(--accent-subtle);
+    background: var(--ui-surface-selected);
     color: var(--foreground);
   }
 }
@@ -517,7 +517,7 @@
   color: var(--button-fg);
 }
 .control[data-button-selected][data-button-tone="neutral"][aria-busy="true"] {
-  background: var(--accent-subtle);
+  background: var(--ui-surface-selected);
   color: var(--foreground);
 }
 .control[data-button-hierarchy][aria-disabled="true"]:not([aria-busy="true"]):is(
@@ -568,7 +568,7 @@
 }
 .control.inset {
   --button-icon-size: var(--ui-icon-sm);
-  border-radius: calc(var(--ui-control-radius) - 2px);
+  border-radius: var(--ui-radius-inset);
 }
 /* Text inset action ("Undo", "Retry", "Show") inside a row or card: same 20px height and
    overlay states as the icon form, content-sized, caption type, never a bordered button. */
@@ -591,14 +591,14 @@
 @media (hover: hover) and (pointer: fine) {
   .control.inset[data-button-hierarchy][data-button-tone]:hover:not([aria-disabled="true"]) {
     border-color: transparent;
-    background: var(--color-selection);
+    background: var(--ui-surface-hover);
     color: var(--button-fg);
   }
 }
 .control.inset[data-button-hierarchy][data-button-tone]:active:not([aria-disabled="true"]),
 .control.inset[data-button-hierarchy][data-button-tone][aria-expanded="true"] {
   border-color: transparent;
-  background: var(--color-selection-strong);
+  background: var(--ui-surface-pressed);
   color: var(--button-fg);
 }
 .control.inset[data-button-hierarchy][data-button-tone][aria-disabled="true"] {
@@ -710,7 +710,7 @@
   inset-block: 0;
   inset-inline-start: 0;
   inline-size: 1px;
-  background: var(--ui-tone-neutral-border);
+  background: var(--ui-pane-border);
 }
 :global([data-button-group="joined"]) > .control:first-of-type {
   border-start-start-radius: var(--ui-control-radius);
@@ -745,15 +745,15 @@
 /* The ring is inset and raised, so neighbours and the outer boundary never clip it. */
 :global([data-button-group="joined"]) > .control:focus-visible {
   z-index: 1;
-  outline-offset: -2px;
+  outline-offset: calc(var(--ui-focus-width) * -1);
 }
 
 :global([data-field-slot]) .control.iconOnly {
-  inline-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
-  block-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
-  min-block-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - 8px);
+  inline-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - var(--space-1) * 2);
+  block-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - var(--space-1) * 2);
+  min-block-size: calc(var(--field-slot-height, var(--ui-field-height-md)) - var(--space-1) * 2);
   padding: 0;
-  border-radius: calc(var(--ui-field-radius) - 3px);
+  border-radius: var(--ui-radius-inset);
 }
 .stableLabel {
   display: inline-block;
@@ -809,9 +809,9 @@
 
 @layer components {
   .control.iconOnly[data-icon-target="compact"] {
-    inline-size: calc(var(--space-1) * 6);
-    block-size: calc(var(--space-1) * 6);
-    min-block-size: calc(var(--space-1) * 6);
+    inline-size: var(--ui-control-height-xs);
+    block-size: var(--ui-control-height-xs);
+    min-block-size: var(--ui-control-height-xs);
   }
   .control[data-control-height="content"] {
     block-size: auto;
@@ -859,11 +859,11 @@
 
 /* Preview selection uses an outer ring without adding to the card or image box. */
 .control[data-button-hierarchy][data-button-selected][data-selection-indicator="accent-ring"] {
-  box-shadow: 0 0 0 2px var(--ui-interaction-accent);
+  box-shadow: 0 0 0 2px var(--ui-selected-ring);
 }
 .control[data-button-hierarchy][data-button-selected][data-selection-indicator="focus-ring"] {
   border-color: transparent;
-  box-shadow: 0 0 0 2px var(--ui-focus-ring-color);
+  box-shadow: 0 0 0 2px var(--ui-selected-ring);
 }
 
 .control[data-button-hierarchy][data-button-selected][data-selection-indicator="accent-inset"] {
@@ -890,10 +890,10 @@
 .control[data-button-hierarchy][data-button-selected][data-selection-indicator="dot"]::after {
   content: "";
   position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 3px;
-  height: 3px;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-1);
+  inline-size: var(--space-1);
+  block-size: var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--ui-tone-accent-fg);
   pointer-events: none;
@@ -906,7 +906,7 @@
     :active,
     [data-button-press]
   ) {
-  box-shadow: 0 0 0 2px var(--ui-border-accent);
+  box-shadow: 0 0 0 2px var(--ui-selected-ring);
   background: var(--ui-tone-accent-subtle);
 }
 
@@ -914,7 +914,7 @@
   --button-border: var(--ui-pane-border);
   border-width: var(--ui-drop-target-border-width);
   border-style: dashed;
-  border-radius: var(--ui-drop-target-radius);
+  border-radius: var(--ui-radius-control);
   border-color: var(--button-border);
 }
 .control[data-button-hierarchy][data-button-tone][data-button-frame="dropzone"]:is(
@@ -938,7 +938,7 @@
     :active,
     [data-button-press]
   ) {
-  box-shadow: 0 0 0 2px var(--ui-border-accent);
+  box-shadow: 0 0 0 2px var(--ui-selected-ring);
 }
 
 .control[data-button-frame="preview"] {

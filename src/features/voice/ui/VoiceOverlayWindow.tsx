@@ -486,7 +486,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 <InlineError
                   className={styles.feedback}
                   text={{ size: "caption", tone: "secondary", leading: "inherit" }}
-                  action={<Button onClick={() => setMenuError("")}>{t("Dismiss")}</Button>}
+                  action={{ label: t("Dismiss"), onClick: () => setMenuError("") }}
                 >
                   {menuError}
                 </InlineError>
@@ -514,7 +514,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                   <InlineError
                     className={styles.caption}
                     text={{ size: "caption", tone: "secondary", leading: "snug" }}
-                    action={<Button onClick={() => send("dismissError")}>{t("Dismiss")}</Button>}
+                    action={{ label: t("Dismiss"), onClick: () => send("dismissError") }}
                   >
                     {voiceErrorTitle(state.error)}
                   </InlineError>

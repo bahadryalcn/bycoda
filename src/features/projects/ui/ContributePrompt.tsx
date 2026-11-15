@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { Button } from "../../../shared/ui/Button";
 import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { Toast } from "../../../shared/ui/ToastRegion";
 import {
@@ -100,37 +99,29 @@ export function ContributePrompt() {
       durationMs={null}
       width="lg"
       actionsPlacement="footer"
-      actions={
-        <>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setShown(false);
-              startContribution().catch(() => undefined);
-            }}
-          >
-            {t("Clone and open")}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              answerContributeLater();
-              setShown(false);
-            }}
-          >
-            {t("Later")}
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              answerContributeNever();
-              setShown(false);
-            }}
-          >
-            {t("No thanks")}
-          </Button>
-        </>
-      }
+      actions={[
+        {
+          label: t("Clone and open"),
+          onClick: () => {
+            setShown(false);
+            startContribution().catch(() => undefined);
+          },
+        },
+        {
+          label: t("Later"),
+          onClick: () => {
+            answerContributeLater();
+            setShown(false);
+          },
+        },
+        {
+          label: t("No thanks"),
+          onClick: () => {
+            answerContributeNever();
+            setShown(false);
+          },
+        },
+      ]}
       onDismiss={() => {
         answerContributeLater();
         setShown(false);

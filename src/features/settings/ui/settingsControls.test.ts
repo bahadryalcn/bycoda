@@ -437,14 +437,16 @@ it("keeps recovery actions independent of feedback dismissal", async () => {
         {
           state: "error",
           onDismiss: dismiss,
-          action: createElement("button", { onClick: retry }, "Retry"),
+          action: { label: "Retry", onClick: retry },
         },
         "Connection failed",
       ),
     ),
   );
   await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Dismiss"]')!.click(),
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "Dismiss")!
+      .click(),
   );
   expect(dismiss).toHaveBeenCalledOnce();
   expect(retry).not.toHaveBeenCalled();

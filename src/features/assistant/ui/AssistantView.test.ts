@@ -2448,20 +2448,20 @@ it("keeps loaded history after a cursor error and retries the same canonical zer
 
 it("shows the default portrait, a chosen avatar or the name initial in the header and a labelled Stop control that resumes when paused", async () => {
   await render();
-  const avatar = container.querySelector<HTMLElement>("header [data-initial]")!;
-  expect(avatar.getAttribute("data-initial")).toBe("A");
+  const avatar = container.querySelector<HTMLElement>("header [data-size]")!;
   expect(avatar.textContent).toBe("");
   const portrait = avatar.querySelector("img")!;
   expect(portrait.getAttribute("src")).toBe("/assistant/avatars/orb.webp");
   // A portrait that cannot load leaves the box empty so the initial is drawn instead.
   await act(async () => portrait.dispatchEvent(new Event("error")));
-  expect(container.querySelector("header [data-initial] img")).toBeNull();
+  expect(container.querySelector("header [data-size] img")).toBeNull();
+  expect(container.querySelector("header [data-size]")!.textContent).toBe("A");
   const stop = container.querySelector<HTMLButtonElement>('button[aria-label="Stop everything"]')!;
   expect(stop.textContent?.trim()).toBe("Stop");
   mock.snapshot!.profile.avatar = "🦊";
   mock.snapshot!.paused = true;
   await render();
-  expect(container.querySelector("header [data-initial]")!.textContent).toBe("🦊");
+  expect(container.querySelector("header [data-size]")!.textContent).toBe("🦊");
   const resume = container.querySelector<HTMLButtonElement>('button[aria-label="Resume work"]')!;
   expect(resume.textContent?.trim()).toBe("Resume");
 });

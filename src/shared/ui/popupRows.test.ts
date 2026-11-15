@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const sheets = [
+  ["ListRow.module.css", "row"],
   ["arc/context-menu/context-menu.module.css", "item"],
   ["arc/combobox/combobox.module.css", "choice|option"],
   ["arc/expanding-search/expanding-search.module.css", "option|highlight"],
   ["picker/picker.module.css", "row"],
-  ["../../styles/arc.css", "bycoda-arc-select-option"],
 ] as const;
 
 describe("popup choice surfaces", () => {

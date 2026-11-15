@@ -25,7 +25,6 @@ import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as technicalI18n from "../../shared/i18n/technical";
-import { Alert } from "../../shared/ui/Alert";
 import { InlineMessage } from "../../shared/ui/InlineError";
 import { LoadingText } from "../../shared/ui/LoadingText";
 import { Button } from "../../shared/ui/Button";
@@ -56,7 +55,6 @@ import {
   Play,
   RotateCcw,
   Trash2,
-  X,
 } from "../../shared/ui/icons";
 import "./DevicePanel.css";
 import { hitTestDeviceNodes } from "./deviceInspector";
@@ -1189,8 +1187,7 @@ function DevicePanelSurface({
                   tooltipDetails={[ownershipLabel]}
                   aria-describedby={ownershipDescriptionId}
                   tone={control ? "success" : controlStatus?.busy ? "warning" : "info"}
-                  role="switch"
-                  aria-checked={control}
+                  pressed={control}
                   selected={control && !annotating}
                   loading={operation === "claim" || operation === "release"}
                   disabled={busy || !device?.booted || !ownershipSupported}
@@ -1257,22 +1254,18 @@ function DevicePanelSurface({
             {!device && optionsButton("bottom")}
           </DeviceBar>
           {actionCompleted && (
-            <Alert
-              inline
+            <InlineMessage
               tone="warning"
-              title={t("Action completed")}
-              action={
-                <Button
-                  loading={operation === "capture"}
-                  disabled={unavailable("capture", canViewDevice && !annotating)}
-                  onClick={refreshFrame}
-                >
-                  {t("Refresh frame")}
-                </Button>
-              }
+              action={{
+                label: t("Refresh frame"),
+                pending: operation === "capture",
+                disabled: unavailable("capture", canViewDevice && !annotating),
+                onClick: refreshFrame,
+              }}
             >
+              <strong>{t("Action completed")} </strong>
               {t("The screen could not be refreshed. Refresh the frame; do not repeat the action.")}
-            </Alert>
+            </InlineMessage>
           )}
           {toolbarReason && (
             <Text
@@ -1314,16 +1307,7 @@ function DevicePanelSurface({
             <InlineMessage
               tone={deviceNotice.error ? "danger" : "info"}
               className="shrink-0"
-              action={
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Dismiss")}
-                  onClick={() => setDeviceNotice(undefined)}
-                >
-                  <X className="icon-sm" aria-hidden />
-                </Button>
-              }
+              action={{ label: t("Dismiss"), onClick: () => setDeviceNotice(undefined) }}
             >
               {readableDeviceError(deviceNotice.text) ?? deviceNotice.text}
             </InlineMessage>
@@ -1792,8 +1776,7 @@ function DevicePanelSurface({
                         ? t("Pause live updates and keep the current frame.")
                         : t("Resume live updates from the device."),
                     ]}
-                    role="switch"
-                    aria-checked={live}
+                    pressed={live}
                     disabled={!canView}
                     disabledReason={
                       busy ? t("Wait for the current operation to finish") : undefined

@@ -48,7 +48,7 @@ export function FullscreenButton() {
           tone="danger"
           durationMs={null}
           message={errorHeadline(error)}
-          actions={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
+          extra={fitsOneLine(error) ? undefined : <ErrorDetails detail={error} />}
           onDismiss={() => setError(null)}
         />
       ) : null}

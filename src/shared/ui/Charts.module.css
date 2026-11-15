@@ -1,0 +1,13 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* The one series palette: series 1-4 are the tone `-solid` fills (accent, info, success, warning), so
+   charts follow the same tone policy as meters and badges. `--ui-chart-color` still recolours the
+   mono-series (a selected account hue). Doubled selector: wins over the Arc chart root remap
+   regardless of stylesheet order. Heat and bar roles stay in the `.bycoda-arc-chart` block. */
+.series.series {
+  --series-1: var(--ui-tone-accent-solid);
+  --series-2: var(--ui-tone-info-solid);
+  --series-3: var(--ui-tone-success-solid);
+  --series-4: var(--ui-tone-warning-solid);
+}

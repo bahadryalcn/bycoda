@@ -333,17 +333,12 @@ export function WorkspacePolicySettings({
     stageError[stage] ? (
       <SettingsFeedback
         state="warning"
-        action={
-          <Button
-            variant="ghost"
-            loading={!!stageBusy[stage]}
-            loadingLabel={t("Refreshing…")}
-            disabled={loading || saving || removing}
-            onClick={() => void runStage(stage, epoch.current)}
-          >
-            {t("Retry")}
-          </Button>
-        }
+        action={{
+          label: t("Retry"),
+          pending: !!stageBusy[stage],
+          disabled: loading || saving || removing,
+          onClick: () => void runStage(stage, epoch.current),
+        }}
       >
         {hasData
           ? t("{p0} could not refresh and may be out of date: {p1}", {

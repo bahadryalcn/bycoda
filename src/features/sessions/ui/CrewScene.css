@@ -87,20 +87,11 @@
   text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
 }
+/* Placement only: the track and fill are the shared Meter; the character accent sets --meter-fill. */
 .crew-scene__meter {
-  display: block;
-  block-size: 3px;
   inline-size: 60%;
   margin-inline: auto;
   margin-block: 4px 3px;
-  border-radius: var(--ui-radius-control);
-  background: var(--ui-surface-pressed);
-  overflow: clip;
-}
-.crew-scene__meter > span {
-  display: block;
-  block-size: 100%;
-  border-radius: inherit;
 }
 .crew-scene__status {
   position: absolute;

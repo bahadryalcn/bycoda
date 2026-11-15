@@ -534,17 +534,11 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           icon={<File />}
           description={t("No notes for this session yet.")}
           className="min-h-0 flex-1"
-          action={
-            <>
-              <Button variant="primary" loading={creating} onClick={() => void onCreate()}>
-                {t("New note")}
-              </Button>
-              {hasNotes ? (
-                <Button variant="ghost" onClick={() => setListOpen(true)}>
-                  {t("Browse project notes")}
-                </Button>
-              ) : null}
-            </>
+          action={{ label: t("New note"), pending: creating, onClick: () => void onCreate() }}
+          secondaryAction={
+            hasNotes
+              ? { label: t("Browse project notes"), onClick: () => setListOpen(true) }
+              : undefined
           }
         />
       ) : (

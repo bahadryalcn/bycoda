@@ -511,7 +511,7 @@ export function GitGraphWorkspace({
                 <span
                   aria-hidden
                   {...surfaceAttributes(
-                    { radius: "pill", bar: "accent" },
+                    { radius: "pill", variant: "accent-marker" },
                     "absolute inset-y-1 start-0 w-0.5",
                   )}
                 />

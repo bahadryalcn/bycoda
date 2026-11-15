@@ -1,30 +1,11 @@
-// Official free Arc registry source, adapted to bycoda shared semantics.
+// Official free Arc registry source, adapted to bycoda shared semantics: one notice motion
+// (opacity and a short rise, from ../../Notice) replaces the blur-rise swaps and icon morph.
 "use client";
 
-import {
-  isValidElement,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  type HTMLAttributes,
-  type ReactNode,
-} from "react";
-import {
-  AnimatePresence,
-  animate,
-  motion,
-  useIsPresent,
-  useMotionValue,
-  useReducedMotion,
-  type AnimationPlaybackControls,
-  type HTMLMotionProps,
-  type MotionProps,
-  type TargetAndTransition,
-  type Transition,
-} from "motion/react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { Folder } from "../../icons";
-import { observeResize } from "../../../lib/observeResize";
-import { motionTokens } from "../lib/motion-tokens";
+import { InfoPopover } from "../../InfoPopover";
+import { noticeEnterClass } from "../../Notice";
 import { optionalTextAttributes, type TextRoles } from "../../Text";
 import styles from "./empty-state.module.css";
 
@@ -39,9 +20,13 @@ export type EmptyStateContext = "page" | "panel" | "list";
 export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLElement>, "title"> {
   context?: EmptyStateContext;
   title?: string;
-  description: ReactNode;
+  /** The visible sentence. Omit it (with `help`) when the description sits behind the info affordance. */
+  description?: ReactNode;
+  /** Explanation shown behind the info affordance next to the title instead of a visible subline. */
+  help?: ReactNode;
   /** Description typography; unset preserves context-specific defaults. */
   descriptionText?: TextRoles;
+  /** Rendered action row; the shared wrappers build it from structured actions. */
   action?: ReactNode;
   icon?: ReactNode;
   className?: string;
@@ -49,109 +34,10 @@ export interface EmptyStateProps extends Omit<HTMLAttributes<HTMLElement>, "titl
   label?: string;
 }
 
-const exitFast: Transition = {
-  duration: motionTokens.duration.fast,
-  ease: [...motionTokens.ease.standard],
-};
-const textIn: TargetAndTransition = {
-  opacity: 0,
-  y: "0.3em",
-  filter: `blur(${motionTokens.blur.soft}px)`,
-};
-const textOut: TargetAndTransition = {
-  opacity: 0,
-  y: "-0.3em",
-  filter: `blur(${motionTokens.blur.subtle}px)`,
-  transition: exitFast,
-};
-const iconIn: TargetAndTransition = {
-  opacity: 0,
-  scale: 0.6,
-  filter: `blur(${motionTokens.blur.subtle}px)`,
-};
-const shown: TargetAndTransition = { opacity: 1, y: "0em", scale: 1, filter: "blur(0px)" };
-const fadeOut: TargetAndTransition = {
-  opacity: 0,
-  transition: { duration: motionTokens.duration.instant },
-};
-
-/** Outgoing copies are hidden from assistive tech while they fade. */
-function Swap(props: HTMLMotionProps<"span">) {
-  const present = useIsPresent();
-  return <motion.span {...props} aria-hidden={present ? props["aria-hidden"] : true} />;
-}
-
-/** A new icon component crossfades in; re-rendering the same icon stays still. */
-function iconKey(icon: ReactNode) {
-  if (!isValidElement(icon)) return "icon";
-  const type = icon.type as string | { displayName?: string; name?: string };
-  return typeof type === "string" ? type : (type.displayName ?? type.name ?? "icon");
-}
-
-/** Follows its content height. After `morphKey` changes, the height springs from the old size to the new one and then returns to auto, so passive reflows (a resize, a font swap) follow instantly. It clips only while moving, so focus rings stay visible at rest. */
-function HeightFrame({
-  reduce,
-  morphKey,
-  children,
-}: {
-  reduce: boolean | null;
-  morphKey: string;
-  children: ReactNode;
-}) {
-  const frame = useRef<HTMLDivElement>(null);
-  const content = useRef<HTMLDivElement>(null);
-  const height = useMotionValue<number | "auto">("auto");
-  const changedAt = useRef(0);
-  useLayoutEffect(() => {
-    changedAt.current = performance.now();
-  }, [morphKey]);
-  useEffect(() => {
-    const node = content.current;
-    if (!node) return;
-    let last: number | undefined;
-    let controls: AnimationPlaybackControls | undefined;
-    const settle = () => {
-      height.jump("auto");
-      if (frame.current) Object.assign(frame.current.style, { overflow: "", height: "auto" });
-    };
-    const unobserve = observeResize(node, (entry) => {
-      const next = entry.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight;
-      const current = height.get();
-      const from = typeof current === "number" ? current : last;
-      last = next;
-      controls?.stop();
-      if (
-        reduce ||
-        from === undefined ||
-        from === next ||
-        performance.now() - changedAt.current > 120
-      )
-        return settle();
-      // Pin the old height before this frame paints, then spring to the new one.
-      if (frame.current)
-        Object.assign(frame.current.style, { overflow: "hidden", height: `${from}px` });
-      controls = animate(height, [from, next], {
-        ...motionTokens.spring.smooth,
-        onComplete: settle,
-      });
-    });
-    return () => {
-      unobserve();
-      controls?.stop();
-    };
-  }, [height, reduce]);
-  return (
-    <motion.div ref={frame} className={styles.frame} style={{ height }}>
-      <div ref={content} className={styles.copy}>
-        {children}
-      </div>
-    </motion.div>
-  );
-}
-
 export function EmptyState({
   title,
   description,
+  help,
   descriptionText,
   action,
   icon,
@@ -160,65 +46,36 @@ export function EmptyState({
   context = "page",
   ...props
 }: EmptyStateProps) {
-  const reduce = useReducedMotion();
-  const glyph =
-    icon === null ? null : (icon ?? <Folder width={24} height={24} strokeWidth={1.5} />);
-  const enter: Transition = reduce
-    ? { duration: motionTokens.duration.instant }
-    : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] };
-  const swap: MotionProps = {
-    initial: reduce ? { opacity: 0 } : textIn,
-    animate: shown,
-    exit: reduce ? fadeOut : textOut,
-    transition: enter,
-  };
-  // The result of an action morphs in place: the icon crossfades and the copy rises in while the old copy leaves.
+  const glyph = icon === null ? null : (icon ?? <Folder aria-hidden />);
+  const hasDescription =
+    description !== undefined &&
+    description !== null &&
+    description !== false &&
+    description !== "";
   return (
     <section
       {...props}
-      className={[styles.root, className].filter(Boolean).join(" ")}
+      className={[styles.root, noticeEnterClass, className].filter(Boolean).join(" ")}
       data-context={context}
       aria-label={label ?? props["aria-label"]}
     >
       {glyph ? (
         <div className={styles.icon} aria-hidden="true">
-          <AnimatePresence mode="popLayout" initial={false}>
-            <Swap
-              key={iconKey(glyph)}
-              className={styles.glyph}
-              initial={reduce ? { opacity: 0 } : iconIn}
-              animate={shown}
-              exit={reduce ? fadeOut : { ...iconIn, transition: exitFast }}
-              transition={reduce ? enter : motionTokens.spring.snappy}
-            >
-              {glyph}
-            </Swap>
-          </AnimatePresence>
+          {glyph}
         </div>
       ) : null}
-      <HeightFrame reduce={reduce} morphKey={`${title}\n${description}`}>
+      <div className={styles.copy}>
         {title ? (
-          <h3>
-            <AnimatePresence mode="popLayout" initial={false}>
-              <Swap key={title} className={styles.line} {...swap}>
-                {title}
-              </Swap>
-            </AnimatePresence>
-          </h3>
+          <div className={styles.heading}>
+            <h3>{title}</h3>
+            {help ? <InfoPopover>{help}</InfoPopover> : null}
+          </div>
         ) : null}
-        <p {...optionalTextAttributes(descriptionText ?? {})}>
-          <AnimatePresence mode="popLayout" initial={false}>
-            <Swap
-              key={typeof description === "string" ? description : "content"}
-              className={styles.line}
-              {...swap}
-            >
-              {description}
-            </Swap>
-          </AnimatePresence>
-        </p>
-      </HeightFrame>
-      {action && <div className={styles.action}>{action}</div>}
+        {hasDescription ? (
+          <p {...optionalTextAttributes(descriptionText ?? {})}>{description}</p>
+        ) : null}
+      </div>
+      {action ? <div className={styles.action}>{action}</div> : null}
     </section>
   );
 }

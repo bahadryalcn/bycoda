@@ -126,10 +126,18 @@ it("styles the drop destination outside the selected-fill rule", () => {
     selector: selector.trim(),
     body,
   }));
-  const selectedFill = rules.find(
-    (rule) =>
-      rule.selector.includes('[aria-selected="true"]') && /surface-selected/.test(rule.body),
+  // The selected fill is the shared ListRow recipe; the tree adds only the drop frame on top of it.
+  const row = readFileSync("src/shared/ui/ListRow.module.css", "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
   );
+  const selectedFill = [...row.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selector, body]) => ({ selector: selector.trim(), body }))
+    .find(
+      (rule) =>
+        rule.selector.includes('[aria-selected="true"]') && /surface-selected/.test(rule.body),
+    );
+  expect(selectedFill).toBeDefined();
   expect(selectedFill?.selector).not.toContain("data-tree-drop-target");
   const drop = rules.find(
     (rule) => rule.selector === ".row[data-tree-drop-target]" && /box-shadow/.test(rule.body),

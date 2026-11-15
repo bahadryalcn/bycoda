@@ -21,7 +21,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => ({ label: "main" }),
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message }));
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: message } }));
 vi.mock("../../settings/model/sounds", async (original) => ({
   ...(await original<typeof import("../../settings/model/sounds")>()),
   loadSoundsEnabled: () => false,
@@ -287,7 +287,9 @@ describe("saved session reminders", () => {
     ensureSaved.mockRejectedValueOnce(failure);
     await act(async () => api.schedule([reminder.sessionId], Date.now() + 60_000));
     expect(invoke.mock.calls.some(([command]) => command === "reminder_set")).toBe(false);
-    expect(message).toHaveBeenCalledWith("Error: Save failed", expect.anything());
+    expect(message).toHaveBeenCalledWith(
+      expect.objectContaining({ tone: "danger", message: "Error: Save failed" }),
+    );
     expect(api.reminders).toEqual([reminder]);
     await act(async () => api.schedule([reminder.sessionId], Date.now() + 60_000));
     expect(api.due).toEqual([]);

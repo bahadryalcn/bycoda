@@ -9,7 +9,7 @@ import { Alert } from "../../shared/ui/Alert";
 import { Heading } from "../../shared/ui/Heading";
 import { PanelHeader } from "../../shared/ui/PanelHeader";
 import { Progress } from "../../shared/ui/Progress";
-import { DetailedInlineError } from "../../shared/ui/ErrorDetails";
+import { InlineError } from "../../shared/ui/InlineError";
 import { t, useLocale } from "../../shared/i18n/technical";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -1048,7 +1048,7 @@ function ProjectBrowserPanel({
         {notice ? ` · ${notice}` : ""}
       </span>
       {error && !selectionOpen && !controlsOpen ? (
-        <DetailedInlineError summary={errorSummary} error={error} />
+        <InlineError details={error}>{errorSummary}</InlineError>
       ) : null}
       {setupRequired ? (
         <Text
@@ -1666,7 +1666,7 @@ function ProjectBrowserPanel({
             </div>
             {error ? (
               <Text as="div" size="caption" tone="inherit" leading="inherit">
-                <DetailedInlineError className="host-browser-target" error={error} />
+                <InlineError className="host-browser-target" details={error} />
               </Text>
             ) : null}
             {uncertainDelivery ? (

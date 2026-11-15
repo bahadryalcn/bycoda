@@ -1,6 +1,5 @@
 import { useSyncExternalStore, type ComponentProps } from "react";
 import { t } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { Row, SettingsFeedback } from "../../settings/public/settingsControls";
 import { voiceSaveFailures } from "../model/voiceSettingsSave";
 
@@ -17,10 +16,7 @@ export function VoicePreferenceRow({ id, feedback, ...props }: ComponentProps<ty
         failure ? (
           <>
             {feedback}
-            <SettingsFeedback
-              state="error"
-              action={<Button onClick={failure.retry}>{t("Retry")}</Button>}
-            >
+            <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: failure.retry }}>
               {t("This change could not be saved. The saved value is still in use.")}
             </SettingsFeedback>
           </>

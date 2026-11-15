@@ -124,7 +124,7 @@ export default function UsageGuideDialog({
               size="caption"
               tone="secondary"
               leading="inherit"
-              {...surfaceAttributes({ bar: "neutral" }, "usage-guide-missing")}
+              className="usage-guide-missing"
               role="status"
             >
               <p>{help.reason}</p>
@@ -152,10 +152,7 @@ export default function UsageGuideDialog({
           ) : null}
           {current.example ? (
             <blockquote
-              {...surfaceAttributes(
-                { variant: "inset", bar: "user-accent", radius: "right-control" },
-                "usage-guide-example",
-              )}
+              {...surfaceAttributes({ variant: "inset", radius: "control" }, "usage-guide-example")}
             >
               <MessageSquare className="icon-md" tone="muted" aria-hidden="true" />
               <p>{current.example}</p>

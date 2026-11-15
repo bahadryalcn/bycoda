@@ -88,16 +88,8 @@ export function WorkspacePolicyEditor({
       {policyConflict ? (
         <SettingsFeedback
           state="warning"
-          action={
-            <>
-              <Button variant="ghost" disabled={saving} onClick={discardDraft}>
-                {t("Reload Host policy")}
-              </Button>
-              <Button variant="ghost" disabled={saving} onClick={onKeepEdits}>
-                {t("Keep my edits")}
-              </Button>
-            </>
-          }
+          action={{ label: t("Reload Host policy"), disabled: saving, onClick: discardDraft }}
+          secondaryAction={{ label: t("Keep my edits"), disabled: saving, onClick: onKeepEdits }}
         >
           {t(
             "The saved policy changed while you were editing. Reload it and lose your edits, or keep them and save over the new revision.",

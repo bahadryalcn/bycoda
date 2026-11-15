@@ -8,6 +8,7 @@ import { X as Xmark } from "../../icons";
 import { InlineAction } from "../../ActionHost";
 import { motionTokens } from "../lib/motion-tokens";
 import { FieldMessage } from "../lib/field-message";
+import { FieldDescription, FieldLabelRow } from "../lib/field-description";
 import { useT } from "../../../i18n";
 import { fieldDescribedBy, fieldMessageIds } from "../lib/field-ids";
 import styles from "./tag-input.module.css";
@@ -32,6 +33,8 @@ export interface TagInputProps {
   onValueChange?: (value: string[]) => unknown;
   placeholder?: string;
   description?: string;
+  /** Render the description as a visible subline. Default: behind the info (i) affordance; use it only for scope or consequence. */
+  descriptionVisible?: boolean;
   /** Local validation message. It precedes the helper, marks the field invalid and is announced as an alert. */
   error?: string;
   id?: string;
@@ -73,6 +76,7 @@ function TagInputControl({
   onValueChange,
   placeholder = "Add a tag",
   description,
+  descriptionVisible,
   error,
   id,
   className,
@@ -545,7 +549,11 @@ function TagInputControl({
       role="group"
       aria-label={label}
     >
-      {hideLabel ? null : <label htmlFor={inputId}>{label}</label>}
+      {hideLabel ? null : (
+        <FieldLabelRow description={description} visible={descriptionVisible}>
+          <label htmlFor={inputId}>{label}</label>
+        </FieldLabelRow>
+      )}
       <motion.div
         ref={scope}
         className={styles.control}
@@ -743,7 +751,12 @@ function TagInputControl({
         {notice}
       </span>
       <FieldMessage id={errorId} text={error || admissionError} className={styles.error} alert />
-      <FieldMessage id={hintId} text={description} className={styles.hint} />
+      <FieldDescription
+        id={hintId}
+        text={description}
+        visible={descriptionVisible || hideLabel}
+        className={styles.hint}
+      />
     </div>
   );
 }

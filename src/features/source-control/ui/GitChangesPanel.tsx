@@ -125,8 +125,7 @@ import { usePrStatus } from "../hooks/usePrStatus";
 import { ACTIVE_PROJECT_REFRESH_MS } from "../model/gitRefreshPolicy";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
-import { InlineMessage } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
@@ -550,7 +549,7 @@ export function GitChangesPanel({
         </InlineMessage>
       ) : null}
       {repository && loadError && !detailsOpen ? (
-        <DetailedInlineError className="px-2" error={loadError} />
+        <InlineError className="px-2" details={loadError} />
       ) : null}
       {loadError?.includes("dubious ownership") ? (
         <Button
@@ -602,28 +601,23 @@ export function GitChangesPanel({
               kind="empty"
               title={t("This folder is not a Git repository")}
               description={t("Initialize a repository to track changes in this folder.")}
-              action={
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={!enabled || (!!busy && busy !== "init")}
-                  loading={busy === "init"}
-                  onClick={async () => {
-                    setBusy("init");
-                    setInitError(null);
-                    try {
-                      await gitInit(cwd);
-                      onMutated();
-                    } catch (error) {
-                      setInitError(String(error).replace(/^Error: /, ""));
-                    } finally {
-                      setBusy(null);
-                    }
-                  }}
-                >
-                  {t("Initialize Repository")}
-                </Button>
-              }
+              action={{
+                label: t("Initialize Repository"),
+                pending: busy === "init",
+                disabled: !enabled || (!!busy && busy !== "init"),
+                onClick: async () => {
+                  setBusy("init");
+                  setInitError(null);
+                  try {
+                    await gitInit(cwd);
+                    onMutated();
+                  } catch (error) {
+                    setInitError(String(error).replace(/^Error: /, ""));
+                  } finally {
+                    setBusy(null);
+                  }
+                },
+              }}
             />
             {initError ? (
               <GitFeedback

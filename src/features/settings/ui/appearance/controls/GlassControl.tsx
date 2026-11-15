@@ -1,5 +1,4 @@
 import { t } from "../../../../../shared/i18n";
-import { Button } from "../../../../../shared/ui/Button";
 import { IS_LINUX, IS_MAC } from "../../../../../platform/tauri/platform";
 import {
   BODY_GLASS_DEFAULT,
@@ -65,9 +64,9 @@ export function GlassControl({
         <SettingsFeedback
           state="warning"
           action={
-            covered ? (
-              <Button onClick={() => saveLiveBackground("none")}>{t("Turn off Live")}</Button>
-            ) : undefined
+            covered
+              ? { label: t("Turn off Live"), onClick: () => saveLiveBackground("none") }
+              : undefined
           }
         >
           {reason}

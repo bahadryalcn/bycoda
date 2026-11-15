@@ -3,7 +3,6 @@ import { act, createElement, createRef } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { Alert } from "./Alert";
-import { InlineMessage } from "./InlineError";
 
 it("forwards the actual error surface ref so recovery can focus it without replacing native attributes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -45,45 +44,6 @@ it("forwards the actual error surface ref so recovery can focus it without repla
   }
 });
 
-it("renders the inline form with its tone icon and message", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () =>
-      root.render(createElement(Alert, { tone: "warning", inline: true }, "Disk almost full")),
-    );
-    const surface = container.querySelector('[role="status"]')!;
-    expect(surface.textContent).toContain("Disk almost full");
-    expect(surface.querySelector("svg")).not.toBeNull();
-  } finally {
-    act(() => root.unmount());
-    container.remove();
-    vi.unstubAllGlobals();
-  }
-});
-
-it("uses InlineMessage presentation for legacy inline alerts", async () => {
-  const { container, done } = await mount(
-    createElement(
-      "div",
-      null,
-      createElement(Alert, { tone: "warning", inline: true }, "Disk almost full"),
-      createElement(InlineMessage, { tone: "warning", children: "Disk almost full" }),
-    ),
-  );
-  try {
-    const inline = container.querySelector('[data-tone="warning"]')!;
-    const direct = container.querySelectorAll('[data-tone="warning"]')[1];
-    expect(inline.className).toBe(direct.className);
-    expect(inline.querySelector("svg")?.outerHTML).toBe(direct.querySelector("svg")?.outerHTML);
-    expect(container.querySelectorAll('[role="status"]')).toHaveLength(2);
-  } finally {
-    done();
-  }
-});
-
 async function mount(node: ReturnType<typeof createElement>) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
@@ -100,31 +60,73 @@ async function mount(node: ReturnType<typeof createElement>) {
   };
 }
 
-it("keeps inline dismissal outside wrapped copy and recovery actions", async () => {
+it("renders structured actions after the copy as secondary buttons and keeps dismiss in its own slot", async () => {
   const onDismiss = vi.fn();
   const onRetry = vi.fn();
+  const onOther = vi.fn();
   const { container, done } = await mount(
     createElement(Alert, {
-      inline: true,
       open: true,
       onDismiss,
-      children: createElement("span", null, "Remote machine stopped 1 conversation."),
-      action: createElement("button", { onClick: onRetry }, "Retry"),
+      children: "Remote machine stopped 1 conversation.",
+      action: { label: "Retry", onClick: onRetry },
+      secondaryAction: { label: "Open", onClick: onOther },
     }),
   );
   try {
     const surface = container.querySelector('[role="status"]')!;
     const dismiss = surface.querySelector<HTMLButtonElement>('[aria-label="Dismiss"]')!;
-    const retry = surface.querySelector<HTMLButtonElement>("button:not([aria-label])")!;
-    expect(dismiss.parentElement).toBe(surface);
-    expect(retry.parentElement?.contains(dismiss)).toBe(false);
-    act(() => retry.click());
+    const labels = [...surface.querySelectorAll("button:not([aria-label])")].map(
+      (button) => button.textContent,
+    );
+    expect(labels).toEqual(["Retry", "Open"]);
+    expect(dismiss.closest("div > span")?.parentElement).toBe(surface);
+    act(() => surface.querySelector<HTMLButtonElement>("button:not([aria-label])")!.click());
     act(() => dismiss.click());
     expect(onRetry).toHaveBeenCalledOnce();
     expect(onDismiss).toHaveBeenCalledOnce();
   } finally {
     done();
   }
+});
+
+it("shows pending and disabled action state and renders one non-button extra control", async () => {
+  const { container, done } = await mount(
+    createElement(Alert, {
+      tone: "danger",
+      action: { label: "Retry", onClick: () => undefined, pending: true },
+      extra: createElement("a", { href: "#details" }, "Details"),
+      children: "Failed",
+    }),
+  );
+  try {
+    const button = container.querySelector("button")!;
+    expect(button.getAttribute("aria-busy") === "true" || button.disabled).toBe(true);
+    expect(container.querySelector("a")?.textContent).toBe("Details");
+  } finally {
+    done();
+  }
+});
+
+it("centres the glyph in a first-line box for one-line, wrapped and titled copy alike", async () => {
+  const shapes = [
+    createElement(Alert, { tone: "info" }, "One line"),
+    createElement(Alert, { tone: "info" }, "A much longer message ".repeat(20)),
+    createElement(Alert, { tone: "info", title: "Title" }, "Body"),
+  ];
+  const boxes: string[] = [];
+  for (const node of shapes) {
+    const { container, done } = await mount(node);
+    try {
+      const box = container.querySelector("svg")!.parentElement!.parentElement!;
+      boxes.push(box.className);
+      expect(box.className).toContain("h-(--ui-leading-secondary)");
+      expect(box.className).toContain("items-center");
+    } finally {
+      done();
+    }
+  }
+  expect(new Set(boxes).size).toBe(1);
 });
 
 it("gives every tone its own glyph, announces danger assertively and others politely", async () => {
@@ -150,7 +152,7 @@ it("renders title above description and the action slot after them", async () =>
       {
         tone: "danger",
         title: "Could not save",
-        action: createElement("button", { onClick: onRetry }, "Retry"),
+        action: { label: "Retry", onClick: onRetry },
       },
       "The disk is full",
     ),

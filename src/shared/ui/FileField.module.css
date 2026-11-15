@@ -10,15 +10,15 @@
   min-inline-size: 0;
   min-block-size: var(--ui-field-height-md);
   padding: var(--space-2) var(--space-3);
-  border: 1px dashed var(--ui-field-border);
-  border-radius: var(--ui-field-radius);
-  background: var(--ui-surface-muted);
+  border: var(--ui-drop-target-border-width) dashed var(--ui-pane-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-field-surface);
 }
 .zone:hover {
   border-color: var(--ui-field-border-hover);
 }
 .zone[data-dragging] {
-  border-color: var(--ui-field-border-focus);
+  border-color: var(--ui-selected-ring);
   background: var(--ui-surface-hover);
 }
 .zone[data-invalid] {
@@ -32,7 +32,7 @@
   flex: 1 1 auto;
   min-inline-size: 0;
   color: var(--text-muted);
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-caption);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }

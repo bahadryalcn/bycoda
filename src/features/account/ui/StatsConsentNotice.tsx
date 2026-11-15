@@ -1,6 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import { Toast } from "../../../shared/ui/ToastRegion";
 import {
@@ -52,16 +51,10 @@ export function StatsConsentNotice() {
       durationMs={null}
       width="lg"
       actionsPlacement="footer"
-      actions={
-        <>
-          <Button variant="secondary" onClick={() => answer("on")}>
-            {t("Share anonymous statistics")}
-          </Button>
-          <Button variant="secondary" onClick={() => answer("off")}>
-            {t("Don't share")}
-          </Button>
-        </>
-      }
+      actions={[
+        { label: t("Share anonymous statistics"), onClick: () => answer("on") },
+        { label: t("Don't share"), onClick: () => answer("off") },
+      ]}
       onDismiss={() => setShown(false)}
     />
   );

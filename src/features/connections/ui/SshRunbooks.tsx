@@ -207,7 +207,8 @@ export function SshRunbooks({
         if (current && value.runId === runId) setStatus(value);
       })
       .catch((reason) => {
-        if (current) setError(String(reason));
+        // A status lookup that follows a failed operation must not replace that operation's error.
+        if (current) setError((previous) => previous || String(reason));
       });
     return () => {
       current = false;

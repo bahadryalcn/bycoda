@@ -62,6 +62,7 @@ import type {
 import { DescriptionItem, DescriptionList } from "../../shared/ui/DescriptionList";
 import "./dev-servers.css";
 import { toolPreferences } from "./model/toolPreferences";
+import { OutputBlock } from "../../shared/ui/OutputBlock";
 
 type Intent = "details" | "stop" | "kill" | "restart";
 type Launch = { input: DevServerStart; result?: DevServerStartResult; pending?: boolean };
@@ -721,9 +722,9 @@ function ProjectDevServersPanel({
       </div>
       {logs ? (
         logs.available ? (
-          <pre className="dev-server-logs" aria-label={t("Server logs")}>
+          <OutputBlock frame="filled" scroll className="max-h-60" aria-label={t("Server logs")}>
             {logs.output || t("No log output yet.")}
-          </pre>
+          </OutputBlock>
         ) : (
           <p className="host-tool-muted">
             {t(
@@ -1155,11 +1156,7 @@ function ProjectDevServersPanel({
         <EmptyState
           kind="empty"
           description={t("No servers found")}
-          action={
-            <Button variant="primary" disabled={disabled} onClick={() => setShowStart(true)}>
-              {t("Start server")}
-            </Button>
-          }
+          action={{ label: t("Start server"), disabled, onClick: () => setShowStart(true) }}
         />
       ) : scan && visibleServers.length === 0 && query ? (
         <EmptyState

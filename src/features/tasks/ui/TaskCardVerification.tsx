@@ -32,7 +32,7 @@ export function VerificationSummary({ verification }: { verification: TaskVerifi
             </>
           }
         >
-          <OutputBlock frame="card" scroll className="mt-1 max-h-40 break-words">
+          <OutputBlock frame="filled" scroll className="mt-1 max-h-40 break-words">
             {command.output.trim() || t("No output.")}
           </OutputBlock>
         </Disclosure>

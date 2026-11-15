@@ -185,7 +185,7 @@ export function AssistantView(props: AssistantViewProps) {
         <header className={shell.header}>
           <div className={shell.identity}>
             <AssistantAvatarMark
-              className={shell.avatar}
+              avatarSize="lg"
               value={snapshot?.profile.avatar}
               name={identity.name}
             />
@@ -306,20 +306,14 @@ export function AssistantView(props: AssistantViewProps) {
             className={shell.notice}
             tone="danger"
             title={t("Room privacy protection could not be confirmed.")}
-            action={
-              <div className={shell.noticeActions}>
-                {hostBusy && (
-                  <ErrorDetails
-                    title={t("Room privacy protection could not be confirmed.")}
-                    detail={roomPrivacy.error}
-                  />
-                )}
-                {retryPrivacy && (
-                  <Button size="sm" variant="secondary" onClick={retryPrivacy}>
-                    {t("Retry")}
-                  </Button>
-                )}
-              </div>
+            action={retryPrivacy ? { label: t("Retry"), onClick: retryPrivacy } : undefined}
+            extra={
+              hostBusy ? (
+                <ErrorDetails
+                  title={t("Room privacy protection could not be confirmed.")}
+                  detail={roomPrivacy.error}
+                />
+              ) : undefined
             }
           >
             {hostBusy ? t("The Host is busy. Try again in a moment.") : t(roomPrivacy.error)}
@@ -404,29 +398,24 @@ export function AssistantView(props: AssistantViewProps) {
             )}
             {errorFor("pauseAll")}
             {snapshot.chiefReview?.blocked && (
-              <Alert
+              <InlineMessage
                 className={shell.notice}
                 tone="warning"
-                inline
-                title={t("Supervisor review needs attention")}
-                action={
-                  <Button
-                    disabled={Boolean(pending)}
-                    loading={pending?.key === "chief.retry"}
-                    onClick={() =>
-                      snapshot.profile.autonomy === "chief"
-                        ? void mutate("chief.retry", t("Updating..."), {
-                            op: "chief.retry",
-                          })
-                        : setSettings(true)
-                    }
-                  >
-                    {t(snapshot.profile.autonomy === "chief" ? "Retry review" : "Settings")}
-                  </Button>
-                }
+                action={{
+                  label: t(snapshot.profile.autonomy === "chief" ? "Retry review" : "Settings"),
+                  disabled: Boolean(pending),
+                  pending: pending?.key === "chief.retry",
+                  onClick: () =>
+                    snapshot.profile.autonomy === "chief"
+                      ? void mutate("chief.retry", t("Updating..."), {
+                          op: "chief.retry",
+                        })
+                      : setSettings(true),
+                }}
               >
+                <strong>{t("Supervisor review needs attention")} </strong>
                 {snapshot.chiefReview.message}
-              </Alert>
+              </InlineMessage>
             )}
             {errorFor("chief.retry")}
             <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, shell.tabRow)}>

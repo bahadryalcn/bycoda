@@ -2877,12 +2877,6 @@
       "bycoda/compiler-owns-memo": 1,
       "bycoda/effect-names-its-sync": 4
     },
-    "src/shared/ui/arc/date-range-picker/date-range-picker.tsx": {
-      "bycoda/compiler-owns-memo": 14,
-      "bycoda/effect-names-its-sync": 12,
-      "bycoda/shared-resize-observer": 2,
-      "jsx-a11y/no-noninteractive-element-interactions": 1
-    },
     "src/shared/ui/arc/donut-chart/donut-chart.tsx": {
       "bycoda/compiler-owns-memo": 3,
       "bycoda/effect-names-its-sync": 7,

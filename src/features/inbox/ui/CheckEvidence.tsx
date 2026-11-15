@@ -173,10 +173,6 @@ function CheckAnnotation({
               {...surfaceAttributes(
                 {
                   tone: firstLine + index === annotation.line ? "danger" : undefined,
-                  bar:
-                    firstLine + index === annotation.line
-                      ? "diagnostic-danger"
-                      : "diagnostic-empty",
                 },
                 "flex min-w-max gap-4 pr-3",
               )}

@@ -195,12 +195,7 @@ export function ComposerCitations({
           flow="scroll"
         >
           <div className={styles.editor}>
-            <Text
-              as="blockquote"
-              size="caption"
-              leading="relaxed"
-              {...surfaceAttributes({ bar: "info" }, styles.quote)}
-            >
+            <Text as="blockquote" size="caption" leading="relaxed" className={styles.quote}>
               {editingCitation.text}
             </Text>
             <TextareaField

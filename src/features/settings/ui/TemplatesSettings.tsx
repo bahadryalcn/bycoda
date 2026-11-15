@@ -227,16 +227,13 @@ export function TemplatesSettings() {
           {!available ? (
             <SettingsFeedback
               state="error"
-              action={
-                <Button
-                  onClick={() => {
-                    if (templateStorageAvailable()) setError(null);
-                    reread((value) => value + 1);
-                  }}
-                >
-                  {t("Retry")}
-                </Button>
-              }
+              action={{
+                label: t("Retry"),
+                onClick: () => {
+                  if (templateStorageAvailable()) setError(null);
+                  reread((value) => value + 1);
+                },
+              }}
             >
               {t("Template storage is unavailable. Retry reading before saving.")}
             </SettingsFeedback>

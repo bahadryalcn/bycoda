@@ -37,9 +37,12 @@ import "./features/connections/model/remoteCommands";
 import "./features/connections/model/remoteGitWatch";
 import "./styles/index.css";
 import { installNativeContextMenuGuard } from "./shared/lib/nativeContextMenu";
+import { installInputModality } from "./shared/ui/inputModality";
 
 const removeContextMenuGuard = installNativeContextMenuGuard();
 if (import.meta.hot) import.meta.hot.dispose(removeContextMenuGuard);
+const removeInputModality = installInputModality();
+if (import.meta.hot) import.meta.hot.dispose(removeInputModality);
 const nativeProjectionReceiver = installNativeProjectionCheckpointReceiver();
 void nativeProjectionReceiver.ready.catch(() => undefined);
 if (import.meta.hot)

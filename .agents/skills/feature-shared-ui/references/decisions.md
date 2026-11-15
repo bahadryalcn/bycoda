@@ -114,7 +114,7 @@ governs shared components, Arc adapters, native windows and feature-special comp
 T3 Code is the quality reference. Owner choices in the same round: no focus visuals on
 pointer interaction (keyboard and forced-colors only); the transcript user prompt is a
 right-aligned borderless bubble; settings apply instantly with per-row reset; soft
-white-alpha state fills; default chat width 48rem; faint field resting border; row,
+white-alpha state fills; faint field resting border; row,
 field and empty-state descriptions behind the info affordance by default; native
 `alert`/non-blocking `message()` dialogs become Toast/Alert. This replaces the earlier
 "descriptions visible by default" settings rule and the transcript "no bubbles" rule.
@@ -128,3 +128,10 @@ Owner decision, 2026-11-13, source: owner chat:
 Recorded decision: `ButtonGroup surface="navigation"` paints no fill in any theme, glass and
 workspace artwork included; the joined tools share their bar's ground and keep the group outline.
 The selected tool always shows the gliding plate across its whole segment.
+
+Follow-up, 2026-11-15, source: owner chat:
+
+> çizgiler çok belirgin olmuş onu t3code daki gibi yapalım lütfen. 48 rem i de eski haline alalım bence çok iyi durmuyor eskisi daha iyi
+
+Recorded decision: hairlines (pane and card borders, settings row dividers) stay T3-faint
+(about 8-10% ink); the default chat width stays 56rem.

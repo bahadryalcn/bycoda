@@ -129,59 +129,24 @@
   }
 }
 
-/* Option rows for SearchableSelect and Select share a check slot, an optional icon,
-   a truncating label and its description. State presentation stays unlayered. */
+/* Option rows for SearchableSelect and Select: the shared ListRow skin plus a check slot, an optional
+   icon, a truncating label and its description. */
 .choice {
-  display: flex;
-  box-sizing: border-box;
-  inline-size: 100%;
-  align-items: center;
+  composes: row from "../../ListRow.module.css";
   justify-content: flex-start;
-  gap: 0.5rem;
-  border: 0;
-  border-radius: calc(var(--ui-radius-popup) - 5px);
-  min-block-size: var(--ui-control-height-compact);
-  padding-block: 0;
-  padding-inline: 0.5rem;
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--text-sm);
-  line-height: var(--leading-body);
-  text-align: start;
-  cursor: pointer;
-  outline: none;
-  user-select: none;
-  transition:
-    background-color 80ms var(--ease-standard),
-    color 80ms var(--ease-standard);
 }
-.choice[data-has-description] {
-  padding-block: var(--space-2);
+.choice:has(.choiceDescription) {
+  padding-block: 0.375rem;
 }
 .choice:disabled,
 .choice[aria-disabled="true"] {
-  --ui-surface-hover: transparent;
-  --ui-surface-selected: transparent;
-  opacity: var(--ui-disabled-opacity, 0.5);
   cursor: not-allowed;
 }
-.choiceCheck,
-.choiceIcon {
-  color: var(--ui-text-secondary);
-  display: grid;
-  flex: none;
-  place-items: center;
-}
 .choiceCheck {
-  inline-size: var(--ui-icon-sm);
-  block-size: var(--ui-icon-sm);
-  color: var(--foreground);
+  composes: check from "../../ListRow.module.css";
 }
 .choiceIcon {
-  color: var(--ui-text-secondary);
-  inline-size: var(--ui-icon-md);
-  block-size: var(--ui-icon-md);
+  composes: icon from "../../ListRow.module.css";
 }
 .choiceBody {
   min-inline-size: 0;
@@ -224,46 +189,4 @@
   justify-content: center;
   padding-block: var(--space-3);
   text-align: center;
-}
-@media (prefers-reduced-motion: reduce) {
-  .choice {
-    transition: none;
-  }
-}
-
-@media (forced-colors: active) {
-  .choice:disabled,
-  .choice[aria-disabled="true"] {
-    color: GrayText;
-    opacity: 1;
-  }
-  .choiceCheck {
-    forced-color-adjust: auto;
-    color: CanvasText;
-  }
-}
-
-.choice:is([data-highlighted], [data-active], [aria-selected="true"]):not(
-    :disabled,
-    [aria-disabled="true"]
-  ) {
-  background: var(--ui-surface-selected);
-  color: var(--foreground);
-}
-@media (hover: hover) and (pointer: fine) {
-  .choice:hover:not(:disabled, [aria-disabled="true"], [aria-selected="true"]) {
-    background: var(--ui-surface-hover);
-    color: var(--foreground);
-  }
-}
-
-.choice:has(.choiceDescription) {
-  min-block-size: var(--ui-control-height-lg);
-  padding-block: var(--space-2);
-}
-
-/* Pressed outranks hover and the keyboard highlight, for selected and unselected rows alike. */
-.choice:active:not(:disabled, [aria-disabled="true"]) {
-  background: var(--ui-surface-pressed);
-  color: var(--foreground);
 }

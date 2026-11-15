@@ -23,7 +23,7 @@ import {
 } from "../../../features/sessions/model/delegatedAgents";
 import { requestViewDelegated } from "../../../features/sessions/ui/delegatedFocus";
 import { t } from "../../../shared/i18n";
-import { message } from "@tauri-apps/plugin-dialog";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
 import { focusWindowLiveAgent } from "../../model/useWindowLiveAgents";
@@ -152,7 +152,11 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
             await focusWindowLiveAgent(elsewhere);
             return true;
           } catch (error) {
-            void message(String(error), { title: t("Open conversation window") }).catch(() => {});
+            toast.show({
+              tone: "warning",
+              title: t("Open conversation window"),
+              message: String(error),
+            });
             return false;
           }
         }

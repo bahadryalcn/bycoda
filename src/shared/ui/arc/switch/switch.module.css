@@ -8,32 +8,28 @@
   color: var(--foreground);
   background: transparent;
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-caption);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 .switch:disabled {
   cursor: not-allowed;
-  opacity: var(--ui-disabled-opacity, 0.5);
+  opacity: var(--ui-disabled-opacity);
 }
-.switch[data-compact] .track {
-  inline-size: 36px;
-  block-size: 20px;
-  padding: 2px;
+/* One geometry from the knob token (36x20, thumb 16 at the default scale): the thumb moves on transforms, so nothing around the switch shifts. The track crossfades between the two fills. */
+.switch {
+  --switch-knob: var(--ui-knob-size, 1rem);
+  --switch-inset: calc(var(--switch-knob) / 8);
 }
-.switch[data-compact] .thumb {
-  block-size: 16px;
-}
-/* Fixed box: the thumb moves inside it with transforms, so nothing around the switch shifts. The track crossfades between the two fills. */
 .track {
   position: relative;
   box-sizing: border-box;
   display: flex;
   flex: 0 0 auto;
-  width: 42px;
-  height: 24px;
+  inline-size: calc(var(--switch-knob) * 2.25);
+  block-size: calc(var(--switch-knob) * 1.25);
   align-items: center;
-  padding: 3px;
+  padding: var(--switch-inset);
   border-radius: var(--radius-pill);
   background: var(--control-track);
   isolation: isolate;
@@ -54,15 +50,26 @@
 }
 .thumb {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
+  inline-size: var(--switch-knob);
+  block-size: var(--switch-knob);
   border-radius: var(--radius-pill);
   background: var(--control-thumb);
   box-shadow: var(--control-thumb-shadow);
-  transition: background-color var(--duration-standard) var(--ease-standard);
+  transition:
+    transform var(--duration-standard) var(--ease-standard),
+    inline-size var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-standard) var(--ease-standard);
 }
 .switch[data-state="checked"] .thumb {
   background: var(--control-thumb-on);
+  transform: translateX(var(--switch-knob));
+}
+/* A held press widens the thumb toward the other side, so it reads as moving mass. */
+.switch[data-pressed] .thumb {
+  inline-size: calc(var(--switch-knob) * 1.3);
+}
+.switch[data-pressed][data-state="checked"] .thumb {
+  transform: translateX(calc(var(--switch-knob) * 0.7));
 }
 @media (hover: hover) and (pointer: fine) {
   .switch[data-state="unchecked"]:hover:not(:disabled) .track {
@@ -95,7 +102,7 @@
 }
 .description {
   color: var(--text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
   line-height: var(--leading-body);
 }
 @media (forced-colors: active) {

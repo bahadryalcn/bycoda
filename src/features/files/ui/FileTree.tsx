@@ -17,7 +17,6 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
   ChevronDown,
@@ -1177,32 +1176,31 @@ function FileTreeInner({
             </Text>
           ) : null}
           {opError ? (
-            <Alert tone="danger" inline className="mx-2 my-1">
+            <InlineError
+              className="mx-2 my-1"
+              action={
+                copyFailedText !== null
+                  ? { label: t("Retry"), onClick: () => void copyPathText(copyFailedText) }
+                  : undefined
+              }
+            >
               {opError}
-              {copyFailedText !== null ? (
-                <Button variant="ghost" size="sm" onClick={() => void copyPathText(copyFailedText)}>
-                  {t("Retry")}
-                </Button>
-              ) : null}
-            </Alert>
+            </InlineError>
           ) : null}
           {refreshFailure?.cwd === cwd ? (
-            <Alert tone="danger" inline className="mx-2 my-1">
-              <span>
-                {t("File change saved. Refresh failed.")} {refreshFailure.message}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                loading={operationPending}
-                onClick={() => {
+            <InlineError
+              className="mx-2 my-1"
+              action={{
+                label: t("Retry"),
+                pending: operationPending,
+                onClick: () => {
                   const failure = refreshFailure;
                   void run(() => refreshAfterMutation(failure.touched, failure.forget));
-                }}
-              >
-                {t("Retry")}
-              </Button>
-            </Alert>
+                },
+              }}
+            >
+              {t("File change saved. Refresh failed.")} {refreshFailure.message}
+            </InlineError>
           ) : null}
           {search ?? (
             <div className="flex min-h-0 flex-1 flex-col">

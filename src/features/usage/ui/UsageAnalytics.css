@@ -224,7 +224,7 @@
   min-block-size: 0;
   block-size: 22px;
   padding: 0;
-  border-radius: calc(var(--ui-control-radius) / 2);
+  border-radius: var(--ui-radius-row);
   justify-content: center;
   background: var(--ui-chart-heat-0);
 }
@@ -242,34 +242,6 @@
 }
 .usage-week-grid .usage-hour-cell > span {
   font-variant-numeric: tabular-nums;
-}
-.usage-heat-legend {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-block-start: 12px;
-}
-.usage-heat-legend > i {
-  inline-size: 12px;
-  block-size: 12px;
-  border-radius: calc(var(--ui-control-radius) / 3);
-  background: var(--ui-chart-heat-0);
-}
-.usage-heat-legend > i[data-level="1"] {
-  background: var(--ui-chart-heat-1);
-}
-.usage-heat-legend > i[data-level="2"] {
-  background: var(--ui-chart-heat-2);
-}
-.usage-heat-legend > i[data-level="3"] {
-  background: var(--ui-chart-heat-3);
-}
-.usage-heat-legend > i[data-level="4"] {
-  background: var(--ui-chart-heat-4);
-}
-.usage-heat-legend > span:last-child {
-  margin-inline-start: auto;
 }
 .usage-limits-view:not([hidden]),
 .usage-limits-content {

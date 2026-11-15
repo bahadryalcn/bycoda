@@ -1,4 +1,5 @@
 import type { ComponentPropsWithoutRef } from "react";
+import { useDelayedVisible } from "../hooks/useDelayedVisible";
 import styles from "./Spinner.module.css";
 import { optionalTextAttributes, type TextTone } from "./Text";
 
@@ -17,6 +18,11 @@ export type SpinnerProps = Omit<ComponentPropsWithoutRef<"span">, "children"> & 
    * on the text line instead of the icon box. `size` is ignored.
    */
   inline?: boolean;
+  /**
+   * Passive loading: hold the glyph back for the shared loading delay (see `LOADING_DELAY_MS`) so
+   * fast work never flashes it. Default off: a control's own pending state shows at once.
+   */
+  delay?: boolean;
 };
 
 /**
@@ -30,10 +36,13 @@ export function Spinner({
   size = "sm",
   label,
   inline = false,
+  delay = false,
   className,
   tone,
   ...props
 }: SpinnerProps) {
+  const shown = useDelayedVisible(true, delay ? undefined : { delay: 0 });
+  if (!shown) return null;
   return (
     <span
       {...props}

@@ -1,6 +1,5 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
-import { message } from "@tauri-apps/plugin-dialog";
 import {
   findSurfacePane,
   leafIds,
@@ -9,6 +8,7 @@ import {
 } from "../../../features/workspace/model/layout";
 import { applyDetachPaneToTab } from "../../../features/workspace/model/workspaceTabGroups";
 import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { type WindowMovePosition } from "../../model/windowTransferPopout";
 import {
   publishWindowTransferNotice,
@@ -77,10 +77,10 @@ export function usePaneDetachActions({
           .find((pane) => pane.id === paneId)
           ?.files.some((file) => dirtyFilesRef.current.has(file.id))
       ) {
-        void message("Save the unsaved files before moving this pane to another window.", {
-          get title() {
-            return t("Move pane");
-          },
+        toast.show({
+          tone: "warning",
+          title: t("Move pane"),
+          message: t("Save the unsaved files before moving this pane to another window."),
         });
         return;
       }

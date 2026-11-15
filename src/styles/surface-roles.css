@@ -9,11 +9,15 @@ html {
   );
   --ui-radius-xs: 0.125rem;
   --ui-radius-sm: 0.25rem;
-  --ui-radius-row: 0.375rem;
-  --ui-surface-danger: color-mix(in srgb, var(--ui-tone-danger-subtle) 45%, var(--ui-surface));
+  /* Tone fills are translucent now, so mix the tone ink into an opaque surface directly. */
+  --ui-surface-danger: color-mix(
+    in srgb,
+    var(--ui-tone-danger-fg) calc(var(--ui-tone-subtle-strength) * 0.45),
+    var(--ui-surface)
+  );
   --ui-surface-danger-floating: color-mix(
     in srgb,
-    var(--ui-tone-danger-subtle) 45%,
+    var(--ui-tone-danger-fg) calc(var(--ui-tone-subtle-strength) * 0.45),
     var(--ui-surface-floating)
   );
   --ui-surface-translucent: color-mix(in oklab, var(--color-background-base) 45%, transparent);

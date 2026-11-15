@@ -1,4 +1,3 @@
-import { message } from "@tauri-apps/plugin-dialog";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { type LinkedWorkItem, type Session } from "../../../features/sessions/model/session";
 import {
@@ -12,8 +11,8 @@ import {
   mergeProjectHistorySummary,
   summaryFromSession,
 } from "../../../features/sessions/data/sessionHistory";
-import { appName } from "../../../shared/lib/appName";
 import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { pathKey } from "../../../shared/lib/paths";
 import type { useLinkedWorkItemPanelState } from "../bridges/useLinkedWorkItemPanels";
 import type { useSessionLoading } from "./useSessionLoading";
@@ -98,9 +97,9 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
               throw new Error(t("Could not save changes"));
             const state = await pinState(target);
             if (state.state !== "current" || state.pinned === null) {
-              await message("The pin owner refused this change. Refresh the session list.", {
-                title: appName(),
-                kind: "error",
+              toast.show({
+                tone: "danger",
+                message: t("The pin owner refused this change. Refresh the session list."),
               });
               return { state: "refused", version: state.version, pinned: state.pinned };
             }
@@ -127,12 +126,13 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
             };
             const prepared = await preparePinSaga(saga);
             if (prepared !== "applied") {
-              await message(
-                prepared === "unknown"
-                  ? `Pin preparation outcome is unknown: ${sagaId}`
-                  : "Pin change conflicted; refresh before retrying.",
-                { title: appName(), kind: "error" },
-              );
+              toast.show({
+                tone: "danger",
+                message:
+                  prepared === "unknown"
+                    ? t("Pin preparation outcome is unknown: {p0}", { p0: sagaId })
+                    : t("Pin change conflicted; refresh before retrying."),
+              });
               return prepared === "unknown"
                 ? { state: "unknown", operationId: sagaId }
                 : { state: "refused", version: state.version, pinned: state.pinned };
@@ -157,23 +157,25 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
               );
             }
             if (result.state !== "applied")
-              await message(
-                result.state === "unknown"
-                  ? `Pin outcome is unknown: ${result.operationId ?? sagaId}`
-                  : result.state === "applied-unavailable"
-                    ? "Pin was applied, but refresh failed."
-                    : "Pin change needs review in the sidebar.",
-                { title: appName(), kind: "error" },
-              );
+              toast.show({
+                tone: "danger",
+                message:
+                  result.state === "unknown"
+                    ? t("Pin outcome is unknown: {p0}", { p0: result.operationId ?? sagaId })
+                    : result.state === "applied-unavailable"
+                      ? t("Pin was applied, but refresh failed.")
+                      : t("Pin change needs review in the sidebar."),
+              });
             return receipt ?? { state: "unknown", operationId: sagaId };
           });
         } catch (error) {
-          await message(
-            confirmed?.state === "applied"
-              ? `Pin was applied, but refresh failed: ${String(error)}`
-              : String(error),
-            { title: appName(), kind: "error" },
-          );
+          toast.show({
+            tone: "danger",
+            message:
+              confirmed?.state === "applied"
+                ? t("Pin was applied, but refresh failed: {p0}", { p0: String(error) })
+                : String(error),
+          });
           if (confirmed?.state === "applied") return confirmed;
           return sagaId
             ? { state: "unknown", operationId: sagaId }
@@ -187,9 +189,10 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
         }
         await setSessionPinned(sessionId, pinned);
       } catch (error) {
-        await message(`${t("Could not save changes")}\n\n${String(error)}`, {
-          title: appName(),
-          kind: "error",
+        toast.show({
+          tone: "danger",
+          title: t("Could not save changes"),
+          message: String(error),
         });
         return;
       }
@@ -271,9 +274,10 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
             : current.filter((session) => session.id !== sessionId),
         );
         void refreshHistory(sidebarCwd);
-        void message(`Could not update this conversation's GitHub link.\n\n${String(error)}`, {
-          title: appName(),
-          kind: "error",
+        toast.show({
+          tone: "danger",
+          title: t("Could not update this conversation's GitHub link."),
+          message: String(error),
         });
       });
     },

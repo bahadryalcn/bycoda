@@ -303,13 +303,13 @@ it("resets device control when switching conversations in the same project", asy
   await chooseTool("Devices");
   await toolAct(async () =>
     container
-      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .querySelector<HTMLButtonElement>('[aria-pressed][aria-label="Allow device control"]')!
       .click(),
   );
   expect(
     container
-      .querySelector('[role="switch"][aria-label="Allow device control"]')!
-      .getAttribute("aria-checked"),
+      .querySelector('[aria-pressed][aria-label="Allow device control"]')!
+      .getAttribute("aria-pressed"),
   ).toBe("true");
   expect(
     vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "devices.control.claim"),
@@ -318,8 +318,8 @@ it("resets device control when switching conversations in the same project", asy
   await chooseTool("Devices");
   expect(
     container
-      .querySelector('[role="switch"][aria-label="Allow device control"]')!
-      .getAttribute("aria-checked"),
+      .querySelector('[aria-pressed][aria-label="Allow device control"]')!
+      .getAttribute("aria-pressed"),
   ).toBe("false");
 });
 
@@ -540,7 +540,7 @@ it("clears the device screen and control and discovers devices on another machin
   ).toContain("iPhone");
   await toolAct(async () =>
     container
-      .querySelector<HTMLButtonElement>('[role="switch"][aria-label="Allow device control"]')!
+      .querySelector<HTMLButtonElement>('[aria-pressed][aria-label="Allow device control"]')!
       .click(),
   );
   await toolAct(async () =>
@@ -556,8 +556,8 @@ it("clears the device screen and control and discovers devices on another machin
   ).toContain("iPhone");
   expect(
     container
-      .querySelector('[role="switch"][aria-label="Allow device control"]')!
-      .getAttribute("aria-checked"),
+      .querySelector('[aria-pressed][aria-label="Allow device control"]')!
+      .getAttribute("aria-pressed"),
   ).toBe("false");
   expect(hostToolRequest).toHaveBeenCalledWith(
     "remote://macbook/repo",

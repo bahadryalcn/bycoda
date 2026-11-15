@@ -2,7 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { SplitButton } from "../../../shared/ui/SplitButton";
 import { Button } from "../../../shared/ui/Button";
-import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
@@ -365,9 +365,9 @@ function GithubPrActionsForItem({
         </Button>
       ) : null}
       {notice ? (
-        <Alert tone="info" inline className="w-full">
+        <InlineMessage tone="info" className="w-full">
           {t(notice)}
-        </Alert>
+        </InlineMessage>
       ) : null}
       {refreshError ? <InlineError>{refreshError}</InlineError> : null}
       {!confirmation && actionError ? <Alert tone="danger">{actionError}</Alert> : null}

@@ -2,11 +2,43 @@
    streamed rows or file editors. Retained pages and sessions appear immediately.
    No forwards fill: release compositor layers as soon as the entrance ends. */
 :root {
-  --motion-surface-duration: 200ms;
-  --motion-sheet-duration: 240ms;
-  --motion-notice-duration: 180ms;
-  --motion-surface-distance: 8px;
+  --motion-surface-duration: var(--motion-duration-standard);
+  --motion-sheet-duration: var(--motion-duration-standard);
+  --motion-notice-duration: var(--motion-duration-standard);
+  /* The one enter rises 4px; the sheet slides in from its edge. Reduced motion zeroes both
+     distances below, leaving a fade (the one reduced-motion switch for entrances). */
+  --motion-enter-distance: 4px;
+  --motion-surface-distance: var(--motion-enter-distance);
   --motion-sheet-distance: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-enter-distance: 0px;
+    --motion-sheet-distance: 0px;
+  }
+}
+
+/* The one enter and the one exit. Use with --motion-duration-standard and --motion-ease-standard;
+   no forwards fill on the enter. */
+@keyframes ui-enter {
+  from {
+    opacity: 0;
+    translate: 0 var(--motion-enter-distance);
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes ui-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes ui-sheet-in {
@@ -24,12 +56,10 @@
   from {
     opacity: 0;
     translate: 0 var(--motion-surface-distance);
-    scale: 0.99;
   }
   to {
     opacity: 1;
     translate: 0 0;
-    scale: 1;
   }
 }
 

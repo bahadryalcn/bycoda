@@ -190,6 +190,7 @@ import {
   InterjectionDivider,
 } from "./AgentTranscriptActivity";
 import { SubagentStack } from "./SubagentCards";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 type Props = {
   codeExecution?: CodeExecutionScope;
@@ -2579,9 +2580,9 @@ function UserMessageBlock({
               <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
                 {t("CI instructions and failure details included with this request.")}
               </p>
-              <pre className="mt-2 max-h-72 min-w-0 overflow-auto overscroll-contain rounded-md bg-(--ui-surface-raised) p-2.5 font-mono text-ui-micro leading-relaxed whitespace-pre-wrap break-words text-(--ui-text-secondary)">
+              <OutputBlock frame="filled" scroll className="mt-2 max-h-72">
                 {block.ciContext}
-              </pre>
+              </OutputBlock>
             </Disclosure>
           ) : null}
           {block.draft ? (

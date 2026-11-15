@@ -218,7 +218,10 @@ export function BrowserSignIn({
         </SettingsFeedback>
       ) : null}
       {phase.kind === "failed" ? (
-        <SettingsFeedback state="error" action={fallbackAction ?? undefined}>
+        <SettingsFeedback
+          state="error"
+          action={fallback ? { label: fallback.action, onClick: fallback.onSelect } : undefined}
+        >
           {phase.message}
         </SettingsFeedback>
       ) : null}

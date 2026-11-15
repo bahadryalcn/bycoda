@@ -131,11 +131,7 @@ export function WorkspaceStorageSummary({
         {storage.materialization !== "allowed" && (
           <SettingsFeedback
             state="warning"
-            action={
-              <Button variant="ghost" size="sm" disabled={disabled} onClick={onRefresh}>
-                {t("Refresh storage")}
-              </Button>
-            }
+            action={{ label: t("Refresh storage"), disabled, onClick: onRefresh }}
           >
             {storage.materialization === "paused"
               ? t("New workspaces are paused. Required free space: {p0}.", {

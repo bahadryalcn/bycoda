@@ -259,7 +259,7 @@
 .scrubber {
   position: absolute;
   inset: 0;
-  border-radius: calc(var(--radius-control) / 2);
+  border-radius: var(--ui-radius-row);
   outline: none;
   touch-action: pan-y;
   user-select: none;

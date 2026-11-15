@@ -1,5 +1,5 @@
-import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
+import { InlineError } from "../../../shared/ui/InlineError";
 
 export function FilePickerError({ error }: { error: string }) {
-  return <DetailedInlineError className="min-w-0 flex-1 break-words" error={error} />;
+  return <InlineError className="min-w-0 flex-1 break-words" details={error} />;
 }

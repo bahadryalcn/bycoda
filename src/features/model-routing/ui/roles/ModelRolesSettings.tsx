@@ -125,13 +125,7 @@ function RolesEditor({
         <InlineMessage
           tone="info"
           live="off"
-          action={
-            onOpenOrder ? (
-              <Button type="button" layout="text" variant="link" onClick={onOpenOrder}>
-                {t("Add models")}
-              </Button>
-            ) : undefined
-          }
+          action={onOpenOrder ? { label: t("Add models"), onClick: onOpenOrder } : undefined}
         >
           {t("Model order is empty")}
         </InlineMessage>

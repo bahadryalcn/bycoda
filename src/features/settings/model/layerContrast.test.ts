@@ -29,14 +29,16 @@ function lightLayers(hue: number, saturation: number, lightness: number, strengt
     paneBorder: mixInOklab(ground, content, (9 * strength) / 100),
     controlBorder: mixInOklab(muted, content, 0.52),
     fieldBorder: mixInOklab(muted, content, 0.38),
-    selected: mixInOklab(ground, content, 0.1),
+    hover: mixInOklab(ground, content, 0.04),
+    selected: mixInOklab(ground, content, 0.12),
+    pressed: mixInOklab(ground, content, 0.16),
   };
 }
 
-/** Mirror of the dark `--ui-surface-hover|selected|pressed` percentages (12 / 20 / 28). */
-function ladder(muted: string, content: string, strength: number) {
-  const mix = (percent: number) => mixInOklab(muted, content, (percent * strength) / 100);
-  return { hover: mix(12), selected: mix(20), pressed: mix(28) };
+/** Mirror of the dark `--ui-surface-hover|selected|pressed` ink alphas (4 / 8 / 10) over the canvas. */
+function ladder(canvas: string, content: string, strength: number) {
+  const mix = (percent: number) => mixInOklab(canvas, content, (percent * strength) / 100);
+  return { hover: mix(4), selected: mix(8), pressed: mix(10) };
 }
 
 function darkLayers(lightness: number, strength = 1) {
@@ -51,7 +53,7 @@ function darkLayers(lightness: number, strength = 1) {
     raised: step(16),
     paneBorder: mixInOklab(step(5), content, 0.21),
     controlBorder: mixInOklab(step(5), content, 0.44),
-    ...ladder(step(5), content, strength),
+    ...ladder(base, content, strength),
   };
 }
 
@@ -78,6 +80,9 @@ describe("light layers derive from the real ground", () => {
       );
       expect(contrastRatio(layers.paneBorder, layers.ground)).toBeGreaterThan(1.05);
       expect(contrastRatio(layers.selected, layers.ground)).toBeGreaterThan(1.05);
+      // Zinc-like ladder: selected clears hover by >= 1.15:1, pressed clears selected.
+      expect(contrastRatio(layers.selected, layers.hover)).toBeGreaterThanOrEqual(1.15);
+      expect(contrastRatio(layers.pressed, layers.selected)).toBeGreaterThan(1.01);
     });
   }
 
@@ -143,12 +148,11 @@ describe("dark interaction ladder", () => {
   for (const lightness of [4, 0]) {
     it(`${lightness}% canvas: rest < hover < selected < pressed, each step visible`, () => {
       const layers = darkLayers(lightness);
-      expect(contrastRatio(layers.hover, layers.muted)).toBeGreaterThanOrEqual(1.2);
-      expect(contrastRatio(layers.hover, layers.canvas)).toBeGreaterThanOrEqual(1.2);
-      expect(contrastRatio(layers.selected, layers.hover)).toBeGreaterThanOrEqual(1.2);
-      expect(contrastRatio(layers.pressed, layers.selected)).toBeGreaterThan(1.2);
+      expect(contrastRatio(layers.hover, layers.canvas)).toBeGreaterThanOrEqual(1.04);
+      expect(contrastRatio(layers.selected, layers.hover)).toBeGreaterThanOrEqual(1.04);
+      expect(contrastRatio(layers.pressed, layers.selected)).toBeGreaterThan(1.01);
       const lum = (c: string) => contrastRatio(c, "#000000");
-      expect(lum(layers.muted)).toBeLessThan(lum(layers.hover));
+      expect(lum(layers.canvas)).toBeLessThan(lum(layers.hover));
       expect(lum(layers.hover)).toBeLessThan(lum(layers.selected));
       expect(lum(layers.selected)).toBeLessThan(lum(layers.pressed));
     });
@@ -160,7 +164,7 @@ describe("dark interaction ladder", () => {
     expect(contrastRatio(strong.hover, base.muted)).toBeGreaterThan(
       contrastRatio(base.hover, base.muted),
     );
-    // Pressed is the loudest state: at most 28% ink at strength 1 (about 30% ceiling).
-    expect(contrastRatio(base.pressed, base.muted)).toBeLessThan(2);
+    // Pressed is the loudest state: 10% ink at strength 1, a soft step.
+    expect(contrastRatio(base.pressed, base.canvas)).toBeLessThan(1.6);
   });
 });

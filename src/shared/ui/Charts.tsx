@@ -1,9 +1,11 @@
 import { useLocale, useT } from "../i18n";
+import styles from "./Charts.module.css";
 import { LineChart as ArcLineChart, type LineChartProps } from "./arc/line-chart/line-chart";
 import { BarChart as ArcBarChart, type BarChartProps } from "./arc/bar-chart/bar-chart";
 import { DonutChart as ArcDonutChart, type DonutChartProps } from "./arc/donut-chart/donut-chart";
 import {
   ActivityHeatmap as ArcActivityHeatmap,
+  HeatScale as ArcHeatScale,
   type ActivityHeatmapProps,
 } from "./arc/activity-heatmap/activity-heatmap";
 
@@ -24,7 +26,9 @@ export function LineChart(props: LineChartProps) {
       selectSeriesLabel={t("Choose a series to show")}
       categoryLabel={t("Time")}
       {...props}
-      className={["bycoda-arc bycoda-arc-chart", props.className].filter(Boolean).join(" ")}
+      className={["bycoda-arc bycoda-arc-chart", styles.series, props.className]
+        .filter(Boolean)
+        .join(" ")}
     />
   );
 }
@@ -38,7 +42,7 @@ export function LineChart(props: LineChartProps) {
 export function BarChart(props: BarChartProps) {
   const t = useT();
   return (
-    <div className="bycoda-arc bycoda-arc-chart min-w-0">
+    <div className={`bycoda-arc bycoda-arc-chart ${styles.series} min-w-0`}>
       <ArcBarChart
         categoryLabel={t("Time")}
         averageLabel={t("Average")}
@@ -65,7 +69,9 @@ export function DonutChart(props: DonutChartProps) {
         otherLabel={t("Other")}
         totalLabel={t("Total")}
         {...props}
-        className={["bycoda-arc bycoda-arc-chart", props.className].filter(Boolean).join(" ")}
+        className={["bycoda-arc bycoda-arc-chart", styles.series, props.className]
+          .filter(Boolean)
+          .join(" ")}
       />
     </div>
   );
@@ -87,7 +93,27 @@ export function ActivityHeatmap(props: ActivityHeatmapProps) {
       lessLabel={t("Less")}
       moreLabel={t("More")}
       {...props}
-      className={["bycoda-arc bycoda-arc-chart", props.className].filter(Boolean).join(" ")}
+      className={["bycoda-arc bycoda-arc-chart", styles.series, props.className]
+        .filter(Boolean)
+        .join(" ")}
+    />
+  );
+}
+/**
+ * The less-to-more intensity legend of ActivityHeatmap as a static row, for a custom hour-by-day grid that colours cells with the chart heat levels.
+ * @group data
+ * @use Legend for a custom grid that uses `--ui-chart-heat-*` levels.
+ * @avoid A real day heatmap: ActivityHeatmap (its legend is built in).
+ */
+export function HeatScale({ className }: { className?: string }) {
+  const t = useT();
+  return (
+    <ArcHeatScale
+      lessLabel={t("Less")}
+      moreLabel={t("More")}
+      className={["bycoda-arc bycoda-arc-chart", styles.series, className]
+        .filter(Boolean)
+        .join(" ")}
     />
   );
 }

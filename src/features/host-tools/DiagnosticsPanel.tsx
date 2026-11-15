@@ -285,11 +285,11 @@ function ProjectDiagnosticsPanel({
       {!sample && !busy && !error ? (
         <EmptyState
           description={t("Take a sample to start the charts.")}
-          action={
-            <Button variant="primary" disabled={busy} onClick={() => void read()}>
-              {t("Take a sample")}
-            </Button>
-          }
+          action={{
+            label: t("Take a sample"),
+            disabled: busy,
+            onClick: () => void read(),
+          }}
         />
       ) : null}
       {sample ? (

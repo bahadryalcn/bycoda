@@ -3,7 +3,7 @@
 .token {
   position: relative;
   padding-block: 3px;
-  border-radius: var(--ui-radius-control);
+  border-radius: var(--ui-radius-inset);
   background: color-mix(in oklch, currentColor 12%, transparent);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
@@ -33,7 +33,7 @@
   gap: 0.18em;
   padding-block: 2px;
   padding-inline: 0.1em;
-  border-radius: var(--ui-radius-control);
+  border-radius: var(--ui-radius-inset);
   /* The face, not the source, carries the fill so it matches what is drawn. */
   background: color-mix(in oklch, currentColor 12%, transparent);
   font-size: 0.82em;
@@ -98,7 +98,7 @@
 
 .icon[data-draft-token-action] {
   z-index: 1;
-  border-radius: var(--ui-radius-control);
+  border-radius: var(--ui-radius-inset);
   pointer-events: auto;
   cursor: pointer;
 }

@@ -26,6 +26,7 @@ import type { HostProject, RemoteMachine } from "../../connections";
 import { Select } from "./settingsControls";
 import { CopyButton } from "./CopyButton";
 import styles from "./ExternalMcpAccess.module.css";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 
 const groups = ["conversation", "runtime-logs", "social"] as const;
 type Group = (typeof groups)[number];
@@ -633,12 +634,16 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
             <Text as="strong" size="inherit" tone="inherit" weight="medium">
               Claude Code · .mcp.json
             </Text>
-            <pre>{examples.claude}</pre>
+            <OutputBlock frame="filled" scroll>
+              {examples.claude}
+            </OutputBlock>
             <CopyButton value={examples.claude} label={t("Copy Claude Code example")} />
             <Text as="strong" size="inherit" tone="inherit" weight="medium">
               Codex · config.toml
             </Text>
-            <pre>{examples.codex}</pre>
+            <OutputBlock frame="filled" scroll>
+              {examples.codex}
+            </OutputBlock>
             <CopyButton value={examples.codex} label={t("Copy Codex example")} />
           </Text>
         </Popover>

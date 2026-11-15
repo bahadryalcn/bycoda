@@ -12,12 +12,12 @@
   box-sizing: border-box;
   align-items: center;
   gap: 0.5rem;
-  min-block-size: 2rem;
+  min-block-size: var(--ui-control-height-sm);
   padding-inline: 0.625rem;
   color: var(--ui-text-secondary);
 }
 .header[data-size="md"] {
-  min-block-size: 2.5rem;
+  min-block-size: var(--ui-control-height-lg);
   padding-inline: 0.75rem;
 }
 .header[data-divider] {

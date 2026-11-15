@@ -221,3 +221,17 @@ it("offers a nine-pixel presence dot with hollow offline state", async () => {
     dot.done();
   }
 });
+
+it("renders the removable chip with a named remove action", async () => {
+  const onRemove = vi.fn();
+  const chip = await render(createElement(Badge, { onRemove, removeLabel: "Remove main" }, "main"));
+  try {
+    expect(chip.container.firstElementChild?.className).toContain("chip");
+    const remove = chip.container.querySelector<HTMLButtonElement>("button")!;
+    expect(remove.getAttribute("aria-label")).toBe("Remove main");
+    await act(async () => remove.click());
+    expect(onRemove).toHaveBeenCalledOnce();
+  } finally {
+    chip.done();
+  }
+});

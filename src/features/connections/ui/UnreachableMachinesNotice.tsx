@@ -1,7 +1,5 @@
-import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { ErrorDetails } from "../../../shared/ui/ErrorDetails";
-import { RefreshCw } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 
 /**
@@ -28,22 +26,13 @@ export function UnreachableMachinesNotice({
   const t = useT();
   return (
     <div className={className} data-unreachable-machines-notice>
-      <Alert tone="warning" inline>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <strong className="min-w-0">{message}</strong>
-          <Button
-            type="button"
-            variant="primary"
-            startIcon={<RefreshCw className="icon-sm" aria-hidden />}
-            loading={retrying}
-            disabled={disabled}
-            onClick={onRetry}
-          >
-            {t("Retry")}
-          </Button>
-          {detail ? <ErrorDetails title={message} detail={detail} /> : null}
-        </div>
-      </Alert>
+      <InlineMessage
+        tone="warning"
+        retry={{ onRetry, label: t("Retry"), pending: retrying, disabled }}
+        extra={detail ? <ErrorDetails title={message} detail={detail} /> : undefined}
+      >
+        <strong>{message}</strong>
+      </InlineMessage>
     </div>
   );
 }

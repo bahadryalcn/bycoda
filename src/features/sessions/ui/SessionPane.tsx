@@ -1720,7 +1720,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           {savedDraftProjection.failed ? (
             <Alert
               tone="warning"
-              action={<Button onClick={savedDraftProjection.retry}>{t("Retry")}</Button>}
+              action={{ label: t("Retry"), onClick: savedDraftProjection.retry }}
             >
               {t("Could not load session ownership. Your saved draft is still available.")}
             </Alert>

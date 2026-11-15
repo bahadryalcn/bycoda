@@ -232,11 +232,9 @@ export function JobsTab({ snapshot }: { snapshot: AssistantSnapshot }) {
               : undefined
           }
           action={
-            view === "Today" && !filtered ? (
-              <Button variant="primary" onClick={() => setView("Jobs")}>
-                {t("Discuss a job")}
-              </Button>
-            ) : undefined
+            view === "Today" && !filtered
+              ? { label: t("Discuss a job"), onClick: () => setView("Jobs") }
+              : undefined
           }
         />
       )}

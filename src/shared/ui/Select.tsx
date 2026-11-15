@@ -336,7 +336,6 @@ export function Select({
                   if (!option.disabled) setActive(index);
                 }}
                 onClick={() => pick(option.value)}
-                className={`bycoda-arc-select-option`}
               >
                 <PickerChoice
                   selected={isSelected}

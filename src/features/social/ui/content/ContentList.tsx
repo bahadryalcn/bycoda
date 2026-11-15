@@ -231,18 +231,13 @@ export function ContentList({
           kind="filtered"
           className="content-platform-note"
           description={t("No posts match these filters.")}
-          action={
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                onAccountFilter("");
-                onStatusFilter("all");
-              }}
-            >
-              {t("Clear filters")}
-            </Button>
-          }
+          action={{
+            label: t("Clear filters"),
+            onClick: () => {
+              onAccountFilter("");
+              onStatusFilter("all");
+            },
+          }}
         />
       )}
       {programs.length ? (

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { useT } from "../../../shared/i18n";
 import { sameProjectPath } from "../../projects/public/recents";
@@ -93,13 +93,12 @@ function RemoteActivity({ notice }: { notice: RemoteActivityNotice }) {
       {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-2")}
       data-remote-activity={notice.kind}
     >
-      <Alert
-        inline
+      <InlineMessage
         tone={notice.failed ? "warning" : "info"}
-        onDismiss={() => dismissRemoteActivityNotice(notice)}
+        action={{ label: t("Dismiss"), onClick: () => dismissRemoteActivityNotice(notice) }}
       >
         <span className="min-w-0 break-words">{text}</span>
-      </Alert>
+      </InlineMessage>
     </div>
   );
 }

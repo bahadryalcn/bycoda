@@ -6,7 +6,13 @@ import { useMemo, useState, type CSSProperties } from "react";
 import { formatNumber, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
-import { ActivityHeatmap, BarChart, DonutChart, LineChart } from "../../../shared/ui/Charts";
+import {
+  ActivityHeatmap,
+  BarChart,
+  DonutChart,
+  HeatScale,
+  LineChart,
+} from "../../../shared/ui/Charts";
 import { ChevronLeft, ChevronRight } from "../../../shared/ui/icons";
 import { Select } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -715,19 +721,7 @@ export function TimeDistribution({
             </div>
           ))}
         </div>
-        <Text
-          as="div"
-          size="caption"
-          tone="secondary"
-          leading="inherit"
-          className="usage-heat-legend"
-        >
-          <span>{t("Less")}</span>
-          {[0, 1, 2, 3, 4].map((level) => (
-            <i key={level} data-level={level} />
-          ))}
-          <span>{t("More")}</span>
-        </Text>
+        <HeatScale className="mt-3" />
       </section>
     </div>
   );

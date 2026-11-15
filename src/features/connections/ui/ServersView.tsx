@@ -589,17 +589,10 @@ export function ServersView({
       </div>
       {error ? (
         <div className="px-3 py-2">
-          <Alert tone="warning">
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-              <span>
-                {loaded
-                  ? t("Couldn’t refresh servers. Showing last loaded data.")
-                  : t("Couldn’t load servers.")}
-              </span>
-              <Button variant="ghost" loading={loading} onClick={refresh}>
-                {t("Retry")}
-              </Button>
-            </div>
+          <Alert tone="warning" action={{ label: t("Retry"), pending: loading, onClick: refresh }}>
+            {loaded
+              ? t("Couldn’t refresh servers. Showing last loaded data.")
+              : t("Couldn’t load servers.")}
           </Alert>
         </div>
       ) : null}
@@ -608,7 +601,7 @@ export function ServersView({
           {fitsOneLine(actionError) ? (
             <Alert tone="danger">{actionError}</Alert>
           ) : (
-            <Alert tone="danger" action={<ErrorDetails detail={actionError} />}>
+            <Alert tone="danger" extra={<ErrorDetails detail={actionError} />}>
               {t("The action failed. Check the details and retry.")}
             </Alert>
           )}
@@ -663,11 +656,7 @@ export function ServersView({
               description={t(
                 "Add an SSH server for terminal access, or a machine running bycoda Host.",
               )}
-              action={
-                <Button variant="primary" onClick={() => setEditor("new")}>
-                  {t("Add SSH server")}
-                </Button>
-              }
+              action={{ label: t("Add SSH server"), onClick: () => setEditor("new") }}
             />
           ) : null}
           {servers.length > 0 && filtered.length === 0 ? (

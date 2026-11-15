@@ -211,7 +211,7 @@ export function ProjectNotificationSettings({
         {preferencesUnavailable ? (
           <SettingsFeedback
             state="warning"
-            action={<Button onClick={() => retryPreferencesRead()}>{t("Retry")}</Button>}
+            action={{ label: t("Retry"), onClick: () => retryPreferencesRead() }}
           >
             {t(
               "Saved project notification choices could not be read. The values shown are the last known ones and changes are paused until they can be read.",
@@ -464,13 +464,10 @@ export function ProjectNotificationSettings({
                       <div className="project-notification-error">
                         <SettingsFeedback
                           state="error"
-                          action={
-                            <Button
-                              onClick={() => setCategory(project.id, error.category, error.enabled)}
-                            >
-                              {t("Retry")}
-                            </Button>
-                          }
+                          action={{
+                            label: t("Retry"),
+                            onClick: () => setCategory(project.id, error.category, error.enabled),
+                          }}
                         >
                           {t("Could not save notification preferences. Please try again.")}
                           <span className="block">

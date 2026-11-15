@@ -114,7 +114,7 @@ export function BuilderPreview({
           {avatar ? (
             <div className={styles.avatarResult}>
               <AssistantAvatarMark
-                className={styles.avatarPreview}
+                avatarSize="lg"
                 value={avatar}
                 name={proposal.profile.name ?? current.name ?? ""}
               />

@@ -1,6 +1,7 @@
 import { useId } from "react";
 import type { ComponentPropsWithRef, ReactNode } from "react";
 import { fieldDescribedBy, fieldMessageIds } from "./arc/lib/field-ids";
+import { FieldDescription, FieldLabelRow } from "./arc/lib/field-description";
 import { optionalTextAttributes, type TextRoles } from "./Text";
 import styles from "./Field.module.css";
 
@@ -18,6 +19,8 @@ export interface FieldProps {
   /** Keep the label for assistive tech only; the control then needs its own visible context. */
   hideLabel?: boolean;
   description?: string;
+  /** Render the description as a visible subline. Default: behind the info (i) affordance; use it only for scope or consequence. */
+  descriptionVisible?: boolean;
   error?: string;
   variant?: FieldVariant;
   /** Control id; generated when omitted. The label points at it. */
@@ -33,7 +36,7 @@ export { fieldDescribedBy, fieldMessageIds };
  * The one label, control, error and description composition for controls that do not own it
  * themselves (Select, SearchableSelect, pickers, color/range triggers). Label points at the control id;
  * `children` may be a function receiving `id`, `aria-describedby` and `aria-invalid`. `error` is announced
- * as an alert and shown above `description`; `hideLabel` keeps the label for assistive tech only
+ * as an alert and shown above `description`; `description` sits behind the info (i) affordance unless `descriptionVisible` (scope or consequence only); `hideLabel` keeps the label for assistive tech only
  * (the control then needs visible context). `variant` is `form` (label above) or `compact` (toolbar).
  * TextField and TextareaField render the same structure internally.
  * @group fields
@@ -45,6 +48,7 @@ export function Field({
   label,
   hideLabel = false,
   description,
+  descriptionVisible,
   error,
   variant = "form",
   id,
@@ -66,9 +70,11 @@ export function Field({
       data-invalid={error ? "" : undefined}
     >
       {!hideLabel && (
-        <FieldLabel className={styles.label} htmlFor={controlId}>
-          {label}
-        </FieldLabel>
+        <FieldLabelRow description={description} visible={descriptionVisible}>
+          <FieldLabel className={styles.label} htmlFor={controlId}>
+            {label}
+          </FieldLabel>
+        </FieldLabelRow>
       )}
       {typeof children === "function" ? children(control) : children}
       {error ? (
@@ -77,9 +83,12 @@ export function Field({
         </span>
       ) : null}
       {description ? (
-        <span id={ids.description} className={styles.description}>
-          {description}
-        </span>
+        <FieldDescription
+          id={ids.description}
+          text={description}
+          visible={descriptionVisible || hideLabel}
+          className={styles.description}
+        />
       ) : null}
     </div>
   );

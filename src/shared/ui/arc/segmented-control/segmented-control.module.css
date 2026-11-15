@@ -12,19 +12,19 @@
   display: inline-flex;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  background: var(--surface-muted);
+  background: var(--ui-field-surface);
 }
 /* The track owns the stacking context so the gliding highlight passes under every label, not over earlier ones. */
 .track {
-  --fade-start: 0px;
-  --fade-end: 0px;
+  --fade-start: 0rem;
+  --fade-end: 0rem;
   isolation: isolate;
   display: flex;
   min-width: 0;
-  gap: 2px;
+  gap: calc(var(--space-1) / 2);
   overflow-x: auto;
   overscroll-behavior-x: contain;
-  padding: 3px;
+  padding: calc(var(--space-1) * 0.75);
   border-radius: inherit;
   scrollbar-width: none;
   -webkit-mask-image: linear-gradient(
@@ -46,10 +46,10 @@
   display: none;
 }
 .track[data-fade-start] {
-  --fade-start: 20px;
+  --fade-start: var(--space-6);
 }
 .track[data-fade-end] {
-  --fade-end: 20px;
+  --fade-end: var(--space-6);
 }
 /* Items never scale or change weight; only the highlight travels and the label color follows it. */
 .button {
@@ -58,12 +58,12 @@
   min-width: 0;
   min-height: var(--control-height-sm);
   border: 0;
-  border-radius: calc(var(--radius-control) - 4px);
-  padding: 0 12px;
+  border-radius: var(--ui-radius-inset);
+  padding: 0 var(--space-3);
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-caption);
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -90,7 +90,7 @@
 }
 /* The track scrolls and fades at its edges, so an outset ring would be clipped there. */
 .track .button:focus-visible {
-  outline-offset: -2px;
+  outline-offset: calc(var(--ui-focus-width) * -1);
 }
 .button:disabled {
   color: var(--ui-control-disabled-fg);
@@ -108,10 +108,8 @@
   position: absolute;
   z-index: -1;
   inset: 0;
-  border: 1px solid var(--border);
   border-radius: inherit;
   background: var(--ui-surface-selected);
-  box-shadow: var(--shadow-resting);
 }
 .label {
   position: relative;
@@ -121,7 +119,7 @@
   max-width: 100%;
   overflow: hidden;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .copy {
   min-width: 0;
@@ -144,7 +142,7 @@
 }
 @media (max-width: 380px) {
   .button {
-    padding: 0 10px;
+    padding: 0 var(--space-3);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -196,5 +194,4 @@
 }
 .root[data-compact] .selection {
   background: var(--ui-surface-selected);
-  border-color: var(--accent);
 }

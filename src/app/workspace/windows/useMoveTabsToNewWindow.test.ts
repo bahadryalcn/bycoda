@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { message } from "@tauri-apps/plugin-dialog";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { newSession } from "../../../features/sessions/model/session";
 import { newEditorWorkspaceTab, newTab } from "../../../features/workspace/model/layout";
 import {
@@ -16,7 +16,7 @@ import { useMoveTabsToNewWindow, type MoveTabsToNewWindowDeps } from "./useMoveT
 const native = vi.hoisted(() => ({ label: "window-1" }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => native }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn() }));
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: vi.fn() } }));
 vi.mock("../../model/appLifecycle", () => ({
   abortQuit: vi.fn(),
   relinquishTransferredWindow: vi.fn(),
@@ -32,7 +32,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(console, "debug").mockImplementation(() => {});
   vi.mocked(invoke).mockReset();
-  vi.mocked(message).mockClear();
+  vi.mocked(toast.show).mockClear();
   native.label = "window-1";
   const session = { ...newSession("codex", "/repo"), id: "running-session", busy: true };
   const tab = { ...newTab(session.id), id: crypto.randomUUID() };
@@ -117,7 +117,7 @@ describe("detached workspace movement", () => {
     expect(deps.setTabs).not.toHaveBeenCalled();
     expect(deps.setPendingWindowMoves).not.toHaveBeenCalled();
     expect(deps.movingTabIds.current.size).toBe(0);
-    expect(message).toHaveBeenCalledOnce();
+    expect(toast.show).toHaveBeenCalledOnce();
   });
 });
 
@@ -191,9 +191,9 @@ describe("transfer to another window: ownership, ACK, reject and queue", () => {
     expect(deps.setTabs).not.toHaveBeenCalled();
     expect(deps.setSessions).not.toHaveBeenCalled();
     expect(deps.setProjectTerminals).not.toHaveBeenCalled();
-    expect(message).toHaveBeenCalledOnce();
-    expect(vi.mocked(message).mock.calls[0][0]).toContain("Your tab is still here.");
-    expect(vi.mocked(message).mock.calls[0][0]).toContain("This panel is not ready");
+    expect(toast.show).toHaveBeenCalledOnce();
+    expect(vi.mocked(toast.show).mock.calls[0][0].title).toContain("Your tab is still here.");
+    expect(vi.mocked(toast.show).mock.calls[0][0].message).toContain("This panel is not ready");
     expect(deps.movingTabIds.current.size).toBe(0);
     expect(deps.movingSessionIds.current.size).toBe(0);
     expect(deps.skipForgetSessionIds.current.size).toBe(0);
@@ -216,7 +216,7 @@ describe("transfer to another window: ownership, ACK, reject and queue", () => {
     deps.dirtyFilesRef.current = new Set(["doc"]);
     expect(await actions.onMoveTabsToNewWindow([tab.id])).toBe("failed");
     expect(invoke).not.toHaveBeenCalled();
-    expect(message).toHaveBeenCalledOnce();
+    expect(toast.show).toHaveBeenCalledOnce();
     expect(deps.setTabs).not.toHaveBeenCalled();
     expect(deps.movingTabIds.current.size).toBe(0);
     expect(published).toEqual([]);
@@ -228,7 +228,7 @@ describe("transfer to another window: ownership, ACK, reject and queue", () => {
     deps.sessionsRef.current = [];
     expect(await actions.onMoveTabsToNewWindow([tab.id])).toBe("failed");
     expect(invoke).not.toHaveBeenCalled();
-    expect(message).toHaveBeenCalledOnce();
+    expect(toast.show).toHaveBeenCalledOnce();
     expect(deps.movingTabIds.current.size).toBe(0);
   });
 
@@ -238,7 +238,7 @@ describe("transfer to another window: ownership, ACK, reject and queue", () => {
     deps.movingTabIds.current.add(tabId);
     expect(await actions.onMoveTabsToNewWindow([tabId])).toBeUndefined();
     expect(invoke).not.toHaveBeenCalled();
-    expect(message).not.toHaveBeenCalled();
+    expect(toast.show).not.toHaveBeenCalled();
     expect(published).toEqual([]);
   });
 });

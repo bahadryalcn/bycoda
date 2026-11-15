@@ -52,6 +52,51 @@ export type SurfaceVariant =
   | "diff-add"
   | "diff-delete"
   | "adaptive-base";
+/**
+ * The four container roles of the component system. Frames are none/pane/card; radii control 8,
+ * row 6, popup 12.
+ * - `page`: canvas, no frame.
+ * - `card`: card border, radius control.
+ * - `inset`: muted ground, radius row (code, output, wells).
+ * - `floating`: popup radius and floating elevation.
+ * A Surface inside a Surface of the same role paints no second fill or frame.
+ */
+export type SurfaceRole = "page" | "card" | "inset" | "floating";
+
+/** Compat aliases: every legacy variant maps to a role (or to none for a data or domain ground). */
+const VARIANT_ROLE: Partial<Record<SurfaceVariant, SurfaceRole>> = {
+  canvas: "page",
+  base: "page",
+  "canvas-chat": "page",
+  "canvas-surface": "page",
+  "reading-base": "page",
+  "adaptive-base": "page",
+  "workspace-panel": "page",
+  "reading-panel": "page",
+  "navigation-quiet": "page",
+  transparent: "page",
+  card: "card",
+  plain: "card",
+  raised: "card",
+  outline: "card",
+  quiet: "card",
+  panel: "card",
+  inset: "inset",
+  "fill-subtle": "inset",
+  "fill-faint": "inset",
+  "neutral-metadata": "inset",
+  floating: "floating",
+  "danger-floating": "floating",
+  translucent: "floating",
+  "composer-glass": "floating",
+  "activity-dock": "floating",
+};
+
+/** The role a variant resolves to; unset for tone, identity and diff grounds. */
+export function surfaceRole(variant: SurfaceVariant | undefined): SurfaceRole | undefined {
+  return variant ? VARIANT_ROLE[variant] : undefined;
+}
+
 export type SurfacePadding = "none" | "sm" | "md" | "lg";
 
 export type SurfaceAppearance = {
@@ -170,19 +215,6 @@ export type SurfaceAppearance = {
     | "pane-outer"
     | "base-outer"
     | "panel-outer";
-  /** A 2px inline-start accent bar for a quoted note, citation or status row. `pane` is the pane
-   *  frame colour, `neutral` the neutral tone border, `accent` the interaction ink, `info` the info
-   *  tone foreground, `user-accent` the configured accent and `success` the success tone border.
-   *  It draws only that one edge. */
-  bar?:
-    | "pane"
-    | "neutral"
-    | "accent"
-    | "user-accent"
-    | "info"
-    | "success"
-    | "diagnostic-danger"
-    | "diagnostic-empty";
 };
 
 /** The semantic tones with a subtle fill token (`--ui-tone-<tone>-subtle`). */
@@ -205,6 +237,7 @@ export function surfaceAttributes(appearance: SurfaceAppearance, className?: str
     "data-surface-layout": appearance.layout,
     "data-surface-reveal": appearance.reveal,
     "data-surface-variant": appearance.variant,
+    "data-surface-role": surfaceRole(appearance.variant),
     "data-surface-frame": appearance.frame,
     "data-surface-edge": appearance.edge,
     "data-surface-border-style": appearance.borderStyle,
@@ -213,7 +246,6 @@ export function surfaceAttributes(appearance: SurfaceAppearance, className?: str
     "data-surface-tone-fill": appearance.toneFill,
     "data-surface-elevation": appearance.elevation,
     "data-surface-ring": appearance.ring,
-    "data-surface-bar": appearance.bar,
     "data-surface-separator": appearance.separator,
     className: [styles.appearance, className].filter(Boolean).join(" "),
   };
@@ -239,10 +271,15 @@ export type SurfaceProps = ComponentPropsWithoutRef<"div"> & {
 } & Omit<SurfaceAppearance, "variant">;
 
 /**
+ * Static container in one of four roles (page, card, inset, floating; see `SurfaceRole`). The
+ * 43 legacy variants stay as compat aliases mapped to a role in `VARIANT_ROLE` (deprecated
+ * for new code): pick `card`, `inset`, `floating` or the page ground and express the rest with
+ * `tone`, `frame` (none, pane, card) and `radius` (control, row, popup).
+ *
  * Static container with the shared card radius (`--ui-radius-card`). Not interactive: rows
  * and cards that act use Button/ActionHost.
  *
- * Nesting: a Surface inside a Surface keeps its fill and padding but drops its frame, so
+ * Nesting: a Surface inside a Surface of the same role paints no second fill or frame, so
  * there is never a card inside a card. Separate nested groups with spacing or `Divider`.
  * Workspace grounds: canvas, workspace-panel, canvas-chat, canvas-surface, reading-base,
  * navigation-quiet use their existing theme roles. selected is a static highlight, never an action.
@@ -272,7 +309,6 @@ export function Surface({
   toneFill,
   elevation,
   ring,
-  bar,
   separator,
   dividers,
   focusRing,
@@ -288,6 +324,7 @@ export function Surface({
       {...props}
       ref={ref as Ref<HTMLDivElement>}
       data-variant={variant}
+      data-surface-role={surfaceRole(variant)}
       data-padding={padding}
       data-surface-frame={frame}
       data-surface-edge={edge}
@@ -297,7 +334,6 @@ export function Surface({
       data-surface-tone-fill={toneFill}
       data-surface-elevation={elevation}
       data-surface-ring={ring}
-      data-surface-bar={bar}
       data-surface-separator={separator}
       data-surface-dividers={dividers}
       data-surface-focus-ring={focusRing}

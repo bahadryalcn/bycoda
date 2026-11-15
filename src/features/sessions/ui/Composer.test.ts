@@ -752,7 +752,7 @@ describe("Composer question focus", () => {
     const list = document.querySelector<HTMLElement>('[data-mcp-picker] [role="listbox"]')!;
     expect(list.querySelectorAll('[role="option"]')).toHaveLength(6);
     expect(list.parentElement?.classList.contains("max-h-[min(184px,45vh)]")).toBe(true);
-    expect(list.querySelector('[role="option"]')?.className).toContain("bycoda-arc");
+    expect(list.querySelector('[role="option"]')?.className).toMatch(/_row_/);
     const pickerDialog = document.querySelector("[data-mcp-picker]")?.closest('[role="dialog"]');
     expect(pickerDialog?.getAttribute("aria-label")).toBe("Choose an MCP server");
     expect(pickerDialog?.parentElement?.querySelector(".popover-backdrop")).not.toBeNull();

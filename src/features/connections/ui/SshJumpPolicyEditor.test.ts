@@ -24,7 +24,12 @@ it("explicitly reorders and removes complete hop drafts and preserves hidden fil
           identityFile: "~/first key",
           knownHostsFile: "~/first trust",
         },
-        { host: "second", user: "bob", port: 2222, certificateFile: "~/second cert" },
+        {
+          host: "second",
+          user: "bob",
+          port: 2222,
+          certificateFile: "~/second cert",
+        },
       ]),
     );
     current = value;
@@ -78,10 +83,21 @@ it("honors controlled changes and eight-hop/disabled limits without callbacks on
   }));
   try {
     await act(async () =>
-      root.render(createElement(SshJumpPolicyEditor, { value, onChange: change, disabled: true })),
+      root.render(
+        createElement(SshJumpPolicyEditor, {
+          value,
+          onChange: change,
+          disabled: true,
+        }),
+      ),
     );
     expect(change).not.toHaveBeenCalled();
-    expect([...host.querySelectorAll("button")].every((b) => b.disabled)).toBe(true);
+    // Field help buttons (aria-haspopup) stay readable while the editor is disabled.
+    expect(
+      [...host.querySelectorAll("button:not([aria-haspopup])")].every(
+        (b) => (b as HTMLButtonElement).disabled,
+      ),
+    ).toBe(true);
     await act(async () =>
       root.render(createElement(SshJumpPolicyEditor, { value, onChange: change })),
     );
@@ -89,7 +105,13 @@ it("honors controlled changes and eight-hop/disabled limits without callbacks on
       [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Add jump host"))
         ?.disabled,
     ).toBe(true);
-    const next = [{ ...value[0], host: "external-change", certificateFile: "~/preserved cert" }];
+    const next = [
+      {
+        ...value[0],
+        host: "external-change",
+        certificateFile: "~/preserved cert",
+      },
+    ];
     await act(async () =>
       root.render(createElement(SshJumpPolicyEditor, { value: next, onChange: change })),
     );

@@ -69,7 +69,7 @@
   block-size: var(--space-1);
   overflow: hidden;
   border-radius: var(--radius-pill);
-  background: var(--color-stroke);
+  background: var(--ui-tone-neutral-subtle);
   isolation: isolate;
   -webkit-tap-highlight-color: transparent;
 }
@@ -141,7 +141,7 @@
   gap: 2px;
   padding: var(--space-2);
   border: 0;
-  border-radius: calc(var(--radius-control) - 6px);
+  border-radius: var(--ui-radius-row);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -188,7 +188,7 @@
   grid-area: 1 / 1;
   width: 10px;
   height: 10px;
-  border-radius: 3px;
+  border-radius: 2px;
 }
 .swatch[data-index="free"] {
   background: var(--ui-surface-muted);
@@ -303,20 +303,20 @@
 
 /* Quota rows and full quota cards share one track; only surrounding copy differs. */
 .meter[data-tone="neutral"] {
-  --segment-0: var(--ui-tone-neutral-fg);
+  --segment-0: var(--ui-tone-neutral-solid);
 }
 .meter[data-tone="accent"] {
-  --segment-0: var(--ui-tone-accent-fg);
+  --segment-0: var(--ui-tone-accent-solid);
 }
 .meter[data-tone="success"] {
-  --segment-0: var(--ui-tone-success-fg);
+  --segment-0: var(--ui-tone-success-solid);
 }
 .meter[data-tone="info"] {
-  --segment-0: var(--ui-tone-info-fg);
+  --segment-0: var(--ui-tone-info-solid);
 }
 .meter[data-tone="warning"] {
-  --segment-0: var(--ui-tone-warning-fg);
+  --segment-0: var(--ui-tone-warning-solid);
 }
 .meter[data-tone="danger"] {
-  --segment-0: var(--ui-tone-danger-fg);
+  --segment-0: var(--ui-tone-danger-solid);
 }

@@ -752,14 +752,11 @@ export function InboxDetail({
                   {postRefreshError ? (
                     <Alert
                       tone="warning"
-                      action={
-                        <Button
-                          loading={threadRefreshing}
-                          onClick={() => void refreshPostedThread()}
-                        >
-                          {t("Retry refresh")}
-                        </Button>
-                      }
+                      action={{
+                        label: t("Retry refresh"),
+                        pending: threadRefreshing,
+                        onClick: () => void refreshPostedThread(),
+                      }}
                     >
                       <p>{t("Comment sent. Could not refresh the conversation.")}</p>
                       <Text as="p" size="caption" tone="inherit" className="wrap-anywhere">

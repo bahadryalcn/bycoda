@@ -780,11 +780,7 @@ export function LinearSettings() {
             teamScope.error ? (
               <SettingsFeedback
                 state="error"
-                action={
-                  <Button stableWidth onClick={teamScope.retry}>
-                    {t("Retry")}
-                  </Button>
-                }
+                action={{ label: t("Retry"), onClick: teamScope.retry }}
               >
                 {t("Saved Inbox scope is unavailable. Retry before changing it.")}
               </SettingsFeedback>

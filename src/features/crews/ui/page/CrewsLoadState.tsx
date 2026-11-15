@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
 import { Alert } from "../../../../shared/ui/Alert";
-import { Button } from "../../../../shared/ui/Button";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import type { ProjectCrews, useProjectCrews } from "../../model/crewClient";
 
@@ -11,11 +10,7 @@ function RetryAlert({ state }: { state: CrewState }) {
   return (
     <Alert
       tone="warning"
-      action={
-        <Button variant="secondary" loading={state.isFetching} onClick={() => void state.refetch()}>
-          {t("Retry")}
-        </Button>
-      }
+      action={{ label: t("Retry"), pending: state.isFetching, onClick: () => void state.refetch() }}
     >
       {state.error?.message}
     </Alert>

@@ -18,7 +18,7 @@ import {
 } from "motion/react";
 import { useStableCallback } from "../../../hooks/useStableCallback";
 import { observeResize } from "../../../lib/observeResize";
-import { CheckCircle, CircleX, Info, TriangleAlert } from "../../icons";
+import { NoticeGlyph, NoticeSlot } from "../../Notice";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./toast-stack.module.css";
 
@@ -276,15 +276,6 @@ export function ToastStackItem({
   );
 }
 
-/** Each tone has its own glyph, so the tone is never carried by colour alone. */
-const icons = {
-  neutral: Info,
-  info: Info,
-  success: CheckCircle,
-  warning: TriangleAlert,
-  danger: CircleX,
-};
-
 export interface ToastStackCardProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
   ref?: Ref<HTMLDivElement>;
   /** Drives the glyph and the role: danger announces assertively, the others politely. */
@@ -322,7 +313,6 @@ export function ToastStackCard({
   const item = useContext(ToastStackItemContext);
   const content = useRef<HTMLDivElement>(null);
   const measure = item?.measure;
-  const Icon = icons[tone];
 
   // Measured before the first paint, so the toast enters from exactly its own height beyond the edge.
   // oxlint-disable-next-line bycoda/effect-names-its-sync -- reports the content height to the stack and follows its resizes
@@ -348,16 +338,18 @@ export function ToastStackCard({
         className={styles.content}
         style={item ? { opacity: item.contentOpacity } : undefined}
       >
-        <span className={styles.icon} data-tone={tone} aria-hidden="true">
-          <Icon width={18} height={18} strokeWidth={1.75} />
-        </span>
+        <NoticeGlyph tone={tone} size="box" />
         <div className={styles.copy}>
           {title ? <strong className={styles.title}>{title}</strong> : null}
           {description ? <div className={styles.description}>{description}</div> : null}
           {children ? <div className={styles.body}>{children}</div> : null}
         </div>
-        {action ? <div className={styles.actionSlot}>{action}</div> : null}
-        {close ? <div className={styles.closeSlot}>{close}</div> : null}
+        {action ? (
+          <NoticeSlot size="box" className={styles.actionSlot}>
+            {action}
+          </NoticeSlot>
+        ) : null}
+        {close ? <NoticeSlot size="box">{close}</NoticeSlot> : null}
         {footer ? <div className={styles.footer}>{footer}</div> : null}
       </motion.div>
     </div>

@@ -1,0 +1,22 @@
+/* One notice motion: opacity plus a short rise on enter. Reduced motion is a plain fade. */
+@keyframes notice-enter {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+}
+@keyframes notice-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.enter {
+  animation: notice-enter var(--motion-duration-standard) var(--motion-ease-standard) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter {
+    animation-name: notice-fade;
+  }
+}

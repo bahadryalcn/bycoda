@@ -10,6 +10,7 @@ import { announceUpdateAvailable } from "../../features/settings/model/sounds";
 import { rememberInstalledUpdate } from "./updateNotice";
 import { settleUpdateCheck } from "./updateProbeBackoff";
 import { appName } from "../../shared/lib/appName";
+import { toast } from "../../shared/ui/ToastRegion";
 
 export type UpdaterPhase = "idle" | "checking" | "current" | "available" | "downloading" | "error";
 
@@ -58,8 +59,10 @@ export async function isUpdaterEnabled(): Promise<boolean> {
   return (knownUpdaterEnabled = identifier === PRODUCT_IDENTIFIER);
 }
 
-export const UPDATES_DISABLED_MESSAGE =
-  "Automatic updates are disabled in this build. Rebuild from source to update (see docs/reference/fork.md).";
+export const updatesDisabledMessage = () =>
+  t(
+    "Automatic updates are disabled in this build. Rebuild from source to update (see docs/reference/fork.md).",
+  );
 
 export async function readAppVersion(): Promise<string> {
   return (knownAppVersion = await getVersion());
@@ -112,7 +115,7 @@ async function runUpdateFlowOnce(
     const idle: UpdaterSnapshot = { phase: "idle", currentVersion };
     onProgress?.(idle);
     if (manual) {
-      await message(UPDATES_DISABLED_MESSAGE, { title: appName() });
+      toast.show({ tone: "info", message: updatesDisabledMessage() });
     }
     return idle;
   }
@@ -126,7 +129,7 @@ async function runUpdateFlowOnce(
       const current: UpdaterSnapshot = { phase: "current", currentVersion };
       onProgress?.(current);
       if (manual) {
-        await message(t("You're on the latest version."), { title: appName() });
+        toast.show({ tone: "info", message: t("You're on the latest version.") });
       }
       return current;
     }
@@ -166,12 +169,17 @@ async function runUpdateFlowOnce(
       const idle: UpdaterSnapshot = { phase: "idle", currentVersion };
       onProgress?.(idle);
       if (manual) {
-        await message(
-          PRODUCT_IDENTITY.repositoryUrl
-            ? `Automatic updates aren't configured for this build.\n\nVisit ${PRODUCT_IDENTITY.repositoryUrl} for product information.`
-            : UPDATES_DISABLED_MESSAGE,
-          { title: appName() },
-        );
+        toast.show({
+          tone: "info",
+          ...(PRODUCT_IDENTITY.repositoryUrl
+            ? {
+                title: t("Automatic updates aren't configured for this build."),
+                message: t("Visit {p0} for product information.", {
+                  p0: PRODUCT_IDENTITY.repositoryUrl,
+                }),
+              }
+            : { message: updatesDisabledMessage() }),
+        });
       }
       return idle;
     }
@@ -180,9 +188,7 @@ async function runUpdateFlowOnce(
     const failed: UpdaterSnapshot = { phase: "error", currentVersion, error };
     onProgress?.(failed);
     if (manual) {
-      await message(t("Couldn't check for updates.\n\n{p0}", { p0: error }), {
-        title: appName(),
-      });
+      toast.show({ tone: "danger", title: t("Couldn't check for updates."), message: error });
     }
     return failed;
   }

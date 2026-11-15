@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
 
-/** Shared by calendar and date-range-picker, which both re-export it, so one copy keeps their "today" in step. */
+/** Shared by the date pickers and Timestamp so one copy keeps their "today" in step. */
 const dateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const fromKey = (key: string) => {

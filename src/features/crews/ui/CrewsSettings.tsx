@@ -21,11 +21,7 @@ export function CrewsSettings() {
         failedValue !== null ? (
           <SettingsFeedback
             state="error"
-            action={
-              <Button size="sm" variant="ghost" onClick={() => save(failedValue)}>
-                {t("Retry")}
-              </Button>
-            }
+            action={{ label: t("Retry"), onClick: () => save(failedValue) }}
           >
             {t("Could not save changes")}
           </SettingsFeedback>

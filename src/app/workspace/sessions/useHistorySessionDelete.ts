@@ -1,4 +1,3 @@
-import { message } from "@tauri-apps/plugin-dialog";
 import {
   useCallback,
   useEffect,
@@ -38,10 +37,10 @@ import {
   leafIds,
   type WorkspaceTab,
 } from "../../../features/workspace/model/layout";
-import { appName } from "../../../shared/lib/appName";
 import { pathKey } from "../../../shared/lib/paths";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
 import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { filesInWorkspaceTabs } from "../helpers/tabHelpers";
 import { crewManagedSession } from "../../../features/crews/public/managed";
 import { refuseCrewManagedSession, reportCrewManagedRefusal } from "./crewManagedGuard";
@@ -157,19 +156,18 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
       if (removingSessionIds.current.has(sessionId)) return false;
       if (switchingWorktrees.current.has(sessionId) || deleteConfirmationPendingRef.current) {
         const reason = switchingWorktrees.current.has(sessionId)
-          ? "This conversation's checkout is being switched."
-          : "Another conversation delete is waiting for confirmation.";
+          ? t("This conversation's checkout is being switched.")
+          : t("Another conversation delete is waiting for confirmation.");
         if (onError) onError(reason);
         else
-          void message(
-            `Could not ${mode} this conversation.
-
-${reason}`,
-            {
-              title: appName(),
-              kind: "warning",
-            },
-          );
+          toast.show({
+            tone: "warning",
+            title:
+              mode === "archive"
+                ? t("Could not archive this conversation.")
+                : t("Could not delete this conversation."),
+            message: reason,
+          });
         return false;
       }
       const open = sessionsRef.current.find((session) => session.id === sessionId);
@@ -398,10 +396,13 @@ ${reason}`,
             await onRemoveWorktree(seed.cwd, deleteWorktreePath, false);
           } catch (error) {
             worktreeError = String(error);
-            void message(
-              `The session was deleted. Its worktree was kept.\n\n${String(error)}\n\nYou can manage it in Settings → Worktrees.`,
-              { title: appName(), kind: "warning" },
-            );
+            toast.show({
+              tone: "warning",
+              title: t("The session was deleted. Its worktree was kept."),
+              message: t("{p0}\n\nYou can manage it in Settings → Worktrees.", {
+                p0: String(error),
+              }),
+            });
           }
         }
         if (removed && deletionStatus) {
@@ -429,9 +430,13 @@ ${reason}`,
           onError(detail);
           return false;
         }
-        void message(`Could not ${mode} this conversation.\n\n${detail}`, {
-          title: appName(),
-          kind: "error",
+        toast.show({
+          tone: "danger",
+          title:
+            mode === "archive"
+              ? t("Could not archive this conversation.")
+              : t("Could not delete this conversation."),
+          message: detail,
         });
         return false;
       } finally {

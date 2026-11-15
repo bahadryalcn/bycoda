@@ -2,8 +2,7 @@ import {
   reserveSessionWindow,
   remoteSessionOwnershipKey,
 } from "../../model/sessionWindowOwnership";
-import { message } from "@tauri-apps/plugin-dialog";
-import { appName } from "../../../shared/lib/appName";
+import { toast } from "../../../shared/ui/ToastRegion";
 import {
   useCallback,
   useEffect,
@@ -276,7 +275,7 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
       try {
         release = await reserveSessionWindow([requestedKey]);
       } catch (error) {
-        await message(String(error), { title: appName(), kind: "warning" });
+        toast.show({ tone: "warning", message: String(error) });
         return;
       }
       if (!release) return;

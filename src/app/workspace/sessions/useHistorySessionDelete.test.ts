@@ -8,7 +8,7 @@ import { newTab } from "../../../features/workspace/model/layout";
 import { useHistorySessionDelete, type HistorySessionDeleteDeps } from "./useHistorySessionDelete";
 
 const storage = vi.hoisted(() => ({ archive: vi.fn(), remove: vi.fn(), confirm: vi.fn() }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn() }));
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: vi.fn() } }));
 vi.mock("../../../features/sessions/data/sessionStore", () => ({
   setSessionArchived: storage.archive,
   deleteSession: storage.remove,

@@ -220,6 +220,19 @@ html
 .surface .surface {
   border-color: transparent;
 }
+/* Same role inside the same role: no second fill, frame or shadow (the outer one already reads). */
+.surface[data-surface-role="card"] :is(.surface, .appearance)[data-surface-role="card"],
+.surface[data-surface-role="inset"] :is(.surface, .appearance)[data-surface-role="inset"],
+.surface[data-surface-role="floating"] :is(.surface, .appearance)[data-surface-role="floating"],
+.appearance[data-surface-role="card"] :is(.surface, .appearance)[data-surface-role="card"],
+.appearance[data-surface-role="inset"] :is(.surface, .appearance)[data-surface-role="inset"],
+.appearance[data-surface-role="floating"] :is(.surface, .appearance)[data-surface-role="floating"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 
 /* Partial presentation never introduces layout or spacing on an existing element. */
 .surface[data-variant="base"],
@@ -599,27 +612,6 @@ button.appearance[data-surface-frame="card"] {
 .appearance[data-surface-ring="pane-outer"] {
   box-shadow: 0 0 0 1px var(--ui-pane-border);
 }
-/* A 2px inline-start accent bar: one edge only, so a box keeps its own frame on the other sides. */
-.surface[data-surface-bar="pane"],
-.appearance[data-surface-bar="pane"] {
-  border-inline-start: 2px solid var(--ui-pane-border);
-}
-.surface[data-surface-bar="neutral"],
-.appearance[data-surface-bar="neutral"] {
-  border-inline-start: 2px solid var(--ui-tone-neutral-border);
-}
-.surface[data-surface-bar="accent"],
-.appearance[data-surface-bar="accent"] {
-  border-inline-start: 2px solid var(--ui-border-accent);
-}
-.surface[data-surface-bar="info"],
-.appearance[data-surface-bar="info"] {
-  border-inline-start: 2px solid var(--ui-tone-info-fg);
-}
-.surface[data-surface-bar="success"],
-.appearance[data-surface-bar="success"] {
-  border-inline-start: 2px solid var(--ui-tone-success-border);
-}
 .surface[data-variant="user-color-tint"],
 .appearance[data-surface-variant="user-color-tint"] {
   background: color-mix(in srgb, var(--surface-user-color) 24%, transparent);
@@ -664,10 +656,6 @@ button.appearance[data-surface-frame="card"] {
 .surface[data-surface-radius="right-control"],
 .appearance[data-surface-radius="right-control"] {
   border-radius: 0 var(--radius-control) var(--radius-control) 0;
-}
-.surface[data-surface-bar="user-accent"],
-.appearance[data-surface-bar="user-accent"] {
-  border-inline-start: 2px solid var(--accent);
 }
 
 .surface[data-variant="attachment"],
@@ -768,14 +756,6 @@ button.appearance[data-surface-frame="card"] {
 .surface[data-surface-frame="neutral-marker"],
 .appearance[data-surface-frame="neutral-marker"] {
   border: 1.5px solid var(--ui-tone-neutral-border);
-}
-.surface[data-surface-bar="diagnostic-danger"],
-.appearance[data-surface-bar="diagnostic-danger"] {
-  border-left: 2px solid var(--ui-tone-danger-border);
-}
-.surface[data-surface-bar="diagnostic-empty"],
-.appearance[data-surface-bar="diagnostic-empty"] {
-  border-left: 2px solid transparent;
 }
 
 .surface[data-surface-variant="drop-line"],

@@ -3,107 +3,62 @@
 
 /* Box layout is layered so consumer utilities can size, align or hide an alert. */
 @layer components {
-  /* Dismiss owns a fixed trailing slot, independent of copy and recovery wrapping. */
-  .inlineRow {
-    display: flex;
-    align-items: start;
-    gap: var(--space-2);
-    min-inline-size: 0;
-  }
-  .inlineCopy {
-    flex: 1;
-  }
   .presence {
     min-inline-size: 0;
   }
+  /* Glyph, copy and dismiss share the first line: each rides a first-line-tall box, so one-line,
+     wrapped and titled copy centre identically. */
   .alert {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-2);
     min-inline-size: 0;
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-control);
   }
-  /* A titled alert with details reads top-down, so the glyph sits on the title line. */
-  .alert:has(.title + .description) {
-    align-items: start;
-  }
   .body {
     display: flex;
     flex: 1;
     flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2) var(--space-3);
+    align-items: flex-start;
+    gap: var(--space-1) var(--space-3);
     min-inline-size: 0;
-  }
-  .icon,
-  .glyph {
-    position: relative;
-    display: grid;
-    flex: 0 0 auto;
-    place-items: center;
-  }
-  .icon {
-    inline-size: 1rem;
-    block-size: 1rem;
-    /* Aligns the glyph with the first line of the title. */
-    margin-block-start: 0.0625rem;
   }
   .copy {
     flex: 1 1 12rem;
     min-inline-size: 0;
   }
-  .action {
+  /* A small control is taller than the first line; the negative margin centres it on that line. */
+  .actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
+    margin-block: calc((var(--ui-leading-secondary) - var(--ui-control-height-sm)) / 2);
     margin-inline-start: auto;
   }
 }
-.icon svg {
-  display: block;
-  inline-size: 100%;
-  block-size: 100%;
-}
-.dismiss {
-  align-self: flex-start;
-  flex-shrink: 0;
-}
-/* A tone is a pairing of glyph, border and subtle surface; the text keeps the neutral ink. */
+/* A tone is a pairing of border and subtle surface; the glyph carries the ink, the text stays neutral. */
 .alert {
   border: 1px solid var(--alert-border, var(--border));
   background: var(--alert-surface, var(--ui-surface));
   color: var(--foreground);
-  line-height: var(--leading-body);
-}
-.content {
-  position: relative;
 }
 .title {
-  position: relative;
   display: block;
   font-size: var(--ui-font-secondary);
   font-weight: 500;
   line-height: var(--ui-leading-secondary);
 }
-.line {
-  display: block;
-  overflow-wrap: anywhere;
-}
 .description {
-  position: relative;
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--ui-font-caption);
   line-height: var(--ui-leading-caption);
   overflow-wrap: anywhere;
 }
-.title + .description {
-  margin-block-start: var(--space-1);
-}
 /* Without a title the copy is the message, so it takes the primary ink. */
-.copy > .content > .description:first-child {
+.copy > .description:first-child {
   color: var(--foreground);
   font-size: var(--ui-font-secondary);
   line-height: var(--ui-leading-secondary);
@@ -123,16 +78,4 @@
 .danger {
   --alert-border: var(--ui-tone-danger-border);
   --alert-surface: var(--ui-tone-danger-subtle);
-}
-.info .icon {
-  color: var(--ui-tone-info-fg);
-}
-.success .icon {
-  color: var(--ui-tone-success-fg);
-}
-.warning .icon {
-  color: var(--ui-tone-warning-fg);
-}
-.danger .icon {
-  color: var(--ui-tone-danger-fg);
 }

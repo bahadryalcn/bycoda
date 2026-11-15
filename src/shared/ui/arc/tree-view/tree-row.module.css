@@ -1,7 +1,7 @@
 /* Free Arc tree-view row geometry; no hierarchy, focus or drag controller.
-   State grammar: selected = tinted fill, hover/pressed = neutral fill, keyboard focus = inset ring,
-   drop destination = inset accent frame (never a fill, so it stays distinct from selection),
-   cut/dragging = dimmed content. */
+   The row skin (height, radius, hover, selected, pressed, disabled) is the shared ListRow recipe.
+   This file adds depth indent, the drop destination (inset accent frame, never a fill, so it stays distinct
+   from selection) and cut/dragging (dimmed content). */
 @layer properties, theme, base, components, utilities;
 /* F3 contract: caller className may change placement (width, margins, flex/grid
    placement), layered below Tailwind utilities; presentation below stays unlayered. */
@@ -12,34 +12,10 @@
   }
 }
 .row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  block-size: var(--ui-control-height-compact);
-  padding-block: 0;
+  composes: row from "../../ListRow.module.css";
   padding-inline: calc(8px + var(--tree-row-depth, 0) * 12px) 8px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--color-content);
-  font: inherit;
-  font-size: var(--ui-font-secondary);
   line-height: 1;
-  text-align: start;
   cursor: default;
-  user-select: none;
-}
-.row[aria-selected="true"] {
-  background: var(--ui-surface-selected);
-}
-@media (hover: hover) and (pointer: fine) {
-  .row:not([aria-selected="true"]):not(:disabled):hover {
-    background: var(--ui-surface-hover);
-  }
-}
-.row:not(:disabled):active {
-  background: var(--ui-surface-pressed);
 }
 /* A drop destination keeps the selection fill (when selected) and adds an accent frame, so "selected" and
    "will receive the drop" read differently with or without hover. */
@@ -48,14 +24,6 @@
 }
 .row[data-tree-drop-target]:not([aria-selected="true"]) {
   background: var(--ui-surface-hover);
-}
-.row:focus-visible {
-  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
-  outline-offset: calc(-1 * var(--ui-focus-width));
-}
-.row:disabled {
-  color: var(--ui-text-disabled);
-  cursor: default;
 }
 .row[data-tree-cut],
 .row[data-explorer-dragging] {
@@ -116,17 +84,8 @@
   font-size: var(--ui-font-micro);
   font-variant-numeric: tabular-nums;
 }
-.row:disabled .toggle,
-.row:disabled .trailing {
-  color: var(--ui-text-disabled);
-}
 
 @media (forced-colors: active) {
-  .row[aria-selected="true"] {
-    background: Highlight;
-    color: HighlightText;
-    forced-color-adjust: none;
-  }
   .row[aria-selected="true"] .toggle,
   .row[aria-selected="true"] .trailing {
     color: HighlightText;

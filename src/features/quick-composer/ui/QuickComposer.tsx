@@ -6,6 +6,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Button } from "../../../shared/ui/Button";
+import { ListRow } from "../../../shared/ui/ListRow";
 import { PromptField } from "../../../shared/ui/PromptField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { projectDisplayName } from "../../projects/public/projectNames";
@@ -804,7 +805,7 @@ export function QuickComposer({
         <Alert
           tone="danger"
           className="mx-3 mb-2 min-w-0 break-words"
-          action={
+          extra={
             isScreenRecordingBlocked(error) ? (
               <PermissionRecoveryAction id="screen-recording" />
             ) : undefined
@@ -967,13 +968,9 @@ export function QuickComposer({
                 />
               ) : (
                 commandOptions.map((command, index) => (
-                  <Button
-                    fullWidth
-                    variant="item"
-                    motion="none"
+                  <ListRow
                     key={command.invocation}
                     id={`quick-command-${command.invocation}`}
-                    type="button"
                     role="option"
                     aria-selected={index === highlight}
                     tabIndex={-1}
@@ -985,7 +982,7 @@ export function QuickComposer({
                     <Text size="micro" tone="secondary">
                       {command.description}
                     </Text>
-                  </Button>
+                  </ListRow>
                 ))
               )}
             </PickerListRoot>
@@ -1056,12 +1053,8 @@ export function QuickComposer({
                   />
                 ) : (
                   projectOptions.map((path, index) => (
-                    <Button
-                      fullWidth
-                      variant="item"
-                      motion="none"
+                    <ListRow
                       key={path}
-                      type="button"
                       role="option"
                       aria-selected={index === highlight}
                       tabIndex={-1}
@@ -1080,7 +1073,7 @@ export function QuickComposer({
                       <Text truncate size="micro" tone="secondary" className="ml-auto pl-3">
                         {prettyParent(path)}
                       </Text>
-                    </Button>
+                    </ListRow>
                   ))
                 )}
               </PickerListRoot>

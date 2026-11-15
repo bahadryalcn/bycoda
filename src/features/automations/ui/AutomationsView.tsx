@@ -714,6 +714,7 @@ function AutomationsContent({
             <EmptyState
               title={t("Automations")}
               description={t("Focus this window to load automations.")}
+              showDescription
             />
           ) : loading && !editorDraft ? (
             <div className="min-h-0 flex-1">

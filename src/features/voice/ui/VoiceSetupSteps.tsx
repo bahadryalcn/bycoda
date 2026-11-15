@@ -344,7 +344,6 @@ export function VoiceSetupSteps({
             {...surfaceAttributes(
               {
                 variant: transcript ? "plain" : undefined,
-                bar: transcript ? "success" : undefined,
               },
               transcript ? styles.transcript : "sr-only",
             )}
@@ -354,7 +353,7 @@ export function VoiceSetupSteps({
         </>
       ) : null}
       {error ? (
-        <InlineError action={<MicrophoneRecoveryAction message={error} />}>{t(error)}</InlineError>
+        <InlineError extra={<MicrophoneRecoveryAction message={error} />}>{t(error)}</InlineError>
       ) : null}
     </div>
   );

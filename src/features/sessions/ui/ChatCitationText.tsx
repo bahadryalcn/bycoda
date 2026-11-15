@@ -179,12 +179,7 @@ function Citation({ citation, token }: { citation: ChatCitation; token?: string 
                 <X className="icon-sm" />
               </Button>
             </Text>
-            <Text
-              as="blockquote"
-              size="secondary"
-              leading="inherit"
-              {...surfaceAttributes({ bar: "accent" }, styles.quote)}
-            >
+            <Text as="blockquote" size="secondary" leading="inherit" className={styles.quote}>
               {citation.text}
             </Text>
             {citation.comment ? (

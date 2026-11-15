@@ -25,16 +25,13 @@
   line-height: var(--ui-leading-body);
 }
 
-.block[data-frame="card"] {
+/* The one code ground, shared with Code: inset role, muted, control radius. `card` is the
+   deprecated alias of `filled`. */
+.block:is([data-frame="card"], [data-frame="filled"]) {
   padding-block: 0.5rem;
   padding-inline: 0.75rem;
-  border: 1px solid var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-}
-.block[data-frame="filled"] {
-  padding: 0.625rem;
   border-radius: var(--ui-radius-control);
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-muted);
 }
 
 .block[data-scroll] {

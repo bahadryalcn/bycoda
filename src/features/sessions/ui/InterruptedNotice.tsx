@@ -2,7 +2,7 @@ import { memo } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Pause, Play } from "../../../shared/ui/icons";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { claimAutoContinue } from "../model/autoContinue";
 import { canAutoContinue } from "../model/inFlight";
@@ -40,17 +40,16 @@ export const InterruptedNotice = memo(function InterruptedNotice({
     return null;
   return (
     <div className="flex items-center gap-3 px-4 py-1" data-interrupted-turn>
-      <Alert
-        inline
+      <InlineMessage
         className="min-w-0 flex-1"
         tone="warning"
         icon={<Pause className="icon-sm" aria-hidden />}
-        title={t("Interrupted")}
       >
+        <strong>{t("Interrupted")} </strong>
         {message
           ? t(message)
           : t("This turn was cut off when {p0} quit.", { p0: PRODUCT_IDENTITY.displayName })}
-      </Alert>
+      </InlineMessage>
       <Button
         variant="secondary"
         className="shrink-0"

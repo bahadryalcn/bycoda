@@ -24,8 +24,8 @@ import {
   readTextFile,
   type ClaudeSessionSummary,
 } from "../../../platform/tauri/fs";
-import { message } from "@tauri-apps/plugin-dialog";
 import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import {
   OPEN_CODE_WORKSPACE_EVENT,
   parseCodeWorkspace,
@@ -70,7 +70,7 @@ export function useProjectImport({
    * rail group named after the file.
    */
   const openCodeWorkspace = useCallback(async () => {
-    const title = "Open VS Code workspace";
+    const title = t("Open VS Code workspace");
     const file = await pickCodeWorkspaceFile();
     if (!file) return;
     try {
@@ -89,12 +89,16 @@ export function useProjectImport({
         ...workspace.unsupported,
       ];
       if (found.length === 0) {
-        await message(
-          skipped.length > 0
-            ? `None of the workspace's folders could be opened:\n\n${skipped.join("\n")}`
-            : "The workspace has no folders.",
-          { title, kind: "error" },
-        );
+        toast.show({
+          tone: "danger",
+          title,
+          message:
+            skipped.length > 0
+              ? t("None of the workspace's folders could be opened:\n\n{p0}", {
+                  p0: skipped.join("\n"),
+                })
+              : t("The workspace has no folders."),
+        });
         return;
       }
       await withRoomPrivacyMutation(async (token) => {
@@ -105,15 +109,19 @@ export function useProjectImport({
         if (group) linkProjectGroup(group.id, file, found);
       });
       if (skipped.length > 0) {
-        await message(
-          `These folders could not be opened and were skipped:\n\n${skipped.join("\n")}`,
-          { title, kind: "warning" },
-        );
+        toast.show({
+          tone: "warning",
+          title,
+          message: t("These folders could not be opened and were skipped:\n\n{p0}", {
+            p0: skipped.join("\n"),
+          }),
+        });
       }
     } catch (error) {
-      await message(error instanceof Error ? error.message : String(error), {
+      toast.show({
+        tone: "danger",
         title,
-        kind: "error",
+        message: error instanceof Error ? error.message : String(error),
       });
     }
   }, [openProjects]);
@@ -141,12 +149,13 @@ export function useProjectImport({
       if (!stillTarget()) return;
       const transcript = await readTextFile(summary.path).catch(async (error: unknown) => {
         if (stillTarget())
-          await message(
-            t("Could not read the conversation. Open Resume again to retry.\n\n{p0}", {
+          toast.show({
+            tone: "danger",
+            title: t("Resume a Claude Code conversation"),
+            message: t("Could not read the conversation. Open Resume again to retry.\n\n{p0}", {
               p0: error instanceof Error ? error.message : String(error),
             }),
-            { title: t("Resume a Claude Code conversation"), kind: "error" },
-          );
+          });
         return null;
       });
       if (transcript === null) return;

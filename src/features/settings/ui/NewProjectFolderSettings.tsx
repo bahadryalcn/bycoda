@@ -105,11 +105,11 @@ export function NewProjectFolderGroup() {
           ) : !chosen && homeError ? (
             <SettingsFeedback
               state="error"
-              action={
-                <Button disabled={busy} onClick={() => setHomeAttempt((attempt) => attempt + 1)}>
-                  {t("Retry")}
-                </Button>
-              }
+              action={{
+                label: t("Retry"),
+                disabled: busy,
+                onClick: () => setHomeAttempt((attempt) => attempt + 1),
+              }}
             >
               {homeError}
             </SettingsFeedback>

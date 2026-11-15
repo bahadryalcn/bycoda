@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { ComponentPropsWithRef, ReactNode } from "react";
+import { FieldInfo } from "./arc/lib/field-description";
 import styles from "./FieldGroup.module.css";
 
 export type FieldGroupProps = Omit<ComponentPropsWithRef<"fieldset">, "children"> & {
@@ -10,8 +11,10 @@ export type FieldGroupProps = Omit<ComponentPropsWithRef<"fieldset">, "children"
   legend?: ReactNode;
   /** Keep the legend for assistive tech only; the group then needs its own visible context. */
   hideLegend?: boolean;
-  /** One short muted line under the group. */
+  /** Explains the group; shown behind the info (i) affordance beside the legend unless `descriptionVisible`. */
   description?: ReactNode;
+  /** Render the description as a visible muted line under the group (scope or consequence only). */
+  descriptionVisible?: boolean;
   /**
    * - `plain`: legend above the controls, no frame.
    * - `card`: the controls sit in the shared card frame (`--ui-card-*`), legend above it.
@@ -45,6 +48,7 @@ export function FieldGroup({
   legend,
   hideLegend = false,
   description,
+  descriptionVisible = false,
   variant = "plain",
   layout = "stack",
   gap = "md",
@@ -67,11 +71,23 @@ export function FieldGroup({
       className={["bycoda-arc", styles.group, className].filter(Boolean).join(" ")}
     >
       {legend != null ? (
-        <legend className={hideLegend ? "sr-only" : styles.legend}>{legend}</legend>
+        hideLegend ? (
+          <legend className="sr-only">{legend}</legend>
+        ) : (
+          <legend className={styles.legend}>
+            {legend}
+            <FieldInfo description={description} visible={descriptionVisible} />
+          </legend>
+        )
       ) : null}
       {variant === "bare" ? children : <div className={styles.body}>{children}</div>}
       {description ? (
-        <span id={descriptionId} className={styles.description}>
+        <span
+          id={descriptionId}
+          className={
+            descriptionVisible || legend == null || hideLegend ? styles.description : "sr-only"
+          }
+        >
           {description}
         </span>
       ) : null}

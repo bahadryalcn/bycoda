@@ -284,6 +284,17 @@
 .swatches {
   display: flex;
 }
+/* Static legend (HeatScale): the same swatch row without level pinning, for a grid that is not an
+   ActivityHeatmap. Swatches carry their own level colours. */
+.staticScale {
+  --level-0: var(--ui-chart-heat-0);
+  --level-1: var(--ui-chart-heat-1);
+  --level-2: var(--ui-chart-heat-2);
+  --level-3: var(--ui-chart-heat-3);
+  --level-4: var(--ui-chart-heat-4);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
 /* The visible square stays the size of a day while the button keeps a comfortable target around it. */
 .swatch {
   position: relative;
@@ -293,7 +304,7 @@
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 2px;
   background: transparent;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -302,7 +313,7 @@
   content: "";
   width: 11px;
   height: 11px;
-  border-radius: 3px;
+  border-radius: 2px;
   background: var(--level-0);
 }
 .swatch[data-level="1"]::before {
@@ -353,7 +364,7 @@
   display: block;
   padding: 7px 12px 8px;
   border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
+  border-radius: var(--ui-radius-popup);
   background: var(--foreground);
   color: var(--background);
   box-shadow: var(--shadow-raised);

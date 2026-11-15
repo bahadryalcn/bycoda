@@ -54,7 +54,7 @@ export function CrewAppearancePicker({
         onClick={() => setOpen((value) => !value)}
         className="shrink-0"
       >
-        <CrewAvatar crew={{ id: crewId }} look={look} className="icon-lg" />
+        <CrewAvatar crew={{ id: crewId }} look={look} size="sm" />
       </Button>
       {open ? (
         <Popover

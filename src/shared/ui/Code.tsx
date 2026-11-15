@@ -6,10 +6,11 @@ export type CodeProps = ComponentPropsWithRef<"code"> & {
   /**
    * - `plain` (default): monospaced text in the line, no box.
    * - `chip`: a quiet filled box around a short value (a command, a flag, an id).
-   * - `block`: the value on its own line in a filled box, selectable as a whole.
+   * - `block`: the value on its own line in the one code ground (muted, control radius, caption
+   *   mono), selectable as a whole; the same ground as OutputBlock `filled`.
    */
   variant?: "plain" | "chip" | "block";
-  /** Type size from the shared scale; `inherit` (default) follows the surrounding text. */
+  /** Type size from the shared scale; `inherit` (default) follows the surrounding text, `block` defaults to `caption`. */
   size?: TextSize;
   /** Ink; `inherit` (default) follows the surrounding text. */
   tone?: TextTone;
@@ -32,13 +33,14 @@ export type CodeProps = ComponentPropsWithRef<"code"> & {
  */
 export function Code({
   variant = "plain",
-  size = "inherit",
+  size: sizeProp,
   tone = "inherit",
   weight,
   tracking,
   className,
   ...props
 }: CodeProps) {
+  const size = sizeProp ?? (variant === "block" ? "caption" : "inherit");
   return (
     <code
       {...props}

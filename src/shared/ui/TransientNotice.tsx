@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { AlertTone } from "./Alert";
+import type { NoticeAction } from "./Notice";
 import { ToastCard } from "./ToastCard";
 import { Toast } from "./ToastRegion";
 
@@ -17,9 +18,11 @@ export interface TransientNoticeProps {
    * One secondary action, for example Undo or Retry. It sits under the message.
    * `pending` shows progress and blocks a second activation; the caller owns the operation.
    */
-  action?: { label: string; onClick: () => void; disabled?: boolean; pending?: boolean };
-  /** Additional header actions, such as "Update all". Use shared Button. */
-  actions?: ReactNode;
+  action?: NoticeAction;
+  /** Additional structured actions, such as "Update all". */
+  actions?: NoticeAction[];
+  /** Escape for one non-button control beside the actions (an ErrorDetails trigger). */
+  extra?: ReactNode;
   /** Determinate progress from 0 to 1, with an accessible label. */
   progress?: { value: number; label: string };
   onDismiss: () => void;
@@ -33,19 +36,21 @@ export interface TransientNoticeProps {
    */
   placement?: "bottom-end" | "top-end";
   width?: "md" | "lg";
-  /** `viewport` portals to the body; `container` positions inside the nearest positioned parent. */
+  /**
+   * `viewport` portals to the body and joins the shared Toast stack; `container` positions inside
+   * the nearest positioned parent.
+   * @deprecated `container` is a second card path; move those callers to Toast or ToastSlot.
+   */
   anchor?: "viewport" | "container";
   "aria-label"?: string;
 }
 
 /**
  * A corner notice with tone, optional action, progress and dismiss. Expires after
- * `durationMs` unless it is `null`. The card is the shared `ToastCard`; a viewport notice
- * stacks in its corner with every other toast.
- * Hand-positioned transient notice cards; the shared ToastCard owns their appearance.
+ * `durationMs` unless it is `null`. A viewport notice is a Toast in its corner stack.
  * @group feedback
- * @use Placement adapter for a ToastCard inside a positioned container or the shared viewport Toast stack.
- * @avoid New background feedback: Toast or useToast. Inline result near a control: InlineMessage. Persistent page notice: Alert.
+ * @use Existing corner notices only; the viewport form is Toast and `anchor="container"` is deprecated.
+ * @avoid New background feedback: Toast or useToast. `anchor="container"`: Toast or ToastSlot. Inline result near a control: InlineMessage. Persistent page notice: Alert.
  */
 export function TransientNotice({
   placement = "bottom-end",

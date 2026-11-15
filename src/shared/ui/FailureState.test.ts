@@ -146,3 +146,22 @@ it("uses InlineError for inline failure and guards an asynchronous retry", async
   await act(async () => finish());
   expect(button("Retry").disabled).toBe(false);
 });
+
+it("renders structured actions in a block and as text links inline", async () => {
+  const onClick = vi.fn();
+  await render({
+    error: undefined,
+    action: { label: "Open settings", onClick },
+    secondaryAction: { label: "Dismiss", onClick: vi.fn() },
+  });
+  expect([...container.querySelectorAll("button")].map((el) => el.textContent)).toEqual([
+    "Open settings",
+    "Dismiss",
+    "Retry",
+  ]);
+  act(() => button("Open settings").click());
+  expect(onClick).toHaveBeenCalledOnce();
+  await render({ error: undefined, size: "inline", action: { label: "Open settings", onClick } });
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  expect(button("Open settings").closest("span.min-w-0")).not.toBeNull();
+});

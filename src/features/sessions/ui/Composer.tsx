@@ -3427,7 +3427,7 @@ export const Composer = memo(function Composer({
           ) : null}
 
           {pasteError ? (
-            <Alert tone="danger" action={<MicrophoneRecoveryAction message={pasteError} />}>
+            <Alert tone="danger" extra={<MicrophoneRecoveryAction message={pasteError} />}>
               {pasteError}
             </Alert>
           ) : null}
@@ -3435,22 +3435,19 @@ export const Composer = memo(function Composer({
             <Alert
               tone="danger"
               action={
-                sessionFolderMutationBlocked ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      void recheckSessionFolderState()
-                        .then((message) => {
-                          if (!message) setSessionFolderMutationBlocked(false);
-                          setSessionFolderError(message);
-                        })
-                        .catch((error: unknown) => setSessionFolderError(String(error)));
-                    }}
-                  >
-                    {t("Check again")}
-                  </Button>
-                ) : undefined
+                sessionFolderMutationBlocked
+                  ? {
+                      label: t("Check again"),
+                      onClick: () => {
+                        void recheckSessionFolderState()
+                          .then((message) => {
+                            if (!message) setSessionFolderMutationBlocked(false);
+                            setSessionFolderError(message);
+                          })
+                          .catch((error: unknown) => setSessionFolderError(String(error)));
+                      },
+                    }
+                  : undefined
               }
             >
               {sessionFolderError}

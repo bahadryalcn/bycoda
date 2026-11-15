@@ -3,6 +3,7 @@
 import { forwardRef, useId } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 import { FieldMessage } from "../lib/field-message";
+import { FieldDescription, FieldLabelRow } from "../lib/field-description";
 import { fieldDescribedBy, fieldMessageIds } from "../lib/field-ids";
 import { FieldControl } from "../../Field";
 import styles from "./input.module.css";
@@ -11,6 +12,8 @@ import { SearchInput } from "../../SearchInput";
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
   description?: string;
+  /** Render the description as a visible subline. Default: behind the info (i) affordance; use it only for scope or consequence. */
+  descriptionVisible?: boolean;
   error?: string;
   /** Adapter hooks for a compact field with an existing visible label. */
   fieldClassName?: string;
@@ -29,6 +32,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   {
     label,
     description,
+    descriptionVisible,
     error,
     id,
     className,
@@ -86,9 +90,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       data-field-appearance={appearance}
     >
       {!hideLabel && (
-        <label className={styles.label} htmlFor={controlId}>
-          {label}
-        </label>
+        <FieldLabelRow description={description} visible={descriptionVisible}>
+          <label className={styles.label} htmlFor={controlId}>
+            {label}
+          </label>
+        </FieldLabelRow>
       )}
       {endAdornment != null || startAdornment != null ? (
         <FieldControl
@@ -103,7 +109,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         control
       )}
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
-      <FieldMessage id={hintId} text={description} className={styles.description} />
+      <FieldDescription
+        id={hintId}
+        text={description}
+        visible={descriptionVisible || hideLabel}
+        className={styles.description}
+      />
     </div>
   );
 });

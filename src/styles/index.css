@@ -23,17 +23,23 @@
 html[data-control-density="comfortable"] {
   --ui-color-swatch-target: 2rem;
   --ui-segment-height: 2rem;
-  --ui-control-height: 2.5rem;
+  --ui-control-height-xs: 1.75rem;
+  --ui-control-height: 2.25rem;
   --ui-control-height-compact: 2rem;
   --ui-control-height-lg: 2.75rem;
+  --ui-knob-size: 1.125rem;
+  --ui-control-checkbox-size: 1.125rem;
 }
 html[data-control-density="touch"] {
   --ui-color-swatch-target: 2.75rem;
   --ui-control-clear-size: 2.75rem;
   --ui-segment-height: 2.75rem;
+  --ui-control-height-xs: 2.75rem;
   --ui-control-height: 2.75rem;
   --ui-control-height-compact: 2.75rem;
   --ui-control-height-lg: 3rem;
+  --ui-knob-size: 1.25rem;
+  --ui-control-checkbox-size: 1.25rem;
 }
 
 html [data-transcript-content],
@@ -256,8 +262,14 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-neutral-fg: var(--color-content);
   --ui-tone-neutral-solid: var(--color-content);
   --ui-tone-neutral-on-solid: var(--palette-scrim);
-  /* Selected, subtle and ghost-selected neutral controls share the one selected role. */
-  --ui-tone-neutral-subtle: var(--ui-surface-selected);
+  /* Chips and badges: translucent tone fills (--ui-tone-subtle-strength: 16% dark, 8% light), never a
+     state role, so they stay visible on hover and selected hosts. Neutral is ink alpha. */
+  --ui-tone-subtle-strength: 16%;
+  --ui-tone-neutral-subtle: color-mix(
+    in srgb,
+    var(--color-content) var(--ui-tone-subtle-strength),
+    transparent
+  );
   --ui-tone-neutral-border: var(--color-stroke);
   --ui-tone-neutral-hover: var(--ui-surface-hover);
   --ui-tone-neutral-pressed: var(--ui-surface-pressed);
@@ -280,7 +292,11 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
      (appearance.ts / accentContrast.ts) so the pair always reaches the chosen contrast. */
   --ui-tone-accent-solid: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
   --ui-tone-accent-on-solid: var(--user-accent-foreground, var(--palette-scrim));
-  --ui-tone-accent-subtle: color-mix(in srgb, var(--ui-tone-accent-fg) 9%, var(--ui-surface));
+  --ui-tone-accent-subtle: color-mix(
+    in srgb,
+    var(--ui-tone-accent-fg) var(--ui-tone-subtle-strength),
+    transparent
+  );
   --ui-tone-accent-border: color-mix(in srgb, var(--ui-tone-accent-fg) 60%, var(--color-stroke));
   --ui-tone-accent-hover: color-mix(in srgb, var(--ui-tone-accent-fg) 14%, var(--ui-surface));
   --ui-tone-accent-pressed: color-mix(in srgb, var(--ui-tone-accent-fg) 20%, var(--ui-surface));
@@ -319,7 +335,11 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   );
   --ui-tone-info-solid: var(--color-info);
   --ui-tone-info-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-info-subtle: color-mix(in srgb, var(--ui-tone-info-fg) 9%, var(--ui-status-surface));
+  --ui-tone-info-subtle: color-mix(
+    in srgb,
+    var(--ui-tone-info-fg) var(--ui-tone-subtle-strength),
+    transparent
+  );
   --ui-tone-info-border: color-mix(in srgb, var(--ui-tone-info-fg) 60%, var(--color-stroke));
   --ui-tone-info-hover: color-mix(in srgb, var(--ui-tone-info-fg) 14%, var(--ui-status-surface));
   --ui-tone-info-pressed: color-mix(in srgb, var(--ui-tone-info-fg) 20%, var(--ui-status-surface));
@@ -371,8 +391,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-success-on-solid: var(--ui-tone-status-on-solid);
   --ui-tone-success-subtle: color-mix(
     in srgb,
-    var(--ui-tone-success-fg) 9%,
-    var(--ui-status-surface)
+    var(--ui-tone-success-fg) var(--ui-tone-subtle-strength),
+    transparent
   );
   --ui-tone-success-border: color-mix(in srgb, var(--ui-tone-success-fg) 60%, var(--color-stroke));
   --ui-tone-success-hover: color-mix(
@@ -407,8 +427,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-warning-on-solid: var(--ui-tone-status-on-solid);
   --ui-tone-warning-subtle: color-mix(
     in srgb,
-    var(--ui-tone-warning-fg) 9%,
-    var(--ui-status-surface)
+    var(--ui-tone-warning-fg) var(--ui-tone-subtle-strength),
+    transparent
   );
   --ui-tone-warning-border: color-mix(in srgb, var(--ui-tone-warning-fg) 60%, var(--color-stroke));
   --ui-tone-warning-hover: color-mix(
@@ -443,8 +463,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-danger-on-solid: var(--ui-tone-status-on-solid);
   --ui-tone-danger-subtle: color-mix(
     in srgb,
-    var(--ui-tone-danger-fg) 9%,
-    var(--ui-status-surface)
+    var(--ui-tone-danger-fg) var(--ui-tone-subtle-strength),
+    transparent
   );
   --ui-tone-danger-border: color-mix(in srgb, var(--ui-tone-danger-fg) 60%, var(--color-stroke));
   --ui-tone-danger-hover: color-mix(
@@ -473,6 +493,7 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
 }
 
 html.theme-light {
+  --ui-tone-subtle-strength: 8%;
   --ui-status-ink-strength: 10%;
   --ui-status-shade-strength: 0%;
   --ui-elevation-floating:
@@ -590,27 +611,44 @@ html.theme-light {
     var(--color-content) calc(5% * var(--appearance-layer-strength, 1)),
     var(--ui-layer-base)
   );
-  /* Hover, selected and pressed share one base (the muted surface) so their steps are monotonic:
-     hover 12% < selected 20% < pressed 28%. Each step is at least 1.2:1 against the one below
-     (hover against the muted field and the pure black canvas). Mirrored in model/interactionTint.ts
-     and asserted in layerContrast.test.ts. */
+  /* State ladder (T3 Code reference): soft translucent ink steps that stay visible over any host
+     (canvas, card, popup). Dark: hover 4%, selected 8%, pressed 10%; light overrides below with
+     4 / 12 / 16 so selected clears hover by >= 1.15:1. Strength scales with Appearance > Interaction
+     strength and Surface contrast (--appearance-layer-strength). Mirrored in
+     model/interactionTint.ts and asserted in layerContrast.test.ts. */
   --ui-interaction-tint: var(--color-content);
   --ui-interaction-strength: 1;
+  --ui-state-hover: 4%;
+  --ui-state-selected: 8%;
+  --ui-state-pressed: 10%;
   --ui-surface-hover: color-mix(
-    in oklab,
-    var(--ui-interaction-tint) calc(12% * var(--ui-interaction-strength)),
-    var(--ui-surface-muted)
+    in srgb,
+    var(--ui-interaction-tint)
+      calc(
+        var(--ui-state-hover) * var(--ui-interaction-strength) * var(--appearance-layer-strength, 1)
+      ),
+    transparent
   );
   --ui-surface-pressed: color-mix(
-    in oklab,
-    var(--ui-interaction-tint) calc(28% * var(--ui-interaction-strength)),
-    var(--ui-surface-muted)
+    in srgb,
+    var(--ui-interaction-tint)
+      calc(
+        var(--ui-state-pressed) * var(--ui-interaction-strength) *
+          var(--appearance-layer-strength, 1)
+      ),
+    transparent
   );
   --ui-surface-selected: color-mix(
-    in oklab,
-    var(--ui-interaction-tint) calc(20% * var(--ui-interaction-strength)),
-    var(--ui-surface-muted)
+    in srgb,
+    var(--ui-interaction-tint)
+      calc(
+        var(--ui-state-selected) * var(--ui-interaction-strength) *
+          var(--appearance-layer-strength, 1)
+      ),
+    transparent
   );
+  /* Selected outline (rows, tiles, cards): never the focus token. */
+  --ui-selected-ring: color-mix(in oklab, var(--color-content) 34%, transparent);
   --ui-border-accent: var(--ui-interaction-ink);
   /* Resize edges brighten quietly on hover/drag: a neutral step, never the accent ink. */
   --ui-sash-active: color-mix(in oklab, var(--color-content) 24%, transparent);
@@ -643,34 +681,35 @@ html.theme-light {
   --ui-frosted-glass: color-mix(in oklab, var(--color-background-base) 22%, transparent);
   --ui-frosted-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(1.8) brightness(0.82);
   --ui-frosted-edge: inset 0 1px 0 color-mix(in oklab, var(--color-content) 10%, transparent);
-  --ui-frosted-divider: var(--ui-fill-subtle);
+  --ui-frosted-divider: var(--ui-pane-border);
   /* Large editable regions and boxed setting groups are identified by surface
      and caret; their edge is quieter than a 3:1 small-field border. */
-  --ui-editor-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-surface));
+  --ui-editor-border: var(--ui-card-border);
   /* Settings groups and collections (owner decision 2026-10-31, V3-013): the group interior is the
      page canvas itself, so there is no gray fill. A thin frame and hairline row dividers carry the
      structure. Every role derives from the user's tint (--color-content / --color-background-base),
      which the light, dark and custom themes already override, so one definition serves all. Inputs,
      selected rows, focus rings and drag targets keep their own boundary roles. */
   --ui-settings-group-surface: var(--ui-card-surface);
-  --ui-settings-group-border: color-mix(
+  /* Hairlines: two roles only. --ui-pane-border (panes, popups, dividers, settings row dividers,
+     frosted dividers) and --ui-card-border (cards, groups, editors). The other line names are
+     aliases kept for existing consumers; --color-stroke stays the translucent ink for Tailwind
+     border-stroke over images and glass. */
+  --ui-card-border: color-mix(
     in oklab,
-    var(--color-content) calc(15% * var(--appearance-layer-strength, 1)),
+    var(--color-content) calc(10% * var(--appearance-layer-strength, 1)),
     var(--ui-layer-base)
   );
-  --ui-settings-hairline: color-mix(
-    in oklab,
-    var(--color-content) calc(9% * var(--appearance-layer-strength, 1)),
-    var(--ui-layer-base)
-  );
+  --ui-settings-group-border: var(--ui-card-border);
+  --ui-settings-hairline: var(--ui-pane-border);
   /* The one grouped-card role: settings groups, feature cards and collection frames share this
      fill and frame (shared Surface variant="card", FieldGroup variant="card"). The fill is
      transparent on tinted and light canvases and a faint ink step on the pure black ground. */
   --ui-card-surface: transparent;
-  --ui-card-border: var(--ui-settings-group-border);
-  /* Same step as --ui-surface-hover (12% dark, 4% light), under every selected role. */
-  --ui-settings-row-hover: color-mix(in srgb, var(--color-content) 12%, transparent);
-  --ui-radius-card: 0.5rem;
+  /* Same step as --ui-surface-hover, under every selected role. */
+  --ui-settings-row-hover: var(--ui-surface-hover);
+  /* Card frames use the control radius; the name stays for existing consumers. */
+  --ui-radius-card: var(--ui-radius-control);
   /* One scrollbar family for native bars, custom rails (editor, rulers) and the terminal.
      Appearance > Interface sets the colour, size, strength and visibility (scrollbarStyle.ts). */
   /* Follows the Appearance accent (palette or picker) when one is set, else the neutral content tone. */
@@ -716,10 +755,11 @@ html.theme-light {
   /* Merge conflict sides are tinted regions, not edge stripes. */
   --ui-conflict-current-marker: color-mix(in oklab, var(--color-conflict-ours) 22%, transparent);
   --ui-conflict-incoming-marker: color-mix(in oklab, var(--color-conflict-theirs) 22%, transparent);
+  /* T3-like hairline: about 8% ink on the dark ground. */
   --ui-pane-border: color-mix(
     in oklab,
-    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 3),
-    var(--ui-surface-muted)
+    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 1.15),
+    var(--ui-layer-base)
   );
   /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
   --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
@@ -739,7 +779,9 @@ html.theme-light {
   --ui-control-thumb: var(--color-on-solid);
   --ui-control-thumb-border: color-mix(in oklab, var(--color-scrim) 5%, transparent);
   --ui-control-thumb-shadow: 0 1px 4px color-mix(in oklab, var(--color-scrim) 20%, transparent);
-  --ui-control-height: 2.25rem;
+  /* Height ladder (One component system spec): xs 24, sm 28, md 32, lg 40; density scales it. */
+  --ui-control-height-xs: 1.5rem;
+  --ui-control-height: 2rem;
   --ui-color-swatch-target: 1.25rem;
   --ui-control-height-compact: 1.75rem;
   --ui-control-height-sm: var(--ui-control-height-compact);
@@ -750,6 +792,8 @@ html.theme-light {
   --ui-preview-card-radius: 0.5625rem;
   --ui-drop-target-border-width: 1.5px;
   --ui-control-checkbox-size: 1rem;
+  /* Switch thumb, slider thumb and checkbox/radio share one density-scaled knob. */
+  --ui-knob-size: 1rem;
   /* Disabled model (one per control family, never both on one element):
      - Fields, rows, list items and composite surfaces dim as a whole with --ui-disabled-opacity,
        so their text, icons and frame keep their relative steps.
@@ -769,26 +813,31 @@ html.theme-light {
   --ui-overlay-backdrop-nested: color-mix(in oklab, var(--ui-overlay-backdrop) 40%, transparent);
   /* Field and focus tokens (--ui-field-*, --ui-focus-*) have one owner: the contract at the top
      of arc.css. Do not redeclare them here. */
-  /* Global motion scale. Arc's --duration-* / --ease-* (arc.css) point at these; use them in
-     feature CSS instead of literal milliseconds or curves. Reduced motion is handled per surface
-     (and globally for Tailwind animate-spin/pulse below), not by zeroing these roles. */
-  --motion-duration-instant: 80ms;
+  /* Global motion scale (One component system spec): two durations and one easing.
+     --motion-duration-fast 120ms: feedback, hover, press. --motion-duration-standard 160ms: enter,
+     exit, state change. --motion-ease-standard: the one curve. The JS tokens in
+     shared/ui/arc/motion-tokens.ts read these values (one source). Arc's --duration-* / --ease-*
+     (arc.css) point at them. Every other duration/ease name below is a deprecated alias kept for
+     existing consumers: use the two roles in new CSS. Scene, ambient and celebrate timings
+     (--motion-duration-reveal/ambient/celebrate/scene) belong to decorative one-off animations.
+     Reduced motion drops the enter distance in surface-motion.css (fade only). */
   --motion-duration-fast: 120ms;
   --motion-duration-standard: 160ms;
-  --motion-duration-slow: 260ms;
   --motion-ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
-  --motion-ease-enter: var(--motion-ease-standard);
-  --motion-ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
-  /* Purpose aliases read by motion.ts / useComposerDockMotion.ts; they follow the scale. */
+  /* @deprecated durations: use fast or standard. */
+  --motion-duration-instant: var(--motion-duration-fast);
+  --motion-duration-slow: var(--motion-duration-standard);
   --motion-reorder-duration: var(--motion-duration-standard);
-  --motion-tab-close-duration: 200ms;
+  --motion-tab-close-duration: var(--motion-duration-standard);
   --motion-feedback-duration: var(--motion-duration-fast);
+  /* @deprecated easings: use --motion-ease-standard. */
+  --motion-ease-enter: var(--motion-ease-standard);
+  --motion-ease-exit: var(--motion-ease-standard);
   --motion-ease-out: var(--motion-ease-standard);
-  --motion-tab-ease-out: cubic-bezier(0.3333, 0.6667, 0.6667, 1);
-  /* Named curves of the one-off ambient and entrance animations below. */
-  --motion-ease-rise: cubic-bezier(0.3, 0.6, 0.4, 1);
-  --motion-ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
-  --motion-ease-sheen: cubic-bezier(0.4, 0, 0.2, 1);
+  --motion-tab-ease-out: var(--motion-ease-standard);
+  --motion-ease-rise: var(--motion-ease-standard);
+  --motion-ease-emphasized: var(--motion-ease-standard);
+  --motion-ease-sheen: var(--motion-ease-standard);
   /* Stacking layers. Keep in sync with LAYER in src/shared/lib/layers.ts (TS sets zIndex inline,
      CSS uses these); values and names must match one to one. */
   --layer-pane-sheet: 40;
@@ -806,8 +855,8 @@ html.theme-light {
      (--control-height-*, --surface*, --border*) are intentionally NOT global: outside Arc they
      must use the --ui-* roles. */
   --radius-control: var(--ui-control-radius);
-  --radius-panel: 0.75rem;
-  --radius-surface: 0.75rem;
+  --radius-panel: var(--ui-radius-popup);
+  --radius-surface: var(--ui-radius-popup);
   --radius-pill: 9999px;
   --space-1: 0.25rem;
   --space-2: 0.375rem;
@@ -821,8 +870,13 @@ html.theme-light {
   --space-16: 3rem;
   --accent: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
   /* Radius names used by features before the scale settled; aliases of the owned roles. */
+  /* Radius roles (One component system spec): control 8, inset = control - 2, row 6, popup 12.
+     Pill only for switch, status dot and count. One name, one value: --radius-panel,
+     --radius-surface and --ui-radius-panel alias the popup role. */
   --ui-radius-control: var(--ui-control-radius);
-  --ui-radius-panel: var(--ui-radius-card);
+  --ui-radius-inset: calc(var(--ui-radius-control) - 2px);
+  --ui-radius-row: 0.375rem;
+  --ui-radius-panel: var(--ui-radius-popup);
   --control-radius: var(--ui-control-radius);
   /* Neutral ink fills over whatever lies beneath (transparent base): hairlines, quiet wells,
      inline chips and dividers that must stay translucent over images and glass. Opaque steps use
@@ -997,25 +1051,10 @@ html.theme-light {
       ),
     var(--ui-layer-base)
   );
-  /* Hover, selected and pressed step from the ground itself, so a selected row stays visible on a
-     mid-tone canvas and every selected control resolves to this one role. */
-  --ui-surface-hover: color-mix(
-    in oklab,
-    var(--ui-interaction-tint) calc(4% * var(--ui-interaction-strength)),
-    var(--ui-layer-base)
-  );
-  --ui-surface-pressed: color-mix(
-    in oklab,
-    var(--ui-interaction-tint) calc(16% * var(--ui-interaction-strength)),
-    var(--ui-layer-base)
-  );
-  /* Calm selected fill: a neutral step firmer than hover and under pressed. Hue comes only from
-     the user's tint, never from the accent, so selection reads the same for every accent. */
-  --ui-surface-selected: color-mix(
-    in oklab,
-    var(--ui-interaction-tint) calc(10% * var(--ui-interaction-strength)),
-    var(--ui-layer-base)
-  );
+  /* Light ladder: zinc-like ink steps (4 / 12 / 16), selected vs hover >= 1.15:1 on the ground. */
+  --ui-state-hover: 4%;
+  --ui-state-selected: 12%;
+  --ui-state-pressed: 16%;
 
   /* Borders are ink over the ground, so they are always darker than it. */
   --ui-pane-border: color-mix(
@@ -1024,7 +1063,6 @@ html.theme-light {
     var(--ui-layer-base)
   );
   --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
-  --ui-editor-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface));
   --ui-chat-canvas: var(--color-background-base);
   --ui-composer-surface: var(--ui-surface-raised);
   --ui-composer-border: color-mix(in oklab, var(--color-content) 13%, var(--ui-composer-surface));
@@ -1049,7 +1087,6 @@ html.theme-light {
   --selection-strength: 10%;
   --selection-strong-strength: 13%;
   --selection-emphasis-strength: 16%;
-  --ui-settings-row-hover: color-mix(in srgb, var(--color-content) 4%, transparent);
   /* Diff text keeps 3:1 on a mid-tone ground: ink is mixed in as the ground darkens (none from
      92% up, so the default paper ground keeps the palette hues). */
   --ui-diff-fg-ink: clamp(0%, calc((92% - var(--ui-ground-lightness)) * 1.4), 60%);
@@ -4531,7 +4568,7 @@ html[data-performance-no-blur] .popover-backdrop.popover-frosted {
 @keyframes popover-open {
   from {
     opacity: 0;
-    transform: translate(var(--popover-shift, 0), var(--popover-lift, 0)) scale(0.94);
+    transform: translate(var(--popover-shift, 0), var(--popover-lift, 0));
   }
   to {
     opacity: 1;
@@ -4540,23 +4577,23 @@ html[data-performance-no-blur] .popover-backdrop.popover-frosted {
 }
 
 .popover-open {
-  animation: popover-open var(--motion-duration-standard) var(--motion-ease-emphasized) backwards;
+  animation: popover-open var(--motion-duration-standard) var(--motion-ease-standard) backwards;
 }
 
 .popover-open[data-popover-side="bottom"] {
-  --popover-lift: -8px;
+  --popover-lift: -4px;
 }
 
 .popover-open[data-popover-side="top"] {
-  --popover-lift: 8px;
+  --popover-lift: 4px;
 }
 
 .popover-open[data-popover-side="right"] {
-  --popover-shift: -8px;
+  --popover-shift: -4px;
 }
 
 .popover-open[data-popover-side="left"] {
-  --popover-shift: 8px;
+  --popover-shift: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,7 +1,8 @@
 import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
 import { useEffect } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { message } from "@tauri-apps/plugin-dialog";
+import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { listDir, readTextFile } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
 import { watchFile } from "../../files/public/fileWatch";
@@ -105,10 +106,20 @@ export async function syncLinkedGroup(groupId: string, onProjectsAdded: () => vo
     setLinkedGroupStatus(groupId, null);
 
     if (result.toDetach.length > 0) {
-      await message(
-        `${result.toDetach.length === 1 ? "This folder was" : "These folders were"} removed from ${file} and taken out of the group "${current.name}". The projects and their sessions are still in the rail:\n\n${result.toDetach.join("\n")}`,
-        { title: "Workspace group updated", kind: "info" },
-      );
+      toast.show({
+        tone: "info",
+        title: t("Workspace group updated"),
+        message:
+          result.toDetach.length === 1
+            ? t(
+                'This folder was removed from {p0} and taken out of the group "{p1}". The projects and their sessions are still in the rail:\n\n{p2}',
+                { p0: file, p1: current.name, p2: result.toDetach.join("\n") },
+              )
+            : t(
+                'These folders were removed from {p0} and taken out of the group "{p1}". The projects and their sessions are still in the rail:\n\n{p2}',
+                { p0: file, p1: current.name, p2: result.toDetach.join("\n") },
+              ),
+      });
     }
   } catch (error) {
     setLinkedGroupStatus(groupId, {

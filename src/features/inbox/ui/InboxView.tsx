@@ -873,11 +873,9 @@ export function InboxView({
                 : t("Add a connection to start using the Inbox.")
             }
             action={
-              connectableSources.length > 0 ? (
-                <Button variant="secondary" type="button" onClick={() => setConnectMenuOpen(true)}>
-                  {t("Connect an inbox source")}
-                </Button>
-              ) : undefined
+              connectableSources.length > 0
+                ? { label: t("Connect an inbox source"), onClick: () => setConnectMenuOpen(true) }
+                : undefined
             }
           />
         ) : sourceError && visibleItems.length === 0 ? null : loading &&
@@ -894,11 +892,9 @@ export function InboxView({
               icon={<Inbox aria-hidden="true" />}
               description={t("Open a project to fill the inbox")}
               action={
-                onOpenProject ? (
-                  <Button variant="secondary" type="button" onClick={() => void onOpenProject()}>
-                    {t("Add project")}
-                  </Button>
-                ) : undefined
+                onOpenProject
+                  ? { label: t("Add project"), onClick: () => void onOpenProject() }
+                  : undefined
               }
             />
           ) : pullRequestsOnly && needsLocalProject && projects.length === 0 ? (

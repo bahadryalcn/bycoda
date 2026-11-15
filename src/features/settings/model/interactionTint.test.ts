@@ -91,8 +91,8 @@ describe("interaction step percentages", () => {
     }
   });
   it("scales the displayed steps with strength", () => {
-    expect(interactionStepPercent(false, 100)).toEqual({ hover: 12, selected: 20, pressed: 28 });
-    expect(interactionStepPercent(true, 100)).toEqual({ hover: 4, selected: 10, pressed: 16 });
-    expect(interactionStepPercent(false, 200)).toEqual({ hover: 24, selected: 40, pressed: 56 });
+    expect(interactionStepPercent(false, 100)).toEqual({ hover: 4, selected: 8, pressed: 10 });
+    expect(interactionStepPercent(true, 100)).toEqual({ hover: 4, selected: 12, pressed: 16 });
+    expect(interactionStepPercent(false, 200)).toEqual({ hover: 8, selected: 16, pressed: 20 });
   });
 });

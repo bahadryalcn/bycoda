@@ -28,7 +28,7 @@ export function CrewMemberTeams({ teams }: { teams: readonly CrewDefinition[] })
     >
       {teams.slice(0, SHOWN_TEAMS).map((team) => (
         <span key={team.id} className="flex min-w-0 items-center gap-1">
-          <CrewAvatar crew={team} className="icon-sm shrink-0" />
+          <CrewAvatar crew={team} />
           <Text size="inherit" tone="inherit" truncate className="min-w-0">
             {team.name}
           </Text>
@@ -52,7 +52,7 @@ function teamItem(
     kind: "item",
     id: `${prefix}:${team.id}`,
     label: team.name,
-    icon: <CrewAvatar crew={team} className="icon-sm" />,
+    icon: <CrewAvatar crew={team} />,
     disabled: !!reason,
     description: reason,
   };

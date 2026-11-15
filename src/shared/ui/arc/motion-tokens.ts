@@ -1,10 +1,25 @@
+/**
+ * One source with src/styles/index.css: `--motion-duration-fast` 120ms, `--motion-duration-standard`
+ * 160ms and `--motion-ease-standard`. Keep these numbers in sync with that file (a test asserts it).
+ */
+const FAST_SECONDS = 0.12;
+const STANDARD_SECONDS = 0.16;
+const STANDARD_EASE = [0.22, 1, 0.36, 1] as const;
+
 export const motionTokens = {
-  duration: { instant: 0.12, fast: 0.16, exit: 0.18, standard: 0.24, considered: 0.48 },
+  /** Two durations. `instant`, `exit` alias fast and standard; `considered` is for scene-level reveals. */
+  duration: {
+    fast: FAST_SECONDS,
+    standard: STANDARD_SECONDS,
+    instant: FAST_SECONDS,
+    exit: STANDARD_SECONDS,
+    considered: 0.48,
+  },
+  /** One easing; enter and exit alias it. `inOut` is for elements that move while on screen. */
   ease: {
-    enter: [0.16, 1, 0.3, 1],
-    exit: [0.7, 0, 0.84, 0],
-    standard: [0.22, 1, 0.36, 1],
-    /** For elements that move while already on screen. */
+    standard: STANDARD_EASE,
+    enter: STANDARD_EASE,
+    exit: STANDARD_EASE,
     inOut: [0.65, 0, 0.35, 1],
   },
   spring: {

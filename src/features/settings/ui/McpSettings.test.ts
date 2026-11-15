@@ -852,7 +852,9 @@ it("dismisses the displayed login error without retrying or hiding a later failu
   await act(async () => signIn().click());
   const alert = container.querySelector('[role="alert"]')!;
   expect(alert.textContent).toContain("failure 1:");
-  const dismiss = alert.querySelector<HTMLButtonElement>('[aria-label="Dismiss"]')!;
+  const dismiss = [...alert.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Dismiss",
+  )!;
   expect(dismiss).toBeTruthy();
   await act(async () => dismiss.click());
   expect(invoke.mock.calls.filter(([command]) => command === "mcp_provider_login")).toHaveLength(1);

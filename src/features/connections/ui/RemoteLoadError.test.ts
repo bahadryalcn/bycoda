@@ -89,7 +89,7 @@ it("keeps the compact notice to one row and the raw transport text behind Detail
   );
   const row = container.querySelector("[data-remote-feedback-row]");
   expect(row?.textContent).toContain("Server");
-  expect(row?.querySelector("button")?.textContent).toContain("Reconnect");
+  expect(row?.textContent).toContain("Reconnect");
   expect(row?.querySelector("details")).toBeNull();
   // The bar never carries the raw message or the secondary actions.
   expect(container.textContent).not.toContain("SSH timed out");

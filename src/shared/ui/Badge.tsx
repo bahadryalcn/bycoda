@@ -6,7 +6,8 @@ import {
   type BadgeTone,
   BADGE_COUNT_MAX,
 } from "./arc/badge/badge";
-import { Check, CircleAlert, CircleX, Clock, RotateCcw } from "./icons";
+import { Check, CircleAlert, CircleX, Clock, RotateCcw, X } from "./icons";
+import { InlineAction } from "./ActionHost";
 import { Spinner } from "./Spinner";
 import { textAttributes, type TextLeading } from "./Text";
 import styles from "./Badge.module.css";
@@ -30,6 +31,10 @@ export type BadgeProps = Omit<ArcBadgeProps, "size"> & {
    *  `normal` 1.5, `relaxed` 1.625, `inherit` the surrounding line height. Replaces
    *  `leading-*` classes. */
   leading?: TextLeading;
+  /** Makes the badge the removable chip (secondary type, xs height, remove action); needs `removeLabel`. */
+  onRemove?: () => void;
+  /** Accessible name of the remove action, for example "Remove main". */
+  removeLabel?: string;
 };
 
 /** Default cap of a `count`: larger numbers render as `99+` and keep the real number as the accessible name. */
@@ -39,6 +44,7 @@ export { BADGE_COUNT_MAX };
  * Small pill for a short label, status or count with tone, appearance and optional icon. Sizes `xs` (inline metadata in triggers, rows, tabs), `sm`, `md`. `variant="count"` caps at 99+ and keeps the real number as the accessible name.
  * `shape="icon"` is a 28px circular well for an icon, with the same semantic tones; name it
  * for assistive technology or hide it when adjacent text already carries the meaning.
+ * `onRemove` + `removeLabel` render the one removable chip (also the TagInput chip).
  * Domain-to-tone mapping stays with the caller.
  * @group feedback
  * @use Tags, counts and short labels beside content.
@@ -56,11 +62,22 @@ export function Badge({
   tone,
   truncate = false,
   leading,
+  onRemove,
+  removeLabel,
   children,
   ...props
 }: BadgeProps) {
   const badgeTone =
     variant === "count" && tone !== "warning" && tone !== "danger" ? "accent" : (tone ?? "neutral");
+  const body =
+    truncate &&
+    variant !== "count" &&
+    (typeof children === "string" || typeof children === "number") ? (
+      // The clip sits on the text, a flex item inside the badge, so the ellipsis can render.
+      <span {...textAttributes({ truncate: true })}>{children}</span>
+    ) : (
+      children
+    );
   return (
     <ArcBadge
       {...props}
@@ -79,18 +96,21 @@ export function Badge({
         size === "xs" && styles.xs,
         shape === "icon" && styles.iconShape,
         leading && styles.leading,
+        onRemove && styles.chip,
         className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      {truncate &&
-      variant !== "count" &&
-      (typeof children === "string" || typeof children === "number") ? (
-        // The clip sits on the text, a flex item inside the badge, so the ellipsis can render.
-        <span {...textAttributes({ truncate: true })}>{children}</span>
+      {onRemove ? (
+        <>
+          {body}
+          <InlineAction reveal="always" label={removeLabel ?? ""} onClick={onRemove}>
+            <X aria-hidden="true" />
+          </InlineAction>
+        </>
       ) : (
-        children
+        body
       )}
     </ArcBadge>
   );

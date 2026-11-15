@@ -152,9 +152,10 @@
     1.0013,
     1
   );
+  /* Same two durations as --motion-duration-* in src/styles/index.css. */
   --duration-instant: 120ms;
-  --duration-fast: 160ms;
-  --duration-standard: 240ms;
+  --duration-fast: 120ms;
+  --duration-standard: 160ms;
   --duration-considered: 480ms;
   --duration-spring: 580ms;
 }

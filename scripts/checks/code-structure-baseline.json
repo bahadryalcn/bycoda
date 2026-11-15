@@ -1958,9 +1958,6 @@
     "src/shared/model/build-info.ts": {
       "foundation-imports-app": 1
     },
-    "src/shared/ui/arc/date-range-picker/date-range-picker.tsx": {
-      "file-lines": 1306
-    },
     "src/shared/ui/ControlBehaviorMatrix.tsx": {
       "file-lines": 1384
     },

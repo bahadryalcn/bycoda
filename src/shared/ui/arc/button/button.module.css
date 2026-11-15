@@ -6,7 +6,7 @@
 @layer components {
   .button {
     font: inherit;
-    font-size: var(--text-sm);
+    font-size: var(--ui-font-caption);
     font-weight: 500;
     line-height: var(--leading-body);
     cursor: pointer;
@@ -19,10 +19,15 @@
     padding: 0 var(--space-4);
     white-space: nowrap;
   }
+  .xs {
+    min-height: var(--ui-control-height-xs);
+    padding-inline: var(--space-2);
+    font-size: var(--ui-font-caption);
+  }
   .sm {
     min-height: var(--control-height-sm);
     padding-inline: var(--space-3);
-    font-size: var(--text-sm);
+    font-size: var(--ui-font-caption);
   }
   .md {
     min-height: var(--control-height-md);
@@ -30,7 +35,7 @@
   .lg {
     min-height: var(--control-height-lg);
     padding-inline: var(--space-5);
-    font-size: var(--text-sm);
+    font-size: var(--ui-font-caption);
   }
 }
 .button {
@@ -50,7 +55,7 @@
   transform: scale(0.98);
 }
 .button:disabled {
-  opacity: 0.52;
+  opacity: var(--ui-disabled-opacity);
 }
 @layer components {
   .button:disabled {

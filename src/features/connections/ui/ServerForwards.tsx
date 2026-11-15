@@ -10,7 +10,6 @@ import { t } from "../../../shared/i18n";
 import { Badge, StatusBadge } from "../../../shared/ui/Badge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { DetailedInlineError } from "../../../shared/ui/ErrorDetails";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { Button } from "../../../shared/ui/Button";
 import { NumberField } from "../../../shared/ui/NumberField";
@@ -150,7 +149,7 @@ export function ServerForwards({
                   ? `SOCKS5 · 127.0.0.1:${rule.localPort}`
                   : `127.0.0.1:${rule.localPort} → ${rule.targetHost}:${rule.targetPort}`}
               </Text>
-              {status?.error ? <DetailedInlineError error={status.error} /> : null}
+              {status?.error ? <InlineError details={status.error} /> : null}
               <div className="flex flex-wrap gap-2">
                 <Button
                   loading={busy === rule.id}

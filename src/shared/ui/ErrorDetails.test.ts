@@ -3,7 +3,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Button } from "./Button";
-import { DetailedInlineError, ErrorDetails } from "./ErrorDetails";
+import { ErrorDetails } from "./ErrorDetails";
+import { InlineError } from "./InlineError";
 
 let root: Root;
 let host: HTMLDivElement;
@@ -105,7 +106,7 @@ it("lets a recovery action close the popover before it opens another surface", a
 });
 
 it("shows a short single-line raw error as written, without a Details link", async () => {
-  await act(async () => root.render(createElement(DetailedInlineError, { error: "Port in use" })));
+  await act(async () => root.render(createElement(InlineError, { details: "Port in use" })));
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Port in use");
   expect(host.querySelector("button")).toBeNull();
 });
@@ -113,7 +114,7 @@ it("shows a short single-line raw error as written, without a Details link", asy
 it("shows only the first line of long raw output and keeps the rest behind Details", async () => {
   const error = `fatal: ${"a".repeat(300)}
 hint: second line`;
-  await act(async () => root.render(createElement(DetailedInlineError, { error })));
+  await act(async () => root.render(createElement(InlineError, { details: error })));
   const alert = host.querySelector('[role="alert"]')!;
   expect(alert.textContent).not.toContain("hint: second line");
   expect(alert.textContent!.length).toBeLessThan(140);
@@ -123,12 +124,7 @@ hint: second line`;
 
 it("prefers the plain summary and still offers the raw text", async () => {
   await act(async () =>
-    root.render(
-      createElement(DetailedInlineError, {
-        summary: "Could not load.",
-        error: "ECONNRESET",
-      }),
-    ),
+    root.render(createElement(InlineError, { details: "ECONNRESET" }, "Could not load.")),
   );
   expect(host.querySelector('[role="alert"]')?.textContent).toBe("Could not load. Details");
   await act(async () => trigger().click());

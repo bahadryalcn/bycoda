@@ -252,7 +252,7 @@ The product has exactly two conversation layouts; do not invent a third per scre
   the bottom; Enter sends, Shift+Enter breaks a line. Voice and send are separate
   controls that never overlap.
 - Transcript layout: agent and coding sessions. A bounded reading column (default
-  48rem, the user's width preference wins); the user's prompt is a quiet borderless
+  56rem, the user's width preference wins); the user's prompt is a quiet borderless
   bubble on the right, agent output is full-width text on the left. Tool and command
   steps are single-line summaries with details on demand; active work and approvals
   always visible.

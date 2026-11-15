@@ -148,16 +148,6 @@
 .dev-server-preview > button {
   justify-self: start;
 }
-.dev-server-logs {
-  max-block-size: 240px;
-  overflow: auto;
-  padding: 10px;
-  border-radius: var(--ui-control-radius);
-  background: var(--ui-surface-selected);
-  font-size: var(--ui-font-micro);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
 .dev-server-preview {
   display: grid;
   gap: 8px;

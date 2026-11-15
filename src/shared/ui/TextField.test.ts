@@ -129,3 +129,25 @@ it("marks a tag input invalid with a local alert and keeps caller descriptions",
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("At least one label");
   expect(described(input).slice(1)).toEqual(["At least one label", "Press Enter to add"]);
 });
+
+it("keeps a description behind the info affordance unless it is explicitly visible", async () => {
+  await act(async () =>
+    root.render(createElement(TextField, { label: "Name", description: "Lowercase only" })),
+  );
+  const input = container.querySelector("input")!;
+  // Hidden for sighted users, still the accessible description.
+  expect(described(input)).toEqual(["Lowercase only"]);
+  expect(container.querySelector('button[aria-haspopup="dialog"]')).not.toBeNull();
+  expect(container.querySelector(".sr-only")?.textContent).toBe("Lowercase only");
+  await act(async () =>
+    root.render(
+      createElement(TextField, {
+        label: "Name",
+        description: "Lowercase only",
+        descriptionVisible: true,
+      }),
+    ),
+  );
+  expect(container.querySelector('button[aria-haspopup="dialog"]')).toBeNull();
+  expect(container.querySelector(".sr-only")).toBeNull();
+});

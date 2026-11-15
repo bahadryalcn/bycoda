@@ -95,9 +95,7 @@ export function VoiceCloudKey({
         statusError ? (
           <SettingsFeedback
             state="error"
-            action={
-              <Button onClick={() => setRevision((value) => value + 1)}>{t("Retry status")}</Button>
-            }
+            action={{ label: t("Retry status"), onClick: () => setRevision((value) => value + 1) }}
           >
             {t("Could not check saved key. Retry status before changing it.")}
           </SettingsFeedback>

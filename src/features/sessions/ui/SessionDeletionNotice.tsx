@@ -2,7 +2,7 @@ import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useT } from "../../../shared/i18n";
 import { sameProjectPath } from "../../projects/public/recents";
 import {
@@ -70,8 +70,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
       {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-2")}
       data-session-deletion-detail
     >
-      <Alert
-        inline
+      <InlineMessage
         tone={
           pending
             ? "info"
@@ -82,7 +81,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
                 : "success"
         }
         icon={pending ? <Spinner size="sm" /> : undefined}
-        onDismiss={pending ? undefined : onDismissStatus}
+        action={pending ? undefined : { label: t("Dismiss"), onClick: onDismissStatus }}
       >
         <span className="min-w-0 break-words">
           <span className="block">{status.title}</span>
@@ -101,7 +100,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
             </Text>
           ) : null}
         </span>
-      </Alert>
+      </InlineMessage>
       {pending && elapsed >= 10 ? (
         <Text size="caption" tone="secondary" className="block tabular-nums" aria-hidden="true">
           {t("Still working… {p0}s elapsed", { p0: elapsed })}

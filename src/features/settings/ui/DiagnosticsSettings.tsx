@@ -109,11 +109,7 @@ export function DiagnosticsGroup() {
           unsaved ? (
             <SettingsFeedback
               state="warning"
-              action={
-                <Button size="sm" onClick={() => onEnabled(enabled)}>
-                  {t("Retry saving")}
-                </Button>
-              }
+              action={{ label: t("Retry saving"), onClick: () => onEnabled(enabled) }}
             >
               {enabled
                 ? t(

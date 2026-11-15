@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { message } from "@tauri-apps/plugin-dialog";
+import { toast } from "../../../shared/ui/ToastRegion";
 import {
   leaf,
   leafIds,
@@ -20,7 +20,7 @@ import {
 import type { MoveTabsOutcome } from "../windows/useMoveTabsToNewWindow";
 import { usePaneDetachActions, type PaneDetachActionDeps } from "./usePaneDetachActions";
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn() }));
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: vi.fn() } }));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -70,7 +70,7 @@ function mount(onMove: PaneDetachActionDeps["onMoveTabsToNewWindow"], tab = sour
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.mocked(message).mockClear();
+  vi.mocked(toast.show).mockClear();
   dismissWindowTransferNotice();
   published = 0;
   unsubscribe = subscribeWindowTransferNotice(() => {
@@ -184,7 +184,7 @@ describe("pane pop-out keeps source ownership until the receiver answers", () =>
     mount(move);
     deps.dirtyFilesRef.current.add("dirty");
     act(() => actions.onPopOutPane("pane-b", position));
-    expect(message).toHaveBeenCalledOnce();
+    expect(toast.show).toHaveBeenCalledOnce();
     expect(move).not.toHaveBeenCalled();
     expect(deps.setTabs).not.toHaveBeenCalled();
     expect(deps.tabsRef.current).toEqual([source]);

@@ -291,11 +291,7 @@ export function CrewWorkManager({
               <div className="pb-3">
                 <Alert
                   tone="warning"
-                  action={
-                    <Button variant="ghost" onClick={() => void state.refetch()}>
-                      {t("Retry")}
-                    </Button>
-                  }
+                  action={{ label: t("Retry"), onClick: () => void state.refetch() }}
                 >
                   {data.catalogError ?? state.error?.message}
                 </Alert>
@@ -320,16 +316,13 @@ export function CrewWorkManager({
                     : t("Create a crew, then start work with it.")
               }
               action={
-                savedCrew ? (
-                  <Button
-                    variant="primary"
-                    disabled={!crew || pending}
-                    startIcon={<Plus className="icon-sm" />}
-                    onClick={() => setPage("start")}
-                  >
-                    {t("New work")}
-                  </Button>
-                ) : undefined
+                savedCrew
+                  ? {
+                      label: t("New work"),
+                      disabled: !crew || pending,
+                      onClick: () => setPage("start"),
+                    }
+                  : undefined
               }
             />
           </div>
@@ -388,11 +381,7 @@ export function CrewWorkManager({
                 {data.catalogError ? (
                   <Alert
                     tone="warning"
-                    action={
-                      <Button variant="ghost" onClick={() => void state.refetch()}>
-                        {t("Retry")}
-                      </Button>
-                    }
+                    action={{ label: t("Retry"), onClick: () => void state.refetch() }}
                   >
                     {data.catalogError}
                   </Alert>
@@ -400,11 +389,7 @@ export function CrewWorkManager({
                 {state.error ? (
                   <Alert
                     tone="warning"
-                    action={
-                      <Button variant="ghost" onClick={() => void state.refetch()}>
-                        {t("Retry")}
-                      </Button>
-                    }
+                    action={{ label: t("Retry"), onClick: () => void state.refetch() }}
                   >
                     {state.error.message}
                   </Alert>

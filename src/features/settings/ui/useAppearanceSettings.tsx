@@ -23,7 +23,6 @@ import {
   resetMotion,
   resetSessionRows,
 } from "./appearance/appearanceResets";
-import { Button } from "../../../shared/ui/Button";
 import { SettingsFeedback } from "./settingsControls";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -612,11 +611,10 @@ export function AppearanceSaveFeedback({ settingIds }: { settingIds: readonly st
   return (
     <SettingsFeedback
       state="error"
-      action={
-        <Button onClick={() => issues.forEach((issue) => retryAppearanceSave(issue.key))}>
-          {t("Retry save")}
-        </Button>
-      }
+      action={{
+        label: t("Retry save"),
+        onClick: () => issues.forEach((issue) => retryAppearanceSave(issue.key)),
+      }}
     >
       {issues.some((issue) => issue.applied)
         ? t("Applied in this window, but could not save. Retry before closing the app.")

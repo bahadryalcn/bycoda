@@ -16,7 +16,7 @@ export function SessionErrorNotice({ text }: { text: string }) {
   ) : undefined;
   if (message.usageLimit) {
     return (
-      <InlineMessage tone="warning" action={details}>
+      <InlineMessage tone="warning" extra={details}>
         <Text as="span" size="caption" tone="primary" weight="medium">
           {title}
         </Text>
@@ -30,7 +30,7 @@ export function SessionErrorNotice({ text }: { text: string }) {
     );
   }
   return (
-    <InlineError text={{ tone: "primary" }} action={details}>
+    <InlineError text={{ tone: "primary" }} extra={details}>
       {summary}
     </InlineError>
   );

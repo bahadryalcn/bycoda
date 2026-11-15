@@ -27,7 +27,6 @@ import {
   type NotificationPermission,
 } from "../../notifications/model/notifications";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { Button } from "../../../shared/ui/Button";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
 import { TimePicker } from "../../../shared/ui/TimePicker";
 import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
@@ -150,10 +149,7 @@ export function NotificationAlerts() {
   };
   const saveFeedback = (id: string) =>
     failedSaves[id] ? (
-      <SettingsFeedback
-        state="error"
-        action={<Button onClick={failedSaves[id]}>{t("Retry")}</Button>}
-      >
+      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: failedSaves[id] }}>
         {t("Could not save changes")}
       </SettingsFeedback>
     ) : undefined;

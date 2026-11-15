@@ -2,7 +2,6 @@ import { useState, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
 import { projectName } from "../../../shared/lib/paths";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { Button } from "../../../shared/ui/Button";
 import { useRecents } from "../../projects/public/recents";
 import {
   JIRA_DEFAULT_PROJECTS_KEY,
@@ -44,7 +43,7 @@ export function JiraDefaultProjectSettings({
     return (
       <SettingsFeedback
         state="error"
-        action={<Button onClick={() => retry((n) => n + 1)}>{t("Retry")}</Button>}
+        action={{ label: t("Retry"), onClick: () => retry((n) => n + 1) }}
       >
         {t("Saved Jira working folders are unavailable.")}
       </SettingsFeedback>

@@ -144,39 +144,45 @@ function ProductLink({
       label={label}
       feedback={
         failure ? (
-          <SettingsFeedback
-            state="error"
-            action={
-              <div ref={recoveryActions} className="flex flex-wrap items-center gap-2">
-                {failure === "open" ? (
-                  <Button
-                    disabled={pending !== null}
-                    loading={pending === "retry"}
-                    loadingLabel={t("Opening…")}
-                    onClick={() => run("retry").catch(() => undefined)}
-                  >
-                    {t("Retry")}
-                  </Button>
-                ) : null}
-                <Button
-                  disabled={pending !== null}
-                  loading={pending === "copy"}
-                  loadingLabel={t("Copying…")}
-                  aria-label={`${t("Copy")}: ${address}`}
-                  onClick={() => run("copy").catch(() => undefined)}
-                >
-                  {t("Copy")}
-                </Button>
-              </div>
-            }
-          >
-            <p>
-              {failure === "open"
-                ? t("Could not open the link. Copy the address and open it manually.")
-                : t("Could not copy. Select the details and copy them manually.")}
-            </p>
-            <span className="select-text break-all">{address}</span>
-          </SettingsFeedback>
+          <div ref={recoveryActions} className="contents">
+            <SettingsFeedback
+              state="error"
+              action={
+                failure === "open"
+                  ? {
+                      label: t("Retry"),
+                      disabled: pending !== null,
+                      pending: pending === "retry",
+                      onClick: () => run("retry").catch(() => undefined),
+                    }
+                  : {
+                      label: t("Copy"),
+                      ariaLabel: `${t("Copy")}: ${address}`,
+                      disabled: pending !== null,
+                      pending: pending === "copy",
+                      onClick: () => run("copy").catch(() => undefined),
+                    }
+              }
+              secondaryAction={
+                failure === "open"
+                  ? {
+                      label: t("Copy"),
+                      ariaLabel: `${t("Copy")}: ${address}`,
+                      disabled: pending !== null,
+                      pending: pending === "copy",
+                      onClick: () => run("copy").catch(() => undefined),
+                    }
+                  : undefined
+              }
+            >
+              <p>
+                {failure === "open"
+                  ? t("Could not open the link. Copy the address and open it manually.")
+                  : t("Could not copy. Select the details and copy them manually.")}
+              </p>
+              <span className="select-text break-all">{address}</span>
+            </SettingsFeedback>
+          </div>
         ) : undefined
       }
     >

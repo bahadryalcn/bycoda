@@ -1,8 +1,8 @@
 import { Text } from "../../../shared/ui/Text";
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
+import { InlineError } from "../../../shared/ui/InlineError";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { sessionRetryNotice } from "../model/sessionIssue";
 
 async function runRefresh(
@@ -47,20 +47,19 @@ export function ProviderRetryNotice({
   };
   return (
     <Text as="div" size="caption" tone="inherit" className="shrink-0 px-4 py-1.5">
-      <Alert
+      <InlineMessage
         tone="warning"
-        inline
         action={
-          <>
-            {onRefresh ? (
-              <Button variant="secondary" loading={refreshing} onClick={() => void refresh()}>
-                {refreshing ? t("Refreshing…") : t("Refresh status")}
-              </Button>
-            ) : null}
-            <Button variant="secondary" disabled={refreshing} onClick={onStop}>
-              {t("Stop")}
-            </Button>
-          </>
+          onRefresh
+            ? {
+                label: refreshing ? t("Refreshing…") : t("Refresh status"),
+                pending: refreshing,
+                onClick: () => void refresh(),
+              }
+            : { label: t("Stop"), onClick: onStop }
+        }
+        secondaryAction={
+          onRefresh ? { label: t("Stop"), disabled: refreshing, onClick: onStop } : undefined
         }
       >
         <span className="min-w-0 break-words">
@@ -74,13 +73,13 @@ export function ProviderRetryNotice({
             )}
           </span>
         </span>
-      </Alert>
+      </InlineMessage>
       {refreshFailed ? (
-        <Alert tone="danger" inline className="mt-1">
+        <InlineError className="mt-1">
           {t(
             "Could not refresh the conversation. Check the host connection and try Refresh status again.",
           )}
-        </Alert>
+        </InlineError>
       ) : null}
     </Text>
   );

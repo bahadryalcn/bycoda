@@ -12,7 +12,8 @@ import { Badge } from "../../../shared/ui/Badge";
 import { terminalText } from "../../../shared/lib/terminalText";
 import { MatchText, MAX_MATCH_POSITIONS } from "../../../shared/ui/MatchText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { NativeSelect } from "../../../shared/ui/Select";
+import { Select } from "../../../shared/ui/Select";
+import { ListRow } from "../../../shared/ui/ListRow";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
@@ -83,47 +84,45 @@ export function ChatFilterBar({
             role="group"
             aria-label={t("Chat search filters")}
           >
-            <NativeSelect
-              aria-label={t("Search in")}
+            <Select
+              label={t("Search in")}
+              hideLabel
+              fieldSize="sm"
               value={filters.scope}
-              onChange={(event) => onChange({ ...filters, scope: event.target.value as ChatScope })}
-            >
-              {(Object.keys(SCOPE_LABEL) as ChatScope[]).map((scope) => (
-                <option key={scope} value={scope} disabled={scope === "group" && !inGroup}>
-                  {t(SCOPE_LABEL[scope])}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              aria-label={t("Provider")}
+              onValueChange={(scope) => onChange({ ...filters, scope: scope as ChatScope })}
+              options={(Object.keys(SCOPE_LABEL) as ChatScope[]).map((scope) => ({
+                value: scope,
+                label: t(SCOPE_LABEL[scope]),
+                disabled: scope === "group" && !inGroup,
+              }))}
+            />
+            <Select
+              label={t("Provider")}
+              hideLabel
+              fieldSize="sm"
               value={filters.harness}
-              onChange={(event) =>
-                onChange({
-                  ...filters,
-                  harness: event.target.value as HarnessId | "any",
-                })
+              onValueChange={(harness) =>
+                onChange({ ...filters, harness: harness as HarnessId | "any" })
               }
-            >
-              <option value="any">{t("Any provider")}</option>
-              {HARNESSES.map((harness) => (
-                <option key={harness} value={harness}>
-                  {HARNESS_TITLE[harness]}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
-              aria-label={t("Date")}
+              options={[
+                { value: "any", label: t("Any provider") },
+                ...HARNESSES.map((harness) => ({
+                  value: harness,
+                  label: HARNESS_TITLE[harness],
+                })),
+              ]}
+            />
+            <Select
+              label={t("Date")}
+              hideLabel
+              fieldSize="sm"
               value={filters.range}
-              onChange={(event) =>
-                onChange({ ...filters, range: event.target.value as ChatDateRange })
-              }
-            >
-              {(Object.keys(RANGE_LABEL) as ChatDateRange[]).map((range) => (
-                <option key={range} value={range}>
-                  {t(RANGE_LABEL[range])}
-                </option>
-              ))}
-            </NativeSelect>
+              onValueChange={(range) => onChange({ ...filters, range: range as ChatDateRange })}
+              options={(Object.keys(RANGE_LABEL) as ChatDateRange[]).map((range) => ({
+                value: range,
+                label: t(RANGE_LABEL[range]),
+              }))}
+            />
             <Checkbox
               checked={filters.archived}
               onChange={(event) => onChange({ ...filters, archived: event.target.checked })}
@@ -280,15 +279,10 @@ export function ChatSearchResults({
                   "app-search-conversation",
                 )}
               >
-                <Button
-                  variant="item"
-                  tone="accent"
-                  motion="none"
-                  fullWidth
+                <ListRow
                   selected={row.highlighted}
                   {...actionContentScopeAttributes()}
                   className="app-search-result app-search-conversation-row @max-[560px]/search:flex-wrap"
-                  type="button"
                   {...row.buttonProps}
                   onClick={() => row.entry && onOpen(row.entry)}
                 >
@@ -324,20 +318,15 @@ export function ChatSearchResults({
                       {formatChatDate(session.updatedAt)}
                     </Text>
                   </span>
-                </Button>
+                </ListRow>
                 {session.hits.map((hit) => {
                   const hitRow = rowProps(hit.id);
                   return (
-                    <Button
-                      variant="item"
-                      tone="accent"
-                      motion="none"
-                      fullWidth
+                    <ListRow
                       selected={hitRow.highlighted}
                       {...actionContentScopeAttributes()}
                       className="app-search-result app-search-match"
                       key={hit.id}
-                      type="button"
                       {...hitRow.buttonProps}
                       onClick={() => hitRow.entry && onOpen(hitRow.entry)}
                     >
@@ -350,7 +339,10 @@ export function ChatSearchResults({
                         size="caption"
                         tone="secondary"
                         leading="inherit"
-                        {...actionContentAttributes({ phase: "always", reveal: "preview" })}
+                        {...actionContentAttributes({
+                          phase: "always",
+                          reveal: "preview",
+                        })}
                         {...motionAttributes(
                           { transition: "size", duration: "standard" },
                           actionContentAttributes(
@@ -364,7 +356,7 @@ export function ChatSearchResults({
                       <Text size="micro" tone="muted" className="shrink-0">
                         {hit.role === "user" ? t("You") : hit.role}
                       </Text>
-                    </Button>
+                    </ListRow>
                   );
                 })}
                 {more > 0 ? (

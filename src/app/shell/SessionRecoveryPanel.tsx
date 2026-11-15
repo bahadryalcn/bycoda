@@ -524,17 +524,11 @@ export function SessionRecoveryPanel({
             kind="filtered"
             title={t("No matching sessions")}
             description={t("No recovered session matches “{p0}”.", { p0: query.trim() })}
-            action={
-              <>
-                <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
-                  {t("Clear search")}
-                </Button>
-                {filter === "attention" && attentionCount < rows.length ? (
-                  <Button variant="ghost" size="sm" onClick={() => setFilterChoice("all")}>
-                    {t("Search all sessions")}
-                  </Button>
-                ) : null}
-              </>
+            action={{ label: t("Clear search"), onClick: () => setQuery("") }}
+            secondaryAction={
+              filter === "attention" && attentionCount < rows.length
+                ? { label: t("Search all sessions"), onClick: () => setFilterChoice("all") }
+                : undefined
             }
           />
         ) : (

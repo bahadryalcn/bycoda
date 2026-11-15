@@ -1,0 +1,49 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+
+/* Root placement stays caller-adjustable (F3 style-ownership contract). */
+@layer components {
+  .avatar {
+    flex: none;
+  }
+}
+
+/* Sizes sit on the icon scale doubled up: 16, 20, 24, 32. */
+.avatar {
+  --avatar-size: 1.5rem;
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--avatar-size);
+  block-size: var(--avatar-size);
+}
+.avatar[data-size="xs"] {
+  --avatar-size: 1rem;
+}
+.avatar[data-size="sm"] {
+  --avatar-size: 1.25rem;
+}
+.avatar[data-size="lg"] {
+  --avatar-size: 2rem;
+}
+.face {
+  display: grid;
+  place-items: center;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+}
+.face img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+.badge {
+  position: absolute;
+  inset-block-end: -0.125rem;
+  inset-inline-end: -0.125rem;
+  display: grid;
+  place-items: center;
+  padding: 0.125rem;
+}

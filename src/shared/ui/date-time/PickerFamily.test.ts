@@ -14,11 +14,17 @@ const named = (label: string) =>
   [...document.querySelectorAll<HTMLButtonElement>("button")].find(
     (button) => button.textContent === label,
   )!;
-const trigger = () => container.querySelector<HTMLButtonElement>('[aria-haspopup="dialog"]')!;
+// Field help (description behind an info button) is also a dialog trigger, so pick the picker itself.
+const trigger = () =>
+  container.querySelector<HTMLButtonElement>('.bycoda-arc-select[aria-haspopup="dialog"]')!;
 const key = async (value: string) =>
   act(async () =>
     document.activeElement!.dispatchEvent(
-      new KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }),
+      new KeyboardEvent("keydown", {
+        key: value,
+        bubbles: true,
+        cancelable: true,
+      }),
     ),
   );
 

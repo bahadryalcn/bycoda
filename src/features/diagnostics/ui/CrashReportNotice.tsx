@@ -1,6 +1,5 @@
 import { useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { Toast } from "../../../shared/ui/ToastRegion";
 import type { DiagnosticSendStatus } from "../model/diagnosticsReport";
 import {
@@ -56,31 +55,19 @@ export function CrashReportNotice() {
       durationMs={null}
       width="lg"
       actionsPlacement="footer"
-      actions={
-        <>
-          <Button
-            variant="secondary"
-            loading={busy}
-            onClick={() => send(false).catch(() => undefined)}
-          >
-            {t("Send")}
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() => send(true).catch(() => undefined)}
-          >
-            {t("Always send")}
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onClick={() => void dismissPendingCrash().catch(() => undefined)}
-          >
-            {t("Don't send")}
-          </Button>
-        </>
-      }
+      actions={[
+        { label: t("Send"), pending: busy, onClick: () => void send(false).catch(() => undefined) },
+        {
+          label: t("Always send"),
+          disabled: busy,
+          onClick: () => void send(true).catch(() => undefined),
+        },
+        {
+          label: t("Don't send"),
+          disabled: busy,
+          onClick: () => void dismissPendingCrash().catch(() => undefined),
+        },
+      ]}
       onDismiss={() => void dismissPendingCrash().catch(() => undefined)}
       dismissDisabled={busy}
     />

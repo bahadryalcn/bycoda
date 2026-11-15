@@ -1,5 +1,4 @@
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
-import { message } from "@tauri-apps/plugin-dialog";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
   newDefaultSession,
@@ -14,7 +13,7 @@ import {
   remoteSessionOwnershipKey,
   reserveSessionWindow,
 } from "../../model/sessionWindowOwnership";
-import { appName } from "../../../shared/lib/appName";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { forgetHarnessSession } from "../../../integrations/harness";
 import { isBlankSession } from "../../../features/projects/model/projectReturn";
 import {
@@ -136,7 +135,7 @@ export function useSessionPlacement({
       try {
         release = await reserveSessionWindow(remoteKey ? [session.id, remoteKey] : [session.id]);
       } catch (error) {
-        await message(String(error), { title: appName(), kind: "warning" });
+        toast.show({ tone: "warning", message: String(error) });
         return;
       }
       if (!release) return;
@@ -241,10 +240,10 @@ export function useSessionPlacement({
         sourceTab &&
         filesInWorkspaceTabs([sourceTab]).some((file) => dirtyFilesRef.current.has(file.id))
       ) {
-        void message("Save the unsaved files before moving this tab to another workspace tab.", {
-          get title() {
-            return t("Arrange workspace");
-          },
+        toast.show({
+          tone: "warning",
+          title: t("Arrange workspace"),
+          message: t("Save the unsaved files before moving this tab to another workspace tab."),
         });
         return;
       }

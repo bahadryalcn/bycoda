@@ -11,7 +11,7 @@
 .steppers {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 /* Native spin buttons are replaced by InlineActions in the intrinsic shared trailing slot. */

@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getIdentifier, getVersion, check, message, ask, relaunch } = vi.hoisted(() => ({
+const { getIdentifier, getVersion, check, message, ask, relaunch, toastShow } = vi.hoisted(() => ({
   getIdentifier: vi.fn(),
   getVersion: vi.fn(),
   check: vi.fn(),
   message: vi.fn(),
   ask: vi.fn(),
   relaunch: vi.fn(),
+  toastShow: vi.fn(),
 }));
 
 const identity = vi.hoisted(() => ({
@@ -14,11 +15,16 @@ const identity = vi.hoisted(() => ({
   updaterEnabled: true,
   repositoryUrl: null as string | null,
 }));
-vi.mock("../../shared/lib/productIdentity", () => ({ PRODUCT_IDENTITY: identity }));
+vi.mock("../../shared/lib/productIdentity", () => ({
+  PRODUCT_IDENTITY: identity,
+}));
 
 vi.mock("@tauri-apps/api/app", () => ({ getIdentifier, getVersion }));
-vi.mock("../../features/settings/model/updateChannel", () => ({ checkForAppUpdate: check }));
+vi.mock("../../features/settings/model/updateChannel", () => ({
+  checkForAppUpdate: check,
+}));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask, message }));
+vi.mock("../../shared/ui/ToastRegion", () => ({ toast: { show: toastShow } }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch }));
 vi.mock("../../features/settings/model/sounds", () => ({
   announceUpdateAvailable: vi.fn(),
@@ -55,7 +61,7 @@ describe("updater", () => {
       phase: "idle",
     });
     expect(check).not.toHaveBeenCalled();
-    expect(message).toHaveBeenCalledOnce();
+    expect(toastShow).toHaveBeenCalledOnce();
   });
 
   it("checks only an explicitly enabled independent installed product", async () => {
@@ -81,7 +87,7 @@ describe("updater", () => {
       phase: "idle",
       currentVersion: "0.1.23",
     });
-    expect(message).not.toHaveBeenCalled();
+    expect(toastShow).not.toHaveBeenCalled();
   });
 
   it("reports disabled updates without an inherited release URL", async () => {
@@ -92,9 +98,10 @@ describe("updater", () => {
       phase: "idle",
       currentVersion: "0.1.23",
     });
-    expect(message).toHaveBeenCalledWith(
-      expect.stringContaining("Automatic updates are disabled"),
-      { title: "bycoda" },
+    expect(toastShow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("Automatic updates are disabled"),
+      }),
     );
   });
 
@@ -112,6 +119,6 @@ describe("updater", () => {
       phase: "error",
       error: "network failed",
     });
-    expect(message).toHaveBeenCalledOnce();
+    expect(toastShow).toHaveBeenCalledOnce();
   });
 });

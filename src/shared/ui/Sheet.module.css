@@ -1,36 +1,15 @@
-/* Sheet entrance: the surface slides in from its edge once. No forwards fill, so no compositor
-   layer is retained after the entrance; reduced motion opens in place. Frequent side panels
-   pass motion="none". */
-.sheet {
-  --sheet-distance: var(--motion-sheet-distance, 16px);
-}
-:dir(rtl) .sheet[data-sheet-side="end"] {
-  --sheet-distance: calc(-1 * var(--motion-sheet-distance, 16px));
-}
+/* Sheet entrance: the one overlay enter (opacity + 4px rise at the standard duration), the same
+   for both sides. No forwards fill, so no compositor layer is retained after the entrance;
+   reduced motion opens in place. Frequent side panels pass motion="none". */
 @media (prefers-reduced-motion: no-preference) {
-  .sheet[data-sheet-side="end"][data-sheet-motion="auto"] {
-    animation: sheet-in-end var(--motion-sheet-duration, 240ms) var(--motion-ease-out, ease-out)
-      backwards;
-  }
-  .sheet[data-sheet-side="bottom"][data-sheet-motion="auto"] {
-    animation: sheet-in-bottom var(--motion-sheet-duration, 240ms) var(--motion-ease-out, ease-out)
-      backwards;
+  .sheet[data-sheet-motion="auto"] {
+    animation: sheet-in var(--motion-duration-standard) var(--motion-ease-standard) backwards;
   }
 }
-@keyframes sheet-in-end {
+@keyframes sheet-in {
   from {
     opacity: 0;
-    translate: var(--sheet-distance) 0;
-  }
-  to {
-    opacity: 1;
-    translate: 0 0;
-  }
-}
-@keyframes sheet-in-bottom {
-  from {
-    opacity: 0;
-    translate: 0 var(--motion-sheet-distance, 16px);
+    translate: 0 4px;
   }
   to {
     opacity: 1;

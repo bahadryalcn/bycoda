@@ -1,7 +1,6 @@
 /** Different job: Appearance preview draws the chosen background; it is not an ordinary selection row. */
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import {
   initWorkspaceBackground,
   loadWorkspaceBackground,
@@ -69,11 +68,10 @@ export function GradientBackgroundCard() {
       {issue === "conflict" ? (
         <SettingsFeedback
           state="error"
-          action={
-            <Button onClick={() => saveWorkspaceBackground(value, { replace: true })}>
-              {t("Apply my background")}
-            </Button>
-          }
+          action={{
+            label: t("Apply my background"),
+            onClick: () => saveWorkspaceBackground(value, { replace: true }),
+          }}
         >
           {t("This background changed in another window. Your unsaved changes are still here.")}
         </SettingsFeedback>
@@ -81,17 +79,15 @@ export function GradientBackgroundCard() {
         <SettingsFeedback
           state="error"
           action={
-            saveIssues.some((entry) => entry.settingId === "workspace-background") ? (
-              <Button
-                onClick={() =>
-                  saveIssues
-                    .filter((entry) => entry.settingId === "workspace-background")
-                    .forEach((entry) => retryAppearanceSave(entry.key))
+            saveIssues.some((entry) => entry.settingId === "workspace-background")
+              ? {
+                  label: t("Retry save"),
+                  onClick: () =>
+                    saveIssues
+                      .filter((entry) => entry.settingId === "workspace-background")
+                      .forEach((entry) => retryAppearanceSave(entry.key)),
                 }
-              >
-                {t("Retry save")}
-              </Button>
-            ) : undefined
+              : undefined
           }
         >
           {t(

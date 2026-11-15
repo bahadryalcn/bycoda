@@ -81,7 +81,10 @@ it("keeps popover searches focused without bubbling clear actions or submitting 
   const input = container.querySelector("input")!;
   input.focus();
   const button = container.querySelector("button")!;
-  const pointer = new PointerEvent("pointerdown", { bubbles: true, cancelable: true });
+  const pointer = new PointerEvent("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+  });
   act(() => {
     button.dispatchEvent(pointer);
     button.click();
@@ -97,7 +100,13 @@ it.each([{ disabled: true }, { readOnly: true }, { clearable: false }])(
   "does not offer clearing when the caller prevents edits: %j",
   (props) => {
     act(() =>
-      root.render(createElement(SearchInput, { value: "query", ...props, onChange: vi.fn() })),
+      root.render(
+        createElement(SearchInput, {
+          value: "query",
+          ...props,
+          onChange: vi.fn(),
+        }),
+      ),
     );
     expect(container.querySelector("button")).toBeNull();
     expect(container.querySelector("input")!.value).toBe("query");
@@ -129,7 +138,11 @@ it("forwards the input ref and preserves caller keyboard navigation", () => {
 it("supports clearing a labeled Arc search field", () => {
   act(() =>
     root.render(
-      createElement(TextField, { label: "Filter notes", clearable: true, defaultValue: "notes" }),
+      createElement(TextField, {
+        label: "Filter notes",
+        clearable: true,
+        defaultValue: "notes",
+      }),
     ),
   );
   const input = container.querySelector("input")!;

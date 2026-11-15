@@ -134,12 +134,8 @@ function OrderSettingsForm({
             context="panel"
             title={t("Choose the models for unattended work")}
             description=""
-            action={
-              <div className="flex items-center gap-2">
-                <SmartSetupAction onEdit={editor.edit} />
-                <Button onClick={addEntry}>{t("Add model")}</Button>
-              </div>
-            }
+            action={{ label: t("Add model"), onClick: addEntry }}
+            extra={<SmartSetupAction onEdit={editor.edit} />}
           />
         ) : (
           <Group

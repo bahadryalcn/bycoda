@@ -839,4 +839,27 @@ export function ActivityHeatmap({
   );
 }
 
+/** The less-to-more swatch row of the heatmap legend, static, for a custom intensity grid. */
+export function HeatScale({
+  lessLabel = "Less",
+  moreLabel = "More",
+  className,
+}: {
+  lessLabel?: string;
+  moreLabel?: string;
+  className?: string;
+}) {
+  return (
+    <span className={[styles.scale, styles.staticScale, className].filter(Boolean).join(" ")}>
+      <span className={styles.legendText}>{lessLabel}</span>
+      <span className={styles.swatches} aria-hidden="true">
+        {LEVELS.map((level) => (
+          <span key={level} className={styles.swatch} data-level={level} />
+        ))}
+      </span>
+      <span className={styles.legendText}>{moreLabel}</span>
+    </span>
+  );
+}
+
 export default ActivityHeatmap;

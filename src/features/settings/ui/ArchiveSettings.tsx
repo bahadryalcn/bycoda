@@ -230,7 +230,7 @@ export function ArchivePage({
         {archivedProjectsUnavailable ? (
           <SettingsFeedback
             state="error"
-            action={<Button onClick={retryArchivedProjects}>{t("Retry")}</Button>}
+            action={{ label: t("Retry"), onClick: retryArchivedProjects }}
           >
             {t("Archived projects could not be read. Saved data was left unchanged.")}
           </SettingsFeedback>
@@ -362,9 +362,9 @@ export function ArchivePage({
           <SettingsFeedback
             state="error"
             action={
-              sessionsStatus.onRetry ? (
-                <Button onClick={sessionsStatus.onRetry}>{t("Retry")}</Button>
-              ) : undefined
+              sessionsStatus.onRetry
+                ? { label: t("Retry"), onClick: sessionsStatus.onRetry }
+                : undefined
             }
           >
             {sessionsStatus.error ?? t("Archived conversations could not be loaded.")}
@@ -394,9 +394,9 @@ export function ArchivePage({
                 <SettingsFeedback
                   state="warning"
                   action={
-                    sessionsStatus?.onRetry ? (
-                      <Button onClick={sessionsStatus.onRetry}>{t("Retry")}</Button>
-                    ) : undefined
+                    sessionsStatus?.onRetry
+                      ? { label: t("Retry"), onClick: sessionsStatus.onRetry }
+                      : undefined
                   }
                 >
                   {t("This list may be incomplete.")} {sessionsStatus?.error}

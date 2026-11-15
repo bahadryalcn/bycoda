@@ -49,8 +49,8 @@
   inline-size: var(--checkbox-box);
   block-size: var(--checkbox-box);
   border: 1px solid var(--ui-control-border);
-  border-radius: calc(var(--ui-control-radius) - 2px);
-  background: var(--ui-surface-muted);
+  border-radius: var(--ui-radius-inset);
+  background: var(--ui-field-surface);
   transition:
     background-color var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard);
@@ -62,7 +62,7 @@
   block-size: calc(var(--checkbox-box) * 0.55);
   border-style: solid;
   border-color: currentColor;
-  border-width: 0 2px 2px 0;
+  border-width: 0 calc(var(--checkbox-box) * 0.125) calc(var(--checkbox-box) * 0.125) 0;
   /* The rotated L carries its mass low; lift it to the box centre. */
   translate: 0 calc(var(--checkbox-box) * -0.1);
   rotate: 45deg;
@@ -83,7 +83,7 @@
 .checkbox:indeterminate::after {
   inline-size: calc(var(--checkbox-box) * 0.5);
   block-size: 0;
-  border-width: 0 0 2px;
+  border-width: 0 0 calc(var(--checkbox-box) * 0.125);
   translate: none;
   rotate: none;
   opacity: 1;
@@ -147,7 +147,7 @@ html[data-control-density="touch"] .control {
 }
 .description {
   color: var(--text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }
@@ -194,7 +194,7 @@ label:has(> .checkbox:disabled) {
   cursor: inherit;
 }
 .mark[data-size="sm"] {
-  --checkbox-box: calc(var(--ui-control-checkbox-size) - 2px);
+  --checkbox-box: calc(var(--ui-control-checkbox-size) * 0.875);
 }
 
 .row[data-choice-appearance="card"] {
@@ -207,7 +207,6 @@ label:has(> .checkbox:disabled) {
   }
 }
 .row[data-choice-appearance="card"]:has(input:checked) {
-  border-color: var(--ui-tone-accent-border);
   background: var(--ui-surface-selected);
 }
 .row[data-choice-appearance="card"]:has(input:focus-visible) {

@@ -271,11 +271,12 @@ export function ThemeGenerator({ appearance }: { appearance: AppearanceSettings 
         state="error"
         onDismiss={dismiss}
         action={
-          failure === null && retryTarget ? (
-            <Button size="sm" onClick={() => startImage(retryTarget.suggestion, retryTarget.index)}>
-              {t("Retry")}
-            </Button>
-          ) : undefined
+          failure === null && retryTarget
+            ? {
+                label: t("Retry"),
+                onClick: () => startImage(retryTarget.suggestion, retryTarget.index),
+              }
+            : undefined
         }
       >
         {[

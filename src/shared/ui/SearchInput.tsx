@@ -62,7 +62,8 @@ export const SearchInputGroup = forwardRef<
 });
 
 /**
- * Single-line search field with a clear button; clearing fires a real change event and keeps focus in the field.
+ * Search mode of the shared field: a thin wrapper that renders the input in the same FieldControl frame as TextField (same
+ * border, ground, height roles and states), adding the clear button; clearing fires a real change event and keeps focus in the field.
  * `fieldSize` sm (default, toolbar height) or md (form height); `textSize` and `leading` set the type role of the typed text. Native input events, ref and keys pass through.
  * @group fields
  * @use Filter or search a list, tree or table; standalone or inside a SearchInputGroup.

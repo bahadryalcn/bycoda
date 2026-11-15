@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { syncNativeGlass } from "../model/appearance";
 import {
   readNativeGlassError,
@@ -23,16 +22,13 @@ export function WindowGlassFeedback({ light }: { light: boolean }) {
     return (
       <SettingsFeedback
         state="error"
-        action={
-          <Button
-            loading={pending}
-            onClick={() => {
-              if (!readNativeGlassPending()) syncNativeGlass(light ? "light" : "dark");
-            }}
-          >
-            {t("Retry")}
-          </Button>
-        }
+        action={{
+          label: t("Retry"),
+          pending: pending,
+          onClick: () => {
+            if (!readNativeGlassPending()) syncNativeGlass(light ? "light" : "dark");
+          },
+        }}
       >
         {t("Window transparency could not be applied.")}
       </SettingsFeedback>
@@ -56,11 +52,11 @@ function RestartNotice() {
   return (
     <SettingsFeedback
       state={restart === "failed" ? "error" : "warning"}
-      action={
-        <Button loading={restart === "pending"} onClick={request}>
-          {restart === "failed" ? t("Retry") : t("Restart now")}
-        </Button>
-      }
+      action={{
+        label: restart === "failed" ? t("Retry") : t("Restart now"),
+        pending: restart === "pending",
+        onClick: request,
+      }}
     >
       {restart === "failed"
         ? t("bycoda could not restart. Restart it manually to apply the window glass change.")

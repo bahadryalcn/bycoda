@@ -7,7 +7,6 @@ import { crewManagedSession } from "../../../features/crews/public/managed";
 import { sameProjectPath } from "../../../features/projects/model/recents";
 import { Alert } from "../../../shared/ui/Alert";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { t } from "../../../shared/i18n";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -96,16 +95,13 @@ export function CrewCoordinatorSession({
     return (
       <Alert
         tone="danger"
-        action={
-          <Button
-            onClick={() => {
-              setError(undefined);
-              setRevision(revision + 1);
-            }}
-          >
-            {t("Retry")}
-          </Button>
-        }
+        action={{
+          label: t("Retry"),
+          onClick: () => {
+            setError(undefined);
+            setRevision(revision + 1);
+          },
+        }}
       >
         {error}
       </Alert>

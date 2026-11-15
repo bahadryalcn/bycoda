@@ -63,9 +63,8 @@
   .content {
     display: flex;
     align-items: flex-start;
-    gap: var(--space-3);
-    padding-block: var(--space-3);
-    padding-inline: var(--space-4) var(--space-3);
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
   }
   .content:has(> .footer) {
     flex-wrap: wrap;
@@ -75,36 +74,11 @@
     flex: 0 0 100%;
     min-inline-size: 0;
   }
-  .icon {
-    display: grid;
-    flex: none;
-    inline-size: 1.125rem;
-    block-size: 1.25rem;
-    place-items: center;
-    color: var(--text-muted);
-    transition: color var(--duration-fast) var(--ease-standard);
-  }
-  .icon[data-tone="success"] {
-    color: var(--success);
-  }
-  .icon[data-tone="info"] {
-    color: var(--info);
-  }
-  .icon[data-tone="warning"] {
-    color: var(--warning);
-  }
-  .icon[data-tone="danger"] {
-    color: var(--danger);
-  }
-  .icon svg {
-    display: block;
-  }
-
   .copy {
     flex: 1;
     min-inline-size: 0;
-    font-size: var(--text-base);
-    line-height: 1.25rem;
+    font-size: var(--ui-font-secondary);
+    line-height: var(--ui-leading-secondary);
     overflow-wrap: anywhere;
     user-select: text;
   }
@@ -115,11 +89,15 @@
   .description {
     margin-block-start: 0.125rem;
     color: var(--text-secondary);
+    font-size: var(--ui-font-caption);
+    line-height: var(--ui-leading-caption);
   }
   /* Without a title the description is the toast's one line, so it reads at full strength. */
   .description:first-child {
     margin-block-start: 0;
     color: inherit;
+    font-size: inherit;
+    line-height: inherit;
   }
   .body {
     display: flex;
@@ -132,19 +110,6 @@
     margin-block-start: 0;
   }
 
-  /* Both controls are a compact control tall; the offset centres them on the first text line. */
-  .actionSlot,
-  .closeSlot {
-    display: flex;
-    flex: none;
-    margin-block-start: -0.25rem;
-  }
-  .actionSlot {
-    justify-content: flex-end;
-  }
-  .closeSlot {
-    margin-inline-end: -0.125rem;
-  }
   /* A narrow toast keeps its copy wide: the action drops under the copy instead of squeezing it. */
   @container (max-width: 21rem) {
     .content {
@@ -154,16 +119,13 @@
     .actionSlot {
       order: 1;
       flex-basis: 100%;
-      justify-content: flex-start;
-      margin-block-start: 0;
-      padding-inline-start: calc(1.125rem + var(--space-3));
+      padding-inline-start: calc(var(--ui-icon-md) + var(--space-2));
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
     .stack,
-    .card,
-    .icon {
+    .card {
       transition: none;
     }
   }

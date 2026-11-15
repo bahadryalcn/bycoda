@@ -38,7 +38,7 @@ import { SubagentRow } from "./SubagentCards";
 import { Button } from "../../../shared/ui/Button";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 import type { ApprovalDecision } from "../../../integrations/harness";
@@ -78,6 +78,7 @@ import { bycodaToolCall, bycodaWorkSummary, type BycodaToolCall } from "../model
 import { NEAR_BOTTOM_PX } from "./transcriptScroll";
 import { useClampOverflow } from "./useClampOverflow";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 /*
  * Tool calls often land in a burst. Each arrival waits for the one before it
  * to finish its whole entrance — rail, branch, row — before starting its own.
@@ -1067,9 +1068,9 @@ function BycodaCallRow({
       ) : null}
       {errorOpen && hasResult ? <ToolInspectionPanel block={block} /> : null}
       {pendingApproval ? (
-        <pre className="max-h-32 min-w-0 overflow-auto whitespace-pre-wrap break-all py-1 pl-5 font-mono text-ui-caption leading-5 text-(--ui-text-secondary)">
+        <OutputBlock scroll className="max-h-32 min-w-0 break-all py-1 pl-5">
           {call.command}
-        </pre>
+        </OutputBlock>
       ) : null}
       <ApprovalControls block={block} onApproval={onApproval} />
     </div>
@@ -1262,9 +1263,7 @@ export function ToolCall({
         </div>
       )}
       {open && expandable ? (
-        <pre className="mt-1.5 min-w-0 whitespace-pre-wrap break-words px-2.5 font-mono text-ui-caption leading-5 text-(--ui-text-secondary)">
-          {expanded}
-        </pre>
+        <OutputBlock className="mt-1.5 min-w-0 px-2.5">{expanded}</OutputBlock>
       ) : null}
       <ApprovalControls block={block} onApproval={onApproval} />
     </div>
@@ -1472,9 +1471,7 @@ function ConnectedApprovalControls({
       </div>
       {decision.feedback ? (
         decision.danger ? (
-          <Alert tone="danger" inline>
-            {decision.feedback}
-          </Alert>
+          <InlineError>{decision.feedback}</InlineError>
         ) : (
           <div role="status" className="mt-1.5 text-ui-caption text-(--ui-text-secondary)">
             {decision.feedback}

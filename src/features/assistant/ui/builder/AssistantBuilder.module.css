@@ -85,16 +85,6 @@
   gap: 12px;
   min-inline-size: 0;
 }
-.avatarPreview {
-  display: inline-grid;
-  flex: none;
-  place-items: center;
-  inline-size: 56px;
-  block-size: 56px;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: var(--ui-surface-muted);
-}
 
 /* Shared by the picker in Settings and the preview. */
 .generator {

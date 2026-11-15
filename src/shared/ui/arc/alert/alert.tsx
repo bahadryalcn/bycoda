@@ -1,25 +1,25 @@
-// Official free Arc registry source, adapted to bycoda shared semantics.
+// Official free Arc registry source, adapted to bycoda shared semantics: the notice anatomy,
+// glyphs, tone ink and actions come from ../../Notice; only presence (height collapse) stays here.
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { HTMLAttributes, ReactNode, Ref } from "react";
 import {
   AnimatePresence,
-  animate,
   motion,
-  useIsPresent,
-  useMotionValue,
   useReducedMotion,
-  type AnimationPlaybackControls,
-  type HTMLMotionProps,
-  type MotionProps,
   type TargetAndTransition,
   type Transition,
 } from "motion/react";
-import { Check, AlertCircle as WarningCircle, CircleX as XmarkCircle, Info, X } from "../../icons";
+import { X } from "../../icons";
 import { Button } from "../../Button";
-import { InlineMessage } from "../../InlineError";
-import { observeResize } from "../../../lib/observeResize";
+import {
+  NoticeButton,
+  NoticeGlyph,
+  NoticeSlot,
+  noticeEnterClass,
+  type NoticeAction,
+} from "../../Notice";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./alert.module.css";
 
@@ -34,263 +34,76 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
   open?: boolean;
   /** Shows a dismiss button. An uncontrolled alert collapses first, then calls this. */
   onDismiss?: () => void;
-  /** Compatibility form rendered through InlineMessage, preserving Alert presence and dismissal. Prefer InlineError / InlineMessage for new row feedback. */
-  inline?: boolean;
-  /** Recovery or follow-up controls, such as Retry. Rendered beside the copy and wrapped under it only when the row is too narrow; the caller keeps the operation. */
-  action?: ReactNode;
+  /** The one follow-up (Retry, Open settings), rendered as a secondary small button after the copy. */
+  action?: NoticeAction;
+  /** A second follow-up, rendered after `action`. */
+  secondaryAction?: NoticeAction;
+  /** Escape for one non-button control after the actions (an ErrorDetails trigger, a menu). */
+  extra?: ReactNode;
   /** Accessible name of the dismiss control. Defaults to `Dismiss` plus the title. */
   dismissLabel?: string;
 }
-type AlertBoxProps = Omit<AlertProps, "open"> & { reduce: boolean | null; animateIcon?: boolean };
-
-/** Each tone has its own glyph, so the tone is never carried by colour alone. */
-const icons = { info: Info, success: Check, warning: WarningCircle, danger: XmarkCircle };
-const exitFast: Transition = {
-  duration: motionTokens.duration.fast,
-  ease: [...motionTokens.ease.standard],
-};
-const textIn: TargetAndTransition = {
-  opacity: 0,
-  y: "0.3em",
-  filter: `blur(${motionTokens.blur.soft}px)`,
-};
-const textOut: TargetAndTransition = {
-  opacity: 0,
-  y: "-0.3em",
-  filter: `blur(${motionTokens.blur.subtle}px)`,
-  transition: exitFast,
-};
-const iconIn: TargetAndTransition = {
-  opacity: 0,
-  scale: 0.6,
-  filter: `blur(${motionTokens.blur.subtle}px)`,
-};
-const shown: TargetAndTransition = { opacity: 1, y: "0em", scale: 1, filter: "blur(0px)" };
-const fadeOut: TargetAndTransition = {
-  opacity: 0,
-  transition: { duration: motionTokens.duration.instant },
-};
-
-/** Outgoing copies are hidden from assistive tech while they fade, so the live region reads only the current text. */
-function Swap(props: HTMLMotionProps<"span">) {
-  const present = useIsPresent();
-  return <motion.span {...props} aria-hidden={present ? props["aria-hidden"] : true} />;
-}
-
-/** Follows its content height. After `morphKey` changes, the height springs from the old size to the new one and then returns to auto, so passive reflows (a resize, a font swap) follow instantly. It clips only while moving, so focus rings stay visible at rest. */
-function HeightFrame({
-  className,
-  reduce,
-  morphKey,
-  children,
-}: {
-  className?: string;
-  reduce: boolean | null;
-  morphKey: string;
-  children: ReactNode;
-}) {
-  const frame = useRef<HTMLDivElement>(null);
-  const content = useRef<HTMLDivElement>(null);
-  const height = useMotionValue<number | "auto">("auto");
-  const changedAt = useRef(0);
-  useLayoutEffect(() => {
-    changedAt.current = performance.now();
-  }, [morphKey]);
-  useEffect(() => {
-    const node = content.current;
-    if (!node) return;
-    let last: number | undefined;
-    let controls: AnimationPlaybackControls | undefined;
-    const settle = () => {
-      height.jump("auto");
-      if (frame.current) Object.assign(frame.current.style, { overflow: "", height: "auto" });
-    };
-    const unobserve = observeResize(node, (entry) => {
-      const next = entry.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight;
-      const current = height.get();
-      const from = typeof current === "number" ? current : last;
-      last = next;
-      controls?.stop();
-      if (
-        reduce ||
-        from === undefined ||
-        from === next ||
-        performance.now() - changedAt.current > 120
-      )
-        return settle();
-      // Pin the old height before this frame paints, then spring to the new one.
-      if (frame.current)
-        Object.assign(frame.current.style, { overflow: "hidden", height: `${from}px` });
-      controls = animate(height, [from, next], {
-        ...motionTokens.spring.smooth,
-        onComplete: settle,
-      });
-    });
-    return () => {
-      unobserve();
-      controls?.stop();
-    };
-  }, [height, reduce]);
-  return (
-    <motion.div ref={frame} className={className} style={{ height }}>
-      <div ref={content} className={styles.content}>
-        {children}
-      </div>
-    </motion.div>
-  );
-}
+type AlertBoxProps = Omit<AlertProps, "open">;
 
 function AlertBox({
   tone = "info",
   title,
   children,
   className,
-  reduce,
   onDismiss,
-  animateIcon = false,
-  inline = false,
   icon,
   role,
   action,
+  secondaryAction,
+  extra,
   dismissLabel,
   ...props
 }: AlertBoxProps) {
-  const Icon = icons[tone];
-  const text =
-    typeof children === "string" || typeof children === "number" ? String(children) : null;
   const hasDetails =
     children !== undefined && children !== null && children !== false && children !== "";
-  const enter: Transition = reduce
-    ? { duration: motionTokens.duration.instant }
-    : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] };
-  const swap: MotionProps = {
-    initial: reduce ? { opacity: 0 } : textIn,
-    animate: shown,
-    exit: reduce ? fadeOut : textOut,
-    transition: enter,
-  };
-  // Inline feedback has one presentation owner; Alert only retains its presence/dismiss API.
-  if (inline) {
-    return (
-      <div
-        {...props}
-        className={[onDismiss ? styles.inlineRow : undefined, className].filter(Boolean).join(" ")}
-        role={role ?? (tone === "danger" ? "alert" : "status")}
-      >
-        <InlineMessage
-          className={onDismiss ? styles.inlineCopy : undefined}
-          tone={tone}
-          icon={icon}
-          live="off"
-          action={action}
-        >
-          {title ? (
-            <strong>
-              {title}
-              {hasDetails ? " " : ""}
-            </strong>
-          ) : null}
-          <AnimatePresence mode="popLayout" initial={false}>
-            {hasDetails ? (
-              <Swap key={text ?? "details"} className={styles.line} {...swap}>
-                {children}
-              </Swap>
-            ) : null}
-          </AnimatePresence>
-        </InlineMessage>
-        {onDismiss ? (
+  const hasActions = Boolean(action || secondaryAction || extra);
+  return (
+    <div
+      {...props}
+      className={[styles.alert, styles[tone], noticeEnterClass, className]
+        .filter(Boolean)
+        .join(" ")}
+      role={role ?? (tone === "danger" ? "alert" : "status")}
+    >
+      <NoticeGlyph tone={tone} size="box" icon={icon} />
+      {/* Copy and actions share one row; actions wrap below only when the row is too narrow. */}
+      <div className={styles.body}>
+        <div className={styles.copy}>
+          {title ? <strong className={styles.title}>{title}</strong> : null}
+          {hasDetails ? <div className={styles.description}>{children}</div> : null}
+        </div>
+        {hasActions ? (
+          <div className={styles.actions}>
+            {action ? <NoticeButton action={action} /> : null}
+            {secondaryAction ? <NoticeButton action={secondaryAction} /> : null}
+            {extra}
+          </div>
+        ) : null}
+      </div>
+      {onDismiss ? (
+        <NoticeSlot size="box">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             iconOnly
-            className={styles.dismiss}
             label={dismissLabel ?? (title ? `Dismiss: ${title}` : "Dismiss")}
             onClick={onDismiss}
           >
-            <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />
+            <X className="icon-md" aria-hidden="true" />
           </Button>
-        ) : null}
-      </div>
-    );
-  }
-  return (
-    <div
-      {...props}
-      className={[styles.alert, styles[tone], className].filter(Boolean).join(" ")}
-      role={role ?? (tone === "danger" ? "alert" : "status")}
-    >
-      {/* A new tone morphs its icon in place; a newly shown alert gives the icon a small settle. */}
-      <motion.span
-        className={styles.icon}
-        initial={animateIcon && !reduce ? iconIn : false}
-        animate={shown}
-        transition={motionTokens.spring.snappy}
-      >
-        <AnimatePresence mode="popLayout" initial={false}>
-          <Swap
-            key={tone}
-            className={styles.glyph}
-            initial={reduce ? { opacity: 0 } : iconIn}
-            animate={shown}
-            exit={reduce ? fadeOut : { ...iconIn, transition: exitFast }}
-            transition={reduce ? enter : motionTokens.spring.snappy}
-          >
-            {icon ?? <Icon width={16} height={16} aria-hidden="true" />}
-          </Swap>
-        </AnimatePresence>
-      </motion.span>
-      {/* Copy and actions share one row; actions wrap below only when the row is too narrow. */}
-      <div className={styles.body}>
-        {/* The copy column follows its content height, so longer or shorter messages never snap the alert. */}
-        <HeightFrame
-          className={styles.copy}
-          reduce={reduce}
-          morphKey={`${title}\n${hasDetails}\n${text ?? ""}`}
-        >
-          {title ? (
-            <strong className={styles.title}>
-              <AnimatePresence mode="popLayout" initial={false}>
-                <Swap key={title} className={styles.line} {...swap}>
-                  {title}
-                </Swap>
-              </AnimatePresence>
-            </strong>
-          ) : null}
-          <AnimatePresence mode="popLayout" initial={false}>
-            {hasDetails && (
-              <motion.div key="details" className={styles.description} {...swap}>
-                {text === null ? (
-                  children
-                ) : (
-                  <AnimatePresence mode="popLayout" initial={false}>
-                    <Swap key={text} className={styles.line} {...swap}>
-                      {text}
-                    </Swap>
-                  </AnimatePresence>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </HeightFrame>
-        {action ? <div className={styles.action}>{action}</div> : null}
-      </div>
-      {onDismiss && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          iconOnly
-          className={styles.dismiss}
-          label={dismissLabel ?? (title ? `Dismiss: ${title}` : "Dismiss")}
-          onClick={onDismiss}
-        >
-          <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />
-        </Button>
-      )}
+        </NoticeSlot>
+      ) : null}
     </div>
   );
 }
+
+const collapsed: TargetAndTransition = { height: 0, opacity: 0 };
 
 export function Alert({ open, onDismiss, ...props }: AlertProps) {
   const reduce = useReducedMotion();
@@ -299,21 +112,16 @@ export function Alert({ open, onDismiss, ...props }: AlertProps) {
   const setClip = (value: string) => {
     if (shell.current) shell.current.style.overflow = value;
   };
-  if (open === undefined && !onDismiss) return <AlertBox {...props} reduce={reduce} />;
+  if (open === undefined && !onDismiss) return <AlertBox {...props} />;
   const isOpen = open ?? !dismissed;
   const dismiss = onDismiss && (() => (open === undefined ? setDismissed(true) : onDismiss()));
-  const presence: Transition = reduce
-    ? { duration: 0 }
-    : {
-        height: motionTokens.spring.smooth,
-        opacity: { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] },
-      };
-  const exit: TargetAndTransition = {
-    height: 0,
-    opacity: 0,
-    transition: reduce
-      ? { duration: 0 }
-      : { height: motionTokens.spring.smooth, opacity: exitFast },
+  // One motion: height and opacity share the standard duration; reduced motion is a plain fade.
+  const presence: Transition = {
+    duration: motionTokens.duration.standard,
+    ease: [...motionTokens.ease.standard],
+  };
+  const fadeOnly: Transition = {
+    duration: reduce ? motionTokens.duration.instant : presence.duration,
   };
   // Presence collapses the height with the fade, so the content below closes the gap instead of jumping.
   return (
@@ -327,15 +135,15 @@ export function Alert({ open, onDismiss, ...props }: AlertProps) {
         <motion.div
           key="alert"
           className={styles.presence}
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={exit}
-          transition={presence}
+          initial={reduce ? { opacity: 0 } : collapsed}
+          animate={reduce ? { opacity: 1 } : { height: "auto", opacity: 1 }}
+          exit={reduce ? { opacity: 0 } : collapsed}
+          transition={reduce ? fadeOnly : presence}
           ref={shell}
           onAnimationStart={() => setClip("hidden")}
           onAnimationComplete={() => setClip("")}
         >
-          <AlertBox {...props} reduce={reduce} onDismiss={dismiss} animateIcon />
+          <AlertBox {...props} onDismiss={dismiss} />
         </motion.div>
       )}
     </AnimatePresence>

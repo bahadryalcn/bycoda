@@ -118,6 +118,13 @@ describe("appearance preferences", () => {
       contrast: 75,
     });
   });
+  it("applies a 56rem comfortable reading column by default", () => {
+    expect(APPEARANCE_DEFAULTS.chatWidth).toBe("comfortable");
+    applyAppearancePreferences({ ...APPEARANCE_DEFAULTS });
+    expect(document.documentElement.style.getPropertyValue("--appearance-chat-width")).toBe(
+      "56rem",
+    );
+  });
   it("bounds surface contrast and applies it as a layer-strength multiplier", () => {
     expect(normalizeAppearancePreferences({}).surfaceContrast).toBe(100);
     expect(normalizeAppearancePreferences({ surfaceContrast: 10 }).surfaceContrast).toBe(50);

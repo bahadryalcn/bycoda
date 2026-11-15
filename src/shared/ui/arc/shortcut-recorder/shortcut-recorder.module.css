@@ -27,52 +27,31 @@
 /* One key cap for menus, help and the recorder. Sans glyphs and platform symbols, tabular so held-key lights never shift. */
 .kbd {
   display: inline-grid;
-  min-width: 1.5rem;
-  height: 1.5rem;
+  min-inline-size: 1.25rem;
+  block-size: 1.25rem;
   box-sizing: border-box;
   place-items: center;
-  padding: 0 var(--space-2) 1px;
-  border: 1px solid var(--ui-field-border);
-  border-bottom-width: 1px;
-  border-radius: calc(var(--ui-control-radius) - 2px);
-  background: var(--ui-surface-muted);
+  padding: 0 var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius-inset);
+  background: var(--ui-tone-neutral-subtle);
   color: var(--ui-tone-neutral-fg);
   font-family: var(--font-body);
-  font-size: var(--ui-font-caption);
+  font-size: var(--ui-font-micro);
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   transition:
-    transform var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard),
-    border-bottom-width var(--duration-fast) var(--ease-standard);
-}
-.kbd[data-size="xs"] {
-  min-width: 1rem;
-  height: 1rem;
-  padding: 0 var(--space-1);
-  border-bottom-width: 1px;
-  border-radius: calc(var(--ui-control-radius) - 4px);
-  font-size: var(--ui-font-micro);
-}
-.kbd[data-size="sm"] {
-  min-width: 1.25rem;
-  height: 1.25rem;
-  padding: 0 var(--space-1) 1px;
-  border-radius: calc(var(--ui-control-radius) - 3px);
-  font-size: var(--ui-font-caption);
+    color var(--duration-fast) var(--ease-standard);
 }
 .kbd[data-pressed] {
-  transform: translateY(1px);
   border-color: var(--ui-tone-accent-border);
-  border-bottom-width: 1px;
   background: var(--ui-tone-accent-subtle);
   color: var(--ui-tone-accent-fg);
-  transition-duration: var(--duration-instant);
 }
 .kbd[data-tone="warning"] {
   border-color: var(--ui-tone-warning-border);

@@ -18,7 +18,9 @@ const index = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../app/shell/TitleBar", () => ({ OverlayNav: () => null }));
-vi.mock("../../../app/shell/WindowControls", () => ({ WindowControls: () => null }));
+vi.mock("../../../app/shell/WindowControls", () => ({
+  WindowControls: () => null,
+}));
 vi.mock("../../files/model/fileIndex", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../files/model/fileIndex")>()),
   peekProjectFiles: (cwd: string) => index.files.get(cwd) ?? null,
@@ -31,7 +33,11 @@ vi.mock("../../files/model/fileIndex", async (importOriginal) => ({
 }));
 vi.mock("../model/useConversationSearch", () => ({
   useConversationSearch: () => ({
-    result: { sessions: [], pending: index.conversationPending, truncated: false },
+    result: {
+      sessions: [],
+      pending: index.conversationPending,
+      truncated: false,
+    },
     loading: false,
     error: null,
   }),
@@ -48,7 +54,10 @@ vi.mock("../model/useProjectFileSearch", () => ({
   },
 }));
 vi.mock("../../group-lock/hooks/useGroupLock", () => {
-  const snapshot = { lockedGroupIds: new Set<string>(), lockedProjectKeys: new Set<string>() };
+  const snapshot = {
+    lockedGroupIds: new Set<string>(),
+    lockedProjectKeys: new Set<string>(),
+  };
   return { useLockSnapshot: () => snapshot };
 });
 let root: Root;
@@ -115,9 +124,21 @@ it("keeps archived history titles and loaded messages out of All results", async
   live.id = archived.id;
   live.title = "needle loaded title";
   live.blocks = [{ id: "message", role: "user", text: "needle archived message" }];
-  const storedArchived = { ...archived, id: "stored-archived", title: "needle stored archive" };
-  const visible = { ...archived, id: "visible", title: "needle visible title", archived: false };
-  await render("/repo", true, { history: [archived, storedArchived, visible], sessions: [live] });
+  const storedArchived = {
+    ...archived,
+    id: "stored-archived",
+    title: "needle stored archive",
+  };
+  const visible = {
+    ...archived,
+    id: "visible",
+    title: "needle visible title",
+    archived: false,
+  };
+  await render("/repo", true, {
+    history: [archived, storedArchived, visible],
+    sessions: [live],
+  });
   await typeQuery("needle");
 
   expect(host.textContent).toContain("needle visible title");
@@ -150,7 +171,9 @@ it("retains the exact active destination when asynchronous filename arrivals reo
   await act(async () =>
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
   );
-  expect(onOpenFile).toHaveBeenCalledWith("/repo/needle-b.ts", undefined, { exact: true });
+  expect(onOpenFile).toHaveBeenCalledWith("/repo/needle-b.ts", undefined, {
+    exact: true,
+  });
 });
 
 it("names incomplete application indexing instead of claiming a confirmed empty result", async () => {
@@ -402,14 +425,16 @@ it("opens contextual conversation search then broadens in the same surface witho
   const filters = host.querySelector<HTMLButtonElement>('[aria-label="Chat search filters"]')!;
   expect(filters.textContent).toContain("This project");
   act(() => filters.click());
-  const scopeSelect = document.body.querySelector<HTMLSelectElement>(
-    'select[aria-label="Search in"]',
+  const scopeSelect = document.body.querySelector<HTMLButtonElement>(
+    'button[aria-label^="Search in"]',
   )!;
-  expect(scopeSelect.value).toBe("project");
-  act(() => {
-    scopeSelect.value = "everywhere";
-    scopeSelect.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  expect(scopeSelect.textContent).toContain("This project");
+  act(() => scopeSelect.click());
+  act(() =>
+    [...document.body.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find((node) => node.textContent === "Everywhere")!
+      .click(),
+  );
   expect(filters.textContent).toContain("Everywhere");
   act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
   act(() =>

@@ -9,6 +9,7 @@ import { readHtmlPreviewSelection, withHtmlSelectionBridge } from "../model/html
 import { Button } from "../../../shared/ui/Button";
 import { PreviewSelectionMenu } from "./PreviewSelection";
 import { HtmlPreviewSecurityActions } from "./HtmlPreviewSecurityActions";
+import { OutputBlock } from "../../../shared/ui/OutputBlock";
 
 /** A separate protocol and opaque sandbox keep generated scripts out of the app. */
 export function HtmlPreview({
@@ -125,12 +126,9 @@ export function HtmlPreview({
     <div className="flex h-full min-h-0 flex-col">
       {toolbarTarget ? <Portal target={toolbarTarget}>{header}</Portal> : header}
       {sourceVisible ? (
-        <pre
-          tabIndex={0}
-          className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 text-ui-caption"
-        >
+        <OutputBlock frame="filled" scroll tabIndex={0} className="m-3 min-h-0 flex-1">
           {originalSource}
-        </pre>
+        </OutputBlock>
       ) : null}
       {state.error && !sourceVisible ? (
         <InlineError className="p-6">{state.error}</InlineError>

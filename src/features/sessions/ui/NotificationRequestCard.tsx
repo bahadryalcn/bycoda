@@ -2,7 +2,7 @@ import { ClampText } from "../../../shared/ui/ClampText";
 import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { motionAttributes } from "../../../shared/ui/Motion";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { X } from "../../../shared/ui/icons";
@@ -159,9 +159,7 @@ export function NotificationRequestCard({
       </Text>
       {notice.kind === "approval" && decision.feedback ? (
         decision.danger ? (
-          <Alert tone="danger" inline className="px-3 pb-2">
-            {decision.feedback}
-          </Alert>
+          <InlineError className="px-3 pb-2">{decision.feedback}</InlineError>
         ) : (
           <Text role="status" as="div" size="caption" tone="secondary" className="px-3 pb-2">
             {decision.feedback}

@@ -17,8 +17,8 @@ export type ActionHostProps = ComponentPropsWithRef<"div"> & {
   /** Rendered element. Default `div`; use `article` for a card or `li` for a list item so the
    *  host carries the right semantics. Event and ref types stay those of the div form. */
   as?: ActionHostElement;
-  /** Opt-in presentation: a flat card-radius row, a framed floating card, or a rectangular compound settings row.
-   * Omit to retain the standard control-radius host. Interaction states remain shared. */
+  /** Opt-in presentation: a flat row, a framed floating card, or a rectangular compound settings row.
+   * Every host uses the shared row radius (`--ui-radius-row`) and the ListRow state fills. */
   variant?: "row" | "floating" | "settings";
   /** The row, tab or card is the current one; the host paints the selected fill. */
   selected?: boolean;
@@ -128,7 +128,7 @@ export function actionHostAttributes(
  * Make the primary Button a direct child (or mark it `data-action-primary`) so it drops its own fills. Feature controllers keep roles, selection and drag.
  * @group layout
  * @use Rail rows, tabs and cards with a main action plus close/remove/more inline actions. Use padding and control height roles to preserve density without control-size classes.
- * @avoid A plain list row with no inline actions: Button variant="item". One standalone icon action: Button iconOnly. Static grouping without actions: Surface.
+ * @avoid A plain list row with no inline actions: ListRow. One standalone icon action: Button iconOnly. Static grouping without actions: Surface.
  */
 export function ActionHost({
   as,

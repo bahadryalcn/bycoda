@@ -40,7 +40,7 @@ it.each(["panel", "list"] as const)(
         title: "No sessions",
         description: "Clear the filters",
         label: "Sessions",
-        action: createElement("button", null, "Clear"),
+        action: { label: "Clear", onClick: () => undefined },
       }),
     );
     try {
@@ -49,7 +49,8 @@ it.each(["panel", "list"] as const)(
       expect(section.getAttribute("aria-label")).toBe("Sessions");
       expect(section.classList.contains("bycoda-arc")).toBe(true);
       expect(section.querySelector("h3")?.textContent).toBe("No sessions");
-      expect(section.querySelector("button")?.textContent).toBe("Clear");
+      expect(section.querySelector('button[aria-label="Help"]')).not.toBeNull();
+      expect(section.querySelector("button:not([aria-label])")?.textContent).toBe("Clear");
     } finally {
       done();
     }
@@ -71,9 +72,9 @@ it("keeps the icon optional: a null icon renders none and an omitted one renders
   }
 });
 
-it("labels the three kinds and announces only the ones that change under the user", async () => {
-  const expected = { empty: null, filtered: "status", unavailable: "alert" } as const;
-  for (const kind of ["empty", "filtered", "unavailable"] as const) {
+it("labels the kinds and announces only the one that changes under the user", async () => {
+  const expected = { empty: null, filtered: "status" } as const;
+  for (const kind of ["empty", "filtered"] as const) {
     const { container, done } = await mount(
       createElement(EmptyState, { kind, description: "Nothing" }),
     );
@@ -89,12 +90,74 @@ it("labels the three kinds and announces only the ones that change under the use
 
 it("lets the caller override the implied role", async () => {
   const { container, done } = await mount(
-    createElement(EmptyState, { kind: "unavailable", role: "status", description: "Offline" }),
+    createElement(EmptyState, { kind: "filtered", role: "alert", description: "Offline" }),
   );
   try {
-    expect(container.querySelector("section")?.getAttribute("role")).toBe("status");
+    expect(container.querySelector("section")?.getAttribute("role")).toBe("alert");
   } finally {
     done();
+  }
+});
+
+it("tucks a titled description behind the info affordance unless it states scope", async () => {
+  const tucked = await mount(
+    createElement(EmptyState, { kind: "empty", title: "No crews", description: "Create a crew." }),
+  );
+  try {
+    expect(tucked.container.querySelector("p")).toBeNull();
+    expect(tucked.container.querySelector('button[aria-label="Help"]')).not.toBeNull();
+  } finally {
+    tucked.done();
+  }
+  for (const props of [{ showDescription: true }, { kind: "filtered" as const }]) {
+    const shown = await mount(
+      createElement(EmptyState, { title: "No crews", description: "Create a crew.", ...props }),
+    );
+    try {
+      expect(shown.container.querySelector("p")?.textContent).toBe("Create a crew.");
+      expect(shown.container.querySelector('button[aria-label="Help"]')).toBeNull();
+    } finally {
+      shown.done();
+    }
+  }
+  const untitled = await mount(createElement(EmptyState, { description: "Nothing here" }));
+  try {
+    expect(untitled.container.querySelector("p")?.textContent).toBe("Nothing here");
+  } finally {
+    untitled.done();
+  }
+});
+
+it("renders structured actions as secondary buttons in a block and links in a row", async () => {
+  const onClick = vi.fn();
+  const block = await mount(
+    createElement(EmptyState, {
+      description: "None",
+      action: { label: "Create", onClick },
+      secondaryAction: { label: "Browse", onClick: () => undefined },
+    }),
+  );
+  try {
+    expect([...block.container.querySelectorAll("button")].map((b) => b.textContent)).toEqual([
+      "Create",
+      "Browse",
+    ]);
+    act(() => block.container.querySelector("button")!.click());
+    expect(onClick).toHaveBeenCalledOnce();
+  } finally {
+    block.done();
+  }
+  const row = await mount(
+    createElement(EmptyState, {
+      size: "inline",
+      description: "None",
+      action: { label: "Create", onClick },
+    }),
+  );
+  try {
+    expect(row.container.querySelector("button")?.textContent).toBe("Create");
+  } finally {
+    row.done();
   }
 });
 
@@ -104,7 +167,7 @@ it("offers a reset action for a filtered state after the caller's own action", a
     createElement(EmptyState, {
       kind: "filtered",
       description: "No match",
-      action: createElement("button", null, "Create"),
+      action: { label: "Create", onClick: () => undefined },
       onReset,
     }),
   );
@@ -121,7 +184,7 @@ it("offers a reset action for a filtered state after the caller's own action", a
 it("uses the caller's reset and retry labels and shows no actions when none are given", async () => {
   const labelled = await mount(
     createElement(EmptyState, {
-      kind: "unavailable",
+      kind: "filtered",
       description: "Offline",
       onReset: () => undefined,
       resetLabel: "Clear search",
@@ -150,7 +213,7 @@ it("blocks a second retry press while the retry is pending", async () => {
   const onRetry = vi.fn();
   const { container, done } = await mount(
     createElement(EmptyState, {
-      kind: "unavailable",
+      kind: "empty",
       description: "Offline",
       onRetry,
       retrying: true,
@@ -177,9 +240,8 @@ it("picks a kind-specific default icon and still honors an explicit icon or null
   };
   const empty = await icon({ kind: "empty" });
   const filtered = await icon({ kind: "filtered" });
-  const unavailable = await icon({ kind: "unavailable" });
-  expect(new Set([empty, filtered, unavailable]).size).toBe(3);
-  expect(await icon({ kind: "unavailable", icon: null })).toBeNull();
+  expect(empty).not.toBe(filtered);
+  expect(await icon({ kind: "empty", icon: null })).toBeNull();
   expect(
     await icon({ kind: "filtered", icon: createElement("svg", { className: "custom" }) }),
   ).toBe("custom");

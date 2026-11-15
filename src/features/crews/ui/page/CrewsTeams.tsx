@@ -1,9 +1,8 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { t } from "../../../../shared/i18n";
-import { Button } from "../../../../shared/ui/Button";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../shared/ui/InlineError";
-import { LayoutGrid, ListBullet, Plus } from "../../../../shared/ui/icons";
+import { LayoutGrid, ListBullet } from "../../../../shared/ui/icons";
 import { SearchInput } from "../../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
 import type { ProjectCrews, CrewRunView } from "../../model/crewClient";
@@ -50,15 +49,10 @@ export function CrewsTeams({
         kind="empty"
         title={t("No crews yet")}
         description={t("Create a team of members that works on a task together.")}
-        action={
-          <Button
-            variant="primary"
-            startIcon={<Plus className="icon-sm" />}
-            onClick={() => setDialog({ kind: "edit", createScope: "project" })}
-          >
-            {t("Create your first crew")}
-          </Button>
-        }
+        action={{
+          label: t("Create your first crew"),
+          onClick: () => setDialog({ kind: "edit", createScope: "project" }),
+        }}
       />
     );
   return (

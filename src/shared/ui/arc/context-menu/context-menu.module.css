@@ -2,82 +2,27 @@
 @layer properties, theme, base, components, utilities;
 
 /*
- * One row primitive for every menu: DropdownMenu, ContextMenu (point/anchor/submenu),
- * MenuRow consumers and the standalone Arc ContextMenu. Box layout lives in `components`
- * so consumer utilities can size or align a row; state colors stay unlayered and consume
- * shared roles only. Slot classes (.icon, .copy, .label, .description, .trailing) are the
- * same for every path, so icons, labels, shortcuts, checks and submenu chevrons align alike.
+ * Menu rows: DropdownMenu, ContextMenu (point/anchor/submenu), MenuRow consumers and the
+ * standalone Arc ContextMenu. The row skin (heights, radius, states, slots) is the shared
+ * ListRow recipe; this file adds the menu height, the two-line copy layout and structure.
+ * Slot classes (.icon, .copy, .label, .description, .trailing) are the same for every path.
  */
 .item {
-  /* Compact row: the control-compact height plus 4px (32px compact, 36px comfortable,
-     48px touch). Coarse pointers never get a target below 44px. */
-  --menu-row-height: calc(var(--ui-control-height-compact) + 0.25rem);
-  --menu-row-gap: 0.5rem;
-  --menu-row-inset: 0.5rem;
-  --menu-slot-size: 1rem;
-  /* Concentric with the popup: popup radius minus the 1px frame border and 4px menu padding. */
-  --menu-row-radius: calc(var(--ui-radius-popup) - 0.25rem - 1px);
-  --menu-row-hover: var(--ui-surface-hover);
-  --menu-row-pressed: var(--ui-surface-pressed);
+  composes: row from "../../ListRow.module.css";
+  --list-row-height: var(--ui-control-height-md);
 }
 @layer components {
-  .item {
-    position: relative;
-    display: flex;
-    box-sizing: border-box;
-    inline-size: 100%;
-    min-block-size: var(--menu-row-height);
-    align-items: center;
-    gap: var(--menu-row-gap);
-    padding-block: 0.375rem;
-    padding-inline: var(--menu-row-inset);
-    text-align: start;
-  }
   .item[data-described] {
     align-items: flex-start;
   }
-  @media (pointer: coarse) {
-    .item {
-      min-block-size: max(var(--menu-row-height), 44px);
-    }
-  }
 }
-.item {
-  border: 0;
-  border-radius: var(--menu-row-radius);
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: var(--ui-font-secondary);
-  line-height: var(--ui-leading-secondary);
-  cursor: pointer;
-  outline: none;
-  transition:
-    background-color var(--motion-feedback-duration) var(--motion-ease-out),
-    color var(--motion-feedback-duration) var(--motion-ease-out);
-}
-.item.destructive,
-.item[data-danger="true"] {
-  color: var(--ui-tone-danger-fg);
+.destructive {
+  composes: danger from "../../ListRow.module.css";
 }
 
 /* Slots: leading icon, copy, trailing shortcut/check/chevron. */
 .icon {
-  display: inline-flex;
-  inline-size: var(--menu-slot-size);
-  block-size: var(--menu-slot-size);
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  color: var(--ui-text-secondary);
-}
-.icon > svg {
-  inline-size: 100%;
-  block-size: 100%;
-}
-.destructive .icon,
-.item[data-danger="true"] .icon {
-  color: currentColor;
+  composes: icon from "../../ListRow.module.css";
 }
 .item[data-described] > .icon {
   margin-block-start: 1px;
@@ -118,28 +63,10 @@
   line-height: var(--ui-leading-micro);
 }
 .trailing {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: flex-end;
-  min-inline-size: var(--menu-slot-size);
-  margin-inline-start: auto;
-  padding-inline-start: 0.25rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: var(--ui-leading-caption);
-  white-space: nowrap;
+  composes: trailing from "../../ListRow.module.css";
 }
 .shortcut {
   color: var(--ui-text-muted);
-}
-.trailing > svg {
-  inline-size: var(--menu-slot-size);
-  block-size: var(--menu-slot-size);
-}
-.destructive .trailing,
-.item[data-danger="true"] .trailing {
-  color: currentColor;
 }
 /* Existing domain rows end with their label span; it wraps instead of ellipsizing. */
 .item > span:last-child:not(.trailing, .copy, .icon) {
@@ -162,51 +89,11 @@
   background: var(--color-stroke);
 }
 .heading {
-  padding: 0.25rem var(--menu-row-inset, 0.5rem);
+  padding: 0.25rem 0.5rem;
   color: var(--ui-text-muted);
   font-size: var(--ui-font-caption);
   line-height: var(--ui-leading-caption);
   font-weight: 500;
-}
-
-.item[data-highlighted="true"],
-.item[aria-expanded="true"],
-.item[aria-checked="true"] {
-  background: var(--ui-surface-selected);
-}
-button.item.item:focus-visible {
-  background: var(--ui-surface-selected);
-  outline: none !important;
-  box-shadow: none !important;
-}
-@media (hover: hover) and (pointer: fine) {
-  .item:hover:not(:disabled, [aria-disabled="true"]) {
-    background: var(--menu-row-hover);
-  }
-}
-/* The leading glyph steps up to primary ink with the row, a cue that does not depend on the fill. */
-.item:is([data-highlighted="true"], [aria-expanded="true"], :focus-visible) > .icon {
-  color: var(--color-content);
-}
-@media (hover: hover) and (pointer: fine) {
-  .item:hover:not(:disabled, [aria-disabled="true"]) > .icon {
-    color: var(--color-content);
-  }
-}
-.item:is(.destructive, [data-danger="true"]) > .icon {
-  color: currentColor;
-}
-/* Pressed comes last so it outranks hover and focus for both tones. */
-.item.item:active:not(:disabled, [aria-disabled="true"]) {
-  background: var(--menu-row-pressed);
-}
-/* Disabled rows are inert: no hover, no pressed fill, and no pointer cursor. */
-.item:disabled,
-.item[aria-disabled="true"] {
-  background: transparent;
-  box-shadow: none;
-  opacity: var(--ui-disabled-opacity, 0.5);
-  cursor: default;
 }
 
 /* Standalone Arc ContextMenu uses the same row states as every command menu. */
@@ -216,9 +103,4 @@ button.item.item:focus-visible {
 }
 .menu {
   color: var(--color-content);
-}
-@media (prefers-reduced-motion: reduce) {
-  .item {
-    transition: none;
-  }
 }

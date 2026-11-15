@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { t, useLocale, formatDate } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { RefreshCw } from "../../../shared/ui/icons";
-import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
+import { type HarnessId } from "../../sessions/model/session";
 import { SettingsFeedback } from "../../settings/ui/settingsControls";
 import {
   getCatalogReceipt,
@@ -33,21 +33,13 @@ export function CatalogReceiptStatus({
   if (!available)
     return <SettingsFeedback state="warning">{t("Available after CLI setup")}</SettingsFeedback>;
   const refreshing = receipt?.status === "refreshing";
-  const retry = (label: string) => (
-    <Button
-      size="sm"
-      variant="ghost"
-      disabled={refreshing}
-      loading={refreshing}
-      startIcon={<RefreshCw className="icon-sm" strokeWidth={1.75} aria-hidden />}
-      aria-label={t("{p0} for {p1} models", { p0: label, p1: HARNESS_TITLE[harness] })}
-      onClick={() => {
-        refreshProviderCatalog(harness, { force: true }).catch(() => undefined);
-      }}
-    >
-      {label}
-    </Button>
-  );
+  const retry = (label: string) => ({
+    label,
+    pending: refreshing,
+    onClick: () => {
+      refreshProviderCatalog(harness, { force: true }).catch(() => undefined);
+    },
+  });
 
   if (receipt?.status === "error") {
     return (

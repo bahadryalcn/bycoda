@@ -113,10 +113,16 @@ export function SettingsFeedback(props: SettingsFeedbackProps) {
     return <SettingsOperationFeedback {...props} />;
   return (
     <div className="settings-feedback" data-state="empty" data-presentation="inset">
-      <InlineMessage tone="neutral" icon={null} live="polite">
+      <InlineMessage
+        tone="neutral"
+        icon={null}
+        live="polite"
+        action={props.action}
+        secondaryAction={props.secondaryAction}
+        extra={props.extra}
+      >
         {props.children}
       </InlineMessage>
-      {props.action}
     </div>
   );
 }

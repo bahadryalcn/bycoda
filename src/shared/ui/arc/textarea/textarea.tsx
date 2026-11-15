@@ -9,12 +9,15 @@ import {
 } from "react";
 import type { CSSProperties, TextareaHTMLAttributes, ReactNode } from "react";
 import { FieldMessage } from "../lib/field-message";
+import { FieldDescription, FieldLabelRow } from "../lib/field-description";
 import { fieldDescribedBy, fieldMessageIds } from "../lib/field-ids";
 import { FieldControl } from "../../Field";
 import styles from "./textarea.module.css";
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   label: string;
   description?: string;
+  /** Render the description as a visible subline. Default: behind the info (i) affordance; use it only for scope or consequence. */
+  descriptionVisible?: boolean;
   error?: string;
   fieldClassName?: string;
   /** `form` (default) is comfortable; `compact` is the toolbar/inline composition. */
@@ -75,6 +78,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   {
     label,
     description,
+    descriptionVisible,
     error,
     id,
     className,
@@ -138,7 +142,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
       data-variant={fieldVariant}
       data-fill={fill ? "" : undefined}
     >
-      {!hideLabel && <label htmlFor={controlId}>{label}</label>}
+      {!hideLabel && (
+        <FieldLabelRow description={description} visible={descriptionVisible}>
+          <label htmlFor={controlId}>{label}</label>
+        </FieldLabelRow>
+      )}
       <FieldControl
         startAdornment={startAdornment}
         endAdornment={endAdornment}
@@ -173,7 +181,12 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         />
       </FieldControl>
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
-      <FieldMessage id={hintId} text={description} className={styles.hint} />
+      <FieldDescription
+        id={hintId}
+        text={description}
+        visible={descriptionVisible || hideLabel}
+        className={styles.hint}
+      />
     </div>
   );
 });

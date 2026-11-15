@@ -1,6 +1,5 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
   isAnonymousStatsEnabled,
@@ -51,11 +50,10 @@ export function PrivacyStartupSettings() {
             ) : startSaved ? undefined : (
               <SettingsFeedback
                 state="error"
-                action={
-                  <Button onClick={() => saveStart(privacy.settings.startInPrivacyMode)}>
-                    {t("Retry")}
-                  </Button>
-                }
+                action={{
+                  label: t("Retry"),
+                  onClick: () => saveStart(privacy.settings.startInPrivacyMode),
+                }}
               >
                 {t(
                   "Applied in this window, but not saved. The next launch may not start in privacy mode.",
@@ -81,7 +79,7 @@ export function PrivacyStartupSettings() {
             maskSaved ? undefined : (
               <SettingsFeedback
                 state="error"
-                action={<Button onClick={() => saveMaskEmails(maskEmails)}>{t("Retry")}</Button>}
+                action={{ label: t("Retry"), onClick: () => saveMaskEmails(maskEmails) }}
               >
                 {t(
                   "Applied in this window, but not saved. The next launch may use the previous choice.",

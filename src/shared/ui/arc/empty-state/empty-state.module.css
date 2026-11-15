@@ -13,18 +13,22 @@
     padding: var(--space-10) var(--space-2);
     text-align: center;
   }
-  .icon,
-  .glyph {
+  .icon {
     position: relative;
     display: grid;
     place-items: center;
   }
-  .frame {
+  .copy {
+    display: flow-root;
     inline-size: 100%;
     max-inline-size: 100%;
   }
-  .copy {
-    display: flow-root;
+  /* Title with its info affordance: the trigger sits on the title line. */
+  .heading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
   }
   .root p {
     max-inline-size: 42ch;
@@ -57,7 +61,10 @@
     gap: var(--space-2) var(--space-3);
     text-align: start;
   }
-  .root[data-context="list"] .frame {
+  .root[data-context="list"] .heading {
+    justify-content: flex-start;
+  }
+  .root[data-context="list"] .copy {
     flex: 1 1 12rem;
     inline-size: auto;
     min-inline-size: 0;
@@ -78,13 +85,13 @@
   color: var(--text-muted);
 }
 .icon svg {
-  inline-size: 1.5rem;
-  block-size: 1.5rem;
+  inline-size: var(--ui-icon-lg);
+  block-size: var(--ui-icon-lg);
 }
 .root[data-context="panel"] .icon svg,
 .root[data-context="list"] .icon svg {
-  inline-size: 1.125rem;
-  block-size: 1.125rem;
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
 }
 /* Heading and description use the shared type roles; page is one step larger than panel and list. */
 .root h3 {
@@ -112,14 +119,15 @@
   font-size: var(--ui-font-caption);
   line-height: var(--ui-leading-caption);
 }
-.root h3 + p {
+.root .heading + p {
   margin-block-start: var(--space-1);
 }
-.line {
-  display: block;
+.root p,
+.root h3 {
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
-.root[data-context="list"] .line {
+.root[data-context="list"] p,
+.root[data-context="list"] h3 {
   text-wrap: pretty;
 }

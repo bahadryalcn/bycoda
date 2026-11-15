@@ -31,7 +31,6 @@ import {
   SettingsFeedback,
   Toggle,
 } from "./settingsControls";
-import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import {
   loadComposerSpelling,
@@ -95,7 +94,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   };
   const feedback = (id: string) =>
     failures[id] ? (
-      <SettingsFeedback state="error" action={<Button onClick={failures[id]}>{t("Retry")}</Button>}>
+      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: failures[id] }}>
         {t("Could not save changes")}
       </SettingsFeedback>
     ) : undefined;

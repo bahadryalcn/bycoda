@@ -21,6 +21,7 @@ import {
 } from "motion/react";
 import { Search, X } from "../../icons";
 import { Button } from "../../Button";
+import { ListRow } from "../../ListRow";
 import { Popover, popupListClassName } from "../../Popover";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./expanding-search.module.css";
@@ -145,17 +146,6 @@ function Match({ text, query }: { text: string; query: string }) {
   );
 }
 
-/** Offsets ignore transforms, so they describe where rows sit in the list, not where a gliding row happens to be mid-flight. */
-function offsetWithin(node: HTMLElement, container: HTMLElement) {
-  let top = 0;
-  let current: HTMLElement | null = node;
-  while (current && current !== container) {
-    top += current.offsetTop;
-    current = current.offsetParent as HTMLElement | null;
-  }
-  return top;
-}
-
 interface ListboxProps {
   id: string;
   label: string;
@@ -186,38 +176,12 @@ function Listbox({
   const layoutKey = flat.map((item) => item.id).join("|");
   const activeItem = flat[activeIndex];
   const activeId = activeItem ? optionId(activeItem) : "";
-  /** The highlight lives inside the active row, so it rides that row wherever it glides. Moving to another row, it starts where the old one was and springs home. */
-  const travel = useMotionValue(0);
-  const fade = useMotionValue(1);
-  const last = useRef<{ id: string; set: string; top: number } | null>(null);
 
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the keyboard-active row inside the scrolled result list
   useLayoutEffect(() => {
-    const list = listRef.current;
     const row = activeId ? document.getElementById(activeId) : null;
-    if (!list || !row) {
-      last.current = null;
-      return;
-    }
-    const top = offsetWithin(row, list);
-    const previous = last.current;
-    last.current = { id: activeId, set: layoutKey, top };
-    // Same row: its highlight is already in place, and any travel still in flight stays relative to it.
-    if (previous?.id === activeId) return;
-    if (previous && previous.set === layoutKey && !reduced) {
-      const velocity = travel.getVelocity();
-      travel.jump(previous.top + travel.get() - top);
-      animate(travel, 0, { ...motionTokens.spring.snappy, velocity });
-    } else {
-      // Nothing was highlighted, or new results arrived: it fades in on its row, without travel.
-      travel.jump(0);
-      if (reduced) fade.jump(1);
-      else {
-        fade.jump(0);
-        animate(fade, 1, { duration: motionTokens.duration.instant, ease: enter });
-      }
-    }
-    if (keyboard.current) row.scrollIntoView({ block: "nearest" });
-  }, [activeId, layoutKey, reduced, travel, fade, keyboard]);
+    if (row && keyboard.current) row.scrollIntoView({ block: "nearest" });
+  }, [activeId, keyboard]);
 
   return (
     <div ref={listRef} id={id} role="listbox" aria-label={label} className={styles.listbox}>
@@ -250,17 +214,13 @@ function Listbox({
                   const position = flat.indexOf(item);
                   const active = position === activeIndex;
                   return (
-                    <Button
-                      variant="item"
-                      motion="none"
+                    <ListRow
                       tabIndex={-1}
                       key={item.id}
                       id={optionId(item)}
                       role="option"
                       aria-selected={active}
-                      selected={false}
-                      data-active={active || undefined}
-                      className={styles.option}
+                      active={active}
                       onPointerMove={() => {
                         if (!active) {
                           keyboard.current = false;
@@ -270,13 +230,6 @@ function Listbox({
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => onChoose(item)}
                     >
-                      {active && (
-                        <motion.span
-                          className={styles.highlight}
-                          style={{ y: travel, opacity: fade }}
-                          aria-hidden="true"
-                        />
-                      )}
                       {item.icon && (
                         <span className={styles.optionIcon} aria-hidden="true">
                           {item.icon}
@@ -288,7 +241,7 @@ function Listbox({
                         </span>
                         {item.meta && <span className={styles.optionMeta}>{item.meta}</span>}
                       </span>
-                    </Button>
+                    </ListRow>
                   );
                 })}
               </AnimatePresence>
@@ -567,7 +520,11 @@ export function ExpandingSearch({
           animate={{ opacity: expanded ? 1 : 0 }}
           transition={
             expanded
-              ? { duration: reduced ? 0.15 : 0.2, ease: enter, delay: reduced ? 0 : 0.08 }
+              ? {
+                  duration: reduced ? 0.15 : 0.2,
+                  ease: enter,
+                  delay: reduced ? 0 : 0.08,
+                }
               : { duration: reduced ? 0.1 : 0.08, ease: standard }
           }
           onChange={(event) => {
@@ -623,11 +580,20 @@ export function ExpandingSearch({
               initial={
                 reduced
                   ? { opacity: 0 }
-                  : { opacity: 0, filter: `blur(${motionTokens.blur.subtle}px)` }
+                  : {
+                      opacity: 0,
+                      filter: `blur(${motionTokens.blur.subtle}px)`,
+                    }
               }
               animate={{ opacity: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0, transition: { duration: 0.1, ease: standard } }}
-              transition={{ duration: reduced ? 0.15 : motionTokens.duration.fast, ease: enter }}
+              exit={{
+                opacity: 0,
+                transition: { duration: 0.1, ease: standard },
+              }}
+              transition={{
+                duration: reduced ? 0.15 : motionTokens.duration.fast,
+                ease: enter,
+              }}
             >
               {mode === "empty" ? (
                 <div className={styles.empty}>

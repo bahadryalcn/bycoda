@@ -710,17 +710,13 @@ export function KeybindingsPage() {
         {rows.length === 0 ? (
           <SettingsFeedback
             state="empty"
-            action={
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setQuery("");
-                  resetFilters();
-                }}
-              >
-                {t("Clear search and filters")}
-              </Button>
-            }
+            action={{
+              label: t("Clear search and filters"),
+              onClick: () => {
+                setQuery("");
+                resetFilters();
+              },
+            }}
           >
             {t("No matching bindings")}
           </SettingsFeedback>

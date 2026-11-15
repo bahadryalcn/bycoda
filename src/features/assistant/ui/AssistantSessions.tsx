@@ -2,7 +2,6 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import type { AssistantJob } from "../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
 import { Badge } from "../../../shared/ui/Badge";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -12,7 +11,7 @@ import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Meter, type MeterTone } from "../../../shared/ui/Meter";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { ExternalLink, MessageSquare, Briefcase } from "../../../shared/ui/icons";
+import { ExternalLink, MessageSquare } from "../../../shared/ui/icons";
 import {
   workerContextAction,
   type WorkerContextSettings,
@@ -107,13 +106,7 @@ export function AssistantSessions({
           )}
           resetLabel={t("Clear filters")}
           onReset={filtered ? onReset : undefined}
-          action={
-            !filtered && onJobs ? (
-              <Button startIcon={<Briefcase className="icon-sm" />} onClick={onJobs}>
-                {t("View jobs")}
-              </Button>
-            ) : undefined
-          }
+          action={!filtered && onJobs ? { label: t("View jobs"), onClick: onJobs } : undefined}
         />
       )}
     </section>

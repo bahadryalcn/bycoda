@@ -1,6 +1,5 @@
 import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
-import { Button } from "../../../shared/ui/Button";
 import { ErrorDetails, fitsOneLine } from "../../../shared/ui/ErrorDetails";
 
 export function InboxLoadError({
@@ -21,14 +20,8 @@ export function InboxLoadError({
     <Alert
       tone="danger"
       title={title}
-      action={
-        <>
-          {short ? null : <ErrorDetails title={title} detail={error} />}
-          <Button loading={retrying} disabled={disabled} onClick={onRetry}>
-            {t("Retry")}
-          </Button>
-        </>
-      }
+      action={{ label: t("Retry"), pending: retrying, disabled, onClick: onRetry }}
+      extra={short ? undefined : <ErrorDetails title={title} detail={error} />}
     >
       {short ? <div className="wrap-anywhere">{error}</div> : null}
     </Alert>

@@ -112,11 +112,7 @@ export function CrewMemberPicker({
             description={t(
               "Create a member once and reuse it in other crews and projects on this host.",
             )}
-            action={
-              <Button variant="primary" onClick={() => onModeChange("new")}>
-                {t("New member")}
-              </Button>
-            }
+            action={{ label: t("New member"), onClick: () => onModeChange("new") }}
           />
         ) : (
           <>

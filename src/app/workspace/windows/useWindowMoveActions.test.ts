@@ -3,7 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { message } from "@tauri-apps/plugin-dialog";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { newSession } from "../../../features/sessions/model/session";
 import {
   leaf,
@@ -20,7 +20,7 @@ import type { PendingWindowMoves } from "../../model/windowTransferPopout";
 import { useWindowMoveActions, type WindowMoveActionDeps } from "./useWindowMoveActions";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ message: vi.fn() }));
+vi.mock("../../../shared/ui/ToastRegion", () => ({ toast: { show: vi.fn() } }));
 
 let root: Root;
 let container: HTMLDivElement;
@@ -62,7 +62,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(console, "debug").mockImplementation(() => {});
   vi.mocked(invoke).mockReset();
-  vi.mocked(message).mockClear();
+  vi.mocked(toast.show).mockClear();
   dismissWindowTransferNotice();
   published = [];
   unsubscribe = subscribeWindowTransferNotice(() => {
@@ -168,8 +168,10 @@ describe("opening one file in a new window", () => {
     render({ tabsRef: { current: [tab] } });
     await act(async () => actions.onOpenFileInNewWindow("editor-pane", "two"));
     expect(deps.onCloseFile).not.toHaveBeenCalled();
-    expect(message).toHaveBeenCalledOnce();
-    expect(vi.mocked(message).mock.calls[0][0]).toContain("The original editor is still here.");
+    expect(toast.show).toHaveBeenCalledOnce();
+    expect(vi.mocked(toast.show).mock.calls[0][0].title).toContain(
+      "The original editor is still here.",
+    );
     expect(deps.movingTabIds.current.size).toBe(0);
     expect(deps.movingSessionIds.current.size).toBe(0);
     expect(deps.openingFileWindowIds.current.size).toBe(0);

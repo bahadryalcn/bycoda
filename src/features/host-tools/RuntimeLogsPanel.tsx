@@ -3,6 +3,7 @@ import { Text } from "../../shared/ui/Text";
 import { LEVEL_LABELS, RuntimeLogRow } from "./ui/RuntimeLogRow";
 import { useRuntimeTerminalMonitor } from "./hooks/useRuntimeTerminalMonitor";
 import { EmptyState } from "../../shared/ui/EmptyState";
+import { FailureState } from "../../shared/ui/FailureState";
 import { ScrollArea } from "../../shared/ui/ScrollArea";
 import { Alert } from "../../shared/ui/Alert";
 import { Popover } from "../../shared/ui/Popover";
@@ -567,40 +568,32 @@ function ScopedRuntimeLogsPanel({
   // Each empty state offers the one local action that resolves it; the source
   // of captured output stays in the toolbar (website monitors) and the servers tool.
   const emptyAction =
-    !started && !busy ? (
-      <Button variant="secondary" size="sm" onClick={togglePause}>
-        {t("Read logs")}
-      </Button>
-    ) : error && !loaded ? undefined : paused && !buffer.entries.length ? (
-      <Button variant="secondary" size="sm" onClick={togglePause}>
-        {t("Resume")}
-      </Button>
-    ) : buffer.entries.length && !filtered.length ? (
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => {
-          setSource("all");
-          setSourceIds([]);
-          setLevel("all");
-          setSearch("");
-        }}
-      >
-        {t("Reset filters")}
-      </Button>
-    ) : target.kind === "project" && loaded && !buffer.entries.length ? (
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={() => {
-          setFiltersOpen(false);
-          setMoreOpen(false);
-          setMonitorsOpen(true);
-        }}
-      >
-        {t("Capture a website")}
-      </Button>
-    ) : undefined;
+    !started && !busy
+      ? { label: t("Read logs"), onClick: togglePause }
+      : error && !loaded
+        ? undefined
+        : paused && !buffer.entries.length
+          ? { label: t("Resume"), onClick: togglePause }
+          : buffer.entries.length && !filtered.length
+            ? {
+                label: t("Reset filters"),
+                onClick: () => {
+                  setSource("all");
+                  setSourceIds([]);
+                  setLevel("all");
+                  setSearch("");
+                },
+              }
+            : target.kind === "project" && loaded && !buffer.entries.length
+              ? {
+                  label: t("Capture a website"),
+                  onClick: () => {
+                    setFiltersOpen(false);
+                    setMoreOpen(false);
+                    setMonitorsOpen(true);
+                  },
+                }
+              : undefined;
   const emptyRetry =
     started && !(buffer.entries.length && !filtered.length) ? () => void read() : undefined;
 
@@ -955,7 +948,7 @@ function ScopedRuntimeLogsPanel({
       {error ? (
         <Alert
           tone="danger"
-          action={
+          extra={
             <ErrorDetails
               title={t("Could not read logs. Check the host connection and retry.")}
               detail={error}
@@ -966,7 +959,7 @@ function ScopedRuntimeLogsPanel({
         </Alert>
       ) : null}
       {actionError ? (
-        <Alert tone="danger" action={<ErrorDetails detail={actionError} />}>
+        <Alert tone="danger" extra={<ErrorDetails detail={actionError} />}>
           <p>
             {t(
               actionError.includes("ERR_CONNECTION_REFUSED")
@@ -1021,6 +1014,21 @@ function ScopedRuntimeLogsPanel({
                 />
               ))}
             </ol>
+          ) : error && !loaded ? (
+            <FailureState
+              icon={
+                <>
+                  <Globe className="icon-lg" />
+                  <Terminal className="icon-lg" />
+                </>
+              }
+              title={t("Runtime logs")}
+              description={empty}
+              action={emptyAction}
+              onRetry={emptyRetry}
+              retryLabel={t("Refresh")}
+              retrying={busy}
+            />
           ) : (
             <EmptyState
               icon={
@@ -1031,13 +1039,7 @@ function ScopedRuntimeLogsPanel({
               }
               title={loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}
               description={empty}
-              kind={
-                error && !loaded
-                  ? "unavailable"
-                  : buffer.entries.length && !filtered.length
-                    ? "filtered"
-                    : "empty"
-              }
+              kind={buffer.entries.length && !filtered.length ? "filtered" : "empty"}
               action={emptyAction}
               onRetry={emptyRetry}
               retryLabel={t("Refresh")}

@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { t, useLocale } from "../../../../shared/i18n";
 import { Tab, TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
 import { TabDirtyDot } from "../../../../shared/ui/TabLabel";
-import { Button } from "../../../../shared/ui/Button";
 import { HARNESSES, HARNESS_TITLE } from "../../../sessions";
 import type { HarnessId } from "../../../sessions/public/session";
 import type { RecentProject } from "../../../projects/public/recents";
@@ -270,17 +269,14 @@ export function ModelsPage({
             <SettingsFeedback
               state="error"
               action={
-                host.error ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      void host.refetch();
-                    }}
-                  >
-                    {t("Retry")}
-                  </Button>
-                ) : undefined
+                host.error
+                  ? {
+                      label: t("Retry"),
+                      onClick: () => {
+                        void host.refetch();
+                      },
+                    }
+                  : undefined
               }
             >
               {String(host.error ?? delegation.error)}

@@ -206,3 +206,37 @@ it("keeps a feature card outside the stack, in the same corner", () => {
     container.remove();
   }
 });
+
+it("renders structured actions as secondary buttons and puts the glyph in a first-line box", () => {
+  const unmount = mount();
+  try {
+    const onYes = vi.fn();
+    act(() => {
+      toast.show({
+        tone: "warning",
+        title: "Update available",
+        message: "Restart to apply.",
+        durationMs: null,
+        actionsPlacement: "footer",
+        actions: [
+          { label: "Yes", onClick: onYes },
+          { label: "Later", onClick: () => {} },
+        ],
+      });
+    });
+    const labels = [...document.querySelectorAll("[data-toast-item] button:not([aria-label])")].map(
+      (node) => node.textContent,
+    );
+    expect(labels).toEqual(["Yes", "Later"]);
+    const glyphBox = document.querySelector("[data-toast-tone] svg")!.parentElement!.parentElement!;
+    expect(glyphBox.className).toContain("h-(--ui-leading-secondary)");
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>("[data-toast-item] button:not([aria-label])")!
+        .click(),
+    );
+    expect(onYes).toHaveBeenCalledOnce();
+  } finally {
+    unmount();
+  }
+});

@@ -11,6 +11,7 @@ const chartData = vi.hoisted(() => ({ labels: [] as string[] }));
 vi.mock("../../../shared/ui/Charts", () => ({
   ActivityHeatmap: () => null,
   BarChart: () => null,
+  HeatScale: () => null,
   DonutChart: () => null,
   LineChart: ({ data }: { data: { label: string }[] }) => {
     chartData.labels = data.map((point) => point.label);

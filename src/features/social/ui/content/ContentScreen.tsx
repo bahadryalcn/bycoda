@@ -198,22 +198,12 @@ export function ContentScreen({
       {!open && dirty ? (
         <InlineMessage
           tone="neutral"
-          action={
-            <span className="content-draft-actions">
-              <Button variant="link" layout="text" onClick={() => setOpen(true)}>
-                {t("Resume draft")}
-              </Button>
-              <Button
-                variant="link"
-                layout="text"
-                tone="danger"
-                disabled={workspace.busy || workspace.uploading}
-                onClick={() => void discard().catch(() => undefined)}
-              >
-                {t("Discard draft")}
-              </Button>
-            </span>
-          }
+          action={{ label: t("Resume draft"), onClick: () => setOpen(true) }}
+          secondaryAction={{
+            label: t("Discard draft"),
+            disabled: workspace.busy || workspace.uploading,
+            onClick: () => void discard().catch(() => undefined),
+          }}
         >
           {t("You have an unsaved post.")}
         </InlineMessage>

@@ -584,7 +584,12 @@ function Projects({
               description={t(
                 "No new conversation history found. Choose a project folder to start.",
               )}
-              action={chooseFolders}
+              action={{
+                label: t("Choose project folders"),
+                pending: adding,
+                disabled: busy,
+                onClick: () => void addFolders(),
+              }}
             />
           ) : null}
           {importing ? (

@@ -82,16 +82,11 @@ export function CrewTaskPicker({
       {crews.error && (
         <Alert
           tone="warning"
-          action={
-            <Button
-              variant="ghost"
-              startIcon={<RefreshCw className="icon-sm" />}
-              loading={crews.isFetching}
-              onClick={() => void crews.refetch()}
-            >
-              {t("Retry")}
-            </Button>
-          }
+          action={{
+            label: t("Retry"),
+            pending: crews.isFetching,
+            onClick: () => void crews.refetch(),
+          }}
         >
           {crews.error.message}
         </Alert>

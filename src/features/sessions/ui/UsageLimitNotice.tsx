@@ -1,9 +1,9 @@
-import { Text } from "../../../shared/ui/Text";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import type { NoticeAction } from "../../../shared/ui/Notice";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
-import { Clock, Gauge, Play, Replace, X } from "../../../shared/ui/icons";
+import { Gauge, X } from "../../../shared/ui/icons";
 import type { ProviderAccountProvider } from "../../providers/model/providerAccounts";
 import type { UsageLimit } from "../model/session";
 import { formatUsageLimitReset } from "../model/usageLimit";
@@ -47,14 +47,27 @@ export function UsageLimitNotice({
         ? t("Resets {p0}", { p0: formatUsageLimitReset(limit.resetsAt, now) })
         : t("Limit has reset");
 
+  const resume: NoticeAction | undefined = !waiting
+    ? onResume
+      ? { label: t("Resume"), onClick: onResume }
+      : undefined
+    : onResumeAtReset
+      ? limit.resumeAtReset
+        ? { label: t("Resuming at reset"), onClick: () => onResumeAtReset(false) }
+        : { label: t("Resume at reset"), onClick: () => onResumeAtReset(true) }
+      : undefined;
+  const switchModel: NoticeAction | undefined = onSwitchModel
+    ? { label: t("Switch model"), onClick: onSwitchModel }
+    : undefined;
+
   return (
     <div className="px-4 py-1" data-usage-limit>
-      <Alert
-        inline
+      <InlineMessage
         tone="warning"
         icon={<Gauge className="icon-sm" aria-hidden />}
-        title={t("Usage limit reached")}
-        action={
+        action={resume ?? switchModel}
+        secondaryAction={resume ? switchModel : undefined}
+        extra={
           <>
             {provider && onSwitchAccount ? (
               <ProviderAccountMenu
@@ -64,47 +77,6 @@ export function UsageLimitNotice({
                 onSelect={onSwitchAccount}
               />
             ) : null}
-            {onSwitchModel ? (
-              <Button
-                variant="ghost"
-                type="button"
-                tooltip={t("Continue this conversation with another model")}
-                onClick={onSwitchModel}
-              >
-                <Replace className="icon-sm" />
-                {t("Switch model")}
-              </Button>
-            ) : null}
-            {!waiting && !onResume ? (
-              <Text size="caption" tone="secondary">
-                {t("Send a message to continue.")}
-              </Text>
-            ) : !waiting ? (
-              <Button variant="secondary" type="button" onClick={onResume}>
-                <Play className="icon-sm" />
-                {t("Resume")}
-              </Button>
-            ) : !onResumeAtReset ? null : limit.resumeAtReset ? (
-              <Button
-                variant="ghost"
-                type="button"
-                tooltip={t("Cancel the automatic resume")}
-                onClick={() => onResumeAtReset?.(false)}
-              >
-                <Clock className="icon-sm" />
-                {t("Resuming at reset")}
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                type="button"
-                tooltip={t("Continue this session once the limit resets")}
-                onClick={() => onResumeAtReset?.(true)}
-              >
-                <Clock className="icon-sm" />
-                {t("Resume at reset")}
-              </Button>
-            )}
             <Button
               iconOnly
               label={t("Dismiss usage limit notice")}
@@ -120,8 +92,10 @@ export function UsageLimitNotice({
           </>
         }
       >
+        <strong>{t("Usage limit reached")} </strong>
         {resetText}
-      </Alert>
+        {!waiting && !onResume ? <> {t("Send a message to continue.")}</> : null}
+      </InlineMessage>
     </div>
   );
 }

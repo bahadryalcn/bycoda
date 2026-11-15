@@ -51,7 +51,7 @@ function Harness({
   projects?: SprintProjectRef[];
   tasks?: BoardTask[];
   onRead?: Parameters<typeof useSprintBoard>[3];
-} = {}) {
+}) {
   const current = useSprintBoard(machines, tasks, projects, onRead);
   useEffect(() => {
     board = current;
@@ -134,7 +134,7 @@ describe("sprint planning authority", () => {
         });
       throw new Error(`Unexpected ${method}`);
     });
-    await act(async () => root!.render(createElement(Harness)));
+    await act(async () => root!.render(createElement(Harness, {})));
     let readback!: Promise<void>;
     await act(async () => {
       readback = board.refresh(false);
@@ -275,7 +275,7 @@ describe("sprint planning authority", () => {
     expect(board.syncErrors).toEqual([]);
   });
   it("follows a pre-mutation coordinator read with one fresh readback", async () => {
-    await act(async () => root!.render(createElement(Harness)));
+    await act(async () => root!.render(createElement(Harness, {})));
     let resolveOld!: (value: unknown) => void;
     const saved = { id: "new", name: "New", projects: [] } as unknown as HostSprint;
     let reads = 0;
@@ -324,7 +324,7 @@ describe("sprint planning authority", () => {
   });
   it("defers initial reads while hidden then reads the chosen coordinator", async () => {
     focusManager.setFocused(false);
-    await act(async () => root!.render(createElement(Harness)));
+    await act(async () => root!.render(createElement(Harness, {})));
     expect(mocks.request).not.toHaveBeenCalled();
     await act(async () => focusManager.setFocused(true));
     expect(mocks.request).toHaveBeenCalledWith("local", "sprints.list");
@@ -332,13 +332,13 @@ describe("sprint planning authority", () => {
   });
   it("retains a saved unavailable authority without creating a second local board", async () => {
     localStorage.setItem("bycoda.tasks.planning-environment.v1", "missing");
-    await act(async () => root!.render(createElement(Harness)));
+    await act(async () => root!.render(createElement(Harness, {})));
     expect(board.coordinator).toBeUndefined();
     expect(board.coordinatorEnvironmentId).toBe("missing");
     expect(mocks.request).not.toHaveBeenCalled();
   });
   it("pins the first local authority even if the local machine is replaced", async () => {
-    await act(async () => root!.render(createElement(Harness)));
+    await act(async () => root!.render(createElement(Harness, {})));
     expect(localStorage.getItem("bycoda.tasks.planning-environment.v1")).toBe("windows");
     mocks.request.mockClear();
     await act(async () =>
@@ -353,7 +353,7 @@ describe("sprint planning authority", () => {
     expect(mocks.request).not.toHaveBeenCalled();
   });
   it("reuses create identity after an uncertain acknowledgement", async () => {
-    await act(async () => root!.render(createElement(Harness)));
+    await act(async () => root!.render(createElement(Harness, {})));
     const fields: SprintFields = {
       name: "Sprint A",
       projects: [{ environmentId: "windows", projectId: "a", cwd: "C:/a", name: "A" }],

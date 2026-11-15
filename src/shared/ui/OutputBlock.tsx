@@ -21,8 +21,8 @@ export type OutputBlockProps = ComponentPropsWithRef<"pre"> & {
   leading?: TextLeading;
   /**
    * - `none` (default): no box; the surface around it frames it.
-   * - `card`: the grouped-card hairline and radius.
-   * - `filled`: a quiet raised fill.
+   * - `filled`: the one code ground (muted fill, control radius), the same as Code `block`.
+   * - `card`: deprecated alias of `filled`.
    */
   frame?: "none" | "card" | "filled";
   /** Scroll inside the block when it has a maximum height (set the height in `className`). */
@@ -43,7 +43,7 @@ export type OutputBlockProps = ComponentPropsWithRef<"pre"> & {
  * @avoid A short literal in a sentence: Code. Highlighted source or a diff: the code and diff viewers. Structured data: JsonViewer. Terminal colours: AnsiText. An error with a summary and details: ErrorDetails.
  * @example
  * <OutputBlock>{stdout}</OutputBlock>
- * <OutputBlock frame="card" scroll className="max-h-48">{log}</OutputBlock>
+ * <OutputBlock frame="filled" scroll className="max-h-48">{log}</OutputBlock>
  * <OutputBlock tone="danger" density="comfortable">{stack}</OutputBlock>
  * <OutputBlock wrap={false} size="body">{table}</OutputBlock>
  */

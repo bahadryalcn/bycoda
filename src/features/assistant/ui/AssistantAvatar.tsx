@@ -13,6 +13,7 @@ import {
   assistantAvatarView,
 } from "../model/assistantAvatar";
 import { loadGeneratedAvatar } from "../model/generatedAvatarCache";
+import { Avatar, type AvatarSize } from "../../../shared/ui/identity/Avatar";
 import { AvatarGenerator } from "./builder/AvatarGenerator";
 import styles from "./AssistantAvatar.module.css";
 
@@ -54,14 +55,22 @@ function GeneratedPortrait({ id, className }: { id: string; className: string })
   );
 }
 
+function GeneratedAvatar({ id, initial, size }: { id: string; initial: string; size: AvatarSize }) {
+  const src = useGeneratedAvatarSrc(id);
+  return <Avatar size={size} src={src ?? DEFAULT_PORTRAIT} fallback={initial} />;
+}
+
 /**
- * The assistant's portrait, emoji or initials. Decorative: the name always sits next to it. A
- * portrait that fails to load leaves the box empty, so the CSS draws the name's first letter.
+ * The assistant's portrait, emoji or initials. Decorative: the name always sits next to it. With
+ * `avatarSize` it is the shared Avatar (a failed portrait shows the name's first letter); without
+ * it the caller's class draws the box, and a failed portrait leaves it empty for the CSS to draw
+ * the first letter (voice surfaces with their own geometry).
  */
 export function AssistantAvatarMark({
   value,
   name,
   className,
+  avatarSize,
   size,
   tone,
   weight,
@@ -69,11 +78,25 @@ export function AssistantAvatarMark({
 }: {
   value: string | undefined;
   name: string;
+  /** Shared Avatar box (16/20/24/32 px); replaces the caller-drawn box. */
+  avatarSize?: AvatarSize;
   /** Placement only (box size, radius, background); type roles are props. */
   className?: string;
 } & Pick<TextRoles, "size" | "tone" | "weight" | "leading">) {
   const view = assistantAvatarView(value);
   const [failed, setFailed] = useState("");
+  if (avatarSize) {
+    const initial = Array.from(name)[0]?.toLocaleUpperCase() ?? "";
+    if (view.kind === "generated")
+      return <GeneratedAvatar id={view.id} initial={initial} size={avatarSize} />;
+    return (
+      <Avatar
+        size={avatarSize}
+        src={view.kind === "image" ? view.src : undefined}
+        fallback={view.kind === "text" ? view.text : initial}
+      />
+    );
+  }
   return (
     <span
       {...optionalTextAttributes({ size, tone, weight, leading }, className)}

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getIdentifier: vi.fn(),
   getVersion: vi.fn(),
   message: vi.fn(),
+  toastShow: vi.fn(),
   relaunch: vi.fn(),
   remember: vi.fn(),
   updaterEnabled: false,
@@ -20,6 +21,7 @@ vi.mock("@tauri-apps/api/app", () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   message: mocks.message,
 }));
+vi.mock("../../shared/ui/ToastRegion", () => ({ toast: { show: mocks.toastShow } }));
 vi.mock("../../shared/model/appConfirm", () => ({ confirmInApp: mocks.ask }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 vi.mock("../../features/settings/model/updateChannel", () => ({ checkForAppUpdate: mocks.check }));
@@ -203,9 +205,6 @@ describe("disabled updater", () => {
   });
 
   it("does not check, install, or relaunch when updates are disabled", async () => {
-    const actual = await vi.importActual<typeof import("../../shared/lib/productIdentity")>(
-      "../../shared/lib/productIdentity",
-    );
     // Even an otherwise eligible identity must respect a disabled build flag.
     mocks.getIdentifier.mockResolvedValue("com.bycoda.desktop");
     const updater = await import("./updater");
@@ -215,8 +214,9 @@ describe("disabled updater", () => {
     expect((await updater.runUpdateFlow(true)).phase).toBe("idle");
     expect((await updater.installPendingUpdate()).phase).toBe("idle");
 
-    expect(mocks.message).toHaveBeenCalledWith(updater.UPDATES_DISABLED_MESSAGE, {
-      title: actual.PRODUCT_IDENTITY.displayName,
+    expect(mocks.toastShow).toHaveBeenCalledWith({
+      tone: "info",
+      message: updater.updatesDisabledMessage(),
     });
     expect(mocks.check).not.toHaveBeenCalled();
     expect(mocks.downloadAndInstall).not.toHaveBeenCalled();

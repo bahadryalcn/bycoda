@@ -21,8 +21,8 @@ export const INTERACTION_TINT_DEFAULT: InteractionTint = {
 export const INTERACTION_TINT_KEY = "bycoda.interactionTint.v1";
 /** Percent of the tint each state mixes in at strength 100%. Mirrors `--ui-surface-*` in src/styles/index.css. */
 export const INTERACTION_STEP_PERCENT = {
-  dark: { hover: 12, selected: 20, pressed: 28 },
-  light: { hover: 4, selected: 10, pressed: 16 },
+  dark: { hover: 4, selected: 8, pressed: 10 },
+  light: { hover: 4, selected: 12, pressed: 16 },
 } as const;
 
 /** The percentages the current scheme and strength actually show. */

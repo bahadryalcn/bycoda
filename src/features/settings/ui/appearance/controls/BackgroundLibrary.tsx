@@ -87,11 +87,7 @@ export function BackgroundLibrary({ appearance }: { appearance: AppearanceSettin
       {error ? (
         <SettingsFeedback
           state="error"
-          action={
-            <Button loading={loading} loadingLabel={t("Loading…")} onClick={retry}>
-              {t("Retry")}
-            </Button>
-          }
+          action={{ label: t("Retry"), pending: loading, onClick: retry }}
         >
           {t("Could not load the image library. Retry to see your saved images.")}
         </SettingsFeedback>

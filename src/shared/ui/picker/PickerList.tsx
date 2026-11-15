@@ -64,7 +64,11 @@ type PickerListSource =
       controller: PickerListController;
     };
 
-const NO_SELECTION: PickerListOptions = { options: [], value: null, onChange: () => undefined };
+const NO_SELECTION: PickerListOptions = {
+  options: [],
+  value: null,
+  onChange: () => undefined,
+};
 
 export type PickerListProps = PickerListSource & {
   /** Accessible name of the listbox. */
@@ -197,7 +201,7 @@ export function PickerList({
         onClick={() => {
           if (!unavailable) list.commit(index);
         }}
-        className={`bycoda-arc-select-option ${styles.row}`}
+        className={styles.row}
       >
         <PickerChoice
           selected={selected}

@@ -3,7 +3,7 @@ import { useCopyFeedback } from "../hooks/useCopyFeedback";
 import { useT } from "../i18n";
 import { truncateGraphemes } from "../lib/text/truncate";
 import { Button } from "./Button";
-import { InlineError, type InlineErrorProps } from "./InlineError";
+import { InlineMessage } from "./InlineError";
 import { Popover } from "./Popover";
 
 /**
@@ -11,11 +11,11 @@ import { Popover } from "./Popover";
  * scrollable, copyable) and optional recovery `actions`. The hosting banner, toolbar or row keeps
  * its height: raw command or transport output never lands in the layout.
  * @group feedback
- * @use The raw error text behind a short, plain failure message in an Alert, InlineError, banner or row.
+ * @use The raw error text behind a short, plain failure message in an Alert, banner or row. InlineError renders it for you through `details`.
  * @avoid Failed pane or route: FailureState (it owns its details). Help that is not an error: InfoPopover. An error short enough for its line: show it directly.
  *
  * ```tsx
- * <Alert tone="danger" title={title} action={<ErrorDetails title={title} detail={error} />} />
+ * <Alert tone="danger" title={title} extra={<ErrorDetails title={title} detail={error} />} />
  * ```
  */
 export function ErrorDetails({
@@ -55,6 +55,7 @@ export function ErrorDetails({
         ref={anchor}
         type="button"
         variant="link"
+        layout="text"
         className={className}
         aria-label={name}
         aria-expanded={open}
@@ -95,7 +96,7 @@ export function ErrorDetails({
             </Button>
             {actions?.(close)}
           </div>
-          {copy.failed ? <InlineError>{copy.error}</InlineError> : null}
+          {copy.failed ? <InlineMessage tone="danger">{copy.error}</InlineMessage> : null}
         </Popover>
       ) : null}
     </>
@@ -113,52 +114,4 @@ export function fitsOneLine(error: string): boolean {
 /** First line of raw error text, shortened to fit one row. */
 export function errorHeadline(error: string): string {
   return truncateGraphemes(error.trimStart().split(/[\r\n]/, 1)[0], ERROR_HEADLINE_CHARS);
-}
-
-export type DetailedInlineErrorProps = Omit<InlineErrorProps, "children"> & {
-  /** Raw backend, command or transport text. */
-  error: string;
-  /** Plain sentence shown instead of the raw text, which then always sits behind Details. */
-  summary?: string;
-};
-
-/**
- * InlineError for raw backend, command or transport text. Text that fits one short line is shown as
- * written; anything longer or multi-line shows `summary` (or its first line, shortened) with an
- * ErrorDetails link, so a toolbar, row or rail never grows or clips the message.
- * @group feedback
- * @use A row, toolbar, rail or form failure whose text comes from a command, the Host or a remote machine.
- * @avoid Copy the app wrote itself (validation, fixed sentences): InlineError. Titled notice: Alert with ErrorDetails as its action. Failed pane: FailureState.
- *
- * ```tsx
- * {error ? <DetailedInlineError summary={t("Could not load.")} error={error} retry={{ onRetry }} /> : null}
- * ```
- */
-export function DetailedInlineError({
-  error,
-  summary,
-  action,
-  ...props
-}: DetailedInlineErrorProps) {
-  if (!summary && fitsOneLine(error)) {
-    return (
-      <InlineError {...props} action={action}>
-        {error}
-      </InlineError>
-    );
-  }
-  const headline = summary ?? errorHeadline(error);
-  return (
-    <InlineError
-      {...props}
-      action={
-        <>
-          {error && error !== summary ? <ErrorDetails title={headline} detail={error} /> : null}
-          {action ? <> {action}</> : null}
-        </>
-      }
-    >
-      {headline}
-    </InlineError>
-  );
 }

@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Alert } from "../../../shared/ui/Alert";
+import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
 import { projectDisplayNameFrom, useProjectLabels } from "../../projects/public/projectNames";
 import { useT } from "../../../shared/i18n";
@@ -79,17 +79,7 @@ export function ReminderNotices({
         </div>
         {error ? (
           <div className="px-2 pt-1">
-            <Alert
-              inline
-              tone="danger"
-              action={
-                <Button variant="secondary" type="submit" onClick={onRetry}>
-                  {t("Retry")}
-                </Button>
-              }
-            >
-              {t("Couldn’t load reminders.")}
-            </Alert>
+            <InlineError retry={{ onRetry }}>{t("Couldn’t load reminders.")}</InlineError>
           </div>
         ) : null}
         <div className="flex max-h-[min(320px,50vh)] flex-col gap-1 overflow-y-auto overscroll-none p-1">

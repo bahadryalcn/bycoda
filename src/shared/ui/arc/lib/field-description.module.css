@@ -1,0 +1,14 @@
+/* Label with its info (i) affordance: the description lives behind the icon unless a caller states a scope or consequence. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-block-end: var(--space-2);
+}
+.row.row > :where(label, legend) {
+  margin: 0;
+}
+.info {
+  flex: none;
+  margin-block: calc(var(--space-1) * -1);
+}

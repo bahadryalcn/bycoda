@@ -1,4 +1,3 @@
-import { message } from "@tauri-apps/plugin-dialog";
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { archiveFocusedSession } from "../../../features/sessions/model/archiveShortcut";
 import { type Session } from "../../../features/sessions/model/session";
@@ -7,7 +6,8 @@ import {
   type SessionSummary,
 } from "../../../features/sessions/data/sessionStore";
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
-import { appName } from "../../../shared/lib/appName";
+import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import type { useHistorySessionDelete } from "./useHistorySessionDelete";
 
 export interface HistorySessionArchiveDeps {
@@ -59,9 +59,10 @@ export function useHistorySessionArchive(deps: HistorySessionArchiveDeps) {
         );
         return true;
       } catch (error) {
-        void message(`Could not unarchive this conversation.\n\n${String(error)}`, {
-          title: appName(),
-          kind: "error",
+        toast.show({
+          tone: "danger",
+          title: t("Could not unarchive this conversation."),
+          message: String(error),
         });
         return false;
       } finally {

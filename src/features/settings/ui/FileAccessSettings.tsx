@@ -136,11 +136,11 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
           error ? (
             <SettingsFeedback
               state="error"
-              action={
-                <Button onClick={() => void refresh()} disabled={pending !== null}>
-                  {t("Retry")}
-                </Button>
-              }
+              action={{
+                label: t("Retry"),
+                disabled: pending !== null,
+                onClick: () => void refresh(),
+              }}
             >
               <p>
                 {errorOperation === "read"

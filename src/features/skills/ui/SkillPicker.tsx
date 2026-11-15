@@ -8,6 +8,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
+import { ListRow } from "../../../shared/ui/ListRow";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { t, useLocale } from "../../../shared/i18n";
 import { Plus } from "../../../shared/ui/icons";
@@ -203,13 +204,10 @@ function SkillList({
                 {SECTION_HEADINGS[sectionOf(skill)]()}
               </Text>
             ) : null}
-            <Button
-              variant="item"
-              motion="none"
-              fullWidth
-              layout={compact ? "inline" : "stacked"}
+            <ListRow
+              className={compact ? undefined : "flex-col items-start justify-center"}
+              data-has-description={compact ? undefined : ""}
               ref={highlighted ? activeRef : undefined}
-              type="button"
               role="option"
               aria-selected={highlighted}
               onMouseDown={(e) => e.preventDefault()}
@@ -247,7 +245,7 @@ function SkillList({
                     skill.subcommands?.map((sub) => sub.usage || sub.name).join(" · ")}
                 </ClampText>
               ) : null}
-            </Button>
+            </ListRow>
           </Fragment>
         );
       })}
@@ -384,7 +382,11 @@ export function CreateSkillForm({
             description: ".agents/skills",
             disabled: !project,
           },
-          { value: "user", label: t("Personal"), description: "~/.agents/skills" },
+          {
+            value: "user",
+            label: t("Personal"),
+            description: "~/.agents/skills",
+          },
         ]}
       />
       {showScopeHelp ? (

@@ -19,10 +19,13 @@
 /* Same role as the Field label, so a group title and a field label always match. */
 .legend {
   float: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   padding: 0;
   margin-block-end: var(--space-2);
   color: var(--foreground);
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-caption);
   font-weight: 500;
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
@@ -50,7 +53,7 @@
   display: block;
   padding-block-start: var(--space-2);
   color: var(--text-muted);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
   line-height: var(--leading-body);
   overflow-wrap: anywhere;
 }

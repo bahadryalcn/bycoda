@@ -301,7 +301,7 @@ const OptionRow = memo(function OptionRow({
         if (!option.disabled) onHover(index);
       }}
       onClick={() => onPick(option.value)}
-      className={`bycoda-arc-select-option${option.pinned ? ` ${styles.pinnedOption}` : ""}`}
+      className={option.pinned ? styles.pinnedOption : undefined}
     >
       <PickerChoice
         selected={selected}

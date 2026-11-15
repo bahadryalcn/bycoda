@@ -4,9 +4,9 @@ import { parseRemotePath } from "../../../features/connections/model/remoteProje
 import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { message } from "@tauri-apps/plugin-dialog";
 import { flushSync } from "react-dom";
 import { t } from "../../../shared/i18n";
+import { toast } from "../../../shared/ui/ToastRegion";
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import {
   splitProjectTerminalsForMove,
@@ -116,14 +116,13 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
             leafIds(tab.layout).some((id) => sessionIdsInMove.has(id)),
         )
       ) {
-        void message(
-          "This conversation is also open in another tab. Close the duplicate tab before moving it to a new window.",
-          {
-            get title() {
-              return t("Move to new window");
-            },
-          },
-        );
+        toast.show({
+          tone: "warning",
+          title: t("Move to new window"),
+          message: t(
+            "This conversation is also open in another tab. Close the duplicate tab before moving it to a new window.",
+          ),
+        });
         return "failed" as const;
       }
       const timing = beginWindowMoveTiming(movingIds);
@@ -152,14 +151,11 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           }
         } catch (error) {
           timing.finish("failed");
-          void message(
-            `Could not move this window. Your workspace is still here.\n\n${String(error)}`,
-            {
-              get title() {
-                return t("Move tab");
-              },
-            },
-          );
+          toast.show({
+            tone: "danger",
+            title: t("Could not move this window. Your workspace is still here."),
+            message: String(error),
+          });
           return "failed" as const;
         } finally {
           for (const id of movingIds) movingTabIds.current.delete(id);
@@ -169,10 +165,10 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
       // twin in the new window just respawned under the same id.
       if (filesInWorkspaceTabs(movingTabs).some((file) => file.terminal)) {
         timing.finish("failed");
-        void message("Close terminal tabs before moving this workspace to another window.", {
-          get title() {
-            return t("Move tab");
-          },
+        toast.show({
+          tone: "warning",
+          title: t("Move tab"),
+          message: t("Close terminal tabs before moving this workspace to another window."),
         });
         return "failed" as const;
       }
@@ -206,10 +202,10 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
             .map((file) => file.id),
         );
         if (dirtyIds.size > 0) {
-          void message("Save the unsaved files before moving this tab to another window.", {
-            get title() {
-              return t("Move tab");
-            },
+          toast.show({
+            tone: "warning",
+            title: t("Move tab"),
+            message: t("Save the unsaved files before moving this tab to another window."),
           });
           return "failed" as const;
         }
@@ -229,14 +225,13 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           sessionsRef.current,
         );
         if (splitDocks.moving.some((dock) => dock.pane.files.some((file) => file.terminal))) {
-          void message(
-            "Close project terminal tabs before moving this workspace to another window.",
-            {
-              get title() {
-                return t("Move tab");
-              },
-            },
-          );
+          toast.show({
+            tone: "warning",
+            title: t("Move tab"),
+            message: t(
+              "Close project terminal tabs before moving this workspace to another window.",
+            ),
+          });
           return "failed" as const;
         }
         const payload = collectWindowTransfer(
@@ -281,14 +276,11 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
           }
         } catch (error) {
           for (const id of sessionIds) skipForgetSessionIds.current.delete(id);
-          void message(
-            `Could not move the conversation to a new window. Your tab is still here.\n\n${error instanceof Error ? error.message : String(error)}`,
-            {
-              get title() {
-                return t("Move to new window");
-              },
-            },
-          );
+          toast.show({
+            tone: "danger",
+            title: t("Could not move the conversation to a new window. Your tab is still here."),
+            message: error instanceof Error ? error.message : String(error),
+          });
           return "failed" as const;
         }
 
@@ -346,14 +338,11 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
             await getCurrentWindow().destroy();
           } catch (error) {
             abortQuit();
-            void message(
-              `The tab was moved, but its empty window could not close.\n\n${String(error)}`,
-              {
-                get title() {
-                  return t("Move tab");
-                },
-              },
-            );
+            toast.show({
+              tone: "warning",
+              title: t("The tab was moved, but its empty window could not close."),
+              message: String(error),
+            });
           }
         }
         for (const id of sessionIds) skipForgetSessionIds.current.delete(id);

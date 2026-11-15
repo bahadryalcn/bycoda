@@ -1,10 +1,10 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import { optionalTextAttributes, type TextRoles } from "./Text";
 import { useT } from "../i18n";
-import { Button } from "./Button";
-import { AlertCircle, Check, CircleX, Info } from "./icons";
+import { ErrorDetails, errorHeadline, fitsOneLine } from "./ErrorDetails";
+import { NoticeGlyph, NoticeLink, type NoticeAction, type NoticeTone } from "./Notice";
 
-export type InlineMessageTone = "danger" | "warning" | "info" | "success" | "neutral";
+export type InlineMessageTone = NoticeTone;
 
 export type InlineMessageProps = Omit<ComponentPropsWithoutRef<"div">, "role" | "children"> & {
   tone?: InlineMessageTone;
@@ -17,37 +17,35 @@ export type InlineMessageProps = Omit<ComponentPropsWithoutRef<"div">, "role" | 
    * message that is present when its surface opens and must not interrupt.
    */
   live?: "assertive" | "polite" | "off";
-  /** Replaces the tone glyph. `null` drops it; the tone colour alone never carries meaning, so keep the copy explicit. */
+  /** Replaces the tone glyph. `null` drops it; the tone alone never carries meaning, so keep the copy explicit. */
   icon?: ReactNode | null;
   /** Retry recovery. The caller owns the operation; `pending` shows progress and blocks a second press. */
   retry?: { onRetry: () => void; label?: string; pending?: boolean; disabled?: boolean };
-  /** Another recovery control (an "Open settings" link). Prefer `retry` for a plain retry. */
-  action?: ReactNode;
+  /** One follow-up (an "Open settings" link) rendered as a text link after the copy. Prefer `retry` for a plain retry. */
+  action?: NoticeAction;
+  /** A second follow-up (Dismiss, Discard) rendered after `action`. */
+  secondaryAction?: NoticeAction;
+  /** Escape for one non-button control that must sit after the copy (a Details popover trigger). Text height only. */
+  extra?: ReactNode;
 };
 
+/** Neutral copy for every tone; only a danger sentence may tint (InlineError). */
 const INK: Record<InlineMessageTone, string> = {
   danger: "text-(--ui-tone-danger-fg)",
-  warning: "text-(--ui-tone-warning-fg)",
-  info: "text-(--ui-tone-info-fg)",
-  success: "text-(--ui-tone-success-fg)",
+  warning: "text-(--ui-text-secondary)",
+  info: "text-(--ui-text-secondary)",
+  success: "text-(--ui-text-secondary)",
   neutral: "text-(--ui-text-secondary)",
 };
 
-/** Same glyph per tone as Alert, so danger and warning never differ by colour alone. */
-const GLYPH = {
-  danger: CircleX,
-  warning: AlertCircle,
-  info: Info,
-  success: Check,
-  neutral: Info,
-} as const;
-
 /**
- * One-line field, row or form message: tone ink, caption size, a tone glyph (not colour alone), optional `retry`
- * link or `action` after the copy. `live` picks `role="alert"` (danger default), `status` (other tones) or none.
+ * One-line field, row or form message: neutral caption copy, a toned 14px glyph centred on the first
+ * line, and structured `retry`, `action` and `secondaryAction` text links after the copy. `live` picks
+ * `role="alert"` (danger default), `status` (other tones) or none.
  * @group feedback
  * @use A short success, warning, info or neutral note under a field, in a row or in a form.
- * @avoid Failures: InlineError. Boxed notice with a title: Alert. Nothing to show: EmptyState. Region that failed to load: FailureState. Never a bare `<p role="alert">`.
+ * @avoid Failures: InlineError. Boxed notice with a title: Alert. Nothing to show: EmptyState. Region that failed to load: FailureState. Never a bare `<p role="alert">`; never a Button in `action`.
+ * @action Pass `action={{ label, onClick }}`; the component renders the link at caption height.
  */
 export function InlineMessage({
   tone = "info",
@@ -56,14 +54,14 @@ export function InlineMessage({
   icon,
   retry,
   action,
+  secondaryAction,
+  extra,
   children,
   className,
   ...props
 }: InlineMessageProps) {
   const t = useT();
   const mode = live ?? (tone === "danger" ? "assertive" : "polite");
-  const Glyph = GLYPH[tone];
-  const glyph = icon === undefined ? <Glyph className="icon-xs" aria-hidden /> : icon;
   return (
     <div
       {...props}
@@ -77,28 +75,34 @@ export function InlineMessage({
         .filter(Boolean)
         .join(" ")}
     >
-      {glyph ? (
-        // One caption line tall, so the glyph centres on the first line of wrapped copy.
-        <span aria-hidden className="flex h-(--ui-leading-caption) shrink-0 items-center">
-          {glyph}
-        </span>
-      ) : null}
+      <NoticeGlyph tone={tone} size="inline" icon={icon} />
       {/* Recovery follows the copy on its line and wraps with it, never detached at the far edge. */}
       <span {...optionalTextAttributes(text ?? {}, "min-w-0 flex-1 break-words")}>
         <span className="select-text">{children}</span>
-        {action ? <> {action}</> : null}
+        {extra ? <> {extra}</> : null}
+        {action ? (
+          <>
+            {" "}
+            <NoticeLink action={action} />
+          </>
+        ) : null}
+        {secondaryAction ? (
+          <>
+            {" "}
+            <NoticeLink action={secondaryAction} />
+          </>
+        ) : null}
         {retry ? (
           <>
             {" "}
-            <Button
-              variant="link"
-              layout="text"
-              loading={retry.pending ?? false}
-              disabled={retry.disabled}
-              onClick={retry.onRetry}
-            >
-              {retry.label ?? t("Retry")}
-            </Button>
+            <NoticeLink
+              action={{
+                label: retry.label ?? t("Retry"),
+                onClick: retry.onRetry,
+                pending: retry.pending,
+                disabled: retry.disabled,
+              }}
+            />
           </>
         ) : null}
       </span>
@@ -106,20 +110,58 @@ export function InlineMessage({
   );
 }
 
-export type InlineErrorProps = Omit<InlineMessageProps, "tone">;
+export type InlineErrorProps = Omit<InlineMessageProps, "tone" | "children"> & {
+  /** The visible sentence. Optional when `details` carries the raw text. */
+  children?: ReactNode;
+  /**
+   * Raw backend, command or transport text. Without `children`, text that fits one short line shows as
+   * written and anything longer or multi-line shows its first line with a Details link. With `children`,
+   * the raw text always sits behind Details.
+   */
+  details?: string;
+};
 
 /**
- * The one inline error: `--ui-tone-danger-fg`, `text-ui-caption`, a leading alert glyph and
- * `role="alert"` (pass `live="polite"` or `"off"` for an error already present on open).
- * Optional `retry` renders a link-style Retry after the copy.
+ * The one inline error: danger ink, caption size, a toned alert glyph and `role="alert"` (pass
+ * `live="polite"` or `"off"` for an error already present on open). Structured `retry`, `action` and
+ * `secondaryAction` render as text links after the copy. `details` takes raw command or transport
+ * output: it shows as written when short, otherwise behind a Details link, so a row never grows or clips.
  * @group feedback
- * @use A failure under a field, in a row or in a form.
- * @avoid Non-error tones: InlineMessage. Boxed notice with a title: Alert. Region that failed to load: FailureState. Never a bare `<p role="alert">`.
+ * @use A failure under a field, in a row or in a form; raw Host, command or remote text via `details`.
+ * @avoid Non-error tones: InlineMessage. Boxed notice with a title: Alert (with `extra` ErrorDetails). Region that failed to load: FailureState. Never a bare `<p role="alert">`.
+ * @action Pass `action={{ label, onClick }}` or `retry`; never a Button.
  *
  * ```tsx
- * {error ? <InlineError retry={{ onRetry: reload, pending: loading }}>{error}</InlineError> : null}
+ * {error ? <InlineError details={error} retry={{ onRetry: reload, pending: loading }}>{t("Could not load.")}</InlineError> : null}
  * ```
  */
-export function InlineError(props: InlineErrorProps) {
-  return <InlineMessage {...props} tone="danger" />;
+export function InlineError({ details, children, extra, ...props }: InlineErrorProps) {
+  const hasSummary = children !== undefined && children !== null && children !== false;
+  if (details === undefined || (!hasSummary && fitsOneLine(details))) {
+    return (
+      <InlineMessage {...props} tone="danger" extra={extra}>
+        {hasSummary ? children : details}
+      </InlineMessage>
+    );
+  }
+  const headline = hasSummary ? children : errorHeadline(details);
+  return (
+    <InlineMessage
+      {...props}
+      tone="danger"
+      extra={
+        <>
+          {details && details !== headline ? (
+            <ErrorDetails
+              title={typeof headline === "string" ? headline : undefined}
+              detail={details}
+            />
+          ) : null}
+          {extra ? <> {extra}</> : null}
+        </>
+      }
+    >
+      {headline}
+    </InlineMessage>
+  );
 }

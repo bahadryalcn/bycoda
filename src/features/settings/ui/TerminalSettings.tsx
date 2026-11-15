@@ -1,5 +1,4 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
@@ -160,16 +159,12 @@ export function TerminalPage() {
               ) : unmirrored && !saving ? (
                 <SettingsFeedback
                   state="warning"
-                  action={
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        if (syncTerminalProfileMirror(unmirrored.id)) setUnmirrored(null);
-                      }}
-                    >
-                      {t("Retry")}
-                    </Button>
-                  }
+                  action={{
+                    label: t("Retry"),
+                    onClick: () => {
+                      if (syncTerminalProfileMirror(unmirrored.id)) setUnmirrored(null);
+                    },
+                  }}
                 >
                   {t(
                     "The shell was saved on this computer, but this window could not remember it, so it may still show the previous choice. Retry updates only this window; the saved shell is not written again.",
@@ -206,11 +201,7 @@ export function RemoteMachineShells() {
         <div className="terminal-host-notice">
           <SettingsFeedback
             state="error"
-            action={
-              <Button loading={loading} onClick={refresh}>
-                {t("Retry")}
-              </Button>
-            }
+            action={{ label: t("Retry"), pending: loading, onClick: refresh }}
           >
             {error}
           </SettingsFeedback>
@@ -373,11 +364,11 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
         problem ? (
           <SettingsFeedback
             state="error"
-            action={
-              <Button variant="ghost" disabled={saving || loading} onClick={reread}>
-                {needsRead ? t("Read current shell") : t("Retry")}
-              </Button>
-            }
+            action={{
+              label: needsRead ? t("Read current shell") : t("Retry"),
+              disabled: saving || loading,
+              onClick: reread,
+            }}
           >
             {problem}
             {needsRead && requestedShell !== null ? (
