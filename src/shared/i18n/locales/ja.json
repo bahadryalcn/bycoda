@@ -14372,5 +14372,17 @@
   "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "このアプリの再起動時にデスクトップ側の作業が停止する可能性があります。Host 側の作業は Host が稼働している間は継続します。",
   "Running sessions and shells on the updated Host are interrupted.": "更新する Host 上で実行中のセッションとシェルは中断されます。",
   "Session history is kept. Interrupted work may require resuming.": "セッション履歴は保持されます。中断した作業は再開が必要な場合があります。",
-  "Denied": "拒否しました"
+  "Denied": "拒否しました",
+  "Machines found": "見つかったマシン",
+  "Sign in to see your other computers.": "他のコンピュータを表示するにはサインインしてください。",
+  "No new machines found": "新しいマシンは見つかりませんでした",
+  "Shared with you": "共有されたマシン",
+  "Phones and tablets": "スマートフォンとタブレット",
+  "Online": "オンライン",
+  "Why Add is unavailable": "追加できない理由",
+  "This computer has no SSH address to set it up from here yet.": "このコンピュータには、ここからセットアップできる SSH アドレスがまだありません。",
+  "Advanced: add manually": "詳細設定：手動で追加",
+  "Add manually": "手動で追加",
+  "Pick one of the machines found above to get started.": "上に見つかったマシンから1台選んで始めましょう。",
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "接続済みのマシンはまだありません。設定でアカウント内のマシンを選び、ここでそのフォルダを開いてください。"
 }

@@ -25,11 +25,14 @@ import { ExternalTunnelsPanel } from "./ExternalTunnelsPanel";
 import { RemoteDataStatus } from "./RemoteDataStatus";
 import { EMPTY_SSH_DRAFT, MachineForm, type MachineMethod, type SshDraft } from "./MachineForm";
 import { MachineRow } from "./MachineRow";
+import { DiscoveredMachines } from "./DiscoveredMachines";
+import type { SshAddPlan } from "../model/machineCandidates";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { UpdateImpact } from "./UpdateImpact";
 import { confirmInApp } from "../../../shared/model/appConfirm";
 import { RemoveMachineDialog } from "./RemoveMachineDialog";
 import { useContext, useRef, useState } from "react";
-import { Internet, Plus, RefreshCw } from "../../../shared/ui/icons";
+import { Internet, RefreshCw } from "../../../shared/ui/icons";
 import {
   connectMachine,
   disconnectMachine,
@@ -79,7 +82,10 @@ export function ConnectionsSettings() {
   const draft = editing ? editDraft : addDraft;
   const submittedAddDraft = useRef<SshDraft | undefined>(undefined);
   const patchDraft = (patch: Partial<SshDraft>) =>
-    (editing ? setEditDraft : setAddDraft)((current) => ({ ...current, ...patch }));
+    (editing ? setEditDraft : setAddDraft)((current) => ({
+      ...current,
+      ...patch,
+    }));
   const [connectionName, setConnectionName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -122,9 +128,13 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           setAddDraft((current) => (current === submitted ? EMPTY_SSH_DRAFT : current));
         setNotice(
           afterEdit.current
-            ? t("{p0} is connected through its new address.", { p0: next.machine.name })
+            ? t("{p0} is connected through its new address.", {
+                p0: next.machine.name,
+              })
             : updatingMachine
-              ? t("{p0} was updated and reconnected.", { p0: next.machine.name })
+              ? t("{p0} was updated and reconnected.", {
+                  p0: next.machine.name,
+                })
               : t(
                   "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
                   { p0: next.machine.name },
@@ -158,7 +168,12 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     alternate: draft.alternate,
     ...(withHostPort ? { remotePort: draft.remotePort } : {}),
   });
-  const begin = async (machine?: RemoteMachine, upgrade = false, edited = false) => {
+  const begin = async (
+    machine?: RemoteMachine,
+    upgrade = false,
+    edited = false,
+    plan?: SshAddPlan,
+  ) => {
     if (submitting.current) return;
     if (upgrade && machine) {
       submitting.current = true;
@@ -176,18 +191,27 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       }
     }
     setView("machines");
-    const parsed = machine ? undefined : parseMachineDraft(sshFields(false));
+    // A found machine brings its own address, so the form is skipped.
+    const fields = plan
+      ? {
+          name: plan.name,
+          target: plan.target,
+          port: "",
+          alternate: plan.alternate ?? "",
+        }
+      : sshFields(false);
+    const parsed = machine ? undefined : parseMachineDraft(fields);
     if (parsed && !parsed.ok) return setError(t(parsed.error));
     submitting.current = true;
-    submittedAddDraft.current = machine ? undefined : addDraft;
+    submittedAddDraft.current = machine || plan ? undefined : addDraft;
     afterEdit.current = edited;
     setBusy(true);
     setError("");
     setNotice("");
     clearSnapshot();
-    setConnectionName(machine?.name ?? (draft.name.trim() || draft.target.trim()));
+    setConnectionName(machine?.name ?? (fields.name.trim() || fields.target.trim()));
     setRemoving(undefined);
-    if (machine) {
+    if (machine || plan) {
       setAdding(false);
       setEditing(undefined);
     }
@@ -200,9 +224,9 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             ...(upgrade ? { upgrade: true } : {}),
           })
         : await invoke<string>("remote_ssh_begin", {
-            target: draft.target.trim(),
-            name: draft.name.trim(),
-            port: draft.port ? Number(draft.port) : null,
+            target: fields.target.trim(),
+            name: fields.name.trim(),
+            port: fields.port ? Number(fields.port) : null,
             alternate: parsed?.ok ? parsed.value.alternate : null,
           });
       if (!alive.current) {
@@ -237,7 +261,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
   const startEdit = (machine: RemoteMachine) => {
     setView("machines");
     setEditing(machine);
-    setEditDraft({ remotePort: "", alternate: "", ...draftFromMachine(machine) });
+    setEditDraft({
+      remotePort: "",
+      alternate: "",
+      ...draftFromMachine(machine),
+    });
     setAdding(true);
     setError("");
     setNotice("");
@@ -259,6 +287,13 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     setError("");
     setNotice("");
     setRemoving(undefined);
+  };
+  // Other views send "add a machine" here; the found machines are the way in.
+  const candidatesRef = useRef<HTMLDivElement>(null);
+  const showCandidates = () => {
+    closeForm();
+    setView("machines");
+    candidatesRef.current?.scrollIntoView?.({ block: "nearest" });
   };
   // Saving is the user's own action, so it connects even when automatic
   // reconnecting is off. The connection runs as a setup job, the same one
@@ -285,7 +320,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
   useConnectionRequestInbox({
     machines,
     busy,
-    onAdd: startAdd,
+    onAdd: showCandidates,
     onEdit: startEdit,
     onReconnect: (machine) => void begin(machine),
   });
@@ -330,6 +365,29 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     editing && parsedDraft.ok && !editImpact(editing, parsedDraft.value).reconnect
       ? "Save"
       : "Save and reconnect";
+  const machineForm = adding ? (
+    <MachineForm
+      editing={editing}
+      method={method}
+      onMethodChange={setMethod}
+      draft={draft}
+      onDraftChange={patchDraft}
+      suggestion={hostnameSuggestion(draft.target, editing?.name ?? "")}
+      url={url}
+      onUrlChange={setUrl}
+      token={token}
+      onTokenChange={setToken}
+      busy={busy}
+      error={error}
+      saveLabel={saveLabel}
+      onSubmit={() => {
+        if (editing) void save();
+        else if (method === "url") connectUrl();
+        else void begin();
+      }}
+      onCancel={closeForm}
+    />
+  ) : null;
   return (
     <div
       id="setting-remote-machines"
@@ -378,41 +436,31 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               >
                 <RefreshCw aria-hidden className="icon-md" />
               </Button>
-              <Button
-                stableWidth
-                disabled={busy}
-                onClick={startAdd}
-                variant="primary"
-                type="button"
-                startIcon={<Plus aria-hidden className="icon-md" />}
-              >
-                {t("Add machine")}
-              </Button>
             </div>
           </div>
-          {adding && (
-            <MachineForm
-              editing={editing}
-              method={method}
-              onMethodChange={setMethod}
-              draft={draft}
-              onDraftChange={patchDraft}
-              suggestion={hostnameSuggestion(draft.target, editing?.name ?? "")}
-              url={url}
-              onUrlChange={setUrl}
-              token={token}
-              onTokenChange={setToken}
-              busy={busy}
-              error={error}
-              saveLabel={saveLabel}
-              onSubmit={() => {
-                if (editing) void save();
-                else if (method === "url") connectUrl();
-                else void begin();
-              }}
-              onCancel={closeForm}
+          <div ref={candidatesRef}>
+            <DiscoveredMachines
+              saved={machines}
+              active={view === "machines"}
+              busy={busy || revoking}
+              onAdd={(plan) => void begin(undefined, false, false, plan)}
             />
-          )}
+          </div>
+          {editing ? machineForm : null}
+          <Disclosure
+            size="sm"
+            textSize="caption"
+            tone="muted"
+            summary={t("Advanced: add manually")}
+            open={adding && !editing}
+            onOpenChange={(next) => {
+              if (next && busy) return;
+              if (next) startAdd();
+              else closeForm();
+            }}
+          >
+            {editing ? null : machineForm}
+          </Disclosure>
           {busy && jobId && (
             <Surface
               variant="outline"
@@ -494,10 +542,10 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           ) : loaded && !loading && !loadError && !adding ? (
             <EmptyState
               icon={<Internet aria-hidden className="icon-lg" />}
-              description={t("Add your always-on Windows, Mac, or Linux machine to get started.")}
+              description={t("Pick one of the machines found above to get started.")}
               action={
                 <Button stableWidth variant="primary" disabled={busy} onClick={startAdd}>
-                  {t("Add machine")}
+                  {t("Add manually")}
                 </Button>
               }
             />
@@ -505,13 +553,19 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
           {rowMenu ? (
             <DropdownMenu
               anchor={rowMenu.anchor}
-              label={t("Actions for {p0}", { p0: machineLabel(machines, rowMenu.machine) })}
+              label={t("Actions for {p0}", {
+                p0: machineLabel(machines, rowMenu.machine),
+              })}
               items={[
                 { kind: "item", id: "sync", label: t("Sync now") },
                 { kind: "item", id: "details", label: t("Connection details") },
                 ...(rowMenu.machine.ssh
                   ? [
-                      { kind: "item" as const, id: "reconnect", label: t("Reconnect") },
+                      {
+                        kind: "item" as const,
+                        id: "reconnect",
+                        label: t("Reconnect"),
+                      },
                       {
                         kind: "item" as const,
                         id: "edit",

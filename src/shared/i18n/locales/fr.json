@@ -14372,5 +14372,17 @@
   "Desktop-owned work may stop when this app restarts. Host-owned work continues while its Host stays running.": "Le travail exécuté par l’application de bureau peut s’arrêter au redémarrage. Celui du Host continue tant que le Host reste actif.",
   "Running sessions and shells on the updated Host are interrupted.": "Les sessions et terminaux en cours sur le Host mis à jour sont interrompus.",
   "Session history is kept. Interrupted work may require resuming.": "L’historique des sessions est conservé. Le travail interrompu peut nécessiter une reprise.",
-  "Denied": "Refusé"
+  "Denied": "Refusé",
+  "Machines found": "Machines trouvées",
+  "Sign in to see your other computers.": "Connectez-vous pour voir vos autres ordinateurs.",
+  "No new machines found": "Aucune nouvelle machine trouvée",
+  "Shared with you": "Partagées avec vous",
+  "Phones and tablets": "Téléphones et tablettes",
+  "Online": "En ligne",
+  "Why Add is unavailable": "Pourquoi Ajouter est indisponible",
+  "This computer has no SSH address to set it up from here yet.": "Cet ordinateur n'a pas encore d'adresse SSH permettant de le configurer d'ici.",
+  "Advanced: add manually": "Avancé : ajouter manuellement",
+  "Add manually": "Ajouter manuellement",
+  "Pick one of the machines found above to get started.": "Choisissez ci-dessus l'une des machines trouvées pour commencer.",
+  "No machines are connected yet. Pick one found on your account in Settings, then open a folder on it here.": "Aucune machine n'est encore connectée. Choisissez-en une de votre compte dans les réglages, puis ouvrez un dossier dessus ici."
 }
