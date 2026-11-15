@@ -145,7 +145,6 @@ export function CrewStageCard() {
           description={t(
             "Show the main agent, the advisor and subagents as a crew. Decorative animations control their activity.",
           )}
-          descriptionVisible={false}
         >
           <Toggle
             label={t("Agent crew")}
@@ -170,7 +169,6 @@ export function CrewStageCard() {
                   "Each character fills with color from the feet up as its context fills. Compaction lowers the level. Unknown context stays neutral. When off, all characters stay in full color.",
                 )
           }
-          descriptionVisible={false}
         >
           <Toggle
             label={growthLabel}

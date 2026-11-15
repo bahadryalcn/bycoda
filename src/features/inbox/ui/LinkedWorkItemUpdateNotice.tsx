@@ -137,7 +137,6 @@ export function LinkedWorkItemUpdateNotice({
   return (
     <TransientNotice
       tone="info"
-      anchor="container"
       placement="top-end"
       width="lg"
       durationMs={null}

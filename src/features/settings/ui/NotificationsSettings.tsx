@@ -180,7 +180,6 @@ export function NotificationAlerts() {
         <Row
           id="notifications"
           label={t("Desktop notifications")}
-          descriptionVisible={false}
           description={t("Show alerts from other sessions or while {p0} is in the background.", {
             p0: PRODUCT_IDENTITY.displayName,
           })}
@@ -263,6 +262,7 @@ export function NotificationAlerts() {
         {/* No row id: search indexes the delivery time under the "daily-summary" entry above. */}
         <Row
           label={t("Delivery time")}
+          descriptionVisible
           description={t("Uses this computer’s local clock.")}
           dependsOn={notificationsEnabled && summaryEnabled}
           disabledReason={

@@ -146,7 +146,6 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
                   </span>
                 }
                 description={modelMeta(model)}
-                descriptionVisible={false}
                 disabled={last}
                 disabledReason={guard}
               >

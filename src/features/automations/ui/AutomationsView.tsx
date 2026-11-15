@@ -30,7 +30,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
 import { Switch } from "../../../shared/ui/Switch";
-import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { Badge } from "../../../shared/ui/Badge";
 import { Alert } from "../../../shared/ui/Alert";
 import { Heading } from "../../../shared/ui/Heading";
 import { Divider } from "../../../shared/ui/Divider";
@@ -40,6 +40,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Spinner } from "../../../shared/ui/Spinner";
+import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
@@ -1225,13 +1226,9 @@ function RunRow({
 
 function RunStatusPill({ status }: { status: AutomationRun["status"] }) {
   return (
-    <Badge
-      tone={runStatusTone(status)}
-      className="shrink-0 whitespace-nowrap"
-      icon={status === "running" ? <Spinner size="xs" /> : undefined}
-    >
+    <StatusText tone={runStatusTone(status)} className="shrink-0 whitespace-nowrap">
       {runStatusLabel(status)}
-    </Badge>
+    </StatusText>
   );
 }
 
@@ -1244,12 +1241,12 @@ function runStatusLabel(status: AutomationRun["status"]): string {
   return "Pending";
 }
 
-function runStatusTone(status: AutomationRun["status"]): BadgeTone {
-  if (status === "succeeded") return "success";
-  if (status === "failed") return "danger";
-  if (status === "skipped") return "warning";
-  if (status === "cancelled") return "neutral";
-  return "info";
+function runStatusTone(status: AutomationRun["status"]): StatusTextTone {
+  if (status === "succeeded") return "done";
+  if (status === "failed") return "failed";
+  if (status === "skipped") return "needs-you";
+  if (status === "running") return "running";
+  return "idle";
 }
 
 function runTriggerMeta(

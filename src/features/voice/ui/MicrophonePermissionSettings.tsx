@@ -105,6 +105,7 @@ export function MicrophonePermissionSettings() {
       <Row
         id="speech-microphone"
         label={t("Microphone access")}
+        descriptionVisible
         description={blocked || error || (requestPending && !busy) ? message : undefined}
         info={
           !blocked && !error && !(requestPending && !busy) ? (

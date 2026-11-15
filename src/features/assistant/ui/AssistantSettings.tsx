@@ -525,6 +525,7 @@ export function AssistantSettings({
                 <Group title={t("Models")}>
                   <Row
                     label={t("Assistant models")}
+                    descriptionVisible
                     description={t("Models and limits follow Settings > Models.")}
                   >
                     <Button
@@ -587,7 +588,6 @@ export function AssistantSettings({
                   {draft.permissionLevel && (
                     <Row
                       label={t("Native consent")}
-                      descriptionVisible={false}
                       description={t(
                         "Native consent stays with this installation and selected Host until changed. Host credential changes require new consent. Host profile settings alone grant no native approval.",
                       )}
@@ -611,7 +611,6 @@ export function AssistantSettings({
                     description={t(
                       "Configures existing job, folder and computer permissions. Assistant authority and critical exclusions still apply.",
                     )}
-                    descriptionVisible={false}
                     stacked
                   >
                     <SegmentedControl
@@ -666,6 +665,7 @@ export function AssistantSettings({
                         ) : (
                           <Row
                             label={t("Execution permissions")}
+                            descriptionVisible
                             description={t("Choose a worker model before enabling job execution.")}
                           />
                         )}

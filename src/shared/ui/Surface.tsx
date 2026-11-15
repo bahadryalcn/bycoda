@@ -19,14 +19,10 @@ export type SurfaceVariant =
   | "canvas-chat"
   | "canvas-surface"
   | "reading-base"
-  | "navigation-quiet"
   | "selected"
   | "transparent"
   | "danger"
   | "danger-floating"
-  | "translucent"
-  | "effort"
-  | "effort-ultra"
   | "base"
   | "panel"
   | "floating"
@@ -73,7 +69,6 @@ const VARIANT_ROLE: Partial<Record<SurfaceVariant, SurfaceRole>> = {
   "adaptive-base": "page",
   "workspace-panel": "page",
   "reading-panel": "page",
-  "navigation-quiet": "page",
   transparent: "page",
   card: "card",
   plain: "card",
@@ -87,7 +82,6 @@ const VARIANT_ROLE: Partial<Record<SurfaceVariant, SurfaceRole>> = {
   "neutral-metadata": "inset",
   floating: "floating",
   "danger-floating": "floating",
-  translucent: "floating",
   "composer-glass": "floating",
   "activity-dock": "floating",
 };
@@ -272,7 +266,7 @@ export type SurfaceProps = ComponentPropsWithoutRef<"div"> & {
 
 /**
  * Static container in one of four roles (page, card, inset, floating; see `SurfaceRole`). The
- * 43 legacy variants stay as compat aliases mapped to a role in `VARIANT_ROLE` (deprecated
+ * legacy variants stay as compat aliases mapped to a role in `VARIANT_ROLE` (deprecated
  * for new code): pick `card`, `inset`, `floating` or the page ground and express the rest with
  * `tone`, `frame` (none, pane, card) and `radius` (control, row, popup).
  *
@@ -281,9 +275,9 @@ export type SurfaceProps = ComponentPropsWithoutRef<"div"> & {
  *
  * Nesting: a Surface inside a Surface of the same role paints no second fill or frame, so
  * there is never a card inside a card. Separate nested groups with spacing or `Divider`.
- * Workspace grounds: canvas, workspace-panel, canvas-chat, canvas-surface, reading-base,
- * navigation-quiet use their existing theme roles. selected is a static highlight, never an action.
- * danger/danger-floating tint error-bearing reading/floating panels; translucent is native popup glass.
+ * Workspace grounds: canvas, workspace-panel, canvas-chat, canvas-surface, reading-base
+ * use their existing theme roles. selected is a static highlight, never an action.
+ * danger/danger-floating tint error-bearing reading/floating panels.
  * Explicit frame/radius overrides are opt-in; omitted props retain the established render.
  *
  * @group layout

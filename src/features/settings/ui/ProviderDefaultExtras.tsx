@@ -115,7 +115,6 @@ export function ProviderDefaultExtras({
             key={setting.id}
             label={t(setting.label)}
             description={setting.description ? t(setting.description) : undefined}
-            descriptionVisible={false}
             modified={saved != null || legacy != null}
             onReset={() => {
               const nextExtras = { ...scopeDefaults.extras };

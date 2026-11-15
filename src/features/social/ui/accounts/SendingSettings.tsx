@@ -93,6 +93,7 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
       ) : null}
       <Row
         label={snapshot.stopped ? t("Resume sending") : t("Stop all sending")}
+        descriptionVisible
         description={snapshot.stopped ? t("Pending jobs are kept") : undefined}
       >
         <DisabledReason

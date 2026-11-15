@@ -160,7 +160,7 @@ describe("linked work item update notice", () => {
     act(() => root.render(null));
     renderNotice({ ...baseCard });
     expect(play).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('[aria-label^="New activity on"]')).not.toBeNull();
+    expect(document.body.querySelector('[aria-label^="New activity on"]')).not.toBeNull();
 
     const updatedCard = { ...baseCard, updatedAt: baseCard.updatedAt + 60_000 };
     renderNotice({ ...updatedCard, status: "loading" });
@@ -199,9 +199,6 @@ describe("linked work item update notice", () => {
     const notice = document.body.querySelector<HTMLElement>(
       '[aria-label="New activity on Pull request 42"]',
     );
-    expect(notice?.parentElement).toBe(container);
-    expect(notice?.classList.contains("absolute")).toBe(true);
-    expect(notice?.classList.contains("fixed")).toBe(false);
     expect(notice?.classList.contains("bg-content/10")).toBe(false);
     expect(notice?.classList.contains("bg-background-base/95")).toBe(false);
     expect(document.body.textContent).toContain("1 new comment");

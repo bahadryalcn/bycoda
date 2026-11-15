@@ -92,6 +92,7 @@ function OwnerSecretsInventory({ hostId }: { hostId: string }) {
             <Row
               key={secret.secretRef}
               label={secret.name}
+              descriptionVisible
               description={[
                 secret.purpose,
                 t("Saved {p0}", { p0: formatArchiveDate(secret.createdAt) }),

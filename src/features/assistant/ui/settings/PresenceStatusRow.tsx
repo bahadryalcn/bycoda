@@ -25,7 +25,11 @@ export function PresenceStatusRow({
     away: draft.keepAwakeWhileAway ?? true,
   });
   return (
-    <Row label={t("Right now")} description={state?.error ? `${text} · ${state.error}` : text}>
+    <Row
+      label={t("Right now")}
+      descriptionVisible
+      description={state?.error ? `${text} · ${state.error}` : text}
+    >
       <Text as="span" size="caption" tone="inherit" leading="inherit">
         <AssistantPresenceStatus snapshot={snapshot} details />
       </Text>

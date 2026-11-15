@@ -191,8 +191,8 @@
   cursor: default;
 }
 .conflict-inline-choice:focus-visible {
-  outline: 1px solid var(--ui-focus-ring-color);
-  outline-offset: -1px;
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 /* Source bars carry their side's ink; a pressed source shows it was accepted. */
 .conflict-source-actions {

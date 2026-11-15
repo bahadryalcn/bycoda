@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "reviewAuthority": "Source reviewed by migration implementers; owner review remains in the uncommitted diff. Never refresh this baseline from inventory counts alone.",
-  "historicalCandidateCount": 940,
+  "historicalCandidateCount": 934,
   "componentDecisions": {
     "columns": ["file","name","indexed","definition","line","sourceFingerprint","decision","owner","reasonIndex","reviewPackage"],
     "rows": [

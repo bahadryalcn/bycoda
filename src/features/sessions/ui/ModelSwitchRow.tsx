@@ -2,9 +2,9 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useState } from "react";
-import { Button } from "../../../shared/ui/Button";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useT } from "../../../shared/i18n";
-import { ArrowLeftRight, ChevronRight } from "../../../shared/ui/icons";
+import { ArrowLeftRight } from "../../../shared/ui/icons";
 import { HARNESS_TITLE } from "../model/session";
 import type {
   ModelSwitchMeta,
@@ -60,30 +60,19 @@ export function ModelSwitchRow({ meta, embedded = false }: Props) {
       data-model-switch
     >
       {switches > 1 ? (
-        <>
-          <Button
-            motion="none"
-            fullWidth
-            variant="item"
-            type="button"
-            selected={open}
-            aria-expanded={open}
-            aria-label={t("{p0}, {p1} switches", { p0: title, p1: String(switches) })}
-            onClick={() => setOpen(!open)}
-            className="w-full min-w-0 text-left"
-            textSize="body"
-            textTone="secondary"
-          >
-            {line}
-            <ChevronRight
-              className={`ml-auto icon-sm shrink-0 ${open ? "rotate-90" : ""}`}
-              tone="secondary"
-              strokeWidth={1.75}
-              aria-hidden="true"
-            />
-          </Button>
+        <Disclosure
+          variant="step"
+          chevron="end"
+          tone="secondary"
+          textSize="body"
+          open={open}
+          onOpenChange={setOpen}
+          summaryLabel={t("{p0}, {p1} switches", { p0: title, p1: String(switches) })}
+          summary={line}
+          className="w-full min-w-0"
+        >
           {open ? <SwitchHistory steps={steps} /> : null}
-        </>
+        </Disclosure>
       ) : (
         <Text
           role="note"

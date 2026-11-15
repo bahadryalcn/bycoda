@@ -157,6 +157,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
           <Row
             id="close-to-tray"
             label={t("Close to tray")}
+            descriptionVisible
             description={t(
               "Keep agents running when you close the window. Reopen or quit the app from the tray icon.",
             )}

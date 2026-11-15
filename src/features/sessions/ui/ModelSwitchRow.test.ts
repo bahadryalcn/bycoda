@@ -49,7 +49,7 @@ describe("ModelSwitchRow", () => {
         { harness: "claude", account: "Personal", model: "Sonnet 5.5", at: 4, note: "deferred" },
       ],
     });
-    const button = container.querySelector("button")!;
+    const button = container.querySelector("summary")!;
     expect(button.getAttribute("aria-expanded")).toBe("false");
     expect(button.textContent).toContain("work");
     expect(button.textContent).toContain("Personal");

@@ -436,7 +436,6 @@ function KeybindingSettingsRow({
           </OverflowTooltip>
         )
       }
-      descriptionVisible={false}
       description={
         modified
           ? t("Default: {p0}", {

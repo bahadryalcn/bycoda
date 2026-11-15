@@ -55,7 +55,6 @@ export function VoiceConversationStyle({
       description={t(
         "Uses a longer pause, allows interruptions, and holds spoken progress updates. You can change each setting afterward.",
       )}
-      descriptionVisible={false}
       feedback={
         presetError ? (
           <SettingsFeedback state="error">{t(VOICE_PRESET_FAILED)}</SettingsFeedback>
@@ -90,7 +89,6 @@ export function VoiceConversationStyle({
       <Row
         id="voice-manual-turn-end"
         label={t("I decide when my turn ends")}
-        descriptionVisible={false}
         description={t(
           "Long pauses keep listening. Choose Finish turn to send your speech. You can switch back to automatic replies here.",
         )}
@@ -116,7 +114,6 @@ export function VoiceConversationStyle({
       <Row
         id="voice-barge-in"
         label={t("I may interrupt speech")}
-        descriptionVisible={false}
         description={t("Lets your speech interrupt the assistant's reply.")}
       >
         <Toggle
@@ -147,7 +144,7 @@ export function VoiceConversationStyle({
         <Row
           id="voice-idle-sleep"
           label={t("Sleep voice when I'm idle")}
-          descriptionVisible={false}
+          descriptionVisible
           description={t(
             "Closes the microphone while idle. Returning leaves it off until you press Talk.",
           )}
@@ -171,6 +168,7 @@ export function VoiceConversationStyle({
         <Row
           id="voice-return-call"
           label={t("Call me when I return")}
+          descriptionVisible
           description={t(
             "When you come back, the assistant speaks first and the microphone opens briefly. If you don't answer, it closes and you are notified.",
           )}

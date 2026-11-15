@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import type { AlertTone } from "./Alert";
 import type { NoticeAction } from "./Notice";
-import { ToastCard } from "./ToastCard";
 import { Toast } from "./ToastRegion";
 
 export type TransientNoticeTone = AlertTone;
@@ -36,29 +35,16 @@ export interface TransientNoticeProps {
    */
   placement?: "bottom-end" | "top-end";
   width?: "md" | "lg";
-  /**
-   * `viewport` portals to the body and joins the shared Toast stack; `container` positions inside
-   * the nearest positioned parent.
-   * @deprecated `container` is a second card path; move those callers to Toast or ToastSlot.
-   */
-  anchor?: "viewport" | "container";
   "aria-label"?: string;
 }
 
 /**
  * A corner notice with tone, optional action, progress and dismiss. Expires after
- * `durationMs` unless it is `null`. A viewport notice is a Toast in its corner stack.
+ * `durationMs` unless it is `null`. It is a Toast in its corner stack.
  * @group feedback
- * @use Existing corner notices only; the viewport form is Toast and `anchor="container"` is deprecated.
- * @avoid New background feedback: Toast or useToast. `anchor="container"`: Toast or ToastSlot. Inline result near a control: InlineMessage. Persistent page notice: Alert.
+ * @use Existing corner notices only; new ones use Toast.
+ * @avoid New background feedback: Toast or useToast. Inline result near a control: InlineMessage. Persistent page notice: Alert.
  */
-export function TransientNotice({
-  placement = "bottom-end",
-  anchor = "viewport",
-  ...props
-}: TransientNoticeProps) {
-  if (anchor === "viewport") return <Toast placement={placement} {...props} />;
-  const inset = 12;
-  const position = placement === "top-end" ? { insetBlockStart: inset } : { insetBlockEnd: inset };
-  return <ToastCard {...props} style={position} position="absolute" className="end-3" />;
+export function TransientNotice({ placement = "bottom-end", ...props }: TransientNoticeProps) {
+  return <Toast placement={placement} {...props} />;
 }

@@ -10,6 +10,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { Meter, type MeterTone } from "../../../shared/ui/Meter";
 import { Timestamp } from "../../../shared/ui/Timestamp";
+import { StatusText } from "../../../shared/ui/StatusText";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { ExternalLink, MessageSquare } from "../../../shared/ui/icons";
 import {
@@ -290,13 +291,16 @@ function ManagedSessionRow({
       </div>
       <div className={sessionStyles.jobStatus}>
         <AssistantManagedBadge management={current?.session.managedBy} compact />
-        <Badge
-          size="sm"
-          tone={status === "interrupted" ? "warning" : status === "running" ? "info" : "neutral"}
+        <StatusText
+          tone={status === "interrupted" ? "needs-you" : status === "running" ? "running" : "idle"}
+          icon={
+            status === "running" ? (
+              <WorkingIndicator className={sessionStyles.indicator} />
+            ) : undefined
+          }
         >
-          {status === "running" && <WorkingIndicator className={sessionStyles.indicator} />}
           {statusLabel}
-        </Badge>
+        </StatusText>
       </div>
       {onOpenSession && (
         <InlineAction

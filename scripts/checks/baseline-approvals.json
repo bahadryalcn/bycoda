@@ -244,6 +244,34 @@
       "from": 0,
       "to": 13,
       "reason": "New single-door rule records existing direct Arc and native-popup internal imports outside shared wrappers."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "hand-rolled-disclosure",
+      "from": 0,
+      "to": 58,
+      "reason": "new rule (owner 2026-11-15 one component system)"
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "motion-literal",
+      "from": 0,
+      "to": 7,
+      "reason": "new rule (owner 2026-11-15 one component system)"
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "radius-size",
+      "from": 0,
+      "to": 11,
+      "reason": "new rule (owner 2026-11-15 one component system)"
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "raw-native-control",
+      "from": 0,
+      "to": 1,
+      "reason": "new rule (owner 2026-11-15 one component system)"
     }
   ]
 }

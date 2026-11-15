@@ -268,7 +268,10 @@ test("catalog tokens become raw-tag and raw-role rules in app scope only", () =>
   assert.deepEqual(catalogRulesOf("src/shared/ui/F.tsx", tsx), []);
   assert.match(rules["raw-details"], /use Disclosure/);
   assert.match(rules["raw-role-switch"], /use Switch/);
-  assert.deepEqual(catalogRulesOf("src/features/demo/F.tsx", tsx, []), ["raw-native-control"]);
+  assert.deepEqual(catalogRulesOf("src/features/demo/F.tsx", tsx, []), [
+    "raw-native-control",
+    "raw-native-control",
+  ]);
 });
 
 test("deprecated catalog exports flag named imports from their shared/ui module", () => {
@@ -491,4 +494,85 @@ test("hand-written loading and native tooltips name shared replacements", () => 
     );
   assert.match(rules["loading-motion"], /Spinner.*Skeleton/);
   assert.match(rules["raw-native-control"], /ProgressBar.*SegmentedControl/);
+});
+
+test("feedback-action-slot flags JSX in notice action slots, not structured objects", () => {
+  const file = "src/features/demo/View.tsx";
+  for (const text of [
+    "<Alert action={<Button>Retry</Button>} />",
+    '<InlineMessage actions={[<Button key="a">A</Button>]} />',
+    "<EmptyState action={cond ? <Button>Go</Button> : null} />",
+    "<Toast action={<Link>More</Link>} />",
+  ])
+    assert.ok(rulesOf(file, text).includes("feedback-action-slot"), text);
+  for (const text of [
+    "<Alert action={{ label: t('Retry'), onClick: retry }} />",
+    "<FailureState extra={<Button>Retry</Button>} />",
+    "<SectionHeader action={<Button>Add</Button>} />",
+  ])
+    assert.ok(!rulesOf(file, text).includes("feedback-action-slot"), text);
+  assert.ok(!rulesOf("src/shared/ui/View.tsx", "<Alert action={<Button />} />").length);
+});
+
+test("native-message-dialog flags Tauri message dialogs and window.alert outside the allowlist", () => {
+  const file = "src/features/demo/model.ts";
+  for (const text of [
+    'import { message } from "@tauri-apps/plugin-dialog";',
+    'import { open, ask as askUser } from "@tauri-apps/plugin-dialog";',
+    "window.alert(text);",
+  ])
+    assert.ok(rulesOf(file, text).includes("native-message-dialog"), text);
+  assert.ok(
+    !rulesOf(file, 'import { open, save } from "@tauri-apps/plugin-dialog";').includes(
+      "native-message-dialog",
+    ),
+  );
+  for (const allowed of [
+    "src/app/model/updater.ts",
+    "src/app/model/appLifecycle.ts",
+    "src/features/files/model/editorClose.ts",
+  ])
+    assert.ok(
+      !rulesOf(allowed, 'import { ask } from "@tauri-apps/plugin-dialog";').includes(
+        "native-message-dialog",
+      ),
+      allowed,
+    );
+});
+
+test("hand-rolled-disclosure flags aria-expanded elements that wrap a Chevron", () => {
+  const file = "src/features/demo/View.tsx";
+  for (const text of [
+    "<button aria-expanded={open} onClick={toggle}><ChevronRight /></button>",
+    '<Button aria-expanded={open}><span>Title</span><ChevronDown className="x" /></Button>',
+    "<div aria-expanded={open}><Row><ChevronDown /></Row></div>",
+  ])
+    assert.ok(rulesOf(file, text).includes("hand-rolled-disclosure"), text);
+  for (const text of [
+    "<button aria-expanded={open}>Menu</button><ChevronDown />",
+    "<Button aria-expanded={open} />",
+    "<div><ChevronDown /></div>",
+  ])
+    assert.ok(!rulesOf(file, text).includes("hand-rolled-disclosure"), text);
+});
+
+test("raw-native-control also flags switch, option and menuitem roles on raw elements", () => {
+  for (const role of ["switch", "option", "menuitem"]) {
+    assert.ok(
+      rulesOf("src/features/demo/View.tsx", `<div role="${role}" />`).includes(
+        "raw-native-control",
+      ),
+      role,
+    );
+    assert.ok(!rulesOf("src/shared/ui/View.tsx", `<div role="${role}" />`).length);
+    assert.ok(!rulesOf("src/features/demo/View.tsx", `<Row role="${role}" />`).length);
+  }
+});
+
+test("px and motion literal rules also cover Arc CSS modules", () => {
+  const file = "src/shared/ui/arc/demo/demo.module.css";
+  const css =
+    ".a { font-size: 12px; border-radius: 6px; transition: opacity 120ms ease; z-index: 99; color: var(--missing); }";
+  assert.deepEqual(rulesOf(file, css).sort(), ["motion-literal", "radius-size", "typography"]);
+  assert.deepEqual(rulesOf(file, ".a { transition: opacity var(--motion-duration-fast); }"), []);
 });

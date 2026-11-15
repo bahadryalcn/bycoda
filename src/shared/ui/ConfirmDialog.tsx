@@ -377,7 +377,7 @@ export function ConfirmDialog({
           </div>
         ) : null}
         {error ? (
-          <Alert tone="danger" role="alert" className="break-words">
+          <Alert tone="danger" className="break-words">
             {error}
           </Alert>
         ) : null}

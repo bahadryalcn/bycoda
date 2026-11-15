@@ -89,6 +89,7 @@ export function AlwaysOnChecklist({
     <Row
       key={item.id}
       label={item.label}
+      descriptionVisible
       description={
         item.state !== "done"
           ? item.target && !onOpen

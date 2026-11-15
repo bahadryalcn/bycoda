@@ -41,12 +41,12 @@ function StoredData({ summary }: { summary: DataSummary }) {
   const activity = summary.activity;
   return (
     <>
-      <Row label={t("Profile")} description={kept(summary.retention.profile)}>
+      <Row label={t("Profile")} descriptionVisible description={kept(summary.retention.profile)}>
         <Text size="body" tone="muted">
           {t("Name, e-mail, since {p0}", { p0: day(summary.profile.createdAt) })}
         </Text>
       </Row>
-      <Row label={t("Devices")} description={kept(summary.retention.devices)}>
+      <Row label={t("Devices")} descriptionVisible description={kept(summary.retention.devices)}>
         <Text size="body" tone="muted">
           {t("{p0} active, {p1} signed out", {
             p0: summary.devices.active,
@@ -54,7 +54,11 @@ function StoredData({ summary }: { summary: DataSummary }) {
           })}
         </Text>
       </Row>
-      <Row label={t("Active time")} description={kept(summary.retention.activity)}>
+      <Row
+        label={t("Active time")}
+        descriptionVisible
+        description={kept(summary.retention.activity)}
+      >
         <Text size="body" tone="muted">
           {activity.days
             ? t("{p0}, {p1} in total", {
@@ -64,12 +68,20 @@ function StoredData({ summary }: { summary: DataSummary }) {
             : t("Nothing yet")}
         </Text>
       </Row>
-      <Row label={t("Notifications")} description={kept(summary.retention.notifications)}>
+      <Row
+        label={t("Notifications")}
+        descriptionVisible
+        description={kept(summary.retention.notifications)}
+      >
         <Text size="body" tone="muted">
           {t("{p0} in your feed", { p0: summary.notifications.feedItems })}
         </Text>
       </Row>
-      <Row label={t("Support requests")} description={kept(summary.retention.support)}>
+      <Row
+        label={t("Support requests")}
+        descriptionVisible
+        description={kept(summary.retention.support)}
+      >
         <Text size="body" tone="muted">
           {summary.support.tickets}
         </Text>
@@ -96,6 +108,7 @@ function DataExportRow() {
   return (
     <Row
       label={t("Export your data")}
+      descriptionVisible
       description={
         status === "pending"
           ? t("Preparing your export…")

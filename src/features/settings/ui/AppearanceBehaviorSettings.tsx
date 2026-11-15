@@ -136,7 +136,6 @@ export function CrewSettings() {
           disabled={!crewSceneEnabled}
           disabledReason={t("Turn on the agent crew first")}
           label={t("Crew theme")}
-          descriptionVisible={false}
           description={
             crewTheme === "star-wars"
               ? t(
@@ -170,7 +169,6 @@ export function CrewSettings() {
           disabled={!crewSceneEnabled}
           disabledReason={t("Turn on the agent crew first")}
           label={growthLabel}
-          descriptionVisible={false}
           description={
             characterTheme
               ? t(

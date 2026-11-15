@@ -140,7 +140,7 @@ Parts: ModalPanel, NativePopupHost, Portal
 | [Toast](../../src/shared/ui/ToastRegion.tsx) | Background or nonblocking event owned by a component: result, undo, retry, progress. | Save feedback next to its control: InlineMessage. Page or panel notice: Alert. Code with no component: useToast. A feature's own card: ToastSlot. |  |
 | [ToastRegion](../../src/shared/ui/ToastRegion.tsx) | Mount once per window to render the imperative `toast` queue and set corner insets. | Mounting a second region or a second toast layer. Component-owned messages: Toast. |  |
 | [ToastSlot](../../src/shared/ui/ToastRegion.tsx) | Put a feature's own card (reminder panel, approval request) in the shared toast corner. | Plain messages: Toast or useToast. Never position a notice with fixed and an offset. |  |
-| [TransientNotice](../../src/shared/ui/TransientNotice.tsx) | Existing corner notices only; the viewport form is Toast and `anchor="container"` is deprecated. | New background feedback: Toast or useToast. `anchor="container"`: Toast or ToastSlot. Inline result near a control: InlineMessage. Persistent page notice: Alert. |  |
+| [TransientNotice](../../src/shared/ui/TransientNotice.tsx) | Existing corner notices only; new ones use Toast. | New background feedback: Toast or useToast. Inline result near a control: InlineMessage. Persistent page notice: Alert. |  |
 | [WorkingIndicator](../../src/shared/ui/WorkingIndicator.tsx) | Compact "agent is working" signal beside a session, row or status line. | Generic loading or a pending button: Spinner. Measurable progress: Progress. Unknown pane load: SurfaceLoading. |  |
 
 Parts: NoticeButton, NoticeGlyph, NoticeLink, NoticeSlot, ToastCard, ToastCard

@@ -42,7 +42,7 @@ export type GroupLockControls = {
     id?: string;
     title: ReactNode;
     description?: string;
-    /** `false` moves a long description into an information popover beside the title. */
+    /** `true` shows the description as a subline; by default it sits behind the info button. */
     descriptionVisible?: boolean;
     action?: ReactNode;
     scope?: ReactNode;
@@ -54,6 +54,8 @@ export type GroupLockControls = {
     id?: string;
     label: ReactNode;
     description?: string;
+    /** Shows the description as a subline instead of behind the info button. */
+    descriptionVisible?: boolean;
     /** Local save result shown with the row. */
     feedback?: ReactNode;
     children?: ReactNode;
@@ -187,6 +189,7 @@ export function GroupLockSettings({
             {/* The only destructive action of the group; it keeps its password confirmation. */}
             <Row
               label={t("Remove protection")}
+              descriptionVisible
               description={t("Removes the password and all group locks.")}
             >
               <Button

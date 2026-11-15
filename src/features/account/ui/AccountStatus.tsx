@@ -83,6 +83,7 @@ export function AccountStatus({
         {deactivated ? (
           <Row
             label={t("Deactivated")}
+            descriptionVisible
             description={t("Devices are signed out and nothing syncs until you reactivate.")}
           >
             <Button variant="primary" size="sm" loading={busy} onClick={() => run(onReactivate)}>
@@ -93,6 +94,7 @@ export function AccountStatus({
           <>
             <Row
               label={t("Deactivate account")}
+              descriptionVisible
               description={t(
                 "Keeps your data, signs all your devices out and silences notifications. You can reactivate any time.",
               )}
@@ -125,6 +127,7 @@ export function AccountStatus({
         {deletion ? (
           <Row
             label={t("Deletion scheduled")}
+            descriptionVisible
             description={t("Your account will be deleted on {p0}.", {
               p0: longDate(deletion.purgeAfter),
             })}
@@ -141,6 +144,7 @@ export function AccountStatus({
         ) : (
           <Row
             label={t("You have {p0} days to change your mind.", { p0: DELETION_GRACE_DAYS })}
+            descriptionVisible
             description={t("Removes everything bycoda stores about you after a grace period.")}
           >
             <Button

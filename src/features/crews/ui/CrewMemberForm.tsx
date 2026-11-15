@@ -8,7 +8,7 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import type { CrewAgent, CrewPolicy, CrewRole } from "../model/crew";
 import type { MemberAvatarTraits } from "../model/memberAvatarTraits";
@@ -231,19 +231,14 @@ export function CrewMemberForm({
         modelError={modelError}
       />
       {advancedExtra ? (
-        <div className="flex flex-col gap-2 pt-1">
-          <Button
-            variant="ghost"
-            motion="none"
-            aria-expanded={advanced}
-            startIcon={advanced ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
-            onClick={() => setAdvanced((value) => !value)}
-            className="self-start"
-          >
-            {t("More options")}
-          </Button>
-          {advanced ? advancedExtra : null}
-        </div>
+        <Disclosure
+          summary={t("More options")}
+          open={advanced}
+          onOpenChange={setAdvanced}
+          className="pt-1"
+        >
+          <div className="flex flex-col gap-2">{advanced ? advancedExtra : null}</div>
+        </Disclosure>
       ) : null}
     </div>
   );

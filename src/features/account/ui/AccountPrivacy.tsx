@@ -19,6 +19,7 @@ export function AccountPrivacy() {
     >
       <Row
         label={t("Share anonymous usage statistics")}
+        descriptionVisible
         description={t(
           "Once a day bycoda sends the app version and operating system with a random install id. Never your sessions, prompts, code or file names. Off by default.",
         )}

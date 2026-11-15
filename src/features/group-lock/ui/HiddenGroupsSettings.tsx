@@ -74,7 +74,6 @@ export function HiddenGroupsSettings({
     <Group
       id="hidden-project-groups"
       title={t("Hidden groups")}
-      descriptionVisible={false}
       description={t(
         "Right-click a project group and choose Hide group to hide it on this device. Temporary visibility ends on restart. Make visible restores the group permanently.",
       )}

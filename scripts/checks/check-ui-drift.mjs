@@ -102,6 +102,12 @@ export const rules = {
     "named import of a shared/ui export whose catalog status is deprecated (use its @instead)",
   "modal-padded-child":
     '<Modal>/<Sheet> without padding="none" or scroll="none" whose first child adds its own padding (the body already pads; drop the child padding or set padding="none")',
+  "feedback-action-slot":
+    "JSX element or Button passed to action/actions of Alert, InlineMessage, InlineError, Toast, EmptyState or FailureState (pass a structured { label, onClick } object; `extra` is the escape)",
+  "native-message-dialog":
+    "message()/ask()/confirm() from @tauri-apps/plugin-dialog or window.alert() in feature/app code (use ConfirmDialog, Alert or Toast; allowlist: updater install/restart failures, app lifecycle, editor close)",
+  "hand-rolled-disclosure":
+    "element with aria-expanded wrapping a Chevron icon (use Disclosure from src/shared/ui)",
   // Appearance ownership: feature code places things, shared components decide how they look.
   ...appearanceRules,
 };
@@ -191,6 +197,8 @@ export function scopeOf(file) {
   if (isTestPath(file)) return null;
   if (!/\.(?:tsx?|css)$/.test(file)) return null;
   if (/^src\/(?:app|features)\//.test(file)) return "app";
+  // Arc CSS modules answer the px and motion literal rules only.
+  if (/^src\/shared\/ui\/arc\/.*\.css$/.test(file)) return "arc-css";
   if (file === "src/styles/index.css" || file === "src/styles/bycoda.css") return "styles";
   if (file.startsWith("src/") && file !== "src/shared/ui/icons.tsx" && /\.tsx?$/.test(file))
     return "imports";
@@ -480,6 +488,46 @@ const varUse = /var\(\s*(--[\w-]+)(?![\w-]|\$\{)/g;
 const twVarUse = /-\((?:[a-z-]+:)?(--[\w-]+)\)/g;
 const iconSizeClass = tw(String.raw`size-(?:3|3\.5|4|5)` + end, "");
 
+/** Files that may still use the OS message dialog (installer/lifecycle prompts outside the webview). */
+export const nativeDialogAllowlist = new Set([
+  "src/app/model/updater.ts",
+  "src/app/model/appLifecycle.ts",
+  "src/features/files/model/editorClose.ts",
+]);
+
+/** True when the action=/actions= prop of a tag span holds JSX (an element, not a structured object). */
+export function hasJsxInActionSlot(span) {
+  for (const match of span.matchAll(/\sactions?=\{/g)) {
+    let depth = 1;
+    let index = match.index + match[0].length;
+    const begin = index;
+    for (; index < span.length && depth > 0; index++) {
+      if (span[index] === "{") depth++;
+      else if (span[index] === "}") depth--;
+    }
+    if (/<[A-Z]/.test(span.slice(begin, index))) return true;
+  }
+  return false;
+}
+
+/** Source of an element from its opening tag through its matching closing tag. */
+export function subtreeOf(source, tag) {
+  if (tag.span.endsWith("/>")) return tag.span;
+  const pattern = new RegExp(
+    String.raw`<(/?)${tag.name.replace(".", String.raw`\.`)}(?=[\s>/])`,
+    "g",
+  );
+  pattern.lastIndex = tag.end + 1;
+  let depth = 1;
+  for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
+    if (match[1]) depth--;
+    else if (!source.slice(match.index, source.indexOf(">", match.index) + 1).endsWith("/>"))
+      depth++;
+    if (depth === 0) return source.slice(tag.start, match.index);
+  }
+  return source.slice(tag.start);
+}
+
 /**
  * True when `previous` (the line above a finding) carries `ui-drift-ignore: <rule>[, <rule>] -- <why>`.
  * Bespoke product surfaces (chat composer, transcript, scene previews) use it with a reason.
@@ -566,8 +614,18 @@ export function scanFile(file, text, definitions) {
     for (const declaration of cssDeclarations(text)) {
       const { property, value, valueOffset, selectors } = declaration;
       const arc = underArc(selectors);
-      for (const match of value.matchAll(varUse))
-        checkVar(match[1], valueOffset + match.index, arc);
+      if (scope === "arc-css") {
+        // Arc modules own their layout; only literal type/radius px and motion are tracked.
+        if (property === "font-size" && /\d(?:\.\d+)?px/.test(value))
+          add("typography", valueOffset);
+        if (
+          /^border(?:-[a-z]+)*-radius$/.test(property) &&
+          /(?<![\w.])[1-9]\d*(?:\.\d+)?px/.test(value)
+        )
+          add("radius-size", valueOffset);
+      } else
+        for (const match of value.matchAll(varUse))
+          checkVar(match[1], valueOffset + match.index, arc);
       if (scope === "app") {
         if (property === "font-size" && /\d(?:\.\d+)?px/.test(value))
           add("typography", valueOffset);
@@ -588,7 +646,8 @@ export function scanFile(file, text, definitions) {
         if (property === "outline" && /^\s*none\b/.test(value))
           add("focus-outline-removed", valueOffset);
       }
-      if (property === "z-index" && Number.parseInt(value, 10) > 10) add("layer", valueOffset);
+      if (scope !== "arc-css" && property === "z-index" && Number.parseInt(value, 10) > 10)
+        add("layer", valueOffset);
       // Reduced-motion overrides (0ms/1ms) are the accessible fallback, not drift.
       if (
         !isTokenBlock(selectors) &&
@@ -711,12 +770,12 @@ export function scanFile(file, text, definitions) {
       add("native-title", tag.start + title + 1);
     if (/^[a-z]/.test(tag.name)) {
       const role =
-        /\srole\s*=\s*\{?\s*["'](listbox|menu|dialog|tooltip|progressbar|tablist|tab)["']/.exec(
+        /\srole\s*=\s*\{?\s*["'](listbox|menu|dialog|tooltip|progressbar|tablist|tab|switch|option|menuitem)["']/.exec(
           tag.span,
         )?.[1];
       if (role && !catalog?.roles.has(role))
         add(
-          ["progressbar", "tablist", "tab"].includes(role)
+          ["progressbar", "tablist", "tab", "switch", "option", "menuitem"].includes(role)
             ? "raw-native-control"
             : "portal-outside-shared",
           tag.start,
@@ -731,6 +790,13 @@ export function scanFile(file, text, definitions) {
       add("role-alert-container", tag.start);
     if (["button", "input", "select", "textarea"].includes(tag.name))
       add("raw-native-control", tag.start);
+    if (
+      /^(?:Alert|InlineMessage|InlineError|Toast|EmptyState|FailureState)$/.test(tag.name) &&
+      hasJsxInActionSlot(tag.span)
+    )
+      add("feedback-action-slot", tag.start);
+    if (/\saria-expanded\b/.test(attributes) && /Chevron/.test(subtreeOf(source, tag)))
+      add("hand-rolled-disclosure", tag.start);
     if (tag.name === "a" && /\shref=/.test(attributes)) add("raw-anchor", tag.start);
     if (/\starget=\{?["']_blank["']/.test(attributes)) add("target-blank", tag.start);
     if (
@@ -759,6 +825,21 @@ export function scanFile(file, text, definitions) {
       add("popover-menu", tag.start);
     if (sizedControls.has(tag.name) && controlSizeClass.test(classNameText(tag.span)))
       add("fixed-control-size", tag.start);
+  }
+  if (!nativeDialogAllowlist.has(file)) {
+    for (const imported of source.matchAll(
+      /import\s*\{([^}]+)\}\s*from\s*["']@tauri-apps\/plugin-dialog["']/g,
+    ))
+      for (const part of imported[1].split(",")) {
+        const name = part
+          .trim()
+          .replace(/^type\s+/, "")
+          .split(/\s+as\s+/)[0];
+        if (["message", "ask", "confirm"].includes(name))
+          add("native-message-dialog", imported.index);
+      }
+    for (const match of source.matchAll(/\bwindow\.alert\s*\(/g))
+      add("native-message-dialog", match.index);
   }
   for (const match of source.matchAll(jsxProse)) {
     // Text inside code samples and keyboard hints is literal by design.

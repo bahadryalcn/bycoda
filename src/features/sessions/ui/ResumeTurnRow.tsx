@@ -1,9 +1,8 @@
 import { Text } from "../../../shared/ui/Text";
-import { memo, useState } from "react";
+import { memo } from "react";
 import { useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { Button } from "../../../shared/ui/Button";
-import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
+import { Disclosure } from "../../../shared/ui/Disclosure";
 import type { ResumePromptKind } from "../model/resumePrompt";
 import type { Block } from "../model/session";
 
@@ -21,33 +20,30 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
   embedded?: boolean;
 }) {
   const t = useT();
-  const [expanded, setExpanded] = useState(false);
   const summary =
     kind === "restart"
       ? t("{p0} restarted and resumed this turn", {
           p0: PRODUCT_IDENTITY.displayName,
         })
       : t("Resumed this turn");
-  const Chevron = expanded ? ChevronDown : ChevronRight;
   return (
     <div
       data-prompt-anchor={block.id}
       data-resume-turn
       className={`${embedded ? "" : "px-4"} pbs-1.5 pbe-3 font-sans`}
     >
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-expanded={expanded}
+      <Disclosure
+        variant="step"
+        chevron="end"
+        tone="secondary"
+        summary={
+          <>
+            <img src={PRODUCT_IDENTITY.smallLogoSrc} alt="" className="icon-sm shrink-0" />
+            {summary}
+          </>
+        }
         className="max-w-full"
-        textTone="secondary"
-        startIcon={<img src={PRODUCT_IDENTITY.smallLogoSrc} alt="" className="icon-sm shrink-0" />}
-        endIcon={<Chevron className="icon-sm" aria-hidden />}
-        onClick={() => setExpanded((open) => !open)}
       >
-        {summary}
-      </Button>
-      {expanded ? (
         <Text
           as="p"
           size="caption"
@@ -56,7 +52,7 @@ export const ResumeTurnRow = memo(function ResumeTurnRow({
         >
           {block.text}
         </Text>
-      ) : null}
+      </Disclosure>
     </div>
   );
 });

@@ -36,7 +36,6 @@ export function VoiceCompanionSettings({
         id="voice-persona"
         label={assistantName ?? voicePersonaSummary(persona)}
         description={t("Name, how it addresses you, tone, tasks and ground rules.")}
-        descriptionVisible={false}
       >
         <Button
           startIcon={<Settings className="icon-sm" />}
@@ -52,8 +51,8 @@ export function VoiceCompanionSettings({
       <Row
         id="voice-memory"
         label={t("Memory")}
+        descriptionVisible
         description={t("Keeps short notes about you between conversations on this device.")}
-        descriptionVisible={false}
       >
         <Button onClick={() => openAssistant("memory")}>
           {t("Manage ({p0})", {

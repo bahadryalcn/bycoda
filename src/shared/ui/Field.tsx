@@ -1,6 +1,7 @@
 import { useId } from "react";
 import type { ComponentPropsWithRef, ReactNode } from "react";
 import { fieldDescribedBy, fieldMessageIds } from "./arc/lib/field-ids";
+import { FieldMessage } from "./arc/lib/field-message";
 import { FieldDescription, FieldLabelRow } from "./arc/lib/field-description";
 import { optionalTextAttributes, type TextRoles } from "./Text";
 import styles from "./Field.module.css";
@@ -77,11 +78,7 @@ export function Field({
         </FieldLabelRow>
       )}
       {typeof children === "function" ? children(control) : children}
-      {error ? (
-        <span id={ids.error} className={styles.error} role="alert">
-          {error}
-        </span>
-      ) : null}
+      <FieldMessage id={ids.error} text={error} className={styles.error} alert />
       {description ? (
         <FieldDescription
           id={ids.description}
