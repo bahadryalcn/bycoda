@@ -393,7 +393,8 @@ describe("provider switch context and failed retirement recovery", () => {
     expect(grokSend.input.text).toContain("CODEX-RESULT");
     expect(grokSend.input.text).toContain("/isolated/handoff-history-2.json");
     expect(grokSend.input.text.split(grokRequest)).toHaveLength(2);
-    expect(grokSend.input.providerAccountId).toBeUndefined();
+    // Grok Build is a profile provider: a switch resolves its default account.
+    expect(grokSend.input.providerAccountId).toBe("default");
     assertFullArchive(archives[1]);
     expect(archives[1].messages).toContainEqual(
       expect.objectContaining({ role: "user", text: codexRequest }),
