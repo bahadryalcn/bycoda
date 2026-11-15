@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { invokeHostRequest } from "./tracedInvoke";
+import { withAccountTunnelRecovery } from "./accountTunnelRecovery";
 import {
   assertDesktopControlReceipts,
   requiresDesktopControlReceipts,
@@ -405,15 +406,17 @@ export function remoteRequest<T>(
         )
       : new Error(SUPERSEDED_CONNECTION);
   const send = () =>
-    invokeHostRequest<T>(method, {
-      machineId,
-      method,
-      params,
-      ...(syncCycleId ? { syncCycleId } : {}),
-      ...(expectedEnvironment ? { expectedEnvironmentId: expectedEnvironment } : {}),
-      ...(fresh ? { fresh } : {}),
-      ...(mayStartTunnel(machineId, fresh, userInitiated) ? {} : { allowConnect: false }),
-    }).then(
+    withAccountTunnelRecovery(method, machine, current, () =>
+      invokeHostRequest<T>(method, {
+        machineId,
+        method,
+        params,
+        ...(syncCycleId ? { syncCycleId } : {}),
+        ...(expectedEnvironment ? { expectedEnvironmentId: expectedEnvironment } : {}),
+        ...(fresh ? { fresh } : {}),
+        ...(mayStartTunnel(machineId, fresh, userInitiated) ? {} : { allowConnect: false }),
+      }),
+    ).then(
       (result) => {
         if (!current()) {
           // A receipt the host returned is the outcome, whatever happened to the

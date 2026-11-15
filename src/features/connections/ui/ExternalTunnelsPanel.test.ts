@@ -61,6 +61,7 @@ const info = {
   publicUrl: "https://owned.trycloudflare.com",
 };
 const overview = (machine = local): TunnelOverview => ({
+  automaticHostAccess: false,
   environmentId: machine.environmentId,
   hostLocalUrl: machine === local ? "http://127.0.0.1:3776" : "http://127.0.0.1:3777",
   publicReachability: "unverified",
@@ -78,16 +79,22 @@ beforeEach(async () => {
   current = overview();
   vi.mocked(remoteRequest).mockReset();
   vi.mocked(copyText).mockClear();
-  vi.mocked(remoteRequest).mockImplementation(async (machineId, method) => {
+  vi.mocked(remoteRequest).mockImplementation(async (machineId, method, params) => {
     if (method === "tunnels.status") return machineId === "local" ? current : overview(remote);
     if (method === "tunnels.stop") {
       current = {
         ...current,
+        automaticHostAccess: false,
         tunnels: [{ ...info, state: "stopped", canStop: false, publicUrl: undefined }],
       };
       return {};
     }
-    if (method === "tunnels.start" || method === "tunnels.credential") return {};
+    if (method === "tunnels.start") {
+      if ((params as { automatic?: boolean }).automatic)
+        current = { ...current, automaticHostAccess: true };
+      return {};
+    }
+    if (method === "tunnels.credential") return {};
     if (method === "mobile.pairing.create")
       return {
         pairingId: "pairing-id",
@@ -146,6 +153,50 @@ async function choose(label: string, value: string) {
   if (!option) throw new Error(`Missing option ${value}`);
   await act(async () => option.click());
 }
+
+it("defaults automatic Host access off and saves both switch changes to the selected Host", async () => {
+  await render();
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+  await choose("Tunnel target", "host");
+  const toggle = container.querySelector<HTMLButtonElement>('[role="switch"]')!;
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  await act(async () => toggle.click());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local",
+    "tunnels.start",
+    {
+      provider: "cloudflare",
+      target: "host",
+      automatic: true,
+    },
+    false,
+    true,
+  );
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  await act(async () => toggle.click());
+  expect(remoteRequest).toHaveBeenCalledWith(
+    "local",
+    "tunnels.stop",
+    { automatic: true },
+    false,
+    true,
+  );
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+});
+
+it("hides automatic access for an older Host that cannot persist the setting", async () => {
+  delete current.automaticHostAccess;
+  await render();
+  await choose("Tunnel target", "host");
+  expect(container.querySelector('[role="switch"]')).toBeNull();
+  expect(remoteRequest).not.toHaveBeenCalledWith(
+    "local",
+    "tunnels.start",
+    expect.anything(),
+    false,
+    true,
+  );
+});
 
 it("keeps a rejected token for retry and clears it only after acknowledged save", async () => {
   let reject = true;
@@ -269,8 +320,8 @@ it("shows missing dependencies and locked credentials and never renders secret d
   current.providers[0].installed = false;
   current.providers[1].credential = "unavailable";
   await render();
-  expect(container.textContent).toContain("Install cloudflared on This computer");
-  expect(button("Start tunnel").disabled).toBe(true);
+  expect(container.textContent).not.toContain("Install cloudflared on This computer");
+  expect(button("Start tunnel").disabled).toBe(false);
   await choose("Tunnel provider", "ngrok");
   expect(container.textContent).toContain("secure credential store is unavailable");
   expect(container.querySelector('input[type="password"]')).not.toBeNull();

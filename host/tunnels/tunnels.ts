@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { writeFileAtomic } from "../storage/atomic-write";
+import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
+import { installCloudflared } from "./cloudflared-install";
 import { renameWithRetry } from "../storage/rename-retry";
 import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -28,6 +29,7 @@ import {
 type Dependencies = {
   credentials: SocialCredentialStore;
   executable: (provider: TunnelProvider) => Promise<string | undefined>;
+  install: () => Promise<string>;
   probe: (url: string) => Promise<boolean>;
   launch: (command: TunnelCommand, emit: (event: TunnelEvent) => void) => OwnedTunnelProcess;
 };
@@ -116,6 +118,8 @@ export class ExternalTunnels {
   private initialized = false;
   private closing = false;
   private repair?: TunnelRepair;
+  private automaticHostAccess = false;
+  private automaticTimer?: ReturnType<typeof setTimeout>;
   private readonly dependencies: Dependencies;
 
   constructor(
@@ -127,6 +131,7 @@ export class ExternalTunnels {
     this.dependencies = {
       credentials: tunnelCredentials(join(directory, "credentials"), environmentId),
       executable: tunnelExecutable,
+      install: () => installCloudflared(join(directory, "bin")),
       probe: probeTunnelOrigin,
       launch: startTunnelGuardian,
       ...dependencies,
@@ -144,6 +149,14 @@ export class ExternalTunnels {
       try {
         await mkdir(this.directory, { recursive: true, mode: 0o700 });
         await this.load();
+        const setting = await readStateFile(join(this.directory, "automatic.json"), (text) => {
+          const value = JSON.parse(text);
+          if (value.environmentId !== this.environmentId || typeof value.enabled !== "boolean")
+            throw new Error("Invalid automatic tunnel setting");
+          return value.enabled as boolean;
+        });
+        if (setting.status === "corrupt") throw new Error("Invalid automatic tunnel setting");
+        this.automaticHostAccess = setting.value ?? false;
       } catch {
         throw new TunnelError("storage-unavailable");
       }
@@ -155,6 +168,60 @@ export class ExternalTunnels {
       this.initialization = undefined;
       throw error;
     }
+  }
+
+  /** Startup restores intent only, never a persisted process handle or URL. */
+  async boot(): Promise<void> {
+    await this.serialized(() => this.initialize());
+    this.scheduleAutomatic(0);
+  }
+
+  private scheduleAutomatic(delay = 5_000): void {
+    clearTimeout(this.automaticTimer);
+    if (this.closing || !this.automaticHostAccess) return;
+    this.automaticTimer = setTimeout(() => {
+      void this.reconcileAutomatic()
+        .finally(() => this.scheduleAutomatic(5_000))
+        .catch(() => {});
+    }, delay);
+    this.automaticTimer.unref();
+  }
+
+  private async reconcileAutomatic(): Promise<void> {
+    if (this.closing || !this.automaticHostAccess) return;
+    // Unknown retirement retains ownership and blocks a replacement.
+    if (
+      this.records.some(
+        (record) =>
+          record.provider === "cloudflare" && record.target === "host" && this.owned.has(record.id),
+      )
+    )
+      return;
+    await this.start({ provider: "cloudflare", target: "host" });
+  }
+
+  private async setAutomatic(enabled: boolean): Promise<void> {
+    await writeFileAtomic(
+      join(this.directory, "automatic.json"),
+      JSON.stringify({
+        environmentId: this.environmentId,
+        enabled,
+      }),
+      { mode: 0o600 },
+    );
+    this.automaticHostAccess = enabled;
+    this.scheduleAutomatic();
+  }
+
+  /** Only a live, owned Host tunnel may be advertised. */
+  publicHostUrl(): string | undefined {
+    return this.records.find(
+      (record) =>
+        record.provider === "cloudflare" &&
+        record.target === "host" &&
+        record.state === "ready" &&
+        this.owned.has(record.id),
+    )?.publicUrl;
   }
 
   /** Only real I/O failures keep the control lane closed; damaged state is repaired here. */
@@ -286,6 +353,7 @@ export class ExternalTunnels {
         }),
       );
       return {
+        automaticHostAccess: this.automaticHostAccess,
         environmentId: this.environmentId,
         hostLocalUrl: tunnelLocalUrl(this.hostUrl()),
         providers,
@@ -325,6 +393,10 @@ export class ExternalTunnels {
         throw new TunnelError("invalid-target");
       const provider = input.provider as TunnelProvider;
       const target = input.target as TunnelStart["target"];
+      if (input.automatic !== undefined) {
+        if (input.automatic !== true || provider !== "cloudflare" || target !== "host")
+          throw new TunnelError("invalid-target");
+      }
       const host = tunnelLocalUrl(this.hostUrl());
       const localUrl = target === "host" ? host : tunnelLocalUrl(input.localUrl);
       if (
@@ -337,6 +409,7 @@ export class ExternalTunnels {
       const localPort = new URL(localUrl).port || (localUrl.startsWith("https:") ? "443" : "80");
       if (target === "dev-server" && localPort === hostPort)
         throw new TunnelError("host-target-required");
+      if (input.automatic === true) await this.setAutomatic(true);
       const existing = this.records.find(
         (record) =>
           this.owned.has(record.id) &&
@@ -369,6 +442,7 @@ export class ExternalTunnels {
       let program: string | undefined;
       try {
         program = await this.dependencies.executable(provider);
+        if (!program && provider === "cloudflare") program = await this.dependencies.install();
       } catch {
         return fail("cli-missing");
       }
@@ -462,8 +536,27 @@ export class ExternalTunnels {
   stop(input: Record<string, unknown>): Promise<ExternalTunnel> {
     return this.serialized(async () => {
       await this.initialize();
+      if (input.automatic === true) {
+        await this.setAutomatic(false);
+        const active = this.records.find(
+          (entry) =>
+            entry.provider === "cloudflare" && entry.target === "host" && this.owned.has(entry.id),
+        );
+        if (active) input = { ...input, id: active.id };
+        else
+          return {
+            id: "",
+            provider: "cloudflare",
+            target: "host",
+            localUrl: tunnelLocalUrl(this.hostUrl()),
+            state: "stopped",
+            startedAt: Date.now(),
+          };
+      }
       const record = this.records.find((entry) => entry.id === input.id);
       if (!record) throw new TunnelError("invalid-target");
+      if (record.provider === "cloudflare" && record.target === "host" && this.automaticHostAccess)
+        await this.setAutomatic(false);
       const child = this.owned.get(record.id);
       if (!child) return { ...record }; // Restarted records convey no authority to kill.
       record.state = "stopping";
@@ -486,6 +579,7 @@ export class ExternalTunnels {
 
   close(): Promise<void> {
     this.closing = true;
+    clearTimeout(this.automaticTimer);
     return this.serialized(async () => {
       for (const [id, child] of this.owned) {
         const record = this.records.find((entry) => entry.id === id)!;

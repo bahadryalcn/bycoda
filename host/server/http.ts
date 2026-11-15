@@ -213,6 +213,18 @@ export function createHttpRuntime(
         response.setHeader("Content-Type", "application/json");
         response.setHeader("Cache-Control", "no-store");
         response.setHeader("X-Content-Type-Options", "nosniff");
+        // Public, credential-free identity preflight for account-discovered routes.
+        // It discloses no device, account or workspace metadata and grants no access.
+        if (
+          request.method === "GET" &&
+          request.url === "/.well-known/bycoda-host" &&
+          !request.headers.origin
+        ) {
+          response
+            .writeHead(200)
+            .end(JSON.stringify({ environmentId: dependencies.engine.store.environmentId }));
+          return;
+        }
         let dispatchStarted: number | undefined;
         let dispatchMethod: unknown;
         let deviceEffectAdmitted = false;

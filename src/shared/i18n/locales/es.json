@@ -1,4 +1,6 @@
 {
+  "Access from outside the network (Cloudflare Quick Tunnel)": "Acceso desde fuera de la red (Cloudflare Quick Tunnel)",
+  "Free temporary URL. Restarts automatically and updates your account when it changes.": "URL temporal gratuita. Se reinicia automáticamente y actualiza tu cuenta cuando cambia.",
   "Screenshots need Screen Recording access. Review access to set it up, then try again.": "Las capturas necesitan acceso a la grabación de pantalla. Configura el acceso y vuelve a intentarlo.",
   "1. Ask for access": "1. Solicitar acceso",
   "2. Change the system setting": "2. Cambiar el ajuste del sistema",

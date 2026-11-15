@@ -58,6 +58,23 @@ A folder on a connected machine is a project in the rail, marked with a globe. E
 
 When a continued Codex conversation is archived in Codex, sending a follow-up asks the owning provider to restore that same thread before starting the turn. Opening history alone does not restore it. If restoration or identity verification fails, the follow-up fails rather than silently starting an empty thread. Check the owning machine and account before retrying.
 
+## Free access outside your network
+
+In **Settings → Connections → External tunnels**, enable **Access from outside
+the network (Cloudflare Quick Tunnel)** for the selected Host. It is off by default.
+No Cloudflare account, token or paid service is needed. bycoda uses an installed
+cloudflared or downloads a pinned, checksum-verified copy into its private data
+directory. The URL changes whenever the tunnel starts. The Host starts it again
+after restart or verified unexpected exit. Stopping the tunnel disables this setting.
+
+With account computer discovery enabled and the desktop signed in, URL changes
+are published within the next five-second check. Paired desktop clients re-fetch
+account routes during reconnect and verify the Host environment identity before
+sending their saved credential. Account listing permission remains required.
+Pairing and device permissions still apply. A headless Host does not run the
+desktop account publisher. Quick Tunnels have no uptime guarantee and do not
+support SSE; HTTP RPC remains the fallback transport.
+
 ## Create a Host conversation on this computer
 
 Windows Host packages include a native background launcher. Its per-user login

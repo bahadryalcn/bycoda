@@ -9,15 +9,27 @@ export type PhoneConnectHost = {
 };
 
 /** The Host is re-read this often; a change is published at the next check. */
-export const PHONE_CONNECT_CHECK_MS = 60_000;
+export const PHONE_CONNECT_CHECK_MS = 5_000;
 /** Unchanged info is re-sent this often so the directory entry stays fresh. */
 export const PHONE_CONNECT_HEARTBEAT_MS = 10 * 60_000;
 
 /** Route hints are display data for phones; entries the contract rejects are dropped, not sent. */
 export function buildConnectInfo(host: PhoneConnectHost): ConnectInfoUpdate | null {
-  const routes = (host.mobileRoutes ?? [])
-    .filter((route) => ConnectInfoUpdate.shape.routes.element.safeParse(route).success)
-    .slice(0, 4);
+  const unique = new Set<string>();
+  const candidates = (host.mobileRoutes ?? [])
+    .filter((route) => {
+      if (
+        !ConnectInfoUpdate.shape.routes.element.safeParse(route).success ||
+        unique.has(route.endpoint)
+      )
+        return false;
+      unique.add(route.endpoint);
+      return true;
+    })
+    .sort((left, right) => routePriority(left) - routePriority(right));
+  const tunnel = candidates.find((route) => routePriority(route) === 2);
+  const routes = candidates.filter((route) => routePriority(route) !== 2).slice(0, tunnel ? 3 : 4);
+  if (tunnel) routes.push(tunnel);
   const hostName = truncateGraphemes(host.name.trim(), 80, "");
   const parsed = ConnectInfoUpdate.safeParse({
     environmentId: host.environmentId,
@@ -25,6 +37,11 @@ export function buildConnectInfo(host: PhoneConnectHost): ConnectInfoUpdate | nu
     routes,
   });
   return parsed.success ? parsed.data : null;
+}
+
+function routePriority(route: { endpoint: string; lanKey?: string }): number {
+  if (route.lanKey) return 0;
+  return new URL(route.endpoint).hostname.endsWith(".trycloudflare.com") ? 2 : 1;
 }
 
 export type PhoneConnectPublisherDeps = {

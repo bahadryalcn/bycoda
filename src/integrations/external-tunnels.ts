@@ -18,7 +18,13 @@ export const TUNNEL_ISSUES = [
   "storage-unavailable",
 ] as const;
 export type TunnelIssue = (typeof TUNNEL_ISSUES)[number];
-export type TunnelStart = { provider: TunnelProvider; target: TunnelTarget; localUrl?: string };
+export type TunnelStart = {
+  provider: TunnelProvider;
+  target: TunnelTarget;
+  localUrl?: string;
+  /** Persist opt-in automatic Host access. Only Cloudflare + host accepts this. */
+  automatic?: boolean;
+};
 export type ExternalTunnel = {
   id: string;
   provider: TunnelProvider;
@@ -39,6 +45,7 @@ export type TunnelProviderStatus = {
 /** The Host quarantined damaged tunnel state and kept what it could salvage. */
 export type TunnelRepair = { repaired: true; dropped: number };
 export type TunnelOverview = {
+  automaticHostAccess?: boolean;
   environmentId: string;
   hostLocalUrl: string;
   providers: TunnelProviderStatus[];

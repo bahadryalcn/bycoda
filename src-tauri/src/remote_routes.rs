@@ -20,7 +20,7 @@ use crate::remote_ssh::{LaterRoute, SshTarget, Tunnel};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -60,6 +60,9 @@ impl Prefer {
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Entry {
+    /// HTTPS account routes are separate from SSH dial targets.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    account_endpoints: Vec<String>,
     /// What the Host last reported, so an unchanged report costs nothing.
     #[serde(default)]
     reported: Vec<String>,
@@ -79,6 +82,76 @@ struct Store {
 }
 
 static STORE: Mutex<Option<Store>> = Mutex::new(None);
+
+pub(crate) fn account_tunnel(value: &str) -> Option<String> {
+    if value.len() > 256 {
+        return None;
+    }
+    let url = url::Url::parse(value).ok()?;
+    let host = url.host_str()?;
+    let label = host.strip_suffix(".trycloudflare.com")?;
+    (url.scheme() == "https"
+        && !label.is_empty()
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path() == "/")
+        .then(|| url.origin().ascii_serialization())
+}
+
+pub(crate) fn account_endpoints(environment_id: &str) -> Vec<String> {
+    with_store(|store| {
+        store
+            .machines
+            .get(&format!("account:{environment_id}"))
+            .map(|entry| {
+                entry
+                    .account_endpoints
+                    .iter()
+                    .filter_map(|endpoint| account_tunnel(endpoint))
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// Called only after credential-free identity preflight and saved-route fencing.
+pub(crate) fn learn_account_endpoint(environment_id: &str, endpoint: String) -> bool {
+    with_store(|store| {
+        let entry = store
+            .machines
+            .entry(format!("account:{environment_id}"))
+            .or_default();
+        if entry.account_endpoints == [endpoint.clone()] {
+            return false;
+        }
+        entry.account_endpoints = vec![endpoint];
+        persist(store);
+        true
+    })
+}
+
+pub(crate) fn verify_account_endpoint(endpoint: &str, environment_id: &str) -> Result<(), String> {
+    let origin = account_tunnel(endpoint).ok_or("Invalid account tunnel route")?;
+    let response = ureq::AgentBuilder::new()
+        .redirects(0)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .get(&format!("{origin}/.well-known/bycoda-host"))
+        .call()
+        .map_err(|_| "Account route identity could not be verified")?;
+    let descriptor: Value = serde_json::from_reader(response.into_reader().take(4096))
+        .map_err(|_| "Invalid account route identity")?;
+    if descriptor.get("environmentId").and_then(Value::as_str) != Some(environment_id) {
+        return Err("Host identity changed".into());
+    }
+    Ok(())
+}
 
 fn with_store<T>(action: impl FnOnce(&mut Store) -> T) -> T {
     let mut guard = STORE.lock().unwrap_or_else(PoisonError::into_inner);
@@ -626,6 +699,46 @@ pub(crate) fn teach(target: &SshTarget, routes: Vec<LearnedRoute>) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn account_tunnel_hints_are_bounded_to_credential_free_quick_tunnel_origins() {
+        assert_eq!(
+            account_tunnel("https://new-host.trycloudflare.com/").as_deref(),
+            Some("https://new-host.trycloudflare.com")
+        );
+        for route in [
+            "http://a.trycloudflare.com",
+            "https://a.trycloudflare.com.evil.test",
+            "https://user@a.trycloudflare.com",
+            "https://a.trycloudflare.com/rpc",
+            "https://a.trycloudflare.com?token=secret",
+            "https://a.trycloudflare.com:444",
+        ] {
+            assert!(account_tunnel(route).is_none(), "{route}");
+        }
+    }
+
+    #[test]
+    fn a_new_account_tunnel_replaces_the_old_route_for_only_the_same_environment() {
+        let environment = "account-route-test";
+        assert!(learn_account_endpoint(
+            environment,
+            "https://old.trycloudflare.com".into()
+        ));
+        assert!(!learn_account_endpoint(
+            environment,
+            "https://old.trycloudflare.com".into()
+        ));
+        assert!(learn_account_endpoint(
+            environment,
+            "https://new.trycloudflare.com".into()
+        ));
+        assert_eq!(
+            account_endpoints(environment),
+            ["https://new.trycloudflare.com"]
+        );
+        assert!(account_endpoints("other-account-route-test").is_empty());
+    }
 
     fn target(value: &str) -> SshTarget {
         SshTarget {

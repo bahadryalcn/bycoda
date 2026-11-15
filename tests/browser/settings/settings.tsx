@@ -118,6 +118,7 @@ const skillDocuments = new Map(
     `---\nname: ${index === 0 ? "arc" : `skill-${index}`}\ndescription: Build and review interfaces using the shared component library.\n---\n\n# Instructions\n\nUse the existing components and preserve project conventions.\n\n${"## Workflow\n\n1. Inspect the page.\n2. Make the change.\n3. Verify the result.\n\n".repeat(12)}`,
   ]),
 );
+let fixtureAutomaticHostAccess = false;
 const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
   name: index === 0 ? "arc" : `server-${String(index).padStart(2, "0")}`,
   provider: index % 2 === 0 ? "claude" : "codex",
@@ -469,6 +470,7 @@ mockIPC(
           };
         if (args.method === "tunnels.status")
           return {
+            automaticHostAccess: fixtureAutomaticHostAccess,
             environmentId: machine.environmentId,
             hostLocalUrl: "http://127.0.0.1:3776",
             publicReachability: "unverified",
@@ -476,8 +478,29 @@ mockIPC(
               { provider: "cloudflare", installed: true, credential: "not-required" },
               { provider: "ngrok", installed: true, credential: "missing" },
             ],
-            tunnels: [],
+            tunnels: fixtureAutomaticHostAccess
+              ? [
+                  {
+                    id: "00000000-0000-0000-0000-000000000003",
+                    provider: "cloudflare",
+                    target: "host",
+                    localUrl: "http://127.0.0.1:3776",
+                    state: "ready",
+                    startedAt: Date.now(),
+                    canStop: true,
+                    publicUrl: "https://fixture.trycloudflare.com",
+                  },
+                ]
+              : [],
           };
+        if (args.method === "tunnels.start" && args.params.automatic === true) {
+          fixtureAutomaticHostAccess = true;
+          return {};
+        }
+        if (args.method === "tunnels.stop") {
+          fixtureAutomaticHostAccess = false;
+          return {};
+        }
       }
     }
     if (
