@@ -15,6 +15,7 @@ import {
 } from "../../connections/public/connections";
 import type { HostSession } from "../../connections";
 import { type HostSessionBinding } from "../../connections/public/sessionExecutionBinding";
+import { useReloadOnMachineReconnect } from "../../connections/public/useReloadOnReconnect";
 import { useHostSessionBinding } from "../../connections/public/useHostSessionBinding";
 import { sessionExecutionClient } from "../../connections/public/sessionExecutionClient";
 import { getGroupLockView, subscribeGroupLock } from "../../group-lock/model/groupLock";
@@ -168,7 +169,8 @@ function startReadOnlyReader({ binding, key, privacy, previous, reader, setState
         }
       } catch (error) {
         // A transient link drop keeps the last snapshot; the shared connection notice covers it.
-        const message = presentRemoteError(error);
+        // With nothing loaded yet there is no snapshot to keep: show the wait and its retry.
+        const message = presentRemoteError(error, { explicit: snapshot === undefined });
         publish(message ? { loading: false, error: message } : { loading: false });
       } finally {
         if (current())
@@ -214,6 +216,10 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
   const valid = state.key === key && state.privacy === privacy;
   const snapshot = valid ? state.snapshot : undefined;
   const retry = () => setRefresh((value) => value + 1);
+  // A first connect that failed reconnects once the machine's link is back.
+  useReloadOnMachineReconnect(binding?.environmentId, retry, {
+    active: !snapshot && !!state.error,
+  });
   const loadHistory = () => reader.current?.loadHistory() ?? Promise.resolve();
   const loadBlock = (id: string) => reader.current?.loadBlock(id) ?? Promise.resolve();
   return {

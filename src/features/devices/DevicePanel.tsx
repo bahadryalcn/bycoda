@@ -390,7 +390,7 @@ function DevicePanelSurface({
       mounted.current = false;
     };
   }, []);
-  useDeviceStatus(api, visible, setStatus, setError, setBusy);
+  const reload = useDeviceStatus(api, visible, setStatus, setError, setBusy, connectionUnavailable);
   const execute = useCallback(
     async <T,>(
       name: DeviceOperation,
@@ -579,7 +579,7 @@ function DevicePanelSurface({
           if (active) {
             setDiscoveryUnavailable(true);
             setConnectionUnavailable(true);
-            setError(String(cause));
+            setError(presentRemoteError(cause, { explicit: true }));
           }
         },
       )
@@ -589,7 +589,7 @@ function DevicePanelSurface({
     return () => {
       active = false;
     };
-  }, [api, status?.running, applyDevices, visible]);
+  }, [api, status?.running, applyDevices, visible, reload]);
   // Video when the Host can stream this device; the still captures below are the fallback.
   const liveStream = useDeviceLiveStream({
     stream: api.stream,

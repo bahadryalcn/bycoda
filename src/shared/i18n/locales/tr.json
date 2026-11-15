@@ -14409,5 +14409,7 @@
   "The signup was interrupted. Start again to reopen the window.": "Kayıt yarıda kesildi. Pencereyi yeniden açmak için baştan başlat.",
   "The signup could not continue.": "Kayıt devam edemedi.",
   "This signup step is not recognized. Finish it in the platform window.": "Bu kayıt adımı tanınmadı. Platform penceresinde tamamla.",
-  "The page changed. Review it in the platform window.": "Sayfa değişti. Platform penceresinde gözden geçir."
+  "The page changed. Review it in the platform window.": "Sayfa değişti. Platform penceresinde gözden geçir.",
+  "Waiting for the connection to this computer. Try again once it is back.": "Bu bilgisayarla bağlantı bekleniyor. Bağlantı geri gelince tekrar deneyin.",
+  "This computer is busy right now. Try again in a moment.": "Bu bilgisayar şu anda meşgul. Birazdan tekrar deneyin."
 }

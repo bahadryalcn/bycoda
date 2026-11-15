@@ -12,6 +12,8 @@ export type {
   DeviceSummary,
 } from "../../shared/model/host-contracts/native-devices";
 export interface DevicePanelApi {
+  /** The machine behind this API, so a failed load reruns when it answers again. */
+  environmentId?: string;
   status: () => Promise<DeviceHostStatus>;
   setup: (agentAccess: boolean) => Promise<DeviceHostStatus>;
   start: () => Promise<DeviceHostStatus>;

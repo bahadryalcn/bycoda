@@ -77,6 +77,7 @@ import {
 import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { useRemoteLoadFailure } from "../../connections/public/remoteHealth";
 import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import type { RemoteDataState } from "../../connections";
 import { basename, clipboardFilePaths, type FsEntry } from "../../../platform/tauri/fs";
 import { parentPath } from "../../../shared/lib/paths";
@@ -874,7 +875,7 @@ function FileTreeInner({
       })
       .catch((err: unknown) => {
         if (!cancelled && request === rootRefreshRequest.current) {
-          setError(err instanceof Error ? err.message : String(err));
+          setError(presentRemoteError(err, { explicit: true }));
         }
       });
     return () => {
@@ -914,6 +915,10 @@ function FileTreeInner({
   };
 
   const rootError = error ?? connectionFailure?.message;
+  // A first load that failed because the connection was down reloads once it is back.
+  useReloadOnReconnect(cwd, refreshRoot, {
+    active: children === null && (error !== null || connectionFailure?.kind === "unreachable"),
+  });
   const rootDataState: RemoteDataState = {
     phase: rootRefreshing
       ? children === null
@@ -1473,7 +1478,7 @@ const TreeNode = memo(function TreeNode({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setSettled({ error: err instanceof Error ? err.message : String(err) });
+          setSettled({ error: presentRemoteError(err, { explicit: true }) });
         }
       });
     return () => {
@@ -1490,6 +1495,7 @@ const TreeNode = memo(function TreeNode({
     if (!failed) return;
     return subscribeDirListings(() => setRetry((n) => n + 1));
   }, [failed]);
+  useReloadOnReconnect(entry.path, () => setRetry((n) => n + 1), { active: failed });
 
   const onClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
     if (consumeFileClick()) return;

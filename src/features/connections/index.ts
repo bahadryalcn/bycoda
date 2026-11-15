@@ -25,6 +25,7 @@ export type * as modelRemoteHealthApi from "./public/remoteHealth";
 export type * as modelRemoteMachineChannelApi from "./public/remoteMachineChannel";
 export type * as modelRemoteProjectsApi from "./public/remoteProjects";
 export type * as modelUseRemoteProjectApi from "./public/useRemoteProject";
+export type * as modelUseReloadOnReconnectApi from "./public/useReloadOnReconnect";
 export type * as modelRemoteSessionActionsApi from "./public/remoteSessionActions";
 export type * as modelServerTerminalRestoreStateApi from "./public/serverTerminalRestoreState";
 export type * as modelSessionExecutionBindingApi from "./public/sessionExecutionBinding";

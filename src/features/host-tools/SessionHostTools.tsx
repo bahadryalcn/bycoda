@@ -262,6 +262,8 @@ function ConversationHostTools({
         ? hostFeatureRequest<T>(cwd, "device.host", `devices.${method}`, params)
         : hostToolRequest<T>(cwd, "device.host", `devices.${method}`, params, target);
     return {
+      environmentId:
+        target.kind === "machine" ? target.machineId : parseRemotePath(cwd)?.environmentId,
       status: () => request("status"),
       setup: (agentAccess) => request("setup", { agentAccess }),
       start: () => request("start"),

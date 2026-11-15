@@ -14409,5 +14409,7 @@
   "The signup was interrupted. Start again to reopen the window.": "登録が中断されました。最初からやり直してウィンドウを開き直してください。",
   "The signup could not continue.": "登録を続行できませんでした。",
   "This signup step is not recognized. Finish it in the platform window.": "この登録ステップを認識できません。プラットフォームのウィンドウで完了してください。",
-  "The page changed. Review it in the platform window.": "ページが変更されました。プラットフォームのウィンドウで確認してください。"
+  "The page changed. Review it in the platform window.": "ページが変更されました。プラットフォームのウィンドウで確認してください。",
+  "Waiting for the connection to this computer. Try again once it is back.": "このコンピューターへの接続を待っています。接続が戻ったらもう一度お試しください。",
+  "This computer is busy right now. Try again in a moment.": "このコンピューターは現在混み合っています。しばらくしてからもう一度お試しください。"
 }

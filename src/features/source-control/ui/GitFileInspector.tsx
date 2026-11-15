@@ -1,9 +1,10 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Button } from "../../../shared/ui/Button";
-import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale, getLocale } from "../../../shared/i18n/git";
 import { useEffect, useState } from "react";
 import { GitFeedback } from "./GitFeedback";
@@ -111,12 +112,16 @@ function FileHistoryDialog({ request, onClose, onOpenCommit }: DialogProps) {
     setCommits(null);
     gitFileHistory(request.cwd, request.relative).then(
       (next) => !stale && setCommits(next),
-      (err) => !stale && setError(errorText(err)),
+      (err) => !stale && setError(presentRemoteError(err, { explicit: true })),
     );
     return () => {
       stale = true;
     };
   }, [request, retry]);
+  // A failed first load reruns once the machine's link is back.
+  useReloadOnReconnect(request.cwd, () => setRetry((value) => value + 1), {
+    active: error !== null,
+  });
 
   return (
     <Modal
@@ -188,12 +193,16 @@ function BlameDialog({ request, onClose, onOpenCommit }: DialogProps) {
       readTextFile(`${request.cwd}/${request.relative}`),
     ]).then(
       ([blame, text]) => !stale && setData({ blame, lines: text.split(/\r?\n/) }),
-      (err) => !stale && setError(errorText(err)),
+      (err) => !stale && setError(presentRemoteError(err, { explicit: true })),
     );
     return () => {
       stale = true;
     };
   }, [request, retry]);
+  // A failed first load reruns once the machine's link is back.
+  useReloadOnReconnect(request.cwd, () => setRetry((value) => value + 1), {
+    active: error !== null,
+  });
 
   return (
     <Modal

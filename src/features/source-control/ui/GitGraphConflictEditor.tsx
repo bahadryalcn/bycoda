@@ -1,3 +1,5 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
@@ -81,12 +83,14 @@ export function GitGraphConflictEditor({
         }
       })
       .catch((error) => {
-        if (!cancelled) setError(String(error));
+        if (!cancelled) setError(presentRemoteError(error, { explicit: true }));
       });
     return () => {
       cancelled = true;
     };
   }, [cwd, path, relative, retry]);
+  // A failed first load reruns once the machine's link is back.
+  useReloadOnReconnect(cwd, () => setRetry((value) => value + 1), { active: error !== null });
   const dirty = loaded !== null && loaded.disk !== null && draft !== loaded.disk;
   useEffect(() => {
     onDirty(dirty);

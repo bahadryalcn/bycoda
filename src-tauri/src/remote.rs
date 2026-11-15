@@ -1133,12 +1133,15 @@ fn machine_rpc_for_consumer(
 /// a clear flag on a mutating request means it was never dispatched. A read that
 /// was sent and then timed out is also clear here; re-running a read is harmless.
 /// `unsupported` is the separate pre-dispatch case that the WS path already reports.
+/// A socket lost mid-request is retried the same way when nothing is uncertain: a
+/// half-open WS on a live tunnel then answers over HTTP at once, and a dead tunnel
+/// fails fast into the unreachable path that probes it.
 fn ws_failure_allows_http_fallback(error: &WsFailure) -> bool {
     error.unsupported
         || (!error.uncertain
             && matches!(
                 error.code.as_str(),
-                "RPC_WS_DEADLINE" | "RPC_WS_UNAVAILABLE" | "RPC_WS_BLOCKED"
+                "RPC_WS_DEADLINE" | "RPC_WS_UNAVAILABLE" | "RPC_WS_BLOCKED" | "RPC_WS_INTERRUPTED"
             ))
 }
 

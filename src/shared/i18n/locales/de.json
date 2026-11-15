@@ -14409,5 +14409,7 @@
   "The signup was interrupted. Start again to reopen the window.": "Die Registrierung wurde unterbrochen. Starte neu, um das Fenster wieder zu öffnen.",
   "The signup could not continue.": "Die Registrierung konnte nicht fortgesetzt werden.",
   "This signup step is not recognized. Finish it in the platform window.": "Dieser Registrierungsschritt wird nicht erkannt. Schließe ihn im Plattformfenster ab.",
-  "The page changed. Review it in the platform window.": "Die Seite hat sich geändert. Prüfe sie im Plattformfenster."
+  "The page changed. Review it in the platform window.": "Die Seite hat sich geändert. Prüfe sie im Plattformfenster.",
+  "Waiting for the connection to this computer. Try again once it is back.": "Warte auf die Verbindung zu diesem Computer. Versuchen Sie es erneut, sobald sie wieder besteht.",
+  "This computer is busy right now. Try again in a moment.": "Dieser Computer ist gerade ausgelastet. Versuchen Sie es gleich noch einmal."
 }

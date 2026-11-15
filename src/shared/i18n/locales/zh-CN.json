@@ -14409,5 +14409,7 @@
   "The signup was interrupted. Start again to reopen the window.": "注册已中断。重新开始以再次打开窗口。",
   "The signup could not continue.": "注册无法继续。",
   "This signup step is not recognized. Finish it in the platform window.": "无法识别此注册步骤，请在平台窗口中完成。",
-  "The page changed. Review it in the platform window.": "页面已变化，请在平台窗口中查看。"
+  "The page changed. Review it in the platform window.": "页面已变化，请在平台窗口中查看。",
+  "Waiting for the connection to this computer. Try again once it is back.": "正在等待与这台电脑的连接。连接恢复后请重试。",
+  "This computer is busy right now. Try again in a moment.": "这台电脑当前繁忙。请稍后重试。"
 }

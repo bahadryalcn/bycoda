@@ -2192,7 +2192,12 @@ fn non_refusal_ws_failures_keep_their_code_text() {
 #[test]
 fn http_fallback_is_allowed_only_when_the_request_was_not_sent() {
     let not_sent = |code: &str| WsFailure::local(code, "fixture");
-    for code in ["RPC_WS_DEADLINE", "RPC_WS_UNAVAILABLE", "RPC_WS_BLOCKED"] {
+    for code in [
+        "RPC_WS_DEADLINE",
+        "RPC_WS_UNAVAILABLE",
+        "RPC_WS_BLOCKED",
+        "RPC_WS_INTERRUPTED",
+    ] {
         assert!(
             super::ws_failure_allows_http_fallback(&not_sent(code)),
             "{code}"
@@ -2203,18 +2208,18 @@ fn http_fallback_is_allowed_only_when_the_request_was_not_sent() {
     ));
 
     // A possibly-sent mutating request is uncertain and must never be replayed.
-    for code in ["RPC_WS_DEADLINE", "RPC_WS_UNAVAILABLE", "RPC_WS_BLOCKED"] {
+    for code in [
+        "RPC_WS_DEADLINE",
+        "RPC_WS_UNAVAILABLE",
+        "RPC_WS_BLOCKED",
+        "RPC_WS_INTERRUPTED",
+    ] {
         let mut sent = not_sent(code);
         sent.uncertain = true;
         assert!(!super::ws_failure_allows_http_fallback(&sent), "{code}");
     }
-    // A definitive Host answer or a lost connection is not a transport miss.
-    for code in [
-        "RPC_WS_REMOTE",
-        "RPC_WS_INTERRUPTED",
-        "RPC_WS_SCHEMA",
-        "RPC_WS_OVERLOAD",
-    ] {
+    // A definitive Host answer is not a transport miss.
+    for code in ["RPC_WS_REMOTE", "RPC_WS_SCHEMA", "RPC_WS_OVERLOAD"] {
         assert!(
             !super::ws_failure_allows_http_fallback(&not_sent(code)),
             "{code}"
