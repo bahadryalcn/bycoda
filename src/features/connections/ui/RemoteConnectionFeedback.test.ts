@@ -30,17 +30,19 @@ vi.mock("./RemoteLoadError", () => ({
     cwd,
     failure,
     coordinated,
+    recovering,
     onDismiss,
   }: {
     cwd: string;
     failure: RemoteFailure;
     coordinated: boolean;
+    recovering?: boolean;
     onDismiss?: () => void;
   }) =>
     createElement(
       "div",
       { role: "alert", "data-machine": cwd, "data-coordinated": String(coordinated) },
-      failure.message,
+      recovering ? "Reconnecting…" : failure.message,
       onDismiss && createElement("button", { onClick: onDismiss }, "Dismiss"),
     ),
 }));
@@ -87,7 +89,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("shares one delayed notice and does not restart its deadline for repeated panel failures", async () => {
+it("shares one reconnecting state and does not restart its deadline for repeated panel failures", async () => {
   state.machines.set("env", { status: "unreachable", error: outage.message });
   const consumers = [
     { id: "files", cwd: "remote://env/repo", failure: outage },
@@ -95,8 +97,9 @@ it("shares one delayed notice and does not restart its deadline for repeated pan
   ];
   await render(consumers);
   expect(container.querySelectorAll("[data-pane]")).toHaveLength(2);
-  expect(container.textContent).toBe("sharedshared");
-  expect(notices()).toHaveLength(0);
+  expect(container.textContent).toBe("Reconnecting…sharedshared");
+  expect(notices()).toHaveLength(1);
+  expect(container.textContent).toContain("Reconnecting…");
   await advance(4_000);
   await render(
     consumers.map((consumer) => ({
@@ -104,16 +107,18 @@ it("shares one delayed notice and does not restart its deadline for repeated pan
       failure: { ...outage, message: "SSH timed out connecting to the machine." },
     })),
   );
-  await advance(3_999);
-  expect(notices()).toHaveLength(0);
+  await advance(40_999);
+  expect(notices()).toHaveLength(1);
+  expect(container.textContent).toContain("Reconnecting…");
   await advance(1);
   expect(notices()).toHaveLength(1);
+  expect(container.textContent).not.toContain("Reconnecting…");
   expect(container.querySelector("[data-coordinated]")?.getAttribute("data-coordinated")).toBe(
     "false",
   );
 });
 
-it("does not flash a notice when the active pane recovers within the grace period", async () => {
+it("clears reconnecting when the active pane recovers within the grace period", async () => {
   state.machines.set("env", { status: "unreachable" });
   await render([{ id: "session", cwd: "env", failure: outage }]);
   await advance(3_000);

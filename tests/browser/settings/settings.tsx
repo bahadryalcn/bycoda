@@ -118,6 +118,8 @@ const skillDocuments = new Map(
     `---\nname: ${index === 0 ? "arc" : `skill-${index}`}\ndescription: Build and review interfaces using the shared component library.\n---\n\n# Instructions\n\nUse the existing components and preserve project conventions.\n\n${"## Workflow\n\n1. Inspect the page.\n2. Make the change.\n3. Verify the result.\n\n".repeat(12)}`,
   ]),
 );
+let fixtureAutomaticHostAccess = false;
+const statusDescribeCalls: Record<string, number> = {};
 const mcpConnections = Array.from({ length: 25 }, (_, index) => ({
   name: index === 0 ? "arc" : `server-${String(index).padStart(2, "0")}`,
   provider: index % 2 === 0 ? "claude" : "codex",
@@ -436,6 +438,91 @@ mockIPC(
           },
         },
       ];
+      // One machine per status for the machine-row screenshots: `?statuses=1`.
+      const statusFixture = new URLSearchParams(location.search).get("statuses") === "1";
+      if (statusFixture) {
+        const ssh = (target: string) => ({ target, remotePort: 3776 });
+        machines.push(
+          {
+            id: "fixture-garage",
+            name: "Garage PC",
+            environmentId: "fixture-garage-env",
+            endpoint: "ssh://me@garage",
+            ssh: ssh("me@garage"),
+          },
+          {
+            id: "fixture-office",
+            name: "Office Linux",
+            environmentId: "fixture-office-env",
+            endpoint: "ssh://me@office",
+            ssh: ssh("me@office"),
+          },
+          {
+            id: "fixture-lab",
+            name: "Lab Mac",
+            environmentId: "fixture-lab-env",
+            endpoint: "ssh://me@lab",
+            ssh: ssh("me@lab"),
+          },
+          {
+            id: "fixture-pi",
+            name: "Pi Zero",
+            environmentId: "fixture-pi-env",
+            endpoint: "ssh://me@pi",
+            ssh: ssh("me@pi"),
+          },
+          {
+            id: "fixture-nas",
+            name: "Old NAS",
+            environmentId: "fixture-nas-env",
+            endpoint: "ssh://me@nas",
+            ssh: ssh("me@nas"),
+          },
+          {
+            id: "fixture-cloud",
+            name: "Cloud box",
+            environmentId: "fixture-cloud-env",
+            endpoint: "https://cloud.example.com",
+          },
+        );
+        const routeSet: Record<string, unknown> = {
+          "fixture-remote": {
+            prefer: "saved",
+            active: "192.168.1.30",
+            routes: [
+              { address: "owner@studio.local", kind: "name", source: "saved", enabled: true },
+              { address: "100.97.82.4", kind: "tailscale", source: "other", enabled: true },
+              { address: "192.168.1.30", kind: "lan", source: "reported", enabled: true },
+            ],
+          },
+          "fixture-cloud": {
+            prefer: "saved",
+            active: "calm-river.trycloudflare.com",
+            routes: [
+              {
+                address: "calm-river.trycloudflare.com",
+                kind: "tunnel",
+                source: "account",
+                enabled: true,
+              },
+            ],
+          },
+        };
+        if (command === "remote_machine_routes") {
+          const id = args.machineId as string;
+          return (
+            routeSet[id] ?? {
+              prefer: "saved",
+              active: null,
+              routes: [
+                { address: "192.168.1.40", kind: "lan", source: "saved", enabled: true },
+                { address: "100.97.82.9", kind: "tailscale", source: "reported", enabled: true },
+              ],
+            }
+          );
+        }
+        if (command === "remote_machine_route_check") return [];
+      }
       if (command === "remote_machines") return machines;
       if (command === "local_host_bundle_status") return { state: "current" };
       if (command === "remote_request") {
@@ -461,14 +548,31 @@ mockIPC(
           };
         if (args.method === "mobile.pairing.status") return { state: "pending" };
         if (args.method === "mobile.pairing.cancel") return {};
-        if (args.method === "environment.describe")
+        if (args.method === "environment.describe") {
+          if (statusFixture) {
+            const calls = (statusDescribeCalls[machine.id] =
+              (statusDescribeCalls[machine.id] ?? 0) + 1);
+            if (machine.id === "fixture-office") throw "Machine is unreachable";
+            if (machine.id === "fixture-garage" && calls > 1) throw "Machine is unreachable";
+            // A busy host proves nothing either way: the machine stays "Connecting".
+            if (machine.id === "fixture-pi")
+              throw "RPC_WS_OVERLOAD: Host read capacity is busy; retry later.";
+          }
           return {
             environmentId: machine.environmentId,
             providers: ["codex", "claude"],
-            capabilities: ["workspace.run", "git.worktreeCreate", "tunnels.manage"],
+            capabilities:
+              statusFixture && machine.id === "fixture-lab"
+                ? ["tunnels.manage"]
+                : ["workspace.run", "git.worktreeCreate", "tunnels.manage"],
+            ...(statusFixture
+              ? { buildIdentity: { buildId: machine.id === "fixture-lab" ? "0.7.8" : "0.7.9" } }
+              : {}),
           };
+        }
         if (args.method === "tunnels.status")
           return {
+            automaticHostAccess: fixtureAutomaticHostAccess,
             environmentId: machine.environmentId,
             hostLocalUrl: "http://127.0.0.1:3776",
             publicReachability: "unverified",
@@ -476,8 +580,29 @@ mockIPC(
               { provider: "cloudflare", installed: true, credential: "not-required" },
               { provider: "ngrok", installed: true, credential: "missing" },
             ],
-            tunnels: [],
+            tunnels: fixtureAutomaticHostAccess
+              ? [
+                  {
+                    id: "00000000-0000-0000-0000-000000000003",
+                    provider: "cloudflare",
+                    target: "host",
+                    localUrl: "http://127.0.0.1:3776",
+                    state: "ready",
+                    startedAt: Date.now(),
+                    canStop: true,
+                    publicUrl: "https://fixture.trycloudflare.com",
+                  },
+                ]
+              : [],
           };
+        if (args.method === "tunnels.start" && args.params.automatic === true) {
+          fixtureAutomaticHostAccess = true;
+          return {};
+        }
+        if (args.method === "tunnels.stop") {
+          fixtureAutomaticHostAccess = false;
+          return {};
+        }
       }
     }
     if (

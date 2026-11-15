@@ -15,6 +15,7 @@ import type { SocialCredential } from "../social/social-credentials";
 
 const directories: string[] = [];
 afterEach(async () => {
+  vi.useRealTimers();
   for (const path of directories.splice(0)) await rm(path, { recursive: true, force: true });
 });
 async function setup() {
@@ -42,7 +43,10 @@ async function setup() {
   });
   const executable = vi.fn(async () => "/test/provider");
   const probe = vi.fn(async () => true);
-  const dependencies = { credentials, executable, probe, launch };
+  const install = vi.fn(async (): Promise<string> => {
+    throw new Error("installation unavailable");
+  });
+  const dependencies = { credentials, executable, probe, launch, install };
   const service = new ExternalTunnels(
     directory,
     "host-a",
@@ -59,12 +63,90 @@ async function setup() {
     stops,
     callbacks,
     executable,
+    install,
     probe,
   };
 }
 const dev = { provider: "cloudflare", target: "dev-server", localUrl: "3000" } as const;
 
 describe("external tunnels host ownership", () => {
+  it("installs pinned cloudflared only when PATH is absent", async () => {
+    const s = await setup();
+    s.executable.mockResolvedValueOnce(undefined as never);
+    s.install.mockResolvedValueOnce("/private/cloudflared");
+    expect((await s.service.start(dev)).state).toBe("starting");
+    expect(s.launch.mock.calls[0][0].program).toBe("/private/cloudflared");
+    expect(s.install).toHaveBeenCalledOnce();
+    await s.service.close();
+  });
+  it("defaults off and leaves manual tunnels interrupted across Host restart", async () => {
+    const s = await setup();
+    await s.service.boot();
+    expect((await s.service.status()).automaticHostAccess).toBe(false);
+    expect(s.launch).not.toHaveBeenCalled();
+    await s.service.start({ provider: "cloudflare", target: "host" });
+    const restarted = new ExternalTunnels(
+      s.directory,
+      "host-a",
+      () => "http://127.0.0.1:3776",
+      s.dependencies,
+    );
+    await restarted.boot();
+    expect((await restarted.status()).tunnels[0].state).toBe("interrupted");
+    expect(s.launch).toHaveBeenCalledOnce();
+    await restarted.close();
+    await s.service.close();
+  });
+
+  it("restarts opted-in Host access after verified exit and startup, but not explicit stop", async () => {
+    const s = await setup();
+    vi.useFakeTimers();
+    await s.service.start({ provider: "cloudflare", target: "host", automatic: true });
+    s.callbacks[0]({ type: "ready", publicUrl: "https://first.trycloudflare.com" });
+    await s.service.status();
+    expect(s.service.publicHostUrl()).toBe("https://first.trycloudflare.com");
+    s.callbacks[0]({ type: "error", issue: "unexpected-exit" });
+    await s.service.status();
+    expect(s.service.publicHostUrl()).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.waitFor(() => expect(s.launch).toHaveBeenCalledTimes(2));
+    await s.service.close();
+    const restarted = new ExternalTunnels(
+      s.directory,
+      "host-a",
+      () => "http://127.0.0.1:3776",
+      s.dependencies,
+    );
+    await restarted.boot();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(s.launch).toHaveBeenCalledTimes(3));
+    await restarted.stop({ automatic: true });
+    expect((await restarted.status()).automaticHostAccess).toBe(false);
+    await restarted.boot();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(s.launch).toHaveBeenCalledTimes(3);
+    await restarted.close();
+  });
+
+  it("does not replace a process whose retirement is unknown", async () => {
+    const s = await setup();
+    s.launch.mockImplementationOnce((_command, emit) => {
+      s.callbacks.push(emit);
+      return {
+        stop: vi.fn(async () => {
+          throw new Error("unknown retirement");
+        }),
+      };
+    });
+    await s.service.start({ provider: "cloudflare", target: "host", automatic: true });
+    s.callbacks[0]({ type: "error", issue: "stop-failed" });
+    await s.service.status();
+    await s.service.boot();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(s.launch).toHaveBeenCalledOnce();
+    expect(s.service.publicHostUrl()).toBeUndefined();
+    await s.service.close();
+  });
   it("observes missing credentials without creating a real OS vault", async () => {
     const s = await setup();
     const service = new ExternalTunnels(s.directory, "host-a", () => "http://127.0.0.1:3776", {

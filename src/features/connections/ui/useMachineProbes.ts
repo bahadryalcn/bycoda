@@ -5,15 +5,20 @@ import {
   remoteRequest,
   reportRemoteMachineStatus,
 } from "../model/connections";
+import { loadDisabledMachines } from "../model/machineEnabled";
 import { REMOTE_PROVIDERS, type HostDescriptor, type RemoteMachine } from "../model/protocol";
 
+import type { MachineProbeResult } from "../model/machineSummary";
+
 /** What this page's own check learned about a machine. */
-export type MachineProbe = "connected" | "provider" | "update" | "offline";
+export type MachineProbe = MachineProbeResult;
 
 /** Checks every machine every 10 s while the window is visible and no setup job runs. */
 export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
   const [status, setStatus] = useState<Record<string, MachineProbe>>({});
   const [needsUpdate, setNeedsUpdate] = useState<Record<string, boolean>>({});
+  /** The build each machine reported (`environment.describe`), polled with the status. */
+  const [versions, setVersions] = useState<Record<string, string | undefined>>({});
   const machinesRef = useRef(machines);
   machinesRef.current = machines;
   const signature = machines.map((machine) => `${machine.id}:${machine.environmentId}`).join("|");
@@ -28,6 +33,8 @@ export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
       if (!busy && !document.hidden)
         await Promise.all(
           machinesRef.current.map(async (machine) => {
+            // A machine the owner turned off is not contacted at all.
+            if (loadDisabledMachines().includes(machine.environmentId)) return;
             let label: MachineProbe = "connected";
             try {
               const host = await remoteRequest<HostDescriptor>(machine.id, "environment.describe", {
@@ -44,6 +51,12 @@ export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
                 !host.capabilities?.includes("workspace.run") ||
                 !host.capabilities?.includes("git.worktreeCreate");
               if (update) label = "update";
+              if (!disposed)
+                setVersions((current) =>
+                  current[machine.id] === host.buildIdentity?.buildId
+                    ? current
+                    : { ...current, [machine.id]: host.buildIdentity?.buildId },
+                );
               if (!disposed)
                 setNeedsUpdate((current) => ({
                   ...current,
@@ -75,5 +88,5 @@ export function useMachineProbes(machines: RemoteMachine[], busy: boolean) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [signature, busy]);
-  return { status, setStatus, needsUpdate };
+  return { status, setStatus, needsUpdate, versions };
 }

@@ -1,3 +1,4 @@
+import { isMachineEnabled } from "./machineEnabled";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
   knownRemoteMachine,
@@ -263,6 +264,7 @@ async function retry(environmentId: string, force: boolean) {
   const allowed =
     !offline() &&
     !paused.has(environmentId) &&
+    isMachineEnabled(environmentId) &&
     loadRemoteAutoReconnect() &&
     status !== "identity-mismatch" &&
     (blocked

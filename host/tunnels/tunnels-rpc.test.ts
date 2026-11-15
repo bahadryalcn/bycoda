@@ -16,6 +16,8 @@ async function setup() {
   const store = new HostStore(join(directory, "host.db"));
   const engine = new HostEngine(store, {});
   const tunnels = {
+    boot: vi.fn(async () => {}),
+    publicHostUrl: vi.fn(() => undefined),
     status: vi.fn(async () => ({ environmentId: store.environmentId })),
     start: vi.fn(async () => ({})),
     stop: vi.fn(async () => ({})),
@@ -67,10 +69,19 @@ async function setup() {
     await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  return { tunnels, store, device, call };
+  const identity = () => fetch(`http://127.0.0.1:${port}/.well-known/bycoda-host`);
+  return { tunnels, store, device, call, identity };
 }
 
 describe("external tunnels use existing authenticated RPC", () => {
+  it("exposes only environment identity before any device credential is sent", async () => {
+    const s = await setup();
+    const response = await s.identity();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ environmentId: s.store.environmentId });
+    expect(s.tunnels.start).not.toHaveBeenCalled();
+  });
   it("rejects unauthenticated, browser-origin, revoked and cross-host operations before dispatch", async () => {
     const s = await setup();
     for (const method of [

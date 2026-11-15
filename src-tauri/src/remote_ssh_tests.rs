@@ -464,7 +464,7 @@ fn tunnels_use_fast_keepalives_without_blocking_interactive_auth() {
         TUNNEL_KEEPALIVE_SECS,
     ));
     for option in [
-        "ServerAliveInterval=5",
+        "ServerAliveInterval=15",
         "ServerAliveCountMax=3",
         "ExitOnForwardFailure=yes",
         "ConnectTimeout=15",
@@ -850,4 +850,61 @@ fn a_tunnel_on_a_later_address_moves_to_a_preferred_one_only_while_unchanged() {
     );
     // The tunnel it saw is gone, so a second switch from the same check is refused.
     assert!(!tunnels.switch(&later[0], on("me@preferred-route.invalid")));
+}
+
+#[test]
+fn a_single_failed_request_keeps_a_tunnel_that_answers_its_probe() {
+    let tunnels = Tunnels::default();
+    tunnels.insert(
+        "host".into(),
+        "env",
+        Tunnel::adopt(long_lived_child(), 4321),
+    );
+    let slot = tunnels.slots().get("host").unwrap().clone();
+    let lease = TunnelLease {
+        endpoint: "http://127.0.0.1:4321".into(),
+        generation: 1,
+        slot: slot.clone(),
+    };
+    assert!(!tunnels.invalidate_after_probe("host", &lease, |_| true));
+    assert!(tunnels.is_current("host", &lease));
+    assert!(tunnels.invalidate_after_probe("host", &lease, |_| false));
+    assert!(slot.lock().unwrap().tunnel.is_none());
+}
+
+#[test]
+fn request_failure_probes_through_the_forward_and_accepts_http_errors() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut request = [0; 2048];
+        let count = stream.read(&mut request).unwrap();
+        let request = String::from_utf8_lossy(&request[..count]);
+        assert!(request.starts_with("GET / HTTP/1.1"));
+        assert!(!request.to_ascii_lowercase().contains("authorization:"));
+        stream
+            .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .unwrap();
+    });
+    let tunnels = Tunnels::default();
+    tunnels.insert(
+        "host".into(),
+        "env",
+        Tunnel::adopt(long_lived_child(), port),
+    );
+    let lease = TunnelLease {
+        endpoint: format!("http://127.0.0.1:{port}"),
+        slot: tunnels.slots().get("host").unwrap().clone(),
+        generation: 1,
+    };
+    assert!(!tunnels.invalidate("host", &lease));
+    server.join().unwrap();
+    assert!(tunnels.is_current("host", &lease));
+    // ssh still runs, but the end-to-end probe can no longer reach Host.
+    assert!(tunnels.invalidate("host", &lease));
+    assert!(!tunnels.is_current("host", &lease));
 }

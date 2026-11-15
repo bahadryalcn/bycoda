@@ -68,7 +68,16 @@ export function tunnelCommand(
     : {
         provider,
         program,
-        args: ["tunnel", "--config", config, "--no-autoupdate", "--url", localUrl],
+        args: [
+          "tunnel",
+          "--config",
+          config,
+          "--no-autoupdate",
+          "--http-host-header",
+          new URL(localUrl).host,
+          "--url",
+          localUrl,
+        ],
       };
 }
 
