@@ -75,6 +75,17 @@ Pairing and device permissions still apply. A headless Host does not run the
 desktop account publisher. Quick Tunnels have no uptime guarantee and do not
 support SSE; HTTP RPC remains the fallback transport.
 
+A computer that only the account knows (no SSH address) is added with one click
+from Settings → Machines → Machines found. The requesting desktop sends an end-to-end
+encrypted request through the account; the other computer shows the requester's name,
+platform and a six-digit code to compare, with Allow and Deny. On Allow, that computer
+issues a device credential, seals it to the requester's one-time key and the account
+only relays the sealed box. The requester verifies the Host identity on the published
+HTTPS route before sending the one-time ticket, then saves and connects the machine.
+Plain HTTP is used only for loopback. The other computer must be signed in with the same
+account, online, and have "Let my signed-in phones find this computer" on; pairing needs
+its phone access (Tailscale or local network) to be set up once.
+
 ## Create a Host conversation on this computer
 
 Windows Host packages include a native background launcher. Its per-user login

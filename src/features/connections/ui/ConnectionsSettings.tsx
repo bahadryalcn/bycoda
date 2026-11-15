@@ -444,6 +444,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               active={view === "machines"}
               busy={busy || revoking}
               onAdd={(plan) => void begin(undefined, false, false, plan)}
+              onPaired={() => void refresh()}
             />
           </div>
           {editing ? machineForm : null}

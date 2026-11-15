@@ -349,11 +349,16 @@ const handlers: Record<RouteName, Handler> = {
     const computer = findDevice(state, params.deviceId);
     const phone = findDevice(state, state.currentDeviceId ?? undefined);
     if (
-      phone.kind !== "mobile" ||
+      (phone.kind !== "mobile" && phone.kind !== "desktop") ||
+      phone.id === computer.id ||
       computer.kind !== "desktop" ||
       !state.connectInfo.has(computer.id)
     )
-      throw new MockHttpError(403, "forbidden", "Not a phone or not a connectable computer");
+      throw new MockHttpError(
+        403,
+        "forbidden",
+        "Not a phone or computer, or not a connectable computer",
+      );
     const request: MockPairRequest = {
       id: `pr_mock_${state.nextId++}`,
       computerDeviceId: computer.id,
@@ -377,6 +382,7 @@ const handlers: Record<RouteName, Handler> = {
           phoneName: phone?.name ?? "Phone",
           phonePlatform: phone?.platform ?? "android",
           phonePublicKey: r.phonePublicKey,
+          requesterKind: phone?.kind === "desktop" ? ("desktop" as const) : ("mobile" as const),
           createdAt: r.createdAt,
           expiresAt: r.expiresAt,
         };

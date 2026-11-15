@@ -37,3 +37,9 @@ export {
   type PairingCodeSource,
 } from "./model/phoneConnectInbox";
 export { listOtherComputers } from "./model/accountComputers";
+export {
+  requestDesktopPair,
+  type DesktopPairOutcome,
+  type DesktopPairRequest,
+  type DesktopPairTarget,
+} from "./model/desktopPairRequest";

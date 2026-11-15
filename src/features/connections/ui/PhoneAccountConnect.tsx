@@ -49,7 +49,7 @@ async function describeLocalHost(): Promise<HostDescriptor | null> {
 
 /**
  * While signed in and "Let my signed-in phones find this computer" is on: publishes this
- * computer's phone routes to the account and asks the owner before a signed-in phone is allowed
+ * computer's phone routes to the account and asks the owner before a signed-in phone or computer is allowed
  * to connect. Renders only the approval dialog. Mount once with the workspace notices.
  */
 export function PhoneAccountConnect() {
@@ -86,15 +86,28 @@ export function PhoneAccountConnect() {
       },
       ask: (request, approve) =>
         confirmRef.current({
-          title: t("Allow this phone to connect?"),
-          message: t(
-            "{phone} ({platform}, your account) wants to connect. Check that the code on the phone is {code}.",
-            {
-              phone: request.phoneName,
-              platform: PLATFORM[request.phonePlatform],
-              code: pairRequestCode(request),
-            },
-          ),
+          title:
+            request.requesterKind === "desktop"
+              ? t("Allow this computer to connect?")
+              : t("Allow this phone to connect?"),
+          message:
+            request.requesterKind === "desktop"
+              ? t(
+                  "{computer} ({platform}, your account) wants to connect. Check that the code on that computer is {code}.",
+                  {
+                    computer: request.phoneName,
+                    platform: PLATFORM[request.phonePlatform],
+                    code: pairRequestCode(request),
+                  },
+                )
+              : t(
+                  "{phone} ({platform}, your account) wants to connect. Check that the code on the phone is {code}.",
+                  {
+                    phone: request.phoneName,
+                    platform: PLATFORM[request.phonePlatform],
+                    code: pairRequestCode(request),
+                  },
+                ),
           confirmLabel: t("Allow"),
           cancelLabel: t("Deny"),
           pendingLabel: t("Connecting…"),

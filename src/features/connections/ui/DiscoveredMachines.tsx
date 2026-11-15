@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Apple, Laptop, Smartphone, Terminal } from "../../../shared/ui/icons";
 import { useAccount } from "../../account";
 import { t, useLocale } from "../../../shared/i18n";
@@ -11,11 +12,14 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Surface } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import {
+  accountPairPlan,
   sshAddPlan,
   type CandidateSource,
   type DiscoveredMachine,
   type SshAddPlan,
 } from "../model/machineCandidates";
+import type { AccountPairPlan } from "../model/accountDesktopPairing";
+import { AccountPairDialog } from "./AccountPairDialog";
 import { useDiscoveredMachines } from "./useDiscoveredMachines";
 import type { RemoteMachine } from "../model/protocol";
 
@@ -38,12 +42,15 @@ function CandidateRow({
   machine,
   busy,
   onAdd,
+  onPair,
 }: {
   machine: DiscoveredMachine;
   busy: boolean;
   onAdd: (plan: SshAddPlan) => void;
+  onPair: (plan: AccountPairPlan) => void;
 }) {
   const plan = sshAddPlan(machine);
+  const pair = plan ? null : accountPairPlan(machine);
   const sources = [...new Set(machine.sources.map((source) => SOURCE_LABEL[source]))];
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
@@ -69,12 +76,12 @@ function CandidateRow({
         <Button
           stableWidth
           variant="secondary"
-          disabled={busy || !plan}
-          onClick={() => plan && onAdd(plan)}
+          disabled={busy || (!plan && !pair)}
+          onClick={() => (plan ? onAdd(plan) : pair && onPair(pair))}
         >
           {t("Add")}
         </Button>
-        {plan ? null : (
+        {plan || pair ? null : (
           <InfoPopover label={t("Why Add is unavailable")} width={280}>
             <p>{t("This computer has no SSH address to set it up from here yet.")}</p>
           </InfoPopover>
@@ -88,15 +95,23 @@ function Rows({
   machines,
   busy,
   onAdd,
+  onPair,
 }: {
   machines: DiscoveredMachine[];
   busy: boolean;
   onAdd: (plan: SshAddPlan) => void;
+  onPair: (plan: AccountPairPlan) => void;
 }) {
   return (
     <Surface variant="outline" padding="none" dividers="card" className="overflow-hidden">
       {machines.map((machine) => (
-        <CandidateRow key={machine.key} machine={machine} busy={busy} onAdd={onAdd} />
+        <CandidateRow
+          key={machine.key}
+          machine={machine}
+          busy={busy}
+          onAdd={onAdd}
+          onPair={onPair}
+        />
       ))}
     </Surface>
   );
@@ -104,21 +119,26 @@ function Rows({
 
 /**
  * Machines the desktop found that are not added yet: the account's computers first, then
- * Tailscale and SSH candidates. Add starts the SSH setup with the address filled in.
+ * Tailscale and SSH candidates. Add starts the SSH setup with the address filled in; a computer
+ * only the account knows is added by asking it through the account, with no address typed.
  */
 export function DiscoveredMachines({
   saved,
   active,
   busy,
   onAdd,
+  onPaired,
 }: {
   saved: RemoteMachine[];
   /** The list is visible; it refreshes only then. */
   active: boolean;
   busy: boolean;
   onAdd: (plan: SshAddPlan) => void;
+  /** An account-paired machine was saved; the caller refreshes its machine list. */
+  onPaired: () => void;
 }) {
   useLocale();
+  const [pairing, setPairing] = useState<AccountPairPlan | null>(null);
   const { signIn } = useAccount();
   const { machines, loading, signedOut } = useDiscoveredMachines(saved, active);
   const open = machines.filter((machine) => !machine.alreadyAdded);
@@ -136,7 +156,9 @@ export function DiscoveredMachines({
           </Button>
         </div>
       ) : null}
-      {main.length > 0 ? <Rows machines={main} busy={busy} onAdd={onAdd} /> : null}
+      {main.length > 0 ? (
+        <Rows machines={main} busy={busy} onAdd={onAdd} onPair={setPairing} />
+      ) : null}
       {main.length === 0 && loading ? (
         <LoadingText>{t("Looking for machines…")}</LoadingText>
       ) : null}
@@ -151,7 +173,7 @@ export function DiscoveredMachines({
           summary={t("Shared with you")}
           count={shared.length}
         >
-          <Rows machines={shared} busy={busy} onAdd={onAdd} />
+          <Rows machines={shared} busy={busy} onAdd={onAdd} onPair={setPairing} />
         </Disclosure>
       ) : null}
       {mobile.length > 0 ? (
@@ -162,8 +184,18 @@ export function DiscoveredMachines({
           summary={t("Phones and tablets")}
           count={mobile.length}
         >
-          <Rows machines={mobile} busy={busy} onAdd={onAdd} />
+          <Rows machines={mobile} busy={busy} onAdd={onAdd} onPair={setPairing} />
         </Disclosure>
+      ) : null}
+      {pairing ? (
+        <AccountPairDialog
+          plan={pairing}
+          onClose={() => setPairing(null)}
+          onPaired={() => {
+            setPairing(null);
+            onPaired();
+          }}
+        />
       ) : null}
     </section>
   );

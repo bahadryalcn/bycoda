@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+pub(crate) mod account_pairing;
 pub(crate) mod account_routes;
 
 #[path = "remote_changes.rs"]

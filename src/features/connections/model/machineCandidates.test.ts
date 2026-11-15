@@ -1,6 +1,7 @@
 import type { Computer } from "@bycoda/account-contracts";
 import { expect, it } from "vitest";
 import {
+  accountPairPlan,
   candidateFromComputer,
   hostOf,
   mergeMachineCandidates,
@@ -179,4 +180,34 @@ it("plans an SSH add only from native routes", () => {
     saved: [],
   })[0]!;
   expect(sshAddPlan(both)).toEqual({ target: "me@box", alternate: "me@100.64.0.9", name: "box" });
+});
+
+it("offers account pairing for an account-only computer with a published https route", () => {
+  const [machine] = mergeMachineCandidates({
+    account: [
+      candidateFromComputer(
+        computer({
+          deviceId: "dev-1",
+          environmentId: "env-1",
+          routes: [
+            { endpoint: "https://studio.tailnet.ts.net" },
+            { endpoint: "http://192.168.1.4:3777", lanKey: "a".repeat(64) },
+          ],
+        }),
+        NOW,
+      ),
+    ],
+    native: [],
+    saved: [],
+  });
+  expect(sshAddPlan(machine!)).toBeNull();
+  expect(accountPairPlan(machine!)).toEqual({
+    deviceId: "dev-1",
+    environmentId: "env-1",
+    name: "Studio",
+    routes: ["https://studio.tailnet.ts.net"],
+  });
+  expect(
+    accountPairPlan({ ...machine!, accountPair: { deviceId: "dev-1", routes: [] } }),
+  ).toBeNull();
 });

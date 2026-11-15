@@ -1,4 +1,5 @@
 import type { Computer } from "@bycoda/account-contracts";
+import type { AccountPairPlan } from "./accountDesktopPairing";
 import type { RemoteMachine } from "./protocol";
 
 export type CandidateSource = "account" | "tailscale" | "ssh-config" | "known-hosts" | "servers";
@@ -17,6 +18,8 @@ export type MachineCandidate = {
   sshUser?: string;
   alreadyAdded: boolean;
   group?: "shared" | "mobile";
+  /** An account computer: its account device id and published https Host routes, for account-mediated pairing. */
+  accountPair?: { deviceId: string; routes: string[] };
 };
 
 /** A merged candidate. `sshRoutes` are the routes a native source vouches for; account routes are Host routes, not SSH. */
@@ -93,6 +96,12 @@ export function candidateFromComputer(
     routes,
     environmentId: computer.environmentId,
     alreadyAdded: false,
+    accountPair: {
+      deviceId: computer.deviceId,
+      routes: computer.routes
+        .filter((route) => route.lanKey === undefined && route.endpoint.startsWith("https://"))
+        .map((route) => route.endpoint),
+    },
     ...(computer.platform === "ios" || computer.platform === "android"
       ? { group: "mobile" as const }
       : {}),
@@ -121,6 +130,7 @@ function mergeInto(target: DiscoveredMachine, next: MachineCandidate): void {
   target.online = mergeOnline(target.online, next.online);
   target.environmentId ??= next.environmentId;
   target.sshUser ??= next.sshUser;
+  target.accountPair ??= next.accountPair;
   target.alreadyAdded ||= next.alreadyAdded;
   for (const source of next.sources)
     if (!target.sources.includes(source)) target.sources.push(source);
@@ -223,5 +233,17 @@ export function sshAddPlan(candidate: DiscoveredMachine): SshAddPlan | null {
     target: withUser(first.address),
     alternate: second ? withUser(second.address) : null,
     name: candidate.name,
+  };
+}
+
+/** What account-mediated pairing needs, or null when the computer is not an account Host with a published https route. */
+export function accountPairPlan(candidate: DiscoveredMachine): AccountPairPlan | null {
+  const pair = candidate.accountPair;
+  if (!pair || !candidate.environmentId || pair.routes.length === 0) return null;
+  return {
+    deviceId: pair.deviceId,
+    environmentId: candidate.environmentId,
+    name: candidate.name,
+    routes: pair.routes.slice(0, 4),
   };
 }

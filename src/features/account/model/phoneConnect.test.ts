@@ -34,6 +34,7 @@ function request(over: Partial<PendingPairRequest> = {}): PendingPairRequest {
     phoneName: "Pixel 8",
     phonePlatform: "android",
     phonePublicKey: KEY,
+    requesterKind: "mobile",
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 120_000).toISOString(),
     ...over,
