@@ -67,6 +67,18 @@ describe("providerAccountEnvironment", () => {
     });
   });
 
+  it("runs Grok Build in the desktop profile through GROK_HOME", async () => {
+    const root = temp();
+    const dir = join(root, "provider-accounts", "grok", "account-1");
+    mkdirSync(dir, { recursive: true });
+    expect(
+      await providerAccountEnvironment({ provider: "grok", id: "account-1" }, {}, [root]),
+    ).toEqual({
+      set: { GROK_HOME: dir },
+      remove: ["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
+    });
+  });
+
   it("refuses to fall back to another account", async () => {
     await expect(
       providerAccountEnvironment({ provider: "claude", id: "account-missing" }, {}, [temp()]),
@@ -111,6 +123,7 @@ it("exposes only safe metadata for real Host profiles and validates the exact la
       { id: "default", label: "Host default" },
       { id: "account-other", label: "Claude account 1" },
     ],
+    grok: [{ id: "default", label: "Host default" }],
   });
   for (const accounts of Object.values(catalog))
     for (const account of accounts) expect(account.color).toMatch(/^hsl\(/);
@@ -164,7 +177,7 @@ describe("provider account styles", () => {
         "account-b": { color: "not-a-colour" },
         "bad id": { label: "x" },
       },
-      grok: { a: { label: "x" } },
+      cursor: { a: { label: "x" } },
     });
     expect(styles).toEqual({ claude: { "account-a": { label: "Work Max", color: "coral" } } });
     const merged = applyProviderAccountStyles(

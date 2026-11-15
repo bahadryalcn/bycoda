@@ -5,7 +5,9 @@ import { assertDomainAuthority, type HostDomainContext } from "../context";
 export interface ModelsPorts {
   read(projectId: unknown, progressive: boolean, refresh: boolean): Promise<object>;
   accounts(): Promise<
-    Partial<Record<"codex" | "claude", Array<{ id: string; label: string; color?: string }>>>
+    Partial<
+      Record<"codex" | "claude" | "grok", Array<{ id: string; label: string; color?: string }>>
+    >
   >;
   providers: readonly string[];
   /** Model ids the owner turned off in the desktop; undefined when never published. */

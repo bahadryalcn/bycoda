@@ -7,7 +7,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
-import { MoreHorizontal, Plus, UserRound, Briefcase } from "../../../shared/ui/icons";
+import { MoreHorizontal, Plus } from "../../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
@@ -28,6 +28,8 @@ import {
   type ProviderAccount,
   type ProviderAccountProvider,
   supportsProviderAccounts,
+  isSharedCliAccountProvider,
+  SHARED_CLI_ACCOUNT_PROVIDERS,
 } from "../../providers/model/providerAccounts";
 import {
   removeProviderAccountCredentials,
@@ -46,7 +48,7 @@ import {
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import { AccountColorPopover } from "../../providers/ui/AccountColorPicker";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
-import { exhaustedExplanation, useGrokSignInState } from "../../providers/ui/providerStatus";
+import { exhaustedExplanation } from "../../providers/ui/providerStatus";
 
 import {
   accountStatus,
@@ -60,6 +62,7 @@ import { clearCachedRateLimits, loadRateLimits } from "../../providers/model/rat
 import { AccountStatusLabel, AccountUsageRefresh } from "../../providers/ui/ProviderAccountUsage";
 
 import { AntigravityAccountSettings } from "./AntigravityAccountSettings";
+import { AccountKindTag, SharedCliAccountCard } from "./SharedCliAccountCard";
 import { TerminalProfileDiscovery } from "./TerminalProfileDiscovery";
 import { ProviderAccountEditor, type AccountEditor } from "./ProviderAccountEditor";
 import { Button } from "../../../shared/ui/Button";
@@ -73,8 +76,7 @@ import { refreshHarnessCatalogs } from "../../../integrations/harness/core/regis
 const SETTINGS_HARNESSES: readonly HarnessId[] = [
   ...PROVIDER_ACCOUNT_PROVIDERS,
   "cursor",
-  "grok",
-  "antigravity",
+  ...SHARED_CLI_ACCOUNT_PROVIDERS,
 ];
 
 /** Serialized account list: changes whenever any provider's accounts change in this or another window. */
@@ -185,17 +187,19 @@ export function ProviderAccountsSettings({
 
   const submitEditor = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!editor || !editor.label.trim()) return;
+    // Shared CLI sign-ins save from their own card; this list owns profiles only.
+    if (!editor || !editor.label.trim() || !supportsProviderAccounts(editor.provider)) return;
+    const provider = editor.provider;
     const key = editor.accountId
       ? `rename:${editor.provider}:${editor.accountId}`
       : `add:${editor.provider}`;
     if (!begin(key)) return;
     try {
       if (editor.accountId) {
-        if (!editProviderAccount(editor.provider, editor.accountId, editor))
+        if (!editProviderAccount(provider, editor.accountId, editor))
           throw new Error("Account no longer exists");
       } else {
-        const account = pendingAccount.current ?? newProviderAccount(editor.provider, editor.label);
+        const account = pendingAccount.current ?? newProviderAccount(provider, editor.label);
         account.label = editor.label;
         pendingAccount.current = account;
         const controller = new AbortController();
@@ -233,6 +237,7 @@ export function ProviderAccountsSettings({
       }
       setVersion((value) => value + 1);
       clearCachedRateLimits(account.provider, account.id);
+      if (account.provider === "grok") void refreshStandaloneCatalog("grok");
       const limits = await loadRateLimits(account.provider, account.id, true);
       if (needsProviderLogin(limits)) {
         throw new Error(
@@ -292,17 +297,12 @@ export function ProviderAccountsSettings({
     }
   };
 
-  const signInStandaloneProvider = async (provider: "cursor" | "grok") => {
+  const signInStandaloneProvider = async (provider: "cursor") => {
     if (!begin(`signin:${provider}`)) return;
     try {
       await loginHarness(provider);
       onStandaloneSignIn?.(provider);
-      try {
-        await probeHarnessAvailability({ force: true });
-        await refreshHarnessCatalogs([provider], { force: true });
-      } catch (refreshError) {
-        console.debug(`[bycoda] ${provider} post-login refresh`, refreshError);
-      }
+      await refreshStandaloneCatalog(provider);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not complete sign-in");
     } finally {
@@ -322,10 +322,8 @@ export function ProviderAccountsSettings({
     provider: harness && supportsProviderAccounts(harness) ? harness : undefined,
     enabled: !harness || supportsProviderAccounts(harness),
   });
-  const standaloneHarness = harness === "cursor" || harness === "grok" ? harness : null;
-  const grokSignedIn =
-    useGrokSignInState(harness === "grok" && isHarnessAvailable("grok")).tone === "ready";
-  const standaloneSignedIn = standaloneHarness === "grok" && grokSignedIn;
+  const standaloneHarness = harness === "cursor" ? harness : null;
+  const sharedCliHarness = harness && isSharedCliAccountProvider(harness) ? harness : null;
   const accountProvider = harness
     ? supportsProviderAccounts(harness)
       ? harness
@@ -344,11 +342,13 @@ export function ProviderAccountsSettings({
 
   return (
     <div hidden={!supportedHarness}>
-      <div hidden={harness === "antigravity"}>
+      {/* First child: a hidden sibling before it would still add the stack gap. */}
+      {sharedCliHarness ? <SharedCliAccountCard provider={sharedCliHarness} /> : null}
+      <div hidden={Boolean(sharedCliHarness)}>
         <Group
           id="provider-accounts"
           layout="full"
-          title={t(harness === "cursor" || harness === "grok" ? "Sign in" : "Accounts")}
+          title={t(harness === "cursor" ? "Sign in" : "Accounts")}
           action={
             accountProvider ? (
               <div
@@ -373,11 +373,13 @@ export function ProviderAccountsSettings({
                     },
                   }}
                 />
-                <TerminalProfileDiscovery
-                  key={accountProvider}
-                  provider={accountProvider}
-                  disabled={Boolean(working)}
-                />
+                {accountProvider === "grok" ? null : (
+                  <TerminalProfileDiscovery
+                    key={accountProvider}
+                    provider={accountProvider}
+                    disabled={Boolean(working)}
+                  />
+                )}
               </div>
             ) : undefined
           }
@@ -497,20 +499,13 @@ export function ProviderAccountsSettings({
                             wrap
                           />
                           {orgTag ? (
-                            <Text
-                              size="caption"
-                              tone="secondary"
-                              wrap="anywhere"
-                              className="inline-flex min-w-0 items-center gap-1"
-                            >
-                              {account.kind === "work" ||
-                              (account.kind !== "personal" && orgTag !== t("Personal")) ? (
-                                <Briefcase className="icon-xs shrink-0" aria-hidden />
-                              ) : (
-                                <UserRound className="icon-xs shrink-0" aria-hidden />
-                              )}
-                              {orgTag}
-                            </Text>
+                            <AccountKindTag
+                              tag={orgTag}
+                              work={
+                                account.kind === "work" ||
+                                (account.kind !== "personal" && orgTag !== t("Personal"))
+                              }
+                            />
                           ) : null}
                         </Text>
                         {exhausted ? (
@@ -616,15 +611,7 @@ export function ProviderAccountsSettings({
             );
           })}
           {standaloneHarness ? (
-            <Row
-              label={
-                standaloneHarness === "cursor"
-                  ? t("Use the Cursor CLI sign-in on this machine.")
-                  : standaloneSignedIn
-                    ? t("Signed in with the Grok Build CLI on this machine.")
-                    : t("Use the Grok Build CLI sign-in on this machine.")
-              }
-            >
+            <Row label={t("Use the Cursor CLI sign-in on this machine.")}>
               {hasProbedHarnessAvailability() && !isHarnessAvailable(standaloneHarness) ? (
                 <Text size="micro" tone="secondary">
                   {t("Install the CLI first, then sign in.")}
@@ -633,7 +620,7 @@ export function ProviderAccountsSettings({
                 <>
                   <Button
                     reserveLabels={[t("Signing in…")]}
-                    variant={standaloneSignedIn ? "ghost" : "secondary"}
+                    variant="secondary"
                     disabled={Boolean(working)}
                     loading={working === `signin:${standaloneHarness}`}
                     aria-label={t("Sign in to {p0}", {
@@ -641,11 +628,7 @@ export function ProviderAccountsSettings({
                     })}
                     onClick={() => void signInStandaloneProvider(standaloneHarness)}
                   >
-                    {working === `signin:${standaloneHarness}`
-                      ? t("Signing in…")
-                      : standaloneSignedIn
-                        ? t("Sign in again")
-                        : t("Sign in")}
+                    {working === `signin:${standaloneHarness}` ? t("Signing in…") : t("Sign in")}
                   </Button>
                 </>
               )}
@@ -695,6 +678,16 @@ export function ProviderAccountsSettings({
       ) : null}
     </div>
   );
+}
+
+/** Availability and model catalog after a CLI sign-in; failures only delay the refresh. */
+async function refreshStandaloneCatalog(provider: HarnessId): Promise<void> {
+  try {
+    await probeHarnessAvailability({ force: true });
+    await refreshHarnessCatalogs([provider], { force: true });
+  } catch (refreshError) {
+    console.debug(`[bycoda] ${provider} post-login refresh`, refreshError);
+  }
 }
 
 /** Sign-in can fix this account; a missing CLI needs an install first. */

@@ -73,8 +73,12 @@ your stale draft cannot overwrite it: load the latest settings and reconcile you
 changes. Hosts without routing support keep their previous selection behavior.
 
 **Settings > Providers** contains **Accounts**, **CLI**, **Catalog** and
-**Decision models**. Accounts manages sign-in; the Grok row reports the Grok Build
-CLI sign-in on this computer. CLI manages installed agent tools. Catalog manages
+**Decision models**. Accounts manages sign-in. Claude Code, Codex and Grok Build
+accept several named accounts, each signed in to its own profile; a Grok Build
+account keeps its own sessions, so switching a conversation to another Grok
+account continues from a summary. OpenCode and Antigravity keep one sign-in per
+computer: their account row can be renamed, coloured and tagged Personal or Work,
+and Antigravity's setup steps open below it. CLI manages installed agent tools. Catalog manages
 model availability. Decision models configure decision routing. Shared model
 order, limits and delegation are managed in Settings > Background work.
 
@@ -84,7 +88,7 @@ Switching between Providers and Usage & limits keeps account drafts and pending
 sign-in operations intact. Finish or cancel account changes before switching the
 selected provider or its inner tabs. Account names show validation beside the field;
 choose a distinct name before starting browser sign-in. Searching for Antigravity
-account setup opens its shared-account instructions.
+account setup opens its setup steps.
 
 Provider account rows separate identity from usage status. The check beside an account marks its provider default. Account management shows complete names and plan details, and terminal profiles wrap their full paths. Email masking stays in effect until you choose Reveal email. CLI updates show model-refresh errors only when discovery fails; an unchanged model list needs no warning.
 

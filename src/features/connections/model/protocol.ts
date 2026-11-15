@@ -167,7 +167,7 @@ export type HostDirectory = {
 export type HostModelCatalog = {
   accounts?: Partial<
     Record<
-      "codex" | "claude",
+      "codex" | "claude" | "grok",
       {
         isDefault?: boolean;
         id: string;

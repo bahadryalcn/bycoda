@@ -1371,7 +1371,7 @@ function ConnectedRemoteSession({
     else setDraft(update);
   };
 
-  const accountAvailable = (provider: "codex" | "claude", accountId: string): boolean => {
+  const accountAvailable = (provider: "codex" | "claude" | "grok", accountId: string): boolean => {
     if (!owner || preparingRef.current) return false;
     if (
       hostSession &&
@@ -1394,7 +1394,7 @@ function ConnectedRemoteSession({
     }
     return true;
   };
-  const selectAccount = (provider: "codex" | "claude", accountId: string): boolean => {
+  const selectAccount = (provider: "codex" | "claude" | "grok", accountId: string): boolean => {
     if (provider !== configuration.harness || !accountAvailable(provider, accountId)) return false;
     updateConfiguration((current) => ({
       ...current,

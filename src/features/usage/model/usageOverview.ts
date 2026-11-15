@@ -101,6 +101,7 @@ const OTHER_SERIES = "other";
 const PROVIDER_LABEL: Record<ProviderAccountProvider, string> = {
   claude: "Claude Code",
   codex: "Codex",
+  grok: "Grok Build",
 };
 
 function dayKey(date: Date): string {

@@ -894,7 +894,7 @@ export async function spawnChild(
   command: string,
   args: string[],
   cwd: string,
-  account?: { provider: "claude" | "codex"; id: string },
+  account?: { provider: "claude" | "codex" | "grok"; id: string },
   binaryProvider?: ConfigurableBinaryProvider,
   genericAcpId?: string,
   authority?: NativeAuthorityScope,

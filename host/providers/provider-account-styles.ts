@@ -4,7 +4,7 @@ import {
 } from "../../src/features/providers/model/providerAccounts";
 import type { HostStore } from "../store";
 
-type Provider = "codex" | "claude";
+type Provider = "codex" | "claude" | "grok";
 /** What the owner named and coloured in the desktop; colour is a palette id. */
 export type ProviderAccountStyles = Partial<
   Record<
@@ -30,7 +30,7 @@ const MAX_ACCOUNTS = 128;
 export function parseProviderAccountStyles(raw: unknown): ProviderAccountStyles {
   const result: ProviderAccountStyles = {};
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return result;
-  for (const provider of ["codex", "claude"] as const) {
+  for (const provider of ["codex", "claude", "grok"] as const) {
     const entries = (raw as Record<string, unknown>)[provider];
     if (!entries || typeof entries !== "object" || Array.isArray(entries)) continue;
     const styles: Record<
@@ -121,7 +121,7 @@ export function applyProviderAccountStyles<
   >,
 >(catalog: T, styles: ProviderAccountStyles): T {
   const result: T = { ...catalog };
-  for (const provider of ["codex", "claude"] as const) {
+  for (const provider of ["codex", "claude", "grok"] as const) {
     const accounts = catalog[provider];
     if (!accounts) continue;
     result[provider] = accounts.map((account) => {
@@ -151,7 +151,7 @@ export function applyProviderAccountStyles<
 /** Explicit desktop default; legacy Hosts retain the fixed default profile. */
 export function providerDefaultAccounts(styles: ProviderAccountStyles) {
   return Object.fromEntries(
-    (["claude", "codex"] as const).map((provider) => [
+    (["claude", "codex", "grok"] as const).map((provider) => [
       provider,
       Object.entries(styles[provider] ?? {})
         .sort(([a], [b]) => a.localeCompare(b, "en"))

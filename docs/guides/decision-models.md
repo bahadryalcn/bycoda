@@ -13,7 +13,7 @@ endpoint. Use the row's test button or its menu to edit or remove that source.
 
 1. Open **Add model** and choose the folder option.
 2. Select the model's installation folder, or paste its full path. For example,
-   `G:\Projects\my_projects\clef`.
+   `D:\Models\clef`.
 3. Scan the folder. The app looks for model files, installation information and a
    compatible runtime. Scanning does not start a program or connect a source.
 4. Review the result. If several models are found, choose the one to use.

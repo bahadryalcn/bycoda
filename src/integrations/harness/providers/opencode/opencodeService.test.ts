@@ -2,14 +2,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   execChild: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock("../../core/child", () => ({
   execChild: mocks.execChild,
+  hasHeadlessChildBackend: () => false,
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: mocks.invoke,
+  isTauri: () => true,
+}));
+
+vi.mock("../../../../features/providers/model/providerBinaryPaths", () => ({
+  runtimeProviderBinaryPath: () => undefined,
 }));
 
 import {
   parseOpenCodeServiceUrl,
+  resolveOwnedOpenCodeCatalog,
   resolveOpenCodeV2Service,
   resolveOpenCodeV2ServiceUrl,
 } from "./opencodeService";
@@ -71,5 +83,32 @@ describe("OpenCode v2 background service", () => {
       ["service", "status"],
       ["service", "get", "password"],
     ]);
+  });
+
+  it("retries a failed catalog service with the same operation instead of caching the failure", async () => {
+    const acquired: unknown[] = [];
+    let failNext = true;
+    mocks.invoke.mockImplementation((command: string, args: Record<string, unknown>) => {
+      if (command === "canonical_store_page_token") return Promise.resolve("page");
+      if (command === "harness_management_grant")
+        return Promise.resolve({ token: "grant", routeId: "route" });
+      acquired.push(args.operationId);
+      if (failNext) {
+        failNext = false;
+        return Promise.reject(new Error("Background service failed to start"));
+      }
+      return Promise.resolve({ serviceId: "s", referenceId: "r", endpoint: "http://127.0.0.1:1" });
+    });
+
+    await expect(resolveOwnedOpenCodeCatalog("/opencode", "/retry")).rejects.toThrow(
+      "Background service failed to start",
+    );
+    await expect(resolveOwnedOpenCodeCatalog("/opencode", "/retry")).resolves.toMatchObject({
+      url: "http://127.0.0.1:1",
+    });
+    expect(acquired).toHaveLength(2);
+    // An unknown outcome may have been accepted natively; the same operation ID
+    // lets the native side return that reference instead of leaking it.
+    expect(acquired[1]).toBe(acquired[0]);
   });
 });

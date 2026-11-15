@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import {
+  accountChoicesSnapshot,
   accountModelChoices,
   modelAccountLabel,
   modelAccountLabelWith,
@@ -17,6 +18,7 @@ vi.mock("../../providers/model/providerAccounts", () => ({
   providerAccountLabel: () => "Native profile",
   defaultProviderAccountId: () => "native-secret",
   supportsProviderAccounts: (provider: string) => provider === "codex" || provider === "claude",
+  PROVIDER_ACCOUNT_PROVIDERS: ["claude", "codex", "grok"],
 }));
 const model = { id: "codex:model", harness: "codex", name: "Model" } as AgentModel;
 
@@ -67,4 +69,13 @@ it("keeps same-labelled accounts distinguishable without touching the stored lab
   expect(modelChoiceBaseName(choices[0])).toBe("Model");
   expect(modelAccountLabel(model, "work-b", catalog)).toBe("Model work · work-b");
   expect(modelAccountLabel(model, "personal", catalog)).toBe("Model Personal");
+});
+
+it("keys account choices by provider so Grok never reads Codex accounts", () => {
+  vi.mocked(providerAccounts).mockImplementation((provider) => [
+    { id: `${provider}-1`, label: provider, provider },
+  ]);
+  const lists = JSON.parse(accountChoicesSnapshot());
+  expect(Object.keys(lists)).toEqual(["claude", "codex", "grok"]);
+  expect(lists.grok).toEqual([{ id: "grok-1", label: "grok", provider: "grok" }]);
 });

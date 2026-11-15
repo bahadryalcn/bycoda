@@ -20,7 +20,7 @@ configuration and authentication; never adopt or stop unrelated external daemons
 ## Bundled Host update with running work
 
 Apply when changing how the desktop updates an existing local Host.
-Recorded 2026-11-10 from the owner's message in T3 thread
+Recorded 2026-11-10 from the owner's message in session
 `9ef17bc9-3ac0-46f1-b2ff-fa7d75cb340d`.
 
 > while updating, it should ask "a Host is running, shall I close it?" and close it

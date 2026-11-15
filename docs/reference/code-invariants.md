@@ -73,7 +73,7 @@ rounding, units, invalid-input handling and locale selection during migration.
 
 ## React performance invariants
 
-Rules that keep the webview from doing avoidable render work. They mirror the checks the T3 Code
+Rules that keep the webview from doing avoidable render work. They mirror the checks a reference
 web app enforces in its own lint plugin; here they are rules of the repository oxlint plugin, so
 existing code is counted in the baseline and only new findings fail.
 

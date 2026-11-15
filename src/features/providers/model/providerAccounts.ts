@@ -6,10 +6,11 @@ import type { HarnessId } from "../../sessions/model/session";
 
 const LEGACY_ACCOUNTS_KEY = "bycoda.providerAccounts.v1";
 const ACCOUNTS_KEY = "bycoda.providerAccounts.v2";
+const SHARED_CLI_ACCOUNTS_KEY = "bycoda.sharedCliAccounts.v1";
 const CHANGE_EVENT = "bycoda-provider-accounts-changed";
 const accountStore = createWindowStore({
   event: CHANGE_EVENT,
-  storageKeys: [ACCOUNTS_KEY, LEGACY_ACCOUNTS_KEY],
+  storageKeys: [ACCOUNTS_KEY, LEGACY_ACCOUNTS_KEY, SHARED_CLI_ACCOUNTS_KEY],
 });
 
 export const DEFAULT_PROVIDER_ACCOUNT_ID = "default";
@@ -27,6 +28,7 @@ export function sameProviderAccountId(
 export const PROVIDER_ACCOUNT_PROVIDERS = [
   "claude",
   "codex",
+  "grok",
 ] as const satisfies readonly HarnessId[];
 
 export type ProviderAccountProvider = (typeof PROVIDER_ACCOUNT_PROVIDERS)[number];
@@ -34,6 +36,32 @@ export type ProviderAccountProvider = (typeof PROVIDER_ACCOUNT_PROVIDERS)[number
 export function supportsProviderAccounts(provider: HarnessId): provider is ProviderAccountProvider {
   return PROVIDER_ACCOUNT_PROVIDERS.some((candidate) => candidate === provider);
 }
+
+/**
+ * Providers whose CLI keeps one sign-in per machine. They get the same named
+ * account card, but no profiles: the account is never selectable per session.
+ */
+export const SHARED_CLI_ACCOUNT_PROVIDERS = [
+  "opencode",
+  "antigravity",
+] as const satisfies readonly HarnessId[];
+
+export type SharedCliAccountProvider = (typeof SHARED_CLI_ACCOUNT_PROVIDERS)[number];
+
+export function isSharedCliAccountProvider(
+  provider: HarnessId,
+): provider is SharedCliAccountProvider {
+  return SHARED_CLI_ACCOUNT_PROVIDERS.some((candidate) => candidate === provider);
+}
+
+export type SharedCliAccount = {
+  id: typeof DEFAULT_PROVIDER_ACCOUNT_ID;
+  provider: SharedCliAccountProvider;
+  /** Owner label; empty until named, so callers show the provider's name. */
+  label: string;
+  kind?: "personal" | "work";
+  color?: ProviderAccountColor;
+};
 
 /**
  * Fixed palette for telling accounts apart. Values match the tab-group palette
@@ -67,13 +95,44 @@ export type ProviderAccount = {
   color?: ProviderAccountColor;
 };
 
+/** Local name, colour and kind of a shared CLI sign-in. */
+export function sharedCliAccount(provider: SharedCliAccountProvider): SharedCliAccount {
+  const stored = readRecord<Record<string, unknown>>(SHARED_CLI_ACCOUNTS_KEY)[provider];
+  const entry = isRecord(stored) ? stored : {};
+  return {
+    id: DEFAULT_PROVIDER_ACCOUNT_ID,
+    provider,
+    label: cleanLabel(entry.label),
+    ...(entry.kind === "personal" || entry.kind === "work" ? { kind: entry.kind } : {}),
+    ...(validAccountColor(entry.color) ? { color: entry.color } : {}),
+  };
+}
+
+export function saveSharedCliAccount(
+  account: Pick<SharedCliAccount, "provider"> &
+    Partial<Pick<SharedCliAccount, "label" | "kind" | "color">>,
+): void {
+  const stored = readRecord<Record<string, unknown>>(SHARED_CLI_ACCOUNTS_KEY);
+  const previous = sharedCliAccount(account.provider);
+  const label = "label" in account ? cleanLabel(account.label) : previous.label;
+  const kind = "kind" in account ? account.kind : previous.kind;
+  const color = "color" in account ? account.color : previous.color;
+  stored[account.provider] = {
+    ...(label ? { label } : {}),
+    ...(kind ? { kind } : {}),
+    ...(color ? { color } : {}),
+  };
+  writeJson(SHARED_CLI_ACCOUNTS_KEY, stored);
+  announceChange();
+}
+
 function validAccountColor(value: unknown): value is ProviderAccountColor {
   return PROVIDER_ACCOUNT_COLORS.some((color) => color.id === value);
 }
 
 /** Palette entry for an account: its own pick, else stable by provider and id. */
 export function providerAccountColor(
-  account: Pick<ProviderAccount, "id" | "provider" | "color">,
+  account: Pick<ProviderAccount, "id" | "color"> & { provider: HarnessId },
 ): (typeof PROVIDER_ACCOUNT_COLORS)[number] {
   const picked = PROVIDER_ACCOUNT_COLORS.find((color) => color.id === account.color);
   if (picked) return picked;
@@ -87,7 +146,7 @@ export function providerAccountColor(
 
 /** CSS colour for an account's dot. */
 export function providerAccountColorValue(
-  account: Pick<ProviderAccount, "id" | "provider" | "color">,
+  account: Pick<ProviderAccount, "id" | "color"> & { provider: HarnessId },
 ): string {
   return providerAccountColor(account).value;
 }

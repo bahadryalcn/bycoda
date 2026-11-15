@@ -123,7 +123,7 @@ export function loadRateLimits(
           : provider === "codex"
             ? await fetchCodexRateLimits(accountId)
             : provider === "grok"
-              ? await fetchGrokRateLimits()
+              ? await fetchGrokRateLimits(accountId)
               : await fetchOpencodeGoRateLimits();
     } catch (error) {
       result = errorRateLimits(provider, error instanceof Error ? error.message : String(error));

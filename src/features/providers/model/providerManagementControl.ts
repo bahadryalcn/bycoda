@@ -2,6 +2,7 @@ import { readProviderAccountIdentity } from "./providerAccountIdentity";
 import {
   providerAccounts,
   PROVIDER_ACCOUNT_PROVIDERS,
+  supportsProviderAccounts,
   type ProviderAccount,
 } from "./providerAccounts";
 import { getCachedRateLimits } from "./rateLimitsCache";
@@ -22,7 +23,7 @@ export type ProviderManagementContext = {
 );
 type Deps = {
   accounts: () => ProviderAccount[];
-  quota: (provider: "claude" | "codex", id: string) => ProviderRateLimits;
+  quota: (provider: ProviderAccount["provider"], id: string) => ProviderRateLimits;
   mcp: (cwd: string) => McpSettingsSnapshot | undefined;
   now: () => number;
   identity?: typeof readProviderAccountIdentity;
@@ -98,7 +99,7 @@ export async function readProviderManagement(
   const accounts = await Promise.all(
     allAccounts.slice(0, 128).map(async (account) => {
       if (
-        !["claude", "codex"].includes(account.provider) ||
+        !supportsProviderAccounts(account.provider) ||
         !text(account.id, 128) ||
         !text(account.label, 160)
       )

@@ -14,10 +14,11 @@ import { AccountColorPicker } from "../../providers/public/accountIdentity";
 import type {
   ProviderAccountProvider,
   ProviderAccountColor,
+  SharedCliAccountProvider,
 } from "../../providers/public/providerAccounts";
 
 export type AccountEditor = {
-  provider: ProviderAccountProvider;
+  provider: ProviderAccountProvider | SharedCliAccountProvider;
   accountId?: string;
   label: string;
   color?: ProviderAccountColor;
@@ -160,7 +161,6 @@ export function ProviderAccountEditor({
                 id: editor.accountId!,
                 label: editor.label,
                 color: editor.color,
-                isDefault: false,
               }}
               disabled={working}
               onPick={(color) => onMetadata({ color })}

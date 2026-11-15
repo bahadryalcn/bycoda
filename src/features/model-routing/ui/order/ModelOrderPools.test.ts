@@ -20,6 +20,7 @@ vi.mock("../../../providers/public/providerAccounts", () => ({
   subscribeProviderAccounts: () => () => {},
   providerAccounts: () => [{ id: "default", label: "Default account" }],
   defaultProviderAccountId: () => "default",
+  supportsProviderAccounts: (harness: string) => ["claude", "codex", "grok"].includes(harness),
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

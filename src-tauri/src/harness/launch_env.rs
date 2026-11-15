@@ -60,6 +60,12 @@ pub(super) fn apply_provider_account(
                 .env_remove("CODEX_API_KEY")
                 .env_remove("CODEX_ACCESS_TOKEN");
         }
+        "grok" => {
+            // GROK_HOME relocates Grok Build's credentials, sessions and config.
+            cmd.env("GROK_HOME", &dir)
+                .env_remove("XAI_API_KEY")
+                .env_remove("GROK_DEPLOYMENT_KEY");
+        }
         _ => unreachable!("provider_account_dir validates the provider"),
     }
     Ok(())

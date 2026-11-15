@@ -459,6 +459,8 @@ describe.skipIf(!LIVE)("account switching, live Claude and Codex", () => {
   const deps: AccountSwitchDeps = {
     transfer: async ({ provider, fromAccountId, toAccountId, providerSessionId, cwd }) => {
       if (fromAccountId === toAccountId) return true;
+      // Grok transcripts have no copy path; the switch falls back to a handoff.
+      if (provider === "grok") return false;
       const from = accountHome(provider, fromAccountId);
       const to = accountHome(provider, toAccountId);
       if (provider === "claude") {

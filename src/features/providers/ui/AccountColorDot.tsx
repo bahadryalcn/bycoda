@@ -1,13 +1,14 @@
 import type { CSSProperties } from "react";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { providerAccountColorValue, type ProviderAccount } from "../model/providerAccounts";
+import type { HarnessId } from "../../sessions";
 
 /** Small dot in the account's colour, so accounts read apart at a glance. */
 export function AccountColorDot({
   account,
   className = "size-2",
 }: {
-  account: Pick<ProviderAccount, "id" | "provider" | "color">;
+  account: Pick<ProviderAccount, "id" | "color"> & { provider: HarnessId };
   className?: string;
 }) {
   return (

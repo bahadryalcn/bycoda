@@ -22,6 +22,9 @@ import {
   defaultProviderAccountIdIn,
   sessionProviderAccountIdIn,
   providerAccountLabelIn,
+  saveSharedCliAccount,
+  sharedCliAccount,
+  supportsProviderAccounts,
 } from "./providerAccounts";
 import { t as moduleT } from "../../../shared/i18n/core";
 
@@ -452,4 +455,47 @@ it("leaves migration-free metadata absent and rejects invalid edits", () => {
   expect(editProviderAccount("claude", original[0].id, { label: " " })).toBe(false);
   expect(editProviderAccount("claude", "missing", { label: "Work", kind: "work" })).toBe(false);
   expect(providerAccounts("claude")).toEqual(original);
+});
+
+describe("shared CLI accounts", () => {
+  it("keeps Grok as a profile provider and OpenCode as one shared sign-in", () => {
+    expect(supportsProviderAccounts("grok")).toBe(true);
+    expect(supportsProviderAccounts("opencode")).toBe(false);
+    expect(sharedCliAccount("opencode")).toEqual({
+      id: DEFAULT_PROVIDER_ACCOUNT_ID,
+      provider: "opencode",
+      label: "",
+    });
+  });
+
+  it("stores a local name, kind and colour without touching profile accounts", () => {
+    const changed = vi.fn();
+    const unsubscribe = subscribeProviderAccounts(changed);
+    saveSharedCliAccount({ provider: "antigravity", label: "  Google   work ", kind: "work" });
+    saveSharedCliAccount({ provider: "antigravity", color: "teal" });
+    unsubscribe();
+    expect(sharedCliAccount("antigravity")).toEqual({
+      id: DEFAULT_PROVIDER_ACCOUNT_ID,
+      provider: "antigravity",
+      label: "Google work",
+      kind: "work",
+      color: "teal",
+    });
+    expect(sharedCliAccount("opencode").label).toBe("");
+    expect(changed).toHaveBeenCalledTimes(2);
+    saveSharedCliAccount({ provider: "antigravity", kind: undefined });
+    expect(sharedCliAccount("antigravity").kind).toBeUndefined();
+  });
+
+  it("ignores malformed shared account storage", () => {
+    localStorage.setItem(
+      "bycoda.sharedCliAccounts.v1",
+      JSON.stringify({ opencode: { label: 4, kind: "boss", color: "neon" } }),
+    );
+    expect(sharedCliAccount("opencode")).toEqual({
+      id: DEFAULT_PROVIDER_ACCOUNT_ID,
+      provider: "opencode",
+      label: "",
+    });
+  });
 });

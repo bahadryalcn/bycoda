@@ -36,6 +36,9 @@ export async function fetchProviderUsage(
   accountId: string,
   sinceMs: number,
 ): Promise<UsageReport> {
+  // shortcut: Grok Build session logs are not scanned yet, so its accounts
+  // report no token rows; add a Grok parser to provider_usage_report to upgrade.
+  if (provider === "grok") return { rows: [], found: false, filesScanned: 0 };
   return invoke<UsageReport>("provider_usage_report", {
     provider,
     accountId,

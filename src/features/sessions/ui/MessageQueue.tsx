@@ -127,7 +127,7 @@ export function MessageQueue({
     accountChoicesSnapshot,
     accountChoicesSnapshot,
   );
-  const accountLists: [AccountList, AccountList] = JSON.parse(accountListsJson);
+  const accountLists: Partial<Record<string, AccountList>> = JSON.parse(accountListsJson);
   const delivery = useDeliveryProgress(sessionId);
   const pendingDelivery = deliveryIsPending(delivery?.stage);
   const departing = useAcceptedQueueDeparture(messages, delivery);
@@ -530,7 +530,7 @@ export function MessageQueue({
             const summary = target ? targetSummary(target) : undefined;
             const accounts =
               target && supportsProviderAccounts(target.harness)
-                ? accountLists[target.harness === "claude" ? 0 : 1]
+                ? (accountLists[target.harness] ?? [])
                 : [];
             const account = accounts.find(
               (account) => account.id === (target?.providerAccountId ?? "default"),

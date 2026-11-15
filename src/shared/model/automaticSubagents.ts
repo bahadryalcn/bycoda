@@ -103,7 +103,9 @@ export function resolveSubagents(value: unknown, input: AutomaticSubagentInput):
     const ref = {
       harness: model.harness,
       model: model.id,
-      ...(["claude", "codex"].includes(model.harness) ? { providerAccountId: account } : {}),
+      ...(["claude", "codex", "grok"].includes(model.harness)
+        ? { providerAccountId: account }
+        : {}),
       tier: subagentTier(model.id),
     };
     const key = delegateRefKey(ref);

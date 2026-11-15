@@ -3,7 +3,8 @@ vi.mock("./providerAccounts", () => ({
   providerAccounts: vi.fn(() => {
     throw Error("real account owner forbidden");
   }),
-  PROVIDER_ACCOUNT_PROVIDERS: ["claude", "codex"],
+  PROVIDER_ACCOUNT_PROVIDERS: ["claude", "codex", "grok"],
+  supportsProviderAccounts: (provider: string) => ["claude", "codex", "grok"].includes(provider),
 }));
 vi.mock("./rateLimitsCache", () => ({
   getCachedRateLimits: vi.fn(() => {

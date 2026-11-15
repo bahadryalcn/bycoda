@@ -8,8 +8,15 @@ export {
   providerAccountColorValue,
   subscribeProviderAccounts,
   sessionProviderAccountId,
+  sharedCliAccount,
+  saveSharedCliAccount,
 } from "../model/providerAccounts";
-export type { ProviderAccount, ProviderAccountProvider } from "../model/providerAccounts";
+export type {
+  ProviderAccount,
+  ProviderAccountProvider,
+  SharedCliAccount,
+  SharedCliAccountProvider,
+} from "../model/providerAccounts";
 
 export { PROVIDER_ACCOUNT_COLORS } from "../model/providerAccounts";
 export type { ProviderAccountColor } from "../model/providerAccounts";

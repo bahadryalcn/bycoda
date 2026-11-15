@@ -6,12 +6,15 @@ import { invoke } from "@tauri-apps/api/core";
  * transcript cannot be found (callers should fall back to a summary handoff).
  */
 export async function transferProviderSession(input: {
-  provider: "claude" | "codex";
+  provider: "claude" | "codex" | "grok";
   fromAccountId?: string;
   toAccountId?: string;
   providerSessionId: string;
   cwd: string;
 }): Promise<boolean> {
+  // Grok Build transcripts live in its own session store; there is no copy
+  // path yet, so callers fall back to a summary handoff.
+  if (input.provider === "grok") return false;
   return invoke<boolean>("provider_transfer_session", {
     provider: input.provider,
     fromAccountId: input.fromAccountId ?? null,

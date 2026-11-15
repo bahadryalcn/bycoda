@@ -5,6 +5,7 @@ import { providerAccountSignedOut } from "../../providers/public/accountUsage";
 import type { ProviderRateLimits } from "../../providers/public/accountUsage";
 import {
   defaultProviderAccountId,
+  PROVIDER_ACCOUNT_PROVIDERS,
   providerAccountLabel,
   providerAccounts,
   providerAccountColorValue,
@@ -18,7 +19,7 @@ export type AccountModelChoice = AgentModel & {
   accountLabel?: string;
 };
 export type ModelAccountCatalog = Partial<
-  Record<"codex" | "claude", readonly { id: string; label: string; isDefault?: boolean }[]>
+  Record<"codex" | "claude" | "grok", readonly { id: string; label: string; isDefault?: boolean }[]>
 >;
 
 /**
@@ -93,8 +94,13 @@ export function modelAccountLabel(
   return `${model.name} ${found ? accountDisplayLabel(accounts, found) : providerAccountLabel(model.harness, id)}`;
 }
 
+/** Every account-capable provider's accounts, keyed by provider. */
 export function accountChoicesSnapshot(): string {
-  return JSON.stringify([providerAccounts("claude"), providerAccounts("codex")]);
+  return JSON.stringify(
+    Object.fromEntries(
+      PROVIDER_ACCOUNT_PROVIDERS.map((provider) => [provider, providerAccounts(provider)]),
+    ),
+  );
 }
 
 /** Local model account label from the caller's reactive accounts and translator. */

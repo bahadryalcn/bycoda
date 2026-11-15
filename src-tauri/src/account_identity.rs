@@ -32,6 +32,7 @@ pub async fn provider_account_identity(
     tauri::async_runtime::spawn_blocking(move || match provider.as_str() {
         "claude" => Ok(claude_identity(dir)),
         "codex" => Ok(codex_identity(dir)),
+        "grok" => Ok(grok_identity(dir)),
         _ => Err("Account identity is not supported for this provider".into()),
     })
     .await
@@ -161,6 +162,37 @@ fn parse_claude_identity(config: &Value) -> Option<ProviderAccountIdentity> {
     })
 }
 
+fn grok_identity(dir: Option<PathBuf>) -> Option<ProviderAccountIdentity> {
+    let dir = match dir {
+        Some(dir) => dir,
+        None => std::env::var_os("GROK_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| home().map(|home| home.join(".grok")))?,
+    };
+    parse_grok_identity(&read_json(&dir.join("auth.json"))?)
+}
+
+/// Grok Build keys `auth.json` by issuer and principal; only the profile
+/// fields are read, never the key or refresh token.
+fn parse_grok_identity(auth: &Value) -> Option<ProviderAccountIdentity> {
+    let entry = auth
+        .as_object()?
+        .values()
+        .find(|entry| text(entry, "email").is_some())?;
+    let name = [text(entry, "first_name"), text(entry, "last_name")]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(ProviderAccountIdentity {
+        email: text(entry, "email"),
+        name: (!name.is_empty()).then_some(name),
+        plan: None,
+        organization: None,
+    })
+}
+
 fn codex_identity(dir: Option<PathBuf>) -> Option<ProviderAccountIdentity> {
     let dir = match dir {
         Some(dir) => dir,
@@ -219,6 +251,25 @@ mod tests {
             plan: plan.map(String::from),
             organization: organization.map(String::from),
         })
+    }
+
+    #[test]
+    fn grok_identity_reads_profile_fields_only() {
+        let auth = json!({
+            "https://auth.x.ai::principal": {
+                "key": "secret",
+                "refresh_token": "secret",
+                "email": " dev@example.com ",
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+            }
+        });
+        assert_eq!(
+            parse_grok_identity(&auth),
+            identity(Some("dev@example.com"), Some("Ada Lovelace"), None, None)
+        );
+        assert_eq!(parse_grok_identity(&json!({})), None);
+        assert_eq!(parse_grok_identity(&json!({ "x": { "key": "k" } })), None);
     }
 
     fn codex_auth(claims: Value) -> Value {

@@ -99,6 +99,8 @@ type Live = {
   acp: AcpClient;
   acpSessionId: string;
   cwd: string;
+  /** Account profile (GROK_HOME) the process runs under. */
+  accountId: string;
   modelId: string;
   contextWindow?: number;
   muteUpdates: boolean;
@@ -116,6 +118,8 @@ type Live = {
 type Resume = {
   acpSessionId: string;
   cwd: string;
+  /** Grok stores sessions per GROK_HOME; another account cannot load it. */
+  accountId: string;
 };
 
 const INIT_TIMEOUT_MS = PROVIDER_STARTUP_TIMEOUT_MS;
@@ -384,10 +388,19 @@ export async function forgetGrokSession(
   retireProviderEpoch(sourceEpochByThread, turnsByThread, sessionId);
 }
 
-export function bindGrokSession(threadId: string, acpSessionId: string, cwd: string): void {
+export function bindGrokSession(
+  threadId: string,
+  acpSessionId: string,
+  cwd: string,
+  providerAccountId?: string,
+): void {
   const sessionId = acpSessionId.trim();
   if (!threadId || !sessionId || !cwd.trim()) return;
-  resumeByThread.set(threadId, { acpSessionId: sessionId, cwd });
+  resumeByThread.set(threadId, {
+    acpSessionId: sessionId,
+    cwd,
+    accountId: providerAccountId ?? "default",
+  });
 }
 
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
@@ -403,8 +416,14 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
   assertProviderOperation(input.operationContext);
 
   const want = grokSpawnShape(input);
+  const accountId = input.providerAccountId ?? "default";
   const existing = liveByThread.get(input.sessionId);
-  if (existing && existing.cwd === input.cwd && sameGrokSpawn(existing, want)) {
+  if (
+    existing &&
+    existing.cwd === input.cwd &&
+    existing.accountId === accountId &&
+    sameGrokSpawn(existing, want)
+  ) {
     observeProviderProcess(input, existing.handle);
 
     return existing;
@@ -426,8 +445,8 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
     }
 
     const resume = resumeByThread.get(input.sessionId);
-    const canLoad = resume != null && resume.cwd === input.cwd;
-    if (resume && resume.cwd !== input.cwd) {
+    const canLoad = resume != null && resume.cwd === input.cwd && resume.accountId === accountId;
+    if (resume && !canLoad) {
       resumeByThread.delete(input.sessionId);
     }
 
@@ -497,7 +516,7 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
         noSubagents: want.noSubagents,
       }),
       input.cwd,
-      undefined,
+      { provider: "grok", id: accountId },
       "grok",
     );
     const startupAcp = await acpTurnWriter(
@@ -593,6 +612,7 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
     const live: Live = {
       operation: input.operationContext?.operation,
       handle,
+      accountId,
       subagents: new AcpSubagents(),
       acp,
       acpSessionId,
@@ -612,6 +632,7 @@ async function ensureStartedLive(input: HarnessSessionInput): Promise<Live> {
     resumeByThread.set(input.sessionId, {
       acpSessionId,
       cwd: input.cwd,
+      accountId,
     });
     live.onEvent({
       type: "session.providerBound",

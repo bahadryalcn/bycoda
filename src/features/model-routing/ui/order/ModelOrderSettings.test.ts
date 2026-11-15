@@ -44,6 +44,7 @@ vi.mock("../../../providers/public/providerAccounts", () => ({
     { id: "work", label: "Work login" },
   ],
   defaultProviderAccountId: () => "default",
+  supportsProviderAccounts: (harness: string) => ["claude", "codex", "grok"].includes(harness),
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

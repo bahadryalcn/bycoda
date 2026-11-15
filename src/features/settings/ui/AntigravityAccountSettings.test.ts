@@ -62,7 +62,7 @@ it("opens shared-account setup from Accounts without offering unsupported named 
   act(() => root.render(createElement(AntigravityAccountSettings, { embedded: true })));
   const details = container.querySelector<HTMLDetailsElement>("#setting-antigravity-account")!;
   const setup = details.querySelector<HTMLElement>("summary")!;
-  expect(setup.textContent).toContain("Antigravity CLI account");
+  expect(setup.textContent).toContain("Setup");
   expect(details.open).toBe(false);
   act(() => {
     details.open = true;

@@ -25,7 +25,20 @@ const PROFILES = {
     set: ["CODEX_HOME"],
     remove: ["OPENAI_API_KEY", "CODEX_API_KEY", "CODEX_ACCESS_TOKEN"],
   },
+  grok: {
+    label: "Grok Build",
+    shared: ["GROK_HOME", ".grok"],
+    set: ["GROK_HOME"],
+    remove: ["XAI_API_KEY", "GROK_DEPLOYMENT_KEY"],
+  },
 } as const;
+
+type ProfileProvider = keyof typeof PROFILES;
+const PROFILE_PROVIDERS = Object.keys(PROFILES) as ProfileProvider[];
+
+function isProfileProvider(provider: unknown): provider is ProfileProvider {
+  return typeof provider === "string" && Object.hasOwn(PROFILES, provider);
+}
 
 export type ProviderAccountEnvironment = {
   set: Record<string, string>;
@@ -33,7 +46,7 @@ export type ProviderAccountEnvironment = {
 };
 export type HostProviderAccountCatalog = Partial<
   Record<
-    "codex" | "claude",
+    ProfileProvider,
     {
       id: string;
       label: string;
@@ -47,7 +60,7 @@ const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
 const MAX_CATALOG_ACCOUNTS = 128;
 
 /** Same stable automatic colour the desktop shows for an account the owner has not recoloured. */
-function accountColor(provider: "codex" | "claude", id: string): string {
+function accountColor(provider: ProfileProvider, id: string): string {
   return providerAccountColorValue({ provider, id });
 }
 
@@ -57,7 +70,7 @@ export async function hostProviderAccounts(
   roots: string[] = desktopDatabasePaths().map(dirname),
 ): Promise<HostProviderAccountCatalog> {
   const catalog: HostProviderAccountCatalog = {};
-  for (const provider of ["codex", "claude"] as const) {
+  for (const provider of PROFILE_PROVIDERS) {
     const ids = new Set<string>();
     for (const root of [...new Set(roots)].slice(0, 16)) {
       const entries = await readdir(join(root, "provider-accounts", provider), {
@@ -120,7 +133,7 @@ export async function assertHostProviderAccount(
   id: string,
   roots?: string[],
 ): Promise<string | undefined> {
-  if ((provider !== "codex" && provider !== "claude") || !ACCOUNT_ID.test(id))
+  if (!isProfileProvider(provider) || !ACCOUNT_ID.test(id))
     throw new Error("Invalid provider account ID");
   if (id === DEFAULT_ACCOUNT_ID) return undefined;
   // Use the exact same resolution as actual provider CLI launch, without the
@@ -189,7 +202,7 @@ export async function providerAccountEnvironment(
   const id = account?.id;
   if (!id || id === DEFAULT_ACCOUNT_ID) return null;
   const provider = account?.provider;
-  if (provider !== "claude" && provider !== "codex")
+  if (!isProfileProvider(provider))
     throw new Error("Provider account profiles are not supported for this provider");
   if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) throw new Error("Invalid provider account id");
   const profile = PROFILES[provider];

@@ -17,6 +17,7 @@ const ownedSources = new WeakMap<
   Map<string, Promise<OpenCodeV2Service>>
 >();
 const catalogSources = new Map<string, Promise<OpenCodeV2Service>>();
+const catalogRetryOperations = new Map<string, string>();
 // Enable conversation routing only after unscoped utilities and provider-open
 // share this service and physical endpoint ownership is qualified.
 const OWNED_V2_ROUTE_READY = true;
@@ -27,7 +28,11 @@ export function resolveOwnedOpenCodeCatalog(path: string, cwd: string): Promise<
   const key = JSON.stringify([path, cwd, binaryPath]);
   const existing = catalogSources.get(key);
   if (existing) return existing;
-  const operationId = newRequestId();
+  // A failed acquire is retried with the same operation ID: native acquisition
+  // is idempotent per ID, so an accepted-but-unreported reference is returned
+  // instead of leaked, and a real failure no longer sticks until restart.
+  const operationId = catalogRetryOperations.get(key) ?? newRequestId();
+  catalogRetryOperations.set(key, operationId);
   const pending = (async () => {
     const pageToken = await invoke<string>("canonical_store_page_token");
     const command = Object.freeze({
@@ -61,7 +66,12 @@ export function resolveOwnedOpenCodeCatalog(path: string, cwd: string): Promise<
       }),
     };
   })();
-  void pending.catch(() => undefined);
+  void pending.then(
+    () => catalogRetryOperations.delete(key),
+    () => {
+      if (catalogSources.get(key) === pending) catalogSources.delete(key);
+    },
+  );
   catalogSources.set(key, pending);
   return pending;
 }

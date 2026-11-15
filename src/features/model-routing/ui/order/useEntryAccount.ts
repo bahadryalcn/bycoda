@@ -4,6 +4,7 @@ import {
   defaultProviderAccountId,
   providerAccounts,
   subscribeProviderAccounts,
+  supportsProviderAccounts,
   type ProviderAccount,
 } from "../../../providers/public/providerAccounts";
 import { inferAccountKind } from "../../model/modelProfile";
@@ -23,8 +24,7 @@ export type EntryAccount = {
 export function useEntryAccount(
   entry: Pick<ModelRoutingEntry, "harness" | "providerAccountId">,
 ): EntryAccount {
-  const provider =
-    entry.harness === "claude" || entry.harness === "codex" ? entry.harness : undefined;
+  const provider = supportsProviderAccounts(entry.harness) ? entry.harness : undefined;
   const snapshot = useSyncExternalStore(subscribeProviderAccounts, () =>
     JSON.stringify(provider ? providerAccounts(provider) : []),
   );

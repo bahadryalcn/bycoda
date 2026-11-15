@@ -41,6 +41,8 @@ type LiveText = {
   acp: AcpClient;
   binaryPath: string;
   cwd: string;
+  /** Account profile (GROK_HOME) the text process runs under. */
+  accountId: string;
   model: string;
   settingsKey: string;
   acpSessionId: string;
@@ -71,6 +73,7 @@ export function warmupGrokText(cwd: string): Promise<void> {
 export async function runGrokTextPrompt(
   input: import("../../core/providerRetirement").ProviderRetirementObserver & {
     cwd: string;
+    providerAccountId?: string;
     model?: string;
     modelSettings?: Record<string, string>;
     prompt: string;
@@ -91,6 +94,7 @@ export async function runGrokTextPrompt(
 async function promptOnLive(
   input: import("../../core/providerRetirement").ProviderRetirementObserver & {
     cwd: string;
+    providerAccountId?: string;
     model?: string;
     modelSettings?: Record<string, string>;
     prompt: string;
@@ -107,6 +111,7 @@ async function promptOnLive(
     input.modelSettings,
     input.operationContext,
     input,
+    input.providerAccountId,
   );
   let writer: Awaited<ReturnType<typeof acpTurnWriter>>;
   try {
@@ -172,8 +177,10 @@ async function ensureLive(
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
   retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
+  providerAccountId?: string,
 ): Promise<LiveText> {
   const model = requestedModel?.trim() || TEXT_MODEL;
+  const accountId = providerAccountId ?? "default";
   const settingsKey = modelSettingsKey(modelSettings);
   const current = live;
   if (current && !current.closed) {
@@ -191,13 +198,14 @@ async function ensureLive(
     live === current &&
     !current.closed &&
     current.cwd === cwd &&
+    current.accountId === accountId &&
     current.model === model &&
     current.settingsKey === settingsKey
   )
     return current;
   // Retire the previous throwaway session before replacing its id, including
   // when a warmed-up process needs a different model or working directory.
-  return startLive(cwd, model, modelSettings, operationContext, retirement);
+  return startLive(cwd, model, modelSettings, operationContext, retirement, accountId);
 }
 
 async function startLive(
@@ -206,6 +214,7 @@ async function startLive(
   modelSettings?: Record<string, string>,
   operationContext?: HarnessOperationContext,
   retirement?: import("../../core/providerRetirement").ProviderRetirementObserver,
+  accountId = "default",
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
@@ -244,6 +253,7 @@ async function startLive(
       acp,
       binaryPath: "",
       cwd,
+      accountId,
       model,
       settingsKey: modelSettingsKey(modelSettings),
       acpSessionId: "",
@@ -268,7 +278,14 @@ async function startLive(
     const { path } = await resolveGrokBinary();
     session.binaryPath = path;
     if (starting !== textProcess) throw new Error("Grok text startup cancelled");
-    await spawnChild(textProcess, path, grokTextSpawnArgs(), cwd, undefined, "grok");
+    await spawnChild(
+      textProcess,
+      path,
+      grokTextSpawnArgs(),
+      cwd,
+      { provider: "grok", id: accountId },
+      "grok",
+    );
     const writer = await acpTurnWriter(
       textProcess,
       acp,

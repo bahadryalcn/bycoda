@@ -13,6 +13,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const sent: string[] = [];
 let heldApprovalWrite: (() => Promise<void>) | null = null;
+const spawned: unknown[][] = [];
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number | null) => void) | undefined;
 let queueAgent: ((message: Record<string, unknown>) => void) | null = null;
@@ -24,7 +25,9 @@ beforeEach(() => {
 vi.mock("../../core/child", () =>
   processConstructions.mock({
     resolveGrokBinary: async () => ({ path: "/fake/grok" }),
-    spawnChild: async () => undefined,
+    spawnChild: async (...args: unknown[]) => {
+      spawned.push(args);
+    },
     killChild: async () => undefined,
     unwatchChild: () => undefined,
     watchChild: (_id: string, line: (l: string) => void, exit: (c: number | null) => void) => {
@@ -249,6 +252,26 @@ describe("grok live turn sequence", () => {
     expect(events.some((e) => e.type === "session.providerBound")).toBe(true);
     expect(parse().some((m) => m.method === "authenticate")).toBe(true);
     await stopGrokSession("t1");
+  });
+
+  it("runs the selected account's Grok profile", async () => {
+    spawned.length = 0;
+    const turn = sendGrokTurn({
+      sessionId: "t-account",
+      cwd: "/repo",
+      model: "grok:grok-4.6",
+      runtimeMode: "supervised",
+      providerAccountId: "account-2",
+      text: "hey",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    await handshake();
+    await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+    expect(spawned.at(-1)?.[4]).toEqual({ provider: "grok", id: "account-2" });
+    reply(parse().find((m) => m.method === "session/prompt")!.id, { stopReason: "end_turn" });
+    await turn;
+    await stopGrokSession("t-account");
   });
 
   it("surfaces a supervised permission request instead of auto-approving", async () => {

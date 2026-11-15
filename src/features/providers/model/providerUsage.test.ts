@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const invoke = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 import type { ProviderAccount } from "./providerAccounts";
 import {
   createUsagePricing,
+  fetchProviderUsage,
   rowCost,
   summarizeUsage,
   usageBreakdown,
@@ -203,4 +207,13 @@ describe("OpenRouter pricing", () => {
     );
     expect(summary.cost).toBeCloseTo(22);
   });
+});
+
+it("reports no Grok rows instead of failing the usage scan", async () => {
+  await expect(fetchProviderUsage("grok", "account-1", 0)).resolves.toEqual({
+    rows: [],
+    found: false,
+    filesScanned: 0,
+  });
+  expect(invoke).not.toHaveBeenCalled();
 });

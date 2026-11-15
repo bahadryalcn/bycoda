@@ -7,9 +7,13 @@ import {
   setProviderAccountColor,
   providerAccountColor,
   PROVIDER_ACCOUNT_COLORS,
+  supportsProviderAccounts,
   type ProviderAccount,
   type ProviderAccountColor,
 } from "../model/providerAccounts";
+import type { HarnessId } from "../../sessions";
+
+type ColorableAccount = Pick<ProviderAccount, "id" | "label" | "color"> & { provider: HarnessId };
 import { AccountColorDot } from "./AccountColorDot";
 
 /** Swatch popover for one account, anchored to any trigger (a button or an overflow menu). */
@@ -19,16 +23,18 @@ export function AccountColorPopover({
   onDismiss,
   onPick,
 }: {
-  account: ProviderAccount;
+  account: ColorableAccount;
   anchor: PopoverAnchor;
   onDismiss: () => void;
+  /** Required for a shared CLI sign-in, which has no profile store to save into. */
   onPick?: (color: ProviderAccountColor | undefined) => void;
 }) {
   useLocale();
   const current = providerAccountColor(account);
   const pick = (color: ProviderAccountColor | undefined) => {
     if (onPick) onPick(color);
-    else setProviderAccountColor(account.provider, account.id, color);
+    else if (supportsProviderAccounts(account.provider))
+      setProviderAccountColor(account.provider, account.id, color);
     onDismiss();
   };
   return (
@@ -71,7 +77,7 @@ export function AccountColorPicker({
   disabled,
   onPick,
 }: {
-  account: ProviderAccount;
+  account: ColorableAccount;
   disabled?: boolean;
   /** Draft editor callback; omit to persist immediately from account rows. */
   onPick?: (color: ProviderAccountColor | undefined) => void;

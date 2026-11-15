@@ -145,14 +145,9 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
             >
               <HarnessIcon harness="antigravity" className="icon-md" />
             </span>
-            <span className="min-w-0">
-              <Text as="span" tone="primary" weight="medium" className="block">
-                {t("Antigravity CLI account")}
-              </Text>
-              <Text size="micro" tone="muted" className="block">
-                {t("This machine · shared CLI account · separate profiles unavailable")}
-              </Text>
-            </span>
+            <Text as="span" tone="primary" weight="medium" className="block min-w-0">
+              {t("Setup")}
+            </Text>
           </span>
         }
       >

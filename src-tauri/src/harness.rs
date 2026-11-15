@@ -3252,7 +3252,7 @@ pub(crate) fn provider_account_path(
     provider: &str,
     account_id: &str,
 ) -> Result<PathBuf, String> {
-    if provider != "claude" && provider != "codex" {
+    if !matches!(provider, "claude" | "codex" | "grok") {
         return Err("Provider account profiles are not supported for this provider".into());
     }
     if account_id == DEFAULT_PROVIDER_ACCOUNT_ID {
@@ -3308,11 +3308,16 @@ fn provider_account_remove_blocking(
         return Ok(());
     }
     if account_id == DEFAULT_PROVIDER_ACCOUNT_ID || credentials_only == Some(true) {
-        if !matches!(provider.as_str(), "claude" | "codex") {
+        if !matches!(provider.as_str(), "claude" | "codex" | "grok") {
             return Err("Unsupported provider account".into());
         }
-        let binary = resolve_mcp_binary(&provider, host.runtime_binary_path(&provider).as_deref())?;
+        let binary = match host.runtime_binary_path(&provider) {
+            Some(path) => resolve_harness_binary_override(&provider, &path)?,
+            None => resolve_harness_binary_default(&provider)
+                .ok_or_else(|| format!("{provider} CLI not found"))?,
+        };
         host.kill_account(&provider, &account_id);
+        // Codex and Grok Build both sign out with a bare `logout`.
         let args: Vec<String> = if provider == "claude" {
             vec!["auth".into(), "logout".into()]
         } else {

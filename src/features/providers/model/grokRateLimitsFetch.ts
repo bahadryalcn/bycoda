@@ -1,3 +1,4 @@
+import { DEFAULT_PROVIDER_ACCOUNT_ID } from "./providerAccounts";
 import { homeDir } from "../../../platform/tauri/fs";
 import {
   createChildProcessHandle,
@@ -22,7 +23,7 @@ import {
 
 const REQUEST_TIMEOUT_MS = 12_000;
 const retirements = createProviderRetirementLedger("grok.usage", killChild);
-let inflight: Promise<ProviderRateLimits> | undefined;
+const inflight = new Map<string, Promise<ProviderRateLimits>>();
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -62,16 +63,20 @@ export function parseGrokBilling(value: unknown): ProviderRateLimits {
 }
 
 /** Coalesce footer/history reads; the CLI retains ownership of cached authentication. */
-export function fetchGrokRateLimits(): Promise<ProviderRateLimits> {
-  if (!inflight) {
-    inflight = readGrokRateLimits().finally(() => {
-      inflight = undefined;
+export function fetchGrokRateLimits(
+  accountId = DEFAULT_PROVIDER_ACCOUNT_ID,
+): Promise<ProviderRateLimits> {
+  let read = inflight.get(accountId);
+  if (!read) {
+    read = readGrokRateLimits(accountId).finally(() => {
+      inflight.delete(accountId);
     });
+    inflight.set(accountId, read);
   }
-  return inflight;
+  return read;
 }
 
-async function readGrokRateLimits(): Promise<ProviderRateLimits> {
+async function readGrokRateLimits(accountId: string): Promise<ProviderRateLimits> {
   try {
     await retirements.drain();
     const { path } = await resolveGrokBinary();
@@ -94,7 +99,14 @@ async function readGrokRateLimits(): Promise<ProviderRateLimits> {
       () => rpc.close(new Error("Grok usage probe exited")),
     );
     try {
-      await spawnChild(handle, path, grokSpawnArgs({ model: "" }), cwd, undefined, "grok");
+      await spawnChild(
+        handle,
+        path,
+        grokSpawnArgs({ model: "" }),
+        cwd,
+        { provider: "grok", id: accountId },
+        "grok",
+      );
       const init = record(
         await rpc.request(
           "initialize",

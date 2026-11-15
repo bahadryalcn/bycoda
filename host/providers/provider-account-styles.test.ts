@@ -64,7 +64,11 @@ it("carries default account identity through safe metadata", () => {
   const styles = parseProviderAccountStyles({
     codex: { work: { isDefault: true }, old: { isDefault: false }, invalid: { isDefault: "yes" } },
   });
-  expect(providerDefaultAccounts(styles)).toEqual({ claude: "default", codex: "work" });
+  expect(providerDefaultAccounts(styles)).toEqual({
+    claude: "default",
+    codex: "work",
+    grok: "default",
+  });
   expect(styles.codex?.invalid).toBeUndefined();
   const catalog = applyProviderAccountStyles({ codex: [{ id: "work", label: "Work" }] }, styles);
   expect(
