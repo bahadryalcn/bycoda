@@ -768,10 +768,12 @@ Pages compose these; they never reskin them or add page-local surfaces.
   Surface and divider roles are `--ui-settings-group-*` / `--ui-settings-hairline` /
   `--ui-settings-row-hover` in `src/styles/index.css`. Children are Rows and a closing
   AdvancedSettings; other content goes in a `stacked` Row. Collections use the same frame.
-- **Row text:** title plus `description` as one short muted line (visible by default).
-  Use `info` (ⓘ) only for long or rare detail. `descriptionVisible={false}` keeps the old
-  info-popover presentation for a row that has not been shortened yet. Do not show the same
-  help twice (description and ⓘ), and state scope once per page or group.
+- **Row text:** title, with `description` behind the info (ⓘ) affordance by default
+  (owner decision 2026-11-15). A visible muted subline only states scope, dependency or
+  consequence. Do not show the same help twice, and state scope once per page or group.
+- **Saving:** settings apply instantly; text entry commits on blur or Enter, and a changed
+  row shows the reset icon. A save bar is used only for a multi-field transaction that
+  must commit together.
 - **Right column:** the control sits on the row's right edge at the density-aware compact
   height; a Select has a fixed minimum width; Slider has a fixed width plus a value chip.
   Wide editors use `stacked`.
@@ -797,6 +799,85 @@ Pages compose these; they never reskin them or add page-local surfaces.
   right, at the end of its group. It is closed by default; pass `defaultOpen` only for a disclosure that must start
   open. Never use it to hold only a paragraph.
 
+## One component system spec
+
+Owner decision 2026-11-15 (shared-ui decisions, "One component system"). Every shared
+component, Arc adapter and feature-special component consumes these values; Arc modules
+are reskinned onto them (`src/styles/arc.css` maps sizes, radii, type and motion, not
+only colour). A component that needs a value not listed here adds a role here first.
+
+**Heights** (`--ui-control-height-*`, density-scaled): `xs` 24 (inline action, chip,
+step row), `sm` 28 (compact control, dense row, option), `md` 32 (default control,
+menu row), `lg` 40. Touch density keeps >= 44. Rows: dense 28, menu 32, sidebar/
+collection 36, settings row 48 minimum.
+
+**Radius:** `--ui-radius-control` 8 (buttons, fields, segmented, cards);
+`--ui-radius-inset` = control - 2 (checkbox, segmented thumb, chip in a field, key cap);
+`--ui-radius-row` 6 (every list, menu, option and tree row); `--ui-radius-popup` 12
+(menus, popovers, dialogs, toasts); pill only for switch, status dot and count. One
+token name has one value; `--radius-panel` / `--ui-radius-panel` resolve to one role.
+
+**Type roles:** micro 11 (count, kbd only), caption 12 (buttons, tabs, badges,
+section labels, metadata), secondary 13 (text entry, rows, menus, chips, body of
+tools), body 14 (reading), title 16, heading 20. Weights 400 and 500 only. Control
+modules read `--ui-font-*`, never Arc `--text-*` directly.
+
+**Icons:** `--ui-icon-xs` 12 inline/chip, `--ui-icon-sm` 14 controls, headers, checks,
+inline notices, `--ui-icon-md` 16 row leading slot, box/toast notices, `--ui-icon-lg`
+20 empty states only. Stroke 1.75. One lucide set through `icons.tsx`.
+
+**State fills (soft, T3 Code reference):** rest transparent; hover
+`--ui-surface-hover`; selected `--ui-surface-selected`; pressed `--ui-surface-pressed`.
+Dark: white-alpha steps (hover ~4%, selected ~8%, pressed ~10%); light: zinc-like steps
+with selected/hover >= 1.15 contrast. `--color-selection*` is not used by controls.
+Selected rows never change border. Chips, badges, skeletons, kbd and code grounds use
+translucent tone fills (`--ui-tone-*-subtle`: tone at 8% light / 16% dark, neutral
+from ink), never a state role, so they stay visible on hover and selected hosts.
+
+**Borders:** one hairline role per job: `--ui-pane-border` (panes, popups, dividers) and
+`--ui-card-border` (cards, groups). Field resting border is faint (T3, ~1.5:1); fields
+keep a muted field ground so they remain findable without a focus frame.
+
+**Focus:** `html[data-input-modality]` is `pointer` or `keyboard` (set on pointerdown /
+keydown). Pointer: no focus visuals anywhere; fields show only the caret. Keyboard:
+2px inset neutral cue >= 3:1 on its host. Forced-colors keeps the system outline.
+Selected state uses `--ui-selected-ring`, never the focus token.
+
+**Motion:** two durations: `--motion-duration-fast` 120ms (feedback, hover, press) and
+`--motion-duration-standard` 160ms (enter, exit, state change); one easing
+`--motion-ease-standard`. The JS tokens in `arc/motion-tokens.ts` read these values.
+One enter (`ui-enter`: opacity + 4px rise), one exit (fade). No blur, morph, particle
+or spring unless a component documents a reason. Reduced motion: fade only, one place.
+
+**Containers:** four Surface roles: `page` (canvas, no frame), `card` (card border,
+radius control, no fill on pure canvas), `inset` (muted ground, radius row; code,
+output, wells), `floating` (popup radius, floating elevation). No surface inside a
+surface of the same role.
+
+**Feedback anatomy** (Alert, InlineMessage/InlineError, Toast, EmptyState and
+FailureState inline): `[glyph][title + body][action][dismiss]`. Glyph per tone
+(info Info, success CircleCheck, warning TriangleAlert, danger CircleAlert), 14px inline
+and 16px in box/toast, inside a box one first line tall so it centres on the first line.
+Copy is neutral (title primary, body secondary); the glyph carries the tone; only
+InlineError danger may tint its sentence. Actions are structured
+(`action={{ label, onClick, pending, disabled }}`, plus `retry`) and rendered by the
+component: inline as a text link after the copy, in a box or toast as a secondary `sm`
+button. No free ReactNode action slot. Empty and failure blocks: title + one sentence +
+optional action.
+
+**Loading:** one indicator per context: `Spinner` on the initiating control,
+`LoadingText` for a line, `Skeleton` for a known layout, `SurfaceLoading` for a whole
+pane, `WorkingIndicator` for agent activity. All share one delay before showing.
+
+**Descriptions:** Row, Group, Field and EmptyState descriptions render behind the info
+(ⓘ) affordance by default; a visible subline only states scope, dependency or
+consequence.
+
+**Special components** (transcript, composer, terminal, diff, boards, sidebar, panels)
+own layout and domain content only. They compose shared components and the roles above;
+they do not declare their own button, row, chip, disclosure, fill, radius, font size,
+icon size, keyframes or shadow.
+
 ## Overlays, focus and motion
 
 `Modal`, `Popover`, `overlay.ts` and native popup routing own layering, Escape,
@@ -806,7 +887,8 @@ global key handler or modal owner.
 
 Keep one focus owner. `SearchInput` uses `input`, `group` or `menu` ownership as
 documented in [Arc integration](arc-ui.md). Features must not add nested outlines.
-All keyboard focus remains visible, including forced-colors mode. An icon action
+Keyboard focus remains visible (keyboard modality and forced-colors mode); pointer
+interaction shows no focus visuals (see One component system spec). An icon action
 needs a translated accessible name and a tooltip; essential help and errors are
 reachable without hover. Navigation, tabs, menus and trees keep their native ARIA
 and keyboard contracts.

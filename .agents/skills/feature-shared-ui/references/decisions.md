@@ -101,6 +101,24 @@ separate and explain their choice in catalog JSDoc. Shared wrappers own Arc and 
 feature code uses those wrappers. The UI drift and catalog ratchets enforce imports, floating-surface
 ownership, family metadata, unused exports and known hand-written control recipes.
 
+## One component system
+
+Owner decisions, 2026-11-15, source: owner chat:
+
+> fokus istemiyorum çok kötü duruyor t3code un ui tasarımını incelermisin buna göre bir yol haritası çiz
+
+> heryer aynı component tasarımlarını kullanması gerekiyor. Eğer farklıysa o component özel bir componenttir fakat onunda benzer tasarım anlayışıyla yapılması gerekiyor biri native biri bycoda biri arc ui olmaması gerekiyor.
+
+Recorded decision: one spec ("One component system spec" in the desktop design system)
+governs shared components, Arc adapters, native windows and feature-special components;
+T3 Code is the quality reference. Owner choices in the same round: no focus visuals on
+pointer interaction (keyboard and forced-colors only); the transcript user prompt is a
+right-aligned borderless bubble; settings apply instantly with per-row reset; soft
+white-alpha state fills; default chat width 48rem; faint field resting border; row,
+field and empty-state descriptions behind the info affordance by default; native
+`alert`/non-blocking `message()` dialogs become Toast/Alert. This replaces the earlier
+"descriptions visible by default" settings rule and the transcript "no bubbles" rule.
+
 ## Navigation tool group ground
 
 Owner decision, 2026-11-13, source: owner chat:

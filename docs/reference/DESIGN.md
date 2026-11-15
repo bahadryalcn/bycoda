@@ -196,8 +196,9 @@ content.
 
 Do not introduce a surrounding focus frame or decorative edge stripe on a large
 composer, panel, card or row. Use the owning surface, text/icon emphasis and
-caret to convey the relevant state; keyboard-operated controls keep a visible
-local focus cue. Treat required input/drag/resize and system high-contrast
+caret to convey the relevant state. Pointer interaction shows no focus visuals at
+all; only keyboard (Tab) navigation and forced-colors mode show a subtle local focus
+cue. Treat required input/drag/resize and system high-contrast
 boundaries separately. Do not wrap a composer's subordinate workspace toolbar
 in another attached outline. Apply this rule to screen compositions and shared
 controls together rather than inventing an edge treatment on each screen.
@@ -210,6 +211,19 @@ control independently on each screen. Icon-only actions retain a full usable
 target, an accessible name and a tooltip.
 
 ## Components
+
+### One component system
+
+Provenance: feature-shared-ui decisions (2026-11-15).
+
+The product has one component language. A shared component, an adapted Arc source,
+a native window and a feature's special component all follow the same control,
+feedback, container, type, icon, state and motion spec in the desktop design system.
+A component that does a different job may look different, but it is built from the
+same roles and parts; a second recipe for the same job is a defect. Native OS dialogs
+are kept only for boot and updater fatal errors, file pickers and menus that a popover
+cannot fit. T3 Code is the quality reference for state fills, rows, status and
+composer composition.
 
 ### Choose the interaction for the task
 
@@ -237,10 +251,11 @@ The product has exactly two conversation layouts; do not invent a third per scre
   the canvas. Day separators, a small time under each bubble, a compact composer at
   the bottom; Enter sends, Shift+Enter breaks a line. Voice and send are separate
   controls that never overlap.
-- Transcript layout: agent and coding sessions. Full-width reading column, user
-  prompts as distinct blocks, tool and command steps as single-line summaries with
-  details on demand, active work and approvals always visible. No bubbles, no
-  alternating alignment.
+- Transcript layout: agent and coding sessions. A bounded reading column (default
+  48rem, the user's width preference wins); the user's prompt is a quiet borderless
+  bubble on the right, agent output is full-width text on the left. Tool and command
+  steps are single-line summaries with details on demand; active work and approvals
+  always visible.
 
 Both keep drafts, attachments, selection and scroll position; both use the shared
 composer owner for text entry.
