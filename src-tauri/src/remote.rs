@@ -14,6 +14,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+pub(crate) mod account_routes;
+
 #[path = "remote_changes.rs"]
 mod changes;
 
@@ -712,6 +714,13 @@ fn rpc_timed(
     params: Value,
     timeout: std::time::Duration,
 ) -> Result<Value, String> {
+    if let Some(environment_id) = environment_id {
+        if crate::remote_routes::account_tunnel(endpoint).is_some() {
+            crate::remote_routes::verify_account_endpoint(endpoint, environment_id).map_err(
+                |_| "Machine is unreachable. Account route identity could not be verified.",
+            )?;
+        }
+    }
     let agent = rpc_agent();
     let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params }).to_string();
     let exchange = transport_health::Exchange::new(endpoint, environment_id, method, timeout);
@@ -1025,80 +1034,102 @@ fn machine_rpc_for_consumer(
     consumer: Option<(&AppHandle, &str)>,
     retained: Option<&Mutex<Option<crate::host_ws::ReplyGuard>>>,
 ) -> Result<Value, String> {
-    with_refused_tunnel_retry(allow_connect && machine.ssh.is_some(), || {
-        let lease = machine
-            .ssh
-            .as_ref()
-            .map(|target| {
-                state
-                    .tunnels
-                    .endpoint(&machine.id, &machine.environment_id, target, allow_connect)
-            })
-            .transpose()?;
-        let endpoint = lease
-            .as_ref()
-            .map(|lease| lease.endpoint.as_str())
-            .unwrap_or(&machine.endpoint);
-        let response = if let Some((app, consumer)) =
-            consumer.filter(|_| state.ws_request_compatible(machine, method, &params))
-        {
-            let route = NativeRoute::new(
-                &machine.id,
-                &machine.environment_id,
-                endpoint,
-                &machine.token,
-                &ws_fingerprint(machine),
-            )
-            .map_err(|error| error.to_string())?;
-            let pending = with_current_ws_machine(app, state, machine, || {
-                state.ws.begin_request(
-                    &route,
-                    consumer,
-                    method,
-                    params.clone(),
-                    RequestOptions::default(),
-                )
-            });
-            match pending.and_then(|pending| pending.wait()) {
-                Ok(reply) => {
-                    let (value, guard) = reply.into_guarded_result();
-                    if let Some(retained) = retained {
-                        *retained
-                            .lock()
-                            .map_err(|_| "Native reply disclosure is unavailable")? = Some(guard);
-                    } else {
-                        guard.check().map_err(native_ws_failure)?;
+    account_routes::with_routes(machine, method, |account_endpoint| {
+        with_refused_tunnel_retry(
+            allow_connect && machine.ssh.is_some() && account_endpoint.is_none(),
+            || {
+                let lease = machine
+                    .ssh
+                    .as_ref()
+                    .filter(|_| account_endpoint.is_none())
+                    .map(|target| {
+                        state.tunnels.endpoint(
+                            &machine.id,
+                            &machine.environment_id,
+                            target,
+                            allow_connect,
+                        )
+                    })
+                    .transpose()?;
+                let endpoint = lease
+                    .as_ref()
+                    .map(|lease| lease.endpoint.as_str())
+                    .unwrap_or_else(|| account_endpoint.unwrap_or(&machine.endpoint));
+                // Check rotating saved routes before WebSocket authentication too.
+                if crate::remote_routes::account_tunnel(endpoint).is_some() {
+                    crate::remote_routes::verify_account_endpoint(
+                        endpoint,
+                        &machine.environment_id,
+                    )
+                    .map_err(|_| {
+                        "Machine is unreachable. Account route identity could not be verified."
+                    })?;
+                }
+                let response = if let Some((app, consumer)) =
+                    consumer.filter(|_| state.ws_request_compatible(machine, method, &params))
+                {
+                    let route = NativeRoute::new(
+                        &machine.id,
+                        &machine.environment_id,
+                        endpoint,
+                        &machine.token,
+                        &ws_fingerprint(machine),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let pending = with_current_ws_machine(app, state, machine, || {
+                        state.ws.begin_request(
+                            &route,
+                            consumer,
+                            method,
+                            params.clone(),
+                            RequestOptions::default(),
+                        )
+                    });
+                    match pending.and_then(|pending| pending.wait()) {
+                        Ok(reply) => {
+                            let (value, guard) = reply.into_guarded_result();
+                            if let Some(retained) = retained {
+                                *retained
+                                    .lock()
+                                    .map_err(|_| "Native reply disclosure is unavailable")? =
+                                    Some(guard);
+                            } else {
+                                guard.check().map_err(native_ws_failure)?;
+                            }
+                            Ok(value)
+                        }
+                        // Compatibility fallbacks reuse the same params, so a durable commandId is unchanged.
+                        Err(error) if ws_failure_allows_http_fallback(&error) => rpc(
+                            endpoint,
+                            &machine.token,
+                            Some(&machine.environment_id),
+                            method,
+                            params.clone(),
+                        ),
+                        Err(error) => Err(native_ws_failure(error)),
                     }
-                    Ok(value)
+                } else {
+                    rpc(
+                        endpoint,
+                        &machine.token,
+                        Some(&machine.environment_id),
+                        method,
+                        params.clone(),
+                    )
+                };
+                if method == "environment.describe" {
+                    if let Ok(descriptor) = &response {
+                        state.observe_ws_capability(machine, descriptor);
+                        if let Some(target) = &machine.ssh {
+                            crate::remote_routes::observe(
+                                target,
+                                &machine.environment_id,
+                                descriptor,
+                            );
+                        }
+                    }
                 }
-                // Compatibility fallbacks reuse the same params, so a durable commandId is unchanged.
-                Err(error) if ws_failure_allows_http_fallback(&error) => rpc(
-                    endpoint,
-                    &machine.token,
-                    Some(&machine.environment_id),
-                    method,
-                    params.clone(),
-                ),
-                Err(error) => Err(native_ws_failure(error)),
-            }
-        } else {
-            rpc(
-                endpoint,
-                &machine.token,
-                Some(&machine.environment_id),
-                method,
-                params.clone(),
-            )
-        };
-        if method == "environment.describe" {
-            if let Ok(descriptor) = &response {
-                state.observe_ws_capability(machine, descriptor);
-                if let Some(target) = &machine.ssh {
-                    crate::remote_routes::observe(target, &machine.environment_id, descriptor);
-                }
-            }
-        }
-        let response = match response {
+                let response = match response {
             Err(error)
                 if error.starts_with("The host request did not complete")
                     && state.tunnels.take_host_refusal(&machine.id) =>
@@ -1110,18 +1141,20 @@ fn machine_rpc_for_consumer(
             }
             other => other,
         };
-        if response
-            .as_ref()
-            .err()
-            .is_some_and(|error| error.starts_with("Machine is unreachable"))
-        {
-            if let Some(lease) = &lease {
-                if state.tunnels.invalidate(&machine.id, lease) {
-                    state.invalidate_ws(&machine.id);
+                if response
+                    .as_ref()
+                    .err()
+                    .is_some_and(|error| error.starts_with("Machine is unreachable"))
+                {
+                    if let Some(lease) = &lease {
+                        if state.tunnels.invalidate(&machine.id, lease) {
+                            state.invalidate_ws(&machine.id);
+                        }
+                    }
                 }
-            }
-        }
-        response
+                response
+            },
+        )
     })
 }
 

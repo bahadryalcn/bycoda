@@ -1,4 +1,6 @@
 {
+  "Access from outside the network (Cloudflare Quick Tunnel)": "ネットワーク外からのアクセス (Cloudflare Quick Tunnel)",
+  "Free temporary URL. Restarts automatically and updates your account when it changes.": "無料の一時URL。自動で再起動し、URLが変わるとアカウントを更新します。",
   "Screenshots need Screen Recording access. Review access to set it up, then try again.": "スクリーンショットには画面収録の許可が必要です。アクセスを設定してから再試行してください。",
   "1. Ask for access": "1. アクセスを要求",
   "2. Change the system setting": "2. システム設定を変更",

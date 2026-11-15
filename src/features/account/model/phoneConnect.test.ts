@@ -41,6 +41,25 @@ function request(over: Partial<PendingPairRequest> = {}): PendingPairRequest {
 }
 
 describe("buildConnectInfo", () => {
+  it("orders LAN before Tailscale before tunnel, deduplicates and caps at four", () => {
+    expect(
+      buildConnectInfo(
+        host([
+          { endpoint: "https://fresh.trycloudflare.com" },
+          { endpoint: "https://pc.ts.net" },
+          { endpoint: "http://192.168.1.3:3777", lanKey: "a".repeat(64) },
+          { endpoint: "https://pc.ts.net" },
+          { endpoint: "https://other.ts.net" },
+          { endpoint: "https://third.ts.net" },
+        ]),
+      )?.routes.map((route) => route.endpoint),
+    ).toEqual([
+      "http://192.168.1.3:3777",
+      "https://pc.ts.net",
+      "https://other.ts.net",
+      "https://fresh.trycloudflare.com",
+    ]);
+  });
   it("keeps valid routes and drops private http routes without a pin", () => {
     const info = buildConnectInfo(
       host([{ endpoint: "https://pc.tail.ts.net" }, { endpoint: "http://192.168.1.5:1234" }]),
@@ -63,6 +82,19 @@ describe("phone connect publisher", () => {
     });
     return { api, stop };
   };
+
+  it("publishes and unpublishes a changed tunnel within five seconds", async () => {
+    let current = host([{ endpoint: "https://pc.ts.net" }]);
+    const { api, stop } = setup(async () => current);
+    await vi.advanceTimersByTimeAsync(0);
+    current = host([...current.mobileRoutes!, { endpoint: "https://new.trycloudflare.com" }]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(api.putConnectInfo.mock.calls.at(-1)![0].body.routes).toHaveLength(2);
+    current = host([{ endpoint: "https://pc.ts.net" }]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(api.putConnectInfo.mock.calls.at(-1)![0].body.routes).toEqual(current.mobileRoutes);
+    stop();
+  });
 
   it("publishes once, republishes on change and as a heartbeat, deletes on stop", async () => {
     let current = host([{ endpoint: "https://a.ts.net" }]);

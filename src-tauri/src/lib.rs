@@ -688,6 +688,7 @@ pub fn run() {
             remote::remote_ssh_reconnect,
             remote::remote_machine_update,
             remote_routes::remote_machine_routes,
+            remote::account_routes::remote_learn_account_routes,
             remote_routes::remote_machine_route_settings,
             remote_routes::remote_machine_route_check,
             remote::remote_ssh_poll,

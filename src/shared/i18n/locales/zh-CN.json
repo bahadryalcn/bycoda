@@ -1,4 +1,6 @@
 {
+  "Access from outside the network (Cloudflare Quick Tunnel)": "从网络外访问 (Cloudflare Quick Tunnel)",
+  "Free temporary URL. Restarts automatically and updates your account when it changes.": "免费的临时网址。自动重启，并在网址更改时更新您的账户。",
   "Screenshots need Screen Recording access. Review access to set it up, then try again.": "截图需要屏幕录制权限。请检查并设置访问权限，然后重试。",
   "1. Ask for access": "1. 请求访问",
   "2. Change the system setting": "2. 更改系统设置",

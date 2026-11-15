@@ -14,6 +14,7 @@ export function createEnvironmentRuntime(
     | "webControl"
     | "mobileLan"
     | "mobileAccess"
+    | "tunnels"
     | "buildIdentity"
     | "providers"
     | "genericAcp"
@@ -29,6 +30,7 @@ export function createEnvironmentRuntime(
   const mobileRoutes = createMobileRoutes({
     lan: () => dependencies.mobileLan.status(),
     tailscale: () => dependencies.mobileAccess.status(),
+    tunnel: () => dependencies.tunnels.publicHostUrl(),
   });
   const environmentService = createEnvironmentService({
     snapshot: async () => ({

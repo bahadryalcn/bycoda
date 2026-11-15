@@ -35,3 +35,15 @@ Host that has running sessions or shells. It grants no other install or stop aut
 
 A version difference prompts the owner app-wide rather than only in Settings. The stop
 still follows the owner's confirmation in that prompt.
+
+## Free rotating Host access
+
+Recorded 2026-11-15 from the owner's machine-discovery implementation brief.
+
+> free Quick Tunnel whose URL changes on every start; logged-in devices learn the new URL from the account automatically. Cost must stay 0.
+
+Automatic public Host access is opt-in and defaults off. Reuse guardian ownership;
+unknown retirement never grants replacement authority. Publish credential-free
+routes through the existing desktop account publisher. Native route learning
+requires the same environmentId over HTTPS before any device credential is sent.
+Managed/named tunnels and paid infrastructure remain outside this contract.
