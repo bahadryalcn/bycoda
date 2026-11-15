@@ -19,8 +19,13 @@ import type { AdoptedEntry } from "./adoptedSessions";
 import { bindHarnessSession, isLiveHarness } from "../../../integrations/harness/core/registry";
 import { notifyRemoteRecovered } from "./remoteHealth";
 import { adoptedBeatFailed, noteAdoptedBeat } from "./hostWake";
+import { hostSessionBinding } from "./sessionExecutionBinding";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("./sessionExecutionBinding", async (original) => {
+  const actual = await original<typeof import("./sessionExecutionBinding")>();
+  return { ...actual, hostSessionBinding: vi.fn(actual.hostSessionBinding) };
+});
 vi.mock("./connections", () => ({
   loadRemoteCapabilities: vi.fn(),
   loadRemoteSession: vi.fn(),
@@ -42,6 +47,7 @@ let container: HTMLDivElement;
 let current: Session;
 let entries: AdoptedEntry[];
 let refresh: RefreshAdoptedSession;
+let reachable: { current: boolean };
 
 function Probe({
   initial,
@@ -55,7 +61,7 @@ function Probe({
   ref.current = sessions;
   const loadRunning = useRef(onLoadRunning);
   const refreshRef = useRef<RefreshAdoptedSession>(undefined);
-  useAdoptedSessions(ref, setSessions, loadRunning, refreshRef);
+  reachable = useAdoptedSessions(ref, setSessions, loadRunning, refreshRef);
   refresh = (id, target, resolution) => refreshRef.current!(id, target, resolution);
   current = sessions[0];
   return createElement("span", null, current.continuingElsewhere ? "working" : "idle");
@@ -626,4 +632,36 @@ it("retries a conversation it could not mirror with growing delays, not every fe
   // 5 s, 10 s, 20 s, 40 s...: three looks where the old timer made twelve.
   expect(listCalls() - before).toBeGreaterThanOrEqual(2);
   expect(listCalls() - before).toBeLessThanOrEqual(4);
+});
+
+it("keeps the Host reachable when one conversation's owner record cannot be read", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.mocked(hostSessionBinding).mockImplementation(() => {
+    throw new Error("The session owner has no durable record. Reconnect before sending.");
+  });
+  try {
+    await act(async () => root.render(createElement(Probe, { initial })));
+    expect(reachable.current).toBe(true);
+    expect(warn).not.toHaveBeenCalledWith("Host session mirror failed", expect.anything());
+  } finally {
+    vi.mocked(hostSessionBinding).mockReset();
+    warn.mockRestore();
+  }
+});
+
+it("names a failed mirror pass once per reason", async () => {
+  const initial = { ...newSession("claude", "/repo"), id: "s1" };
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  vi.mocked(remoteRequest).mockRejectedValue(new Error("Host is restarting"));
+  try {
+    await act(async () => root.render(createElement(Probe, { initial })));
+    await act(async () => vi.advanceTimersByTimeAsync(3 * 60_000));
+    expect(reachable.current).toBe(false);
+    expect(
+      warn.mock.calls.filter(([message]) => message === "Host session mirror failed"),
+    ).toHaveLength(1);
+  } finally {
+    warn.mockRestore();
+  }
 });

@@ -132,6 +132,17 @@ export async function enqueueAgentParentMessage(
   }
 }
 
+/** How long a queued notice may wait before the Host log names it. */
+export const NOTICE_WATCH_MS = 3 * 60_000;
+
+/** A notice at the head of an active queue that no consumer has claimed. */
+export async function noticeUndelivered(queues: SessionQueues, sessionId: string) {
+  const queue = await queues.get(sessionId);
+  return (
+    queue.messages[0]?.author?.kind === "delegation" && !queue.claim && queue.status !== "paused"
+  );
+}
+
 export async function inspectAgentSession(deps: DelegationDependencies, id: string) {
   const snapshot: Pick<HostSession, "projectId" | "session"> & { status?: string } =
     await deps.engine.store.session(id).catch((error) => {

@@ -12,7 +12,12 @@ import { resolveAntigravityBinary } from "../../src/integrations/harness/core/ch
 import { STREAM_MODE_LIMITS } from "../../src/integrations/harness/providers/antigravity/antigravityStreamProtocol";
 import type { HostModelCatalog } from "../../src/features/connections/model/protocol";
 import { ConversationDelegation } from "../delegation/service";
-import { enqueueAgentParentMessage } from "../delegation/message-delivery";
+import { hostWarnDeduped } from "../diagnostics/log-dedupe";
+import {
+  enqueueAgentParentMessage,
+  NOTICE_WATCH_MS,
+  noticeUndelivered,
+} from "../delegation/message-delivery";
 import { ConversationGoalTools } from "../conversation/conversation-goal-tools";
 import { ConversationSecretTools } from "../secrets/conversation-secret-tools";
 import { SecretStore, osSecretValues } from "../secrets/secret-store";
@@ -204,8 +209,24 @@ export function createProjectsRuntime(
     engine: dependencies.engine,
     directory: dirname(dependencies.engine.store.attachmentDir),
     featureSession: dependencies.featureSession,
-    enqueueParent: (sessionId, id, text, author) =>
-      enqueueAgentParentMessage(dependencies.sessionQueues, sessionId, id, text, author),
+    enqueueParent: async (sessionId, id, text, author) => {
+      await enqueueAgentParentMessage(dependencies.sessionQueues, sessionId, id, text, author);
+      if (!author) return;
+      // The trail for a parent that never continues: when the notice was queued, and
+      // whether its consumer (the desktop for a Native parent) had taken it minutes later.
+      console.info(`Subagent notice queued for ${sessionId} (${author.reason})`);
+      setTimeout(() => {
+        noticeUndelivered(dependencies.sessionQueues, sessionId).then(
+          (waiting) => {
+            if (waiting)
+              hostWarnDeduped(
+                `Subagent notice for ${sessionId} is still undelivered after ${NOTICE_WATCH_MS / 60_000} min`,
+              );
+          },
+          () => {}, // -- a diagnostic read; the Host may be closing.
+        );
+      }, NOTICE_WATCH_MS).unref();
+    },
     models: async (projectId) =>
       applyDisabledModels(
         await models(projectId),

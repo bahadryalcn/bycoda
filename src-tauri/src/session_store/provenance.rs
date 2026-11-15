@@ -140,7 +140,9 @@ fn protect_block(
             }
             // Accepted only when it creates the block. On a stored block the stored
             // authorship stands, without failing the save that carries the transcript.
-            if old.is_none() && role_is_user(row) && stored_ids.is_some_and(|ids| !ids.contains(&id))
+            if old.is_none()
+                && role_is_user(row)
+                && stored_ids.is_some_and(|ids| !ids.contains(&id))
             {
                 return Ok(());
             }
@@ -271,7 +273,8 @@ mod tests {
     fn a_client_may_stamp_a_delegation_notice_only_on_a_new_user_block() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
-        let notice = json!({"kind":"delegation","runId":"run","title":"Child","reason":"completion"});
+        let notice =
+            json!({"kind":"delegation","runId":"run","title":"Child","reason":"completion"});
         let mut session = sample();
         session.managed_by = None;
         session.blocks = json!([{"id":"owner","role":"user","text":"Hello"}]);

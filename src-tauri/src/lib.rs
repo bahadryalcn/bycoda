@@ -1037,6 +1037,7 @@ pub fn run() {
             diagnostics::diagnostics_collect_logs,
             diagnostics::diagnostics_clear_crash,
             diagnostics::diagnostics_gzip_base64,
+            diagnostics::diagnostics_ui_log,
             provider_terminal_profiles::provider_terminal_profiles,
             provider_terminal_profiles::provider_terminal_profile_connect,
             pi_usage::fetch_pi_usage,

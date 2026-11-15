@@ -17,7 +17,7 @@ own implementation of the same contract.
 - UI model: `src/features/diagnostics/model/` (`diagnosticsConsent.ts`, `uiLogBuffer.ts`, `diagnosticsReport.ts`, `diagnosticsScheduler.ts`, `diagnosticsService.ts`, `diagnosticsNative.ts`), `ui/` (`CrashReportNotice.tsx`, `DiagnosticsSharingSetting.tsx`), `hooks/useDiagnostics.ts`; public entry `src/features/diagnostics/index.ts`.
 - Wiring: `src/app/hooks/useAccountPlatform.ts` starts it; `src/app/workspace/layout/WorkspaceNotices.tsx` mounts the notice; the setting lives in Account â†’ Privacy and Settings â†’ Privacy; the feedback dialog in `src/features/account/` sends the linked report.
 - Contract: `packages/account-contracts/src/diagnostics.ts` (read-only here).
-- Native commands: `diagnostics_collect_logs`, `diagnostics_clear_crash` in `src-tauri/src/`.
+- Native commands: `diagnostics_collect_logs`, `diagnostics_clear_crash`, `diagnostics_ui_log` in `src-tauri/src/`.
 
 ## Workflow
 

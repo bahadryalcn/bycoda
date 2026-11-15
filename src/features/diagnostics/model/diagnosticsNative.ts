@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { UiLogFileLine } from "./uiLogFile";
 
 export type NativeLogSection = { name: string; text: string; truncated: boolean };
 export type NativeCrash = {
@@ -25,6 +26,8 @@ export type DiagnosticsNative = {
   clearCrash(): Promise<void>;
   /** Gzip + base64 in Rust, for webviews without `CompressionStream`. */
   gzipBase64?(text: string): Promise<string>;
+  /** Appends UI warnings and errors to `bycoda.log` (`diagnostics_ui_log`). */
+  writeUiLog?(lines: UiLogFileLine[]): Promise<void>;
 };
 
 const inTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -40,6 +43,7 @@ export const tauriDiagnosticsNative: DiagnosticsNative = {
     return { ...logs, hostCrash: logs.hostCrash ?? null }; // -- an older native build has no Host marker.
   },
   gzipBase64: (text) => invoke<string>("diagnostics_gzip_base64", { text }),
+  writeUiLog: (lines) => invoke<void>("diagnostics_ui_log", { lines }),
   clearCrash: async () => {
     if (inTauri()) await invoke<void>("diagnostics_clear_crash");
   },

@@ -1,3 +1,4 @@
+import { sessionAttention, sessionUnread } from "./sessions/session-attention";
 import {
   decodeDelegationParent,
   DELEGATION_PARENT_KEY,
@@ -1546,7 +1547,8 @@ export class HostStore {
               cached.needsInput !== undefined &&
               cached.providerSessionId !== undefined &&
               cached.providerHistory !== undefined &&
-              cached.delegationParent !== undefined
+              cached.delegationParent !== undefined &&
+              cached.unread !== undefined
             )
               return cached;
             const fresh = summary(await this.session(String(row.id)));
@@ -1988,6 +1990,7 @@ export class HostStore {
                 this.touchProject(previous.projectId);
               const value = {
                 ...accepted,
+                ...sessionAttention(accepted, previous),
                 ...(authorityGeneration === undefined ? {} : { authorityGeneration }),
                 // Older snapshots have no creation time. Preserve their last recorded
                 // timestamp when they are first written by this version of the host.
@@ -2371,18 +2374,27 @@ export class HostStore {
       archived?: boolean;
       pinned?: boolean;
       linkedWorkItem?: LinkedWorkItem | null;
+      unread?: boolean;
+      snoozedUntil?: number | null;
+      expectedRevision?: number;
     },
     authorityGeneration?: number,
   ): Promise<HostSessionSummary> {
     if (
       Object.keys(patch).some(
-        (key) => !["title", "archived", "pinned", "linkedWorkItem"].includes(key),
+        (key) => !["title", "archived", "pinned", "linkedWorkItem", "unread", "snoozedUntil", "expectedRevision"].includes(key),
       )
     )
       throw new Error("Unsupported client-editable session metadata.");
     return this.db.storeScope(async () => {
       return await this.withAuthorityGeneration(id, authorityGeneration, async () => {
         const current = await this.session(id);
+        if (patch.expectedRevision !== undefined && patch.expectedRevision !== current.revision)
+          throw new Error("This session changed. Refresh the list and review it again.");
+        if (patch.unread !== undefined && typeof patch.unread !== "boolean") throw new Error("Invalid unread value");
+        if (patch.snoozedUntil !== undefined && patch.snoozedUntil !== null &&
+            (!Number.isSafeInteger(patch.snoozedUntil) || patch.snoozedUntil <= Date.now()))
+          throw new Error("Invalid snooze time");
         if (patch.title !== undefined && (!patch.title.trim() || patch.title.length > 200))
           throw new Error("Invalid session title");
         const next = await this.save(
@@ -2391,6 +2403,11 @@ export class HostStore {
             revision: current.revision + 1,
             archived: patch.archived ?? current.archived,
             pinned: patch.pinned ?? current.pinned,
+            ...(patch.unread === undefined ? {} : {
+              forceUnread: patch.unread,
+              ...(patch.unread ? {} : { lastViewedAt: Date.now(), lastViewedRevision: current.revision }),
+            }),
+            ...(patch.snoozedUntil === undefined ? {} : { snoozedUntil: patch.snoozedUntil }),
             session: {
               ...current.session,
               ...(patch.title === undefined ? {} : { title: patch.title.trim() }),
@@ -2975,6 +2992,12 @@ function summaryFromBlocks(value: HostSession): HostSessionSummary {
     createdAt: value.createdAt ?? value.updatedAt,
     archived: value.archived,
     pinned: value.pinned,
+    unread: sessionUnread(value),
+    lastViewedAt: value.lastViewedAt ?? 0,
+    lastViewedRevision: value.lastViewedRevision ?? value.revision,
+    agentActivityRevision: value.agentActivityRevision ?? 0,
+    forceUnread: value.forceUnread ?? false,
+    snoozedUntil: value.snoozedUntil ?? null,
     linkedWorkItem: value.session.linkedWorkItem,
     needsInput: sessionNeedsInput(value.session),
     draft: value.session.blocks.some((block) => block.role === "user" && block.draft),

@@ -219,6 +219,13 @@ export type HostSession = {
   lastActivityAt?: number;
   archived?: boolean;
   pinned?: boolean;
+  /** Host-owned attention metadata; absent on older Hosts. */
+  unread?: boolean;
+  lastViewedAt?: number;
+  lastViewedRevision?: number;
+  agentActivityRevision?: number;
+  forceUnread?: boolean;
+  snoozedUntil?: number | null;
   /** Temporary branch created by the composer for automatic first-turn naming. */
   autoWorktreeBranch?: string;
   /** Sent when a request asks for digests (`sessions.digests`): the head of the
