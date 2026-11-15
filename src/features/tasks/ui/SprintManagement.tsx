@@ -23,6 +23,7 @@ import { SprintHostBar } from "./SprintHostBar";
 import { SprintCatalog } from "./SprintCatalog";
 import { SprintStatusBadge } from "./SprintStatusBadge";
 import "./sprints.css";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export { dateValue as sprintDateValue, dateNumber as sprintDateNumber };
 export { SprintGoalDescription };
@@ -125,7 +126,7 @@ export function SprintManagement({
     try {
       await operation();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       pending.current = false;
       setBusy(null);

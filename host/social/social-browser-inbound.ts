@@ -72,7 +72,8 @@ export function parseXBrowserMentions(
     if (
       node.timeline?.instructions ||
       node.timeline_v2?.instructions ||
-      node.timeline_response?.timeline?.instructions
+      node.timeline_response?.timeline?.instructions ||
+      node.threaded_conversation_with_injections_v2?.instructions
     )
       recognized = true;
     const tweet = node.legacy ?? node;

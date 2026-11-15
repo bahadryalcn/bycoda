@@ -33,6 +33,7 @@ import { HOST_TASKS, HOST_TASKS_TODO } from "./hostTasks";
 import { HOST_GOALS } from "./hostGoals";
 import { HOST_STEWARDS } from "./hostStewards";
 import { HOST_SETTINGS } from "./hostSettings";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 const EMPTY_MACHINES: RemoteMachine[] = [];
 const identity = (machine: RemoteMachine) =>
@@ -139,7 +140,7 @@ export function useTaskBoardQueries(projectScope = "all", { planningCatalog = fa
             capabilities:
               client.getQueryData<Description>(["task-board", ...identity(machine), "capabilities"])
                 ?.capabilities ?? [],
-            error: reason instanceof Error ? reason.message : String(reason),
+            error: presentRemoteError(reason),
           };
         }
       },

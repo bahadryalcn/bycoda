@@ -8,6 +8,7 @@ import {
   type ModelRoutingScope,
   type ModelRoutingTarget,
 } from "../../../shared/model/host-contracts/model-routing";
+import { EFFORT_LEVELS } from "../../../shared/model/host-contracts/delegation";
 import { modelRoutingPoolCycle } from "../../../shared/model/modelRoutingPools";
 import { REMOTE_PROVIDERS } from "../../connections/public/protocol";
 import {
@@ -18,6 +19,7 @@ import {
   defaultModelSettings,
   isModelEnabled,
   loadHiddenPickerProviders,
+  modelEffortSetting,
 } from "../../sessions/public/models";
 import type { ModelSource } from "../../sessions/public/modelSource";
 import { catalogModelFacts, valueScore } from "./modelCatalogFacts";
@@ -34,6 +36,8 @@ export type SetupCandidate = {
   modelName: string;
   account?: SetupAccount;
   profile: ModelProfile;
+  /** The model's reasoning-effort setting and the values it accepts, when it has one. */
+  effort?: { id: string; options: string[] };
 };
 export type SetupPoolNames = Record<"smartest" | "balanced" | "fast" | "work" | "personal", string>;
 
@@ -77,6 +81,7 @@ export function setupCandidates(source: ModelSource): SetupCandidate[] {
       : [undefined];
     return accounts.flatMap((account) =>
       models.map((model): SetupCandidate => {
+        const effort = modelEffortSetting(model);
         const explicit =
           account && "kind" in account
             ? (account.kind as ModelRoutingScope | undefined)
@@ -100,6 +105,9 @@ export function setupCandidates(source: ModelSource): SetupCandidate[] {
               }
             : {}),
           profile: modelProfile(harness, model.id),
+          ...(effort
+            ? { effort: { id: effort.id, options: effort.options.map((option) => option.value) } }
+            : {}),
         };
       }),
     );
@@ -176,6 +184,49 @@ export function fitsNeed(candidate: SetupCandidate, need: RoleNeed): boolean {
     : need === "heavy"
       ? intelligence >= 4
       : intelligence >= 3 && cost <= 3;
+}
+
+/**
+ * The reasoning effort smart setup picks per need: light jobs low, standard jobs medium, heavy
+ * jobs high. Smart setup never goes above high; higher levels stay the owner's own choice.
+ */
+export type SetupEffort = "low" | "medium" | "high";
+const effortRank = (value: string | undefined) => (value ? EFFORT_LEVELS.indexOf(value) : -1);
+const CEILING = effortRank("high");
+
+/** The candidate's settings at the supported level closest to `effort`, never above high. */
+export function settingsAtEffort(
+  candidate: SetupCandidate,
+  effort: SetupEffort,
+): Record<string, string> {
+  const setting = candidate.effort;
+  const want = effortRank(effort);
+  const usable = (setting?.options ?? []).filter((value) => {
+    const rank = effortRank(value);
+    return rank > effortRank("none") && rank <= CEILING;
+  });
+  const best = usable.sort(
+    (a, b) =>
+      Math.abs(effortRank(a) - want) - Math.abs(effortRank(b) - want) ||
+      effortRank(b) - effortRank(a),
+  )[0];
+  return setting && best
+    ? { ...candidate.target.modelSettings, [setting.id]: best }
+    : candidate.target.modelSettings;
+}
+
+/** A pool runs at the effort of its jobs: light-only pools low, any heavy job high, else medium. */
+export function poolEffort(plan: SetupPlan, name: string): SetupEffort {
+  const lower = name.trim().toLowerCase();
+  const needs = (
+    Object.entries(plan.roles) as [ModelRoutingRole, SetupPlan["roles"][ModelRoutingRole]][]
+  )
+    .filter(
+      ([, choice]) => choice && choice !== "order" && choice.pool.trim().toLowerCase() === lower,
+    )
+    .map(([role]) => ROLE_NEED[role]);
+  if (needs.includes("heavy")) return "high";
+  return needs.length && needs.every((need) => need === "light") ? "low" : "medium";
 }
 
 export function rulePlan(candidates: SetupCandidate[], names: SetupPoolNames): SetupPlan {
@@ -272,42 +323,57 @@ export function enforceRoleNeeds(candidates: SetupCandidate[], plan: SetupPlan):
   return { ...plan, roles };
 }
 
-/** Add every missing candidate; returns the entry id of each candidate by index. */
-function addCandidates(draft: OrderDraft, candidates: SetupCandidate[]) {
+/**
+ * Entries per candidate and effort, created on first use. An existing entry is reused when its
+ * effort matches; for high, an entry the owner set above high also counts. Others are kept.
+ */
+function candidateEntries(draft: OrderDraft, candidates: SetupCandidate[]) {
   const entries = [...draft.routing.entries];
   const percentages = { ...draft.percentages };
-  const ids = new Map<string, string>();
-  for (const entry of entries) {
-    const key = targetKey(entry);
-    if (!ids.has(key)) ids.set(key, entry.id);
-  }
-  const entryIds = candidates.map((candidate) => {
+  const cache = new Map<string, string>();
+  const claimed = new Set<string>();
+  const entryFor = (index: number, effort: SetupEffort) => {
+    const candidate = candidates[index]!;
+    const settings = settingsAtEffort(candidate, effort);
+    const id = candidate.effort?.id;
+    // Levels a model lacks collapse onto one entry; models without effort keep a single entry.
+    const cacheKey = `${index}:${id ? settings[id] : ""}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return cached;
     const key = targetKey(candidate.target);
-    const known = ids.get(key);
-    if (known) return known;
-    if (entries.length >= MODEL_ROUTING_MAX_ENTRIES)
-      throw new Error(
-        "Not enough room in the model order. Disable unused catalog models and try again.",
-      );
-    const id = crypto.randomUUID();
-    entries.push({
-      ...candidate.target,
-      id,
-      modelSettings: entrySettings(candidate.target.modelSettings),
-      unknownLimit: "use",
-    });
-    percentages[id] = "0";
-    ids.set(key, id);
-    return id;
-  });
-  return { entries, percentages, entryIds };
+    const same = entries.filter((entry) => targetKey(entry) === key && !claimed.has(entry.id));
+    const known =
+      same.find((entry) => !id || entry.modelSettings[id] === settings[id]) ??
+      (id && effort === "high"
+        ? same.find((entry) => effortRank(entry.modelSettings[id]) > CEILING)
+        : undefined);
+    let entryId = known?.id;
+    if (!entryId) {
+      if (entries.length >= MODEL_ROUTING_MAX_ENTRIES)
+        throw new Error(
+          "Not enough room in the model order. Disable unused catalog models and try again.",
+        );
+      entryId = crypto.randomUUID();
+      entries.push({
+        ...candidate.target,
+        id: entryId,
+        modelSettings: entrySettings(settings),
+        unknownLimit: "use",
+      });
+      percentages[entryId] = "0";
+    }
+    claimed.add(entryId);
+    cache.set(cacheKey, entryId);
+    return entryId;
+  };
+  return { entries, percentages, entryFor };
 }
 
 /** Create or refill each planned pool by name; resolve includes after every pool exists. */
 function planPools(
   current: ModelRoutingPool[],
   plan: SetupPlan,
-  memberIds: (indexes: number[]) => string[],
+  memberIds: (indexes: number[], effort: SetupEffort) => string[],
 ) {
   let pools = [...current];
   const byName = (name: string) => {
@@ -316,7 +382,7 @@ function planPools(
   };
   const planned = new Map<string, string[]>();
   for (const proposal of plan.pools) {
-    const entryIds = memberIds(proposal.members);
+    const entryIds = memberIds(proposal.members, poolEffort(plan, proposal.name));
     if (!proposal.name.trim() || (!entryIds.length && !proposal.includes.length)) continue;
     const existing = byName(proposal.name);
     if (existing) {
@@ -351,30 +417,32 @@ function planPools(
 }
 
 /**
- * Apply a plan: add every missing candidate, put the planned order first, create or refill the
- * planned pools by name and bind the planned roles. Existing entries keep their ids, limits
- * and settings; pools and roles the plan does not name are untouched.
+ * Apply a plan: add every candidate at medium effort in the planned order, create or refill
+ * the planned pools by name with entries at each pool's effort, and bind the planned roles.
+ * Existing entries keep their ids, limits and settings; pools and roles the plan does not name
+ * are untouched.
  */
 export function applySmartSetup(
   draft: OrderDraft,
   candidates: SetupCandidate[],
   plan: SetupPlan,
 ): OrderDraft {
-  const { entries, percentages, entryIds } = addCandidates(draft, candidates);
-  const memberIds = (indexes: number[]) => [
+  const { entries, percentages, entryFor } = candidateEntries(draft, candidates);
+  const memberIds = (indexes: number[], effort: SetupEffort) => [
     ...new Set(
       indexes
         .filter((index) => Number.isInteger(index) && index >= 0 && index < candidates.length)
-        .map((index) => entryIds[index]!),
+        .map((index) => entryFor(index, effort)),
     ),
   ];
-  const planned = memberIds([...plan.order, ...baselineOrder(candidates)]);
+  const planned = memberIds([...plan.order, ...baselineOrder(candidates)], "medium");
+  const { pools, byName } = planPools(draft.routing.pools, plan, memberIds);
+  // Pool entries at other efforts follow the medium ones in the main order.
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const sorted = [
     ...planned.map((id) => byId.get(id)!),
     ...entries.filter((entry) => !planned.includes(entry.id)),
   ];
-  const { pools, byName } = planPools(draft.routing.pools, plan, memberIds);
   const roles = { ...draft.routing.roles };
   for (const [role, choice] of Object.entries(plan.roles) as [
     ModelRoutingRole,

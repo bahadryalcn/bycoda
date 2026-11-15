@@ -64,15 +64,18 @@ export function createSessionViewsRuntime(
       ...(snapshot.status === "running" ? { runId: DESKTOP_RUN_ID } : {}),
       ...(snapshot.blockRevisions
         ? {
-            blockRevisions: {
-              ...snapshot.blockRevisions,
-              ...Object.fromEntries(
-                (overlay?.pending ?? []).map((block) => [
-                  block.id,
-                  overlay?.changedAt ?? snapshot.revision,
-                ]),
-              ),
-            },
+            // Copy only when the overlay adds pending revisions; otherwise reuse the record.
+            blockRevisions: overlay?.pending?.length
+              ? {
+                  ...snapshot.blockRevisions,
+                  ...Object.fromEntries(
+                    overlay.pending.map((block) => [
+                      block.id,
+                      overlay.changedAt ?? snapshot.revision,
+                    ]),
+                  ),
+                }
+              : snapshot.blockRevisions,
           }
         : {}),
       // The desktop's own bookkeeping about its host copy is not part of the view.
@@ -93,6 +96,9 @@ export function createSessionViewsRuntime(
       bytes: number;
     }
   >();
+  /** Serialized form of each block object; unchanged blocks keep their object
+   * identity across revisions, so a stream re-serializes only what it touched. */
+  const blockJson = new WeakMap<object, string>();
   const desktopSync = (view: HostSession, client?: number): SessionSync => {
     const id = view.session.id;
     let entry = views.get(id);
@@ -101,7 +107,13 @@ export function createSessionViewsRuntime(
       const json = new Map<string, string>();
       for (const block of view.session.blocks) {
         const persisted = view.blockRevisions?.[block.id];
-        const text = persisted !== undefined ? `revision:${persisted}` : JSON.stringify(block);
+        let text: string;
+        if (persisted !== undefined) text = `revision:${persisted}`;
+        else {
+          const cached = blockJson.get(block);
+          text = cached ?? JSON.stringify(block);
+          blockJson.set(block, text);
+        }
         json.set(block.id, text);
         revs.set(
           block.id,

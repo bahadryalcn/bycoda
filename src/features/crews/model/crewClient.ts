@@ -8,6 +8,7 @@ import {
   hostProjectFor,
 } from "../../automations/model/hostAutomationClient";
 import { remoteRequest } from "../../connections/model/connections";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { crewHasRunningWork } from "./crewPresentation";
 import type {
   HostModelCatalog,
@@ -194,7 +195,8 @@ export function useProjectCrews(cwd: string, enabled = true) {
       });
       setNextCursor(page.historyNextCursor ?? null);
     } catch (reason) {
-      if (generation === historyGeneration.current) setHistoryError(String(reason));
+      if (generation === historyGeneration.current)
+        setHistoryError(presentRemoteError(reason, { explicit: true }));
     } finally {
       if (generation === historyGeneration.current) setHistoryLoading(false);
     }

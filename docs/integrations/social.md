@@ -121,7 +121,7 @@ continue to apply.
 | Snapchat  | Public Profile API: encrypted Spotlight MP4 upload with exact Spotlight ID tracking until LIVE, health check.                                                                                                                                               | Member chat text replies in existing chats; Public Profile uploader for Spotlight or 24-hour Story video. Current Story acceptance lacks a durable Snap ID and is held for review.                           | Public Story through the API, Marketing API, Creative Kit, metrics, Story interactions, API audience collection.                                                                          |
 | WhatsApp  | Business Cloud API: signed incoming text, text or one image/video reply within the 24-hour window, delivery receipts. Business-initiated free text is refused before I/O.                                                                                   | Personal Web session: bounded visible direct chats, text and one image or video per send. Audience collection from chat senders is not offered (no sender reader is wired).                                  | Templates and interactive messages (exported, not reachable from jobs), catalog, Status and Channels, group messages, bulk messaging for personal accounts, auto-reply, quality webhooks. |
 | Telegram  | Bot token: bounded text polling, text and one image or video send, webhook parser, bot-sender collection. Channel: administrator bot publishing with receipts.                                                                                              | Personal Web session: direct chats only, stable cursor, text and one image or video per send.                                                                                                                | Polls, inline buttons, edit and pin (functions only, no host path), webhook route, moderation, MTProto, stories, channel settings.                                                        |
-| Reddit    | Script or web app OAuth, text and link posts to one subreddit per item, subreddit rules and required flair, comments and replies, inbox polling, private message start and reply, keyword search, own-post commenters, delete.                              | No browser recipe (`browser.no_recipe`).                                                                                                                                                                     | Image, video and gallery posts; edit; account commenters; moderation and chat; upvote and save.                                                                                           |
+| Reddit    | Script or web app OAuth, text and link posts to one subreddit per item, subreddit rules and required flair, comments and replies, inbox polling, private message start and reply, keyword search, own-post commenters, delete.                              | Member web session: text and link posts to one subreddit (flair when required), comments, replies, inbox poll of comment replies and username mentions. Chat and private messages are not offered.           | Image, video and gallery posts; edit; account commenters; moderation and chat; upvote and save.                                                                                           |
 
 Which operations are free depends on each platform's current pricing, which this document
 does not verify. The rule is fixed in the Host: the free official API is the default driver,
@@ -150,10 +150,9 @@ permission or turns on external sending.
 Access and refresh tokens stay in a host-only vault. Its key is protected by Windows
 DPAPI (CurrentUser), macOS Keychain or Linux Secret Service. There is no plaintext
 fallback. A locked or missing key preserves existing credentials and fails the
-operation. Renewal runs for X, YouTube, TikTok and Snapchat with a valid refresh token,
+operation. Renewal runs for X, YouTube, TikTok, Snapchat, LinkedIn and Reddit with a valid refresh token,
 without changing scopes. Instagram Login exchanges its short-lived token for a
-long-lived token and renews it near expiry. LinkedIn and Facebook token refresh and
-Reddit refresh are present in source but not all are scheduled by the Host (see Open
+long-lived token and renews it near expiry. Facebook has no refresh hook (see Open
 questions). Expired, revoked or scope-changed connections require reconnection.
 
 #### X
@@ -176,9 +175,12 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   `BYCODA_SOCIAL_BROWSER_HEADED=1` shows the window for debugging.
 - Legacy browser DM sends require an exact numeric recipient, an observed conversation
   with that recipient and a matching delivery acknowledgement. Missing evidence goes to
-  review. Encrypted X Chat and browser DM attachments are unavailable.
+  review. Encrypted X Chat and browser DM attachments are unavailable: X now redirects
+  `/messages` and `/messages/compose` to `/i/chat`, where a key-recovery passcode prompt is
+  reported as `chat_setup_required` (otherwise `encrypted_chat_unsupported`) and a DM send
+  fails fast as unsupported before any submit marker or pacing slot.
 - A missing mentions response counts as empty only when the authenticated page shows the
-  mentions tab and its known empty state. Redirects into `/i/chat` report unsupported
+  mentions tab and its empty-state container (any UI language). Redirects into `/i/chat` report unsupported
   encrypted Chat, not an empty inbox.
 
 #### Instagram, Facebook and Meta
@@ -212,6 +214,12 @@ questions). Expired, revoked or scope-changed connections require reconnection.
   Documents API (title 200, 100 MB API limit in source), and browser PDFs up to 5 MiB.
 - Browser connection requests, acceptance and personal chat use the same verification and
   challenge handling as other browser recipes.
+- Browser member posts and PDF documents open the composer through `/feed/?shareActive=true`
+  and find controls by role and EN/TR label inside `dialog[open]`; `data-view-name` is only an
+  optional first choice, because LinkedIn serves variants without it.
+- A post with no comments reports `comments` as read only on a positive signal: the comment box
+  is loaded, the comment list holds no content, and the social counts have no comments item.
+  Anything else stays unavailable.
 - **AI exclusion:** the current rule code still blocks LinkedIn inbound third-party
   content from automatic reply rules. See Autonomy policy and Open questions.
 
@@ -318,14 +326,28 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
 #### Reddit
 
 - OAuth is a Reddit script or web app. The identity call uses `oauth.reddit.com/api/v1/me`.
-  The host allowlist must include Reddit before runtime use; without it the connection is
-  denied. Renewal is present, but Reddit is not yet in the host's due-refresh list.
+  `oauth.reddit.com` is in the adapter's host allowlist, and the Host's due-refresh sweep
+  renews the one-hour access token with the permanent refresh token. Since November 2025
+  Reddit approves new API clients individually (Responsible Builder Policy); existing
+  clients keep working.
 - One subreddit per post item. Flair is required when the subreddit requires it, and the
   flair ID is sent. Text fits 300 characters (title), 10000 (body), 40000 (self text) and
   2048 (link). Images, video and gallery are not supported.
 - Inbox polling reads `/message/inbox` with a `before` cursor and 100 items. Backlog beyond
   100 is an open limit. Private message start needs a subject (default "Message"). The
   adapter does not reconcile an uncertain start.
+- Browser recipe (member web session, API first; used where no API connection exists): identity from
+  `/api/me.json` with the page session, stored as `web:reddit:t2_<id>` so it never equals an API id.
+  Text and link posts go to one subreddit; a required flair the job does not name is refused before
+  submit. Comments and replies target a known `t3_`/`t1_` thing. Every send keeps the identity
+  check before and after, `markSubmitted` before the click, and reports delivery only from a
+  recognized create response plus a persisted readback (author, title, text); otherwise it is
+  uncertain and goes to review, never resent. Poll reads `/message/inbox.json` (comment replies and
+  username mentions, up to 300 items) with a millisecond cursor; an unfinished window keeps the
+  old cursor and reports partial coverage. Private messages and chat are not implemented. A login,
+  captcha or checkpoint page raises NEEDS_HUMAN. Live Reddit blocks headless automation, so the
+  selectors and request shapes were written from known page structure and are unverified until
+  the owner's first Reddit session.
 - Keyword capture uses search with a `r/<subreddit>` prefix. Subreddit capture as a
   separate source is not implemented.
 
@@ -459,8 +481,8 @@ Otherwise the job becomes NEEDS_HUMAN.
 **NEEDS_HUMAN.** A captcha, a verification step, a suspicious-login screen, a login prompt
 or an unexpected screen stops automation for that account. The job waits as NEEDS_HUMAN
 and the owner is notified. The Command screen lists these items with a live view and an
-"I'm done" action. The owner is alerted through this list; the desktop notification
-planned as a desktop notification is not verified. Automation never clicks, types or solves a captcha,
+"I'm done" action. The desktop also alerts the owner (see "Owner notifications" below).
+Automation never clicks, types or solves a captcha,
 verification or suspicious-login screen. The decision layer treats these states as
 human-only, and the desktop layer refuses them. A challenge is recognized and reported only.
 
@@ -511,6 +533,21 @@ a conversation or a session tool.
 - Final LinkedIn Page creation uses owner-only review and submit methods, with a two-minute
   review bound to the observed administrator, fields and terms. Unknown results keep a
   durable hold and are never resubmitted automatically.
+- Reddit signup opens `https://www.reddit.com/register/` in the account's dedicated profile
+  and fills only the owner-supplied email (email step) and username (credentials step),
+  reading the fields through open shadow roots. The owner completes Continue and the User
+  Agreement, the email verification code, the password and the reCAPTCHA ("Prove your
+  humanity") in the platform window; those screens are reported, never typed or clicked.
+  Automated profiles are often challenged before the form appears, and the step layout is
+  a documented fixture, not an observed account creation. Reddit has only a signup route
+  until its browser recipe has operations; login, inbox and publish stay unavailable.
+- X signup opens `https://x.com/i/flow/signup` and fills only the owner-supplied display name,
+  email and birthdate (name/email inputs and the three birthdate selects) on the profile
+  step, never overwriting an owner choice. The initial Create account choice, the
+  phone/email toggle, Next, terms, the Arkose "Authenticate" challenge, the verification
+  code, the password and suspicious-login screens stay with the owner and are only reported.
+  x.com returns HTTP 403 to headless automation, so the form layout is a documented fixture
+  and unverified live.
 - Generic signup is not brand provisioning. A Facebook signup does not create a Page; a
   Google account does not create a YouTube channel; an Instagram API connection needs a
   professional account.
@@ -545,6 +582,24 @@ dispatched content is not edited in place.
   dispatch as autonomous. Source supports this path. End-to-end use is not verified.
 - LinkedIn program content still requires final publication review in the current code. This differs from the owner decision that LinkedIn follows the same autonomy policy. See Open questions.
 
+## Project account requests
+
+When a project's social work needs a platform account the project does not have, the AI calls the `accounts.request` tool (`projectId`, `platform`, optional `accountType`, `reason`, optional suggested name and username). The tool only asks the owner: it creates nothing on any platform and has no external effect, so it is not an autonomy action. The Host validates that the caller owns the project, that the platform has a browser route and a supported browser account type, and that the project has no connected account for the platform granted to it. An open request for the same project, platform and account type is returned instead of a duplicate. Records are stored as `account-request` rows in the audience store with status `pending`, `approved`, `dismissed` or `fulfilled`.
+
+The owner-only methods `accounts.requests.list`, `accounts.requests.approve` and `accounts.requests.dismiss` are never tools. `approve` takes `id`, `mode` (`create` or `signin`) and an optional `name`. It creates the browser account through `accounts.create`, grants the requesting project `read` and `draft`, records the `accountId` and returns it; the Social Command screen then opens the existing signup window (`create`) or starts the existing browser sign-in (`signin`). Approval grants no send authority. A request becomes `fulfilled` when `accounts.requests.list` finds its account connected.
+
+## Owner notifications
+
+Items that wait for the owner reach the owner through the existing notification model, whether or not the Social screen is open. Three kinds: a new pending project account request, a job or account in NEEDS_HUMAN, and a connected, unpaused account that needs a new sign-in. A sign-in is signalled by `expiresAt <= now`, which the Host sets when a poll or send fails with an expired session; API accounts count only 15 minutes after the expiry, so the Host's due-refresh sweep has had its chance, and browser accounts count at once. The item id carries the expiry value, so a later expiry notifies again and a reconnect clears the item.
+
+**Desktop.** The lead workspace window reads `accounts.requests.list`, `browser.needsHuman.list` and the accounts snapshot from the Social authority Host (this computer when none is set) about once a minute, announces each item id once and remembers announced ids on this computer (`bycoda.notifications.social.announced.v1`, newest 300), so a poll or a restart never repeats one. An announcement follows the "Needs your input" event setting, the master switch, the per-project "Agent approvals and questions" mute and the unfocused-window rule: it adds a Notifications history entry (muted projects excepted), sends one desktop banner per poll (a summary when several are new) and adds to the taskbar and Dock count while the item waits. A waiting browser task or an account belongs to every project it is granted to; it is muted only when all of them are muted. A locked project is logged with the masked wording and never bannered or counted. Clicking opens Social on Command, or on Accounts focused on that account for a sign-in.
+
+**Phone.** While the desktop is away, the Host reads the same three kinds straight from the Social service and sends one push per item id and phone (ledger table `push_social_sent`, written before sending, so a failed send is not replayed). It follows the phone's "needs your input" choice; there is no separate Social setting. Items older than a day are not sent, and at most three per phone per read. The push uses `kind: "input"` with no session, so the current phone app opens without a deep link into Social.
+
+**Privacy.** Text names the platform and the reason only, never the project, the account name or the AI's request text; the phone body is its own "needs your input" text.
+
+**Not covered.** Signup workflows awaiting the owner, Telegram (its delivery sends only Assistant notifications through a Native-authorized effect), and a deep link into Social on the phone (needs a mobile app change). Real OS and phone delivery are not verified by automated tests.
+
 ## Session tools
 
 AI tools are the registry actions marked for AI use. The MCP tool names use underscores
@@ -553,7 +608,7 @@ in the Social tool registry. Tools call the same Host operations as the UI, so e
 applies to them.
 
 ```text
-policy.get            accounts.list           capabilities.get
+policy.get            accounts.list           accounts.request       capabilities.get
 campaigns.create      campaigns.preview       campaigns.schedule     campaigns.status
 inbox.list            inbox.unified           inbox.setStatus        inbox.timeline
 inbox.replyOptions    thread.read             replies.draft          replies.send
@@ -579,6 +634,7 @@ Rules for every tool:
 
 - A tool cannot exceed the account's autonomy level, suppression, limits, working hours,
   the AI stop or the global stop. Tools read these facts; they do not hold authority.
+- `accounts.request` only files an owner request; approving, dismissing and listing requests are owner-only.
 - A tool cannot change owner-only state. Owner-only operations, including `people.delete`,
   `people.export`, `audience.import`, `autonomy.set`, policy saves, program activation and
   browser workflow methods, are not tools.
@@ -662,10 +718,8 @@ They are not verified as fixed.
   confirmed removed in every path.
 - **Bot token storage (Telegram).** The token module is vault-first. The dispatcher still
   reads the host environment value.
-- **Token refresh coverage.** LinkedIn, Facebook and Reddit refresh code exists, but these
-  platforms are not all in the Host's due-refresh list.
-- **Reddit allowlist and refresh wiring.** Reddit runs only after its host allowlist entry is
-  configured, and refresh is not scheduled.
+- **Token refresh coverage.** Facebook has no refresh hook, so its API tokens are not renewed
+  by the Host's due-refresh sweep. LinkedIn and Reddit refresh are scheduled.
 - **Session-agent and AI program activation.** The autonomous program dispatch path is in
   source. End-to-end use with an autonomous account is not verified.
 

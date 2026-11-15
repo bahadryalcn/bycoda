@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   finalizeRecentSessionPages,
@@ -183,7 +184,10 @@ export function useGlobalRecentSessions(
                 if (String(reason).includes("RECENT_SESSIONS_CHANGED")) {
                   if (attempt < 2) continue;
                   publishError(t("Recent sessions changed while loading. Retry shortly."));
-                } else publishError(String(reason));
+                } else {
+                  const message = presentRemoteError(reason);
+                  if (message) publishError(message);
+                }
                 return;
               }
             }
@@ -198,7 +202,8 @@ export function useGlobalRecentSessions(
         };
         void start().catch((reason: unknown) => {
           if (!cancelled) {
-            publishError(String(reason));
+            const message = presentRemoteError(reason);
+            if (message) publishError(message);
             publishLoading(false);
           }
         });

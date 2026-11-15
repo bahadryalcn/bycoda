@@ -17,6 +17,7 @@ import {
 import type { DailySummary, SummaryTask } from "../model/dailySummary";
 import { formatAgentMinutes } from "../model/hostSettings";
 import "./task-ops.css";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** Day and time in the app language, never the system's: an English UI must not
  * show another language's weekday names. */
@@ -293,7 +294,7 @@ export function useDailySummaryPanel() {
       const at = Date.now();
       setFresh(await gatherDailySummary(at - 24 * 60 * 60 * 1000, at));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       setBusy(false);
     }

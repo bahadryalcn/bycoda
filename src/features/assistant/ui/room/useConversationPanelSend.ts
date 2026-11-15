@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { isTauri } from "@tauri-apps/api/core";
 import { beginAssistantDraftOperation } from "../../model/assistantDraftFlush";
 import {
@@ -14,6 +15,7 @@ import {
   type ConversationPanelState,
 } from "./useConversationPanelState";
 import type { ConversationPanelMessagesState } from "./useConversationPanelMessages";
+const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
 
 export type ConversationPanelSendState = ReturnType<typeof useConversationPanelSend>;
 
@@ -83,7 +85,7 @@ export function useConversationPanelSend(
           ),
         );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(actionError(cause));
     } finally {
       release();
     }
@@ -185,7 +187,7 @@ export function useConversationPanelSend(
           release,
         );
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(actionError(cause));
       } finally {
         release();
         nativeSendInFlight.current = false;
@@ -315,7 +317,7 @@ export function useConversationPanelSend(
         /* A retained receipt remains safe to retry. */
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(actionError(cause));
     } finally {
       setPending(false);
     }

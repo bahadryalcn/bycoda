@@ -1,8 +1,8 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useState, type FormEvent } from "react";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -77,7 +77,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
       await withGitOperation(cwd, "Updating branches…", work);
       return true;
     } catch (err) {
-      setError(errorText(err));
+      setError(presentRemoteError(err, { explicit: true }));
       return false;
     } finally {
       setBusy(false);

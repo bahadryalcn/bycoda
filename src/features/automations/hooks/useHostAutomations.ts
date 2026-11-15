@@ -12,6 +12,7 @@ import { failedMachineNames } from "../model/machineResults";
 import { migrateNativeAutomations } from "../model/nativeAutomationMigration";
 import { machineCapabilities } from "../model/machineSnapshot";
 import { HOST_AUTOMATION_MIGRATION, HOST_AUTOMATIONS } from "../model/hostAutomations";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export const HOST_AUTOMATIONS_QUERY_KEY = ["automations", "hosts"] as const;
 
@@ -80,7 +81,8 @@ export function useHostAutomations(enabled: boolean) {
                 (entry) => `${machine.name}: ${entry.automationId}: ${entry.reason}`,
               );
             } catch (error) {
-              return [`${machine.name}: ${error instanceof Error ? error.message : String(error)}`];
+              const message = presentRemoteError(error);
+              return message ? [`${machine.name}: ${message}`] : [];
             }
           }),
         )

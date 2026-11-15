@@ -5,11 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { saveNotificationEvent } from "../model/notificationEvents";
 import {
   probeNotificationPermission,
-  replaceUnseenAttention,
   saveNotificationsEnabled,
   setNotificationBatchDelay,
   setWindowFocused,
 } from "../model/notifications";
+import {
+  publishUnseenFinished,
+  unseenFinishedSnapshot,
+} from "../../sessions/public/unseenFinished";
 import { newSession, type Session } from "../../sessions/model/session";
 import { useAttentionNotifications } from "./useAttentionNotifications";
 
@@ -53,7 +56,7 @@ beforeEach(async () => {
   saveNotificationsEnabled(true);
   setWindowFocused(false);
   setNotificationBatchDelay(0);
-  replaceUnseenAttention(new Set());
+  publishUnseenFinished(new Set());
   await probeNotificationPermission();
   container = document.createElement("div");
   document.body.append(container);
@@ -248,4 +251,26 @@ it("resends an unchanged taskbar count after the native call failed", async () =
       if (command === "notification_permission") return "granted";
     });
   }
+});
+
+it("counts an unseen finished or failed session on the taskbar, and clears it once viewed", async () => {
+  const done = session({ id: "done" });
+  const failed = session({ id: "failed" });
+  await render([done, failed], "other");
+  expect(calls("set_taskbar_attention")).toEqual([]);
+  await act(async () => publishUnseenFinished(new Set(["done", "failed"])));
+  expect(calls("set_taskbar_attention").at(-1)).toMatchObject({ count: 2 });
+  setWindowFocused(true);
+  await render([done, failed], "done");
+  expect(calls("set_taskbar_attention").at(-1)).toMatchObject({ count: 1 });
+  // The sidebar store is untouched by the taskbar view rules.
+  expect(unseenFinishedSnapshot().has("done")).toBe(true);
+});
+
+it("hides unseen finishes from the taskbar when the taskbar setting is off, but keeps the shared set", async () => {
+  localStorage.setItem("bycoda.notifications.events.v1", JSON.stringify({ taskbar: false }));
+  await render([session({ id: "done" })], "other");
+  await act(async () => publishUnseenFinished(new Set(["done"])));
+  expect(calls("set_taskbar_attention")).toEqual([]);
+  expect(unseenFinishedSnapshot().has("done")).toBe(true);
 });

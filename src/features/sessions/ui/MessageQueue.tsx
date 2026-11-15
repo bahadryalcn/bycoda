@@ -1,4 +1,5 @@
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { actionDragAttributes } from "../../../shared/ui/ActionHost";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -93,7 +94,7 @@ async function runQueueAction(
     setFeedback({
       error: true,
       actionId: id,
-      text: t(String(error).replace(/^Error: /, "")),
+      text: t(presentRemoteError(error, { explicit: true })),
     });
     return false;
   } finally {
@@ -204,7 +205,7 @@ export function MessageQueue({
       setFeedback({
         error: true,
         actionId: "admission",
-        text: t(String(error).replace(/^Error: /, "")),
+        text: t(presentRemoteError(error, { explicit: true })),
       }),
     );
   };

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { UpdateImpact } from "./UpdateImpact";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConfirmDialog, type ConfirmRequest } from "../../../shared/ui/ConfirmDialog";
 import { updateBundledHostNow, useBundledHostStatus } from "../model/bundledHostStatus";
@@ -46,6 +47,7 @@ export function LocalHostVersionPrompt({
         }
       : {
           title: t("Update this computer's host now?"),
+          body: <UpdateImpact target="local-host" />,
           message: versions,
           consequences: [
             sameVersion,
@@ -56,6 +58,7 @@ export function LocalHostVersionPrompt({
             { content: t("Session history is kept.") },
           ],
           confirmLabel: t("Stop and update"),
+          danger: true,
           cancelLabel: t("Not now"),
           pendingLabel: t("Updating host…"),
           onConfirm: async () => {

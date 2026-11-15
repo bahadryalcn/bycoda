@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { PickerList, usePickerList } from "../../../shared/ui/picker";
 import { Text } from "../../../shared/ui/Text";
@@ -77,7 +78,7 @@ export function WorktreePicker({
       await onSelect(tree);
       dismiss();
     } catch (e) {
-      setError(String(e));
+      setError(presentRemoteError(e, { explicit: true }));
     } finally {
       setBusy(false);
     }

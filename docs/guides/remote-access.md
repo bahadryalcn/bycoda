@@ -2,6 +2,18 @@
 
 ## Work from both computers
 
+Before installing an app update, the interruption confirmation lists saved machines,
+their freshly checked running-session counts and which computer restarts. Local
+and SSH Host updates use the same preview for their selected Host. Alternate routes
+to one environment count once. Unavailable or incomplete activity is shown as
+unknown, never idle. Counts refresh while the confirmation remains open.
+
+An app update installs only on this computer. Desktop-owned or legacy work may
+stop; Host-owned work continues while its Host remains running. A Host update
+interrupts sessions and shells on that Host. History is retained, but interrupted
+work may need resuming. Other computers are not silently updated, and cancelling
+the confirmation does not start an installation.
+
 Open the same conversation through its owning Host on either computer. Ordinary
 messages can steer a Host-owned active turn. A turn running in the desktop app
 keeps new remote messages queued until it finishes. A busy owner or a request
@@ -45,6 +57,55 @@ bycoda can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, He
 A folder on a connected machine is a project in the rail, marked with a globe. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
 
 When a continued Codex conversation is archived in Codex, sending a follow-up asks the owning provider to restore that same thread before starting the turn. Opening history alone does not restore it. If restoration or identity verification fails, the follow-up fails rather than silently starting an empty thread. Check the owning machine and account before retrying.
+
+## Free access outside your network
+
+In **Settings → Connections → External tunnels**, enable **Access from outside
+the network (Cloudflare Quick Tunnel)** for the selected Host. It is off by default.
+No Cloudflare account, token or paid service is needed. bycoda uses an installed
+cloudflared or downloads a pinned, checksum-verified copy into its private data
+directory. The URL changes whenever the tunnel starts. The Host starts it again
+after restart or verified unexpected exit. Stopping the tunnel disables this setting.
+
+With account computer discovery enabled and the desktop signed in, URL changes
+are published within the next five-second check. Paired desktop clients re-fetch
+account routes during reconnect and require a nonce-based HMAC-SHA256 possession
+proof before sending their saved credential. The proof uses the device credential's
+SHA-256 hash, stays bound to the expected environment and a Host-owned published
+origin, and never discloses the credential or its hash. Public environment identity
+alone does not authenticate a Host. Account listing permission remains required.
+Pairing and device permissions still apply. A headless Host does not run the
+desktop account publisher. Quick Tunnels have no uptime guarantee and do not
+support SSE; HTTP RPC remains the fallback transport.
+
+**Settings → Connections** lists **Machines found** above the saved machines. It
+combines computers signed in to your account, Tailscale devices and SSH config
+aliases, each with its OS, online state and sources; **Refresh machines** reloads
+it. Choose **Add** to connect one. A machine with an SSH address is set up as in
+the SSH section below, without a form. Manual entry stays under **Advanced: add
+manually**, collapsed by default.
+
+Each saved machine row shows its status and a route count; **N routes ›** opens
+its addresses. The row's switch turns that machine's connection on or off.
+
+A computer that only the account knows (no SSH address) is added with one click
+from Machines found. The requesting desktop sends an end-to-end
+encrypted request through the account; the other computer shows the requester's name,
+platform and a six-digit code to compare, with Allow and Deny. On Allow, that computer
+issues a device credential, seals it to the requester's one-time key and the account
+only relays the sealed box. The requester verifies the Host identity on the published
+HTTPS route with a possession proof derived from the sealed ticket before sending
+the one-time ticket, then saves and connects the machine. Phone pairing and its
+redemption protocol remain unchanged; the proof endpoint is additive.
+Turning a machine off blocks SSH, direct HTTP and WebSocket admission on this
+desktop and skips its background polls. Turning it on keeps its saved credential.
+Requests prefer the route used by the latest successful probe. A failed account
+tunnel is retired; a discovery probe can try SSH next. A write with an unknown
+outcome is never replayed on another route. Closing the pairing dialog cancels
+pending setup and status waits before a ticket can be redeemed.
+Plain HTTP is used only for loopback. The other computer must be signed in with the same
+account, online, and have "Let my signed-in phones find this computer" on; pairing needs
+its phone access (Tailscale or local network) to be set up once.
 
 ## Create a Host conversation on this computer
 
@@ -304,7 +365,7 @@ for copying without repeating it in the status row.
 SSH settings load keys, known hosts and agent information independently. A failed
 section has its own **Retry** action; successfully loaded sections remain available.
 
-In **Settings → Machines → Add machine**, enter an SSH address (`user@my-mac-mini`) or an alias from your SSH config and click **Connect**. The machine picker also links to this Settings page. An optional name and SSH port are available.
+To type an address yourself, open **Settings → Machines → Advanced: add manually**, enter an SSH address (`user@my-mac-mini`) or an alias from your SSH config and click **Connect**. The machine picker also links to this Settings page. An optional name and SSH port are available.
 
 bycoda downloads the host package matching the desktop release and remote architecture, verifies its checksum, installs a background service, pairs this desktop, and opens a private SSH forward. Node is included in the host package; users do not build the host, install Node, copy tokens, or run a tunnel command. Existing running hosts are reused without interrupting their agents.
 
@@ -364,7 +425,7 @@ Open an SSH tunnel from your laptop:
 ssh -N -L 3776:127.0.0.1:3776 user@your-host
 ```
 
-Under **Settings → Machines → Machines → Add machine**, choose **Host URL** and enter `http://127.0.0.1:3776` and the device token.
+Under **Settings → Machines → Advanced: add manually**, choose **Host URL** and enter `http://127.0.0.1:3776` and the device token.
 
 When the laptop wakes, restore the SSH tunnel. The remote view reconnects automatically and loads the host's latest persisted snapshot. An uncertain request retains its original command ID, including creation of a new session and its first message. **Retry** asks the host for that same command’s receipt, so a lost response does not create another conversation or submit the prompt again. Pending requests survive restarting the desktop and belong to the tab that created them.
 
@@ -518,7 +579,7 @@ This remains development-source behavior pending installed-platform acceptance.
 
 Supported: persistent remote text conversations with all ten local provider adapters, follow-up turns, approvals, questions where the provider offers them, cancellation, per-device revocation, reconnect, remote file browsing and text editing, Git status, file diffs, and history, staging and commits, branch selection and creation, worktree selection and creation, and a tracked Git diff against HEAD. OpenCode's server and event stream stay on the host's loopback interface. Cursor's optional enrichment from its native session database is not available on the headless host; basic transcript and subagent events still work. The desktop polls the host and downloads only transcript blocks that changed since its last update (every 0.75 s while a session runs, 3 s otherwise). The desktop rejects any single host response over 16 MiB. A sync above 4 MiB, such as reopening a very long transcript or one very large tool output, is sent as a series of bounded pieces of one consistent revision. Transcript size is therefore not limited by the response cap. The host writes streamed output in 120 ms batches and keeps a bounded event journal.
 
-Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, named provider accounts, `/operator`, automations, orchestration, LAN discovery, and account-based tunnels are not implemented yet. Other remote prompts are sent directly to the provider.
+Remote history appears in the Sessions sidebar of each project on a machine. Host snapshots also populate the app's normal session state while the tab is open; they are not written to the local session store. Remote `/compact` uses the provider's context compaction, and `/plan` selects the host provider's plan mode. Queued follow-ups and editing the last message still need host commands. Other local slash commands and skill expansion are not yet available remotely. Worktree deletion, terminals, generated image output, named provider accounts, `/operator`, automations, and orchestration are not implemented yet. Other remote prompts are sent directly to the provider.
 
 The headless host runs the reused TypeScript adapters with a Node process backend. It proves the execution boundary without introducing the planned Rust daemon/worker IPC yet. Node is included in host release archives, separately from the desktop application.
 
@@ -562,3 +623,15 @@ Host CI runs on Windows, macOS, and Linux. Windows-specific tests cover ACL inhe
 Required approvals appear inside the source conversation when it is visible, or in an application confirmation when it is not. SSH, desktop actions, management, Inbox, Room delegation, file access, privacy recovery and quit confirmations use this flow. The exact target and operation remain visible. Expired requests, closed source windows and changed privacy scope cannot authorize work. Application-owned approvals never fall back to an operating-system or browser confirmation dialog; system permission prompts and file pickers remain platform-owned.
 
 Full access reuses execution permission for saved SSH commands in the original coding session. It does not grant publication, credentials, clipboard or physical input, persistent file access, privacy changes or delegation. Those decisions keep their existing approval boundaries.
+
+### Short connection interruptions
+
+During sleep, network changes or a Host restart, mounted workspace panes share one
+**Reconnecting…** notice per machine for up to 45 seconds. Loaded content and drafts
+stay available; authentication, identity and protocol refusals still need immediate
+attention. A longer outage exposes the existing reconnect controls and details.
+Automatic reconnect disabled keeps manual recovery available immediately.
+
+A failed request does not close an SSH forward that still answers a bounded HTTP
+probe. SSH keepalives tolerate three missed replies at 15-second intervals. Recovery
+never replays an operation whose outcome is unknown.

@@ -78,9 +78,9 @@ import { useTabGroupLogos } from "../../features/projects/hooks/useTabGroupLogos
 import { useProjectGroupMembers } from "../../features/projects/hooks/useProjectGroupMembers";
 import {
   loadProjectRailWidth,
-  PROJECT_RAIL_COMPACT_WIDTH,
   PROJECT_RAIL_WIDTH_DEFAULT,
   PROJECT_RAIL_WIDTH_MAX,
+  PROJECT_RAIL_WIDTH_MIN,
   saveProjectRailWidth,
 } from "../../features/settings/model/appearance";
 import { basename } from "../../platform/tauri/fs";
@@ -202,15 +202,16 @@ import { surfaceAttributes } from "../../shared/ui/Surface";
 /** Dismissal key for the Projects section shown open for the active project. */
 const PROJECTS_REVEAL_ID = "section:projects";
 /**
- * The wide rail is never dragged into a crushed layout: its minimum is the width where it
- * goes icon-only (this also clears the macOS window buttons and panel toggle). A pointer drag
- * released this far below it hands over to the compact rail instead.
+ * The wide rail is never dragged into a crushed layout: its minimum keeps the labelled layout
+ * (this also clears the macOS window buttons and panel toggle). A pointer drag released this
+ * far below it hands over to the compact rail (the Ctrl+B layout) instead.
  */
-const railMin = PROJECT_RAIL_COMPACT_WIDTH;
+const railMin = PROJECT_RAIL_WIDTH_MIN;
 const RAIL_COLLAPSE_MARGIN = 40;
 
-// The rail goes icon-only below PROJECT_RAIL_COMPACT_WIDTH (140px). That is a
-// container query on `@container/rail`, so it follows a drag with no re-render.
+// Containers narrower than PROJECT_RAIL_COMPACT_WIDTH (140px) go icon-only (the navigator
+// popup can be that narrow; the resizable pane never is). That is a container query on
+// `@container/rail`, so it follows a drag with no re-render.
 // Tailwind needs the classes written out: spell it `@max-[140px]/rail:`.
 // Below PROJECT_RAIL_NARROW_WIDTH (200px) shortcut hints drop: `@max-[200px]/rail:`.
 

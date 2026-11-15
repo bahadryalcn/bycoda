@@ -3,6 +3,8 @@ import { useStableCallback } from "../../../../shared/hooks/useStableCallback";
 import { useT } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { WandSparkles } from "../../../../shared/ui/icons";
+import { InfoPopover } from "../../../../shared/ui/InfoPopover";
+import { Text } from "../../../../shared/ui/Text";
 import { toast } from "../../../../shared/ui/ToastRegion";
 import { useModelSource } from "../../../sessions/public/modelSource";
 import type { OrderDraft } from "../../model/modelRoutingDraft";
@@ -79,15 +81,24 @@ export function SmartSetupAction({
     );
   }
   return (
-    <Button
-      variant={variant}
-      size="sm"
-      startIcon={<WandSparkles className="icon-sm" />}
-      loading={running}
-      loadingLabel={t("Setting up…")}
-      onClick={() => void run()}
-    >
-      {t("Smart setup")}
-    </Button>
+    <>
+      <Button
+        variant={variant}
+        size="sm"
+        startIcon={<WandSparkles className="icon-sm" />}
+        loading={running}
+        loadingLabel={t("Setting up…")}
+        onClick={() => void run()}
+      >
+        {t("Smart setup")}
+      </Button>
+      <InfoPopover label={t("About smart setup")} className="shrink-0">
+        <Text as="p" tone="muted" leading="inherit">
+          {t(
+            "Effort follows the job: Low for simple jobs, Medium for most work, High for reviews and planning. Smart setup never goes above High; choose higher levels yourself.",
+          )}
+        </Text>
+      </InfoPopover>
+    </>
   );
 }

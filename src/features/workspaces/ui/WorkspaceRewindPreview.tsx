@@ -5,6 +5,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { SessionRewindPlan } from "../model/contracts";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 
@@ -244,7 +245,7 @@ export function WorkspaceRewindPreviewHost({ sessionId }: { sessionId: string })
               try {
                 await currentUndo.run();
               } catch (cause) {
-                setError(cause instanceof Error ? cause.message : String(cause));
+                setError(presentRemoteError(cause, { explicit: true }));
               } finally {
                 setPending(false);
               }

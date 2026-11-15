@@ -6,7 +6,8 @@ export const MAX_NOTIFICATION_HISTORY = 100;
 /**
  * What the log records: the questions and approvals waiting on the owner, and
  * the other things the app announced (finished/failed turns, reminders,
- * assistant, background work, account items).
+ * assistant, background work, account items) and the outcome of owner requests
+ * (application approvals and secret inputs), which carry only a title.
  */
 export const NOTIFICATION_HISTORY_KINDS = [
   "approval",
@@ -17,6 +18,7 @@ export const NOTIFICATION_HISTORY_KINDS = [
   "assistant",
   "background",
   "account",
+  "owner",
 ] as const;
 export type NotificationHistoryKind = (typeof NOTIFICATION_HISTORY_KINDS)[number];
 

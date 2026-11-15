@@ -606,8 +606,10 @@ export function useSharedLocalQueues(
         // Interactive sessions go first; opening a project with much history
         // must not put its active queue behind every empty historical queue.
         // A queue another computer just changed is read even if idle or hidden.
+        // A reset names no queue: every conversation is looked at, also one without an entry
+        // (the Host did not store it when last asked and may hold a notice for it now).
         const changed = wakeAll
-          ? sessionsRef.current.filter((session) => localQueues.has(session.id))
+          ? sessionsRef.current.slice()
           : [...woken].flatMap((id) => {
               const session = sessionById(sessionsRef.current, id);
               return session ? [session] : [];
@@ -633,7 +635,9 @@ export function useSharedLocalQueues(
             !entry &&
             !justChanged &&
             absent.stateKey === stateKeyOf(session) &&
-            !(interactive && Date.now() >= absent.askAt)
+            // The safety pass asks again too: a Host notice for an idle conversation
+            // shows nowhere in this window, so nothing else would ever look.
+            !((interactive || forceAll) && Date.now() >= absent.askAt)
           )
             continue;
           if (!entry && !interactive && idleInitializations++ >= 8) {

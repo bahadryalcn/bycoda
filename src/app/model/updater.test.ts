@@ -29,6 +29,7 @@ vi.mock("../../features/settings/model/sounds", () => ({
   announceUpdateAvailable: mocks.announce,
 }));
 vi.mock("./updateNotice", () => ({ rememberInstalledUpdate: mocks.remember }));
+vi.mock("../../features/connections/ui/UpdateImpact", () => ({ UpdateImpact: () => null }));
 vi.mock("../../shared/lib/productIdentity", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../shared/lib/productIdentity")>();
   return {
@@ -80,6 +81,15 @@ async function updaterWithPendingUpdate() {
 }
 
 describe("installPendingUpdate", () => {
+  it("requires interruption approval for direct installs before downloading", async () => {
+    const updater = await updaterWithPendingUpdate();
+    mocks.ask.mockResolvedValue(false);
+    const result = await updater.installPendingUpdate();
+    expect(result.phase).toBe("available");
+    expect(mocks.ask).toHaveBeenCalledOnce();
+    expect(mocks.downloadAndInstall).not.toHaveBeenCalled();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+  });
   it("coalesces installs before version preflight resolves", async () => {
     mocks.downloadAndInstall.mockResolvedValue(undefined);
     const updater = await updaterWithPendingUpdate();
@@ -187,8 +197,8 @@ describe("disabled updater", () => {
     expect(mocks.ask).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Update available",
-        confirmLabel: "Install now",
-        tone: "normal",
+        confirmLabel: "Install and restart",
+        tone: "danger",
         message: expect.stringContaining("0.1.23 is available (you have 0.1.22)."),
       }),
     );

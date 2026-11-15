@@ -14,6 +14,7 @@ export function createEnvironmentRuntime(
     | "webControl"
     | "mobileLan"
     | "mobileAccess"
+    | "tunnels"
     | "buildIdentity"
     | "providers"
     | "genericAcp"
@@ -29,6 +30,7 @@ export function createEnvironmentRuntime(
   const mobileRoutes = createMobileRoutes({
     lan: () => dependencies.mobileLan.status(),
     tailscale: () => dependencies.mobileAccess.status(),
+    tunnel: () => dependencies.tunnels.publicHostUrl(),
   });
   const environmentService = createEnvironmentService({
     snapshot: async () => ({
@@ -66,6 +68,7 @@ export function createEnvironmentRuntime(
         "desktop.control.v1",
         HOST_WS_READ_CAPABILITY,
         "transport.ws.sessions.v2",
+        "transport.ws.sessions.tail.v1",
         "sessions.approvalOccurrence.v1",
         "sessions.desktopControlReceipts.v1",
         "transport.ws.queue.v2",
@@ -200,6 +203,7 @@ export function createEnvironmentRuntime(
         "shell.profile.compare.v1",
         "sessions.desktop",
         "sessions.desktopLive",
+        "assistant.ownerActive",
         "sessions.desktop-writer-retirement.v1",
         "sessions.host-writer-retirement.v1",
         "sessions.queue",

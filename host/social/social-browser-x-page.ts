@@ -23,6 +23,37 @@ export type XBrowserDeps = {
   releaseRead(accountId: string, session: BrowserSession, success: boolean): Promise<void>;
 };
 
+/** True on the encrypted XChat route (`/i/chat`), which replaced the legacy /messages inbox. */
+export const CHAT_PATH_EXPRESSION = `(location.pathname === "/i/chat" || location.pathname.startsWith("/i/chat/"))`;
+
+/**
+ * Page expression that yields "pin" while the XChat shell asks for the key-recovery passcode. The
+ * prompt lives in an open shadow root (testid pin-title), so a plain querySelector cannot see it.
+ * Reading it never touches the prompt.
+ */
+export const CHAT_PIN_EXPRESSION = `(() => {
+  if (location.pathname.startsWith("/i/chat/pin/")) return "pin";
+  const walk = (root) => {
+    for (const el of root.querySelectorAll("*")) {
+      const shadow = el.shadowRoot;
+      if (shadow && (shadow.querySelector('[data-testid="pin-title"], [data-testid="pin-code-input-container"]') || walk(shadow))) return true;
+    }
+    return false;
+  };
+  return walk(document) ? "pin" : "";
+})()`;
+
+/** Reason an encrypted chat cannot be read or written: passcode prompt versus the shell itself. */
+export async function xChatBlockReason(
+  deps: Pick<XBrowserDeps, "until">,
+  page: BrowserPage,
+): Promise<"chat_setup_required" | "encrypted_chat_unsupported"> {
+  // The shell mounts the passcode prompt after the route; wait briefly, then fall back to the generic reason.
+  return (await deps.until<string>(page, CHAT_PIN_EXPRESSION, 8_000)) === "pin"
+    ? "chat_setup_required"
+    : "encrypted_chat_unsupported";
+}
+
 export function xUserId(cookies: { name: string; value: string }[]): string | undefined {
   if (!cookies.some((cookie) => cookie.name === "auth_token" && cookie.value)) return undefined;
   const twid = cookies.find((cookie) => cookie.name === "twid")?.value;

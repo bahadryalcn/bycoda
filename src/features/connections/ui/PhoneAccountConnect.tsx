@@ -47,9 +47,31 @@ async function describeLocalHost(): Promise<HostDescriptor | null> {
   );
 }
 
+/** The Host's https Quick Tunnel origin from `environment.describe`, if it published one. */
+async function publishedTunnelEndpoint(machine: RemoteMachine): Promise<string | undefined> {
+  const host = await remoteRequest<HostDescriptor>(
+    machine.id,
+    "environment.describe",
+    {},
+    false,
+    false,
+    machine.environmentId,
+  );
+  return host.mobileRoutes?.find((route) => {
+    try {
+      const url = new URL(route.endpoint);
+      return (
+        !route.lanKey && url.protocol === "https:" && url.hostname.endsWith(".trycloudflare.com")
+      );
+    } catch {
+      return false;
+    }
+  })?.endpoint;
+}
+
 /**
  * While signed in and "Let my signed-in phones find this computer" is on: publishes this
- * computer's phone routes to the account and asks the owner before a signed-in phone is allowed
+ * computer's phone routes to the account and asks the owner before a signed-in phone or computer is allowed
  * to connect. Renders only the approval dialog. Mount once with the workspace notices.
  */
 export function PhoneAccountConnect() {
@@ -81,20 +103,37 @@ export function PhoneAccountConnect() {
           api,
           desktopDeviceId: deviceId,
           environmentId: machine.environmentId,
-          createPairingCode: () => createAccountPairingCode(machine),
+          createPairingCode: () =>
+            createAccountPairingCode(machine, undefined, {
+              requester: request.requesterKind === "desktop" ? "desktop" : "phone",
+              tunnelEndpoint: () => publishedTunnelEndpoint(machine),
+            }),
         });
       },
       ask: (request, approve) =>
         confirmRef.current({
-          title: t("Allow this phone to connect?"),
-          message: t(
-            "{phone} ({platform}, your account) wants to connect. Check that the code on the phone is {code}.",
-            {
-              phone: request.phoneName,
-              platform: PLATFORM[request.phonePlatform],
-              code: pairRequestCode(request),
-            },
-          ),
+          title:
+            request.requesterKind === "desktop"
+              ? t("Allow this computer to connect?")
+              : t("Allow this phone to connect?"),
+          message:
+            request.requesterKind === "desktop"
+              ? t(
+                  "{computer} ({platform}, your account) wants to connect. Check that the code on that computer is {code}.",
+                  {
+                    computer: request.phoneName,
+                    platform: PLATFORM[request.phonePlatform],
+                    code: pairRequestCode(request),
+                  },
+                )
+              : t(
+                  "{phone} ({platform}, your account) wants to connect. Check that the code on the phone is {code}.",
+                  {
+                    phone: request.phoneName,
+                    platform: PLATFORM[request.phonePlatform],
+                    code: pairRequestCode(request),
+                  },
+                ),
           confirmLabel: t("Allow"),
           cancelLabel: t("Deny"),
           pendingLabel: t("Connecting…"),

@@ -11,6 +11,7 @@ import { DeviceSetupPanel } from "./ui/DeviceSetupPanel";
 import { DeviceConnectState, DeviceWaitingState } from "./ui/DeviceStageStates";
 import { DeviceOptionsMenu } from "./ui/DeviceOptionsMenu";
 import { DeviceInspector } from "./ui/DeviceInspector";
+import { presentRemoteError } from "../connections/public/remoteFailure";
 import { useDeviceStatus } from "./hooks/useDeviceStatus";
 import { useDeviceLiveStream } from "./hooks/useDeviceLiveStream";
 import { kindLabel, platformVersionLabel, stateLabel } from "./model/deviceLabels";
@@ -208,6 +209,8 @@ function DevicePanelSurface({
   const [operation, setOperation] = useState<DeviceOperation>();
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [error, setError] = useState<string | undefined>(saved?.error);
+  const showActionError = (cause: unknown) =>
+    setError(presentRemoteError(cause, { explicit: true }));
   const [errorOperation, setErrorOperationState] = useState<DeviceOperation>(
     (saved?.errorOperation as DeviceOperation) ?? "status",
   );
@@ -384,7 +387,7 @@ function DevicePanelSurface({
       mounted.current = false;
     };
   }, []);
-  useDeviceStatus(api, visible, setStatus, setError, setBusy);
+  const reload = useDeviceStatus(api, visible, setStatus, setError, setBusy, connectionUnavailable);
   const execute = useCallback(
     async <T,>(
       name: DeviceOperation,
@@ -415,7 +418,9 @@ function DevicePanelSurface({
         if (current()) commit(value);
       } catch (cause) {
         if (current()) {
-          setError(String(cause));
+          setError(
+            presentRemoteError(cause, { explicit: name !== "status" && name !== "capture" }),
+          );
           if (name === "status") setStatus(undefined);
           if (name === "refresh") setDiscoveryUnavailable(true);
           if (/DEVICE_CONTROL_BUSY/.test(String(cause)) && name === "claim")
@@ -571,7 +576,7 @@ function DevicePanelSurface({
           if (active) {
             setDiscoveryUnavailable(true);
             setConnectionUnavailable(true);
-            setError(String(cause));
+            setError(presentRemoteError(cause, { explicit: true }));
           }
         },
       )
@@ -581,7 +586,7 @@ function DevicePanelSurface({
     return () => {
       active = false;
     };
-  }, [api, status?.running, applyDevices, visible]);
+  }, [api, status?.running, applyDevices, visible, reload]);
   // Video when the Host can stream this device; the still captures below are the fallback.
   const liveStream = useDeviceLiveStream({
     stream: api.stream,
@@ -619,7 +624,7 @@ function DevicePanelSurface({
         } catch (cause) {
           if (!cancelled) {
             setErrorOperation("capture");
-            setError(String(cause));
+            setError(presentRemoteError(cause));
             setFrameStale(true);
             failures++;
           }
@@ -1216,7 +1221,7 @@ function DevicePanelSurface({
                             delete claimRequests.current[selected];
                             setInspection(undefined);
                           },
-                        ).catch((cause: unknown) => setError(String(cause)));
+                        ).catch(showActionError);
                       } else if (api.claimControl) {
                         claimRequests.current[selected] ??= crypto.randomUUID();
                         void execute(
@@ -1230,7 +1235,7 @@ function DevicePanelSurface({
                             });
                             setControl(!!value.leaseId);
                           },
-                        ).catch((cause: unknown) => setError(String(cause)));
+                        ).catch(showActionError);
                       }
                     }}
                   />
@@ -2151,7 +2156,7 @@ function DevicePanelSurface({
                             error: false,
                           });
                         },
-                      ).catch((cause: unknown) => setError(String(cause)));
+                      ).catch(showActionError);
                     }}
                   >
                     {t("Check attachment")}

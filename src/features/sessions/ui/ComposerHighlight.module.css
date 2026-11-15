@@ -71,3 +71,15 @@
   width: 12px;
   height: 12px;
 }
+
+/* Inline padding offset by an equal negative margin: room inside the fill without moving
+   a character away from the textarea underneath. */
+.skill {
+  padding-inline: 1px;
+  margin-inline: -1px;
+  padding-block: 2px;
+  border-radius: var(--ui-radius-control);
+  background: color-mix(in oklch, currentColor 12%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}

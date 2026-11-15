@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n/git";
@@ -67,7 +68,7 @@ export function SwitchBranchDialog({
       if (!controller.signal.aborted) setMessage(generated);
     } catch (err) {
       if (!controller.signal.aborted) {
-        setGenerateError(err instanceof Error ? err.message : String(err));
+        setGenerateError(presentRemoteError(err, { explicit: true }));
       }
     } finally {
       if (generateAbortRef.current === controller) {

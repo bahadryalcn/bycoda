@@ -47,6 +47,16 @@ export type RefreshAdoptedSession = (
   resolution?: AdoptedResolution,
 ) => Promise<boolean>;
 
+/** A conversation this desktop runs. An owner record that cannot be read keeps that one
+ * conversation out instead of failing the pass, which would mark the Host unreachable. */
+const desktopOwned = (session: Session): boolean => {
+  try {
+    return !hostSessionBinding(session);
+  } catch {
+    return false;
+  }
+};
+
 /** Mirrors sessions the local Bycoda Host adopted from this desktop (another
  * computer continued them there) back into the loaded local sessions.
  * `loadRunning` is handed the ids the host runs that are not loaded here, so
@@ -78,6 +88,7 @@ export function useAdoptedSessions(
     let outstanding = false;
     let retries = 0;
     let listed: readonly AdoptedEntry[] = [];
+    let lastFailure: string | undefined;
     const refreshes = new Map<string, Promise<boolean>>();
     const mirrored = new Map<string, number>();
     /** Archive and pin changes other computers made on the host copy; they live
@@ -154,8 +165,7 @@ export function useAdoptedSessions(
             await metadata.observe(host).catch(() => undefined);
             return host;
           },
-          local: () =>
-            stopped ? [] : sessionsRef.current.filter((session) => !hostSessionBinding(session)),
+          local: () => (stopped ? [] : sessionsRef.current.filter(desktopOwned)),
           mirrored,
           // Only an explicit refresh saves a separate copy, before it replaces
           // the local conversation. A failed backup leaves the original untouched.
@@ -173,7 +183,7 @@ export function useAdoptedSessions(
             const update = (list: Session[]) => {
               let changed = false;
               const next = list.map((session) => {
-                if (hostSessionBinding(session)) return session;
+                if (!desktopOwned(session)) return session;
                 const continuingElsewhere = running.has(session.id) || undefined;
                 if (session.continuingElsewhere === continuingElsewhere) return session;
                 changed = true;
@@ -268,6 +278,7 @@ export function useAdoptedSessions(
         };
         if (sessionId) return await refreshAdoptedSession(deps, sessionId, resolution);
         await mirrorAdoptedSessions(deps);
+        lastFailure = undefined;
         outstanding = listed.some(
           (entry) =>
             mirrored.get(entry.id) !== entry.revision && declined.get(entry.id) !== entry.revision,
@@ -277,7 +288,11 @@ export function useAdoptedSessions(
         outstanding = true;
         known = undefined;
         if (sessionId) throw error;
-        // Host unreachable or too old; the next pass tries again.
+        // Host unreachable or too old; the next pass tries again. Queue delivery and the
+        // live beat wait on this flag, so the reason is named once.
+        const reason = String(error);
+        if (reason !== lastFailure) console.warn("Host session mirror failed", error);
+        lastFailure = reason;
       }
     };
 

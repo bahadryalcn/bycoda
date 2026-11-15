@@ -18,6 +18,8 @@ Use for notification settings, project exceptions/mute, pending request sheet/hi
 
 - `host/approvals/` mirrors pending owner approvals (`src/features/notifications/model/ownerApprovalMirror.ts` publishes them) so a paired phone can answer the `remote` ones through `approvals.*`; the desktop still settles the native dialog, only for a matching signature, and secrets and desktop input stay `remote: false` (see [decisions](references/decisions.md)).
 
+- `src/features/notifications/hooks/useSocialNotifications.ts` with `model/socialWaiting.ts` and `socialWaitingFeed.ts` announce Social items that wait for the owner (account requests, NEEDS_HUMAN) once per item id, using the `input` event, the `agentInput` project mute and the `background:social` target; see [Social integration](../../../docs/integrations/social.md).
+
 ## Preserve
 
 - Sound, desktop alerts and request popups are independent preferences; master-off preserves dependent event/project/schedule choices. Saved intent is not permission or delivered notification.

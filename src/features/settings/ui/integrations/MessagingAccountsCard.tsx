@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { useRef, useState, type ComponentType, type ReactNode } from "react";
@@ -18,7 +19,6 @@ import {
   type MessagingAccount,
   type MessagingProvider,
 } from "../../../messaging";
-import { errorText } from "../../../../shared/lib/errors";
 import { useMessagingAccounts } from "./useMessagingAccounts";
 
 export type AccountFormProps = {
@@ -75,7 +75,7 @@ export function MessagingAccountsCard({
       setEditing((current) => (current === account.id ? null : current));
       setSaved((current) => (current?.id === account.id ? null : current));
     } catch (err: unknown) {
-      setRemoveError(errorText(err));
+      setRemoveError(presentRemoteError(err, { explicit: true }));
     } finally {
       setRemoving(null);
     }
@@ -115,7 +115,11 @@ export function MessagingAccountsCard({
               { variant: "card", frame: "card", radius: "card" },
               "settings-collection settings-collection-empty",
             )}
-            descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
+            descriptionText={{
+              size: "caption",
+              tone: "secondary",
+              leading: "normal",
+            }}
             description={emptyLabel}
           />
         ) : (
@@ -248,7 +252,7 @@ export function useAccountSave(
     try {
       onSaved(await saveMessagingAccount(result.input));
     } catch (err: unknown) {
-      setError(errorText(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       pending.current = false;
       setSaving(false);

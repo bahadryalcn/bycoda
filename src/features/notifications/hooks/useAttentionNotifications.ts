@@ -1,23 +1,25 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { sessionIssue } from "../../sessions/model/sessionIssue";
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
+import {
+  subscribeUnseenFinished,
+  unseenFinishedSnapshot,
+} from "../../sessions/public/unseenFinished";
 import {
   enteredBackgroundFinish,
   flashFor,
-  pruneUnseen,
   sessionPhase,
   taskbarAttention,
   type SessionPhase,
 } from "../model/attention";
 import { attentionRulesFor, subscribeAttentionRules } from "../model/attentionRules";
+import { socialWaitingCount, subscribeSocialWaiting } from "../model/socialWaiting";
 import {
   announceBackgroundFinish,
   announceSessionIssue,
   isWindowFocused,
-  replaceUnseenAttention,
   subscribeAttention,
-  unseenAttentionSessions,
 } from "../model/notifications";
 
 /**
@@ -56,16 +58,20 @@ export function useAttentionNotifications(
 
   const syncAttention = useEffectEvent(() => {
     const focused = isWindowFocused();
-    replaceUnseenAttention(
-      pruneUnseen(unseenAttentionSessions(), sessions, activeSessionId, focused),
-    );
-    const next = taskbarAttention(
+    const rules = attentionRulesFor("taskbar");
+    const sessionsWaiting = taskbarAttention(
       sessions,
-      unseenAttentionSessions(),
+      unseenFinishedSnapshot(),
       activeSessionId,
       focused,
-      attentionRulesFor("taskbar"),
+      rules,
     );
+    // Social items that wait for the owner count like a session that needs input.
+    const social = rules.input ? socialWaitingCount() : 0;
+    const next = {
+      count: sessionsWaiting.count + social,
+      hasInput: sessionsWaiting.hasInput || social > 0,
+    };
     const flash = flashFor(shownCount.current, next, focused);
     if (next.count === shownCount.current && flash === "none" && !nativeRetry.current) return;
     const previousCount = shownCount.current;
@@ -86,7 +92,12 @@ export function useAttentionNotifications(
     // Badge, event and project preferences (including mute expiry) change what
     // the taskbar may show without any session changing.
     const sync = () => syncAttention();
-    const unsubscribe = [subscribeAttention(sync), subscribeAttentionRules(sync)];
+    const unsubscribe = [
+      subscribeAttention(sync),
+      subscribeAttentionRules(sync),
+      subscribeUnseenFinished(sync),
+      subscribeSocialWaiting(sync),
+    ];
     return () => unsubscribe.forEach((off) => off());
   }, []);
 }

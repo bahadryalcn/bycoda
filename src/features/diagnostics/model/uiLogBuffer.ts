@@ -67,6 +67,24 @@ const buffer = createLogBuffer();
 export const uiLogSnapshot = (): string => buffer.snapshot();
 export const clearUiLog = (): void => buffer.clear();
 
+export type UiLogSink = (level: "warn" | "error", category: string, message: string) => void;
+let sink: UiLogSink | undefined;
+
+/** Also hands every warning and error to a durable sink (the native log file). */
+export function setUiLogSink(next: UiLogSink | undefined): void {
+  sink = next;
+}
+
+function keep(
+  level: DiagnosticLogLevel,
+  category: string,
+  message: string,
+  fields?: DiagnosticLogFields,
+): void {
+  buffer.push(level, category, message, fields);
+  if (level === "warn" || level === "error") sink?.(level, category, message);
+}
+
 /** Adds one line to the UI log; never throws. Used by the console hook and the breadcrumbs. */
 export function recordUiLog(
   level: DiagnosticLogLevel,
@@ -75,7 +93,7 @@ export function recordUiLog(
   fields?: DiagnosticLogFields,
 ): void {
   try {
-    buffer.push(level, category, message, fields);
+    keep(level, category, message, fields);
   } catch {
     // -- logging must never break the caller.
   }
@@ -122,7 +140,7 @@ export function installUiLogBuffer(): void {
   for (const level of ["warn", "error"] as const) {
     const original = console[level].bind(console);
     console[level] = (...args: unknown[]) => {
-      guarded(() => buffer.push(level, "ui.console", args.map(describe).join(" ")));
+      guarded(() => keep(level, "ui.console", args.map(describe).join(" ")));
       original(...args);
     };
   }
@@ -131,7 +149,7 @@ export function installUiLogBuffer(): void {
       const src = sourceLocation(event.filename, event.lineno, event.colno);
       const error = event.error;
       const stack = error instanceof Error && error.stack ? `\n${error.stack}` : "";
-      buffer.push(
+      keep(
         "error",
         "ui.error",
         `${error instanceof Error ? error.message : event.message}${stack}`,
@@ -140,7 +158,7 @@ export function installUiLogBuffer(): void {
     }),
   );
   window.addEventListener("unhandledrejection", (event) =>
-    guarded(() => buffer.push("error", "ui.error", describe(event.reason), { kind: "rejection" })),
+    guarded(() => keep("error", "ui.error", describe(event.reason), { kind: "rejection" })),
   );
   const state = (category: string, message: string, fields?: DiagnosticLogFields) =>
     guarded(() => buffer.push("info", category, message, fields));

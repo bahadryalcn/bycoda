@@ -12,6 +12,7 @@ import type { RemoteMachine } from "../../connections";
 import { hostProjectFor } from "../../automations/model/hostAutomationClient";
 import { machineCapabilities } from "../../automations/model/machineSnapshot";
 import { HOST_TASK_WORKSPACES, type TaskWorkspace } from "../model/taskWorkspace";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type Tree = { path: string; branch: string | null; missing?: boolean };
 type Inventory = { projectId: string; trees: Tree[]; branches: string[]; current: string | null };
@@ -182,7 +183,7 @@ export function TaskWorkspacePicker({
       changeNewName("");
       setRevision((count) => count + 1);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       creating.current = false;
       setCreation(null);

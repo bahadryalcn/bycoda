@@ -168,9 +168,13 @@ export const SIDEBAR_BLUR_MIN = APPEARANCE_RANGES.sidebarBlur.min;
 export const SIDEBAR_BLUR_MAX = APPEARANCE_RANGES.sidebarBlur.max;
 export const SIDEBAR_BLUR_DEFAULT = 24;
 
-export const PROJECT_RAIL_WIDTH_MIN = 56;
 /** Below this the rail drops its labels and shows icons only. */
 export const PROJECT_RAIL_COMPACT_WIDTH = 140;
+/**
+ * The narrowest rail pane. Its inner containers sit about 21px inside the pane, so this keeps
+ * every one of them above PROJECT_RAIL_COMPACT_WIDTH: a narrower rail becomes the compact rail.
+ */
+export const PROJECT_RAIL_WIDTH_MIN = 168;
 /** Below this the rail keeps labels but drops keyboard shortcut hints. */
 export const PROJECT_RAIL_NARROW_WIDTH = 200;
 export const PROJECT_RAIL_WIDTH_MAX = 360;

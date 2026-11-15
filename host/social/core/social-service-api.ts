@@ -12,6 +12,7 @@ import type {
   SocialRule,
   SocialThread,
 } from "../../../src/features/social/model/social";
+import type { HostProject } from "../../../src/features/connections/model/protocol";
 import type { SocialAdapter, SocialInbound } from "../../../src/integrations/social/adapter";
 import type { AutonomyDecision } from "../autonomy/autonomy-gate";
 import type { SendTarget } from "../autonomy/suppression";
@@ -60,6 +61,8 @@ export interface SocialServiceApi {
     permission: SocialPermission,
   ): Promise<SocialAccount>;
   owner(p: SocialPrincipal): void;
+  /** The registered project; refuses another project's data for a non-owner principal. */
+  project(p: SocialPrincipal, projectId: string): Promise<HostProject>;
   adapterFor(account: SocialAccount): SocialAdapter;
   credentialFor(accountId: string): Promise<SocialCredential | undefined>;
   capability(account: SocialAccount, operation: SocialOperation): void;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CrewDefinition } from "../model/crew";
 import { adoptSaved, crewFingerprint, outgoingCrew, shouldAutosave } from "../model/crewBulk";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export type CrewAutosaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -98,7 +99,7 @@ export function useCrewAutosave(input: Live & { delayMs?: number }) {
               live.current = { ...live.current, draft: adoptSaved(draft, sent, result) };
             live.current.onSaved(result, sent);
           } catch (reason) {
-            const message = reason instanceof Error ? reason.message : String(reason);
+            const message = presentRemoteError(reason, { explicit: true });
             const next = { fingerprint: crewFingerprint(sent), message };
             mirror.current = { ...mirror.current, failed: next };
             setFailed(next);

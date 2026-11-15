@@ -33,6 +33,7 @@ import { CrewLibraryBulkBar } from "./CrewLibraryBulk";
 import { CrewMemberForm } from "./CrewMemberForm";
 import { CrewMemberTeamError, CrewMemberTeamMenu, CrewMemberTeams } from "./CrewLibraryTeams";
 import { useCrewAssignment } from "./useCrewAssignment";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
@@ -340,7 +341,7 @@ function LibraryMemberDialog({
       await operation();
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       gate.current = false;
       setPendingAction(null);
@@ -412,7 +413,7 @@ function LibraryMemberDialog({
                   await state.call("crews.agent.delete", { agentId: saved.id });
                   onClose();
                 } catch (reason) {
-                  setError(reason instanceof Error ? reason.message : String(reason));
+                  setError(presentRemoteError(reason, { explicit: true }));
                   throw reason;
                 } finally {
                   gate.current = false;
@@ -549,7 +550,7 @@ function GroupDialog({
       }
       onDone(kind === "rename" ? next : undefined);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       gate.current = false;
       setPending(false);

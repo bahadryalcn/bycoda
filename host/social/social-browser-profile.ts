@@ -117,14 +117,11 @@ export class XProfileActions {
     }
     for (const kind of ["banner", "avatar"] as const)
       if (files[kind]) {
-        // The two file inputs have the same test ID; bind only the explicitly named image slot.
+        // Both image inputs share a test ID and button labels are localized; the edit dialog holds exactly two image-only inputs, banner first, avatar second.
         const bound = await this.page.evaluate<boolean>(`(() => {
-        const labels = ${JSON.stringify(kind === "avatar" ? ["Add avatar photo", "Profil fotoğrafı ekle"] : ["Add banner photo", "Afiş fotoğrafı ekle", "Başlık fotoğrafı ekle"])};
-        const buttons = [...document.querySelectorAll('button[aria-label]')].filter(el => el.getClientRects().length && labels.includes(el.getAttribute('aria-label')));
-        if (buttons.length !== 1) return false;
-        const inputs = buttons[0].parentElement?.querySelectorAll('input[type="file"]');
-        if (inputs?.length !== 1) return false;
-        const input = inputs[0];
+        const inputs = [...document.querySelectorAll('[role="dialog"] input[type="file"][data-testid="fileInput"]')].filter(el => !el.accept.includes('video'));
+        if (inputs.length !== 2) return false;
+        const input = inputs[${kind === "banner" ? 0 : 1}];
         document.querySelectorAll('[data-bycoda-profile-image]').forEach(el => el.removeAttribute('data-bycoda-profile-image'));
         input.setAttribute('data-bycoda-profile-image', ${JSON.stringify(kind)}); return true;
       })()`);
@@ -162,8 +159,8 @@ export class XProfileActions {
       `(() => {
       if (location.pathname.toLowerCase() !== ${JSON.stringify(`/${handle.toLowerCase()}`)}) return null;
       const root = document.querySelector('[data-testid="primaryColumn"]');
-      const userName = root?.querySelector('[data-testid="UserName"]')?.textContent ?? '';
-      if (!new RegExp(${JSON.stringify(`(?:^|[^A-Za-z0-9_])@${handle}(?![A-Za-z0-9_])`)}, 'i').test(userName)) return null;
+      const handleLabel = [...(root?.querySelectorAll('[data-testid="UserName"] span') ?? [])].some(el => el.textContent.trim().toLowerCase() === ${JSON.stringify(`@${handle.toLowerCase()}`)});
+      if (!handleLabel) return null;
       const controls = [...root.querySelectorAll('button[data-testid]')].filter(el => /^\\d+-(follow|unfollow)$/.test(el.dataset.testid) && el.getAttribute('aria-label')?.toLowerCase().endsWith(${JSON.stringify(`@${handle.toLowerCase()}`)}));
       if (controls.length !== 1) return null;
       const [id, state] = controls[0].dataset.testid.split('-'); return { id, following: state === 'unfollow' };

@@ -9,6 +9,7 @@ import { newTaskDraft, saveTask, startTask, type TaskDraft } from "../../tasks/p
 import { TaskForm } from "../../tasks/public/taskCreation";
 import type { useProjectCrews } from "../model/crewClient";
 import { useCrewMachineScope } from "./CrewMachineScope";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 // Each exact host/project/team owns its draft and original creation receipt.
 const drafts = new Map<string, TaskDraft>();
@@ -100,7 +101,7 @@ function CrewTaskDraft({
       await state.refetch();
       onClose();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       gate.current = false;
       setSaving(false);

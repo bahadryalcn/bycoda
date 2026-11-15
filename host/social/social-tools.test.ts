@@ -435,6 +435,7 @@ describe("Real local CLI and MCP transport", () => {
         "browser.recipeSuggestions.list",
       ];
       const writes = [
+        "accounts.request",
         "campaigns.create",
         "campaigns.schedule",
         "drafts.update",

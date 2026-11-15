@@ -4,15 +4,18 @@ import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { Text } from "../../../shared/ui/Text";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
-import { Bot } from "../../../shared/ui/icons";
+import { MemberAvatar, memberTraits } from "../../crews/public/mentions";
 import type { DockAgent } from "../model/activityDock";
 import { AgentStatusDot } from "./ActivityDock";
 import { formatElapsed } from "./useElapsedFrom";
 
+const SUBAGENTS_FACE = memberTraits({ id: "subagents" });
+
 /**
  * The session's subagents, past and running, behind one composer control. It
  * stays after the turn ends, so an old run can still be opened in its sheet.
- * Renders nothing when the session has none.
+ * Renders nothing when the session has none. Hidden while the activity dock lists
+ * the same runs (`data-dock-subagents`), so one control shows them at a time.
  */
 export function SessionSubagentsMenu({
   agents,
@@ -74,7 +77,11 @@ export function SessionSubagentsMenu({
         data-composer-subagents-trigger
         onClick={() => setOpen((value) => !value)}
       >
-        {running > 0 ? <WorkingIndicator size="xs" /> : <Bot className="icon-sm" />}
+        {running > 0 ? (
+          <WorkingIndicator size="xs" />
+        ) : (
+          <MemberAvatar traits={SUBAGENTS_FACE} size={16} />
+        )}
         <Text as="span" size="inherit" tone="inherit">
           {agents.length}
         </Text>

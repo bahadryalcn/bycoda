@@ -12,6 +12,7 @@ import type {
 } from "../../../shared/model/host-contracts/assistant";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
 import { assistantRequest } from "./assistantClient";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export type ManualProject = { id?: string; path: string; name: string };
 export type ManualState = NonNullable<AssistantResponse["manual"]>;
@@ -53,7 +54,7 @@ const reason = (cause: unknown) => {
   const message = cause instanceof Error ? cause.message : String(cause);
   return message === "The assistant already has 100 active manual supervision grants."
     ? "No more conversations can be enrolled. Revoke supervision before adding another."
-    : message;
+    : presentRemoteError(cause, { explicit: true });
 };
 
 export function useManualSupervision(

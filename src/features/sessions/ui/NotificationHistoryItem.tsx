@@ -71,6 +71,8 @@ export function historyKindMeta(
       return { label: t("Background"), Icon: CheckList, tone: "info" };
     case "account":
       return { label: t("Account"), Icon: UserRound, tone: "neutral" };
+    case "owner":
+      return { label: t("Request"), Icon: Shield, tone: "neutral" };
     default:
       return { label: t("Approval"), Icon: Shield, tone: "warning" };
   }

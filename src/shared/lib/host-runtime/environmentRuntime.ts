@@ -68,6 +68,15 @@ type Entry = {
 };
 type ControlWaiter = { grant(): void; reject(error: Error): void };
 let runtimeSequence = 0;
+/** Longest wait for the connection to return before an interrupted read gives up. */
+const RETRY_READY_WAIT_MS = 10_000;
+function isInterruptedRead(error: unknown): boolean {
+  const code = typeof error === "object" && error !== null && "code" in error ? error.code : "";
+  return (
+    code === "RPC_WS_INTERRUPTED" ||
+    (error instanceof Error && error.message === "Stale Host connection or access scope")
+  );
+}
 
 export class HostCommandUncertainError extends Error {
   readonly delivery = "unknown";
@@ -155,6 +164,7 @@ export class EnvironmentRuntime {
   private stopListening?: () => void;
   private disposed = false;
   private scopeVersion = 0;
+  private readonly readyWaiters = new Set<(ready: boolean) => void>();
 
   constructor(
     readonly scope: RuntimeScope,
@@ -247,6 +257,7 @@ export class EnvironmentRuntime {
     this.disposed = true;
     this.scopeVersion++;
     this.stateValue = reduceConnectionState(this.stateValue, { type: "close" });
+    for (const settle of this.readyWaiters) settle(false);
     for (const { cancel } of this.pending.values()) cancel();
     for (const entry of this.entries.values()) {
       entry.closed = true;
@@ -259,10 +270,54 @@ export class EnvironmentRuntime {
     await this.port.detach();
   }
 
+  /**
+   * A query interrupted by a connection change is retried once after the
+   * connection is ready again, inside its original deadline. Commands and
+   * effectful RPCs are never replayed: their outcome is unknown.
+   */
   async request(
     method: string,
     params: unknown,
     options: RuntimeRequestOptions = {},
+  ): Promise<unknown> {
+    const definition = getHostRpcMethod(hostRpcWireMethod(method));
+    const started = this.clock.now();
+    try {
+      return await this.requestOnce(method, params, options);
+    } catch (error) {
+      if (
+        definition?.kind !== "query" ||
+        this.disposed ||
+        options.signal?.aborted ||
+        !isInterruptedRead(error)
+      )
+        throw error;
+      const total = options.responseTimeoutMs ?? definition.responseTimeoutMs;
+      const waitMs = Math.min(RETRY_READY_WAIT_MS, total - (this.clock.now() - started));
+      if (waitMs <= 0 || !(await this.waitReady(waitMs))) throw error;
+      const remaining = Math.floor(total - (this.clock.now() - started));
+      if (remaining <= 0) throw error;
+      return this.requestOnce(method, params, { ...options, responseTimeoutMs: remaining });
+    }
+  }
+
+  private waitReady(timeoutMs: number): Promise<boolean> {
+    if (this.stateValue.transport === "ready") return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      const release = this.clock.schedule(timeoutMs, () => settle(false));
+      const settle = (ready: boolean) => {
+        release();
+        this.readyWaiters.delete(settle);
+        resolve(ready);
+      };
+      this.readyWaiters.add(settle);
+    });
+  }
+
+  private async requestOnce(
+    method: string,
+    params: unknown,
+    options: RuntimeRequestOptions,
   ): Promise<unknown> {
     method = hostRpcWireMethod(method);
     if (this.disposed || options.signal?.aborted) throw new Error("Host request is cancelled");
@@ -527,6 +582,7 @@ export class EnvironmentRuntime {
           generation,
           environmentId: event.environmentId,
         });
+        for (const settle of this.readyWaiters) settle(true);
         for (const entry of this.entries.values())
           void this.open(entry).catch((error) => this.report(entry, error));
       } else if (event.phase !== "connecting") {

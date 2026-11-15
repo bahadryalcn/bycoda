@@ -7,7 +7,6 @@ import {
   notifyBackground,
   notifyDailySummary,
   notifyAssistant,
-  unseenAttentionSessions,
   saveNotificationsEnabled,
   setNotificationBatchDelay,
   setWindowFocused,
@@ -237,7 +236,6 @@ it.each([
     const session = { ...newSession("claude", "/work/app"), id: "foreground-other" };
     expect(await notifySession(session, event, false)).toBe(false);
     expect(banners()).toEqual([]);
-    if (typeof event === "string") expect(unseenAttentionSessions().has(session.id)).toBe(true);
   },
 );
 

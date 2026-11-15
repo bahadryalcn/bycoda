@@ -1,3 +1,9 @@
+import {
+  isMachineEnabled,
+  startNativeDisabledMachinesSync,
+  subscribeMachineTurnedOff,
+} from "./machineEnabled";
+import { closeTurnedOffMachine } from "./machineTurnOff";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
   knownRemoteMachine,
@@ -263,6 +269,7 @@ async function retry(environmentId: string, force: boolean) {
   const allowed =
     !offline() &&
     !paused.has(environmentId) &&
+    isMachineEnabled(environmentId) &&
     loadRemoteAutoReconnect() &&
     status !== "identity-mismatch" &&
     (blocked
@@ -315,6 +322,7 @@ const pauseOffline = () => schedule();
  * of the retrying happens while "Automatically reconnect" is off. */
 export function startRemoteAutoRecovery(): () => void {
   if (stopRecovery) return stopRecovery;
+  startNativeDisabledMachinesSync();
   const onVisibility = () => {
     const wasHidden = hiddenSince !== undefined;
     hiddenSince = document.visibilityState === "hidden" ? Date.now() : undefined;
@@ -344,6 +352,7 @@ export function startRemoteAutoRecovery(): () => void {
     schedule();
   });
   const stopTunnelWatch = watchTunnelExits();
+  const stopTurnOff = subscribeMachineTurnedOff(closeTurnedOffMachine);
   window.addEventListener("focus", retryOnFocus);
   window.addEventListener("online", retryOnline);
   window.addEventListener("offline", pauseOffline);
@@ -355,6 +364,7 @@ export function startRemoteAutoRecovery(): () => void {
     stopInvalidation();
     unsubscribeSetting();
     stopTunnelWatch();
+    stopTurnOff();
     window.removeEventListener("focus", retryOnFocus);
     window.removeEventListener("online", retryOnline);
     window.removeEventListener("offline", pauseOffline);

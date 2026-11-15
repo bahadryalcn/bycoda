@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
-import { firstTurnBelow } from "./useTranscriptFollow";
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { describe, expect, it, vi } from "vitest";
+import { firstTurnBelow, useTranscriptFollow, type TranscriptFollow } from "./useTranscriptFollow";
+import { TranscriptRetentionContext, type TranscriptUiState } from "./TranscriptPool";
+import { TranscriptVirtualization } from "./transcriptVirtualization";
 import { isStaleFollowReplay } from "./transcriptScroll";
 
 function turnsWithBottoms(bottoms: number[]) {
@@ -72,5 +76,61 @@ describe("isStaleFollowReplay", () => {
         followedTops: [{ top: 3990, at: 900 }],
       }),
     ).toBe(true);
+  });
+});
+
+describe("rememberScroll", () => {
+  it("reads the first visible virtual row only while a turn is virtualized", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const state: TranscriptUiState = {};
+    const retention = {
+      read: () => state,
+      update: (patch: Partial<TranscriptUiState>) => Object.assign(state, patch),
+      setDisclosure: () => {},
+    };
+    const virtualization = new TranscriptVirtualization();
+    const firstVisibleRow = vi.spyOn(virtualization, "firstVisibleRow");
+    let follow: TranscriptFollow | undefined;
+    function Probe() {
+      follow = useTranscriptFollow({
+        visible: false,
+        parked: false,
+        lastUserId: undefined,
+        virtualization,
+      });
+      return null;
+    }
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const scroller = document.createElement("div");
+    vi.spyOn(scroller, "clientHeight", "get").mockReturnValue(400);
+    document.body.append(scroller);
+    try {
+      act(() =>
+        root.render(
+          createElement(
+            TranscriptRetentionContext.Provider,
+            { value: retention },
+            createElement(Probe),
+          ),
+        ),
+      );
+      // The reader scrolled away from the end.
+      follow!.stickToBottom.current = false;
+      follow!.rememberScroll(scroller);
+      expect(state.bottomFollow).toBe(false);
+      expect(firstVisibleRow).not.toHaveBeenCalled();
+      const turn = document.createElement("div");
+      turn.dataset.transcriptVirtualizedTurn = "true";
+      scroller.append(turn);
+      follow!.rememberScroll(scroller);
+      expect(firstVisibleRow).toHaveBeenCalledOnce();
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+      scroller.remove();
+      vi.unstubAllGlobals();
+    }
   });
 });

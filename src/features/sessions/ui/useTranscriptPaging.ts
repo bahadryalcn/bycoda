@@ -6,9 +6,12 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type Dispatch,
   type RefObject,
+  type SetStateAction,
 } from "react";
 import { flushSync } from "react-dom";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { Block } from "../model/session";
 import { pinToBottom, syncTranscriptViewport } from "./transcriptScroll";
 import { TranscriptRetentionContext } from "./TranscriptPool";
@@ -34,7 +37,7 @@ type Options = {
 };
 
 /** The remote history request and what must run however it ends; kept out of the hook for the compiler. */
-async function runRemoteLoad({
+export async function runRemoteLoad({
   load,
   stale,
   apply,
@@ -54,11 +57,39 @@ async function runRemoteLoad({
     if (stale()) return;
     apply();
   } catch (error) {
-    setPagingError(error instanceof Error ? error.message : String(error));
+    // A dropped link is covered by the shared connection notice; the page can be requested again.
+    setPagingError(presentRemoteError(error) ?? null);
   } finally {
     loadingRef.current = false;
     setPagingLoading(false);
   }
+}
+
+/**
+ * A window whose first turn no longer exists (rewound, regrouped or reloaded)
+ * re-anchors on the turn now at its last committed position, instead of
+ * falling back to the oldest turns; with no committed position it follows the tail.
+ */
+function useSurvivingFirstTurn(
+  window: Window,
+  setWindow: Dispatch<SetStateAction<Window>>,
+  turns: Block[][],
+  previousRef: RefObject<{ first?: number } | null>,
+): Window {
+  if (window.tail || !window.firstId || !turns.length) return window;
+  if (turns.some((turn) => turn[0]?.id === window.firstId)) return window;
+  const first = previousRef.current?.first;
+  const count = Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, window.count);
+  const next: Window =
+    first === undefined
+      ? { ...window, firstId: undefined, offset: 0, tail: true }
+      : {
+          ...window,
+          firstId: turns[Math.min(first, Math.max(0, turns.length - count))][0]?.id,
+          offset: 0,
+        };
+  setWindow(next);
+  return next;
 }
 
 /** Bounded settled-history window. Model history remains reachable in both directions. */
@@ -92,9 +123,19 @@ export function useTranscriptPaging({
       tail: retained?.bottomFollow !== false,
     };
   });
-  const previous = useRef<{ firstId?: string; lastId?: string; count: number } | null>(null);
+  const previous = useRef<{
+    firstId?: string;
+    lastId?: string;
+    count: number;
+    first?: number;
+  } | null>(null);
   const lastId = turns[turns.length - 1]?.[0]?.id;
-  const selected = useReleasedTail(window, setWindow, lastId, stickToBottomRef, previous);
+  const selected = useSurvivingFirstTurn(
+    useReleasedTail(window, setWindow, lastId, stickToBottomRef, previous),
+    setWindow,
+    turns,
+    previous,
+  );
   const count = Math.min(MAX_TRANSCRIPT_WINDOW_TURNS, selected.count);
   const located = selected.firstId
     ? turns.findIndex((turn) => turn[0]?.id === selected.firstId)
@@ -116,7 +157,12 @@ export function useTranscriptPaging({
   useLayoutEffect(() => {
     turnsRef.current = turns;
     rangeRef.current = { first: firstVisibleTurn, last: lastVisibleTurn, count };
-    previous.current = { firstId: visibleTurns[0]?.[0]?.id, lastId, count };
+    previous.current = {
+      firstId: visibleTurns[0]?.[0]?.id,
+      lastId,
+      count,
+      first: firstVisibleTurn,
+    };
     retention?.update({
       visibleTurnCount,
       firstLoadedTurnId: visibleTurns[0]?.[0]?.id,

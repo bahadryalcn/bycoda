@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseMarkdownIntoBlocks } from "streamdown";
 import remend from "remend";
-import { markdownBlocks, parseStreamingMarkdown } from "./streamingMarkdown";
+import { markdownBlocks, parseStreamingMarkdown, splitMarkdownBlocks } from "./streamingMarkdown";
 
 /** Every whole-text lex that streamingMarkdown asks Streamdown for, by input length. */
 const lexed = vi.hoisted(() => ({ lengths: [] as number[] }));
@@ -44,10 +44,10 @@ describe("streamed Markdown repair", () => {
   });
 });
 
-/** A parse that cannot reuse Streamdown's single cached input. */
+/** A whole-text split that cannot reuse Streamdown's single cached input. */
 function fullBlocks(text: string): string[] {
   parseMarkdownIntoBlocks("");
-  return [...parseMarkdownIntoBlocks(text)];
+  return splitMarkdownBlocks(text);
 }
 
 const REPLY = [
@@ -114,7 +114,37 @@ const SAMPLES: Record<string, string> = {
   tabsInList: "- item\n\tindented with tab\n\n\tcode with tab\n",
   definitionAtEnd: "See [docs][d] and more\n\nlast paragraph\n\n[d]: https://example.com\n",
   footnoteAtEnd: "Claim[^note] here\n\nmore text\n\n[^note]: the source\n",
+  regexInFence:
+    "Strip letters:\n\n```js\nconst out = s.replace(/[^a-z]/g, '');\n```\n\nThen [^x] in prose.\n\nDone.\n",
 };
+
+describe("footnote-shaped text without a definition", () => {
+  const reply =
+    "Intro paragraph\n\n```js\nconst letters = /[^a-z]/g;\n```\n\nMiddle paragraph\n\nLast paragraph\n";
+
+  it("keeps splitting a reply with a fenced regex into blocks", () => {
+    const blocks = splitMarkdownBlocks(reply);
+    expect(blocks.length).toBeGreaterThan(1);
+    expect(blocks.join("")).toBe(reply);
+    expect(blocks[1]).toContain("[^a-z]");
+  });
+
+  it("keeps the incremental path while it streams", () => {
+    const stream = "regex-fence";
+    const steps: string[] = [];
+    for (let end = 1; end <= reply.length; end += 1) steps.push(reply.slice(0, end));
+    for (const step of steps.slice(0, -30)) markdownBlocks(step, stream);
+    lexed.lengths.length = 0;
+    for (const step of steps.slice(-30)) markdownBlocks(step, stream);
+    // The settled intro and fence are never lexed again once later paragraphs stream.
+    expect(Math.max(...lexed.lengths)).toBeLessThan(reply.indexOf("Middle"));
+  });
+
+  it("keeps the whole text as one block once a definition exists", () => {
+    const text = "Claim[^1]\n\nMore\n\n[^1]: source\n";
+    expect(splitMarkdownBlocks(text)).toEqual([text]);
+  });
+});
 
 /** Growing prefixes of `text`: one character at a time, or random chunks from a fixed seed. */
 function streamedPrefixes(text: string, seed: number | undefined): string[] {

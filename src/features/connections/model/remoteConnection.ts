@@ -31,6 +31,10 @@ export type RemoteConnectionState = {
   lastSeen?: number;
 };
 
+/** A machine that stopped answering is "Reconnecting", not down, for this long: the
+ * Host restart window. The workspace outage notice and the machine row share it. */
+export const RECONNECT_GRACE_MS = 45_000;
+
 export const INITIAL_CONNECTION: RemoteConnectionState = { status: "connecting" };
 
 export type RemoteConnectionEvent =

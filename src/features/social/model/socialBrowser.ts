@@ -190,8 +190,11 @@ export const SOCIAL_BROWSER_SITES: Record<SocialPlatform, Site> = {
     origins: ["https://web.telegram.org"],
     routes: { login: "https://web.telegram.org/", inbox: "https://web.telegram.org/" },
   },
-  // reddit: placeholder until 4E-reddit (no origin or route is allowed yet)
-  reddit: { origins: [], routes: {} },
+  // reddit: owner-assisted signup only; no login, inbox or publish route is allowed yet
+  reddit: {
+    origins: ["https://www.reddit.com"],
+    routes: { signup: "https://www.reddit.com/register/" },
+  },
 };
 
 export function socialBrowserUrl(

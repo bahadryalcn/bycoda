@@ -2,6 +2,11 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
 import { FilePickerError } from "./FilePickerError";
+import {
+  isTransientTransportError,
+  presentRemoteError,
+} from "../../connections/public/remoteFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { projectFilesTruncated } from "../../../platform/tauri/fs";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Modal } from "../../../shared/ui/Modal";
@@ -272,7 +277,13 @@ export function FilePicker({
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
+        setError(
+          isTransientTransportError(err)
+            ? presentRemoteError(err, { explicit: true })
+            : err instanceof Error
+              ? err.message
+              : String(err),
+        );
         setLoading(false);
         setRetrying(false);
       });
@@ -280,6 +291,9 @@ export function FilePicker({
       cancelled = true;
     };
   }, [open, cwd, initialQuery, retry]);
+  useReloadOnReconnect(open ? cwd : undefined, () => setRetry((value) => value + 1), {
+    active: error !== null && files.length === 0,
+  });
 
   useEffect(() => {
     if (!open) return;

@@ -5,6 +5,7 @@ mod environment;
 mod file_log;
 mod gzip;
 mod logs;
+mod ui_log;
 
 pub(crate) use crash::{clear_recovered_on_exit, install_panic_hook};
 pub(crate) use file_log::flush as flush_logs;
@@ -31,6 +32,12 @@ pub(crate) async fn diagnostics_collect_logs() -> Result<NativeDiagnosticLogs, S
     tauri::async_runtime::spawn_blocking(logs::collect)
         .await
         .map_err(|error| error.to_string())
+}
+
+/// Appends UI warnings and errors to `bycoda.log`; the logger queues them without blocking.
+#[tauri::command]
+pub(crate) fn diagnostics_ui_log(lines: Vec<ui_log::UiLogLine>) {
+    ui_log::write(lines);
 }
 
 #[tauri::command]

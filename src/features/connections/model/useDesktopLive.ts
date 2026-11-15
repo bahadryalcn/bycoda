@@ -69,6 +69,7 @@ export function useDesktopLive(
     let machineId: string | undefined;
     let approvalOccurrenceSupported = false;
     let checkedAt = 0;
+    let lastFailure: string | undefined;
     const { unacked, handled, beat, inboxResults, inboxRunning } = state.current;
 
     let directoryInputs: { id: string; cwd: string }[] = [];
@@ -160,7 +161,15 @@ export function useDesktopLive(
           },
           request: (payload) =>
             remoteRequest<DesktopLiveResult>(id, "sessions.desktopLive", payload),
-          sessions: () => sessionsRef.current.filter((session) => !hostSessionBinding(session)),
+          // An owner record that cannot be read keeps that conversation out, not the whole beat.
+          sessions: () =>
+            sessionsRef.current.filter((session) => {
+              try {
+                return !hostSessionBinding(session);
+              } catch {
+                return false;
+              }
+            }),
           writers: retainedHarnessWriters,
           projectDirectory,
           handlers: {
@@ -208,7 +217,12 @@ export function useDesktopLive(
             },
           },
         });
-      } catch {
+        lastFailure = undefined;
+      } catch (error) {
+        // The beat carries queue wakes, leases and commands: a failure is named once per reason.
+        const reason = String(error);
+        if (reason !== lastFailure) console.warn("Desktop live beat failed", error);
+        lastFailure = reason;
         machineId = undefined; // Host unreachable; the next tick looks again.
         approvalOccurrenceSupported = false;
         setHostPushEvents(undefined); // The Host cannot push now, so the account copy resumes.

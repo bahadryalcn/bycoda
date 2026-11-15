@@ -173,6 +173,7 @@ function LocalAgentTabView({
     <div data-agent-tab className="flex h-full min-h-0 flex-col">
       <div className="@container relative min-h-0 flex-1">
         <AgentTranscript
+          sessionId={session.id}
           blocks={session.blocks}
           busy={session.busy}
           historyLoading={session.historyLoading}

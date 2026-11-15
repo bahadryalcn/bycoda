@@ -140,16 +140,6 @@ function SshFields({
       </div>
       <TextField
         disabled={busy}
-        value={draft.alternate}
-        onChange={(event) => onChange({ alternate: event.target.value })}
-        placeholder={t("Optional, e.g. user@100.64.0.5 (Tailscale)")}
-        autoComplete="off"
-        spellCheck={false}
-        label={t("Other address (optional)")}
-        fieldClassName="min-w-0 flex-1"
-      />
-      <TextField
-        disabled={busy}
         value={draft.name}
         onChange={(event) => onChange({ name: event.target.value })}
         placeholder={t("Optional, e.g. Home Mac mini")}
@@ -175,7 +165,23 @@ function SshFields({
           fieldClassName="min-w-0 flex-1"
         />
       ) : null}
-      <Disclosure size="sm" textSize="caption" tone="muted" summary={t("Advanced")}>
+      <Disclosure
+        size="sm"
+        textSize="caption"
+        tone="muted"
+        summary={t("More options")}
+        defaultOpen={Boolean(draft.alternate)}
+      >
+        <TextField
+          disabled={busy}
+          value={draft.alternate}
+          onChange={(event) => onChange({ alternate: event.target.value })}
+          placeholder={t("Optional, e.g. user@100.64.0.5 (Tailscale)")}
+          autoComplete="off"
+          spellCheck={false}
+          label={t("Other address (optional)")}
+          fieldClassName="min-w-0 flex-1"
+        />
         <div className="max-w-40">
           <NumberField
             disabled={busy}

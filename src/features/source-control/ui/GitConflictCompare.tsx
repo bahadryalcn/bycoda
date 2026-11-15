@@ -1,3 +1,5 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
+import { useReloadOnReconnect } from "../../connections/public/useReloadOnReconnect";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -44,10 +46,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
       },
       (error: unknown) => {
         if (!cancelled) {
-          setLoad({
-            status: "error",
-            message: error instanceof Error ? error.message : String(error),
-          });
+          setLoad({ status: "error", message: presentRemoteError(error, { explicit: true }) });
         }
       },
     );
@@ -55,6 +54,10 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
       cancelled = true;
     };
   }, [cwd, relative, retry]);
+  // A failed first load reruns once the machine's link is back.
+  useReloadOnReconnect(cwd, () => setRetry((value) => value + 1), {
+    active: load.status === "error",
+  });
 
   const comparisons = useMemo(
     () => (load.status === "ready" ? comparisonsFor(load.stages) : []),

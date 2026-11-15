@@ -193,6 +193,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "decisionModels.decide",
   "secrets.owner.list",
   "assistant.request",
+  "assistant.ownerActive",
   "desktop.request",
   "desktop.helper.request",
   "native.services.assistant.presence.get",

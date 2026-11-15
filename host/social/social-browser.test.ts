@@ -48,6 +48,9 @@ function fakeBrowser(options: {
       if (expression.includes("empty_state_body_text")) return options.emptyMentions === true;
       if (expression === "location.pathname") return options.path ?? "/messages/42-7";
       if (expression.includes("AppTabBar_Profile_Link")) return "/owner";
+      // pollX waits for the client redirect to the encrypted chat route.
+      if (expression.includes("const p = location.pathname"))
+        return options.path ?? "/messages/42-7";
       if (expression.includes("location.pathname"))
         return options.path === "login" ? "login" : "ready";
       return true;

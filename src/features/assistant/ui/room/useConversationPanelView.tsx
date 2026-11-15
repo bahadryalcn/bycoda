@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t, useLocale } from "../../../../shared/i18n";
@@ -106,8 +107,8 @@ export function useConversationPanelView(
             setSearch({ query, results: result.messages ?? [], settled: false });
         })
         .catch((cause) => {
-          if (!cancelled && epoch === searchEpoch.current)
-            setError(cause instanceof Error ? cause.message : String(cause));
+          const message = presentRemoteError(cause);
+          if (!cancelled && epoch === searchEpoch.current && message) setError(message);
         })
         .finally(() => {
           if (!cancelled)

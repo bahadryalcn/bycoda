@@ -84,6 +84,12 @@ const metadata = {
   lastActivityAt: SafeCounterSchema.optional(),
   archived: z.boolean().optional(),
   pinned: z.boolean().optional(),
+  unread: z.boolean().optional(),
+  lastViewedAt: SafeCounterSchema.optional(),
+  lastViewedRevision: SafeCounterSchema.optional(),
+  agentActivityRevision: SafeCounterSchema.optional(),
+  forceUnread: z.boolean().optional(),
+  snoozedUntil: SafeCounterSchema.nullable().optional(),
   autoWorktreeBranch: z.string().optional(),
   head: ConversationHeadSchema.optional(),
   /** Set on sessions the assistant started or supervises (`AssistantSessionManagement`). */

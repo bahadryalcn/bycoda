@@ -193,8 +193,14 @@ export function hydrateHostSessionBindings(): Promise<void> {
 /** Await durable owner publication before command admission or Native fallback. */
 export async function flushHostSessionBindings(shellId?: string): Promise<void> {
   await hydrateHostSessionBindings();
+  let failure: { error: unknown } | undefined;
   do {
-    await drain();
+    try {
+      await drain();
+    } catch (error) {
+      // Re-read below so this window projects the stored owner, not the failed one.
+      failure ??= { error };
+    }
     if (shellId !== undefined) {
       const latest = await readBindingEvidence(shellId);
       if (writes.length) continue;
@@ -218,20 +224,52 @@ export async function flushHostSessionBindings(shellId?: string): Promise<void> 
       bindingsChanged();
     }
   } while (writes.length);
+  if (failure) throw failure.error;
 }
 
+/** Writes every queued owner in order. A failed write is dropped, not retried
+ * forever: the queue keeps draining, and the first failure rejects this drain
+ * for the flush that awaits it, which still re-reads the durable owners. */
 function drain(): Promise<void> {
   if (saving) return saving;
   saving = (async () => {
+    let failure: { error: unknown } | undefined;
     while (writes.length) {
       const { previous, next } = writes[0];
-      await writeBindingEvidence(previous, next);
-      writes.shift();
+      try {
+        await writeBindingEvidence(previous, next);
+        writes.shift();
+      } catch (error) {
+        failure ??= { error };
+        await resetAfterFailedWrite(next.shellId);
+      }
     }
+    if (failure) throw failure.error;
   })().finally(() => {
     saving = undefined;
   });
   return saving;
+}
+
+/** Every queued write for this owner was based on the failed one, and the
+ * versioned store would refuse each of them. Drop them and project the stored
+ * owner, so the next save is checked against the version that really exists. */
+async function resetAfterFailedWrite(shellId: string): Promise<void> {
+  for (let index = writes.length - 1; index >= 0; index -= 1)
+    if (writes[index].next.shellId === shellId) writes.splice(index, 1);
+  let stored: StoredBindingEvidence | undefined;
+  try {
+    stored = await readBindingEvidence(shellId);
+  } catch {
+    // An unreadable store keeps the failed projection; the next flush re-reads.
+    return;
+  }
+  // A save published while the store was read is based on the failed write too.
+  for (let index = writes.length - 1; index >= 0; index -= 1)
+    if (writes[index].next.shellId === shellId) writes.splice(index, 1);
+  if (stored) canonical.set(shellId, stored);
+  else canonical.delete(shellId);
+  bindingsChanged();
 }
 
 /** True when the legacy key already holds `raw`; an unreadable store counts as different so the write still runs and reports its own error. */
@@ -256,7 +294,14 @@ function publish(shellId: string, raw: string): void {
   const next = { shellId, raw, legacyRaw: canonicalEpoch ? (previous?.legacyRaw ?? null) : raw };
   canonical.set(shellId, next);
   bindingsChanged();
-  writes.push({ previous, next });
+  // A write not yet started for this owner only needs its latest bytes; the
+  // head is in flight while a drain runs and keeps its own.
+  let queued = writes.length - 1;
+  while (queued >= 0 && writes[queued].next.shellId !== shellId) queued -= 1;
+  if (queued >= (saving ? 1 : 0) && writes[queued].next === previous)
+    writes[queued] = { previous: writes[queued].previous, next };
+  else writes.push({ previous, next });
+  // A failure reaches the flush that awaits this drain; publication itself is not awaited.
   void drain().catch(() => {});
 }
 
@@ -372,17 +417,30 @@ export function saveHostSessionBinding(shell: Session, binding: HostSessionBindi
     throw new Error("The session authority changed while the request was in flight.");
   if (previous?.binding.created && !binding.created)
     throw new Error("An acknowledged Host conversation cannot become uncreated.");
-  publish(
-    shell.id,
-    JSON.stringify({
-      ...previous,
-      createdAt: previous?.createdAt ?? Date.now(),
-      updatedAt: Date.now(),
-      binding,
-      shell: { ...next, blocks: [] },
-    }),
-  );
+  const record = {
+    ...previous,
+    createdAt: previous?.createdAt ?? Date.now(),
+    updatedAt: Date.now(),
+    binding,
+    shell: { ...next, blocks: [] },
+  };
+  // Every streamed Host flush saves again: a record unchanged apart from its
+  // timestamp is not published, so streaming writes nothing and wakes no reader.
+  if (!previous || !sameStoredRecord(previous, record)) publish(shell.id, JSON.stringify(record));
   return next;
+}
+
+/** True when the stored records differ at most in `updatedAt` (key order ignored). */
+function sameStoredRecord(a: StoredHostShell, b: StoredHostShell): boolean {
+  const canonicalJson = (record: StoredHostShell) =>
+    JSON.stringify({ ...record, updatedAt: 0 }, (_key, value: unknown) =>
+      value && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(
+            Object.entries(value).sort(([left], [right]) => (left < right ? -1 : +(left > right))),
+          )
+        : value,
+    );
+  return canonicalJson(a) === canonicalJson(b);
 }
 
 /**

@@ -1,6 +1,14 @@
 import type { SocialPlatform } from "../../src/features/social/model/social";
 import type { BrowserPage } from "./social-browser";
 import { setTimeout as sleep } from "node:timers/promises";
+import {
+  fillGoogleBirthdate,
+  GOOGLE_FIELD_PATH,
+  GOOGLE_ORIGIN,
+  GOOGLE_PROBE,
+  GOOGLE_SIGNUP_URL,
+  googleSelectors,
+} from "./social-browser-registration-google";
 import type {
   SocialRegistrationField,
   SocialRegistrationProfile,
@@ -39,7 +47,14 @@ type Contract =
   | "tiktok-start"
   | "tiktok-method"
   | "tiktok-email-method"
-  | "tiktok-email";
+  | "tiktok-email"
+  | "reddit-email"
+  | "x-profile"
+  | "reddit-username"
+  | "google-signin"
+  | "google-name"
+  | "google-birthdate"
+  | "google-email";
 type Probe = {
   contract?: Contract;
   fields: RegistrationField[];
@@ -50,7 +65,10 @@ type Probe = {
     | "email-form"
     | "facebook-page"
     | "linkedin-page"
-    | "youtube-channel";
+    | "youtube-channel"
+    | "google-signup";
+  /** Set on accounts.google.com: the sign-in pages or the account-creation steps. */
+  google?: "signin" | "signup";
 };
 const literal = JSON.stringify;
 const supported = new Set<SocialPlatform>([
@@ -59,6 +77,8 @@ const supported = new Set<SocialPlatform>([
   "instagram",
   "facebook",
   "youtube",
+  "reddit",
+  "x",
 ]);
 const origins = {
   linkedin: "https://www.linkedin.com",
@@ -66,6 +86,8 @@ const origins = {
   tiktok: "https://www.tiktok.com",
   facebook: "https://www.facebook.com",
   youtube: "https://www.youtube.com",
+  reddit: "https://www.reddit.com",
+  x: "https://x.com",
 } as const;
 const fields: Record<RegistrationField, string> = {
   email: 'form.join-form input#email-address[name="email-address"][type="email"]',
@@ -79,6 +101,23 @@ const fields: Record<RegistrationField, string> = {
 };
 const tiktokEmail =
   'input[type="text"][name="email"][autocomplete="email"][placeholder="Email address"]';
+// Reddit renders its auth fields inside open shadow roots (faceplate-text-input), so the
+// probe pierces them. A closed root is simply not found and the step stays unsupported.
+const redditSelectors = {
+  email: 'input[name="email"]',
+  username: 'input[name="username"]',
+} as const;
+// X renders signup as a modal on /i/flow/signup. x.com answers headless Chrome with HTTP 403
+// (observed 2026-11-15), so these names are documented/remembered, not observed live.
+// shortcut: unverified live, re-check on the first owner-visible signup run.
+const xPath = "^/i/flow/signup/?$";
+const xSelectors = { displayName: 'input[name="name"]', email: 'input[name="email"]' } as const;
+const xBirthdate = {
+  Month: ["select#SELECTOR_1", 'select[aria-label="Month"]', 'select[aria-label="Ay"]'],
+  Day: ["select#SELECTOR_2", 'select[aria-label="Day"]', 'select[aria-label="Gün"]'],
+  Year: ["select#SELECTOR_3", 'select[aria-label="Year"]', 'select[aria-label="Yıl"]'],
+} as const;
+const redditPath = "^/register/?$";
 const linkedInPageFields = {
   displayName: 'input[id="single-line-text-form-component-urn-li-fsu-pageCreationFormItem-NAME"]',
   username:
@@ -89,7 +128,12 @@ const linkedInPageFields = {
 function fieldSelector(contract: Contract, field: RegistrationField): string {
   if (contract === "linkedin-page")
     return field === "displayName" || field === "username" ? linkedInPageFields[field] : "";
+  if (contract === "x-profile")
+    return field === "displayName" || field === "email" ? xSelectors[field] : "";
   if (contract === "facebook-page" && field === "displayName") return 'label input[type="text"]';
+  if (contract === "google-name")
+    return field === "givenName" || field === "familyName" ? googleSelectors[field] : "";
+  if (contract === "google-email") return field === "email" ? googleSelectors.email : "";
   return contract === "tiktok-email"
     ? field === "email"
       ? tiktokEmail
@@ -169,13 +213,24 @@ function probeExpression(
     const empty={fields:[],blockers:[]};
     const googleAuth=${literal(platform)}==='youtube'&&location.origin==='https://accounts.google.com';
     if(location.origin!==${literal(origins[platform])}&&!googleAuth)return empty;
-    const visible=el=>!!el&&!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length;
-    const inputs=[...document.querySelectorAll('input')].filter(visible);
+    // Google keeps an invisible reCAPTCHA anchor iframe (visibility:hidden, non-empty rect) on
+    // every signup step; counting it would report a challenge on each step.
+    const visible=el=>!!el&&!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden';
+    const reddit=${literal(platform)}==='reddit';
+    const deepAll=(selector,root=document)=>{const out=[...root.querySelectorAll(selector)];for(const el of root.querySelectorAll('*'))if(el.shadowRoot)out.push(...deepAll(selector,el.shadowRoot));return out;};
+    const all=selector=>reddit?deepAll(selector):[...document.querySelectorAll(selector)];
+    const inputs=all('input').filter(visible);
     const blockers=[];
     if(inputs.some(el=>el.type==='password'||/^(new-password|current-password)$/.test(el.autocomplete)))blockers.push('password');
-    if(inputs.some(el=>el.autocomplete==='one-time-code'||/^(verificationCode|verification-code|security_code|confirmation_code|otp|otp-code)$/i.test(el.name)||/^(Verification code|Confirmation code|Security code|Doğrulama kodu)$/i.test(el.getAttribute('aria-label')||'')||el.getAttribute('placeholder')==='Enter 6-digit code'))blockers.push('verification');
-    if([...document.querySelectorAll('iframe')].some(el=>visible(el)&&/captcha|arkoselabs|hcaptcha|recaptcha/i.test(el.getAttribute('src')||''))||[...document.querySelectorAll('[role="dialog"],h1,h2')].filter(visible).some(el=>/^(Verify (?:you are|you're) human|Complete the security check|Security verification|Güvenlik doğrulaması)$/i.test(el.textContent.trim())))blockers.push('challenge');
-    if(googleAuth)return {...empty,blockers};
+    if(inputs.some(el=>el.autocomplete==='one-time-code'||/^(verificationCode|verification-code|security_code|confirmation_code|otp|otp-code)$/i.test(el.name)||/^(Verification code|Confirmation code|Security code|Doğrulama kodu)$/i.test(el.getAttribute('aria-label')||'')||el.getAttribute('placeholder')==='Enter 6-digit code'||(reddit&&(/^(code|email-code|email_code)$/i.test(el.name)||/verification code|doğrulama kodu/i.test((el.getAttribute('aria-label')||'')+' '+(el.getAttribute('placeholder')||''))))))blockers.push('verification');
+    const x=${literal(platform)}==='x';
+    const xHeadings=x?all('h1,h2,[role="heading"]').filter(visible).map(el=>el.textContent.trim()):[];
+    if(x&&(inputs.some(el=>/^(verfication_code|verification_code)$/i.test(el.name))||xHeadings.some(text=>/^(We sent you a code|Check your email|Bir kod gönderdik|E-postanı kontrol et)/i.test(text))))blockers.push('verification');
+    if(reddit&&all('h1,h2,[role="heading"]').filter(visible).some(el=>/^(Verify your email|Check your email|Verify email address|E-postanı doğrula)/i.test(el.textContent.trim())))blockers.push('verification');
+    if(all('iframe').some(el=>visible(el)&&/captcha|arkoselabs|hcaptcha|recaptcha/i.test(el.getAttribute('src')||''))||all('[role="dialog"],h1,h2').filter(visible).some(el=>/^(Verify (?:you are|you're) human|Complete the security check|Security verification|Prove your humanity|Güvenlik doğrulaması)$/i.test(el.textContent.trim())))blockers.push('challenge');
+    if(x&&xHeadings.some(text=>/^(Authenticate|Suspicious login|Kimlik doğrulama|Şüpheli)/i.test(text)))blockers.push('challenge');
+    if(googleAuth){${GOOGLE_PROBE}
+    }
     const normalize=value=>(value||'').replace(/\s+/g,' ').trim();
     if(${literal(platform)}==='linkedin'&&${literal(accountKind !== "person")}){
       const pageFields=${literal(linkedInPageFields)},visibleOne=selector=>[...document.querySelectorAll(selector)].filter(visible).length===1;
@@ -215,6 +270,24 @@ function probeExpression(
       // Both Agree & Join and Continue accept LinkedIn's agreements on this form.
       blockers.push('terms');
       return {contract:'linkedin-person',fields:keys,blockers};
+    }
+    if(reddit&&new RegExp(${literal(redditPath)}).test(location.pathname)){
+      // Reddit's signup is one SPA route: the email step first, then (after the owner's
+      // Continue and code) a username and password step. Continue accepts the User Agreement.
+      const only=selector=>{const found=all(selector).filter(visible);return found.length===1&&!found[0].disabled&&!found[0].readOnly&&['text','email'].includes(found[0].type||'text')?found[0]:undefined;};
+      const email=only(${literal(redditSelectors.email)}),username=only(${literal(redditSelectors.username)});
+      if(email&&!username&&!blockers.includes('verification'))return {contract:'reddit-email',fields:['email'],blockers:[...blockers,'terms']};
+      if(username&&!email&&!blockers.includes('verification'))return {contract:'reddit-username',fields:['username'],blockers:[...blockers,'terms']};
+      return {...empty,blockers};
+    }
+    if(x&&new RegExp(${literal(xPath)}).test(location.pathname)){
+      // Name, email and the three birthdate selects are the only profile step. Switching
+      // phone and email, Next, the code, the password and the captcha stay with the owner.
+      const one=selector=>{const found=[...document.querySelectorAll(selector)].filter(visible);return found.length===1&&!found[0].disabled&&!found[0].readOnly?found[0]:undefined;};
+      const selects=Object.values(${literal(xBirthdate)}).map(list=>{const found=new Set(list.flatMap(selector=>[...document.querySelectorAll(selector)].filter(visible)));return found.size===1;});
+      if(one(${literal(xSelectors.displayName)})&&one(${literal(xSelectors.email)})&&selects.every(Boolean))
+        return {contract:'x-profile',fields:['displayName','email','birthdate'],blockers:[...blockers,'terms']};
+      return {...empty,blockers};
     }
     if(${literal(platform)}==='tiktok'&&/^\/login\/?$/.test(location.pathname)){
       const links=[...document.querySelectorAll('a[href]')].filter(el=>visible(el)&&/^(Sign up|Kaydol)$/i.test((el.textContent||'').trim())).filter(el=>{try{const url=new URL(el.getAttribute('href'),location.origin);return url.origin===location.origin&&url.pathname==='/signup';}catch{return false;}});
@@ -337,6 +410,81 @@ async function fillTikTokBirthdate(
     }
   }
   return true;
+}
+
+/** X's birthdate is three native selects (numeric option values); an owner choice is never overwritten. */
+async function fillXBirthdate(
+  page: BrowserPage,
+  birthdate: string,
+  beforeAction?: () => Promise<void>,
+): Promise<boolean> {
+  const [year, month, day] = birthdate.split("-");
+  const wanted = { Month: String(Number(month)), Day: String(Number(day)), Year: year };
+  for (const part of ["Month", "Day", "Year"] as const) {
+    await beforeAction?.();
+    const done = await page.evaluate<boolean>(String.raw`(() => {
+      if(location.origin!=='https://x.com'||!new RegExp(${literal(xPath)}).test(location.pathname))return false;
+      const found=new Set(${literal(xBirthdate[part])}.flatMap(selector=>[...document.querySelectorAll(selector)].filter(el=>!el.hidden&&!!el.getClientRects().length&&!el.disabled)));
+      if(found.size!==1)return false;
+      const select=[...found][0],wanted=${literal(wanted[part])};
+      if(select.value&&select.value!==wanted)return false;
+      if(![...select.options].some(option=>option.value===wanted&&!option.disabled))return false;
+      if(select.value!==wanted){
+        const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value')?.set;
+        if(setter)setter.call(select,wanted);else select.value=wanted;
+        select.dispatchEvent(new Event('input',{bubbles:true}));select.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+      return select.value===wanted;
+    })()`);
+    if (!done) return false;
+  }
+  return true;
+}
+
+/** The shared evaluator helpers for Reddit's open shadow roots. */
+const redditDeep = String.raw`
+    const deepAll=(selector,root=document)=>{const out=[...root.querySelectorAll(selector)];for(const el of root.querySelectorAll('*'))if(el.shadowRoot)out.push(...deepAll(selector,el.shadowRoot));return out;};
+    const anchor=el=>{let node=el;while(node){const root=node.getRootNode();if(root===document)return node;node=root.host;}};
+    const match=selector=>deepAll(selector).filter(el=>!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length&&!el.disabled&&!el.readOnly&&['text','email'].includes(el.type||'text'));`;
+
+/** Marks the light-DOM host of the one shadow-rooted input (CDP click cannot pierce shadow
+ * roots) so the shared fill clicks it, then selects and types into the focused field. */
+async function fillRedditField(
+  page: BrowserPage,
+  key: "email" | "username",
+  value: string,
+  beforeAction?: () => Promise<void>,
+): Promise<boolean> {
+  const selector = redditSelectors[key];
+  const state = (mark: boolean) => String.raw`(() => {
+    if(location.origin!=='https://www.reddit.com'||!new RegExp(${literal(redditPath)}).test(location.pathname))return;
+    ${redditDeep}
+    const found=match(${literal(selector)});
+    if(found.length!==1)return;const input=found[0];
+    if(input.autocomplete==='one-time-code')return;
+    if(input.value&&input.value!==${literal(value)})return 'changed';
+    if(${mark}){
+      document.querySelectorAll('[data-bycoda-registration-field]').forEach(el=>el.removeAttribute('data-bycoda-registration-field'));
+      anchor(input).setAttribute('data-bycoda-registration-field',${literal(key)});
+    }
+    return input.value?'same':'empty';
+  })()`;
+  await beforeAction?.();
+  const previous = await page.evaluate<"empty" | "same" | "changed" | undefined>(state(true));
+  if (!previous || previous === "changed") return false;
+  if (previous === "empty") {
+    await beforeAction?.();
+    const current = await page.evaluate<"empty" | "same" | "changed" | undefined>(state(true));
+    if (current === "empty")
+      await page.fill(`[data-bycoda-registration-field=${literal(key)}]`, value);
+    else if (current !== "same") return false;
+  }
+  return !!(await page.evaluate<boolean>(String.raw`(() => {
+    if(location.origin!=='https://www.reddit.com')return false;
+    ${redditDeep}
+    const found=match(${literal(selector)});
+    return found.length===1&&found[0].value===${literal(value)}&&anchor(found[0])?.getAttribute('data-bycoda-registration-field')===${literal(key)};
+  })()`));
 }
 
 function facebookCategoryState(category: string, mark = false): string {
@@ -512,6 +660,42 @@ function progress(
       "Complete the platform's verification in its browser window, then resume this step.",
       { blockers: probe.blockers },
     );
+  if (platform === "youtube" && probe.contract === "google-signin") {
+    // An existing Google account signs in here; a new one starts only after the owner entered
+    // the name for it and pressed Continue, so opening the window never starts account creation.
+    const requiredFields = (["givenName", "familyName"] as const).filter((key) => !profile[key]);
+    return requiredFields.length
+      ? result(
+          "needs_fields",
+          "method",
+          "Sign in with the channel's existing Google account in the window, or enter the name for a new Google account and press Continue.",
+          { requiredFields },
+        )
+      : result(
+          "awaiting_owner",
+          "method",
+          "Sign in with the channel's existing Google account in the window, or press Continue to create a new Google account.",
+          { canAdvance: true },
+        );
+  }
+  if (platform === "youtube" && probe.google === "signup") {
+    const requiredFields = probe.fields.filter((key) => !profile[key]);
+    if (requiredFields.length)
+      return result("needs_fields", "profile", "Provide the details for the new Google account.", {
+        blockers: probe.blockers,
+        requiredFields,
+      });
+    return result(
+      "awaiting_owner",
+      probe.blockers[0] ?? (probe.contract === "google-birthdate" ? "birthdate" : "profile"),
+      probe.contract === "google-birthdate"
+        ? "Continue fills the birth date. Choose the gender option and press Next in the Google window."
+        : probe.contract
+          ? "Continue fills this Google step. Check it and press Next in the Google window."
+          : "Finish this Google step in the window (Gmail address, password, phone or code) and press Next there. The channel follows after the account exists.",
+      { blockers: probe.blockers },
+    );
+  }
   if (
     probe.blockers.length &&
     !probe.contract &&
@@ -627,14 +811,19 @@ async function prepareRegistrationStep(
   if (!probe.contract || probe.blockers.includes("challenge"))
     return progress(platform, profile, probe);
   const filledFields: RegistrationField[] = [];
-  const fieldPath =
-    probe.contract === "linkedin-page"
+  const google = probe.contract.startsWith("google-");
+  const origin = google ? GOOGLE_ORIGIN : origins[selected];
+  const fieldPath = google
+    ? GOOGLE_FIELD_PATH
+    : probe.contract === "linkedin-page"
       ? "^/company/setup/new/$"
-      : selected === "tiktok"
-        ? "^/signup/phone-or-email/email/?$"
-        : selected === "facebook"
-          ? "^/pages/creation/?$"
-          : "^/signup/?$";
+      : selected === "x"
+        ? xPath
+        : selected === "tiktok"
+          ? "^/signup/phone-or-email/email/?$"
+          : selected === "facebook"
+            ? "^/pages/creation/?$"
+            : "^/signup/?$";
   for (const key of probe.fields) {
     if (!profile[key]) continue;
     if (key === "category" && probe.contract === "linkedin-page") {
@@ -659,6 +848,28 @@ async function prepareRegistrationStep(
       filledFields.push(key);
       continue;
     }
+    if (key === "birthdate" && probe.contract === "google-birthdate") {
+      if (!(await fillGoogleBirthdate(page, profile.birthdate!, options.beforeAction)))
+        return result(
+          "changed",
+          "birthdate",
+          "The birthday control or an existing owner selection changed. Review it before resuming.",
+          { filledFields },
+        );
+      filledFields.push(key);
+      continue;
+    }
+    if (key === "birthdate" && probe.contract === "x-profile") {
+      if (!(await fillXBirthdate(page, profile.birthdate!, options.beforeAction)))
+        return result(
+          "changed",
+          "birthdate",
+          "The birthday control or an existing owner selection changed. Review it before resuming.",
+          { filledFields },
+        );
+      filledFields.push(key);
+      continue;
+    }
     if (key === "category" && probe.contract === "facebook-page") {
       if (!(await fillFacebookCategory(page, profile.category!, options.beforeAction)))
         return result(
@@ -670,11 +881,25 @@ async function prepareRegistrationStep(
       filledFields.push(key);
       continue;
     }
+    if (selected === "reddit") {
+      if (
+        (key !== "email" && key !== "username") ||
+        !(await fillRedditField(page, key, profile[key]!, options.beforeAction))
+      )
+        return result(
+          "changed",
+          "profile",
+          "The signup field or an existing owner value changed. Review it before resuming.",
+          { filledFields },
+        );
+      filledFields.push(key);
+      continue;
+    }
     const selector = fieldSelector(probe.contract, key);
     if (!selector) continue;
     await options.beforeAction?.();
     const marked = await page.evaluate<"empty" | "same" | "changed" | undefined>(String.raw`(() => {
-      if(location.origin!==${literal(origins[selected])}||!new RegExp(${literal(fieldPath)}).test(location.pathname))return;
+      if(location.origin!==${literal(origin)}||!new RegExp(${literal(fieldPath)}).test(location.pathname))return;
       const matches=[...document.querySelectorAll(${literal(selector)})].filter(el=>!el.hidden&&el.getAttribute('aria-hidden')!=='true'&&!!el.getClientRects().length&&!el.disabled&&!el.readOnly);
       if(${literal(probe.contract)}==='facebook-page'){
         for(let index=matches.length-1;index>=0;index--)if(!(matches[index].closest('label')?.textContent||'').replace(/\s+/g,' ').trim().startsWith('Sayfa adı (zorunlu)'))matches.splice(index,1);
@@ -696,7 +921,7 @@ async function prepareRegistrationStep(
     if (marked === "empty") {
       await options.beforeAction?.();
       const unchanged = await page.evaluate<"empty" | "same" | undefined>(String.raw`(() => {
-        if(location.origin!==${literal(origins[selected])}||!new RegExp(${literal(fieldPath)}).test(location.pathname))return;
+        if(location.origin!==${literal(origin)}||!new RegExp(${literal(fieldPath)}).test(location.pathname))return;
         const input=document.querySelector('[data-bycoda-registration-field="${key}"]');
         if(!input||!input.matches(${literal(selector)})||input.hidden||!input.getClientRects().length||input.disabled||input.readOnly||input.type==='password'||input.autocomplete==='one-time-code')return;
         return input.value===${literal(profile[key])}?'same':input.value?undefined:'empty';
@@ -712,7 +937,7 @@ async function prepareRegistrationStep(
         await page.fill(`[data-bycoda-registration-field=${literal(key)}]`, profile[key]!);
     }
     const persisted = await page.evaluate<boolean>(String.raw`(() => {
-      if(location.origin!==${literal(origins[selected])})return false;
+      if(location.origin!==${literal(origin)})return false;
       const input=document.querySelector('[data-bycoda-registration-field="${key}"]');
       return !!input&&input.type!=='password'&&input.autocomplete!=='one-time-code'&&input.value===${literal(profile[key])};
     })()`);
@@ -769,6 +994,28 @@ async function prepareRegistrationStep(
     await options.beforeAction?.();
     await page.click('[data-bycoda-registration-navigation="true"]');
     const after = await page.evaluate<Probe>(probeExpression(selected, profile.accountKind));
+    return { ...progress(platform, profile, after), filledFields };
+  }
+  if (fresh.navigation === "google-signup") {
+    await options.beforeAction?.();
+    const current = await page.evaluate<Probe>(probeExpression(selected, profile.accountKind));
+    if (current.contract !== "google-signin" || current.blockers.length)
+      return result(
+        "changed",
+        "method",
+        "The Google sign-in page changed. Review the platform window.",
+        { filledFields },
+      );
+    await options.beforeAction?.();
+    await page.goto(GOOGLE_SIGNUP_URL);
+    // The signup form renders after load; wait briefly for a known step instead of guessing.
+    let after = await page.evaluate<Probe>(probeExpression(selected, profile.accountKind));
+    for (let attempt = 0; attempt < 50 && !after.contract && !after.blockers.length; attempt++) {
+      await sleep(200);
+      after = await page.evaluate<Probe>(probeExpression(selected, profile.accountKind));
+    }
+    if (after.fields.length)
+      return prepareRegistrationStep(page, platform, profile, options, false);
     return { ...progress(platform, profile, after), filledFields };
   }
   if (fresh.navigation === "facebook-page") {

@@ -1529,6 +1529,15 @@ describe("finding the desktop app's session database", () => {
           expect(desktopDatabasePaths(env, platform, home).sort(), platform).toEqual(
             all.slice().sort(),
           );
+        // An isolated run names its own data directory and reads nothing else.
+        const isolated = join(home, "isolated");
+        const run = { BYCODA_DEV_PROFILE_ID: "run", BYCODA_DESKTOP_DATA_DIR: isolated };
+        expect(desktopDatabasePaths(run, platform, home), platform).toEqual([]);
+        mkdirSync(isolated, { recursive: true });
+        writeFileSync(join(isolated, "bycoda.db"), "");
+        expect(desktopDatabasePaths(run, platform, home), platform).toEqual([
+          join(isolated, "bycoda.db"),
+        ]);
         rmSync(release[0], { force: true });
         expect(desktopDatabasePaths({}, platform, home), platform).toEqual(
           all.filter((path) => path.includes("desktop.dev")),

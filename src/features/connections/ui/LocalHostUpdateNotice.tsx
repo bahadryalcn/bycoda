@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
+import { UpdateImpact } from "./UpdateImpact";
 import { Button } from "../../../shared/ui/Button";
 import { Text } from "../../../shared/ui/Text";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -71,6 +72,8 @@ export function LocalHostUpdateNotice() {
         { content: t("Session history is kept.") },
       ],
       confirmLabel: t("Stop and update"),
+      danger: true,
+      body: <UpdateImpact target="local-host" />,
     });
     if (!approved) return;
     setUpdating(true);

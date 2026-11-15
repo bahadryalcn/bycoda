@@ -11,10 +11,12 @@ import { writeFileAtomic } from "../storage/atomic-write";
 import type { BrowserPage } from "./social-browser";
 import { parseXBrowserMessageSent } from "./social-browser-inbound";
 import {
+  CHAT_PATH_EXPRESSION,
   EDITOR,
   FILE_INPUT,
   LOGIN_PATH,
   parseCreateTweet,
+  xChatBlockReason,
   xUnexpectedScreen,
   xUserId,
   type XBrowserDeps,
@@ -47,10 +49,17 @@ async function sendMessage(
   const editor = '[data-testid="dmComposerTextInput"]';
   const ready = await deps.until<string>(
     page,
-    `${LOGIN_PATH}.test(location.pathname) ? "login" : document.querySelector(${JSON.stringify(editor)}) ? "ready" : ""`,
+    `${LOGIN_PATH}.test(location.pathname) ? "login" : ${CHAT_PATH_EXPRESSION} ? "chat" : document.querySelector(${JSON.stringify(editor)}) ? "ready" : ""`,
     30_000,
   );
   if (ready === "login") throw new SocialPlatformError("expired");
+  if (ready === "chat") {
+    // X redirects /messages/compose to the encrypted XChat shell, which this recipe cannot drive.
+    // Fail before any submit marker or pacing slot so the job is a clean unsupported, not a timeout.
+    await deps.identity(page, account);
+    const reasonCode = await xChatBlockReason(deps, page);
+    throw new SocialPlatformError("unsupported", undefined, { reasonCode });
+  }
   // A missing composer is a challenge (NEEDS_HUMAN) or an unexpected screen for the next layer.
   if (ready !== "ready")
     throw (await challengeError(page, deps.directory)) ?? (await xUnexpectedScreen(page));

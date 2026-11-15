@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
@@ -89,7 +90,7 @@ function dispatchSave<Input extends object>(
   } catch (reason) {
     // The visible error is not an authoritative rejection; keep the original input as unknown.
     retained.update({ ...input, disposition: "dispatch-unknown" });
-    outcome.failed(reason instanceof Error ? reason.message : String(reason));
+    outcome.failed(presentRemoteError(reason, { explicit: true }));
   }
 }
 

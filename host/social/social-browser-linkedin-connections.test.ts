@@ -33,7 +33,7 @@ describe("LinkedIn connection invitations", () => {
       {
         click: (element) => {
           if (element.getAttribute("data-bycoda-web-control") === "connect")
-            element.ownerDocument.body.innerHTML = `${owner}<main><h1>Ada Example</h1><button>Pending</button></main>`;
+            element.ownerDocument.body.innerHTML = `${owner}<main><p>· 2.</p><button>Beklemede</button></main>`;
         },
         render: (url) =>
           url.includes("/in/ada-example") ? fixtureHtml("profile-connectable.html") : owner,
@@ -65,7 +65,7 @@ describe("LinkedIn connection invitations", () => {
     const f = fixture(
       linkedinBrowserRecipe,
       memberAccount(),
-      `${owner}<main><h1>Ada Example</h1><span class="distance-badge">1st</span><button>Connect</button></main>`,
+      `${owner}<main><p>· 1.</p><div data-view-name="edge-creation-connect-action"><a href="/in/ada-example/">Bağlantı kur</a></div></main>`,
     );
     await expect(
       linkedInSendConnectionRequest(f.ctx, { recipientId: recipient }, gate),
@@ -91,7 +91,7 @@ describe("LinkedIn connection invitations", () => {
       {
         click: (element) => {
           if (element.getAttribute("data-bycoda-li-accept") === "true")
-            element.ownerDocument.body.innerHTML = `${owner}<main><ul><li><a href="/in/grace-example/">Grace Example</a></li></ul></main>`;
+            element.ownerDocument.body.innerHTML = `${owner}<main><div><div><a href="/in/grace-example/">Grace Example</a></div></div></main>`;
         },
       },
     );
@@ -103,11 +103,39 @@ describe("LinkedIn connection invitations", () => {
 
   it("stops without clicking when two invitation cards match the same member", async () => {
     const gate = limiter();
-    const card = `<li><a href="/in/ada-example/">Ada Example</a><button aria-label="Accept Ada Example's invitation">Accept</button></li>`;
+    const card = `<div><a href="/in/ada-example/">Ada Example</a><button><span>Kabul et</span></button></div>`;
     const f = fixture(
       linkedinBrowserRecipe,
       memberAccount(),
-      `${owner}<main><ul>${card}${card}</ul></main>`,
+      `${owner}<main><div>${card}${card}</div></main>`,
+    );
+    await expect(
+      linkedInAcceptInvitation(f.ctx, { senderId: recipient }, gate),
+    ).rejects.toMatchObject({ code: "unsupported" });
+    expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+    expect(f.page.click).not.toHaveBeenCalled();
+  });
+
+  it("denies when the only Connect control belongs to a suggestion card for another member", async () => {
+    const gate = limiter();
+    const f = fixture(
+      linkedinBrowserRecipe,
+      memberAccount(),
+      `${owner}<main><p>· 2.</p><aside><div data-view-name="edge-creation-connect-action"><button>Bağlantı kur</button></div></aside></main>`,
+    );
+    await expect(
+      linkedInSendConnectionRequest(f.ctx, { recipientId: recipient }, gate),
+    ).rejects.toMatchObject({ code: "denied" });
+    expect(gate.record).not.toHaveBeenCalled();
+    expect(f.ctx.markSubmitted).not.toHaveBeenCalled();
+  });
+
+  it("stops without clicking when one invitation card holds several members", async () => {
+    const gate = limiter();
+    const f = fixture(
+      linkedinBrowserRecipe,
+      memberAccount(),
+      `${owner}<main><div><a href="/in/ada-example/">Ada</a><a href="/in/grace-example/">Grace</a><button>Kabul et</button></div></main>`,
     );
     await expect(
       linkedInAcceptInvitation(f.ctx, { senderId: recipient }, gate),

@@ -255,13 +255,13 @@ it("enforces the file count and size limits when exporting", () => {
   expect(exportOf("many")).toThrow(/more than 200 files/);
 
   skill(root, "big", "# big");
-  writeFileSync(join(root, "big/blob.bin"), Buffer.alloc(2 * 1024 * 1024 + 1));
-  expect(exportOf("big")).toThrow(/larger than 2 MiB/);
+  writeFileSync(join(root, "big/blob.bin"), Buffer.alloc(32 * 1024 * 1024 + 1));
+  expect(exportOf("big")).toThrow(/larger than 32 MiB/);
 
   skill(root, "huge", "# huge");
   for (let i = 0; i < 5; i++)
-    writeFileSync(join(root, "huge", `p${i}.bin`), Buffer.alloc(2 * 1024 * 1024));
-  expect(exportOf("huge")).toThrow(/8 MiB in total/);
+    writeFileSync(join(root, "huge", `p${i}.bin`), Buffer.alloc(32 * 1024 * 1024));
+  expect(exportOf("huge")).toThrow(/64 MiB in total/);
 });
 
 it("imports into the personal agents folder and round-trips bytes", () => {
@@ -330,15 +330,15 @@ it("checks the import limits on the decoded bytes", () => {
   expect(() => importHostSkill({ name: "tool", files: many }, home)).toThrow(/more than 200 files/);
   expect(() =>
     importHostSkill(
-      { name: "tool", files: [ok, asFile("blob.bin", Buffer.alloc(2 * 1024 * 1024 + 1))] },
+      { name: "tool", files: [ok, asFile("blob.bin", Buffer.alloc(32 * 1024 * 1024 + 1))] },
       home,
     ),
-  ).toThrow(/2 MiB/);
+  ).toThrow(/32 MiB/);
   const parts = Array.from({ length: 5 }, (_, i) =>
-    asFile(`p${i}.bin`, Buffer.alloc(2 * 1024 * 1024)),
+    asFile(`p${i}.bin`, Buffer.alloc(32 * 1024 * 1024)),
   );
   expect(() => importHostSkill({ name: "tool", files: [ok, ...parts] }, home)).toThrow(
-    /8 MiB in total/,
+    /64 MiB in total/,
   );
 });
 
@@ -396,4 +396,17 @@ it("accepts an empty project for list and export but still checks a real one", a
       cwd: outside,
     }),
   ).rejects.toThrow(/outside this machine/);
+});
+
+it("round trips bundled executables larger than the old 2 MiB limit", () => {
+  const project = scratch("project");
+  const home = scratch("home");
+  const root = join(home, ".agents/skills");
+  skill(root, "binary-tool", "# binary-tool");
+  const bytes = Buffer.alloc(20 * 1024 * 1024, 173);
+  writeFileSync(join(root, "binary-tool/tool.exe"), bytes);
+  const bundle = exportHostSkill(skillMd(home, "binary-tool"), project, home);
+  expect(
+    Buffer.from(bundle.files.find((file) => file.path === "tool.exe")!.data, "base64"),
+  ).toEqual(bytes);
 });

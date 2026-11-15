@@ -65,7 +65,7 @@ impl NativeGatewayChannel {
         machine: StoredMachine,
         websocket: bool,
     ) -> Arc<Self> {
-        let route = NativeRoute::new(
+        let route = account_routes::native_route(
             &machine.id,
             &machine.environment_id,
             &machine.endpoint,
@@ -136,7 +136,7 @@ impl NativeGatewayChannel {
             tunnel,
         };
         let caller = selection.with_current(|| {
-            let route = NativeRoute::new(
+            let route = account_routes::native_route(
                 &selection.machine.id,
                 &selection.machine.environment_id,
                 &selection.endpoint,

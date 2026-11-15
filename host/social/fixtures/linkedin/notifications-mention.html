@@ -2,16 +2,24 @@
 <html>
   <body>
     <div class="feed-identity-module__actor-meta"><a href="/in/bycoda-owner/">Owner</a></div>
-    <article class="nt-card">
-      <a href="/in/ada-example/">Ada Example</a>
-      <div class="nt-card__text">Ada Example mentioned you in a post</div>
-      <a href="/feed/update/urn:li:activity:111/">View</a>
-      <time datetime="2026-10-26T09:00:00Z">9h</time>
-    </article>
-    <article class="nt-card">
-      <a href="/in/grace-example/">Grace Example</a>
-      <div class="nt-card__text">Grace Example liked your post</div>
-      <time datetime="2026-10-26T08:00:00Z">10h</time>
-    </article>
+    <main>
+      <div role="radio" aria-checked="false">Tümü</div>
+      <div role="radio" aria-checked="true">Bahsetmeler</div>
+      <div data-view-name="notification-card" style="display: contents">
+        <a href="/in/ada-example/">Ada Example</a>
+        <p>Ada Example bir gönderide sizden bahsetti</p>
+        <a
+          href="/feed/?highlightedUpdateUrn=urn%3Ali%3Aactivity%3A111&amp;highlightedUpdateType=MENTION"
+          >Aç</a
+        >
+        <span>2 saat</span>
+      </div>
+      <div data-view-name="notification-card" style="display: contents">
+        <a href="/in/grace-example/">Grace Example</a>
+        <p>Grace Example bir yorumda sizden bahsetti</p>
+        <a href="/feed/?highlightedUpdateUrn=urn%3Ali%3Aactivity%3A222">Aç</a>
+        <span>1 gün</span>
+      </div>
+    </main>
   </body>
 </html>

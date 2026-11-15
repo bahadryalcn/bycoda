@@ -3,6 +3,7 @@
 use crate::host_ws::{HostWsBroker, NativeRoute, RequestOptions, WsFailure, WsReply};
 use crate::remote_routes::{port_may_have_moved, reported_port};
 use crate::remote_ssh::{self, Job, JobView, SshTarget, Tunnel, Tunnels};
+use account_routes::native_ws_route;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -13,6 +14,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager, State};
+
+pub(crate) mod account_pairing;
+pub(crate) mod account_routes;
+pub(crate) mod host_proof;
 
 #[path = "remote_changes.rs"]
 mod changes;
@@ -712,7 +717,19 @@ fn rpc_timed(
     params: Value,
     timeout: std::time::Duration,
 ) -> Result<Value, String> {
+    if let Some(environment_id) = environment_id {
+        account_routes::require_environment_enabled(environment_id)?;
+        if crate::remote_routes::account_tunnel(endpoint).is_some() {
+            crate::remote_routes::verify_account_endpoint(endpoint, environment_id, token)
+                .map_err(|_| {
+                    "Machine is unreachable. Account route identity could not be verified."
+                })?;
+        }
+    }
     let agent = rpc_agent();
+    if let Some(environment_id) = environment_id {
+        account_routes::require_environment_enabled(environment_id)?;
+    }
     let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params }).to_string();
     let exchange = transport_health::Exchange::new(endpoint, environment_id, method, timeout);
     let response = exchange.send(|timeout| {
@@ -1025,80 +1042,93 @@ fn machine_rpc_for_consumer(
     consumer: Option<(&AppHandle, &str)>,
     retained: Option<&Mutex<Option<crate::host_ws::ReplyGuard>>>,
 ) -> Result<Value, String> {
-    with_refused_tunnel_retry(allow_connect && machine.ssh.is_some(), || {
-        let lease = machine
-            .ssh
-            .as_ref()
-            .map(|target| {
-                state
-                    .tunnels
-                    .endpoint(&machine.id, &machine.environment_id, target, allow_connect)
-            })
-            .transpose()?;
-        let endpoint = lease
-            .as_ref()
-            .map(|lease| lease.endpoint.as_str())
-            .unwrap_or(&machine.endpoint);
-        let response = if let Some((app, consumer)) =
-            consumer.filter(|_| state.ws_request_compatible(machine, method, &params))
-        {
-            let route = NativeRoute::new(
-                &machine.id,
-                &machine.environment_id,
-                endpoint,
-                &machine.token,
-                &ws_fingerprint(machine),
-            )
-            .map_err(|error| error.to_string())?;
-            let pending = with_current_ws_machine(app, state, machine, || {
-                state.ws.begin_request(
-                    &route,
-                    consumer,
-                    method,
-                    params.clone(),
-                    RequestOptions::default(),
-                )
-            });
-            match pending.and_then(|pending| pending.wait()) {
-                Ok(reply) => {
-                    let (value, guard) = reply.into_guarded_result();
-                    if let Some(retained) = retained {
-                        *retained
-                            .lock()
-                            .map_err(|_| "Native reply disclosure is unavailable")? = Some(guard);
-                    } else {
-                        guard.check().map_err(native_ws_failure)?;
+    account_routes::require_machine_enabled(machine)?;
+    account_routes::with_routes(machine, method, |account_endpoint| {
+        with_refused_tunnel_retry(
+            allow_connect && machine.ssh.is_some() && account_endpoint.is_none(),
+            || {
+                let lease = machine
+                    .ssh
+                    .as_ref()
+                    .filter(|_| account_endpoint.is_none())
+                    .map(|target| {
+                        state.tunnels.endpoint(
+                            &machine.id,
+                            &machine.environment_id,
+                            target,
+                            allow_connect,
+                        )
+                    })
+                    .transpose()?;
+                let endpoint = lease
+                    .as_ref()
+                    .map(|lease| lease.endpoint.as_str())
+                    .unwrap_or_else(|| account_endpoint.unwrap_or(&machine.endpoint));
+                let response = if let Some((app, consumer)) =
+                    consumer.filter(|_| state.ws_request_compatible(machine, method, &params))
+                {
+                    let route = account_routes::native_route(
+                        &machine.id,
+                        &machine.environment_id,
+                        endpoint,
+                        &machine.token,
+                        &ws_fingerprint(machine),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let pending = with_current_ws_machine(app, state, machine, || {
+                        state.ws.begin_request(
+                            &route,
+                            consumer,
+                            method,
+                            params.clone(),
+                            RequestOptions::default(),
+                        )
+                    });
+                    match pending.and_then(|pending| pending.wait()) {
+                        Ok(reply) => {
+                            let (value, guard) = reply.into_guarded_result();
+                            if let Some(retained) = retained {
+                                *retained
+                                    .lock()
+                                    .map_err(|_| "Native reply disclosure is unavailable")? =
+                                    Some(guard);
+                            } else {
+                                guard.check().map_err(native_ws_failure)?;
+                            }
+                            Ok(value)
+                        }
+                        // Compatibility fallbacks reuse the same params, so a durable commandId is unchanged.
+                        Err(error) if ws_failure_allows_http_fallback(&error) => rpc(
+                            endpoint,
+                            &machine.token,
+                            Some(&machine.environment_id),
+                            method,
+                            params.clone(),
+                        ),
+                        Err(error) => Err(native_ws_failure(error)),
                     }
-                    Ok(value)
+                } else {
+                    rpc(
+                        endpoint,
+                        &machine.token,
+                        Some(&machine.environment_id),
+                        method,
+                        params.clone(),
+                    )
+                };
+                if method == "environment.describe" {
+                    if let Ok(descriptor) = &response {
+                        state.observe_ws_capability(machine, descriptor);
+                        if let Some(target) = &machine.ssh {
+                            crate::remote_routes::observe(
+                                target,
+                                &machine.environment_id,
+                                descriptor,
+                            );
+                        }
+                    }
                 }
-                // Compatibility fallbacks reuse the same params, so a durable commandId is unchanged.
-                Err(error) if ws_failure_allows_http_fallback(&error) => rpc(
-                    endpoint,
-                    &machine.token,
-                    Some(&machine.environment_id),
-                    method,
-                    params.clone(),
-                ),
-                Err(error) => Err(native_ws_failure(error)),
-            }
-        } else {
-            rpc(
-                endpoint,
-                &machine.token,
-                Some(&machine.environment_id),
-                method,
-                params.clone(),
-            )
-        };
-        if method == "environment.describe" {
-            if let Ok(descriptor) = &response {
-                state.observe_ws_capability(machine, descriptor);
-                if let Some(target) = &machine.ssh {
-                    crate::remote_routes::observe(target, &machine.environment_id, descriptor);
-                }
-            }
-        }
-        let response = match response {
+                let response = match response {
             Err(error)
                 if error.starts_with("The host request did not complete")
                     && state.tunnels.take_host_refusal(&machine.id) =>
@@ -1110,17 +1140,23 @@ fn machine_rpc_for_consumer(
             }
             other => other,
         };
-        if response
-            .as_ref()
-            .err()
-            .is_some_and(|error| error.starts_with("Machine is unreachable"))
-        {
-            if let Some(lease) = &lease {
-                state.invalidate_ws(&machine.id);
-                state.tunnels.invalidate(&machine.id, lease);
-            }
-        }
-        response
+                if response
+                    .as_ref()
+                    .err()
+                    .is_some_and(|error| error.starts_with("Machine is unreachable"))
+                {
+                    if let Some(lease) = &lease {
+                        // Probe first: a failed request on a live tunnel (a sleep gap, a
+                        // slow Host) must not rebuild it.
+                        state.tunnels.invalidate_unless_healthy(&machine.id, lease);
+                        // Pooled WS links of this machine are retired even when the tunnel
+                        // survives, so a half-open socket does not linger.
+                        state.invalidate_ws(&machine.id);
+                    }
+                }
+                response
+            },
+        )
     })
 }
 
@@ -1129,12 +1165,15 @@ fn machine_rpc_for_consumer(
 /// a clear flag on a mutating request means it was never dispatched. A read that
 /// was sent and then timed out is also clear here; re-running a read is harmless.
 /// `unsupported` is the separate pre-dispatch case that the WS path already reports.
+/// A socket lost mid-request is retried the same way when nothing is uncertain: a
+/// half-open WS on a live tunnel then answers over HTTP at once, and a dead tunnel
+/// fails fast into the unreachable path that probes it.
 fn ws_failure_allows_http_fallback(error: &WsFailure) -> bool {
     error.unsupported
         || (!error.uncertain
             && matches!(
                 error.code.as_str(),
-                "RPC_WS_DEADLINE" | "RPC_WS_UNAVAILABLE" | "RPC_WS_BLOCKED"
+                "RPC_WS_DEADLINE" | "RPC_WS_UNAVAILABLE" | "RPC_WS_BLOCKED" | "RPC_WS_INTERRUPTED"
             ))
 }
 
@@ -1487,6 +1526,15 @@ pub fn remote_disconnect(
     state.tunnels.remove(&machine_id);
     folder_access::stop_machine(&machine_id);
     Ok(())
+}
+
+/// The owner turned a machine off: close its SSH tunnel and Host WebSocket now. The saved
+/// machine, its credential and learned routes stay, so turning it on dials again.
+#[tauri::command(async)]
+pub fn remote_close_connection(state: State<'_, RemoteConnections>, machine_id: String) {
+    state.invalidate_ws(&machine_id);
+    state.tunnels.remove(&machine_id);
+    folder_access::stop_machine(&machine_id);
 }
 
 /// Caller holds the canonical connection-store lock through write + retirement.
@@ -2120,34 +2168,6 @@ fn with_current_ws_machine<T>(
     admit()
 }
 
-fn native_ws_route(
-    state: &RemoteConnections,
-    machine: &StoredMachine,
-    allow_connect: bool,
-) -> Result<NativeRoute, WsFailure> {
-    let lease = machine
-        .ssh
-        .as_ref()
-        .map(|target| {
-            state
-                .tunnels
-                .endpoint(&machine.id, &machine.environment_id, target, allow_connect)
-        })
-        .transpose()
-        .map_err(|_| WsFailure::local("RPC_WS_SSH", "Verified native SSH tunnel is unavailable"))?;
-    let endpoint = lease
-        .as_ref()
-        .map(|lease| lease.endpoint.as_str())
-        .unwrap_or(&machine.endpoint);
-    NativeRoute::new(
-        &machine.id,
-        &machine.environment_id,
-        endpoint,
-        &machine.token,
-        &ws_fingerprint(machine),
-    )
-}
-
 /// Blocking Host-connection work off Tauri's async workers: a hung Host must
 /// not occupy the threads that stop and write commands need.
 async fn run_ws_blocking<T: Send + 'static>(
@@ -2489,6 +2509,7 @@ fn require_machine_environment(
     machine: &StoredMachine,
     expected: Option<&str>,
 ) -> Result<(), String> {
+    account_routes::require_machine_enabled(machine)?;
     if expected.is_some_and(|expected| expected != machine.environment_id) {
         return Err(
             "The owning Host environment changed; reconnect this conversation before sending"
@@ -2679,7 +2700,7 @@ impl NativeWorkspaceTransport {
             {
                 return Ok(None);
             }
-            let route = NativeRoute::new(
+            let route = account_routes::native_route(
                 &self.machine.id,
                 &self.machine.environment_id,
                 &self.machine.endpoint,

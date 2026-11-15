@@ -202,3 +202,34 @@ it("disk-full Stop reaches the exact running provider and returns a non-durable 
   expect(f.provider.cancel).toHaveBeenCalledWith("migrated");
   expect(await f.store.receiptStatus("emergency-stop")).toBeUndefined();
 });
+
+it("checks authority once per delta burst, not per token, and still fences a revoked generation", async () => {
+  const f = await fixture();
+  await f.engine.command(f.send);
+  await vi.waitFor(() => expect(f.input()).toBeDefined(), { timeout: 5_000 });
+  const asserts = vi.spyOn(f.store, "assertAuthority");
+  const tokens = Array.from({ length: 60 }, (_, index) => `t${index} `);
+  for (const text of tokens) f.input()!.onEvent({ type: "message.delta", text });
+  await vi.waitFor(
+    async () => {
+      const live = await f.store.session("migrated");
+      expect(live.session.blocks.at(-1)?.text).toBe(tokens.join(""));
+    },
+    { timeout: 5_000 },
+  );
+  expect(asserts.mock.calls.length).toBeLessThanOrEqual(6);
+  expect(
+    (await f.store.session("migrated")).session.blocks.filter((b) => b.role === "assistant"),
+  ).toHaveLength(1);
+  await f.store.db
+    .prepare("UPDATE host_authority_heads SET generation=3 WHERE session_id='migrated'")
+    .run();
+  const snapshot = async () =>
+    (await f.store.db.prepare("SELECT snapshot FROM sessions WHERE id='migrated'").get())?.snapshot;
+  const before = await snapshot();
+  for (const text of tokens) f.input()!.onEvent({ type: "message.delta", text });
+  await tick();
+  await f.store.db.scope(() => undefined);
+  await tick();
+  expect(await snapshot()).toBe(before);
+});

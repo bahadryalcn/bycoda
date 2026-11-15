@@ -12,6 +12,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { LabeledSelect } from "./LabeledSelect";
 import { errorMessage } from "./audienceModel";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useFormFooter, useTouched } from "./formFooter";
 import { SequenceStepEditor, newStepDraft, type StepDraft } from "./SequenceStepEditor";
 
@@ -150,7 +151,7 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
       onSaved(saved);
       onClose();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setSaving(false);
     }
@@ -161,7 +162,8 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
     error,
     blockedReason: reason,
     saveLabel: t("Save sequence"),
-    onSave: () => void save().catch((err: unknown) => setError(errorMessage(err))),
+    onSave: () =>
+      void save().catch((err: unknown) => setError(presentRemoteError(err, { explicit: true }))),
     onCancel: onClose,
   });
 
@@ -192,7 +194,10 @@ export function SequenceEditor({ client, sequence, lists, onClose, onSaved }: Se
             error={touched("list") ? listReason : undefined}
             options={[
               { value: "", label: t("Choose a list") },
-              ...staticLists.map((list) => ({ value: list.id, label: list.name })),
+              ...staticLists.map((list) => ({
+                value: list.id,
+                label: list.name,
+              })),
             ]}
             onChange={(value) => {
               touch("list");

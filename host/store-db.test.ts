@@ -689,6 +689,80 @@ it("survives a cache-publication fault after a commit: logs, clears caches and k
   error.mockRestore();
 });
 
+it("attributes a full session save, including its event rows, to that session's project", async () => {
+  const { store, value } = await fixture();
+  const unattributed = store.unattributedChangeVersion;
+  const project = store.projectVersion(value.projectId);
+  await store.save(
+    { ...value, revision: 2, session: { ...value.session, title: "Saved" } },
+    {
+      type: "fixture",
+    },
+  );
+  expect(
+    (
+      await store.db
+        .prepare("SELECT count(*) AS count FROM events WHERE session_id=?")
+        .get("session")
+    )?.count,
+  ).toBeGreaterThan(0);
+  expect(store.projectVersion(value.projectId)).toBe(project + 1);
+  expect(store.unattributedChangeVersion).toBe(unattributed);
+  await store.db.exec("CREATE TABLE IF NOT EXISTS unattributed_fixture(value TEXT)");
+  expect(store.unattributedChangeVersion).toBe(unattributed + 1);
+});
+
+it("keeps a cold session read off the Host SQL queue and keeps a write made meanwhile", async () => {
+  const { store: first, path, value } = await fixture();
+  const snapshot = await first.session("session");
+  await first.close();
+  const store = new HostStore(path);
+  cleanups.push(() => store.close());
+  await store.ready;
+  const release = gate(),
+    started = gate();
+  const processes = (store as unknown as { sessionReadProcesses: { read: unknown } })
+    .sessionReadProcesses;
+  processes.read = vi.fn(async () => {
+    started.resolve();
+    await release.promise;
+    return snapshot;
+  });
+  const read = store.session("session", new AbortController().signal);
+  await started.promise;
+  // The slow child read is in flight; a queued write must not wait for it.
+  await store.save(
+    { ...value, revision: 2, session: { ...value.session, title: "Written meanwhile" } },
+    {},
+  );
+  release.resolve();
+  expect((await read).session.title).toBe("Written meanwhile");
+  expect((await store.session("session")).revision).toBe(2);
+});
+
+it("attributes a streaming save to its session without moving the project version or siblings", async () => {
+  const { store, value } = await fixture();
+  const sibling = store.versions.session("other", false);
+  const scope = store.versions.scope(value.projectId, false);
+  const project = store.projectVersion(value.projectId);
+  const session = store.versions.session("session", false);
+  // Same list-visible summary, only revision and updatedAt move.
+  await store.save({ ...value, revision: 2, updatedAt: 2 }, {}, { deferred: true });
+  await store.save({ ...value, revision: 3, updatedAt: 3 }, {}, { deferred: true });
+  expect(store.versions.session("session", false)).toBe(session + 2);
+  expect(store.projectVersion(value.projectId)).toBe(project);
+  expect(store.versions.scope(value.projectId, false)).toBe(scope);
+  expect(store.versions.session("other", false)).toBe(sibling);
+  // A list-visible change still moves the project version, but never the sibling scope.
+  await store.save(
+    { ...value, revision: 4, updatedAt: 4, session: { ...value.session, title: "Renamed" } },
+    {},
+    { deferred: true },
+  );
+  expect(store.projectVersion(value.projectId)).toBe(project + 1);
+  expect(store.versions.scope(value.projectId, false)).toBe(scope);
+});
+
 it("batches ordered writes atomically and keeps cached statements usable after eviction", async () => {
   const { store } = await fixture();
   await store.db.exec("CREATE TABLE batch_fixture(id INTEGER PRIMARY KEY, value TEXT)");

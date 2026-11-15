@@ -7,7 +7,7 @@ for (const theme of ["light", "dark"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/chat/subagent-relay.html?retention&theme=${theme}`);
       const history = page.locator("[data-composer-subagents-trigger]");
-      await expect(history).toHaveAccessibleName("Session subagents: 10 running of 10");
+      await expect(history).toHaveAttribute("aria-label", "Session subagents: 10 running of 10");
       await expect(
         page
           .getByRole("region", { name: "Turn activity" })
@@ -19,11 +19,15 @@ for (const theme of ["light", "dark"])
       await expect(
         page.getByTestId("retained-cards").getByText("Interrupted", { exact: true }),
       ).toHaveCount(0);
+      // The dock lists the same runs, so the composer control steps aside while it shows.
+      await expect(history).toBeHidden();
+      const dock = page.getByRole("region", { name: "Turn activity" });
+      await dock.locator("button[data-dock-toggle]").click();
+      await expect(dock.locator("[data-dock-agent]")).toHaveCount(10);
       await page.screenshot({
         path: `temp/verification/agent-communication/background-running-${theme}-${width}.png`,
       });
-      await history.click();
-      await page.getByRole("menuitem", { name: /^Physics table 2,/ }).click();
+      await dock.getByRole("button", { name: /^Open Physics table 2,/ }).click();
       const panel = page.getByRole("dialog");
       await expect(panel).toContainText("Low initial entropy");
       // Finish while reading a child, then observe longer than one discovery interval.

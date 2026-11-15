@@ -57,6 +57,14 @@ export function userTurnCards(
   };
 }
 
+/** The Host's stamp on a queue row it wrote (a subagent notice); the turn it starts keeps it,
+ * so the transcript never shows or counts the notice as owner input. */
+export function queuedRowAuthor(session: Session, queuedMessageId: string | undefined) {
+  if (!queuedMessageId) return undefined;
+  const author = session.queuedMessages?.find((row) => row.id === queuedMessageId)?.author;
+  return author?.kind === "delegation" ? { author } : undefined;
+}
+
 export function withPlanBuildTarget(session: Session, target: PlanBuildTarget): Session {
   const resolved = resolveModel(target.harness, target.model);
   const modelSettings = mergeModelSettings(resolved, target.modelSettings);

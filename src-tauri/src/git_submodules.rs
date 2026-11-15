@@ -64,7 +64,12 @@ fn list(cwd: &Path) -> Result<Vec<String>, String> {
 }
 
 fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, String> {
-    let root = cwd.canonicalize().map_err(|error| error.to_string())?;
+    let root = match cwd.canonicalize() {
+        Ok(root) => root,
+        // A removed checkout has no repositories, like any other vanished path.
+        Err(error) if vanished(&error) => return Ok(Vec::new()),
+        Err(error) => return Err(error.to_string()),
+    };
     let deadline = Instant::now() + GIT_LOCAL_TIMEOUT;
     let mut queue = vec![root.clone()];
     let mut seen = HashSet::from([root.clone()]);
@@ -102,7 +107,7 @@ fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, S
                         return Ok(());
                     };
                     let mut top = Vec::new();
-                    git_stream_output(
+                    let checked = git_stream_output(
                         &child,
                         &["rev-parse", "--show-toplevel"],
                         deadline,
@@ -114,7 +119,11 @@ fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, S
                             top.extend_from_slice(chunk);
                             Ok(())
                         },
-                    )?;
+                    );
+                    if checked.is_err() && !child.exists() {
+                        return Ok(());
+                    }
+                    checked?;
                     let top = String::from_utf8_lossy(&top);
                     if PathBuf::from(top.trim()).canonicalize().ok().as_ref() != Some(&child) {
                         return Ok(());
@@ -138,6 +147,9 @@ fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, S
             if parent == root && not_a_repository(&root) {
                 continue;
             }
+            if parent != root && !parent.exists() {
+                continue;
+            }
             return Err(error);
         }
         parser.finish()?;
@@ -147,6 +159,23 @@ fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, S
     }
     paths.sort();
     Ok(paths)
+}
+
+/// Agents create and delete files while discovery runs. A path that disappeared
+/// between listing and inspection is skipped, not reported as failed discovery.
+fn vanished(error: &std::io::Error) -> bool {
+    // Windows reports ERROR_DELETE_PENDING (303) for a path whose deletion is in progress.
+    error.kind() == std::io::ErrorKind::NotFound
+        || (cfg!(windows) && error.raw_os_error() == Some(303))
+}
+
+/// `None` when the path vanished; other IO failures still fail discovery.
+fn present<T>(result: std::io::Result<T>) -> Result<Option<T>, String> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if vanished(&error) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 /// The index stream discards stderr, so a failed root scan asks Git why.
@@ -217,13 +246,15 @@ fn discover_repositories(
         let (directory, depth) = queue[index].clone();
         index += 1;
         // Recheck queued paths at the read boundary; this is not an atomic snapshot.
-        let metadata = std::fs::symlink_metadata(&directory).map_err(|error| error.to_string())?;
+        let Some(metadata) = present(std::fs::symlink_metadata(&directory))? else {
+            continue;
+        };
+        let Some(canonical) = present(directory.canonicalize())? else {
+            continue;
+        };
         if !metadata.is_dir()
             || linked(&metadata)
-            || directory
-                .canonicalize()
-                .map_err(|error| error.to_string())?
-                != directory
+            || canonical != directory
             || !directory.starts_with(root)
         {
             return Err("Repository discovery directory changed".into());
@@ -236,7 +267,10 @@ fn discover_repositories(
                 return Err("Repository discovery directory changed".into());
             }
         }
-        for entry in std::fs::read_dir(&directory).map_err(|error| error.to_string())? {
+        let Some(listing) = present(std::fs::read_dir(&directory))? else {
+            continue;
+        };
+        for entry in listing {
             if Instant::now() >= deadline {
                 return Err("Repository discovery timed out".into());
             }
@@ -244,7 +278,9 @@ fn discover_repositories(
             if entries > 200_000 {
                 return Err("Repository discovery entry limit exceeded".into());
             }
-            let entry = entry.map_err(|error| error.to_string())?;
+            let Some(entry) = present(entry)? else {
+                continue;
+            };
             let name = entry.file_name();
             let name = name.to_string_lossy();
             let skip = if cfg!(windows) {
@@ -256,20 +292,24 @@ fn discover_repositories(
                 continue;
             }
             let path = entry.path();
-            let metadata = std::fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+            let Some(metadata) = present(std::fs::symlink_metadata(&path))? else {
+                continue;
+            };
             if !metadata.is_dir() || linked(&metadata) {
                 continue;
             }
             if depth >= 64 {
                 return Err("Repository discovery depth limit exceeded".into());
             }
-            let child = path.canonicalize().map_err(|error| error.to_string())?;
+            let Some(child) = present(path.canonicalize())? else {
+                continue;
+            };
             if child != path || !child.starts_with(root) {
                 continue;
             }
             let git = match std::fs::symlink_metadata(child.join(".git")) {
                 Ok(metadata) => Some(metadata),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) if vanished(&error) => None,
                 Err(error) => return Err(error.to_string()),
             };
             if git.is_some_and(|metadata| {
@@ -277,7 +317,7 @@ fn discover_repositories(
             }) && !seen.contains(&child)
             {
                 let mut top = Vec::new();
-                git_stream_output(
+                let checked = git_stream_output(
                     &child,
                     &["rev-parse", "--show-toplevel"],
                     deadline,
@@ -289,7 +329,11 @@ fn discover_repositories(
                         top.extend_from_slice(chunk);
                         Ok(())
                     },
-                )?;
+                );
+                if checked.is_err() && !child.exists() {
+                    continue;
+                }
+                checked?;
                 let top = String::from_utf8_lossy(&top);
                 if PathBuf::from(top.trim()).canonicalize().ok().as_ref() == Some(&child) {
                     if paths.len() >= 256 {
@@ -541,6 +585,33 @@ mod tests {
             std::fs::read_to_string(mobile.join("file.txt")).unwrap(),
             "independent unsaved change\n"
         );
+    }
+
+    #[test]
+    fn vanished_paths_are_skipped_instead_of_failing_discovery() {
+        let fixture = Fixture::new();
+        let parent = fixture.repo("parent");
+        let removed = parent.join("removed-worktree");
+        assert_eq!(list_options(&removed, true).unwrap(), Vec::<String>::new());
+        // A queued directory deleted before it is read, as when an agent cleans up mid-scan.
+        let queued = parent.join("scratch");
+        std::fs::create_dir_all(&queued).unwrap();
+        let queued = queued.canonicalize().unwrap();
+        std::fs::remove_dir_all(&queued).unwrap();
+        let mut seen = HashSet::new();
+        let mut paths = Vec::new();
+        discover_repositories(
+            &queued,
+            Instant::now() + GIT_LOCAL_TIMEOUT,
+            &mut seen,
+            &mut paths,
+        )
+        .unwrap();
+        assert!(paths.is_empty());
+        assert!(present(std::fs::symlink_metadata(&queued))
+            .unwrap()
+            .is_none());
+        assert!(present::<()>(Err(std::io::Error::other("denied"))).is_err());
     }
 
     #[test]

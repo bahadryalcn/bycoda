@@ -3,6 +3,7 @@ import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import type { RemoteDataState } from "../../connections";
 import type { BoardTask } from "../model/taskClient";
 import type { useTaskBoardQueries } from "../model/useTaskBoardQueries";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** A sprint assignment that failed after its task or goal was created. */
 export type PlanningRecovery = {
@@ -39,7 +40,7 @@ export function useTaskBoardOperations(refreshQueries: () => Promise<unknown>) {
       setError(null);
       void refresh();
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
       // A merge that failed is recorded on its task, which stays in review.
       void refresh();
     } finally {

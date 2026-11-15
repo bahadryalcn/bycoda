@@ -54,7 +54,73 @@ fn protect_management(conn: &Connection, session: &SessionUpsert) -> Result<(), 
     }
     Ok(())
 }
-fn protect_block(block: &mut Value, existing: &HashMap<String, Value>) -> Result<(), String> {
+/// A subagent notice the desktop delivered from the Host queue. Its stamp says "not owner
+/// input", which claims less than an unstamped block does.
+fn delegation_notice(author: &Value) -> bool {
+    let Some(row) = author.as_object() else {
+        return false;
+    };
+    let text = |key: &str, limit: usize| {
+        row.get(key)
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty() && value.len() <= limit)
+    };
+    row.len() == 4
+        && row.get("kind").and_then(Value::as_str) == Some("delegation")
+        && text("runId", 800)
+        && text("title", 1600)
+        && matches!(
+            row.get("reason").and_then(Value::as_str),
+            Some("completion" | "message")
+        )
+}
+
+fn stored_block_ids(
+    conn: &Connection,
+    id: &str,
+) -> Result<std::collections::HashSet<String>, String> {
+    let normalized: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM session_block_state WHERE session_id=?1 AND length>=0)",
+            [id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let sql = if normalized {
+        "SELECT block_id FROM session_blocks WHERE session_id=?1"
+    } else {
+        "SELECT json_extract(value,'$.id') FROM sessions,json_each(sessions.blocks_json) WHERE sessions.id=?1"
+    };
+    conn.prepare(sql)
+        .map_err(|e| e.to_string())?
+        .query_map([id], |row| row.get::<_, Option<String>>(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|row| row.map_err(|e| e.to_string()).transpose())
+        .collect()
+}
+
+/// Loads the stored block ids only when a save carries a delegation stamp the store lacks.
+fn stored_ids_for_notices<'a>(
+    conn: &Connection,
+    id: &str,
+    mut blocks: impl Iterator<Item = &'a Value>,
+    existing: &HashMap<String, Value>,
+) -> Result<Option<std::collections::HashSet<String>>, String> {
+    let claims = blocks.any(|block| {
+        block.get("author").is_some_and(delegation_notice)
+            && !block
+                .get("id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| existing.contains_key(id))
+    });
+    claims.then(|| stored_block_ids(conn, id)).transpose()
+}
+
+fn protect_block(
+    block: &mut Value,
+    existing: &HashMap<String, Value>,
+    stored_ids: Option<&std::collections::HashSet<String>>,
+) -> Result<(), String> {
     let Some(row) = block.as_object_mut() else {
         return Ok(());
     };
@@ -66,9 +132,20 @@ fn protect_block(block: &mut Value, existing: &HashMap<String, Value>) -> Result
     let old = existing.get(&id);
     if let Some(author) = row.get("author").filter(|value| !value.is_null()) {
         if Some(author) != old {
-            return Err(
-                "Message authorship is Host-owned and cannot be changed by a client save.".into(),
-            );
+            if !delegation_notice(author) {
+                return Err(
+                    "Message authorship is Host-owned and cannot be changed by a client save."
+                        .into(),
+                );
+            }
+            // Accepted only when it creates the block. On a stored block the stored
+            // authorship stands, without failing the save that carries the transcript.
+            if old.is_none()
+                && role_is_user(row)
+                && stored_ids.is_some_and(|ids| !ids.contains(&id))
+            {
+                return Ok(());
+            }
         }
     }
     if let Some(author) = old {
@@ -78,8 +155,12 @@ fn protect_block(block: &mut Value, existing: &HashMap<String, Value>) -> Result
     }
     Ok(())
 }
+fn role_is_user(row: &serde_json::Map<String, Value>) -> bool {
+    row.get("role").and_then(Value::as_str) == Some("user")
+}
 /// Ordinary webview persistence may retain an accepted Host stamp, but cannot
 /// create or replace it. Legacy clients omitting a stamp keep the stored value.
+/// The one stamp a client may create is a delegation notice's, on a new user block.
 /// Internal authenticated Host projection does not pass through this boundary.
 pub(super) fn protect_client_upsert(
     conn: &Connection,
@@ -88,8 +169,9 @@ pub(super) fn protect_client_upsert(
     protect_management(conn, session)?;
     let existing = authors(conn, &session.id)?;
     if let Some(blocks) = session.blocks.as_array_mut() {
+        let stored = stored_ids_for_notices(conn, &session.id, blocks.iter(), &existing)?;
         for block in blocks {
-            protect_block(block, &existing)?;
+            protect_block(block, &existing, stored.as_ref())?;
         }
     }
     Ok(())
@@ -100,8 +182,14 @@ pub(super) fn protect_client_delta(
 ) -> Result<(), String> {
     protect_management(conn, &delta.session)?;
     let existing = authors(conn, &delta.session.id)?;
+    let stored = stored_ids_for_notices(
+        conn,
+        &delta.session.id,
+        delta.changes.iter().map(|change| &change.block),
+        &existing,
+    )?;
     for change in &mut delta.changes {
-        protect_block(&mut change.block, &existing)?;
+        protect_block(&mut change.block, &existing, stored.as_ref())?;
     }
     Ok(())
 }
@@ -180,6 +268,42 @@ mod tests {
         assert!(protect_client_upsert(&conn, &mut forged).is_err());
         let record = get_session(&conn, "managed").unwrap().unwrap();
         assert_eq!(record.blocks[0]["author"]["name"], "Owner Name");
+    }
+    #[test]
+    fn a_client_may_stamp_a_delegation_notice_only_on_a_new_user_block() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let notice =
+            json!({"kind":"delegation","runId":"run","title":"Child","reason":"completion"});
+        let mut session = sample();
+        session.managed_by = None;
+        session.blocks = json!([{"id":"owner","role":"user","text":"Hello"}]);
+        protect_client_upsert(&conn, &mut session).unwrap();
+        upsert_session(&conn, &session).unwrap();
+
+        let mut next = session.clone();
+        next.blocks = json!([
+            {"id":"owner","role":"user","text":"Hello","author":notice},
+            {"id":"notice","role":"user","text":"Done","author":notice},
+            {"id":"reply","role":"assistant","text":"Ok","author":notice}
+        ]);
+        protect_client_upsert(&conn, &mut next).unwrap();
+        assert!(next.blocks[0].get("author").is_none());
+        assert_eq!(next.blocks[1]["author"], notice);
+        assert!(next.blocks[2].get("author").is_none());
+        upsert_session(&conn, &next).unwrap();
+
+        // Stored: a later save may repeat or omit it, and cannot change it.
+        let mut changed = next.clone();
+        changed.blocks[1]["author"]["title"] = json!("Other");
+        protect_client_upsert(&conn, &mut changed).unwrap();
+        assert_eq!(changed.blocks[1]["author"], notice);
+        let mut forged = next.clone();
+        forged.blocks[1]["author"] = json!({"kind":"assistant","name":"Owner Name","jobId":"job","reason":"nudge","operationId":"operation"});
+        assert!(protect_client_upsert(&conn, &mut forged).is_err());
+        let mut extra = next;
+        extra.blocks.as_array_mut().unwrap().push(json!({"id":"wide","role":"user","text":"x","author":{"kind":"delegation","runId":"run","title":"Child","reason":"completion","operationId":"x"}}));
+        assert!(protect_client_upsert(&conn, &mut extra).is_err());
     }
     #[test]
     fn manual_provenance_keeps_distinct_source_and_rejects_client_forgery() {

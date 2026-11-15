@@ -22,6 +22,8 @@ export type NeedsHumanListProps = Pick<SocialScreenProps, "client" | "machineId"
   active?: boolean;
   /** Reports how many items wait, so the host screen can show a count in its header. */
   onCountChange?: (count: number) => void;
+  /** Render nothing instead of the empty hint, because another list in the same panel has items. */
+  quietWhenEmpty?: boolean;
 };
 
 function reasonLabel(reason: NeedsHumanItem["reason"]): string {
@@ -38,7 +40,12 @@ function reasonLabel(reason: NeedsHumanItem["reason"]): string {
 }
 
 /** Accounts waiting for the owner. The owner opens the live view, completes the step, then says "I'm done". */
-export function NeedsHumanList({ client, active = true, onCountChange }: NeedsHumanListProps) {
+export function NeedsHumanList({
+  client,
+  active = true,
+  onCountChange,
+  quietWhenEmpty = false,
+}: NeedsHumanListProps) {
   const [items, setItems] = useState<NeedsHumanItem[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [openAccount, setOpenAccount] = useState<string | null>(null);
@@ -99,7 +106,8 @@ export function NeedsHumanList({ client, active = true, onCountChange }: NeedsHu
       <LoadingText delay={false}>{t("Loading…")}</LoadingText>
     );
 
-  if (items.length === 0) return <EmptyHint message={t("Nothing is waiting for you.")} />;
+  if (items.length === 0)
+    return quietWhenEmpty ? null : <EmptyHint message={t("Nothing is waiting for you.")} />;
 
   return (
     <div className="needs-human">

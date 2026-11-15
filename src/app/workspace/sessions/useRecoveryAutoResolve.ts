@@ -41,7 +41,7 @@ export function useRecoveryAutoResolve({
   removeRecoveredSessions,
   setRecoveryOpen,
 }: RecoveryAutoResolveDeps): void {
-  const [, setReadRevision] = useState(0);
+  const [readRevision, setReadRevision] = useState(0);
   const stored = useRef(new Map<string, Stored>());
   const queued = useRef(new Set<string>());
   const chain = useRef<Promise<void>>(Promise.resolve());
@@ -119,6 +119,7 @@ export function useRecoveryAutoResolve({
     autoOpenDecided.current = true;
     if (attention && !sessionRecovery.dismissed) setRecoveryOpen(true);
   }, [
+    readRevision,
     enabled,
     sessionRecovery,
     sessions,

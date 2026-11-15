@@ -55,6 +55,7 @@ import { backgroundMachineFor } from "../../automations/model/hostAutomationClie
 import { TaskSessionSheet } from "./TaskSessionSheet";
 import { useLocalHostState } from "../../connections/public/localHostService";
 import { parseRemotePath } from "../../connections/public/remoteProjects";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/public/lockState";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -212,9 +213,7 @@ function TasksContent({
           ]
         : []),
     ])
-      .catch((reason: unknown) =>
-        setError(reason instanceof Error ? reason.message : String(reason)),
-      )
+      .catch((reason: unknown) => setError(presentRemoteError(reason, { explicit: true })))
       .finally(() => setManualRefresh(false));
   };
   const { boardDataState, now } = useBoardDataState(board);
@@ -713,7 +712,7 @@ function TasksContent({
       setPlanningRecovery((items) => items.filter((entry) => entry.id !== item.id));
       setError(null);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       setRetryingPlanning(null);
     }

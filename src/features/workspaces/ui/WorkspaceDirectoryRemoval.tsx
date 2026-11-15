@@ -7,6 +7,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import type { ManagedWorkspace, WorkspaceCleanupPlan } from "../model/contracts";
 import { runBackgroundRemoval } from "../model/backgroundRemoval";
 import {
@@ -64,7 +65,7 @@ export function WorkspaceDirectoryRemoval({
     try {
       setPlan(await request);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       previewing.current = null;
       setPending(null);

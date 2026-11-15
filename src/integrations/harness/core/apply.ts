@@ -712,6 +712,8 @@ type UserTurnExtra = {
   bycoda?: boolean;
   intent?: Block["intent"];
   appRequestId?: string;
+  /** Set only for a queue row the Host authored (a delegation notice), never for owner input. */
+  author?: Block["author"];
 };
 
 function userTurnFields(extra?: UserTurnExtra) {
@@ -723,6 +725,7 @@ function userTurnFields(extra?: UserTurnExtra) {
     ...(extra?.bycoda ? { bycoda: true } : {}),
     ...(extra?.intent ? { intent: extra.intent } : {}),
     ...(extra?.appRequestId ? { appRequestId: extra.appRequestId } : {}),
+    ...(extra?.author ? { author: extra.author } : {}),
   };
 }
 

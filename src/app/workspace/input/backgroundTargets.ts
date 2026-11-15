@@ -1,4 +1,8 @@
 import { BACKGROUND_NOTIFICATION_TARGETS } from "../../../features/notifications/model/notifications";
+import {
+  requestSocialScreen,
+  SOCIAL_PANEL_EVENT,
+} from "../../../features/social/model/socialNavigation";
 import { requestSummaryPanel } from "../../../features/tasks/model/dailySummaryClient";
 
 /** Window event that asks the workspace to open a background notification target. */
@@ -24,6 +28,18 @@ export function backgroundTargetAction(
 ): (() => void) | null {
   const openAssistant = () =>
     window.dispatchEvent(new CustomEvent("bycoda:open-assistant", { detail: { tab: "today" } }));
+  const accountPrefix = `${BACKGROUND_NOTIFICATION_TARGETS.socialAccounts}:`;
+  if (
+    target === BACKGROUND_NOTIFICATION_TARGETS.socialAccounts ||
+    target.startsWith(accountPrefix)
+  ) {
+    // Accounts opens that account; a target without one shows the list.
+    const accountId = target.slice(accountPrefix.length);
+    return () => {
+      window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd: "" } }));
+      requestSocialScreen("accounts", accountId ? { accountId } : undefined);
+    };
+  }
   switch (target) {
     case BACKGROUND_NOTIFICATION_TARGETS.tasks:
       return actions.onOpenTasks;
@@ -37,6 +53,12 @@ export function backgroundTargetAction(
     case BACKGROUND_NOTIFICATION_TARGETS.assistant:
     case "": // Rust assistant banners carry no session.
       return openAssistant;
+    case BACKGROUND_NOTIFICATION_TARGETS.social:
+      // Command lists the waiting account requests and browser tasks.
+      return () => {
+        window.dispatchEvent(new CustomEvent(SOCIAL_PANEL_EVENT, { detail: { cwd: "" } }));
+        requestSocialScreen("command");
+      };
     case BACKGROUND_NOTIFICATION_TARGETS.account:
       return () => actions.openSettings("account");
     default:

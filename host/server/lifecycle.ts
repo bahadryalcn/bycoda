@@ -192,6 +192,7 @@ export async function createLifecycleRuntime(
         step("perf-metrics", () => perfMetrics.start()),
         step("attachment-ownership", () => dependencies.attachmentOwnership.start()),
         step("mobile-lan", () => dependencies.mobileLan.start()),
+        step("automatic-tunnel", () => dependencies.tunnels.boot()),
         step("social", () => dependencies.social.start()),
       ]);
     });

@@ -2,6 +2,8 @@ import type { Announcement } from "@bycoda/account-contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ANNOUNCEMENT_POLL_MS,
+  announcementIdOfFeedItem,
+  markAnnouncementRead,
   createAnnouncementFeed,
   startAnnouncementPolling,
   unseenAnnouncements,
@@ -100,5 +102,39 @@ describe("announcement polling", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(feed.setItems).not.toHaveBeenCalled();
     stop();
+  });
+});
+
+describe("announcement read state", () => {
+  const feedItem = (id: string, dedupeKey: string, readAt: string | null = null) => ({
+    id,
+    event: "announcement.published" as const,
+    title: "t",
+    body: "b",
+    createdAt: "2026-11-01T00:00:00Z",
+    readAt,
+    dedupeKey,
+  });
+
+  it("maps a feed item to its announcement id", () => {
+    expect(announcementIdOfFeedItem(feedItem("n1", "ann_1"))).toBe("ann_1");
+    expect(announcementIdOfFeedItem(feedItem("n1", "announcement:ann_1"))).toBe("ann_1");
+    expect(announcementIdOfFeedItem({ event: "summary.daily", dedupeKey: "ann_1" })).toBeNull();
+  });
+
+  it("marks only the unread feed copies of a dismissed announcement read", async () => {
+    const markRead = vi.fn(async () => undefined);
+    const listFeed = vi.fn(async () => ({
+      items: [
+        feedItem("n1", "announcement:ann_1"),
+        feedItem("n2", "announcement:ann_1", "2026-11-02T00:00:00Z"),
+        feedItem("n3", "announcement:ann_2"),
+      ],
+    }));
+    await markAnnouncementRead("ann_1", { listFeed, markRead });
+    expect(markRead).toHaveBeenCalledWith(["n1"]);
+    markRead.mockClear();
+    await markAnnouncementRead("ann_9", { listFeed, markRead });
+    expect(markRead).not.toHaveBeenCalled();
   });
 });

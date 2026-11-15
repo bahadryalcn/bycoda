@@ -19,6 +19,7 @@ import {
   type TaskWorkflowScope,
 } from "../model/taskWorkflows";
 import type { TaskPreflightReport, TaskPreflightRequirement } from "../model/taskPreflight";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type Props = {
   scope: TaskWorkflowScope;
@@ -90,7 +91,9 @@ function ScopedTaskWorkflowControls({
       await operation();
     } catch (failure) {
       setError(
-        failure instanceof Error ? failure.message : t("The workflow could not be updated."),
+        failure instanceof Error
+          ? presentRemoteError(failure, { explicit: true })
+          : t("The workflow could not be updated."),
       );
     } finally {
       operationGate.current = false;

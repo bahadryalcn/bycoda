@@ -11,6 +11,7 @@ export {
   type StatsChoice,
 } from "./model/accountPrivacy";
 export { useAnonymousStats } from "./hooks/useAnonymousStats";
+export { announcementFeed, announcementIdOfFeedItem } from "./model/announcementFeed";
 export { AnnouncementNotices } from "./ui/AnnouncementNotices";
 export { FeedbackDialog } from "./ui/FeedbackDialog";
 export { openFeedbackDialog } from "./model/feedbackDialog";
@@ -35,3 +36,10 @@ export {
   startPhoneConnectInbox,
   type PairingCodeSource,
 } from "./model/phoneConnectInbox";
+export { listOtherComputers } from "./model/accountComputers";
+export {
+  requestDesktopPair,
+  type DesktopPairOutcome,
+  type DesktopPairRequest,
+  type DesktopPairTarget,
+} from "./model/desktopPairRequest";

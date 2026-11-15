@@ -159,4 +159,48 @@ describe("streaming frames", () => {
     expect(reads / 50).toBeLessThan(25);
     expect(true).toBe(true);
   });
+
+  it("keeps text-only frames cheap after an older turn's repeated error was collapsed", () => {
+    let reads = 0;
+    const base: Block[] = [
+      { id: "e0", role: "system", notice: "error", text: "Rate limit reached" },
+      { id: "e1", role: "system", notice: "error", text: "Rate limit reached" },
+    ];
+    for (let i = 0; i < 40; i++) {
+      const u: Block = { id: `u${i}`, role: "user", text: `q${i}` };
+      Object.defineProperty(u, "role", {
+        get() {
+          reads++;
+          return "user";
+        },
+        enumerable: true,
+      });
+      base.push(u, { id: `a${i}`, role: "assistant", text: `a${i}` });
+    }
+    base.push({ id: "last", role: "assistant", text: "x", streaming: true });
+    const render = (blocks: Block[]) =>
+      flushSync(() =>
+        root.render(
+          createElement(AgentTranscript, {
+            blocks,
+            visible: true,
+            busy: true,
+            harness: undefined,
+          }),
+        ),
+      );
+    render(base);
+    let prev = base;
+    reads = 0;
+    for (let i = 0; i < 50; i++) {
+      const next = prev.slice();
+      next[next.length - 1] = { ...prev[prev.length - 1], text: prev[prev.length - 1].text + "y" };
+      registerStreamingTextUpdate(prev, next, next.length - 1);
+      render(next);
+      prev = next;
+    }
+    expect(reads / 50).toBeLessThan(25);
+    expect(container.textContent).toContain(`x${"y".repeat(50)}`);
+    expect(container.textContent?.split("Rate limit reached").length).toBeLessThanOrEqual(2);
+  });
 });

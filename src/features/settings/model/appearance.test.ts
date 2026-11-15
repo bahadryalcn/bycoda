@@ -397,10 +397,10 @@ describe("project rail width", () => {
   const WIDTH_KEY = "bycoda.projectRailWidth";
   beforeEach(() => localStorage.removeItem(WIDTH_KEY));
 
-  it("goes down to an icon-only strip", () => {
-    expect(PROJECT_RAIL_WIDTH_MIN).toBe(56);
-    expect(PROJECT_RAIL_COMPACT_WIDTH).toBeGreaterThan(PROJECT_RAIL_WIDTH_MIN);
-    expect(PROJECT_RAIL_COMPACT_WIDTH).toBeLessThan(PROJECT_RAIL_WIDTH_DEFAULT);
+  it("never narrows the pane into the icon-only layout", () => {
+    // The footer tools container sits 21px inside the pane (padding and border).
+    expect(PROJECT_RAIL_WIDTH_MIN - 21).toBeGreaterThanOrEqual(PROJECT_RAIL_COMPACT_WIDTH);
+    expect(PROJECT_RAIL_WIDTH_MIN).toBeLessThanOrEqual(PROJECT_RAIL_WIDTH_DEFAULT);
   });
 
   it("defaults, and keeps widths saved before the lower minimum", () => {

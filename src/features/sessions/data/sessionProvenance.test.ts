@@ -72,3 +72,20 @@ it("round-trips explicit manual supervision provenance without a fabricated job 
   expect(sessionMessageAuthor({ ...author, jobId: "fake-job" })).toBeUndefined();
   expect(assistantSessionManagement({ ...session.managedBy, jobId: "" })).toBeUndefined();
 });
+
+it("saves a delivered subagent notice with its stamp, on a user block only", () => {
+  const session = newSession("codex", "/fixture");
+  const author = {
+    kind: "delegation" as const,
+    runId: "run",
+    title: "Child",
+    reason: "completion" as const,
+  };
+  session.blocks = [
+    { id: "notice", role: "user", text: "Done", author },
+    { id: "reply", role: "assistant", text: "Ok", author },
+  ];
+  const saved = sanitizeSessionForPersist(session).blocks;
+  expect(saved[0]).toMatchObject({ id: "notice", author });
+  expect(saved[1]).not.toHaveProperty("author");
+});

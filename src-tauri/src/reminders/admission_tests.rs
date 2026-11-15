@@ -20,6 +20,7 @@ fn preferences(ids: &[&str]) -> DeliveryPreferences {
     DeliveryPreferences {
         notifications_enabled: true,
         events: Default::default(),
+        assistant_project_rules: Default::default(),
         sound: false,
         project_rules: ids
             .iter()

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** Machine concurrency keeps partial edits local and saves a valid number on blur or Enter. */
 export function TaskConcurrencyField({
@@ -33,7 +34,7 @@ export function TaskConcurrencyField({
       if ((await onSave(count)) !== false)
         setDraft((current) => (current === submitted ? null : current));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       pending.current = false;
       setSaving(false);

@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostStore } from "../store";
 import { SessionQueues } from "../sessions/session-queue";
-import { agentMessageDelivery, enqueueAgentParentMessage } from "./message-delivery";
+import {
+  agentMessageDelivery,
+  enqueueAgentParentMessage,
+  noticeUndelivered,
+} from "./message-delivery";
 import type { DelegationDependencies } from "./service";
 import type { AgentDelivery } from "./communication";
 
@@ -186,4 +190,17 @@ it("does not merge notices across reasons, owner rows or a row being sent, and c
     "agent_message_3",
   ]);
   expect(rows[3]!.text.length).toBeLessThanOrEqual(8_000);
+});
+
+it("reports a notice as undelivered only while it heads an active queue nobody claimed", async () => {
+  const queues = await noticeQueues();
+  expect(await noticeUndelivered(queues, "parent")).toBe(false);
+  await enqueueAgentParentMessage(queues, "parent", "agent_message_1", "Done", notice("a"));
+  expect(await noticeUndelivered(queues, "parent")).toBe(true);
+  const queue = await queues.get("parent");
+  await queues.change("parent", queue, { ...queue, status: "paused" });
+  expect(await noticeUndelivered(queues, "parent")).toBe(false);
+  await enqueueAgentParentMessage(queues, "owner-first", "owner", "Draft");
+  await enqueueAgentParentMessage(queues, "owner-first", "agent_message_2", "Done", notice("b"));
+  expect(await noticeUndelivered(queues, "owner-first")).toBe(false);
 });

@@ -39,6 +39,7 @@ import {
 } from "../model/workspaceClient";
 import { setWorkspacePinned, WORKSPACE_PINNING_CAPABILITY } from "../model/workspacePinning";
 import { isBackgroundRemoval } from "../model/backgroundRemoval";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useBackgroundRemovals } from "../hooks/useBackgroundRemovals";
 
 type Stage = "inventory" | "policy" | "storage";
@@ -87,7 +88,10 @@ export function WorkspacePolicySettings({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string>();
   const [cleanup, setCleanup] = useState<ManagedWorkspace>();
-  const [cleanupMode, setCleanupMode] = useState({ closeFirst: false, missing: false });
+  const [cleanupMode, setCleanupMode] = useState({
+    closeFirst: false,
+    missing: false,
+  });
   const [review, setReview] = useState<ManagedWorkspace>();
   const [pinning, setPinning] = useState<string>();
   const [pinError, setPinError] = useState<{ id: string; message: string }>();
@@ -103,7 +107,13 @@ export function WorkspacePolicySettings({
   const epoch = useRef(0);
   const saveAttempt = useRef<{ fingerprint: string; key: string } | undefined>(undefined);
   const resolvedContext = useRef<
-    { cwd: string; projectId: string; environmentId: string; machineId?: string } | undefined
+    | {
+        cwd: string;
+        projectId: string;
+        environmentId: string;
+        machineId?: string;
+      }
+    | undefined
   >(undefined);
   const capabilitiesRef = useRef<string[] | undefined>(undefined);
   const policyRef = useRef<WorkspaceRpcResponse<"projects.workspacePolicy.get"> | undefined>(
@@ -148,7 +158,10 @@ export function WorkspacePolicySettings({
       const context = resolvedContext.current;
       const caps = capabilitiesRef.current;
       if (!context || !caps) return;
-      const args = { projectId: context.projectId, environmentId: context.environmentId };
+      const args = {
+        projectId: context.projectId,
+        environmentId: context.environmentId,
+      };
       setStageBusy((busy) => ({ ...busy, [stage]: true }));
       try {
         if (stage === "inventory") {
@@ -245,7 +258,10 @@ export function WorkspacePolicySettings({
     setSaving(true);
     setError(undefined);
     setSaved(false);
-    const fingerprint = JSON.stringify({ revision: policy.revision, override: override ?? draft });
+    const fingerprint = JSON.stringify({
+      revision: policy.revision,
+      override: override ?? draft,
+    });
     if (saveAttempt.current?.fingerprint !== fingerprint) {
       saveAttempt.current = { fingerprint, key: crypto.randomUUID() };
     }
@@ -271,7 +287,7 @@ export function WorkspacePolicySettings({
       // failure is reported on its own section with a local retry.
       void runStage("storage", requestEpoch);
     } catch (failure) {
-      if (epoch.current === requestEpoch) setError(String(failure));
+      if (epoch.current === requestEpoch) setError(presentRemoteError(failure, { explicit: true }));
     } finally {
       setSaving(false);
     }
@@ -345,7 +361,10 @@ export function WorkspacePolicySettings({
               p0: label,
               p1: stageError[stage],
             })
-          : t("{p0} could not be read: {p1}", { p0: label, p1: stageError[stage] })}
+          : t("{p0} could not be read: {p1}", {
+              p0: label,
+              p1: stageError[stage],
+            })}
       </SettingsFeedback>
     ) : null;
   if (!cwd || cwd === "~") return renderHeader?.(async () => {}, false, true) ?? null;

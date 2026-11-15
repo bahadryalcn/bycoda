@@ -35,3 +35,30 @@ Host that has running sessions or shells. It grants no other install or stop aut
 
 A version difference prompts the owner app-wide rather than only in Settings. The stop
 still follows the owner's confirmation in that prompt.
+
+## Free rotating Host access
+
+Recorded 2026-11-15 from the owner's machine-discovery implementation brief.
+
+> free Quick Tunnel whose URL changes on every start; logged-in devices learn the new URL from the account automatically. Cost must stay 0.
+
+Automatic public Host access is opt-in and defaults off. Reuse guardian ownership;
+unknown retirement never grants replacement authority. Publish credential-free
+routes through the existing desktop account publisher. Native route learning
+requires the same environmentId over HTTPS before any device credential is sent.
+Managed/named tunnels and paid infrastructure remain outside this contract.
+
+## Machine discovery and account pairing
+
+Recorded 2026-11-15 from owner decisions on the machine-discovery plan.
+
+> manuel ekleme özelliğinide bırakalım bunu kapalı gösteririz otomatik taramayıda sunucu üzerinden yaparız
+
+> her seferinde farklı cloudflare adresi olsa ücretisz olsa giriş yapanların adresleri telefondan girince güncellense
+
+Manual add stays but is collapsed under "Advanced" by default. Automatic discovery
+comes from the account server first, with Tailscale and ssh-config candidates as
+secondary sources; discovery never sends credentials and only proposes. Changing
+free Quick Tunnel URLs are published to the account, so signed-in devices follow them
+without manual entry. Account pairing requires the other computer to allow it and to
+show the matching six-digit code; the account only relays sealed data.

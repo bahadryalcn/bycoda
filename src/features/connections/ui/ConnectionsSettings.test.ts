@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { RevealedSetting } from "../../settings/public/ConnectionRecoverySettings";
 import { requestMachineAdd } from "../model/machineAdd";
+import { registerAppConfirmHost } from "../../../shared/model/appConfirm";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
 import { REMOTE_PROVIDERS, type RemoteMachine, type SshSetup } from "../model/protocol";
 
@@ -21,6 +22,8 @@ let container: HTMLDivElement;
 let root: Root;
 let state: SshSetup;
 let machines: RemoteMachine[];
+let stopConfirm: () => void;
+const approveUpdate = vi.fn(async () => true);
 const machine: RemoteMachine = {
   id: "machine",
   name: "Home Mac",
@@ -29,6 +32,9 @@ const machine: RemoteMachine = {
   ssh: { target: "me@home", remotePort: 3774 },
 };
 beforeEach(() => {
+  approveUpdate.mockResolvedValue(true);
+  approveUpdate.mockClear();
+  stopConfirm = registerAppConfirmHost(approveUpdate);
   vi.mocked(useSyncStatus).mockReturnValue({ state: "idle", pendingOps: 0 });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
@@ -68,6 +74,7 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  stopConfirm();
   act(() => root.unmount());
   container.remove();
   vi.useRealTimers();
@@ -79,6 +86,10 @@ const button = (name: string) =>
     copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
     return copy.textContent?.trim() === name;
   })!;
+const openAdvanced = () =>
+  [...container.querySelectorAll("summary")]
+    .find((summary) => summary.textContent?.includes("Advanced: add manually"))!
+    .click();
 const confirmRemove = () =>
   [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].at(-1)!;
 async function pick(machineName: string, label: string) {
@@ -163,15 +174,16 @@ it("labels the kind and icon of each machine row", async () => {
 it("opens the existing add editor for a Servers request made before Settings mounts", async () => {
   requestMachineAdd();
   await render();
+  expect(container.textContent).toContain("Machines found");
   expect(
     container.querySelector('input[placeholder="user@my-mac-mini or an SSH alias"]'),
-  ).toBeTruthy();
+  ).toBeNull();
   expect(requested("remote_ssh_begin")).toBe(false);
 });
 
 it("keeps a machine draft when moving between connection views", async () => {
   await render();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@new-host");
   const choose = (value: string) =>
     container.querySelector<HTMLButtonElement>(`[role="tab"][data-tab-value="${value}"]`)!;
@@ -204,7 +216,7 @@ async function fill(selector: string, value: string) {
 
 it("locks the connection method while SSH setup is pending", async () => {
   await render();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "owner@fixture");
   await act(async () => button("Connect").click());
   const methods = [...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')];
@@ -216,7 +228,7 @@ it("keeps Add SSH fields through method switches, cancel and editing another mac
   machines = [machine];
   await render();
   const target = 'input[placeholder="user@my-mac-mini or an SSH alias"]';
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   await fill(target, "owner@new-computer");
   await chooseMethod("Host URL");
   await fill('input[type="url"]', "https://new-computer.example");
@@ -227,7 +239,7 @@ it("keeps Add SSH fields through method switches, cancel and editing another mac
   expect(container.querySelector<HTMLInputElement>(target)?.value).toBe("me@home");
   await fill(target, "owner@edited-computer");
   await act(async () => button("Cancel").click());
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   expect(container.querySelector<HTMLInputElement>(target)?.value).toBe("owner@new-computer");
   await chooseMethod("Host URL");
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
@@ -238,7 +250,7 @@ it("keeps Add SSH fields through method switches, cancel and editing another mac
 });
 async function start() {
   await render();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@home");
   await act(async () => button("Connect").click());
 }
@@ -259,7 +271,7 @@ const chooseMethod = (label: string) =>
 
 it("keeps the URL and token drafts across method switches and a failed connect", async () => {
   await render();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   await chooseMethod("Host URL");
   await fill('input[type="url"]', "https://remote.example.com");
   await fill('input[type="password"]', "device-token");
@@ -284,7 +296,7 @@ it("keeps the URL and token drafts across method switches and a failed connect",
   expect(container.querySelector('input[type="url"]')).toBeNull();
   await chooseMethod("Host URL");
   await act(async () => button("Cancel").click());
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   // A reopened form starts on SSH again; the URL drafts wait behind the method switch.
   expect(container.querySelector('input[type="url"]')).toBeNull();
   await chooseMethod("Host URL");
@@ -328,7 +340,7 @@ it("connects an existing host by URL from the add form and closes it on success"
     return previous(command, args);
   });
   await render();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   expect(container.querySelector('input[type="url"]')).toBeNull();
   await chooseMethod("Host URL");
   expect(container.textContent).toContain(
@@ -365,7 +377,7 @@ it("starts SSH setup from Settings and makes the machine available after native 
   expect(
     container.querySelector('input[placeholder="user@my-mac-mini or an SSH alias"]'),
   ).toBeNull();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   expect(
     container.querySelector<HTMLInputElement>(
       'input[placeholder="user@my-mac-mini or an SSH alias"]',
@@ -436,13 +448,61 @@ async function openRemove() {
 it("offers an explicit host update for an SSH machine missing workspace methods", async () => {
   machines = [machine];
   await render();
-  expect(container.textContent).toContain("host update needed for Explorer and Changes");
-  expect(container.textContent).toContain("interrupts active agent turns");
+  expect(container.querySelector("[data-machine-summary]")?.textContent).toContain(
+    "Update required",
+  );
   await act(async () => button("Update Host").click());
+  expect(approveUpdate).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "Update Host on Home Mac?",
+      tone: "danger",
+      body: expect.anything(),
+    }),
+  );
   expect(invoke).toHaveBeenCalledWith("remote_ssh_reconnect", {
     machineId: machine.id,
     upgrade: true,
   });
+});
+
+it("turns a machine off without deleting its connection and keeps Remove in the menu", async () => {
+  localStorage.removeItem("bycoda.disabledMachines");
+  machines = [machine];
+  await render();
+  const toggle = container.querySelector(
+    '[role="switch"][aria-label="Use Home Mac"]',
+  ) as HTMLElement;
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  vi.mocked(invoke).mockClear();
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(container.querySelector("[data-machine-summary]")?.textContent).toContain("Disabled");
+  expect(localStorage.getItem("bycoda.disabledMachines")).toBe('["env"]');
+  // Nothing was removed or revoked: the credential, routes and cache stay.
+  const commands = vi.mocked(invoke).mock.calls.map(([command]) => command);
+  expect(commands).not.toContain("remote_disconnect");
+  expect(commands.some((command) => /revoke|forget|remove|delete/i.test(command))).toBe(false);
+  expect(container.textContent).toContain("Home Mac");
+  await act(async () =>
+    (container.querySelector('[aria-label="Actions for Home Mac"]') as HTMLElement).click(),
+  );
+  expect(document.querySelector('[role="menuitem"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Remove connection…");
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  expect(localStorage.getItem("bycoda.disabledMachines")).toBe("[]");
+  localStorage.removeItem("bycoda.disabledMachines");
+});
+
+it("does not restart an SSH Host when interruption approval is cancelled", async () => {
+  machines = [machine];
+  approveUpdate.mockResolvedValue(false);
+  await render();
+  await act(async () => button("Update Host").click());
+  expect(approveUpdate).toHaveBeenCalledOnce();
+  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "remote_ssh_reconnect")).toBe(
+    false,
+  );
 });
 
 it("advertises every supported provider when checking a host", async () => {
@@ -478,24 +538,21 @@ it("names the machine being worked on in connection progress", async () => {
   expect(container.textContent).toContain("Host port 3774");
 });
 
-it("keeps the Add machine button visible without resetting the open draft", async () => {
+it("keeps the open draft when the manual disclosure is clicked while closed views change", async () => {
   machines = [machine];
   await render();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@second");
-  expect(button("Add machine").disabled).toBe(false);
-  await act(async () => button("Add machine").click());
+  expect(container.textContent).toContain("Home Mac");
   expect(
     container.querySelector<HTMLInputElement>(
       'input[placeholder="user@my-mac-mini or an SSH alias"]',
     )!.value,
   ).toBe("me@second");
-  expect(container.textContent).toContain("Home Mac");
 });
 
 it("explains why adding a new machine waits while a setup is in progress", async () => {
   await start();
-  expect(button("Add machine").disabled).toBe(true);
   expect(container.textContent).toContain(
     "Finish or cancel the current connection before adding another machine.",
   );
@@ -503,8 +560,9 @@ it("explains why adding a new machine waits while a setup is in progress", async
   expect(invoke).toHaveBeenCalledWith("remote_ssh_cancel", { jobId: "setup" });
   state = { ...state, done: true, error: "Connection cancelled" };
   await poll();
-  expect(button("Add machine").disabled).toBe(false);
-  await act(async () => button("Add machine").click());
+  // The form is still open after the failure; closing and reopening it starts clean.
+  await act(async () => openAdvanced());
+  await act(async () => openAdvanced());
   expect(container.querySelector('form[aria-label="Add a new machine"]')).toBeTruthy();
   expect(container.textContent).not.toContain("Connection cancelled");
 });
@@ -610,7 +668,7 @@ it("keeps the connection when the host cannot revoke its credential", async () =
 
 it("does not spellcheck or autocorrect the machine name", async () => {
   await render();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   const name = container.querySelector<HTMLInputElement>(
     'input[placeholder="Optional, e.g. Home Mac mini"]',
   )!;
@@ -686,7 +744,7 @@ it("switches from editing to a fresh machine without updating the saved machine"
   expect(container.querySelector<HTMLInputElement>('input[placeholder*="Tailscale"]')!.value).toBe(
     "me@tailnet",
   );
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   expect(container.querySelector<HTMLInputElement>('input[placeholder*="Tailscale"]')!.value).toBe(
     "",
   );
@@ -714,7 +772,7 @@ it("clears edit state after reconnect succeeds so the next connection adds a mac
   await pick("Home Mac", "Reconnect");
   state = { ...state, done: true, machine };
   await poll();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   expect(container.querySelector('form[aria-label="Add a new machine"]')).toBeTruthy();
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@office");
   await act(async () => button("Connect").click());
@@ -746,7 +804,7 @@ it("keeps the other address when saving a new primary address", async () => {
 
 it("validates the other address before starting setup", async () => {
   await render();
-  await act(async () => button("Add machine").click());
+  await act(async () => openAdvanced());
   await fill('input[placeholder="user@my-mac-mini or an SSH alias"]', "me@office");
   await fill('input[placeholder*="Tailscale"]', "-oProxyCommand=bad");
   await act(async () => button("Connect").click());
@@ -772,5 +830,7 @@ it.each([
   machines = [machine];
   await render();
   // A busy host (for example while this computer builds) keeps its last status.
-  expect(container.textContent?.includes("Offline · reconnect to check access")).toBe(offline);
+  expect(container.querySelector("[data-machine-summary]")?.textContent?.includes("Offline")).toBe(
+    offline,
+  );
 });

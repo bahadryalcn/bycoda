@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useAccountContext } from "../../account";
+import { announcementFeed, announcementIdOfFeedItem, useAccountContext } from "../../account";
 import { isLeadWindow } from "../../../platform/tauri/workspaceWindows";
 import { loadDailySummarySentAt } from "../model/dailySummarySettings";
 import { isWindowFocused, notifyServerItem } from "../model/notifications";
@@ -54,6 +54,12 @@ export function useServerNotifications(): void {
       isFocused: isWindowFocused,
       localSummarySentAt: loadDailySummarySentAt,
       announce: (item) => notifyServerItem({ title: item.title, body: item.body }),
+      onItemsRead: (items) => {
+        for (const item of items) {
+          const id = announcementIdOfFeedItem(item);
+          if (id) announcementFeed.dismiss(id);
+        }
+      },
       local: { read: readLocalSnapshot, write: writeLocalSnapshot },
       store: {
         loadBase: loadSyncBase,

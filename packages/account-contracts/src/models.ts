@@ -375,6 +375,10 @@ export type Computer = z.infer<typeof Computer>;
 export const ComputerList = z.object({ items: z.array(Computer) });
 export type ComputerList = z.infer<typeof ComputerList>;
 
+/**
+ * The requesting device may be a phone or another desktop (account-mediated desktop pairing). The
+ * field keeps its phone-era name: it is the requester's X25519 public key.
+ */
 export const PairRequestCreate = z.strictObject({
   phonePublicKey: X25519_PUBLIC_KEY,
 });
@@ -392,6 +396,8 @@ export const PendingPairRequest = z.object({
   phoneName: z.string(),
   phonePlatform: DevicePlatform,
   phonePublicKey: X25519_PUBLIC_KEY,
+  /** Added with desktop pairing. `phone*` fields describe the requester of either kind; an older API omits the kind. */
+  requesterKind: z.enum(["mobile", "desktop"]).default("mobile"),
   createdAt: IsoDateTime,
   expiresAt: IsoDateTime,
 });

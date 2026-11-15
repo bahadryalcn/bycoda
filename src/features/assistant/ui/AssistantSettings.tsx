@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -317,7 +318,7 @@ export function AssistantSettings({
         setPage("access");
         setCustomAccessOpen(true);
       }
-      if (!shownInline) setError(cause instanceof Error ? cause.message : String(cause));
+      if (!shownInline) setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       setPending(false);
     }

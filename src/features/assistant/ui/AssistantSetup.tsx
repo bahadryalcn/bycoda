@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { modelDisplayName } from "../../sessions/public/modelDisplayName";
@@ -333,7 +334,7 @@ export function AssistantSetup({
       localStorage.removeItem(DRAFT_KEY);
       setFinished(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       busy.current = false;
       setPending(false);

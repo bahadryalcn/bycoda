@@ -36,6 +36,11 @@ pub struct DeliveryPreferences {
     /// Local per-event switches (`finished`, `input`, `failed`); a missing key is on.
     #[serde(default)]
     events: HashMap<String, bool>,
+    /// Project-path rules for assistant banners: `pathKey` -> event (`finished`,
+    /// `input`) -> rule. A path or event without an entry is unrestricted, as
+    /// for a renderer that predates this field.
+    #[serde(default)]
+    assistant_project_rules: HashMap<String, HashMap<String, ProjectDeliveryRule>>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -49,6 +54,17 @@ impl DeliveryPreferences {
     /// `input` or `failed`). Project rules need session context native lacks.
     pub(crate) fn allows_event(&self, event: &str) -> bool {
         self.notifications_enabled && self.events.get(event).copied().unwrap_or(true)
+    }
+
+    /// The owner's project rules for an assistant banner, as the renderer's
+    /// `allowsProjectNotification` applies them at `now` to every project path.
+    pub(crate) fn allows_assistant_projects(&self, event: &str, paths: &[&str], now: i64) -> bool {
+        paths.iter().all(|path| {
+            self.assistant_project_rules
+                .get(&project_path_key(path))
+                .and_then(|rules| rules.get(event))
+                .is_none_or(|rule| rule.enabled && now > rule.after)
+        })
     }
 
     fn allows(&self, reminder: &Reminder) -> bool {
@@ -85,6 +101,48 @@ impl ReminderService {
             .and_then(|p| p.as_ref().map(|p| p.allows_event(event)))
             .unwrap_or(false)
     }
+
+    /// Event gate plus the owner's per-project rules for the banner's project paths.
+    pub(crate) fn allows_assistant_banner(&self, event: &str, paths: &[&str]) -> bool {
+        self.preferences.lock().ok().is_some_and(|p| {
+            p.as_ref().is_some_and(|p| {
+                p.allows_event(event) && p.allows_assistant_projects(event, paths, now_millis())
+            })
+        })
+    }
+}
+
+/// The renderer's `pathKey`, including its case rule for the path after a
+/// `remote://<machine>/` prefix.
+fn project_path_key(path: &str) -> String {
+    let (prefix, rest) = match path
+        .strip_prefix("remote://")
+        .and_then(|tail| tail.split_once('/'))
+    {
+        Some((machine, rest)) => (format!("remote://{machine}/"), rest),
+        None => (String::new(), path),
+    };
+    let slashed = rest.replace('\\', "/");
+    let trimmed = slashed.trim_end_matches('/');
+    let trimmed = if trimmed.is_empty() && prefix.is_empty() {
+        "/"
+    } else {
+        trimmed
+    };
+    let bytes = trimmed.as_bytes();
+    let windows = (bytes.len() >= 2
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && (bytes.len() == 2 || bytes[2] == b'/'))
+        || trimmed.starts_with("//");
+    format!(
+        "{prefix}{}",
+        if windows {
+            trimmed.to_lowercase()
+        } else {
+            trimmed.to_owned()
+        }
+    )
 }
 
 pub(crate) fn ensure_table(conn: &Connection) -> rusqlite::Result<()> {
@@ -585,6 +643,31 @@ mod tests {
         assert!(!service.allows_event("input"), "unconfigured fails closed");
         *service.preferences.lock().unwrap() = Some(some);
         assert!(service.allows_event("input") && !service.allows_event("finished"));
+    }
+
+    #[test]
+    fn assistant_banner_follows_project_rules_by_path() {
+        let parse = |json: &str| -> DeliveryPreferences { serde_json::from_str(json).unwrap() };
+        let legacy = parse(r#"{"notificationsEnabled":true,"sound":false}"#);
+        assert!(legacy.allows_assistant_projects("finished", &["C:\\Work\\App"], 10));
+        let rules = parse(
+            r#"{"notificationsEnabled":true,"sound":false,"assistantProjectRules":{
+              "c:/work/app":{"finished":{"enabled":false,"after":0},"input":{"enabled":true,"after":0}},
+              "/open":{"finished":{"enabled":true,"after":50}},
+              "remote://m/c:/x":{"finished":{"enabled":false,"after":0}}}}"#,
+        );
+        assert!(!rules.allows_assistant_projects("finished", &["C:\\Work\\App\\"], 100));
+        assert!(rules.allows_assistant_projects("input", &["C:\\Work\\App"], 100));
+        assert!(!rules.allows_assistant_projects("finished", &["/open"], 50));
+        assert!(rules.allows_assistant_projects("finished", &["/open"], 51));
+        assert!(!rules.allows_assistant_projects("finished", &["/open", "C:/work/app"], 100));
+        assert!(rules.allows_assistant_projects("finished", &["/unlisted"], 100));
+        assert!(!rules.allows_assistant_projects("finished", &["remote://m/C:\\X"], 100));
+        let service = ReminderService::default();
+        assert!(!service.allows_assistant_banner("finished", &["/unlisted"]));
+        *service.preferences.lock().unwrap() = Some(rules);
+        assert!(service.allows_assistant_banner("finished", &["/unlisted"]));
+        assert!(!service.allows_assistant_banner("finished", &["C:/work/app"]));
     }
 
     #[test]

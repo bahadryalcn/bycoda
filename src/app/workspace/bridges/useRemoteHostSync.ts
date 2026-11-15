@@ -2,19 +2,25 @@ import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
 import { startProviderAccountHostSync } from "../../../features/providers/public/providerAccountHostSync";
 import { startModelEnabledHostSync } from "../../../features/sessions/model/modelEnabledHostSync";
 import {
+  getShellSessions,
   sessionsRef,
   setSessions,
   subscribeShell,
 } from "../../../features/sessions/model/sessionsStore";
+import type { Session } from "../../../features/sessions/model/session";
 import {
   useAdoptedSessions,
   type RefreshAdoptedSession,
 } from "../../../features/connections/model/useAdoptedSessions";
 import { useDesktopLive } from "../../../features/connections/model/useDesktopLive";
+import { startOwnerActivityReports } from "../../../features/connections/model/ownerActivity";
 import { useSharedLocalQueues } from "../../../features/connections/model/useSharedLocalQueues";
 import type { DesktopLiveHandlers } from "../../../features/connections/model/desktopLive";
 import type { HostSession } from "../../../features/connections/model/protocol";
-import { remoteSessionState } from "../../../features/connections/model/remoteSessionState";
+import {
+  keepUnchangedFields,
+  remoteSessionState,
+} from "../../../features/connections/model/remoteSessionState";
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
 import {
   acknowledgedHostSessionBinding,
@@ -33,6 +39,16 @@ export interface RemoteHostSync {
   onRemoteSnapshot: (shellId: string, snapshot?: HostSession) => void;
 }
 
+/** Forget the snapshot of every shell no longer in `sessions`. */
+export function pruneClosedSnapshots(
+  snapshots: Map<string, HostSession>,
+  sessions: readonly Session[],
+): void {
+  if (!snapshots.size) return;
+  const open = new Set(sessions.map((session) => session.id));
+  for (const shellId of snapshots.keys()) if (!open.has(shellId)) snapshots.delete(shellId);
+}
+
 /** Adopted-host and remote-snapshot wiring. The handler table for the desktop
  * live channel is assigned by the caller, since it closes over workspace state. */
 export function useRemoteHostSync(): RemoteHostSync {
@@ -40,6 +56,8 @@ export function useRemoteHostSync(): RemoteHostSync {
   const refreshAdoptedSessionRef = useRef<RefreshAdoptedSession>(undefined);
   useEffect(() => startProviderAccountHostSync(), []);
   useEffect(() => startModelEnabledHostSync(), []);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- timer reporting owner input to other connected Hosts while the workspace is mounted
+  useEffect(() => startOwnerActivityReports(), []);
   const localHostReachable = useAdoptedSessions(
     sessionsRef,
     setSessions,
@@ -64,6 +82,14 @@ export function useRemoteHostSync(): RemoteHostSync {
   const linkedSessionUpdatesRef = useRef<ReadonlyMap<string, LinkedSessionUpdate>>(new Map());
 
   const lastRemoteSnapshot = useRef(new Map<string, HostSession>());
+  // A closed or deleted tab never reports an empty snapshot; drop the whole
+  // transcript it last showed once its shell leaves the session list.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- subscribes to the shell store while mounted to prune closed tabs' snapshots
+  useEffect(
+    () =>
+      subscribeShell(() => pruneClosedSnapshots(lastRemoteSnapshot.current, getShellSessions())),
+    [],
+  );
   const onRemoteSnapshot = useCallback((shellId: string, snapshot?: HostSession) => {
     if (!snapshot) {
       lastRemoteSnapshot.current.delete(shellId);
@@ -111,7 +137,9 @@ export function useRemoteHostSync(): RemoteHostSync {
         },
         acknowledged,
       );
-      setSessions((current) => current.map((entry) => (entry.id === shellId ? next : entry)));
+      setSessions((current) =>
+        current.map((entry) => (entry.id === shellId ? keepUnchangedFields(entry, next) : entry)),
+      );
       return;
     }
     setSessions((current) => {

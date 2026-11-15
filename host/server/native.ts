@@ -31,7 +31,19 @@ import {
   readProviderAccountStyles,
 } from "../providers/provider-account-styles";
 import { readDisabledModels } from "../providers/disabled-models";
+import { providerAuthStatus } from "../providers/provider-auth";
+import {
+  createProviderAccountStatusCache,
+  withProviderAccountStatus,
+} from "../providers/provider-account-status";
 import type { ServerBindings } from "./bindings";
+import { resolveBinary } from "./support";
+
+/** One Host-wide cache: every catalog read shares the last known sign-in results. */
+const accountStatuses = createProviderAccountStatusCache({
+  probe: async (provider, id) =>
+    providerAuthStatus(provider, (await resolveBinary[provider]()).path, id),
+});
 export function createNativeRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -81,7 +93,9 @@ export function createNativeRuntime(
       preview: (schedule) => dependencies.automations.preview(schedule),
     }),
   });
-  const stewardsService = createHostStewardsService({ stewards: dependencies.stewards });
+  const stewardsService = createHostStewardsService({
+    stewards: dependencies.stewards,
+  });
   const crewsService = createHostCrewsService({ crews: dependencies.crews });
   const crewOperation =
     (method: Parameters<typeof crewsService.call>[0]) =>
@@ -101,11 +115,14 @@ export function createNativeRuntime(
   });
   const modelsService = createModelsService({
     read: dependencies.models,
-    accounts: async () =>
-      applyProviderAccountStyles(
-        await hostProviderAccounts(),
-        await readProviderAccountStyles(dependencies.engine.store).catch(() => ({})),
-      ),
+    accounts: async () => {
+      const inventory = await hostProviderAccounts();
+      const [styles, statuses] = await Promise.all([
+        readProviderAccountStyles(dependencies.engine.store).catch(() => ({})),
+        accountStatuses.read(inventory),
+      ]);
+      return withProviderAccountStatus(applyProviderAccountStyles(inventory, styles), statuses);
+    },
     providers: dependencies.providers,
     disabledModels: () => readDisabledModels(dependencies.engine.store),
   });
@@ -162,10 +179,15 @@ export function createNativeRuntime(
         desktopControl: dependencies.desktopControl,
         assistantName: () => dependencies.assistant.identityName(),
         assistantPresence: () => dependencies.assistant.nativePresenceStatus(),
-        visibilityEpoch: async () => ({ epoch: dependencies.visibilityFence.currentEpoch() }),
+        visibilityEpoch: async () => ({
+          epoch: dependencies.visibilityFence.currentEpoch(),
+        }),
         observationsIngest: async (raw) => {
           const envelope = z
-            .strictObject({ operationJson: z.string().max(32768), proof: z.unknown() })
+            .strictObject({
+              operationJson: z.string().max(32768),
+              proof: z.unknown(),
+            })
             .parse(raw);
           const operation = nativeObservationOperation.parse(JSON.parse(envelope.operationJson));
           const proof =
@@ -212,7 +234,9 @@ export function createNativeRuntime(
                         }
                       : null;
                   },
-                  resolvePersonal: async () => ({ valid: () => lease.valid() && projectValid() }),
+                  resolvePersonal: async () => ({
+                    valid: () => lease.valid() && projectValid(),
+                  }),
                 }),
               ),
           );
@@ -284,12 +308,18 @@ export function createNativeRuntime(
                     );
                     let value = rawResult;
                     if (params.action === "browser.input") {
-                      const receipt = rawResult as { state?: string; result?: object };
+                      const receipt = rawResult as {
+                        state?: string;
+                        result?: object;
+                      };
                       if (receipt.state !== "completed" || !receipt.result)
                         throw new Error(
                           `Browser input outcome is unknown. Original operation: ${params.requestId}. Check its status; do not resend it.`,
                         );
-                      value = { ...receipt.result, operationId: params.requestId };
+                      value = {
+                        ...receipt.result,
+                        operationId: params.requestId,
+                      };
                     }
                     await publish(value, valid);
                   },
@@ -305,7 +335,10 @@ export function createNativeRuntime(
           ),
         authorizeAssistantWorkspace: (input) =>
           dependencies.assistantWorkspaceOwner.authorize(
-            { ...input, environmentId: dependencies.engine.store.environmentId },
+            {
+              ...input,
+              environmentId: dependencies.engine.store.environmentId,
+            },
             createHash("sha256").update(token).digest("hex"),
           ),
         executeAssistantBackground: (input, actor) => {

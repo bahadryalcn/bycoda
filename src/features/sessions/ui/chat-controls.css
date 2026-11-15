@@ -245,6 +245,10 @@
 .activity-dock {
   container: activity-dock / inline-size;
 }
+/* The dock lists the session's subagents; the composer's own subagent control steps aside. */
+[data-composer]:has([data-dock-subagents]) [data-composer-subagents-trigger] {
+  display: none;
+}
 .activity-dock-agent-metrics {
   max-inline-size: 52%;
   font-variant-numeric: tabular-nums;

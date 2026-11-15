@@ -226,6 +226,7 @@ import { useDockBadge } from "../features/notifications/hooks/useDockBadge";
 import { useKeepAwake } from "../features/settings/model/keepAwake";
 import { useInputNotifications } from "../features/notifications/hooks/useInputNotifications";
 import { useBackgroundNotifications } from "../features/notifications/hooks/useBackgroundNotifications";
+import { useSocialNotifications } from "../features/notifications/hooks/useSocialNotifications";
 import { useAccountPlatform } from "./hooks/useAccountPlatform";
 import { useAttentionNotifications } from "../features/notifications/hooks/useAttentionNotifications";
 import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQuickComposerLaunches";
@@ -829,6 +830,7 @@ function Workspace({
   useInputNotifications(sessions, activeSessionId);
   useAttentionNotifications(sessions, activeSessionId);
   useBackgroundNotifications(automationsViewOpen && taskBoardShown);
+  useSocialNotifications();
   useAccountPlatform();
   useNotificationPermissionProbe();
   const unseenFinishedIds = useUnseenFinishedIds(sessions, busySessionIds, activeSessionId);

@@ -86,7 +86,7 @@ export class PlatformBrowserSessions {
   }
   private recipe(account: SocialAccount): BrowserRecipe {
     const recipe = this.recipes.get(account.platform);
-    // A recipe without operations (Reddit placeholder) must not open login or any session.
+    // A recipe without operations must not open login or any session.
     if (!recipe || recipe.operations.length === 0) throw new SocialPlatformError("unsupported");
     return recipe;
   }

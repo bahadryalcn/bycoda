@@ -298,6 +298,19 @@ it("preserves selected DOM while a live list crosses the virtualization threshol
   expect(original.isConnected).toBe(true);
 });
 
+it("keeps the plain list's real row heights when it crosses the virtualization threshold", () => {
+  for (let index = 0; index < 81; index++) sizes.set(`block-${index}`, 28);
+  mount(rows(80));
+  mount(rows(81));
+  expect(mounted()).toBeLessThan(80);
+  // Row 60 never mounts after the switch; only the plain list's DOM knew its height.
+  expect(owner.measurementsFor("test").get("row-60")).toEqual({ width: 500, height: 28 });
+  const spacers = [
+    ...host.querySelectorAll<HTMLElement>("[data-transcript-virtual-spacer]"),
+  ].reduce((sum, spacer) => sum + Number.parseFloat(spacer.style.height), 0);
+  expect(mounted() * 28 + spacers).toBeLessThan(81 * 28 + 96);
+});
+
 it("materializes a native Select All range for Copy, then reclaims rows after clearing it", () => {
   mount(rows(500));
   const list = host.querySelector<HTMLElement>("[data-transcript-virtual-list]")!;

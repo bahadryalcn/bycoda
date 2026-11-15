@@ -126,6 +126,7 @@ import {
 } from "./providers/provider-activity-retirement";
 import { HostStore } from "./store";
 import { isSessionRunActivity } from "./sessions/session-run-activity";
+import { BATCHED, drainPendingEvents, FLUSH_MS, PendingEvents } from "./engine-support/event-batch";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments/attachments";
 import { runHostShell } from "./execution/shell";
 import { assertShellOwnershipAvailable, reserveShellOwnership } from "./execution/shell-ownership";
@@ -167,22 +168,12 @@ import { newRequestId } from "../src/shared/lib/id/requestId";
 import { secondOpinionMeta } from "./sessions/second-opinion-meta";
 import { utilityCompletionProof } from "./sessions/utility-completion-proof";
 
-// Streamed output is written in batches. Anything a user may need to act on
-// (approvals, questions, errors, completion) is written immediately.
-const FLUSH_MS = 120;
 function assertModelProvider(harness: RemoteProvider, model: string): void {
   if (!modelBelongsToHarness(harness, model))
     throw new Error(
       `Model "${model}" does not belong to provider "${harness}". Select a matching provider and model.`,
     );
 }
-const BATCHED = new Set<string>([
-  "message.delta",
-  "reasoning.delta",
-  "tool.updated",
-  "agent.step",
-  "status",
-]);
 
 const text = (value: unknown, label: string, max = 128): string => {
   if (typeof value !== "string" || !value.trim() || value.length > max || value.includes("\0"))
@@ -640,6 +631,8 @@ export class HostEngine {
     }
   }
   private readonly operations = new EngineOperations();
+  /** Provider events not yet applied; one queued drain applies them as a batch. */
+  private readonly pendingEvents = new PendingEvents();
   private switchingProjects = new Set<string>();
   private readonly deferredManagedBindings = new Map<
     string,
@@ -4273,6 +4266,8 @@ export class HostEngine {
     let ready!: () => void;
     let replayConsumed = false;
     const acceptReplay = async () => {
+      // Every later streamed event repeats this; once accepted it has nothing left to do.
+      if (active.accepted && (!rewindReplay || replayConsumed)) return;
       await this.store.assertAuthority(session.id, value.authorityGeneration);
       active.accepted = true;
       this.store.changes.notify();
@@ -4762,18 +4757,29 @@ export class HostEngine {
   ): void {
     const original = this.running.get(id);
     if (!original || original.runId !== runId) return;
-    const observedAt = Date.now();
-    this.queueEvent(
-      id,
-      async () => {
-        const live = this.live.get(id);
-        if (!live || live.value.runId !== runId) return;
-        await this.store.assertAuthority(id, live.value.authorityGeneration);
-        if (before) await before();
-        await this.applyEvent(id, runId, event, observedAt);
-      },
-      original,
-    );
+    if (this.pendingEvents.add(id, { runId, event, observedAt: Date.now(), before }))
+      this.queueEvent(id, () => this.drainEvents(id), original);
+  }
+
+  /** One authority check and one transcript copy per burst of deltas, not per token. */
+  private drainEvents(id: string): Promise<void> {
+    return drainPendingEvents(this.pendingEvents.take(id), {
+      live: () => this.live.get(id),
+      assertAuthority: (generation) => this.store.assertAuthority(id, generation),
+      applyOne: (item) => this.applyEvent(id, item.runId, item.event, item.observedAt),
+      recorded: (runId) => this.scheduleFlush(id, runId),
+    });
+  }
+
+  private scheduleFlush(id: string, runId: string) {
+    const live = this.live.get(id);
+    const original = this.running.get(id);
+    if (live && original?.runId === runId)
+      live.timer ??= this.store.db.outsideScope(() =>
+        setTimeout(() => {
+          void this.scheduledFlush(id, original);
+        }, FLUSH_MS),
+      );
   }
 
   private async applyEvent(
@@ -4870,15 +4876,7 @@ export class HostEngine {
     };
     live.events.push(event);
     if (!BATCHED.has(event.type)) await this.flush(id);
-    else {
-      const original = this.running.get(id);
-      if (original?.runId === runId)
-        live.timer ??= this.store.db.outsideScope(() =>
-          setTimeout(() => {
-            void this.scheduledFlush(id, original);
-          }, FLUSH_MS),
-        );
-    }
+    else this.scheduleFlush(id, runId);
   }
 
   private settled(

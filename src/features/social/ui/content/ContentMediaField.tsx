@@ -7,6 +7,7 @@ import type { SocialClient } from "../../model/socialClient";
 import { uploadForSocialEditor, type SocialMediaEditor } from "../../model/socialMediaEditor";
 import type { ContentMedia } from "./contentDraft";
 import { probeVideo } from "./mediaProbe";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png"];
 const VIDEO_TYPE = "video/mp4";
@@ -50,14 +51,21 @@ export function ContentMediaField({
         added.push({
           localId: upload.uploadId,
           name: file.name,
-          media: { kind: isVideo ? "video" : "image", uploadId: upload.uploadId },
+          media: {
+            kind: isVideo ? "video" : "image",
+            uploadId: upload.uploadId,
+          },
           probe,
           mediaId: upload.managed?.mediaId,
         });
       }
       onChange([...media, ...added]);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : t("The file could not be attached."));
+      setError(
+        caught instanceof Error
+          ? presentRemoteError(caught, { explicit: true })
+          : t("The file could not be attached."),
+      );
     } finally {
       setBusy(false);
       onBusyChange?.(false);

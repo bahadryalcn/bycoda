@@ -235,6 +235,19 @@ export function createSessionReadService<
           };
         }
       }
+      // A tail stream (opened with `tail`) opens with the newest page when the
+      // transcript does not fit one; the client pages older history on demand.
+      if (params.tail === true && sync.kind === "snapshot" && !("history" in sync.value)) {
+        const page = await ports.transcript.page(
+          () => current,
+          id,
+          undefined,
+          undefined,
+          true,
+          params.digests === true,
+        );
+        if (page.before !== undefined) sync = { kind: "snapshot", value: page.value };
+      }
       if (sync.kind === "snapshot" && !complete)
         sync = { ...sync, value: ports.transcript.preview(sync.value, params.digests === true) };
       else if (sync.kind === "delta")

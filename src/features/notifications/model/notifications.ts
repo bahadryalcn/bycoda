@@ -20,6 +20,8 @@ import { loadNotificationEvents } from "./notificationEvents";
 import { logNotification } from "./notificationLog";
 import { allowsProjectNotification, type NotificationSubject } from "./notificationPreferences";
 import { knownNotificationProject } from "./notificationProjects";
+import { socialWaitingVisibility, type SocialWaitingItem } from "./socialWaiting";
+import { SOCIAL_PLATFORM_NAMES } from "../../social/public/waiting";
 import { reportAgentEvent } from "./serverRuntime";
 
 const KEY = "bycoda.notifications";
@@ -122,31 +124,12 @@ export function isWindowFocused(): boolean {
   return windowFocused;
 }
 
-/** Sessions whose finish or failure was announced and not yet looked at. */
-const unseenAttention = new Set<string>();
 const attentionListeners = new Set<() => void>();
 
-export function unseenAttentionSessions(): ReadonlySet<string> {
-  return unseenAttention;
-}
-
-export function replaceUnseenAttention(next: ReadonlySet<string>) {
-  if (next.size === unseenAttention.size && [...next].every((id) => unseenAttention.has(id))) {
-    return;
-  }
-  unseenAttention.clear();
-  for (const id of next) unseenAttention.add(id);
-}
-
-/** Notified when focus or the unseen set changes, so the taskbar can follow. */
+/** Notified when window focus changes, so the taskbar can follow. */
 export function subscribeAttention(listener: () => void): () => void {
   attentionListeners.add(listener);
   return () => attentionListeners.delete(listener);
-}
-
-function markUnseen(sessionId: string) {
-  unseenAttention.add(sessionId);
-  for (const listener of attentionListeners) listener();
 }
 
 /**
@@ -293,6 +276,10 @@ export const BACKGROUND_NOTIFICATION_TARGETS = {
   assistant: "background:assistant",
   /** Items of the signed-in account's feed (new device, announcements). */
   account: "background:account",
+  /** Social items that wait for the owner (account requests, browser tasks needing a person). */
+  social: "background:social",
+  /** Social accounts that need a new sign-in; the account id follows after a colon. */
+  socialAccounts: "background:social-accounts",
 } as const;
 
 /** Assistant messages keep the same native delivery, mute and privacy gates. */
@@ -389,6 +376,84 @@ export async function notifyServerItem(item: { title: string; body: string }): P
   });
 }
 
+function socialWaitingReason(item: SocialWaitingItem): string {
+  switch (item.reason) {
+    case "challenge":
+      return t("Security check");
+    case "verification":
+      return t("Verification code");
+    case "login":
+      return t("Sign-in needed");
+    case "unexpected_screen":
+      return t("Unexpected page");
+    default:
+      return item.kind === "signIn" ? t("Sign-in needed") : t("Account request");
+  }
+}
+
+function socialWaitingTitle(item: SocialWaitingItem): string {
+  if (item.kind === "accountRequest") return t("Account request");
+  return item.kind === "signIn" ? t("Sign in again") : t("Waiting for you");
+}
+
+/** Where a click on this item goes: the account itself for a sign-in, Command otherwise. */
+export function socialWaitingTarget(item: SocialWaitingItem): string {
+  return item.kind === "signIn" && item.accountId
+    ? `${BACKGROUND_NOTIFICATION_TARGETS.socialAccounts}:${item.accountId}`
+    : BACKGROUND_NOTIFICATION_TARGETS.social;
+}
+
+/**
+ * Social items seen for the first time that wait for the owner. Each one is logged (event
+ * setting "needs your input", mute and lock apply, a locked project is masked); one banner
+ * leaves for the batch when the global switch, permission and the unfocused-window rule allow
+ * it. Text carries the platform and the reason only, never a project, account name or the
+ * AI's own wording. A locked item is logged masked and never bannered.
+ */
+export async function notifySocialWaiting(
+  items: readonly SocialWaitingItem[],
+  now = Date.now(),
+): Promise<boolean> {
+  if (!loadNotificationEvents().input) return false;
+  const open: SocialWaitingItem[] = [];
+  for (const item of items) {
+    const visibility = socialWaitingVisibility(item, { now });
+    if (visibility === "muted") continue;
+    logNotification({
+      kind: "background",
+      key: `social:${item.id}`,
+      title: socialWaitingTitle(item),
+      label: `${SOCIAL_PLATFORM_NAMES[item.platform]} · ${socialWaitingReason(item)}`,
+      target: socialWaitingTarget(item),
+      occurredAt: item.at,
+      locked: visibility === "locked",
+    });
+    if (visibility === "open") open.push(item);
+  }
+  if (
+    !open.length ||
+    !shouldNotify({
+      enabled: loadNotificationsEnabled(),
+      permission,
+      windowFocused,
+      sessionVisible: false,
+    })
+  )
+    return false;
+  const single = open.length === 1 ? open[0] : undefined;
+  return deliver({
+    sessionId: single ? socialWaitingTarget(single) : BACKGROUND_NOTIFICATION_TARGETS.social,
+    kind: "input",
+    title: single ? socialWaitingTitle(single) : t("Social Media"),
+    subtitle: "",
+    body: single
+      ? `${SOCIAL_PLATFORM_NAMES[single.platform]} · ${socialWaitingReason(single)}`
+      : t("{p0} items are waiting for you", { p0: open.length }),
+    projectName: "",
+    sessionTitle: "",
+  });
+}
+
 /** The daily summary of background work. The global switch applies; it has no
  * event setting of its own beyond the summary's own toggle. */
 export async function notifyDailySummary(headline: string): Promise<boolean> {
@@ -428,7 +493,7 @@ export async function notifyDailySummary(headline: string): Promise<boolean> {
 export async function notifyBackground(transition: {
   target: Exclude<
     keyof typeof BACKGROUND_NOTIFICATION_TARGETS,
-    "summary" | "assistant" | "account"
+    "summary" | "assistant" | "account" | "social" | "socialAccounts"
   >;
   kind: AttentionKind;
   message: string;
@@ -573,9 +638,6 @@ async function notifyProjectSession(
     },
   );
   if (!payload) return false;
-  // Preserve unread attention for other chats even when foreground delivery
-  // is suppressed by deliver(). The active chat was excluded above.
-  if (kind !== "input") markUnseen(session.id);
   const cwd = session.cwd;
   return batcher.enqueue(
     isProjectLocked(cwd) ? maskLockedNotification(payload) : payload,

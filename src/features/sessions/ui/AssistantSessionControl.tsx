@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AssistantSessionManagement } from "../model/session";
 import { useAssistantSnapshot } from "../../assistant/model/assistantClient";
@@ -151,7 +152,7 @@ function LocalControl({
           if (token === epoch.current) {
             setUncertain(!(cause instanceof AssistantSessionDetachError) || cause.submitted);
             setPrepared(null);
-            setError(cause instanceof Error ? cause.message : String(cause));
+            setError(presentRemoteError(cause, { explicit: true }));
           }
         },
         done: () => {

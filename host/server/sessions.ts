@@ -6,6 +6,7 @@ import { AttachmentOwnership } from "../attachments/attachment-ownership";
 import { DesktopDelete } from "../desktop/desktopDelete";
 import { RemoteActivityFeed } from "../desktop/remoteActivity";
 import { type DesktopSessionMeta } from "../desktop/desktopSessions";
+import { createDedupedWarn } from "../diagnostics/log-dedupe";
 import { sessionNotFound } from "../sessions/session-authority";
 import { SessionQueues } from "../sessions/session-queue";
 import { AdoptedChanges } from "../workspaces/adoptedChanges";
@@ -194,12 +195,17 @@ export async function createSessionsRuntime(
     }
     return value;
   };
+  // The desktop asks again every minute for a conversation this Host does not store.
+  const queueRefusalWarn = createDedupedWarn({ windowMs: 60 * 60_000, maxKeys: 500 });
   const queueSessionStatus = async (id: string) => {
     const metadata = await dependencies.desktop.metadataAsync(id);
+    const provider =
+      !!metadata &&
+      (metadata.harness === "acp" ||
+        dependencies.providers.includes(metadata.harness as RemoteProvider));
     if (
       metadata &&
-      (metadata.harness === "acp" ||
-        dependencies.providers.includes(metadata.harness as RemoteProvider)) &&
+      provider &&
       (await dependencies.engine.store.projects()).some((project) =>
         dependencies.desktop.samePath(project.cwd, metadata.cwd),
       )
@@ -207,7 +213,13 @@ export async function createSessionsRuntime(
       return metadata.running ? "running" : "idle";
     // Every caller asks before its effect, so a conversation neither side stores
     // is refused as not sent rather than failing with an unknown outcome.
-    if (!(await dependencies.engine.store.sessionAuthority(id))) throw sessionNotFound();
+    if (!(await dependencies.engine.store.sessionAuthority(id))) {
+      // The refusal reaches the caller as one sentence; the log keeps which check failed.
+      queueRefusalWarn(
+        `Queue refused for ${id}: ${!metadata ? "no desktop record" : !provider ? "provider not offered by this Host" : "no Host project at its folder"}`,
+      );
+      throw sessionNotFound();
+    }
     return await dependencies.engine.store.sessionStatus(id);
   };
   /** Existence check for queue calls. A conversation the host already stores is one indexed

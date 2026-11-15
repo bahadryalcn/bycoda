@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
@@ -275,7 +276,7 @@ export function GitGraphWorkspace({
       setGitFeedback(cwd, {
         kind: "error",
         title: t("Git operation failed"),
-        detail: String(error),
+        detail: presentRemoteError(error, { explicit: true }),
       });
       onCommit(null);
       return false;

@@ -363,19 +363,6 @@ export function createNotificationBatcher(
   };
 }
 
-/** Sessions with unseen finished/failed turns, minus the ones now in view. */
-export function pruneUnseen(
-  unseen: ReadonlySet<string>,
-  sessions: readonly Session[],
-  activeSessionId: string | undefined,
-  windowFocused: boolean,
-): Set<string> {
-  const live = new Set(sessions.map((session) => session.id));
-  return new Set(
-    [...unseen].filter((id) => live.has(id) && !(windowFocused && id === activeSessionId)),
-  );
-}
-
 export type TaskbarAttention = {
   count: number;
   /** At least one session is waiting on an approval or question. */

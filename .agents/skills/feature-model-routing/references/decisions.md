@@ -45,3 +45,13 @@ Owner decision, 2026-11-15:
 (Gloss: smart setup must use AI to plan the model order, pools and all assignments by cost, and separate work and personal accounts; we provide a researched benefit/cost ranking of the active models as its starting point.)
 
 Recorded decision: smart setup sends the full catalog with a researched capability and price table and a benefit-per-cost baseline to the planner model, which returns the order, pools and role bindings; the researched rules are the fallback. Same-named pools are refilled and role bindings replaced in the draft; Save keeps its owner approval. No new execution or publishing authority.
+
+## Per-job effort in smart setup
+
+Owner decision, 2026-11-15:
+
+> max imum high seçebilsinler basit işler hep low genelde medium seçilmesi gerekiyor. High sonrasını kullanıcı kendi seçmesi gerkeiyor bunuda ufak bir bilgi ile belirtiriz
+
+(Gloss: smart setup may choose at most High; simple jobs always Low, most work Medium; levels above High are the owner's own choice, noted with a small info.)
+
+Recorded decision: smart setup creates entries per model and effort. The main order runs at medium, pools bound only to light roles at low, pools with any heavy role at high. It never sets an effort above high, and an owner entry above high is reused for high pools. An info popover beside Smart setup states the rule.

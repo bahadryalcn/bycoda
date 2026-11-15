@@ -28,15 +28,17 @@
   inset-block-start: 50%;
   inset-inline-start: 1px;
   display: inline-flex;
-  max-inline-size: calc(100% - 2px);
+  /* Spans the whole source so every gap between tokens is exactly one space. */
+  inline-size: calc(100% - 2px);
   align-items: center;
+  justify-content: center;
   gap: 0.18em;
   padding-block: 2px;
   padding-inline: 0.1em;
   border-radius: var(--ui-radius-inset);
   /* The face, not the source, carries the fill so it matches what is drawn. */
   background: color-mix(in oklch, currentColor 12%, transparent);
-  font-size: 0.82em;
+  font-size: 0.85em;
   line-height: 1;
   white-space: nowrap;
   transform: translateY(-50%);
@@ -70,8 +72,8 @@
 .face > .icon {
   position: static;
   flex: none;
-  inline-size: 0.8em;
-  block-size: 0.8em;
+  inline-size: 0.9em;
+  block-size: 0.9em;
   transform: none;
 }
 

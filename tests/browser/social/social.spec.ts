@@ -422,6 +422,61 @@ test("account settings and connection forms visual matrix", async ({ page }, tes
   }
 });
 
+test("a new account is created through the owner-assisted signup dialog", async ({
+  page,
+}, testInfo) => {
+  for (const theme of ["light", "dark"]) {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/tests/browser/social/social.html?signup-create");
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    await page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }).click();
+    await page.getByRole("button", { name: "Hesap bağla", exact: true }).click();
+    await page.getByRole("button", { name: /^Platform: / }).click();
+    await page.getByRole("option", { name: "Reddit" }).click();
+    await page.getByRole("button", { name: /^Nasıl bağlanılacak: / }).click();
+    await page.getByRole("option", { name: "Tarayıcıda oturum açma" }).click();
+    await page.getByRole("button", { name: "Bunun yerine yeni bir Reddit hesabı oluştur" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("İsim").fill("Studio");
+    await page.screenshot({
+      path: testInfo.outputPath(`signup-start-${theme}.png`),
+      animations: "disabled",
+    });
+    await dialog.getByRole("button", { name: "Kayıt penceresini aç" }).click();
+    await expect(dialog.getByLabel("E-posta adresi")).toBeVisible();
+    await expect(dialog.locator('input[type="password"]')).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`signup-fields-${theme}.png`),
+      animations: "disabled",
+    });
+    await dialog.getByLabel("E-posta adresi").fill("studio@example.com");
+    await dialog.getByRole("button", { name: "Devam et" }).click();
+    await expect(dialog.getByText("Doğrulama kodunu gir")).toHaveCount(1);
+    await expect(dialog.getByLabel("E-posta adresi")).toHaveCount(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`signup-blockers-${theme}.png`),
+      animations: "disabled",
+    });
+    await page.evaluate(() =>
+      (
+        window as unknown as { socialFixtureCloseSignupWindow: () => void }
+      ).socialFixtureCloseSignupWindow(),
+    );
+    await expect(dialog.getByRole("button", { name: "Girişe devam et" })).toBeVisible({
+      timeout: 8000,
+    });
+    await page.screenshot({
+      path: testInfo.outputPath(`signup-closed-${theme}.png`),
+      animations: "disabled",
+    });
+    await dialog.getByRole("button", { name: "Girişe devam et" }).click();
+    await expect(page.getByRole("dialog", { name: "Studio" })).toBeVisible();
+  }
+});
+
 test("automatic audience labels stay on one line", async ({ page }, testInfo) => {
   for (const theme of ["light", "dark"]) {
     for (const width of [800, 1280]) {
@@ -918,5 +973,58 @@ for (const theme of ["light", "dark"])
         "jobs.create",
       ])
         expect(await requests(page, action)).toEqual([]);
+    });
+  }
+
+for (const theme of ["light", "dark"])
+  for (const width of [800, 1280]) {
+    test(`social project account requests ${theme} ${width}`, async ({ page }) => {
+      const shot = (name: string) =>
+        page.screenshot({
+          path: `temp/verification/2026-11-15-social-account-requests/${name}-${theme}-${width}.png`,
+          animations: "disabled",
+        });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/tests/browser/social/social.html?requests");
+      await page.evaluate(
+        (light) => document.documentElement.classList.toggle("theme-light", light),
+        theme === "light",
+      );
+      const rows = page.locator(".account-request-row");
+      await expect(rows).toHaveCount(2);
+      await expect(rows.getByText("Demo project")).toHaveCount(2);
+      await shot("waiting");
+      await rows.first().getByRole("button", { name: "Hesap oluştur", exact: true }).click();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      await shot("approve-create");
+      expect(await requests(page, "accounts.requests.approve")).toEqual([
+        { id: "request-linkedin", mode: "create" },
+      ]);
+      // The approved account is reused: the dialog never creates a second record.
+      expect(await requests(page, "accounts.create")).toEqual([]);
+      // Approving opens the signup window at once; leaving cancels it and opens the new account.
+      await page
+        .getByRole("dialog")
+        .getByRole("button", { name: "Kaydı iptal et", exact: true })
+        .click();
+      await expect(
+        page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      await shot("account-opened");
+      await page.keyboard.press("Escape");
+      await sections(page).getByRole("tab", { name: "Komut", exact: true }).click();
+      await expect(rows).toHaveCount(1);
+      await rows
+        .first()
+        .getByRole("button", { name: "Zaten bir hesabım var", exact: true })
+        .click();
+      await expect(
+        page.getByRole("tab", { name: "Hesaplar ve Ayarlar", exact: true }),
+      ).toHaveAttribute("aria-selected", "true");
+      expect(await requests(page, "accounts.requests.approve")).toEqual([
+        { id: "request-linkedin", mode: "create" },
+        { id: "request-x", mode: "signin" },
+      ]);
+      await shot("approve-signin");
     });
   }

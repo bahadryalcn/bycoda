@@ -10,6 +10,7 @@ import { activeCrewRuns } from "../../model/crewRoster";
 import type { OpenCrewSession } from "../CrewDialogHost";
 import { crewMenuDialog, type CrewDialog } from "../crewMenuItems";
 import { CrewTeamItem } from "./CrewTeamItem";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 type Layout = "cards" | "list";
 
@@ -38,9 +39,7 @@ export function CrewsTeams({
     setError("");
     Promise.resolve(
       onOpenSession({ cwd, machineId: data.machine.id, projectId: data.project.id, sessionId }),
-    ).catch((reason: unknown) =>
-      setError(reason instanceof Error ? reason.message : String(reason)),
-    );
+    ).catch((reason: unknown) => setError(presentRemoteError(reason, { explicit: true })));
   };
   if (!data.definitions.length)
     return (

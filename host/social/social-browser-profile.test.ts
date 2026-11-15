@@ -87,6 +87,26 @@ it("follows only the resolved numeric target, is idempotent, and requires visibl
   await expect(s.actions.follow("github?other=1")).rejects.toThrow("username");
 });
 
+it("resolves the follow control when the display name abuts the handle (live X UserName text)", async () => {
+  const window = new Window({ url: "https://x.com/github" });
+  window.document.body.innerHTML =
+    '<div data-testid="primaryColumn"><div data-testid="UserName"><span><span>GitHub</span></span><span>@github</span></div><button data-testid="9-follow" aria-label="Follow @github"></button></div>';
+  const page = {
+    goto: vi.fn(),
+    evaluate: vi.fn(async <T>(expression: string): Promise<T> => window.eval(expression)),
+    click: vi.fn(async () => {
+      window.document.querySelector("button")!.setAttribute("data-testid", "9-unfollow");
+    }),
+  } as unknown as BrowserPage;
+  const until = async <T>(expression: string) => (await page.evaluate<T>(expression)) || undefined;
+  const actions = new XProfileActions(
+    page,
+    vi.fn(async () => undefined),
+    until,
+  );
+  expect(await actions.follow("github")).toMatchObject({ platformId: "9", changed: true });
+});
+
 /** Rendered synthetic DOM, not evidence of the current external X website. */
 function imageFixture(options: { turkish?: boolean; persist?: boolean; duplicate?: boolean } = {}) {
   const window = new Window({ url: "https://x.com/home" });
@@ -107,8 +127,8 @@ function imageFixture(options: { turkish?: boolean; persist?: boolean; duplicate
     if (url.endsWith("/settings/profile")) {
       pending = { ...stored };
       const slot = (kind: "avatar" | "banner") =>
-        `<div><button aria-label="${options.turkish ? (kind === "avatar" ? "Profil fotoğrafı ekle" : "Başlık fotoğrafı ekle") : `Add ${kind} photo`}">Upload</button><input type="file" data-testid="fileInput" data-slot="${kind}"></div>`;
-      window.document.body.innerHTML = `${identity()}<input name="displayName" value="Bycoda"><textarea name="description">Bio</textarea><input name="location" value=""><input name="url" value="">${slot("banner")}${slot("avatar")}${options.duplicate ? slot("avatar") : ""}<button data-testid="Profile_Save_Button">Save</button>`;
+        `<div><button aria-label="${options.turkish ? (kind === "avatar" ? "Profil resmi ekle" : "Kapak fotoğrafı ekle") : `Add ${kind} photo`}">Upload</button><input type="file" accept="image/jpeg,image/png,image/webp" data-testid="fileInput" data-slot="${kind}"></div>`;
+      window.document.body.innerHTML = `${identity()}<input name="displayName" value="Bycoda"><textarea name="description">Bio</textarea><input name="location" value=""><input name="url" value=""><div role="dialog">${slot("banner")}${slot("avatar")}${options.duplicate ? slot("avatar") : ""}</div><button data-testid="Profile_Save_Button">Save</button>`;
     } else {
       window.document.body.innerHTML = `${identity()}<div data-testid="UserName">Bycoda</div><a href="/bycoda/photo"><img src="${imageUrl("avatar", stored.avatar)}"></a><a href="/bycoda/header_photo"><img src="${imageUrl("banner", stored.banner)}"></a>`;
     }
@@ -128,7 +148,7 @@ function imageFixture(options: { turkish?: boolean; persist?: boolean; duplicate
       order.push(`upload:${editing}:${paths[0]}`);
       window.document.body.insertAdjacentHTML(
         "beforeend",
-        `<div role="dialog"><button>${options.turkish ? "Uygula" : "Apply"}</button></div>`,
+        `<div role="dialog" data-crop><button>${options.turkish ? "Uygula" : "Apply"}</button></div>`,
       );
     }),
     click: vi.fn(async (selector: string) => {
@@ -138,7 +158,7 @@ function imageFixture(options: { turkish?: boolean; persist?: boolean; duplicate
         order.push(`crop:${editing}`);
         pending[editing!] = `new-${editing}`;
         editing = undefined;
-        button.closest('[role="dialog"]')!.remove();
+        button.closest("[data-crop]")!.remove();
       } else if (button.getAttribute("data-testid") === "Profile_Save_Button") {
         order.push("save");
         if (options.persist !== false) stored = { ...pending };

@@ -10,6 +10,11 @@ for (const theme of ["dark", "light"]) {
       const panel = page.getByRole("dialog", { name: "Notifications", exact: true });
       await expect(panel.locator(".approval-toast")).toHaveCount(3);
       await expect(panel.locator(".approval-toast").first()).toHaveCSS("animation-name", "none");
+      const owner = panel.locator(".notification-owner-request");
+      await expect(owner).toHaveCount(1);
+      await expect(owner).toContainText("Run the release script");
+      await expect(owner).toContainText("left");
+      await expect(owner).not.toContainText("pnpm release");
       await page.screenshot({
         path: `temp/verification/2026-11-11-notification-center/pending-${theme}-${width}.png`,
       });

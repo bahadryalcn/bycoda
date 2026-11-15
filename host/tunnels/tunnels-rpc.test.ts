@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
+import { hostProof } from "../mobile/host-proof";
 import { HostStore } from "../store";
 import { HostEngine } from "../engine";
 import { createHostServer } from "../server";
@@ -16,6 +18,8 @@ async function setup() {
   const store = new HostStore(join(directory, "host.db"));
   const engine = new HostEngine(store, {});
   const tunnels = {
+    boot: vi.fn(async () => {}),
+    publicHostUrl: vi.fn(() => undefined),
     status: vi.fn(async () => ({ environmentId: store.environmentId })),
     start: vi.fn(async () => ({})),
     stop: vi.fn(async () => ({})),
@@ -67,10 +71,63 @@ async function setup() {
     await store.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  return { tunnels, store, device, call };
+  const identity = () => fetch(`http://127.0.0.1:${port}/.well-known/bycoda-host`);
+  return { tunnels, store, device, call, identity, origin: `http://127.0.0.1:${port}` };
 }
 
 describe("external tunnels use existing authenticated RPC", () => {
+  it("real Host proves ticket/device possession and preserves phone redemption", async () => {
+    const s = await setup();
+    const created = await s.call("mobile.pairing.create", { token: s.device.token });
+    expect(created.status).toBe(200);
+    const ticket = created.value.result as { ticket: string };
+    for (const [kind, secret] of [
+      ["pairing", ticket.ticket],
+      ["device", s.device.token],
+    ] as const) {
+      const key = createHash("sha256").update(secret).digest("hex");
+      const nonce = randomBytes(32).toString("hex");
+      const body = {
+        kind,
+        nonce,
+        environmentId: s.store.environmentId,
+        origin: s.origin,
+        proof: hostProof(key, kind, "request", nonce, s.store.environmentId, s.origin),
+      };
+      const response = await fetch(`${s.origin}/.well-known/bycoda-host/proof`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        result: { proof: hostProof(key, kind, "response", nonce, s.store.environmentId, s.origin) },
+      });
+    }
+    const response = await fetch(`${s.origin}/mobile/pairing/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        environmentId: s.store.environmentId,
+        ticket: ticket.ticket,
+        claimId: randomBytes(32).toString("base64url"),
+        deviceName: "Existing phone protocol",
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      result: { environmentId: s.store.environmentId, token: expect.any(String) },
+    });
+  });
+  it("exposes only environment identity before any device credential is sent", async () => {
+    const s = await setup();
+    const response = await s.identity();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(await response.json()).toEqual({ environmentId: s.store.environmentId });
+    expect(s.tunnels.start).not.toHaveBeenCalled();
+  });
   it("rejects unauthenticated, browser-origin, revoked and cross-host operations before dispatch", async () => {
     const s = await setup();
     for (const method of [

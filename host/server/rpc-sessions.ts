@@ -272,6 +272,9 @@ export async function handleSessionsRpc(
         archived?: boolean;
         pinned?: boolean;
         linkedWorkItem?: LinkedWorkItem | null;
+        unread?: boolean;
+        snoozedUntil?: number | null;
+        expectedRevision?: number;
       } = {};
       if (request.params.title !== undefined) {
         if (typeof request.params.title !== "string") throw new Error("Invalid session title");
@@ -285,6 +288,17 @@ export async function handleSessionsRpc(
         if (typeof request.params.pinned !== "boolean") throw new Error("Invalid pin value");
         patch.pinned = request.params.pinned;
       }
+      if (request.params.unread !== undefined) {
+        if (typeof request.params.unread !== "boolean") throw new Error("Invalid unread value");
+        patch.unread = request.params.unread;
+      }
+      if (request.params.snoozedUntil !== undefined)
+        patch.snoozedUntil =
+          request.params.snoozedUntil === null
+            ? null
+            : SafeCounterSchema.parse(request.params.snoozedUntil);
+      if (request.params.expectedRevision !== undefined)
+        patch.expectedRevision = SafeCounterSchema.parse(request.params.expectedRevision);
       if (request.params.linkedWorkItem !== undefined) {
         const item = request.params.linkedWorkItem;
         const parsed =

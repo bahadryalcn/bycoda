@@ -340,6 +340,20 @@ describe("host turn checkpoints", () => {
     await f.checkpoints.change("session", f.cwd, undefined, true);
     expect(await readFile(join(f.cwd, "a.txt"), "utf8")).toBe("base\n");
   });
+  it("retires a deleted session's file history after its worktree was removed", async () => {
+    const f = await fixture();
+    await f.checkpoints.beginFilesTurn("session", f.cwd, "turn");
+    await writeFile(join(f.cwd, "a.txt"), "agent\n");
+    await f.checkpoints.finishFilesTurn("session", f.cwd, "turn");
+    await rm(f.cwd, { recursive: true, force: true, maxRetries: 5 });
+    await expect(f.checkpoints.retireDeletedSessionHistory("session", f.cwd)).resolves.toEqual({
+      retainedUnknown: true,
+    });
+    // A second retirement finds the emptied index, not an unresolved marker.
+    await expect(f.checkpoints.retireDeletedSessionHistory("session", f.cwd)).resolves.toEqual({
+      retainedUnknown: true,
+    });
+  });
   it("records shell edits, additions and deletions while preserving dirty bytes and the staging index", async () => {
     const f = await fixture();
     const a = join(f.cwd, "a.txt");

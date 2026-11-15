@@ -12,6 +12,8 @@ import type {
 export const INLINE_SYNC_BYTES = 4 * 1024 * 1024;
 export const SYNC_CHUNK_BYTES = 4 * 1024 * 1024;
 const TRANSFER_TTL_MS = 2 * 60_000;
+/** After the last piece is served, only that piece stays readable so a lost response can be retried. */
+const LAST_CHUNK_GRACE_MS = 15_000;
 const MAX_TRANSFERS = 8;
 export const MAX_SYNC_TRANSFER_UNITS = 32 * 1024 * 1024;
 export const MAX_TRANSFER_CACHE_BYTES = 128 * 1024 * 1024;
@@ -28,7 +30,10 @@ export function serializedResponse(value: unknown): string | undefined {
 const encodedBytes = (value: string) => Buffer.byteLength(JSON.stringify(value));
 
 export class SyncTransfers {
-  private transfers = new Map<string, { sessionId: string; text: string; expires: number }>();
+  private transfers = new Map<
+    string,
+    { sessionId: string; text: string; expires: number; lastOffset?: number }
+  >();
 
   constructor(
     private readonly limits: {
@@ -87,6 +92,10 @@ export class SyncTransfers {
       throw new Error("Session transfer expired; reload the session");
     if (!Number.isSafeInteger(offset) || offset < 0 || offset > entry.text.length)
       throw new Error("Invalid session transfer offset");
+    if (entry.lastOffset !== undefined && offset !== entry.lastOffset) {
+      this.transfers.delete(transfer);
+      throw new Error("Session transfer expired; reload the session");
+    }
     // Transcript JSON usually encodes near one byte per UTF-16 unit; shrink
     // the piece when escaping or non-ASCII text makes it larger.
     let end = Math.min(
@@ -100,8 +109,10 @@ export class SyncTransfers {
     const code = entry.text.charCodeAt(end - 1);
     if (end < entry.text.length && end - offset > 1 && code >= 0xd800 && code <= 0xdbff) end--;
     const data = entry.text.slice(offset, end);
-    entry.expires = Date.now() + TRANSFER_TTL_MS;
-    if (end === entry.text.length) this.transfers.delete(transfer);
+    if (end === entry.text.length) {
+      entry.lastOffset = offset;
+      entry.expires = Date.now() + LAST_CHUNK_GRACE_MS;
+    } else entry.expires = Date.now() + TRANSFER_TTL_MS;
     return { data };
   }
 

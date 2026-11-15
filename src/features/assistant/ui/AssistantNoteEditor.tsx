@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { useRef, useState } from "react";
 import type { AssistantNote } from "../../../shared/model/host-contracts/assistant";
 import { formatNumber, t } from "../../../shared/i18n";
@@ -71,7 +72,7 @@ export function NoteEditor({
       await onSaved();
       onClose();
     } catch (cause) {
-      setError(t(cause instanceof Error ? cause.message : String(cause)));
+      setError(t(presentRemoteError(cause, { explicit: true })));
     } finally {
       setPending(false);
     }

@@ -40,7 +40,7 @@ import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
 import { isSessionErrorBlock } from "../model/sessionIssue";
-import { collapseTranscriptErrors } from "../model/transcriptErrors";
+import { filterDisplayedBlocks, type DisplayFilterFrame } from "../model/transcriptDisplayFilter";
 import { SessionErrorNotice } from "./SessionErrorNotice";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
@@ -109,10 +109,6 @@ import { TurnOutputActions } from "./TranscriptMessageActions";
 import { ResumeTurnRow } from "./ResumeTurnRow";
 import { resumePromptKind } from "../model/resumePrompt";
 import type { ApprovalDecision } from "../../../integrations/harness";
-import {
-  isHarnessAuthBlock,
-  supportsHarnessLogin,
-} from "../../../integrations/harness/core/authSupport";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Attachment } from "../model/session";
 import type { ShellRun } from "../model/shellRun";
@@ -121,7 +117,7 @@ import { playCue } from "../../settings/public/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
 import { useResolvedModelName } from "../model/reactiveReads";
 import { BlockScanCache } from "../model/blockScanCache";
-import { sameBlocksIgnoringStreamingText, streamingTextUpdate } from "../model/stableBlocks";
+import { sameBlocksIgnoringStreamingText } from "../model/stableBlocks";
 import {
   projectTranslatedBlocks,
   type TranslationProjection,
@@ -262,11 +258,6 @@ type Props = {
   /** A worker's transcript: show the orchestrator's turns instead of hiding them. */
   managed?: boolean;
 };
-function filterAuthErrors(harness: HarnessId | undefined, sourceBlocks: Block[]): Block[] {
-  if (!harness || !supportsHarnessLogin(harness)) return sourceBlocks;
-  const visibleBlocks = sourceBlocks.filter((block) => !isHarnessAuthBlock(block));
-  return visibleBlocks.length === sourceBlocks.length ? sourceBlocks : visibleBlocks;
-}
 function AgentTranscriptComponent({
   sessionId,
   blocks: persistedBlocks,
@@ -371,28 +362,11 @@ function AgentTranscriptComponent({
       [activeTranslation]: { ...current[activeTranslation], translatedVisible },
     }));
   };
-  const [authFilterPrev] = useState(
-    () =>
-      new FrameMemory<{
-        harness: typeof harness;
-        source: Block[];
-        result: Block[];
-      }>(),
+  const [authFilterPrev] = useState(() => new FrameMemory<DisplayFilterFrame>());
+  const blocks = useMemo(
+    () => filterDisplayedBlocks(harness, sourceBlocks, authFilterPrev.read()),
+    [harness, sourceBlocks, authFilterPrev],
   );
-  const blocks = useMemo(() => {
-    const prev = authFilterPrev.read();
-    // A text-only streaming frame changes no block's role or notice, so a
-    // previously unfiltered transcript stays unfiltered: skip the scan.
-    if (
-      prev &&
-      prev.harness === harness &&
-      prev.result === prev.source &&
-      streamingTextUpdate(prev.source, sourceBlocks) !== undefined
-    ) {
-      return sourceBlocks;
-    }
-    return collapseTranscriptErrors(filterAuthErrors(harness, sourceBlocks));
-  }, [harness, sourceBlocks, authFilterPrev]);
   // Remember what each committed frame filtered, never from inside the memo:
   // a render that React discards must not move the baseline.
   useLayoutEffect(() => {
@@ -509,6 +483,9 @@ function AgentTranscriptComponent({
     (blockId: string) => {
       if (!findTurn(blockId)) return false;
       flushSync(() => virtualization.reveal(blockId));
+      // Callers align the block now and once more on the next frame; after
+      // that the reveal must not keep forcing its rows mounted or groups open.
+      virtualization.settleRevealAfterAlignment(blockId);
       return pagingRevealBlock(blockId);
     },
     [findTurn, pagingRevealBlock, virtualization],

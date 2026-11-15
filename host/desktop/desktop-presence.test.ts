@@ -2,7 +2,11 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import { expect, it, vi } from "vitest";
-import { DesktopPresenceWorker, readDesktopPresence } from "./desktop-presence";
+import {
+  DesktopPresenceWorker,
+  readDesktopPresence,
+  readMacDesktopPresence,
+} from "./desktop-presence";
 
 it("logs why a failed desktop read counts this computer as away", async () => {
   const warn = vi.fn();
@@ -118,3 +122,30 @@ it.runIf(process.platform === "win32")(
   },
   30_000,
 );
+
+it("reads macOS idle time and the console lock flag for owner availability", async () => {
+  const hid = '    | |     "HIDIdleTime" = 149833583\n';
+  const users = (extra: string) =>
+    `      "IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=Yes,"kCGSSessionUserNameKey"="owner"${extra}})\n`;
+  const run = (root: string) => async (args: string[]) => (args.includes("IOHIDSystem") ? hid : root);
+  expect(await readMacDesktopPresence(run(users("")), vi.fn())).toEqual({
+    supported: true,
+    locked: false,
+    idleMs: 149,
+  });
+  expect(
+    await readMacDesktopPresence(run(users(',"CGSSessionScreenIsLocked"=Yes')), vi.fn()),
+  ).toMatchObject({ supported: true, locked: true });
+  expect(
+    await readMacDesktopPresence(
+      run('      "IOConsoleUsers" = ({"kCGSSessionOnConsoleKey"=No})\n'),
+      vi.fn(),
+    ),
+  ).toMatchObject({ locked: true });
+  const warn = vi.fn();
+  expect(await readMacDesktopPresence(async () => "", warn)).toEqual({
+    supported: false,
+    locked: true,
+  });
+  expect(warn).toHaveBeenCalledOnce();
+});

@@ -5,18 +5,22 @@ export function isFenceBlock(content: string): boolean {
   return /^ {0,3}(?:`{3,}|~{3,})/.test(content);
 }
 
-// Inputs Streamdown always parses whole: footnotes, reference definitions and CR line ends.
-const FOOTNOTE = /\[\^[\w-]{1,200}\]/;
+// Inputs parsed whole: footnote definitions, reference definitions and CR line ends.
+// The footnote test is Streamdown's own: `[^label]:` anywhere, so a definition nested
+// in a quote or list item counts too.
+const FOOTNOTE_DEFINITION = /\[\^[\w-]{1,200}\]:/;
+/** A `[^` Streamdown reads as a footnote reference and then keeps the whole text as one block for. */
+const FOOTNOTE_REFERENCE_START = /\[\^(?=[\w-]{1,200}\])/g;
 const REFERENCE_DEFINITION = /^ {0,3}\[[^\]]+\]:/m;
 const BLANK_LINE_END = "\n\n";
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
 const STREAMS_MAX = 32;
-// A footnote label is at most 203 characters, so a match crossing the old text ends in this window.
+// A footnote definition is at most 204 characters, so a match crossing the old text ends in this window.
 const FOOTNOTE_WINDOW = 210;
 
 /**
- * The last parse of one stream. `plain` means the input has no footnote, reference
- * definition or CR, so the incremental path may extend it.
+ * The last parse of one stream. `plain` means the input has no footnote definition,
+ * reference definition or CR, so the incremental path may extend it.
  */
 type Stream = { input: string; blocks: string[]; plain: boolean };
 
@@ -28,13 +32,39 @@ type Stream = { input: string; blocks: string[]; plain: boolean };
 const streams = new Map<string, Stream>();
 
 function isPlain(text: string): boolean {
-  return !text.includes("\r") && !FOOTNOTE.test(text) && !REFERENCE_DEFINITION.test(text);
+  return (
+    !text.includes("\r") && !FOOTNOTE_DEFINITION.test(text) && !REFERENCE_DEFINITION.test(text)
+  );
+}
+
+/**
+ * Streamdown's block split, without its footnote shortcut. Streamdown keeps the whole
+ * text as one block when it holds anything shaped like a footnote reference, so a regex
+ * such as `/[^a-z]/` in a code fence made every streamed frame render the whole reply
+ * again. A reference needs the whole text only when a definition exists (remark pairs
+ * them in one parse; an unpaired reference is literal text), so otherwise the `[^` is
+ * masked for the split and the blocks are cut from the original text. `^` never
+ * changes block structure.
+ */
+export function splitMarkdownBlocks(text: string): string[] {
+  if (!text.includes("[^") || FOOTNOTE_DEFINITION.test(text)) {
+    return [...parseMarkdownIntoBlocks(text)];
+  }
+  const masked = parseMarkdownIntoBlocks(text.replace(FOOTNOTE_REFERENCE_START, "[x"));
+  const blocks: string[] = [];
+  let offset = 0;
+  for (const block of masked) {
+    blocks.push(text.slice(offset, offset + block.length));
+    offset += block.length;
+  }
+  // Blocks are slices of their input except after CR normalisation; keep Streamdown's split then.
+  return offset === text.length ? blocks : [...parseMarkdownIntoBlocks(text)];
 }
 
 /** Whether `previous.input + appended` is still plain; scans only what a match can cross. */
 function staysPlain(previous: Stream, appended: string): boolean {
   if (appended.includes("\r")) return false;
-  if (FOOTNOTE.test(previous.input.slice(-FOOTNOTE_WINDOW) + appended)) return false;
+  if (FOOTNOTE_DEFINITION.test(previous.input.slice(-FOOTNOTE_WINDOW) + appended)) return false;
   // A reference label cannot contain "]", so a match crossing the old text starts after the
   // "]" before the last one (the last "]" may be the label's end with its ":" appended).
   const close = previous.input.lastIndexOf("]");
@@ -107,11 +137,11 @@ function extendBlocks(previous: Stream, text: string): string[] | undefined {
   if (settled === 0) return undefined;
   let offset = 0;
   for (let index = 0; index < settled; index += 1) offset += blocks[index].length;
-  return blocks.slice(0, settled).concat(parseMarkdownIntoBlocks(text.slice(offset)));
+  return blocks.slice(0, settled).concat(splitMarkdownBlocks(text.slice(offset)));
 }
 
 /**
- * The same blocks as `parseMarkdownIntoBlocks(text)`. When `stream` names a growing
+ * The same blocks as `splitMarkdownBlocks(text)`. When `stream` names a growing
  * text, the blocks that are provably unchanged are kept and only the rest is lexed.
  */
 export function markdownBlocks(text: string, stream?: string): string[] {
@@ -129,7 +159,7 @@ export function markdownBlocks(text: string, stream?: string): string[] {
   }
   if (!blocks) {
     plain = isPlain(text);
-    blocks = [...parseMarkdownIntoBlocks(text)];
+    blocks = splitMarkdownBlocks(text);
   }
   if (stream !== undefined) {
     streams.delete(stream);

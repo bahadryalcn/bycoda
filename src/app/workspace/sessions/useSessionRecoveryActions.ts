@@ -12,7 +12,8 @@ import {
   eligibleRecoverySessions,
   setRecoverySaveFailure,
   getRecoverySaveFailure,
-  removeRecoverySessions,
+  beginRecoveryRemoval,
+  rollbackRecoveryRemoval,
   setSessionRecovery,
   type SessionRecovery,
 } from "../../../features/workspace/model/sessionRecovery";
@@ -73,12 +74,14 @@ export function useSessionRecoveryActions({
   tabsRef,
   activeTabIdRef,
 }: SessionRecoveryActionsDeps): SessionRecoveryActions {
-  const dismissSavePending = useRef(false);
+  const saveTail = useRef<Promise<void>>(Promise.resolve());
+  const failedReceipts = useRef(new Set<string | undefined>());
   const owner = useRef({});
   const refreshOwner = useRef({});
   const mounted = useRef(true);
   const latest = useRef({ projectCwd, projectTerminals, lastDockSide, keepWorkspaceTab });
   latest.current = { projectCwd, projectTerminals, lastDockSide, keepWorkspaceTab };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Retire recovery retry handles when their workspace owner unmounts.
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -87,43 +90,63 @@ export function useSessionRecoveryActions({
       if (getRecoverySaveFailure()?.owner === refreshOwner.current) setRecoverySaveFailure(null);
     };
   }, []);
+  const saveLatest = (recoveryReceipt?: string, prepare?: () => boolean, rollback?: () => void) => {
+    const write = saveTail.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (!mounted.current || (prepare && !prepare()) || workspaceSnapshotWriteBlocked()) return;
+        const context = latest.current;
+        try {
+          await saveWorkspaceSnapshot(
+            collectWorkspaceSnapshot(
+              tabsRef.current,
+              sessionsRef.current,
+              activeTabIdRef.current,
+              context.projectCwd,
+              projectReturnRef.current,
+              context.projectTerminals,
+              context.lastDockSide ?? undefined,
+              context.keepWorkspaceTab,
+            ),
+            recoveryReceipt,
+          );
+        } catch (error) {
+          rollback?.();
+          throw error;
+        }
+      });
+    saveTail.current = write;
+    return write;
+  };
   const persistDismissal = async (recoveryReceipt?: string) => {
-    if (!mounted.current || dismissSavePending.current) return;
-    // The saved layout could not be read at launch (a notice says so): this
-    // window shows a seed layout that must not be saved over it.
-    if (workspaceSnapshotWriteBlocked()) return;
-    dismissSavePending.current = true;
-    const context = latest.current;
+    if (!mounted.current || workspaceSnapshotWriteBlocked()) return;
     try {
-      await saveWorkspaceSnapshot(
-        collectWorkspaceSnapshot(
-          tabsRef.current,
-          sessionsRef.current,
-          activeTabIdRef.current,
-          context.projectCwd,
-          projectReturnRef.current,
-          context.projectTerminals,
-          context.lastDockSide ?? undefined,
-          context.keepWorkspaceTab,
-        ),
-        recoveryReceipt,
-      );
-      if (mounted.current && getRecoverySaveFailure()?.owner === owner.current)
+      await saveLatest(recoveryReceipt);
+      failedReceipts.current.delete(recoveryReceipt);
+      if (
+        mounted.current &&
+        !failedReceipts.current.size &&
+        getRecoverySaveFailure()?.owner === owner.current
+      )
         setRecoverySaveFailure(null);
     } catch {
+      failedReceipts.current.add(recoveryReceipt);
       if (
         mounted.current &&
         (!getRecoverySaveFailure() || getRecoverySaveFailure()?.owner === owner.current)
       ) {
         setRecoverySaveFailure({
           owner: owner.current,
-          retry: () => persistDismissal(recoveryReceipt),
+          retry: async () => {
+            // Retry a fixed batch: a repeated failure must not re-enter this iteration.
+            const receipts = Array.from(failedReceipts.current);
+            for (const receipt of receipts) await persistDismissal(receipt);
+          },
         });
       }
-    } finally {
-      dismissSavePending.current = false;
     }
   };
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Own the native retirement listener and its retry timer while the workspace is eligible.
   useEffect(() => {
     if (!isPrimaryWorkspaceWindow() || readToolWindow()) return;
     let disposed = false;
@@ -196,32 +219,35 @@ export function useSessionRecoveryActions({
     void persistDismissal();
   };
   const removeRecoveredSessions = async (ids: string[]) => {
-    const current = getSessionRecovery();
-    if (!current) return;
-    const next = removeRecoverySessions(current, ids);
-    setSessionRecovery(next);
-    updateSessionRecovery(next);
-    // Blocked while the boot read failure is unresolved: the recovery list itself is
-    // updated above, only the layout write is held back.
-    if (workspaceSnapshotWriteBlocked()) return;
-    try {
-      await saveWorkspaceSnapshot(
-        collectWorkspaceSnapshot(
-          tabsRef.current,
-          sessionsRef.current,
-          activeTabIdRef.current,
-          projectCwd,
-          projectReturnRef.current,
-          projectTerminals,
-          lastDockSide ?? undefined,
-          keepWorkspaceTab,
-        ),
-      );
-    } catch (error) {
-      setSessionRecovery(current);
-      updateSessionRecovery(current);
-      throw error;
-    }
+    let removal: ReturnType<typeof beginRecoveryRemoval> | undefined;
+    await saveLatest(
+      undefined,
+      () => {
+        const current = getSessionRecovery();
+        if (!current) return false;
+        const lock = getGroupLockView().lock;
+        const unlockedIds = ids.filter((id) =>
+          current.workspace.sessions.some(
+            (stub) =>
+              stub.id === id &&
+              !isProjectLockedIn(lock, stub.cwd) &&
+              (!stub.worktreeCwd || !isProjectLockedIn(lock, stub.worktreeCwd)),
+          ),
+        );
+        if (!unlockedIds.length) return false;
+        removal = beginRecoveryRemoval(current, unlockedIds);
+        setSessionRecovery(removal.next);
+        updateSessionRecovery(removal.next);
+        // A blocked boot read still permits the list choice; only its layout write is held back.
+        return true;
+      },
+      () => {
+        if (!removal) return;
+        const next = rollbackRecoveryRemoval(removal, getSessionRecovery());
+        setSessionRecovery(next);
+        updateSessionRecovery(next);
+      },
+    );
   };
   const recoveryCount = sessionRecovery
     ? eligibleRecoverySessions(
@@ -234,11 +260,7 @@ export function useSessionRecoveryActions({
   const clearRecoveredSessions = async () => {
     const current = getSessionRecovery();
     if (!current) return;
-    await removeRecoveredSessions(
-      current.workspace.sessions
-        .filter((stub) => !isProjectLockedIn(getGroupLockView().lock, stub.cwd))
-        .map((stub) => stub.id),
-    );
+    await removeRecoveredSessions(current.workspace.sessions.map((stub) => stub.id));
   };
   return { closeRecovery, removeRecoveredSessions, recoveryCount, clearRecoveredSessions };
 }

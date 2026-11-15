@@ -133,6 +133,32 @@ it.each(["worker", "main"])("offers the correct selection actions in %s chat", a
   }
 });
 
+it("binds the worker transcript to its session for citations and session-scoped tools", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.clear();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const session = {
+    ...newSession("codex", "/project"),
+    blocks: [{ id: "prompt", role: "user" as const, text: "Cite me" }],
+  };
+  try {
+    act(() =>
+      root.render(createElement(AgentTabView, { title: "Worker", session, visible: true })),
+    );
+    expect(
+      container
+        .querySelector("[data-chat-citation-session]")
+        ?.getAttribute("data-chat-citation-session"),
+    ).toBe(session.id);
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("saves worker prompts and responses with their source session and project", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();

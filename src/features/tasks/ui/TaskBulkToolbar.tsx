@@ -19,6 +19,7 @@ import {
   type TaskBulkAction,
   type TaskBulkResult,
 } from "../model/taskBulkActions";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export function TaskBulkToolbar({
   tasks,
@@ -60,8 +61,7 @@ export function TaskBulkToolbar({
     setProgress(undefined);
     onSelect(keys);
   };
-  const report = (reason: unknown) =>
-    onError(reason instanceof Error ? reason.message : String(reason));
+  const report = (reason: unknown) => onError(presentRemoteError(reason, { explicit: true }));
   const failures = results.filter((row) => row.status === "failed");
   const resultGroups = groupTaskBulkResults(results);
   const eligibility = (action: TaskBulkAction) =>
@@ -122,6 +122,7 @@ export function TaskBulkToolbar({
           setResults((rows) => [...rows, result]);
           setProgress({ completed, total });
         },
+        (error) => presentRemoteError(error, { explicit: true }),
       );
       if (action === "delete") {
         const remaining = new Set(selected);

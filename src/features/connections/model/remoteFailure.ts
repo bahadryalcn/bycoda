@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { TimeoutError } from "../../../shared/lib/withTimeout";
 
 /** Why a request to a connected machine failed, as far as the user can act on it. */
@@ -19,7 +20,7 @@ export type RemoteFailure = { kind: RemoteFailureKind; message: string };
 
 /** Messages from `remote.rs`, `remote_ssh.rs`, `remoteCommands.ts` and the host. */
 const UNREACHABLE =
-  /RPC_HOST_UNAVAILABLE|RPC_CONNECTION_INTERRUPTED|RPC_DNS|RPC_PROXY|Machine is unreachable|Host is not running on the machine|SSH connection failed|SSH timed out|Could not start OpenSSH|Machine is no longer connected|machine isn.t connected on this computer|Connect this project.s machine/i;
+  /RPC_HOST_UNAVAILABLE|RPC_CONNECTION_INTERRUPTED|RPC_DNS|RPC_PROXY|Machine is unreachable|Host is not running on the machine|SSH connection failed|SSH timed out|Could not start OpenSSH|Machine is no longer connected|machine isn.t connected on this computer|Connect this project.s machine|Connection changed while the request was running|Connection ?(reset|aborted)|ConnectionReset|ConnectionAborted|ConnectionRefused|TimedOut|forcibly closed|os error 10(053|054|060)|Broken pipe/i;
 const OUTDATED =
   /Unsupported (host method|remote operation|workspace command)|Update bycoda Host in (?:Connections|Machines) settings/i;
 const UNSUPPORTED = /isn.t available for projects on another machine/i;
@@ -29,7 +30,9 @@ const TEMPORARY =
 
 export function remoteErrorText(error: unknown): string {
   if (typeof error === "string") return error;
-  return error instanceof Error ? error.message : String(error);
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string")
+    return error.message;
+  return String(error);
 }
 
 /** Native failures retain a code; persisted view errors may retain only its prefix. */
@@ -64,6 +67,13 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
     return { kind: "unreachable", message };
   if (/Host identity changed\. Add this machine again before continuing\./i.test(text))
     return { kind: "identity", message };
+  // A Host rejection proves transport worked. Its operation may mention SSH or
+  // another service being unreachable; that is not this machine's connection.
+  if (/^Host rejected request:/i.test(text)) {
+    if (OUTDATED.test(text)) return { kind: "outdated", message };
+    if (TEMPORARY.test(text)) return { kind: "temporary", message };
+    return { kind: "other", message };
+  }
   if (UNREACHABLE.test(text)) return { kind: "unreachable", message };
   if (OUTDATED.test(text)) return { kind: "outdated", message };
   if (UNSUPPORTED.test(text)) return { kind: "unsupported", message };
@@ -74,6 +84,47 @@ export function classifyRemoteError(error: unknown): RemoteFailure {
 /** The machine itself cannot be asked right now, as opposed to one command failing. */
 export const isConnectionFailure = (failure: RemoteFailure) =>
   failure.kind === "unreachable" || failure.kind === "outdated" || failure.kind === "identity";
+
+/** Codes of native failures the owner must act on; never treated as a passing outage. */
+const HARD_WS_CODES = ["RPC_WS_BLOCKED", "RPC_WS_SCHEMA", "RPC_WS_TLS"];
+
+/**
+ * A request failed only because the link to the machine dropped or the machine
+ * was busy. These usually clear within seconds, so the shared connection notice
+ * (shown after a short grace period) covers them and screens stay quiet.
+ */
+export function isTransientTransportError(error: unknown): boolean {
+  const failure = classifyRemoteError(error);
+  if (failure.kind === "temporary") return true;
+  if (failure.kind !== "unreachable") return false;
+  const code = nativeConnectionFailureCode(error);
+  return !(code && HARD_WS_CODES.includes(code));
+}
+
+/**
+ * What a screen should show for a failed request: nothing (`undefined`) for a
+ * transient transport error, otherwise the classified, human message. An
+ * explicit user action passes `{ explicit: true }` to always get a message.
+ */
+export function presentRemoteError(error: unknown, options: { explicit: true }): string;
+export function presentRemoteError(
+  error: unknown,
+  options?: { explicit?: boolean },
+): string | undefined;
+export function presentRemoteError(
+  error: unknown,
+  options: { explicit?: boolean } = {},
+): string | undefined {
+  if (!isTransientTransportError(error))
+    // An error with no text still needs a visible message.
+    return classifyRemoteError(error).message || t("Something went wrong. Try again.");
+  if (!options.explicit) return undefined;
+  // An action is never replayed on its own, since it could apply twice: tell the
+  // user to repeat it once the link is back instead of showing transport text.
+  return classifyRemoteError(error).kind === "unreachable"
+    ? t("Waiting for the connection to this computer. Try again once it is back.")
+    : t("This computer is busy right now. Try again in a moment.");
+}
 
 /** How long to wait before asking an unreachable machine again, given how
  * many requests in a row have failed. Each ask can cost an SSH attempt. */

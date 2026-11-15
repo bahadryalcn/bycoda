@@ -17,6 +17,7 @@ import {
   taskMetricsComparisons,
   type TaskEvaluationInput,
 } from "../model/taskMetrics";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type Props = {
   task: HostTask;
@@ -112,7 +113,9 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
           setMessage(t("Evaluation saved"));
         } catch (cause) {
           setError(
-            cause instanceof Error ? cause.message : t("Could not save the task evaluation."),
+            cause instanceof Error
+              ? presentRemoteError(cause, { explicit: true })
+              : t("Could not save the task evaluation."),
           );
         } finally {
           pending.current = false;

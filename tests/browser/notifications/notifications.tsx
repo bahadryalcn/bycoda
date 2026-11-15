@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { flushHostSessionBindings } from "../../../src/features/connections/public/sessionExecutionBinding";
 import { ApprovalToasts } from "../../../src/features/sessions/ui/ApprovalToasts";
+import { requestOwnerApproval } from "../../../src/features/notifications/model/ownerApprovals";
 import { NOTIFICATION_HISTORY_KEY } from "../../../src/features/notifications/model/notificationHistory";
 import { rememberNotificationProjects } from "../../../src/features/notifications/model/notificationProjects";
 import { applyThemePreference } from "../../../src/features/settings/model/appearance";
@@ -81,6 +82,20 @@ if (!localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
       })),
     ),
   );
+}
+// A live owner approval: the pending card lists its title and time left, never its message.
+if (!params.has("empty")) {
+  requestOwnerApproval({
+    id: "fixture-owner",
+    sessionId: "fixture-0",
+    input: {
+      title: "Run the release script",
+      message: "Command: pnpm release",
+      confirmLabel: "Run",
+      cancelLabel: "Cancel",
+      deadline: Date.now() + 200_000,
+    },
+  }).catch(() => undefined);
 }
 function Fixture() {
   const [pending, setPending] = useState(params.has("empty") ? [] : notices);

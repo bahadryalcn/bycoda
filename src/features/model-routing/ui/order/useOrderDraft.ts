@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { retainedTransactionValue, useRetainedTransaction } from "../../model/retainedTransaction";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -134,7 +135,7 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
       setSaveConflict(false);
       setSaved(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       submitting.current = false;
       setPending(false);
@@ -165,7 +166,10 @@ export function useOrderDraft(settings: Settings, initial: Baseline, machineId: 
         if (!machine) throw new Error("Work limits are unavailable on this Host.");
         const state = await saveMachineLimits(machine, input.limits);
         acknowledged = { ...acknowledged, limits: state };
-        client.setQueryData(["model-routing-limits", machineId], { machine, state });
+        client.setQueryData(["model-routing-limits", machineId], {
+          machine,
+          state,
+        });
       }
       setBaseline(acknowledged);
       setDraft(orderDraft(acknowledged.routing, acknowledged.limits));

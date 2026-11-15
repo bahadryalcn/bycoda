@@ -24,7 +24,7 @@ import { SkillPicker } from "./SkillPicker";
 import { Popover } from "../../../shared/ui/Popover";
 import { PromptField } from "../../../shared/ui/PromptField";
 import { DraftToken } from "../../../shared/ui/DraftToken";
-import { Sparkles } from "../../../shared/ui/icons";
+import { SkillIcon } from "../../../shared/ui/icons";
 import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
 
 type Props = {
@@ -272,7 +272,7 @@ function SkillPromptHighlight({
                 part.text[0]
               )
             }
-            icon={<Sparkles />}
+            icon={<SkillIcon />}
           >
             {localAnchor > 0 ? (
               <>

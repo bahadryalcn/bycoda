@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { isMachineEnabled } from "./machineEnabled";
 import { recordHostConnection } from "../../diagnostics";
 import {
   classifyRemoteError,
@@ -66,6 +67,27 @@ export function recordRemoteConnection(environmentId: string, error?: unknown): 
 
 export function listRemoteConnections(): [string, RemoteConnectionState][] {
   return [...connections];
+}
+
+/** Machines whose connection is down or refused right now, in first-seen order. */
+export function listRemoteOutages(): string[] {
+  return [...connections]
+    .filter(([, state]) => state.status !== "connected" && state.status !== "connecting")
+    .map(([environmentId]) => environmentId);
+}
+
+let outageSnapshot: readonly string[] = [];
+function readOutages(): readonly string[] {
+  const next = listRemoteOutages();
+  // Keep the array identity while the set is unchanged, as useSyncExternalStore requires.
+  if (next.length !== outageSnapshot.length || next.some((id, i) => id !== outageSnapshot[i]))
+    outageSnapshot = next;
+  return outageSnapshot;
+}
+
+/** Subscribe-able list of machines with an outage, independent of any mounted pane. */
+export function useRemoteOutages(): readonly string[] {
+  return useSyncExternalStore(subscribeChanges, readOutages, readOutages);
 }
 
 export function readRemoteConnection(environmentId: string): RemoteConnectionState {
@@ -176,6 +198,7 @@ function recover(environmentId: string): void {
  * seconds. Loads the user triggers themselves skip this check. */
 export function remotePollDue(cwd: string): boolean {
   const environmentId = environmentOf(cwd);
+  if (environmentId && !isMachineEnabled(environmentId)) return false;
   const state = environmentId ? unreachable.get(environmentId) : undefined;
   return !state || Date.now() - state.at >= unreachablePollDelay(state.count);
 }

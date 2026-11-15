@@ -70,7 +70,12 @@ export const ConnectionProbeResultSchema = z.strictObject({
 export const SubscriptionTargetSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("environment") }),
   z.strictObject({ kind: z.literal("project"), projectId: IdentifierSchema }),
-  z.strictObject({ kind: z.literal("session"), sessionId: IdentifierSchema }),
+  z.strictObject({
+    kind: z.literal("session"),
+    sessionId: IdentifierSchema,
+    /** Hosts advertising `transport.ws.sessions.tail.v1`: newest page first, compact deltas. */
+    tail: z.literal(true).optional(),
+  }),
 ]);
 export const SubscriptionOpenParamsSchema = z.strictObject({
   subscriptionId: IdentifierSchema,

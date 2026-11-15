@@ -1,4 +1,10 @@
 export { ownerApprovalsSnapshot, subscribeOwnerApprovals } from "./model/ownerApprovals";
+export {
+  ownerSecretInputsSnapshot,
+  subscribeOwnerSecretInputs,
+  type OwnerSecretInput,
+} from "./model/ownerSecretInputs";
+export { logOwnerRequest } from "./model/notificationLog";
 export { OwnerApprovalChat, OwnerApprovalInbox } from "./ui/OwnerApprovalRequests";
 export { useServerNotifications } from "./hooks/useServerNotifications";
 export { useOwnerApprovalMirror } from "./hooks/useOwnerApprovalMirror";

@@ -56,6 +56,8 @@ mod keep_awake;
 mod linear;
 mod link_preview;
 mod local_host;
+#[path = "remote/discovery/mod.rs"]
+mod machine_discovery;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -587,6 +589,7 @@ pub fn run() {
             native_editor_drafts::native_editor_draft_inventory,
             native_editor_drafts::native_editor_draft_clear_saved,
             remote::remote_machines,
+            machine_discovery::discover_machine_candidates,
             server_inventory::server_inventory_list,
             termius_import::termius_import_preview,
             termius_import::termius_import_apply,
@@ -653,6 +656,7 @@ pub fn run() {
             handoff_history::handoff_history_save,
             handoff_history::handoff_history_read,
             remote::remote_disconnect,
+            remote::remote_close_connection,
             remote::remote_request,
             remote::assistant_native_send,
             remote::assistant_native_finish,
@@ -685,6 +689,9 @@ pub fn run() {
             remote::remote_ssh_reconnect,
             remote::remote_machine_update,
             remote_routes::remote_machine_routes,
+            remote::account_routes::remote_learn_account_routes,
+            remote::account_routes::remote_set_disabled_machines,
+            remote::account_pairing::remote_pair_account,
             remote_routes::remote_machine_route_settings,
             remote_routes::remote_machine_route_check,
             remote::remote_ssh_poll,
@@ -1037,6 +1044,7 @@ pub fn run() {
             diagnostics::diagnostics_collect_logs,
             diagnostics::diagnostics_clear_crash,
             diagnostics::diagnostics_gzip_base64,
+            diagnostics::diagnostics_ui_log,
             provider_terminal_profiles::provider_terminal_profiles,
             provider_terminal_profiles::provider_terminal_profile_connect,
             pi_usage::fetch_pi_usage,

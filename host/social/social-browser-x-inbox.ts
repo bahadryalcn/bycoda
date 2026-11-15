@@ -2,7 +2,7 @@ import type { SocialAccount, SocialMonitorChannel } from "../../src/features/soc
 import { SocialPlatformError, type SocialInbound } from "../../src/integrations/social/adapter";
 import { parseXBrowserInbox, parseXBrowserMentions } from "./social-browser-inbound";
 import { challengeError } from "./browser/challenge";
-import type { XBrowserDeps } from "./social-browser-x-page";
+import { xChatBlockReason, type XBrowserDeps } from "./social-browser-x-page";
 
 /**
  * Monitoring for X browser accounts: mentions, direct messages and reply comments. Channels follow
@@ -47,12 +47,19 @@ export async function pollX(
       try {
         await session.page.goto(channel.url);
         if (channel.name === "messages") {
-          const path = await session.page.evaluate<string>("location.pathname");
+          // goto does not wait for the client redirect to encrypted chat; reading the path at once
+          // still sees the previous page and the channel then times out as response_unavailable.
+          const path =
+            (await deps.until<string>(
+              session.page,
+              `(() => { const p = location.pathname; return p === "/i/chat" || p.startsWith("/i/chat/") ? p : null; })()`,
+              8_000,
+            )) ?? (await session.page.evaluate<string>("location.pathname"));
           if (path === "/i/chat" || path.startsWith("/i/chat/")) {
             await deps.identity(session.page, account);
             result.reason = path.startsWith("/i/chat/pin/")
               ? "chat_setup_required"
-              : "encrypted_chat_unsupported";
+              : await xChatBlockReason(deps, session.page);
             continue;
           }
         }
@@ -63,14 +70,15 @@ export async function pollX(
           const challenge = await challengeError(session.page, deps.directory);
           if (challenge) throw challenge;
           // Positive, route-specific empty-state evidence; absence of a response alone is not success.
+          // Structure only: the empty-state copy is localized (a Turkish account never matched English text).
           if (
             channel.name === "mentions" &&
             (await session.page.evaluate<boolean>(`(() => {
             return location.origin === "https://x.com" &&
               location.pathname === "/notifications/mentions" &&
               !!document.querySelector('a[role="tab"][aria-selected="true"][href="/notifications/mentions"]') &&
-              document.querySelector('[data-testid="emptyState"] [data-testid="empty_state_header_text"]')?.textContent?.trim() === "Nothing to see here — yet" &&
-              document.querySelector('[data-testid="emptyState"] [data-testid="empty_state_body_text"]')?.textContent?.trim() === "When someone mentions you, you’ll find it here." &&
+              !!document.querySelector('[data-testid="emptyState"] [data-testid="empty_state_header_text"]')?.textContent?.trim() &&
+              !!document.querySelector('[data-testid="emptyState"] [data-testid="empty_state_body_text"]')?.textContent?.trim() &&
               !document.querySelector('article[data-testid="tweet"]');
           })()`))
           ) {

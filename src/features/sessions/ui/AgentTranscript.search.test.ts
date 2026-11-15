@@ -7,7 +7,7 @@ import { AgentTranscript } from "./AgentTranscript";
 
 let container: HTMLDivElement;
 let root: Root;
-let navigate: ((blockId: string | null) => boolean) | undefined;
+let navigate: ((blockId: string | null, query?: string) => boolean) | null | undefined;
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -95,6 +95,50 @@ it("opens folded work when its tool result is selected", () => {
   expect(container.querySelector('[data-transcript-search-current="true"]')?.textContent).toContain(
     "Inspect the search module",
   );
+});
+
+it("hands a revealed phase group back to its header once navigation settles", async () => {
+  const blocks: Block[] = [
+    { id: "user", role: "user", text: "Check the repository" },
+    { id: "narration", role: "assistant", text: "Reading the diff first." },
+    {
+      id: "tool-1",
+      role: "tool",
+      text: "Read src/App.tsx",
+      tool: { kind: "read", status: "completed" },
+    },
+    {
+      id: "tool-2",
+      role: "tool",
+      text: "Read src/lib/session.ts",
+      tool: { kind: "read", status: "completed" },
+    },
+    { id: "answer", role: "assistant", text: "Done." },
+  ];
+  act(() =>
+    root.render(
+      createElement(AgentTranscript, {
+        blocks,
+        onNavigateReady: (callback) => {
+          navigate = callback;
+        },
+      }),
+    ),
+  );
+  act(() => {
+    expect(navigate?.("tool-1")).toBe(true);
+  });
+  const header = () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label*="the steps for"]')!;
+  expect(header().getAttribute("aria-expanded")).toBe("true");
+  await act(async () => {
+    for (let frame = 0; frame < 3; frame++)
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
+  // Navigation is done: the group stays open, and its header closes it again.
+  expect(header().getAttribute("aria-expanded")).toBe("true");
+  act(() => header().click());
+  expect(header().getAttribute("aria-expanded")).toBe("false");
 });
 
 it("paints matching words and clears them when find closes", () => {

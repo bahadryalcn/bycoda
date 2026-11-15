@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cancelOwnerSecretInput,
   ownerSecretInputsSnapshot,
+  ownerSecretOutcome,
   requestOwnerSecretInput,
   submitOwnerSecretInput,
 } from "./ownerSecretInputs";
@@ -31,6 +32,26 @@ afterEach(() => {
 });
 
 describe("owner secret inputs", () => {
+  it("keeps how each request ended, never its value", async () => {
+    vi.useFakeTimers();
+    const sent = payload();
+    const sentPromise = requestOwnerSecretInput(sent);
+    submitOwnerSecretInput(sent.id, VALUE);
+    await sentPromise;
+    const closed = payload();
+    const closedPromise = requestOwnerSecretInput(closed);
+    cancelOwnerSecretInput(closed.id);
+    await closedPromise;
+    const late = payload();
+    const latePromise = requestOwnerSecretInput(late);
+    vi.advanceTimersByTime(60_001);
+    await latePromise;
+    expect(ownerSecretOutcome(sent.id)).toBe("submitted");
+    expect(ownerSecretOutcome(closed.id)).toBe("cancelled");
+    expect(ownerSecretOutcome(late.id)).toBe("expired");
+    expect(ownerSecretOutcome("unknown")).toBeUndefined();
+  });
+
   it("settles with the typed value once and keeps no copy in the store", async () => {
     const request = payload();
     const promise = requestOwnerSecretInput(request);

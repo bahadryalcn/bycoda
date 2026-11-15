@@ -27,6 +27,7 @@ import {
 } from "../model/goalClient";
 import type { BackgroundSessionTarget } from "../model/backgroundSession";
 import type { PlanningRecovery, TaskBoardOperations } from "./useTaskBoardOperations";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export const ALL_GOALS = "all";
 
@@ -71,8 +72,7 @@ export function useTaskGoals({
   const { saving, setSaving, setError, refresh, act, confirm } = ops;
   const { cwd, recents, projectFilter, lock, machines, selectedProject, scopedCwd } = scope;
   const { currentSprint, sprintBoard } = scope;
-  const report = (reason: unknown) =>
-    setError(reason instanceof Error ? reason.message : String(reason));
+  const report = (reason: unknown) => setError(presentRemoteError(reason, { explicit: true }));
   const [draft, setDraft] = useState<GoalDraft | null>(null);
   const [editing, setEditing] = useState<BoardGoal | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -154,7 +154,7 @@ export function useTaskGoals({
           });
           setError(
             t("Epic created. Sprint assignment failed: {p0}", {
-              p0: reason instanceof Error ? reason.message : String(reason),
+              p0: presentRemoteError(reason, { explicit: true }),
             }),
           );
           refresh().catch(report);
@@ -164,7 +164,7 @@ export function useTaskGoals({
       setError(null);
       refresh().catch(report);
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(presentRemoteError(reason, { explicit: true }));
     } finally {
       setSaving(false);
     }
@@ -231,7 +231,7 @@ export function useTaskGoals({
       setEditing(null);
       refresh().catch(report);
     } catch (reason) {
-      setSettingsError(reason instanceof Error ? reason.message : String(reason));
+      setSettingsError(presentRemoteError(reason, { explicit: true }));
       refresh().catch(report);
     } finally {
       setSaving(false);

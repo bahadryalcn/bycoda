@@ -11,6 +11,7 @@ import {
   subscribeRemoteRecovered,
 } from "./remoteHealth";
 import { remotePath } from "./remoteProjects";
+import { setMachineEnabled } from "./machineEnabled";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -19,7 +20,11 @@ import {
   reportRemoteConnection,
 } from "./remoteHealth";
 import { blocksSending, connectionIndicator, shouldAutoRetry } from "./remoteConnection";
-import { adoptRemoteMachineInventory, reportRemoteMachineStatus } from "./connections";
+import {
+  adoptRemoteMachineInventory,
+  reportRemoteMachineStatus,
+  remoteRequest,
+} from "./connections";
 import type { RemoteMachine } from "./protocol";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -33,6 +38,15 @@ beforeEach(() => {
   resetRemoteHealth();
 });
 afterEach(() => vi.useRealTimers());
+
+it("skips background polls for disabled machines, including healthy direct routes", () => {
+  setMachineEnabled("env", false);
+  expect(remotePollDue(project)).toBe(false);
+  vi.advanceTimersByTime(60_000);
+  expect(remotePollDue(project)).toBe(false);
+  setMachineEnabled("env", true);
+  expect(remotePollDue(project)).toBe(true);
+});
 
 it("slows polling while unreachable and resumes after one success", () => {
   const recovered = vi.fn();
@@ -215,4 +229,33 @@ it("forgets a removed machine's connection, failure and backoff", () => {
   forgetRemoteConnection("env");
   expect(readRemoteConnection("env")).toEqual({ status: "connecting" });
   expect(remotePollDue(project)).toBe(true);
+});
+
+it("records RPC transport failures and recovery without requiring a pane reporter", async () => {
+  const { invoke } = await import("@tauri-apps/api/core");
+  adoptRemoteMachineInventory([{ id: "rpc-health", environmentId: "rpc-env" } as RemoteMachine]);
+  vi.mocked(invoke).mockRejectedValueOnce({
+    message: "The host request did not complete [RPC_HOST_UNAVAILABLE] (environment.describe).",
+  });
+  await expect(remoteRequest("rpc-health", "environment.describe")).rejects.toMatchObject({
+    message: expect.stringContaining("RPC_HOST_UNAVAILABLE"),
+  });
+  expect(readRemoteConnection("rpc-env").status).toBe("unreachable");
+  vi.mocked(invoke).mockResolvedValueOnce({ environmentId: "rpc-env" });
+  await remoteRequest("rpc-health", "environment.describe");
+  expect(readRemoteConnection("rpc-env").status).toBe("connected");
+});
+
+it("lists machines in an outage and notifies subscribers, without any pane", async () => {
+  const { listRemoteOutages, subscribeChanges } = await import("./remoteHealth");
+  const seen: string[][] = [];
+  const stop = subscribeChanges(() => seen.push(listRemoteOutages()));
+  expect(listRemoteOutages()).toEqual([]);
+  recordRemoteConnection("a", new Error(down));
+  recordRemoteConnection("b", undefined);
+  expect(listRemoteOutages()).toEqual(["a"]);
+  notifyRemoteRecovered("a");
+  expect(listRemoteOutages()).toEqual([]);
+  expect(seen.some((ids) => ids.includes("a"))).toBe(true);
+  stop();
 });

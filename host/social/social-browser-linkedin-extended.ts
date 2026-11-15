@@ -1,6 +1,11 @@
 import { open } from "node:fs/promises";
 import type { SocialJob, SocialMedia } from "../../src/features/social/model/social";
 import { SocialPlatformError, type SocialSendResult } from "../../src/integrations/social/adapter";
+import {
+  LINKEDIN_CAPTURE_FILE_INPUT,
+  LINKEDIN_COMPOSER_EDITOR,
+  LINKEDIN_POST_LABELS,
+} from "./social-browser-linkedin-composer";
 import type { BrowserRecipeContext } from "./social-browser-recipe";
 
 const origin = "https://www.linkedin.com";
@@ -44,6 +49,36 @@ async function click(
   labels?: readonly string[],
 ) {
   const target = await unique(ctx, selector, token, labels);
+  await ctx.verifyIdentity();
+  await ctx.page.click(target);
+}
+
+const DOCUMENT_LABELS = ["Document", "Belge"] as const;
+const SELECT_FILE_LABELS = ["Choose file", "Select file", "Choose a file", "Dosya seçin"] as const;
+const DONE_LABELS = ["Done", "Bitti"] as const;
+
+/** `data-view-name` is only an optional first choice: LinkedIn A/B serves a variant without it. */
+async function uniquePreferred(
+  ctx: BrowserRecipeContext,
+  preferred: string,
+  fallback: string,
+  token: string,
+  labels?: readonly string[],
+): Promise<string> {
+  const has = await ctx.page.evaluate<boolean>(
+    `[...document.querySelectorAll(${json(preferred)})].some(el=>el.getClientRects().length)`,
+  );
+  return unique(ctx, has ? preferred : fallback, token, has ? undefined : labels);
+}
+
+async function clickPreferred(
+  ctx: BrowserRecipeContext,
+  preferred: string,
+  fallback: string,
+  token: string,
+  labels?: readonly string[],
+) {
+  const target = await uniquePreferred(ctx, preferred, fallback, token, labels);
   await ctx.verifyIdentity();
   await ctx.page.click(target);
 }
@@ -103,14 +138,17 @@ export async function linkedInApplyImageAlt(
   if (description.length > 1000) throw unsupported();
   const image = await ctx.waitFor<boolean>(
     String.raw`(() => {
-    const dialog=document.querySelector('[role="dialog"]');
-    return !!dialog&&dialog.querySelectorAll('img[src^="blob:"]').length===1&&!dialog.querySelector('[role="progressbar"],.uploading');
+    const dialogs=[...document.querySelectorAll('dialog[open]')],dialog=dialogs[dialogs.length-1];
+    if(!dialog||dialog.querySelector('[role="progressbar"],progress'))return false;
+    const blobs=[...dialog.querySelectorAll('img[src^="blob:"]')],thumbs=blobs.filter(img=>/^image \d+$/i.test(img.getAttribute('alt')||''));
+    return thumbs.length?thumbs.length===1:blobs.length===1;
   })()`,
     30_000,
   );
   if (!image) throw unsupported();
   const openEditor = async () =>
-    click(ctx, '[role="dialog"] button,[role="dialog"] [role="button"]', "alt-open", [
+    click(ctx, "dialog[open] button", "alt-open", [
+      "Alt text",
       "Alt.text",
       "Alt. text",
       "Add alt text",
@@ -118,18 +156,14 @@ export async function linkedInApplyImageAlt(
       "Alternatif metin",
     ]);
   await openEditor();
-  const field = await unique(
-    ctx,
-    '[role="dialog"] textarea,[role="dialog"] input[type="text"]',
-    "alt-field",
-  );
+  const field = await unique(ctx, "dialog[open] textarea", "alt-field");
   await ctx.verifyIdentity();
   await ctx.page.fill(field, description);
   const value = await ctx.page.evaluate<string>(
     `String(document.querySelector(${json(field)})?.value??'')`,
   );
   if (value !== description) throw denied();
-  await click(ctx, '[role="dialog"] button', "alt-save", [
+  await click(ctx, "dialog[open] button", "alt-save", [
     "Save",
     "Add",
     "Done",
@@ -139,23 +173,13 @@ export async function linkedInApplyImageAlt(
   ]);
   // Reopen the editor to distinguish a saved description from an input echo.
   await openEditor();
-  const savedField = await unique(
-    ctx,
-    '[role="dialog"] textarea,[role="dialog"] input[type="text"]',
-    "alt-readback",
-  );
+  const savedField = await unique(ctx, "dialog[open] textarea", "alt-readback");
   const saved = await ctx.page.evaluate<string>(
     `String(document.querySelector(${json(savedField)})?.value??'')`,
   );
   if (saved !== description) throw denied();
-  await click(ctx, '[role="dialog"] button', "alt-close", [
-    "Save",
-    "Add",
-    "Done",
-    "Kaydet",
-    "Ekle",
-    "Bitti",
-  ]);
+  // A reopened, unchanged description leaves Update disabled, so leave through the back arrow (unsaved text is the saved text).
+  await click(ctx, "dialog[open] button[aria-label]", "alt-close", ["Back", "Geri"]);
 }
 
 /** Call after reopening a persisted post when a described image was submitted. */
@@ -191,68 +215,100 @@ export async function linkedInPublishDocument(
   )
     throw unsupported();
   await validateLinkedInPdf(ctx.files[0].path);
-  await ctx.page.goto(own.home);
+  // A member's composer opens by LinkedIn's own `shareActive` link, which needs no feed markup.
+  await ctx.page.goto(own.path.startsWith("/in/") ? `${origin}/feed/?shareActive=true` : own.home);
   await ctx.verifyIdentity();
-  await click(ctx, "button.share-box-feed-entry__trigger", "post-open");
-  // Document is an additional sharing option, not an image attachment.
-  const visibleDocument = await ctx.page.evaluate<boolean>(
-    String.raw`[...document.querySelectorAll('[role="dialog"] button')].some(el=>['Add a document','Document','Belge ekle','Belge'].includes((el.getAttribute('aria-label')||el.textContent||'').trim())&&el.getClientRects().length)`,
-  );
-  if (!visibleDocument)
-    await click(ctx, '[role="dialog"] button', "post-more", [
+  if (!own.path.startsWith("/in/"))
+    await clickPreferred(
+      ctx,
+      '[data-view-name="share-sharebox-focus"]',
+      "button.share-box-feed-entry__trigger",
+      "post-open",
+    );
+  // Document is an additional sharing option behind the expand control, not an image attachment.
+  const documentSelector = "dialog[open] [aria-label]";
+  const documentVisible = String.raw`(() => {
+    const labels=${json(DOCUMENT_LABELS)};
+    return [...document.querySelectorAll('dialog[open] [data-view-name="share-sharebox-bottom-bar-document"],dialog[open] [aria-label]')].some(el=>
+      el.getClientRects().length&&(el.hasAttribute('data-view-name')||labels.includes(el.getAttribute('aria-label')||'')));
+  })()`;
+  await ctx.waitFor<boolean>(`!!document.querySelector('dialog[open]')`, 20_000);
+  if (!(await ctx.page.evaluate<boolean>(documentVisible)))
+    await click(ctx, "dialog[open] button", "post-more", [
+      "Expand content types",
       "More",
       "More options",
+      "İçerik türlerini genişlet",
       "Diğer",
       "Diğer seçenekler",
     ]);
-  await click(ctx, '[role="dialog"] button', "document-open", [
-    "Add a document",
-    "Document",
-    "Belge ekle",
-    "Belge",
-  ]);
+  await clickPreferred(
+    ctx,
+    'dialog[open] [data-view-name="share-sharebox-bottom-bar-document"]',
+    documentSelector,
+    "document-open",
+    DOCUMENT_LABELS,
+  );
+  await ctx.page.evaluate(LINKEDIN_CAPTURE_FILE_INPUT);
+  await clickPreferred(
+    ctx,
+    'dialog[open] [data-view-name="media-document-share-select-file"]',
+    "dialog[open] button",
+    "document-select",
+    SELECT_FILE_LABELS,
+  );
   const upload = await unique(
     ctx,
-    '[role="dialog"] input[type="file"][accept*="pdf"],[role="dialog"] input[type="file"][accept*="application"]',
+    'input[type="file"][data-bycoda-li-file][accept*="pdf"]',
     "document-upload",
     undefined,
     true,
   );
   await ctx.verifyIdentity();
   await ctx.page.setFiles(upload, [ctx.files[0].path]);
-  const titleField = await unique(
-    ctx,
-    '[role="dialog"] input[aria-label="Document title"],[role="dialog"] input[placeholder="Document title"],[role="dialog"] input[aria-label="Belge başlığı"]',
-    "document-title",
-  );
+  const titleField = await unique(ctx, 'dialog[open] input[type="text"]', "document-title");
   await ctx.verifyIdentity();
   await ctx.page.fill(titleField, title);
   const ready = await ctx.waitFor<boolean>(
     String.raw`(() => {
-    const dialog=document.querySelector('[role="dialog"]'),input=document.querySelector(${json(titleField)});
-    return !!dialog&&input?.value===${json(title)}&&!dialog.querySelector('[role="progressbar"],.uploading,.processing')&&
-      !!dialog.querySelector('iframe,object[type="application/pdf"],[role="document"]');
+    const dialog=document.querySelector('dialog[open]'),input=document.querySelector(${json(titleField)});
+    const labels=${json(DONE_LABELS)};
+    const done=dialog&&([...dialog.querySelectorAll('[data-view-name="media-document-share-confirm"],button')].find(el=>
+      el.hasAttribute('data-view-name')||labels.includes((el.getAttribute('aria-label')||el.textContent||'').trim())));
+    return !!dialog&&input?.value===${json(title)}&&!dialog.querySelector('[role="progressbar"],progress')&&!!done&&!done.disabled;
   })()`,
     120_000,
   );
   if (!ready) throw unsupported();
-  await click(ctx, '[role="dialog"] button', "document-done", ["Done", "Bitti"]);
-  const editor = await unique(
+  await clickPreferred(
     ctx,
-    '[role="dialog"] .ql-editor[contenteditable="true"]',
-    "post-text",
+    'dialog[open] [data-view-name="media-document-share-confirm"]',
+    "dialog[open] button",
+    "document-done",
+    DONE_LABELS,
   );
+  // The document dialog is gone once the composer shows the attachment and its editor.
+  if (
+    !(await ctx.waitFor<boolean>(
+      String.raw`document.querySelectorAll('dialog[open]').length===1&&!document.querySelector('dialog[open] input[type="text"]')&&!!document.querySelector(${json(LINKEDIN_COMPOSER_EDITOR)})`,
+      20_000,
+    ))
+  )
+    throw unsupported();
+  const editor = await unique(ctx, LINKEDIN_COMPOSER_EDITOR, "post-text");
   const previous = await ctx.page.evaluate<string>(
     `document.querySelector(${json(editor)})?.textContent??''`,
   );
   if (previous.trim()) throw denied();
   await ctx.verifyIdentity();
   await ctx.page.fill(editor, content(job));
-  const submit = await unique(ctx, "button.share-actions__primary-action", "document-post", [
-    "Post",
-    "Yayınla",
-    "Paylaş",
-  ]);
+  const submit = await uniquePreferred(
+    ctx,
+    'dialog[open] [data-view-name="share-post"]',
+    "dialog[open] button",
+    "document-post",
+    LINKEDIN_POST_LABELS,
+  );
   const watcher = ctx.page.watchResponse(
     /\/(?:voyager\/api\/)?(?:contentcreation\/normShares|graphql)/,
     (raw) => !!createdId(raw),
@@ -311,29 +367,31 @@ function createdId(raw: string): string | undefined {
 type Conversation = {
   recipient: string;
   href: string;
-  rows: { id: string; sender: string; text: string; at: number }[];
+  rows: { id: string; sender: string; text: string; at: number; last: boolean }[];
 };
+/** The messaging UI keeps its legacy msg-* classes; only the sender link and timestamps changed. */
 function conversationExpression(): string {
   return String.raw`(() => {
     if(location.origin!==${json(origin)})return;
     const threads=[...document.querySelectorAll('.msg-thread,.msg-overlay-conversation-bubble')].filter(el=>el.getClientRects().length);
     if(threads.length!==1)return;const thread=threads[0];
-    if(thread.querySelector('input[name="subject"],[aria-label="Subject"],.msg-inmail-credit-count'))return;
-    const profiles=[...thread.querySelectorAll('.msg-thread__link-to-profile[href],.msg-entity-lockup__link[href]')].map(el=>{try{
+    if(thread.querySelector('input[name="subject"],[aria-label="Subject"],[aria-label="Konu"],.msg-inmail-credit-count'))return;
+    const slugOf=el=>{try{
       const url=new URL(el.getAttribute('href'),location.origin),slug=/^\/in\/([\w-]+)\/?$/.exec(url.pathname)?.[1];
       return url.origin===${json(origin)}&&slug?'web:linkedin:in:'+slug.toLowerCase():null;
-    }catch{return null;}}).filter(Boolean);
+    }catch{return null;}};
+    const profiles=[...thread.querySelectorAll('a[href*="/in/"]')].filter(el=>!el.closest('[data-event-urn]')).map(slugOf).filter(Boolean);
     const recipients=[...new Set(profiles)];if(recipients.length!==1)return;
     const hrefs=[...thread.querySelectorAll('a[href*="/messaging/thread/"]')].map(el=>{try{const url=new URL(el.getAttribute('href'),location.origin);return url.origin===${json(origin)}&&/^\/messaging\/thread\/[\w:(),-]+\/?$/.test(url.pathname)?url.origin+url.pathname:null;}catch{return null;}}).filter(Boolean);
     const current=/^\/messaging\/thread\/[\w:(),-]+\/?$/.test(location.pathname)?location.origin+location.pathname:null;
     const href=[...new Set([current,...hrefs].filter(Boolean))];if(href.length>1)return;
-    const list=thread.querySelector('.msg-s-message-list');if(!list)return;
-    const rows=[...list.querySelectorAll('[data-event-urn]')].slice(-100).map(el=>{
+    const events=[...thread.querySelectorAll('[data-event-urn]')];
+    const rows=events.slice(-100).map(el=>{
       const id=el.getAttribute('data-event-urn'),body=el.querySelector('.msg-s-event-listitem__body'),group=el.closest('.msg-s-message-group')||el;
-      const actor=group.querySelector('a.msg-s-message-group__profile-link[href]'),time=el.querySelector('time[datetime]')||group.querySelector('time[datetime]');
-      if(!/^urn:li:(?:msg_message|fsd_message):[\w:(),-]+$/.test(id||'')||!body||!actor||!time||el.querySelector('.msg-s-event-listitem--pending'))return null;
-      try{const url=new URL(actor.getAttribute('href'),location.origin),slug=/^\/in\/([\w-]+)\/?$/.exec(url.pathname)?.[1],at=Date.parse(time.getAttribute('datetime'));
-      return url.origin===${json(origin)}&&slug&&Number.isFinite(at)?{id,sender:'web:linkedin:in:'+slug.toLowerCase(),text:body.textContent.trim(),at}:null;}catch{return null;}
+      const actor=el.querySelector('a.msg-s-event-listitem__link[href]')||group.querySelector('a.msg-s-message-group__profile-link[href]'),time=el.querySelector('time[datetime]')||group.querySelector('time[datetime]');
+      if(!/^urn:li:(?:msg_message|fsd_message):[\w:(),-]+$/.test(id||'')||!body||!actor||el.querySelector('.msg-s-event-listitem--pending'))return null;
+      const sender=slugOf(actor),at=time?Date.parse(time.getAttribute('datetime')):0;
+      return sender&&Number.isFinite(at)?{id,sender,text:body.textContent.trim(),at,last:el===events[events.length-1]}:null;
     }).filter(Boolean);
     return {recipient:recipients[0],href:href[0]||'',rows};
   })()`;
@@ -361,20 +419,26 @@ export async function linkedInStartMessage(
   const recipient = `web:linkedin:in:${match[1].toLowerCase()}`;
   await ctx.page.goto(`${origin}/in/${match[1]}/`);
   await ctx.verifyIdentity();
-  const eligible = await ctx.waitFor<boolean>(
+  // The profile top card has no h1 and no distance class: the degree is the first "· 1." text before
+  // the Message link. That link carries the compose URL; its overlay lives in a shadow root the CDP
+  // click cannot reach, so the same URL is opened as a page.
+  const composeUrl = await ctx.waitFor<string | false>(
     String.raw`(() => {
     if(location.origin!==${json(origin)}||location.pathname.replace(/\/$/,'').toLowerCase()!==${json(`/in/${match[1].toLowerCase()}`)})return false;
-    const main=document.querySelector('main');if(!main||!main.querySelector('h1'))return false;
-    const first=[...main.querySelectorAll('.distance-badge,.dist-value')].some(el=>/^(1st|1\.|1\. derece)$/.test((el.textContent||'').trim()));
-    const buttons=[...main.querySelectorAll('button,a[role="button"]')].filter(el=>el.getClientRects().length&&!el.disabled&&
-      ['Message','Mesaj'].includes((el.getAttribute('aria-label')||el.textContent||'').trim()));
-    if(!first||buttons.length!==1)return false;buttons[0].setAttribute('data-bycoda-linkedin-new-message','true');return true;
+    const main=document.querySelector('main');if(!main)return false;
+    const links=[...main.querySelectorAll('[data-view-name="profile-primary-message"] a[href],[data-view-name="profile-secondary-message"] a[href]')].filter(el=>el.getClientRects().length&&el.getAttribute('aria-disabled')!=='true'&&
+      ['Message','Mesaj','Mesaj gönder'].includes((el.getAttribute('aria-label')||el.textContent||'').trim()));
+    if(links.length!==1)return false;
+    const degree=[...main.querySelectorAll('p,span,.distance-badge,.dist-value')].find(el=>el.getClientRects().length&&!el.children.length&&/^(·\s*)?\d(st|nd|rd|th|\.)?(\s*derece)?$/.test((el.textContent||'').trim()));
+    if(!degree||!/^(·\s*)?(1st|1\.?(\s*derece)?)$/.test(degree.textContent.trim())||!(degree.compareDocumentPosition(links[0])&Node.DOCUMENT_POSITION_FOLLOWING))return false;
+    try{const url=new URL(links[0].getAttribute('href'),location.origin),recipient=url.searchParams.get('recipient');
+      return url.origin===${json(origin)}&&url.pathname==='/messaging/compose/'&&/^[\w-]{10,}$/.test(recipient||'')?url.href:false;}catch{return false;}
   })()`,
     20_000,
   );
-  if (!eligible) throw denied();
+  if (!composeUrl) throw denied();
   await ctx.verifyIdentity();
-  await ctx.page.click('[data-bycoda-linkedin-new-message="true"]');
+  await ctx.page.goto(composeUrl);
   const before = await ctx.waitFor<Conversation>(conversationExpression(), 20_000);
   if (before?.recipient !== recipient) throw denied();
   const editor = await unique(
@@ -413,7 +477,8 @@ export async function linkedInStartMessage(
       (row) =>
         row.sender === ctx.account.platformId &&
         row.text === job.payload.text &&
-        row.at >= at - 5000 &&
+        row.last &&
+        (!row.at || row.at >= at - 5000) &&
         !before.rows.some((old) => old.id === row.id),
     );
     if (matches.length !== 1) throw unknown();

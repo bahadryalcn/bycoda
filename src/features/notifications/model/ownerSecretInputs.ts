@@ -1,4 +1,5 @@
 import { boundedSet, createStore } from "../../../shared/lib/store";
+import { logOwnerRequest } from "./notificationLog";
 
 /** A masked request for one secret. The owner's text is never kept in this store. */
 export type OwnerSecretInput = {
@@ -27,8 +28,12 @@ const pending = new Map<
     release: () => void;
   }
 >();
-/** Only identity is retained after a request settles, so a replay can never re-deliver a value. */
-const settled = new Map<string, { signature: string }>();
+/** How a request ended; never its value. */
+export type OwnerSecretOutcome = "submitted" | "cancelled" | "expired";
+/** Only identity and outcome are retained after a request settles, so a replay can never re-deliver a value. */
+const settled = new Map<string, { signature: string; outcome: OwnerSecretOutcome }>();
+/** How a settled request ended, for the notification log. */
+export const ownerSecretOutcome = (id: string) => settled.get(id)?.outcome;
 export const subscribeOwnerSecretInputs = store.subscribe;
 export const ownerSecretInputsSnapshot = () => requests;
 
@@ -118,9 +123,13 @@ function finishOwnerSecretInput(id: string, value: string | null): boolean {
   } catch {
     accepted = null;
   }
-  boundedSet(settled, id, { signature: entry.signature }, 256);
+  const outcome: OwnerSecretOutcome =
+    accepted !== null ? "submitted" : Date.now() >= request.deadline ? "expired" : "cancelled";
+  boundedSet(settled, id, { signature: entry.signature, outcome }, 256);
   requests = requests.filter((request) => request.id !== id);
   store.notify();
   entry.resolve(accepted);
+  // Only the title and how it ended reach the log; the value never does.
+  logOwnerRequest({ id, title: request.title, outcome });
   return accepted !== null;
 }

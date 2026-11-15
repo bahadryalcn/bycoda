@@ -397,6 +397,7 @@ const handlers: Record<
   "desktop.request": handleDesktopRpc,
   "desktop.helper.request": handleDesktopRpc,
   "assistant.request": handleAssistantRpc,
+  "assistant.ownerActive": handleAssistantRpc,
   "conversation.desktop.take": handleConversationRpc,
   "conversation.desktop.finish": handleConversationRpc,
   "conversation.desktop.authorize": handleConversationRpc,

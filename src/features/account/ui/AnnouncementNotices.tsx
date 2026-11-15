@@ -3,9 +3,20 @@ import { openExternal } from "../../../platform/tauri/openExternal";
 import { t, useLocale } from "../../../shared/i18n";
 import { Toast, type ToastTone } from "../../../shared/ui/ToastRegion";
 import { useAnnouncementFeed, useAnnouncementPolling } from "../hooks/useAnnouncements";
-import { announcementFeed, unseenAnnouncements } from "../model/announcementFeed";
+import {
+  announcementFeed,
+  markAnnouncementRead,
+  unseenAnnouncements,
+} from "../model/announcementFeed";
+import { accountNotificationsPort } from "../model/notificationsPort";
 
 const MAX_SHOWN = 3;
+
+/** One read state: dismissing the notice also reads its server feed copy (the OS banner's). */
+function dismissAnnouncement(id: string) {
+  announcementFeed.dismiss(id);
+  markAnnouncementRead(id, accountNotificationsPort()).catch(() => undefined); // -- best effort; the banner copy stays unread.
+}
 const TONE: Record<Announcement["severity"], ToastTone> = {
   info: "info",
   warning: "warning",
@@ -30,7 +41,7 @@ export function AnnouncementNotices() {
         message={item.body}
         durationMs={null}
         width="lg"
-        action={{ label: t("Dismiss"), onClick: () => announcementFeed.dismiss(item.id) }}
+        action={{ label: t("Dismiss"), onClick: () => dismissAnnouncement(item.id) }}
         actionsPlacement="footer"
         actions={
           item.url
@@ -44,7 +55,7 @@ export function AnnouncementNotices() {
               ]
             : undefined
         }
-        onDismiss={() => announcementFeed.dismiss(item.id)}
+        onDismiss={() => dismissAnnouncement(item.id)}
       />
     ));
 }

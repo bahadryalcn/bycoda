@@ -877,8 +877,8 @@ fn slug_name(raw: &str) -> String {
 // either machine.
 
 const MAX_TRANSFER_FILES: usize = 200;
-const MAX_TRANSFER_FILE_BYTES: usize = 2 * 1024 * 1024;
-const MAX_TRANSFER_TOTAL_BYTES: usize = 8 * 1024 * 1024;
+const MAX_TRANSFER_FILE_BYTES: usize = 32 * 1024 * 1024;
+const MAX_TRANSFER_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 const MAX_TRANSFER_PATH_LEN: usize = 240;
 const MAX_TRANSFER_DEPTH: usize = 16;
 
@@ -1093,11 +1093,11 @@ fn collect_skill_files(
 }
 
 fn too_large_file(path: &str) -> String {
-    format!("{path} is larger than 2 MiB, which is the most one file can be when copying a skill.")
+    format!("{path} is larger than 32 MiB, which is the most one file can be when copying a skill.")
 }
 
 fn too_large_total() -> String {
-    "This skill is more than 8 MiB in total, which is the most that can be copied.".to_string()
+    "This skill is more than 64 MiB in total, which is the most that can be copied.".to_string()
 }
 
 const WINDOWS_DEVICE_NAMES: [&str; 22] = [
@@ -2283,18 +2283,18 @@ description: Make images
         assert!(export("many").unwrap_err().contains("more than 200 files"));
 
         write_skill(&root, "big", "# big");
-        std::fs::write(root.join("big/blob.bin"), vec![1u8; 2 * 1024 * 1024 + 1]).unwrap();
-        assert!(export("big").unwrap_err().contains("larger than 2 MiB"));
+        std::fs::write(root.join("big/blob.bin"), vec![1u8; 32 * 1024 * 1024 + 1]).unwrap();
+        assert!(export("big").unwrap_err().contains("larger than 32 MiB"));
 
         write_skill(&root, "huge", "# huge");
         for i in 0..5 {
             std::fs::write(
                 root.join(format!("huge/p{i}.bin")),
-                vec![1u8; 2 * 1024 * 1024],
+                vec![1u8; 32 * 1024 * 1024],
             )
             .unwrap();
         }
-        assert!(export("huge").unwrap_err().contains("8 MiB in total"));
+        assert!(export("huge").unwrap_err().contains("64 MiB in total"));
     }
 
     #[test]
@@ -2382,17 +2382,17 @@ description: Make images
         assert!(skill_import_into(&home.0, "tool", &many, false)
             .unwrap_err()
             .contains("more than 200 files"));
-        let big = file("blob.bin", &vec![1u8; 2 * 1024 * 1024 + 1]);
+        let big = file("blob.bin", &vec![1u8; 32 * 1024 * 1024 + 1]);
         assert!(
             skill_import_into(&home.0, "tool", &[ok.clone(), big], false)
                 .unwrap_err()
-                .contains("2 MiB")
+                .contains("32 MiB")
         );
         let mut all = vec![ok];
-        all.extend((0..5).map(|i| file(&format!("p{i}.bin"), &vec![1u8; 2 * 1024 * 1024])));
+        all.extend((0..5).map(|i| file(&format!("p{i}.bin"), &vec![1u8; 32 * 1024 * 1024])));
         assert!(skill_import_into(&home.0, "tool", &all, false)
             .unwrap_err()
-            .contains("8 MiB in total"));
+            .contains("64 MiB in total"));
     }
 
     #[test]

@@ -154,3 +154,20 @@ it("shows why a reconnect that really failed did not work", async () => {
   await act(async () => button?.click());
   expect(container.textContent).toContain("Reconnecting failed: SSH timed out");
 });
+
+it("shows recovery status without transport error details or retry actions", async () => {
+  state.shared = false;
+  await act(async () =>
+    root.render(
+      createElement(RemoteLoadError, {
+        cwd: "env",
+        failure: { kind: "unreachable", message: "RPC_HOST_UNAVAILABLE: raw transport failure" },
+        recovering: true,
+      }),
+    ),
+  );
+  expect(container.textContent).toContain("Server");
+  expect(container.textContent).toContain("Reconnecting");
+  expect(container.textContent).not.toContain("RPC_HOST_UNAVAILABLE");
+  expect(container.querySelectorAll("button")).toHaveLength(0);
+});

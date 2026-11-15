@@ -10,6 +10,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { sprintProjectKey, sprintTaskKey, type SprintReport } from "../model/hostSprints";
 import type { SprintBoardController } from "../model/sprintClient";
 import "./sprints.css";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** Completing a sprint: freeze the report and optionally roll unfinished tasks over. */
 export function SprintCompletion({
@@ -86,7 +87,7 @@ export function SprintCompletion({
                 : {},
             );
           } catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
+            setError(presentRemoteError(reason, { explicit: true }));
           } finally {
             pending.current = false;
             setBusy(false);

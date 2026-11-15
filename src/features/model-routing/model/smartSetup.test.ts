@@ -30,6 +30,10 @@ vi.mock("../../sessions/public/models", () => ({
   defaultModelSettings: () => ({ effort: "high", crossAdvisor: "reserved" }),
   isModelEnabled: (id: string) => id !== "disabled",
   loadHiddenPickerProviders: () => ["claude"],
+  modelEffortSetting: () => ({
+    id: "effort",
+    options: ["low", "medium", "high", "xhigh"].map((value) => ({ value })),
+  }),
 }));
 
 const names: SetupPoolNames = {
@@ -85,6 +89,7 @@ it("lists available visible providers, enabled models and local accounts with ki
     modelSettings: { effort: "high", crossAdvisor: "reserved" },
   });
   expect(found[0].account).toEqual({ id: "local-secret", label: "Local" });
+  expect(found[0].effort).toEqual({ id: "effort", options: ["low", "medium", "high", "xhigh"] });
   expect(found[1].account?.kind).toBe("personal");
   expect(found[2].account).toBeUndefined();
 });
@@ -326,4 +331,41 @@ it("binds light jobs to the fast pool and heavy jobs to the smartest in the rule
     expect(roles[role as keyof typeof roles]).toEqual({
       pool: need === "light" ? "Fast" : need === "heavy" ? "Smartest" : "Balanced",
     });
+});
+
+it("runs light pools at low, the order at medium and heavy pools at high, never above", () => {
+  const efforts = { id: "effort", options: ["minimal", "low", "medium", "high", "xhigh"] };
+  const list = [
+    { ...candidate("strong", 5, 3), effort: efforts },
+    { ...candidate("mid", 3, 2), effort: efforts },
+    { ...candidate("mini", 2, 1), effort: efforts },
+  ];
+  const next = setup(draft(), list);
+  const byId = new Map(next.routing.entries.map((entry) => [entry.id, entry]));
+  const pool = (name: string) =>
+    next.routing.pools
+      .find((item) => item.name === name)!
+      .entryIds.map((id) => `${byId.get(id)!.model}:${byId.get(id)!.modelSettings.effort}`);
+  expect(next.routing.entries.slice(0, 3).map((e) => e.modelSettings.effort)).toEqual([
+    "medium",
+    "medium",
+    "medium",
+  ]);
+  expect(pool("Smartest")).toEqual(["strong:high"]);
+  expect(pool("Fast")).toEqual(["mini:low"]);
+  expect(next.routing.entries.some((e) => e.modelSettings.effort === "xhigh")).toBe(false);
+  expect(setup(next, list).routing.entries).toHaveLength(next.routing.entries.length);
+});
+
+it("keeps an owner's above-high entry for heavy pools and collapses missing levels", () => {
+  const list = [{ ...candidate("strong", 5, 3), effort: { id: "effort", options: ["xhigh"] } }];
+  expect(setup(draft(), list).routing.entries.map((e) => e.modelSettings.effort)).toEqual(["high"]);
+  const owner = draft();
+  owner.routing.entries = [
+    { ...list[0]!.target, id: "own", modelSettings: { effort: "max" }, unknownLimit: "use" },
+  ];
+  const tuned = [{ ...list[0]!, effort: { id: "effort", options: ["medium", "high", "max"] } }];
+  const next = setup(owner, tuned);
+  expect(next.routing.pools.find((p) => p.name === "Smartest")!.entryIds).toEqual(["own"]);
+  expect(next.routing.entries.find((e) => e.id === "own")!.modelSettings.effort).toBe("max");
 });

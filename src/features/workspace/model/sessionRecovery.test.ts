@@ -6,6 +6,8 @@ import { newTab, splitPane, leafIds } from "./layout";
 import { collectWorkspaceSnapshot } from "./workspaceSnapshot";
 import {
   captureSessionRecovery,
+  beginRecoveryRemoval,
+  rollbackRecoveryRemoval,
   getSessionRecovery,
   isRecoverySessionHeld,
   mergeRecoveryTabs,
@@ -20,6 +22,18 @@ import {
 } from "./sessionRecovery";
 
 describe("eligible recovery population", () => {
+  it("excludes entries whose execution worktree is locked", () => {
+    const value = captureSessionRecovery(null, snapshot(["a", "b"]), 100)!;
+    value.workspace.sessions[0].worktreeCwd = "/locked-worktree";
+    expect(
+      eligibleRecoverySessions(
+        value,
+        [],
+        (cwd) => cwd === "/locked-worktree",
+        () => undefined,
+      ).map((row) => row.id),
+    ).toEqual(["b"]);
+  });
   it("uses the same deduplicated unlocked unresolved entries for rail and panel", () => {
     const value = captureSessionRecovery(null, snapshot(["a", "b", "c"]), 100)!;
     value.workspace.sessions.push(value.workspace.sessions[0]);
@@ -81,6 +95,50 @@ const snapshot = (ids: string[]) => {
 };
 
 describe("durable session recovery", () => {
+  it("rolls back only its failed removal while retaining newer captures and resolutions", () => {
+    const before = captureSessionRecovery(null, snapshot(["a", "b"]), 100)!;
+    const removal = beginRecoveryRemoval(before, ["a"]);
+    const captured = captureSessionRecovery(removal.next, snapshot(["c"]), 200)!;
+    const latest = removeRecoverySessions(captured, ["b"]);
+    const restored = rollbackRecoveryRemoval(removal, latest)!;
+    expect(restored.workspace.sessions.map((row) => row.id).sort()).toEqual(["a", "c"]);
+    expect(restored.resolvedIds).toContain("b");
+    expect(restored.resolvedIds).not.toContain("a");
+    expect(restored.workspace.tabs.flatMap((tab) => leafIds(tab.layout)).sort()).toEqual([
+      "a",
+      "c",
+    ]);
+  });
+  it("never resurrects a newer acknowledgment or a replaced journal", () => {
+    const before = captureSessionRecovery(null, snapshot(["a", "b"]), 100)!;
+    const removal = beginRecoveryRemoval(before, ["a"]);
+    const acknowledged = removeRecoverySessions(removal.next, ["a"]);
+    expect(rollbackRecoveryRemoval(removal, acknowledged)).toBe(acknowledged);
+    expect(rollbackRecoveryRemoval(removal, null)).toBeNull();
+    const reloaded = JSON.parse(JSON.stringify(removal.next));
+    expect(rollbackRecoveryRemoval(removal, reloaded)).toBe(reloaded);
+  });
+  it("restores the exact prior layout and does not transfer ownership to a no-op removal", () => {
+    const before = captureSessionRecovery(null, snapshot(["a", "b"]), 100)!;
+    const removal = beginRecoveryRemoval(before, ["a"]);
+    expect(beginRecoveryRemoval(removal.next, ["a"]).next).toBe(removal.next);
+    expect(rollbackRecoveryRemoval(removal, removal.next)).toBe(before);
+  });
+  it("retains ownership across a close-only spread without persisting rollback metadata", () => {
+    const before = captureSessionRecovery(null, snapshot(["a"]), 100)!;
+    const removal = beginRecoveryRemoval(before, ["a"]);
+    setSessionRecovery(removal.next);
+    try {
+      const closed = { ...removal.next, dismissed: true };
+      setSessionRecovery(closed);
+      const restored = rollbackRecoveryRemoval(removal, getSessionRecovery())!;
+      expect(restored.workspace.sessions.map((row) => row.id)).toEqual(["a"]);
+      expect(restored.dismissed).toBe(true);
+      expect(JSON.stringify(closed)).not.toContain("token");
+    } finally {
+      setSessionRecovery(null);
+    }
+  });
   it("drops never-sent entries without resolving them, so a later sent turn is still captured", () => {
     const initial = captureSessionRecovery(null, snapshot(["a", "b"]), 100)!;
     const dropped = dropRecoverySessions(initial, ["a", "missing"]);

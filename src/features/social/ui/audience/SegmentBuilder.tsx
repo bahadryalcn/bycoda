@@ -4,9 +4,10 @@ import { Modal } from "../../../../shared/ui/Modal";
 import { TextField } from "../../../../shared/ui/TextField";
 import type { AudienceFilter, SocialList } from "../../model/audience";
 import type { SocialClient } from "../../model/socialClient";
-import { errorMessage, isFilterEmpty } from "./audienceModel";
+import { isFilterEmpty } from "./audienceModel";
 import { useFormFooter, useTouched } from "./formFooter";
 import { SegmentFilterFields } from "./SegmentFilterFields";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type SegmentBuilderProps = {
   client: SocialClient;
@@ -46,7 +47,7 @@ export function SegmentBuilder({ client, list: existing, onClose, onSaved }: Seg
       onSaved(list);
       onClose();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
     } finally {
       setSaving(false);
     }

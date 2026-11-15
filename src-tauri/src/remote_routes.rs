@@ -20,7 +20,7 @@ use crate::remote_ssh::{LaterRoute, SshTarget, Tunnel};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
@@ -60,6 +60,9 @@ impl Prefer {
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Entry {
+    /// HTTPS account routes are separate from SSH dial targets.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    account_endpoints: Vec<String>,
     /// What the Host last reported, so an unchanged report costs nothing.
     #[serde(default)]
     reported: Vec<String>,
@@ -79,6 +82,113 @@ struct Store {
 }
 
 static STORE: Mutex<Option<Store>> = Mutex::new(None);
+/// The account tunnel each environment's latest `environment.describe` answered
+/// over, `None` once the saved route answered instead. Memory only.
+static ACCOUNT_IN_USE: Mutex<Vec<(String, Option<String>)>> = Mutex::new(Vec::new());
+
+pub(crate) fn note_account_route(environment_id: &str, endpoint: Option<&str>) {
+    let mut guard = ACCOUNT_IN_USE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    guard.retain(|(id, _)| id != environment_id);
+    guard.push((environment_id.to_string(), endpoint.map(str::to_string)));
+}
+
+pub(crate) fn account_in_use(environment_id: &str) -> Option<String> {
+    let guard = ACCOUNT_IN_USE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    guard
+        .iter()
+        .find(|(id, _)| id == environment_id)
+        .and_then(|(_, endpoint)| endpoint.clone())
+}
+
+pub(crate) fn account_tunnel(value: &str) -> Option<String> {
+    if value.len() > 256 {
+        return None;
+    }
+    let url = url::Url::parse(value).ok()?;
+    let host = url.host_str()?;
+    let label = host.strip_suffix(".trycloudflare.com")?;
+    (url.scheme() == "https"
+        && !label.is_empty()
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.port().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path() == "/")
+        .then(|| url.origin().ascii_serialization())
+}
+
+pub(crate) fn account_endpoints(environment_id: &str) -> Vec<String> {
+    with_store(|store| {
+        store
+            .machines
+            .get(&format!("account:{environment_id}"))
+            .map(|entry| {
+                entry
+                    .account_endpoints
+                    .iter()
+                    .filter_map(|endpoint| account_tunnel(endpoint))
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
+}
+
+/// Called only after credential-free possession proof and saved-route fencing.
+pub(crate) fn learn_account_endpoint(environment_id: &str, endpoint: String) -> bool {
+    with_store(|store| {
+        let entry = store
+            .machines
+            .entry(format!("account:{environment_id}"))
+            .or_default();
+        if entry.account_endpoints == [endpoint.clone()] {
+            return false;
+        }
+        entry.account_endpoints = vec![endpoint];
+        persist(store);
+        true
+    })
+}
+
+pub(crate) fn verify_account_endpoint(
+    endpoint: &str,
+    environment_id: &str,
+    token: &str,
+) -> Result<(), String> {
+    let origin = account_tunnel(endpoint).ok_or("Invalid account tunnel route")?;
+    let response = ureq::AgentBuilder::new()
+        .redirects(0)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .get(&format!("{origin}/.well-known/bycoda-host"))
+        .call()
+        .map_err(|_| "Account route identity could not be verified")?;
+    let descriptor: Value = serde_json::from_reader(response.into_reader().take(4096))
+        .map_err(|_| "Invalid account route identity")?;
+    if descriptor.get("environmentId").and_then(Value::as_str) != Some(environment_id) {
+        return Err("Host identity changed".into());
+    }
+    crate::remote::host_proof::verify(&origin, environment_id, token, "device")
+}
+
+pub(crate) fn retire_account_endpoint(environment_id: &str, endpoint: &str) {
+    with_store(|store| {
+        if let Some(entry) = store.machines.get_mut(&format!("account:{environment_id}")) {
+            entry.account_endpoints.retain(|known| known != endpoint);
+            persist(store);
+        }
+    });
+    if account_in_use(environment_id).as_deref() == Some(endpoint) {
+        note_account_route(environment_id, None);
+    }
+}
 
 fn with_store<T>(action: impl FnOnce(&mut Store) -> T) -> T {
     let mut guard = STORE.lock().unwrap_or_else(PoisonError::into_inner);
@@ -397,9 +507,11 @@ pub fn watch_better_routes(app: tauri::AppHandle) {
 #[serde(rename_all = "camelCase")]
 pub struct RouteView {
     address: String,
-    /// `tailscale`, `lan`, or `name` for an ssh-config alias or host name.
+    /// `tailscale`, `lan`, `tunnel` (a Quick Tunnel from the account), or `name`
+    /// for an ssh-config alias or host name.
     kind: &'static str,
-    /// `saved`, `other` (the saved other address) or `reported` by the Host.
+    /// `saved`, `other` (the saved other address), `reported` by the Host or
+    /// `account` (learned from the signed-in account).
     source: &'static str,
     /// Turned on; the saved address always is.
     enabled: bool,
@@ -462,36 +574,76 @@ fn route_list(
     routes
 }
 
+/// Quick Tunnel addresses learned from the account, after the dialed ones. The
+/// tunnel the latest answer came over is the one in use.
+fn tunnel_views(environment_id: &str) -> (Vec<RouteView>, Option<String>) {
+    let in_use = account_in_use(environment_id).and_then(|endpoint| account_tunnel(&endpoint));
+    let views = account_endpoints(environment_id)
+        .into_iter()
+        .filter_map(|endpoint| {
+            let host = url::Url::parse(&endpoint).ok()?.host_str()?.to_string();
+            Some(RouteView {
+                address: host,
+                kind: "tunnel",
+                source: "account",
+                enabled: true,
+            })
+        })
+        .collect();
+    let active = in_use
+        .and_then(|origin| url::Url::parse(&origin).ok())
+        .and_then(|url| url.host_str().map(str::to_string));
+    (views, active)
+}
+
 fn machine_routes(
     machine_id: &str,
-    target: &SshTarget,
+    target: Option<&SshTarget>,
+    environment_id: Option<&str>,
     state: &RemoteConnections,
 ) -> MachineRoutes {
-    let (disabled, prefer) = with_store(|store| {
-        store
-            .machines
-            .get(&key(target))
-            .map(|entry| (entry.disabled.clone(), entry.prefer))
-            .unwrap_or_default()
-    });
-    let reported: Vec<String> = learned(target)
-        .iter()
-        .map(|route| host_of(&route.target))
-        .collect();
-    let other = target.alternate.as_deref().map(host_of);
+    let (mut routes, prefer, mut active) = match target {
+        Some(target) => {
+            let (disabled, prefer) = with_store(|store| {
+                store
+                    .machines
+                    .get(&key(target))
+                    .map(|entry| (entry.disabled.clone(), entry.prefer))
+                    .unwrap_or_default()
+            });
+            let reported: Vec<String> = learned(target)
+                .iter()
+                .map(|route| host_of(&route.target))
+                .collect();
+            let other = target.alternate.as_deref().map(host_of);
+            (
+                route_list(
+                    &host_of(&target.target),
+                    other.as_deref(),
+                    &reported,
+                    &disabled,
+                    prefer,
+                ),
+                prefer,
+                state
+                    .tunnels
+                    .dialed(machine_id)
+                    .map(|dial| host_of(&dial.target)),
+            )
+        }
+        None => (Vec::new(), Prefer::default(), None),
+    };
+    if let Some(environment_id) = environment_id {
+        let (tunnels, in_use) = tunnel_views(environment_id);
+        routes.extend(tunnels);
+        if in_use.is_some() {
+            active = in_use;
+        }
+    }
     MachineRoutes {
-        routes: route_list(
-            &host_of(&target.target),
-            other.as_deref(),
-            &reported,
-            &disabled,
-            prefer,
-        ),
+        routes,
         prefer,
-        active: state
-            .tunnels
-            .dialed(machine_id)
-            .map(|dial| host_of(&dial.target)),
+        active,
     }
 }
 
@@ -502,11 +654,17 @@ fn machine_routes(
 pub async fn remote_machine_routes(
     app: tauri::AppHandle,
     machine_id: String,
-    target: SshTarget,
+    target: Option<SshTarget>,
+    environment_id: Option<String>,
 ) -> Result<MachineRoutes, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<RemoteConnections>();
-        machine_routes(&machine_id, &target, &state)
+        machine_routes(
+            &machine_id,
+            target.as_ref(),
+            environment_id.as_deref(),
+            &state,
+        )
     })
     .await
     .map_err(|error| error.to_string())
@@ -599,7 +757,7 @@ pub async fn remote_machine_route_settings(
         entry.prefer = prefer;
         persist(store);
     });
-    remote_machine_routes(app, machine_id, target).await
+    remote_machine_routes(app, machine_id, Some(target), None).await
 }
 
 /// The port a `connection-info` result reports (the script's last line).
@@ -626,6 +784,46 @@ pub(crate) fn teach(target: &SshTarget, routes: Vec<LearnedRoute>) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn account_tunnel_hints_are_bounded_to_credential_free_quick_tunnel_origins() {
+        assert_eq!(
+            account_tunnel("https://new-host.trycloudflare.com/").as_deref(),
+            Some("https://new-host.trycloudflare.com")
+        );
+        for route in [
+            "http://a.trycloudflare.com",
+            "https://a.trycloudflare.com.evil.test",
+            "https://user@a.trycloudflare.com",
+            "https://a.trycloudflare.com/rpc",
+            "https://a.trycloudflare.com?token=secret",
+            "https://a.trycloudflare.com:444",
+        ] {
+            assert!(account_tunnel(route).is_none(), "{route}");
+        }
+    }
+
+    #[test]
+    fn a_new_account_tunnel_replaces_the_old_route_for_only_the_same_environment() {
+        let environment = "account-route-test";
+        assert!(learn_account_endpoint(
+            environment,
+            "https://old.trycloudflare.com".into()
+        ));
+        assert!(!learn_account_endpoint(
+            environment,
+            "https://old.trycloudflare.com".into()
+        ));
+        assert!(learn_account_endpoint(
+            environment,
+            "https://new.trycloudflare.com".into()
+        ));
+        assert_eq!(
+            account_endpoints(environment),
+            ["https://new.trycloudflare.com"]
+        );
+        assert!(account_endpoints("other-account-route-test").is_empty());
+    }
 
     fn target(value: &str) -> SshTarget {
         SshTarget {
@@ -771,6 +969,26 @@ mod tests {
             hosts(&arrange(&saved, candidates())),
             ["100.97.82.0", "macbook", "192.168.2.145", "10.0.0.4"]
         );
+    }
+
+    #[test]
+    fn account_tunnels_are_listed_as_tunnel_routes_and_the_answering_one_is_in_use() {
+        let environment = "tunnel-view-env";
+        learn_account_endpoint(environment, "https://abc-123.trycloudflare.com".into());
+        let (views, active) = tunnel_views(environment);
+        assert_eq!(active, None);
+        assert_eq!(views.len(), 1);
+        assert_eq!(
+            (views[0].address.as_str(), views[0].kind, views[0].source),
+            ("abc-123.trycloudflare.com", "tunnel", "account")
+        );
+        note_account_route(environment, Some("https://abc-123.trycloudflare.com"));
+        assert_eq!(
+            tunnel_views(environment).1.as_deref(),
+            Some("abc-123.trycloudflare.com")
+        );
+        note_account_route(environment, None);
+        assert_eq!(tunnel_views(environment).1, None);
     }
 
     #[test]

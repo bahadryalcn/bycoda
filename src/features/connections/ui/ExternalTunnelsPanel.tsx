@@ -2,6 +2,7 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Code } from "../../../shared/ui/Code";
 import { Text } from "../../../shared/ui/Text";
 import { Field } from "../../../shared/ui/Field";
+import { Switch } from "../../../shared/ui/Switch";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -356,8 +357,8 @@ export function TunnelControls({
           event.preventDefault();
           if (
             ready &&
-            selected?.installed &&
-            (provider === "cloudflare" || selected.credential === "saved")
+            (provider === "cloudflare" || selected?.installed) &&
+            (provider === "cloudflare" || selected?.credential === "saved")
           )
             void run("start", () =>
               controller.start({
@@ -399,7 +400,22 @@ export function TunnelControls({
           />
         </Field>
         <div className="external-tunnel-actions external-tunnel-wide">
-          {selected ? (
+          {overview?.automaticHostAccess !== undefined &&
+          target === "host" &&
+          provider === "cloudflare" ? (
+            <Switch
+              label={t("Access from outside the network (Cloudflare Quick Tunnel)")}
+              description={t(
+                "Free temporary URL. Restarts automatically and updates your account when it changes.",
+              )}
+              checked={overview.automaticHostAccess === true}
+              disabled={!ready || state.pending}
+              onCheckedChange={(enabled) =>
+                void run("automatic", () => controller.automatic(enabled))
+              }
+            />
+          ) : null}
+          {selected && (selected.installed || provider === "ngrok") ? (
             <Badge variant="dot" tone={selected.installed ? "success" : "neutral"}>
               {t(selected.installed ? "{p0} CLI ready" : "{p0} CLI needed", {
                 p0: provider === "cloudflare" ? "Cloudflare" : "ngrok",
@@ -420,11 +436,13 @@ export function TunnelControls({
             <LoadingText>{t("Checking tunnel access…")}</LoadingText>
           ) : null}
           <InfoPopover label={t("Tunnel setup")}>
-            <p>
-              {t(
-                "Provider CLI and authentication must be available on the selected computer. Local URLs and ports refer to that computer.",
-              )}
-            </p>
+            {provider === "ngrok" ? (
+              <p>
+                {t(
+                  "Provider CLI and authentication must be available on the selected computer. Local URLs and ports refer to that computer.",
+                )}
+              </p>
+            ) : null}
             {provider === "cloudflare" ? (
               <p>
                 {t(
@@ -459,18 +477,17 @@ export function TunnelControls({
           loading={state.pending && action === "start"}
           disabled={
             !ready ||
-            !selected?.installed ||
-            (provider === "ngrok" && selected.credential !== "saved")
+            (provider === "ngrok" && (!selected?.installed || selected.credential !== "saved"))
           }
           variant="primary"
         >
           {t("Start tunnel")}
         </Button>
       </form>
-      {selected && !selected.installed ? (
+      {provider === "ngrok" && selected && !selected.installed ? (
         <InlineMessage tone="warning">
           {t("Install {p0} on {p1}, then check again.", {
-            p0: provider === "cloudflare" ? "cloudflared" : "ngrok",
+            p0: "ngrok",
             p1: machineLabel,
           })}
         </InlineMessage>

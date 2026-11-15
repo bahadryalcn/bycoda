@@ -2,7 +2,7 @@ import { Text } from "../../../../shared/ui/Text";
 import { t, useLocale } from "../../../../shared/i18n";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { Bot, Globe } from "../../../../shared/ui/icons";
-import { useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { Button } from "../../../../shared/ui/Button";
 import {
   SessionDiscussionPanel,
@@ -12,6 +12,7 @@ import {
 import { isLocalSyncMachine } from "../../../connections/public/localSync";
 import { isRemoteProjectPath } from "../../../../shared/lib/paths";
 import { remotePath, rememberRemoteProject } from "../../../connections/public/remoteProjects";
+import { SOCIAL_SCREEN_EVENT, takeSocialScreenRequest } from "../../model/socialNavigation";
 import { SocialNav } from "./SocialNav";
 import { SocialShellBar } from "./SocialShellBar";
 import { HostPanels } from "./HostPanels";
@@ -61,6 +62,18 @@ export function SocialShell({
   const workspace = useSocialWorkspace(cwd);
   const sections = useSocialShell(workspace.machineId);
   const { machineId, client, shell, loaded } = workspace;
+  const navigate = sections.navigate;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Show the screen a notification click asked for, now or once a computer is selected.
+  useEffect(() => {
+    const show = () => {
+      if (!machineId) return;
+      const request = takeSocialScreenRequest();
+      if (request) navigate(request.screen, request.target);
+    };
+    show();
+    window.addEventListener(SOCIAL_SCREEN_EVENT, show);
+    return () => window.removeEventListener(SOCIAL_SCREEN_EVENT, show);
+  }, [machineId, navigate]);
   const [chatOpen, setChatOpen] = useState(() => {
     try {
       return localStorage.getItem("bycoda.social.chatOpen") === "1";

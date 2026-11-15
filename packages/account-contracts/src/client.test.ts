@@ -543,4 +543,53 @@ describe("account connect (0.8.0)", () => {
       },
     ).toEqual({ state: "delivered" });
   });
+
+  it("lets a desktop request a connection to another desktop and reports the requester kind", async () => {
+    const { createMockAccountServer } = await import("./mock/index.ts");
+    const server = createMockAccountServer();
+    const call = async (method: string, path: string, body?: unknown) =>
+      server.fetch(`https://mock.bycoda.invalid${path}`, {
+        method,
+        headers: {
+          Authorization: "Bearer mock-t",
+          [CONTRACT_HEADER]: CONTRACT_VERSION,
+          "Content-Type": "application/json",
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    const device = (name: string) =>
+      call("POST", "/v1/devices", {
+        name,
+        platform: "windows",
+        osVersion: "1",
+        appVersion: "1",
+        channel: "stable",
+        kind: "desktop",
+      }).then((r) => r.json() as Promise<{ id: string }>);
+    const target = await device("Target");
+    await call("PUT", `/v1/devices/${target.id}/connect`, {
+      environmentId: "env",
+      routes: [{ endpoint: "https://pc.example" }],
+    });
+    const requester = await device("Requester");
+    expect(
+      (
+        await call("POST", `/v1/computers/${requester.id}/pair-requests`, {
+          phonePublicKey: "A".repeat(43),
+        })
+      ).status,
+    ).toBe(403);
+    const created = (await (
+      await call("POST", `/v1/computers/${target.id}/pair-requests`, {
+        phonePublicKey: "A".repeat(43),
+      })
+    ).json()) as { id: string };
+    server.state.currentDeviceId = target.id;
+    const pending = (await (await call("GET", "/v1/pair-requests")).json()) as {
+      items: { id: string; requesterKind: string; phoneName: string }[];
+    };
+    expect(pending.items).toMatchObject([
+      { id: created.id, requesterKind: "desktop", phoneName: "Requester" },
+    ]);
+  });
 });

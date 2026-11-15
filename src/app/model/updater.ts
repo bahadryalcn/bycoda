@@ -11,6 +11,8 @@ import { rememberInstalledUpdate } from "./updateNotice";
 import { settleUpdateCheck } from "./updateProbeBackoff";
 import { appName } from "../../shared/lib/appName";
 import { toast } from "../../shared/ui/ToastRegion";
+import { createElement } from "react";
+import { UpdateImpact } from "../../features/connections/ui/UpdateImpact";
 
 export type UpdaterPhase = "idle" | "checking" | "current" | "available" | "downloading" | "error";
 
@@ -145,23 +147,6 @@ async function runUpdateFlowOnce(
 
     if (!manual) return available;
 
-    const notes = update.body?.trim();
-    const detail = notes
-      ? `\n\n${notes.length > MAX_NOTES ? `${notes.slice(0, MAX_NOTES - 1)}…` : notes}`
-      : "";
-    const yes = await confirmInApp({
-      title: t("Update available"),
-      message:
-        t("{p0} {p1} is available (you have {p2}).", {
-          p0: PRODUCT_IDENTITY.displayName,
-          p1: update.version,
-          p2: currentVersion,
-        }) + detail,
-      confirmLabel: t("Install now"),
-      tone: "normal",
-    });
-    if (!yes) return available;
-
     return installPendingUpdate(onProgress);
   } catch (err) {
     if (isUpdaterNotConfiguredError(err)) {
@@ -218,6 +203,24 @@ async function installPendingUpdateOnce(
     onProgress?.(idle);
     return idle;
   }
+
+  const notes = update.body?.trim();
+  const detail = notes
+    ? `\n\n${notes.length > MAX_NOTES ? `${notes.slice(0, MAX_NOTES - 1)}…` : notes}`
+    : "";
+  const approved = await confirmInApp({
+    title: t("Update available"),
+    message:
+      t("{p0} {p1} is available (you have {p2}).", {
+        p0: PRODUCT_IDENTITY.displayName,
+        p1: update.version,
+        p2: currentVersion,
+      }) + detail,
+    body: createElement(UpdateImpact, { target: "app" }),
+    confirmLabel: t("Install and restart"),
+    tone: "danger",
+  });
+  if (!approved) return { phase: "available", currentVersion, availableVersion: update.version };
 
   let downloaded = 0;
   let contentLength = 0;

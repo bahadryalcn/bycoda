@@ -16,6 +16,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { RemoteMachine } from "../../connections";
 import { DAILY_LIMIT_CHOICES, formatAgentMinutes, type HostSettings } from "../model/hostSettings";
 import { type MachineLimits, saveMachineLimits } from "../model/settingsClient";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 const DAILY_LIMIT_LABELS: Record<number, string> = {
   0: "No limit",
@@ -368,7 +369,7 @@ export function useMachineLimitSave(
       onResult(null);
       return true;
     } catch (reason: unknown) {
-      onResult(reason instanceof Error ? reason.message : String(reason));
+      onResult(presentRemoteError(reason, { explicit: true }));
       return false;
     }
   });

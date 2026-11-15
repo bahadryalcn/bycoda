@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { join } from "node:path";
 import { hostWarnDeduped, type DedupedWarn } from "../diagnostics/log-dedupe";
 
@@ -157,6 +157,51 @@ export class DesktopPresenceWorker {
   }
 }
 const sharedWorker = new DesktopPresenceWorker();
+
+export type IoregRun = (args: string[], timeoutMs: number) => Promise<string>;
+const runIoreg: IoregRun = (args, timeoutMs) =>
+  new Promise((resolve, reject) => {
+    execFile(
+      "/usr/sbin/ioreg",
+      args,
+      { timeout: timeoutMs, maxBuffer: 1024 * 1024, encoding: "buffer" },
+      // Lossy decoding: one invalid byte never fails the reading.
+      (error, stdout) =>
+        error ? reject(error) : resolve(new TextDecoder("utf-8", { fatal: false }).decode(stdout)),
+    );
+  });
+
+/**
+ * macOS reading for owner availability only: HIDIdleTime (nanoseconds since the last input) and
+ * the console session's lock flag. Physical desktop-control gates keep `readDesktopPresence`,
+ * which stays Windows-only. A session that is not on the console counts as locked.
+ */
+export async function readMacDesktopPresence(
+  run: IoregRun = runIoreg,
+  warn: DedupedWarn = hostWarnDeduped,
+): Promise<DesktopPresence> {
+  try {
+    const [hid, root] = await Promise.all([
+      run(["-r", "-c", "IOHIDSystem", "-d", "1", "-k", "HIDIdleTime"], 5000),
+      run(["-n", "Root", "-d", "1", "-k", "IOConsoleUsers"], 5000),
+    ]);
+    const idle = /"HIDIdleTime"\s*=\s*(\d+)/.exec(hid)?.[1];
+    const users = /"IOConsoleUsers"\s*=\s*(.*)/.exec(root)?.[1];
+    if (idle === undefined || users === undefined) throw new Error("Invalid presence");
+    const idleMs = Math.floor(Number(idle) / 1e6);
+    if (!Number.isSafeInteger(idleMs) || idleMs < 0) throw new Error("Invalid presence");
+    const locked =
+      /"CGSSessionScreenIsLocked"\s*=\s*Yes/.test(users) ||
+      !/"kCGSSessionOnConsoleKey"\s*=\s*Yes/.test(users);
+    return { locked, supported: true, idleMs };
+  } catch (error) {
+    warn(
+      "Desktop presence could not be read; availability counts this computer as away.",
+      error instanceof Error ? `(${error.message})` : undefined,
+    );
+    return { supported: false, locked: true };
+  }
+}
 
 /** Unsupported and failed reads never certify an active, unlocked desktop. */
 export async function readDesktopPresence(

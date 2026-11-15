@@ -18,9 +18,12 @@ code.
 Closing the tunnel panel does not stop a running tunnel. Stopping its tunnel,
 losing access to its status, or an unexpected exit removes URL sharing controls.
 
-The selected host must have the native `ngrok` or `cloudflared` executable on its
-PATH (standard Homebrew/local binary locations are also checked). bycoda does not
-install a CLI or modify an existing provider service. ngrok requires an authtoken
+The selected host uses an existing native `ngrok` or `cloudflared` executable on its
+PATH (standard Homebrew/local binary locations are also checked). If cloudflared
+is absent, bycoda downloads release **2026.1.2**, verifies the official SHA-256
+against constants in source, and installs it privately under the Host's data
+directory. A checksum mismatch prevents installation and execution. No global
+provider service is modified. ngrok requires an authtoken
 saved through this panel. It uses the existing host credential vault implementation:
 Windows DPAPI CurrentUser, macOS Keychain, or Linux Secret Service, with no
 plaintext fallback. Tokens are isolated from social accounts. Only credential
@@ -45,8 +48,30 @@ reuse a stored PID. A failed stop retains ownership so it can be retried.
 
 The host stores a bounded, credential-free manifest under its existing data
 directory's `tunnels/` folder. On restart, active records become interrupted and
-their URLs and stop authority are cleared. Tunnels are not automatically restarted
-or adopted. Foreign/corrupt state is preserved and reported as unavailable.
+their URLs and stop authority are cleared. Manual tunnels are not restarted or
+adopted. **Access from outside the network (Cloudflare Quick Tunnel)** is off by
+default. Turning it on persists Host access intent: startup creates a fresh tunnel,
+and verified unexpected retirement creates a replacement. Unknown retirement
+blocks replacement. Stopping the Host tunnel or turning the switch off disables
+automatic restart. Foreign/corrupt state is preserved and reported as unavailable.
+
+While **Let my signed-in phones find this computer** is on and the desktop is signed in, the
+publisher checks Host routes every five seconds. Routes are ordered LAN, Tailscale,
+then the live tunnel, capped at four with one slot reserved for the tunnel.
+Stopping a tunnel removes its URL at the next successful check. Only endpoints
+are published, never device credentials. The publisher runs in the desktop;
+a headless Host alone does not update the account.
+
+After a desktop reconnect probe exhausts known routes, it re-fetches the account
+computer list and selects the same environmentId. A new Quick Tunnel route is
+learned only after a credential-free `GET /.well-known/bycoda-host` confirms that
+identity over HTTPS. The native client rechecks identity before using a learned
+hostname. Reconnect probes retry once; operations with unknown outcomes are never
+replayed. Account API authorization is still required for listing computers.
+
+Cloudflared forwards the origin's loopback Host header, preserving the existing
+native WebSocket Host and browser Origin restrictions. HTTP RPC remains available
+as the fallback transport.
 
 Status distinguishes missing executables, missing/invalid credentials, locked
 credential storage, unreachable local services, provider connection failures,

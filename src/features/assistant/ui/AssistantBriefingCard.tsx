@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t } from "../../../shared/i18n";
@@ -106,7 +107,7 @@ export function AssistantBriefingCard({
       );
     } catch (cause) {
       if (!controller.signal.aborted && captured === epoch.current)
-        setAudioError(cause instanceof Error ? cause.message : String(cause));
+        setAudioError(presentRemoteError(cause, { explicit: true }));
     } finally {
       if (playback.current === controller) {
         playback.current = null;
@@ -126,8 +127,7 @@ export function AssistantBriefingCard({
     try {
       await action(current);
     } catch (cause) {
-      if (captured === epoch.current)
-        setError(cause instanceof Error ? cause.message : String(cause));
+      if (captured === epoch.current) setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       if (captured === epoch.current) {
         busyRef.current = false;
