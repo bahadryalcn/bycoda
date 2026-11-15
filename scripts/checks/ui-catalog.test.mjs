@@ -198,9 +198,10 @@ export { Local as Public };
 export { Remote } from "./Remote";
 export type { Props } from "./types";`,
   );
+  // A plain re-export (`Remote`) is catalogued at its own definition, not here.
   assert.deepEqual(
     entries.map((entry) => entry.name),
-    ["Public", "Remote"],
+    ["Public"],
   );
   assert.ok(
     validateUiCatalog(entries).some(

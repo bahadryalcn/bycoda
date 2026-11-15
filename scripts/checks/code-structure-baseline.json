@@ -85,7 +85,7 @@
       "loose-host-file": 1
     },
     "host/server.test.ts": {
-      "file-lines": 6318
+      "file-lines": 6377
     },
     "host/session-read-process.ts": {
       "loose-host-file": 1
@@ -107,7 +107,7 @@
       "loose-host-file": 1
     },
     "host/tasks/tasks.test.ts": {
-      "file-lines": 4284
+      "file-lines": 4334
     },
     "host/terminal-process.ts": {
       "loose-host-file": 1

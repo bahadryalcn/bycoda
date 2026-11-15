@@ -146,6 +146,8 @@ export function readUiCatalog(root = process.cwd()) {
   // Subfolders that expose a barrel (`index.ts`): their capitalised component files are catalogued.
   for (const folder of ["", "settings/"]) {
     const directory = path.join(root, "src/shared/ui", folder);
+    // A checkout or fixture without the optional subfolder has nothing to catalog there.
+    if (folder && !fs.existsSync(directory)) continue;
     for (const name of fs.readdirSync(directory).sort()) {
       if (!name.endsWith(".tsx") || EXCLUDED_FILE.test(name) || (folder && !/^[A-Z]/.test(name)))
         continue;
