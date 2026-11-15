@@ -156,6 +156,16 @@ describe("presentRemoteError", () => {
     expect(presentRemoteError(text, { explicit: true })).toBeTruthy();
   });
 
+  it("asks the user to repeat an action once the link is back instead of showing transport text", () => {
+    expect(presentRemoteError("ConnectionReset: os error 10054", { explicit: true })).toBe(
+      "Waiting for the connection to this computer. Try again once it is back.",
+    );
+    expect(presentRemoteError("RPC_WS_OVERLOAD: busy", { explicit: true })).toBe(
+      "This computer is busy right now. Try again in a moment.",
+    );
+    expect(presentRemoteError("Permission denied", { explicit: true })).toBe("Permission denied");
+  });
+
   it.each([
     "Not a Git repository",
     "RPC_WS_BLOCKED: Owner sign-in is required",

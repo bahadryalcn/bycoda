@@ -106,9 +106,15 @@ export function presentRemoteError(
   error: unknown,
   options: { explicit?: boolean } = {},
 ): string | undefined {
-  if (!options.explicit && isTransientTransportError(error)) return undefined;
-  // An error with no text still needs a visible message.
-  return classifyRemoteError(error).message || t("Something went wrong. Try again.");
+  if (!isTransientTransportError(error))
+    // An error with no text still needs a visible message.
+    return classifyRemoteError(error).message || t("Something went wrong. Try again.");
+  if (!options.explicit) return undefined;
+  // An action is never replayed on its own, since it could apply twice: tell the
+  // user to repeat it once the link is back instead of showing transport text.
+  return classifyRemoteError(error).kind === "unreachable"
+    ? t("Waiting for the connection to this computer. Try again once it is back.")
+    : t("This computer is busy right now. Try again in a moment.");
 }
 
 /** How long to wait before asking an unreachable machine again, given how
