@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { rules as uiDriftRules } from "./check-ui-drift.mjs";
+import { rules as uiDriftRules, ruleScopes as uiDriftScopes } from "./check-ui-drift.mjs";
 import { lint } from "./lint-config.mjs";
 import { rules as pluginRules } from "./oxlint-plugin/index.mjs";
 
@@ -202,7 +202,7 @@ export function collectRules(root = defaultRoot) {
   const uiDrift = Object.entries(uiDriftRules).map(([id, text]) => ({
     id,
     engine: "ui-drift",
-    scope: "src/app, src/features, shared stylesheets",
+    scope: uiDriftScopes[id] ?? "src/app, src/features, shared stylesheets",
     text,
     source: "scripts/checks/check-ui-drift.mjs",
   }));

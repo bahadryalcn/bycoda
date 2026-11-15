@@ -188,9 +188,9 @@ it("keeps active filters on an icon button and clears them through the menu", as
 });
 
 it.each([
-  ["indeterminate", "info"],
-  ["done", "success"],
-  ["new", "neutral"],
+  ["indeterminate", "running"],
+  ["done", "done"],
+  ["new", "idle"],
 ])(
   "presents Jira status category %s without cramped uppercase metadata",
   async (stateType, tone) => {
@@ -223,12 +223,12 @@ it.each([
     const row = inboxRow(container, jira.title)!;
     expect(row).not.toBeNull();
     const metadata = row.querySelector("[data-inbox-row-metadata]")!;
-    expect(metadata.textContent).toContain("PFDEV-1037");
+    expect(row.textContent).toContain("PFDEV-1037");
     expect(metadata.textContent).toContain("Development in progress");
     expect(metadata.textContent).not.toContain("Issue PFDEV");
-    expect(metadata.querySelector(`[data-tone="${tone}"]`)).not.toBeNull();
-    expect(row.parentElement?.textContent).toContain("Acme PF Dev Board");
-    expect(row.parentElement?.querySelector('[aria-label="Labels"]')).not.toBeNull();
+    expect(metadata.getAttribute("data-tone")).toBe(tone);
+    expect(row.textContent).toContain("Acme PF Dev Board");
+    expect(row.getAttribute("aria-label")).toContain("merchant, uiux-test");
     await act(async () => row.click());
     expect(row.getAttribute("aria-current")).toBe("true");
   },
@@ -249,7 +249,7 @@ it("bounds loaded rows and restores a scrolled position beyond the initial windo
     container.querySelectorAll<HTMLButtonElement>('button[aria-label*=": Inbox issue "]');
   expect(rows().length).toBeLessThan(64);
   const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
-  scroller.scrollTop = 2440;
+  scroller.scrollTop = 1280;
   await act(async () => scroller.dispatchEvent(new Event("scroll")));
   expect(inboxRow(container, "Inbox issue 40")).not.toBeNull();
   expect(rows().length).toBeLessThan(64);
@@ -257,8 +257,8 @@ it("bounds loaded rows and restores a scrolled position beyond the initial windo
   root = createRoot(container);
   await show();
   const restoredScroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
-  expect(restoredScroller.scrollTop).toBe(2440);
-  expect(inboxRow(container, "Inbox issue 40")).not.toBeNull();
+  expect(restoredScroller.scrollTop).toBe(1280);
+  expect(inboxRow(container, "Inbox issue 50")).not.toBeNull();
   expect(rows().length).toBeLessThan(64);
 });
 

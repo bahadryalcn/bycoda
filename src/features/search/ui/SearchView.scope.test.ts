@@ -107,23 +107,20 @@ it.each(["projects", "conversations"] as const)(
   },
 );
 
-it.each(["Projects", "Conversations"])(
-  "releases the file-index subscription in %s",
-  async (name) => {
-    await render();
-    expect(index.listeners.size).toBe(1);
-    await scope(name);
-    expect(index.listeners.size).toBe(0);
-    index.load.mockClear();
-    for (const listener of index.listeners) listener();
-    expect(index.load).not.toHaveBeenCalled();
-    await scope("All");
-    expect(index.listeners.size).toBe(1);
-    expect(index.load).toHaveBeenCalled();
-  },
-);
+it.each(["Projects", "Sessions"])("releases the file-index subscription in %s", async (name) => {
+  await render();
+  expect(index.listeners.size).toBe(1);
+  await scope(name);
+  expect(index.listeners.size).toBe(0);
+  index.load.mockClear();
+  for (const listener of index.listeners) listener();
+  expect(index.load).not.toHaveBeenCalled();
+  await scope("All");
+  expect(index.listeners.size).toBe(1);
+  expect(index.load).toHaveBeenCalled();
+});
 
-it.each(["Files", "Projects", "Conversations"])(
+it.each(["Files", "Projects", "Sessions"])(
   "skips local transcript scans in %s and resumes current All results",
   async (name) => {
     const messages = vi.spyOn(SessionMessageSearch.prototype, "search");

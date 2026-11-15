@@ -197,7 +197,7 @@ export function LocalSessionReferenceLink({
                 void open(false, true);
               }}
             >
-              {t("Open conversation")}
+              {t("Open session")}
             </Button>
           ) : null}
         </Text>
@@ -262,7 +262,7 @@ export function LocalSessionReferenceLink({
                   disabled={!!opening || reading}
                   onClick={() => void open(false, true)}
                 >
-                  {t("Open conversation")}
+                  {t("Open session")}
                 </Button>
               ) : null}
               <Button

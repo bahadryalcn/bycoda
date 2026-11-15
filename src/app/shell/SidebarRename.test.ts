@@ -817,7 +817,7 @@ describe("sidebar session bulk actions", () => {
   it("shows local loading and load failure before empty state", async () => {
     props = { ...props, sessions: [], pending: true };
     act(() => render());
-    expect(container.textContent).toContain("Loading conversations…");
+    expect(container.textContent).toContain("Loading sessions…");
     expect(container.textContent).not.toContain("Sessions you start will show up here");
     props = { ...props, pending: false, status: "error" };
     act(() => render());
@@ -1887,15 +1887,13 @@ describe("collapsed rail Inbox actions", () => {
     props.onSearchConversations = vi.fn();
     await act(async () => render());
     const search = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Search conversations"]',
+      'button[aria-label="Search sessions"]',
     )!;
     expect(search.type).toBe("button");
     act(() => search.click());
     // The control is a list filter now: it opens a field instead of the shared dialog.
     expect(props.onSearchConversations).not.toHaveBeenCalled();
-    const field = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Search conversations"]',
-    )!;
+    const field = container.querySelector<HTMLInputElement>('input[aria-label="Search sessions"]')!;
     expect(field).not.toBeNull();
     typeTitle(field, "zzz-no-such-conversation");
     expect(container.textContent).toContain("No matching sessions");
@@ -2005,7 +2003,7 @@ describe("collapsed rail Inbox actions", () => {
     );
     expect(labels.indexOf("Back")).toBeLessThan(labels.indexOf("Forward"));
     expect(labels.indexOf("Forward")).toBeLessThan(labels.indexOf("Expand projects"));
-    expect(labels.indexOf("Expand projects")).toBeLessThan(labels.indexOf("Search conversations"));
+    expect(labels.indexOf("Expand projects")).toBeLessThan(labels.indexOf("Search sessions"));
     const back = header.querySelector<HTMLButtonElement>('button[aria-label="Back"]')!;
     expect(title.compareDocumentPosition(back) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(back.closest("[data-pane-header-body]")).not.toBeNull();

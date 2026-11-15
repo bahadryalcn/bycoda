@@ -1,31 +1,28 @@
-import { Text, type TextTone } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
-import { ActionHost } from "../../../shared/ui/ActionHost";
-import { Badge } from "../../../shared/ui/Badge";
-import { Button } from "../../../shared/ui/Button";
+import { CollectionRow } from "../../../shared/ui/CollectionRow";
+import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Timestamp } from "../../../shared/ui/Timestamp";
-import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
 import { taskInstructionsSummary } from "../model/taskInstructions";
-import { taskStatusLine, type TaskStatusTone } from "../model/taskStatusLine";
-import { resolveModel } from "../../sessions/public/models";
+import { taskStatusLine, type TaskStatusKind, type TaskStatusLine } from "../model/taskStatusLine";
 import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { projectDisplayName } from "../../projects/public/projectNames";
 import { AssistantTaskBadge } from "./AssistantTaskBadge";
-import "./task-list.css";
 
-/** The ink of a status detail line: the danger ink unless the status names a warning or a plain state. */
-const STATUS_DETAIL_TONE: Record<TaskStatusTone, TextTone> = {
-  danger: "danger",
-  warning: "warning",
-  neutral: "secondary",
-  accent: "secondary",
-  info: "secondary",
-  success: "secondary",
-};
+const RUNNING_KINDS: ReadonlySet<TaskStatusKind> = new Set(["running", "verifying", "correcting"]);
+
+/** Maps the task status line to the five shared status roles. */
+function statusTextTone(status: TaskStatusLine): StatusTextTone {
+  if (RUNNING_KINDS.has(status.kind)) return "running";
+  if (status.tone === "danger") return "failed";
+  if (status.tone === "warning") return "needs-you";
+  if (status.tone === "success") return "done";
+  return "idle";
+}
 
 /** First non-empty line of the task prompt, shown as the one-line description caption. */
 export function taskListDescription(prompt: string | undefined, crewAssignment = false): string {
@@ -67,14 +64,14 @@ export function TaskList({
   const t = useT();
   const activeTask = tasks.find((task) => `${task.machineId}:${task.id}` === activeKey);
   return (
-    <div className="task-management-list">
+    <div className="grid content-start">
       <ContinuousList
         items={tasks}
         itemKey={bulkTaskKey}
         stateKey={stateKey}
         requiredKey={activeTask ? bulkTaskKey(activeTask) : null}
         label={t("Tasks")}
-        estimateSize={72}
+        estimateSize={36}
         renderItem={(task) => {
           const status = taskStatusLine(task);
           const description = taskListDescription(
@@ -83,137 +80,58 @@ export function TaskList({
           );
           const planning = planningLabel?.(task);
           const updatedAt = taskListUpdatedAt(task);
-          const model = task.harness ? resolveModel(task.harness, task.model) : null;
+          const key = bulkTaskKey(task);
+          const isActive = activeKey === `${task.machineId}:${task.id}`;
+          const secondary = [
+            projectDisplayName(task.cwd),
+            task.machineName,
+            task.stale ? t("Offline") : "",
+            planning,
+            description,
+          ]
+            .filter(Boolean)
+            .join(" · ");
           return (
-            <ActionHost
-              variant="row"
-              padding={{ inline: "md", block: "md" }}
-              key={bulkTaskKey(task)}
+            <CollectionRow
+              key={key}
               className="task-management-row"
-              selected={
-                selected.has(bulkTaskKey(task)) || activeKey === `${task.machineId}:${task.id}`
+              selected={selected.has(key) || isActive}
+              data-selected={selected.has(key) || undefined}
+              data-active={isActive || undefined}
+              before={
+                selection ? (
+                  <Checkbox
+                    className="task-row-select"
+                    label={
+                      <span className="sr-only">{t("Select task: {p0}", { p0: task.title })}</span>
+                    }
+                    disabled={disabled}
+                    checked={selected.has(key)}
+                    onChange={(event) => onToggle(task, event.currentTarget.checked)}
+                  />
+                ) : undefined
               }
-              data-selected={selected.has(bulkTaskKey(task)) || undefined}
-              data-active={activeKey === `${task.machineId}:${task.id}` || undefined}
-            >
-              {selection ? (
-                <Checkbox
-                  className="task-row-select"
-                  label={
-                    <span className="sr-only">{t("Select task: {p0}", { p0: task.title })}</span>
-                  }
-                  disabled={disabled}
-                  checked={selected.has(bulkTaskKey(task))}
-                  onChange={(event) => onToggle(task, event.currentTarget.checked)}
-                />
-              ) : null}
-              <div className="task-management-identity">
-                <Button
-                  truncate
-                  variant="link"
-                  layout="text"
-                  align="start"
-                  className="task-list-open"
-                  textSize="body"
-                  weight="medium"
-                  onClick={() => onOpen(task)}
-                >
-                  <OverflowTooltip label={task.title}>
-                    <Text size="inherit" tone="inherit" truncate className="task-list-title">
-                      {task.title}
-                    </Text>
-                  </OverflowTooltip>
-                </Button>
-                {description ? (
-                  <Text
-                    as="p"
-                    truncate
-                    size="caption"
-                    tone="secondary"
-                    leading="inherit"
-                    className="task-list-caption task-list-description"
-                  >
-                    {description}
-                  </Text>
-                ) : null}
-                <Text
-                  as="p"
-                  truncate
-                  size="caption"
-                  tone="muted"
-                  leading="inherit"
-                  className="task-list-caption"
-                >
-                  <OverflowTooltip label={task.cwd}>
-                    <span>{projectDisplayName(task.cwd)}</span>
-                  </OverflowTooltip>
-                  {" / "}
-                  {task.machineName}
-                </Text>
-                {task.stale ? (
-                  <Text as="p" size="caption" tone="warning" leading="inherit" wrap="anywhere">
-                    {t("Offline")}
-                  </Text>
-                ) : null}
-                {planning ? (
-                  <Text
-                    as="p"
-                    truncate
-                    size="caption"
-                    tone="muted"
-                    leading="inherit"
-                    className="task-list-caption task-list-planning"
-                  >
-                    {planning}
-                  </Text>
-                ) : null}
-                <AssistantTaskBadge task={task} />
-                {status.detail ? (
-                  <Tooltip label={task.error ?? task.mergeError ?? status.detail} asChild>
-                    <Text
-                      as="p"
-                      size="caption"
-                      tone={STATUS_DETAIL_TONE[status.tone]}
-                      leading="inherit"
-                      truncate
-                      data-task-status-detail
-                    >
-                      {status.detail}
-                    </Text>
+              leading={
+                task.harness ? (
+                  <HarnessIcon harness={task.harness} className="icon-sm" />
+                ) : undefined
+              }
+              title={task.title}
+              secondary={secondary || undefined}
+              trailing={
+                <>
+                  <AssistantTaskBadge task={task} />
+                  <Tooltip label={task.error ?? task.mergeError ?? status.detail ?? status.label}>
+                    <StatusText tone={statusTextTone(status)} data-task-status={status.kind}>
+                      {status.label}
+                    </StatusText>
                   </Tooltip>
-                ) : null}
-              </div>
-              {model ? (
-                <Text
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  className="task-list-agent task-list-secondary"
-                >
-                  <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
-                  <OverflowTooltip label={model.name}>
-                    <Text size="inherit" tone="inherit" truncate className="task-list-agent-name">
-                      {model.name}
-                    </Text>
-                  </OverflowTooltip>
-                </Text>
-              ) : null}
-              <Text
-                size="caption"
-                tone="muted"
-                leading="inherit"
-                className="task-list-updated task-list-secondary"
-              >
-                {updatedAt ? <Timestamp value={updatedAt} /> : null}
-              </Text>
-              <div className="task-list-status">
-                <OverflowTooltip label={status.label}>
-                  <Badge truncate tone={status.tone} data-task-status={status.kind}>
-                    {status.label}
-                  </Badge>
-                </OverflowTooltip>
-              </div>
-            </ActionHost>
+                  {updatedAt ? <Timestamp value={updatedAt} size="micro" tone="muted" /> : null}
+                </>
+              }
+              primary={{ "aria-current": isActive ? "true" : undefined, "aria-label": task.title }}
+              onOpen={() => onOpen(task)}
+            />
           );
         }}
       />

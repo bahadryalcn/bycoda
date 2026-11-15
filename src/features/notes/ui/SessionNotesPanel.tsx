@@ -14,6 +14,7 @@ import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Popover } from "../../../shared/ui/Popover";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
@@ -337,7 +338,36 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         appearance="hidden"
         className="absolute inset-y-0 -left-px"
       />
-      <div data-notes-header className="flex h-9 shrink-0 items-center gap-1 px-2">
+      <PaneHeader
+        data-notes-header
+        actions={
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              label={t("New note")}
+              motion="none"
+              loading={creating}
+              disabled={!loaded}
+              onClick={() => void onCreate()}
+            >
+              <Plus className="icon-sm" strokeWidth={1.75} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              label={t("Close notes")}
+              shortcut={shortcut}
+              motion="none"
+              onClick={() => setNotesPanelOpen(false)}
+            >
+              <X className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          </>
+        }
+      >
         <Button
           ref={listButton}
           variant="ghost"
@@ -358,30 +388,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
             {selected?.title ?? t("Notes")}
           </Text>
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={t("New note")}
-          motion="none"
-          loading={creating}
-          disabled={!loaded}
-          onClick={() => void onCreate()}
-        >
-          <Plus className="icon-sm" strokeWidth={1.75} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={t("Close notes")}
-          shortcut={shortcut}
-          motion="none"
-          onClick={() => setNotesPanelOpen(false)}
-        >
-          <X className="icon-sm" strokeWidth={1.75} />
-        </Button>
-      </div>
+      </PaneHeader>
       {listOpen ? (
         <Popover
           anchor={listButton}

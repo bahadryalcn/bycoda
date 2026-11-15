@@ -2,7 +2,6 @@ import { AutomationTemplateCard } from "./AutomationTemplateCard";
 import { HostAutomationFields } from "./HostAutomationFields";
 import { AutomationModelChoice } from "./AutomationModelChoice";
 import { useAutomationRoutingHost } from "../hooks/useAutomationRoutingHost";
-import { resolveModel } from "../../sessions/public/models";
 import { FailureState } from "../../../shared/ui/FailureState";
 import { Text } from "../../../shared/ui/Text";
 import { ClampText } from "../../../shared/ui/ClampText";
@@ -25,7 +24,6 @@ import "./automations.css";
 import { AutomationAssistant } from "./AutomationAssistant";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { TextField } from "../../../shared/ui/TextField";
@@ -39,11 +37,11 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Spinner } from "../../../shared/ui/Spinner";
+import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { StatusText, type StatusTextTone } from "../../../shared/ui/StatusText";
 import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
-import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -62,7 +60,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   useSyncExternalStore,
   type ElementType,
   type FormEvent,
@@ -71,7 +68,6 @@ import {
 import { loadModelControls, subscribeModelControls } from "../../settings/model/settings";
 import { Row } from "../../settings/ui/settingsControls";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import {
   Maximize2,
   Minimize2,
@@ -84,8 +80,6 @@ import {
   Zap,
 } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
-import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import { HostModelSource } from "../../connections/ui/HostModelSource";
 import { UnreachableMachinesNotice } from "../../connections/public/UnreachableMachinesNotice";
@@ -94,7 +88,6 @@ import { SkillPromptField } from "../../skills/ui/SkillPromptField";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import {
   applyTriggers,
   applyAutomationChange,
@@ -130,16 +123,7 @@ import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
-import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupLabels,
-  loadTabGroupMascots,
-  resolveTabGroupColor,
-  resolveTabGroupLabel,
-  resolveTabGroupLogo,
-  resolveTabGroupMascot,
-} from "../../workspace/model/tabGroups";
+import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 
 import { assistantAutomationSelection } from "../model/assistantAutomationSelection";
 type Props = {
@@ -289,11 +273,7 @@ function AutomationsContent({
   const deferredQuery = useDeferredValue(query);
   const [draft, setDraft] = useRetainedState<AutomationDraft | null>(`${viewStateKey}:draft`, null);
   const [pickerOpen, setPickerOpen] = useState(() => draft == null);
-  const logos = useTabGroupLogos();
   const [groupLabels] = useState(loadTabGroupLabels);
-  const [groupMascots] = useState(loadTabGroupMascots);
-  const [groupColors] = useState(loadTabGroupColors);
-  const [groupCustomColors] = useState(loadTabGroupCustomColors);
 
   useEffect(
     () =>
@@ -669,11 +649,7 @@ function AutomationsContent({
                           automationKey(automation) === selectedId &&
                           (!draft || draft.id === automation.id)
                         }
-                        logos={logos}
                         labels={groupLabels}
-                        mascots={groupMascots}
-                        colors={groupColors}
-                        customColors={groupCustomColors}
                         onSelect={async () => {
                           if (savingRef.current || (draft && !(await confirmDiscard()))) return;
                           setPickerOpen(false);
@@ -851,11 +827,7 @@ function backgroundMachineName(
 function AutomationCard({
   automation,
   active,
-  logos,
   labels,
-  mascots,
-  colors,
-  customColors,
   onSelect,
   onToggle,
   pending,
@@ -863,131 +835,34 @@ function AutomationCard({
 }: {
   automation: Automation;
   active: boolean;
-  logos: Record<string, string>;
   labels: Record<string, string>;
-  mascots: Record<string, string>;
-  colors: Record<string, number>;
-  customColors: Record<string, string>;
   onSelect: () => void;
   onToggle: (enabled: boolean) => void;
   pending: boolean;
   disabled: boolean;
 }) {
   useLocale();
-  const seed = projectName(automation.cwd);
   const key = projectKey(automation.cwd);
-  const project = automation.cwd ? resolveTabGroupLabel(key, labels, seed) : t("General");
-  const logoPath = resolveTabGroupLogo(key, logos);
-  const mascotName = resolveTabGroupMascot(key, mascots);
-  const mascotColor = resolveTabGroupColor(key, colors, customColors, seed);
+  const project = automation.cwd
+    ? resolveTabGroupLabel(key, labels, projectName(automation.cwd))
+    : t("General");
   const lastRun = automation.lastRunAt
     ? formatRelativeTime(new Date(automation.lastRunAt).toISOString())
     : null;
-  const model = resolveModel(automation.harness, automation.model);
-  // The first trigger names the card; the others open from a "+N" beside the switch, which cannot
-  // sit inside the card button.
-  const otherTriggers = automationTriggers(automation).slice(1);
+  const triggers = automationTriggers(automation);
+  const secondary = [
+    triggerLabel(automation) + (triggers.length > 1 ? ` +${triggers.length - 1}` : ""),
+    automation.host ? t("on {p0}", { p0: automation.host.machineName }) : "",
+    automation.host?.stale ? t("offline, last known") : "",
+    project,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <div className="group relative" data-paused={automation.enabled ? undefined : ""}>
-      <Button
-        type="button"
-        aria-current={active ? "true" : undefined}
-        aria-label={t("Open {p0}", { p0: automation.name })}
-        onClick={onSelect}
-        variant="item"
-        selected={active}
-        layout="stacked"
-      >
-        <Text
-          size="caption"
-          tone="muted"
-          className="automation-trigger-summary flex min-w-0 flex-wrap items-center gap-1.5"
-          style={
-            {
-              "--layout-trigger-reserve": otherTriggers.length > 0 ? "6rem" : "3.5rem",
-            } as CSSProperties
-          }
-        >
-          <TriggerMark
-            kind={automationTriggers(automation)[0]?.kind ?? automation.triggerKind}
-            className="icon-xs"
-          />
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {triggerLabel(automation)}
-            {automation.host ? t(" · on {p0}", { p0: automation.host.machineName }) : ""}
-          </Text>
-          {automation.host?.stale ? (
-            <Text size="inherit" tone="warning" wrap="anywhere">
-              {t(" (offline, last known)").trim()}
-            </Text>
-          ) : null}
-        </Text>
-        <span className="mt-1 flex min-w-0 items-center gap-1.5">
-          <Text size="secondary" tone="neutral" weight="medium" truncate className="min-w-0">
-            {automation.name}
-          </Text>
-          {automation.host?.needsInput ? (
-            <Badge tone="warning" className="shrink-0 whitespace-nowrap">
-              {t("Needs input")}
-            </Badge>
-          ) : automation.lastRunStatus === "failed" || automation.lastRunStatus === "running" ? (
-            <RunStatusPill status={automation.lastRunStatus} />
-          ) : !automation.enabled ? (
-            <Badge tone="neutral" className="shrink-0 whitespace-nowrap">
-              {t("Paused")}
-            </Badge>
-          ) : null}
-        </span>
-        <Text size="micro" tone="muted" className="mt-1 flex min-w-0 items-center gap-1.5">
-          {logoPath ? (
-            <ProjectLogoIcon
-              path={logoPath}
-              className="icon-sm shrink-0 rounded-sm"
-              imageClassName="icon-sm"
-            />
-          ) : (
-            <ProjectMascot
-              project={seed}
-              color={mascotColor}
-              name={mascotName}
-              className="icon-xs shrink-0"
-            />
-          )}
-          <Text size="inherit" tone="inherit" truncate className="min-w-0">
-            {project}
-          </Text>
-          {lastRun ? (
-            <>
-              <span className="shrink-0">·</span>
-              <span className="shrink-0">{lastRun}</span>
-            </>
-          ) : null}
-          <OverflowTooltip label={model.name}>
-            <Text
-              size="inherit"
-              tone="muted"
-              className="ml-auto flex min-w-0 max-w-28 items-center gap-1"
-            >
-              <HarnessIcon harness={automation.harness} className="icon-sm shrink-0" />
-              <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                {model.name}
-              </Text>
-            </Text>
-          </OverflowTooltip>
-        </Text>
-      </Button>
-      <span className="absolute right-2.5 top-2 flex items-center gap-1">
-        <BadgeList
-          label={t("Triggers")}
-          size="xs"
-          max={0}
-          items={otherTriggers.map((trigger) => ({
-            id: trigger.id,
-            label: triggerText(trigger),
-            icon: <TriggerMark kind={trigger.kind} className="icon-xs" />,
-          }))}
-        />
-        {pending ? <Spinner size="xs" /> : null}
+    <CollectionRow
+      data-paused={automation.enabled ? undefined : ""}
+      selected={active}
+      before={
         <ToggleSwitch
           label={`${automation.enabled ? "Pause" : "Enable"} ${automation.name}`}
           on={automation.enabled}
@@ -996,8 +871,29 @@ function AutomationCard({
           disabled={disabled}
           compact
         />
-      </span>
-    </div>
+      }
+      leading={
+        <TriggerMark kind={triggers[0]?.kind ?? automation.triggerKind} className="icon-xs" />
+      }
+      title={automation.name}
+      secondary={secondary}
+      trailing={
+        automation.host?.needsInput ? (
+          <StatusText tone="needs-you">{t("Needs input")}</StatusText>
+        ) : automation.lastRunStatus === "failed" || automation.lastRunStatus === "running" ? (
+          <RunStatusPill status={automation.lastRunStatus} />
+        ) : !automation.enabled ? (
+          t("Paused")
+        ) : (
+          lastRun
+        )
+      }
+      primary={{
+        "aria-current": active ? "true" : undefined,
+        "aria-label": t("Open {p0}", { p0: automation.name }),
+      }}
+      onOpen={onSelect}
+    />
   );
 }
 
@@ -1677,12 +1573,9 @@ function AutomationEditor({
                             }
                           />
                         </SettingsRow>
-                        <SettingsRow
-                          label={t("Conversation")}
-                          hint="New chat, or continue the last run"
-                        >
+                        <SettingsRow label={t("Session")} hint="New chat, or continue the last run">
                           <SettingsSelect
-                            label={t("Conversation")}
+                            label={t("Session")}
                             value={draft.reuseSession ? "reuse" : "fresh"}
                             disabled={draft.workspaceMode === "worktree"}
                             options={CONVERSATION_OPTIONS}

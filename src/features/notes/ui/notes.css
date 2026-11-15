@@ -84,11 +84,6 @@
   margin-inline-start: 6px;
 }
 
-.note-selectable-row > .note-library-card {
-  min-inline-size: 0;
-  flex: 1;
-}
-
 .note-group-heading {
   inline-size: 100%;
 }
@@ -101,10 +96,6 @@
   gap: 8px;
   padding-block: 8px;
   padding-inline: 12px;
-}
-
-.notes-workspace button.note-library-card {
-  align-items: stretch;
 }
 
 .note-detail {

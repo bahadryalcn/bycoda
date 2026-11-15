@@ -272,6 +272,27 @@
       "from": 0,
       "to": 1,
       "reason": "new rule (owner 2026-11-15 one component system)"
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "one-primary-per-view",
+      "from": 0,
+      "to": 12,
+      "reason": "New Phase 5 guard rule one-primary-per-view records existing debt on 2026-11-15; future per-file counts may only fall via --ratchet."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "nested-card",
+      "from": 0,
+      "to": 1,
+      "reason": "New Phase 5 guard rule nested-card records existing debt on 2026-11-15; future per-file counts may only fall via --ratchet."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "hover-only-reveal",
+      "from": 0,
+      "to": 0,
+      "reason": "New Phase 5 guard rule hover-only-reveal records existing debt on 2026-11-15; future per-file counts may only fall via --ratchet."
     }
   ]
 }

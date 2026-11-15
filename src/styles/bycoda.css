@@ -540,9 +540,9 @@ html.theme-light .project-sigil {
   }
 }
 .bycoda-titlebar {
-  /* Follows the shared density preference: compact control height plus 8px. */
-  min-height: calc(var(--ui-control-height-compact) + 0.5rem);
-  height: calc(var(--ui-control-height-compact) + 0.5rem);
+  /* Same row height as every pane header (--ui-pane-header-height). */
+  min-height: var(--ui-pane-header-height);
+  height: var(--ui-pane-header-height);
   background: var(--ui-navigation-chrome);
   border-bottom: 1px solid var(--color-stroke);
 }

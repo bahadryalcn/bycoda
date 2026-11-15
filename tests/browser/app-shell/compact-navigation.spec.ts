@@ -185,8 +185,8 @@ test("workspace picker uses spare header width before clipping names", async ({
     }
   }
   await page.getByRole("tab", { name: /^Sessions/ }).click();
-  await header.getByRole("button", { name: "Search conversations", exact: true }).click();
-  const search = header.getByPlaceholder("Search conversations...");
+  await header.getByRole("button", { name: "Search sessions", exact: true }).click();
+  const search = header.getByPlaceholder("Search sessions...");
   await expect(search).toBeVisible();
   await search.fill("retained query");
   for (const pane of ["wide", "narrow"]) {
@@ -461,15 +461,15 @@ test("compact navigation keeps workspace tabs in place and stacks app tool short
   await expect(page.getByRole("dialog")).toBeVisible();
   await expect(page.getByRole("radio", { name: "All", exact: true })).toBeChecked();
   await page.keyboard.press("Escape");
-  // "Search conversations" is an inline filter of the session list now, not the shared dialog.
-  await page.getByRole("button", { name: "Search conversations", exact: true }).click();
+  // "Search sessions" is an inline filter of the session list now, not the shared dialog.
+  await page.getByRole("button", { name: "Search sessions", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("combobox", { name: "Search conversations" })).toBeFocused();
+  await expect(page.getByRole("combobox", { name: "Search sessions" })).toBeFocused();
   await page.keyboard.type("zzz-no-such-conversation");
   await expect(page.getByText("No matching sessions")).toBeVisible();
   await page.getByRole("button", { name: /^Search all conversations/ }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Conversations", exact: true })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "Sessions", exact: true })).toBeChecked();
   await page.screenshot({
     path: testInfo.outputPath("shared-conversation-search.png"),
   });
@@ -559,7 +559,7 @@ test("workspace header keeps location before history and project controls", asyn
             }));
             expect(titleWidth.content).toBeLessThanOrEqual(titleWidth.available);
           }
-          for (const name of ["Back", "Forward", "Expand projects", "Search conversations"]) {
+          for (const name of ["Back", "Forward", "Expand projects", "Search sessions"]) {
             const control = header.getByRole("button", { name, exact: true });
             await expect(control).toBeInViewport();
             const bounds = (await control.boundingBox())!;

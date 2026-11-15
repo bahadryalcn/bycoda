@@ -95,7 +95,7 @@ const SCOPES: { id: SearchScope; label: string }[] = [
   {
     id: "conversations",
     get label() {
-      return t("Conversations");
+      return t("Sessions");
     },
   },
   {
@@ -528,7 +528,7 @@ export function SearchView({
         ? t("Recent projects")
         : chatMode
           ? `${t(filters.scope === "everywhere" ? "Everywhere" : filters.scope === "group" ? "This group" : "This project")}${filters.scope === "everywhere" ? "" : ` · ${projectDisplayName(cwd)}`}`
-          : `${t("Files")}: ${projectScope} · ${t("Conversations")}: ${t("Everywhere")} · ${t("Recent projects")}`;
+          : `${t("Files")}: ${projectScope} · ${t("Sessions")}: ${t("Everywhere")} · ${t("Recent projects")}`;
   const limitNotice =
     !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
       <InfoPopover label={t("Search result limits")}>
@@ -849,7 +849,7 @@ function ResultList({
         const row = rowCopy(hit, query);
         const heading =
           hit.kind === "conversation"
-            ? t("Conversations")
+            ? t("Sessions")
             : hit.kind === "message"
               ? t("Messages")
               : hit.kind === "file"
@@ -977,7 +977,7 @@ function ResultList({
               >
                 {t(
                   hit.kind === "conversation"
-                    ? "Conversation"
+                    ? "Session"
                     : hit.kind === "message"
                       ? "Message"
                       : hit.kind === "project"

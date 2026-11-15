@@ -241,7 +241,7 @@ describe("local references in the actual Markdown pipeline", () => {
     await act(async () => host.querySelector<HTMLAnchorElement>("a")!.click());
     await act(async () =>
       [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Open conversation")!
+        .find((button) => button.textContent === "Open session")!
         .click(),
     );
     expect(navigation.open).toHaveBeenLastCalledWith(

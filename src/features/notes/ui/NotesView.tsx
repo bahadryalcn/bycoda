@@ -1,8 +1,8 @@
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
-import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Timestamp } from "../../../shared/ui/Timestamp";
+import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { Button } from "../../../shared/ui/Button";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
@@ -10,13 +10,12 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { InlineAction } from "../../../shared/ui/ActionHost";
 import { ContextMenu } from "../../../shared/ui/ContextMenu";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { ClampText } from "../../../shared/ui/ClampText";
 import { NoteDeleteDescription } from "./NoteDeleteDescription";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
@@ -54,14 +53,11 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import { OverlayNav } from "../../../app/shell/TitleBar";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
 import {
   createNote,
@@ -85,14 +81,6 @@ import { createRecoveredNote } from "../noteImages";
 import { projectKey } from "../../../shared/lib/paths";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
-import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupMascots,
-  resolveTabGroupColor,
-  resolveTabGroupLogo,
-  resolveTabGroupMascot,
-} from "../../workspace/model/tabGroups";
 import { openReplacePanel } from "../../files/editor/editorSearch";
 import { NoteMarkdownEditor, NoteMarkdownToolbar } from "./NoteMarkdownEditor";
 import { NoteEditablePreview } from "./NoteEditablePreview";
@@ -354,10 +342,6 @@ export function NotesView({
   }
   const [creating, setCreating] = useState(false);
   const creatingRef = useRef(false);
-  const logos = useTabGroupLogos();
-  const [groupMascots] = useState(loadTabGroupMascots);
-  const [groupColors] = useState(loadTabGroupColors);
-  const [groupCustomColors] = useState(loadTabGroupCustomColors);
 
   const refresh = useCallback(async () => {
     await notesQuery.refetch();
@@ -1117,7 +1101,7 @@ export function NotesView({
                   ? `note:${selectedRowGroup.key}:${selectedSummary.id}`
                   : null
               }
-              estimateSize={76}
+              estimateSize={32}
               loading={notesQuery.isFetching || searchingBody}
               error={listError ?? searchError}
               onRetry={() => {
@@ -1189,10 +1173,6 @@ export function NotesView({
                         bodyMatches?.query === deferredQuery.trim() ? bodyMatches.ids : undefined
                       }
                       active={selectedSummary?.id === row.note.id}
-                      logos={logos}
-                      mascots={groupMascots}
-                      colors={groupColors}
-                      customColors={groupCustomColors}
                       onSelect={() => {
                         if (selectionMode) {
                           toggleChecked(row.note.id);
@@ -1405,49 +1385,6 @@ export function NotesView({
   );
 }
 
-type ProjectMarks = {
-  logos: Record<string, string>;
-  mascots: Record<string, string>;
-  colors: Record<string, number>;
-  customColors: Record<string, string>;
-};
-
-function NoteProjectMark({
-  cwd,
-  logos,
-  mascots,
-  colors,
-  customColors,
-}: { cwd: string } & ProjectMarks) {
-  useLocale();
-  const project = projectDisplayName(cwd);
-  const key = projectKey(cwd);
-  const logoPath = resolveTabGroupLogo(key, logos);
-  const mascotName = resolveTabGroupMascot(key, mascots);
-  const mascotColor = resolveTabGroupColor(key, colors, customColors, project);
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      {logoPath ? (
-        <ProjectLogoIcon
-          path={logoPath}
-          className="size-3.5 shrink-0 rounded-sm"
-          imageClassName="size-3.5"
-        />
-      ) : (
-        <ProjectMascot
-          project={project}
-          color={mascotColor}
-          name={mascotName}
-          className="size-3 shrink-0"
-        />
-      )}
-      <Text size="inherit" tone="inherit" truncate className="min-w-0">
-        {project}
-      </Text>
-    </span>
-  );
-}
-
 function NoteCard({
   note,
   group,
@@ -1456,10 +1393,6 @@ function NoteCard({
   query,
   bodyMatches,
   active,
-  logos,
-  mascots,
-  colors,
-  customColors,
   onSelect,
   onNavigate,
   menuOpen,
@@ -1476,107 +1409,34 @@ function NoteCard({
   onNavigate: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
   menuOpen: boolean;
   onMenu: (place: MenuPlace) => void;
-} & ProjectMarks) {
+}) {
   useLocale();
   const date = noteLibraryDate(note, sort);
   const validDate = Number.isFinite(date.timestamp) && date.timestamp > 0;
-  const time = validDate ? formatRelativeTime(new Date(date.timestamp).toISOString()) : "";
   const project = noteSourceProject(note.sourceCwd);
   const match = noteLibraryMatchLocation(note, query, bodyMatches);
   const hint = [note.title, note.sourceCwd || project, ...note.tags].filter(Boolean).join(" · ");
+  const preview = match === "content" ? t("Match in note") : note.preview || t("No preview");
+  const secondary = [grouping !== "project" ? project : "", preview].filter(Boolean).join(" · ");
   return (
-    <ActionHost selected={active} className="min-w-0 flex-1 items-start">
-      {/* The tag badges hold their own "+N" button, which cannot sit inside the row button: the tag
-        line is a sibling laid over the row (clicks outside the badges fall through to the row)
-        and the row keeps the line's height. It also holds the gutter the row actions cover. */}
-      <div className="relative min-w-0 flex-1">
-        <Button
-          data-action-primary=""
-          variant="item"
-          layout="stacked"
-          motion="none"
-          tooltip={hint}
-          aria-current={active ? "true" : undefined}
-          aria-haspopup="menu"
-          data-note-id={note.id}
-          data-note-group={group}
-          onClick={onSelect}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onMenu({ x: event.clientX, y: event.clientY });
-          }}
-          onKeyDown={(event) => {
-            if (isMenuKey(event)) {
-              event.preventDefault();
-              onMenu({ anchor: event.currentTarget });
-            } else onNavigate(event);
-          }}
-          className="w-full min-w-0"
-        >
-          <ClampText
-            as="span"
-            lines={2}
-            expandable={false}
-            size="secondary"
-            tone="inherit"
-            weight="medium"
-            className="min-w-0 wrap-anywhere"
-          >
-            {note.title || t("Untitled")}
-          </ClampText>
-          <ClampText as="span" lines={1} expandable={false} size="caption" tone="secondary">
-            {match === "content" ? t("Match in note") : note.preview || t("No preview")}
-          </ClampText>
-          <Text
+    <CollectionRow
+      selected={active}
+      className="min-w-0 flex-1"
+      title={note.title || t("Untitled")}
+      secondary={secondary}
+      trailing={
+        validDate ? (
+          <Timestamp
+            value={date.timestamp}
+            format="relative"
+            relativeStyle="narrow"
             size="micro"
-            tone="secondary"
-            className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden"
-          >
-            {grouping !== "project" && project && note.sourceCwd ? (
-              <Text size="inherit" tone="inherit" truncate className="min-w-0 max-w-full">
-                <NoteProjectMark
-                  cwd={note.sourceCwd}
-                  logos={logos}
-                  mascots={mascots}
-                  colors={colors}
-                  customColors={customColors}
-                />
-              </Text>
-            ) : null}
-            {time ? (
-              <Timestamp
-                value={date.timestamp}
-                format="relative"
-                prefix={t(date.label)}
-                className="shrink-0"
-              />
-            ) : null}
-            {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
-            {/* Empty trailing gutter: the row actions sit over it, so the title, preview and meta never move. */}
-            {note.tags.length ? null : (
-              <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
-            )}
-          </Text>
-          {note.tags.length ? <span aria-hidden="true" className="mt-1 block h-4" /> : null}
-        </Button>
-        {note.tags.length ? (
-          <div className="pointer-events-none absolute inset-x-[calc(var(--space-3)+1px)] bottom-[calc(var(--space-2)+1px)] flex h-4 items-center gap-2">
-            <BadgeList
-              label={t("Tags")}
-              size="xs"
-              items={note.tags.map((tag) => ({ id: tag, label: `#${tag}` }))}
-              className="pointer-events-auto"
-            />
-            <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
-          </div>
-        ) : null}
-      </div>
-      <div
-        data-action-slot="collapse"
-        data-action-anchor="end"
-        className="flex shrink-0 items-center"
-      >
+            tone="muted"
+            leading="inherit"
+          />
+        ) : undefined
+      }
+      action={
         <InlineAction
           label={t("Actions for {p0}", { p0: note.title || t("Untitled") })}
           aria-haspopup="menu"
@@ -1585,8 +1445,27 @@ function NoteCard({
         >
           <MoreHorizontal className="icon-sm" />
         </InlineAction>
-      </div>
-    </ActionHost>
+      }
+      onOpen={onSelect}
+      primary={{
+        tooltip: hint,
+        "aria-current": active ? "true" : undefined,
+        "aria-haspopup": "menu",
+        "data-note-id": note.id,
+        "data-note-group": group,
+        onContextMenu: (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onMenu({ x: event.clientX, y: event.clientY });
+        },
+        onKeyDown: (event) => {
+          if (isMenuKey(event)) {
+            event.preventDefault();
+            onMenu({ anchor: event.currentTarget });
+          } else onNavigate(event);
+        },
+      }}
+    />
   );
 }
 

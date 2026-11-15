@@ -94,7 +94,7 @@ export function CrewWorkDetail({
           ? t("Deleting…")
           : "";
   const openCoordinator = (key: string) => ({
-    label: key.startsWith("answer:") ? t("Answer") : t("Open conversation"),
+    label: key.startsWith("answer:") ? t("Answer") : t("Open session"),
     disabled: !run.coordinatorSessionId || !canOpen || pending,
     pending: pendingAction === `open:${key}`,
     onClick: () => run.coordinatorSessionId && onOpen(run.coordinatorSessionId, key),

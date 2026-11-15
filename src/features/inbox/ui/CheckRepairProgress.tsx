@@ -399,7 +399,7 @@ function RepairCard({
                 className="shrink-0"
               >
                 <MessageSquare aria-hidden="true" className="icon-sm" />
-                {t("Open conversation")}
+                {t("Open session")}
               </Button>
             ) : null}
           </>

@@ -61,6 +61,8 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
   /** Make the row a window drag region (`data-tauri-drag-region`). `true` = `"deep"`
    *  (children drag too); control slots are always excluded. */
   dragRegion?: boolean | "deep" | "self";
+  /** Optional second band under the title row: a 24px tab strip (`Tabs`/`TabList`). Together with the title row, at most two bands above the content. */
+  tabs?: ReactNode;
   /** Bottom hairline (`--ui-pane-border`). Default true. */
   bordered?: boolean;
   /** `div` (default) or `header`. A `header` outside a section reads as a page banner. */
@@ -69,9 +71,9 @@ export type PaneHeaderProps = Omit<ComponentPropsWithRef<"div">, "title"> & {
 
 /**
  * Title row of a pane or tool view: slots leading, icon, title, meta, children (tabs/search), actions, trailing.
- * Pane header contract: one 40px row (`--ui-pane-header-height`, density-aware), caption-role title, 24px tabs in the body, at most 4 actions.
+ * Pane header contract: one 40px row (`--ui-pane-header-height`, density-aware, same as the title bar), caption-role title, at most 4 actions (more go into an overflow menu), optional 24px tab strip (`tabs`, `--ui-pane-tabs-height`) as the only second band.
  * Owns height (`--ui-pane-header-height`), bottom hairline, and optional window drag region plus macOS traffic-light inset.
- * Heading levels: PaneHeader = pane title row; PanelHeader = dialog/sheet/popover header; SectionLabel = caption over a group inside either.
+ * Heading levels: PaneHeader = pane title row; PanelHeader = dialog/sheet/popover header (a different pattern, not merged); SectionLabel = caption over a group inside either.
  * @group layout
  * @use The top bar of a view, side pane or tool panel, including a window title bar.
  * @avoid Dialog, sheet or popover header: PanelHeader. Group caption in content: SectionLabel. Tabs alone: Tabs.
@@ -97,6 +99,7 @@ export function PaneHeader({
   meta,
   actions,
   trailing,
+  tabs,
   chromeInset = false,
   dragRegion = false,
   bordered = true,
@@ -108,7 +111,7 @@ export function PaneHeader({
   const drag = dragRegion === true ? "deep" : dragRegion === "self" ? "" : dragRegion || undefined;
   const noDrag = drag !== undefined ? "false" : undefined;
   const inset = chromeInset !== false && IS_MAC;
-  return (
+  const row = (
     <Root
       {...props}
       data-tauri-drag-region={drag}
@@ -156,5 +159,14 @@ export function PaneHeader({
         </div>
       ) : null}
     </Root>
+  );
+  if (tabs == null) return row;
+  return (
+    <div className={styles.root}>
+      {row}
+      <div className={styles.tabs} data-bordered={bordered || undefined} data-pane-header-tabs>
+        {tabs}
+      </div>
+    </div>
   );
 }

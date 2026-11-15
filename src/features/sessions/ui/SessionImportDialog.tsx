@@ -454,7 +454,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                 value={text}
                 onChange={(event) => setText(event.target.value)}
                 placeholder={t("Filter by prompt or folder")}
-                aria-label={t("Filter conversations")}
+                aria-label={t("Filter sessions")}
                 containerClassName="ml-auto min-w-40 flex-1 sm:max-w-64"
               />
               <FilterTrigger

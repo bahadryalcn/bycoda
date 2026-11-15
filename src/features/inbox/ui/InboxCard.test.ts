@@ -36,9 +36,6 @@ describe("InboxCard attention", () => {
         createElement(InboxCard, {
           item,
           active: false,
-          logoPath: null,
-          mascotName: null,
-          mascotColor: "",
           relatedSessionCount: 0,
           onSelect: () => {},
         }),

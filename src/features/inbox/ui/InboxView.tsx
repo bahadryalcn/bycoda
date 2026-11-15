@@ -86,7 +86,7 @@ import {
   type InboxFilters,
   type InboxSource,
 } from "../model/inboxFilters";
-import { projectKey, projectName } from "../../../shared/lib/paths";
+import { projectKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { type RecentProject } from "../../projects/model/recents";
@@ -106,14 +106,7 @@ import {
 } from "../model/inboxSeen";
 import { saveHiddenLinearTeamIds } from "../model/linear";
 import { saveHiddenJiraProjectIds } from "../model/jira";
-import {
-  loadTabGroupColors,
-  loadTabGroupCustomColors,
-  loadTabGroupMascots,
-  resolveTabGroupColor,
-  resolveTabGroupLogo,
-  resolveTabGroupMascot,
-} from "../../workspace/model/tabGroups";
+import {} from "../../workspace/model/tabGroups";
 import { InboxDiscussionPanel, type InboxSessionPortal } from "./InboxDiscussionPanel";
 import { inboxAskKey } from "../model/inboxAsk";
 import { InboxDetailBody } from "./InboxDetailBody";
@@ -187,9 +180,6 @@ export function InboxView({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const logos = useTabGroupLogos();
-  const [groupMascots] = useState(loadTabGroupMascots);
-  const [groupColors] = useState(loadTabGroupColors);
-  const [groupCustomColors] = useState(loadTabGroupCustomColors);
 
   const [retainedSearch, setRetainedSearch] = useRetainedState(`${viewStateKey}:search`, "");
   const queryVisible = useQueryVisible();
@@ -933,24 +923,15 @@ export function InboxView({
             stateKey={`inbox:${listScope}`}
             itemKey={inboxItemKey}
             requiredKey={selected ? inboxItemKey(selected) : null}
-            estimateSize={96}
+            estimateSize={32}
             renderItem={(item) => {
               const key = inboxItemKey(item);
-              const projectId = projectKey(item.projectPath);
               const relatedSessionCount = sessionCounts.get(key) ?? 0;
               return (
                 <div role="listitem">
                   <InboxCard
                     item={item}
                     active={selected != null && key === inboxItemKey(selected)}
-                    logoPath={resolveTabGroupLogo(projectId, logos)}
-                    mascotName={resolveTabGroupMascot(projectId, groupMascots)}
-                    mascotColor={resolveTabGroupColor(
-                      projectId,
-                      groupColors,
-                      groupCustomColors,
-                      projectName(item.projectPath),
-                    )}
                     relatedSessionCount={relatedSessionCount}
                     onSelect={selectItem}
                   />

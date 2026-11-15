@@ -664,7 +664,7 @@ function AppMenuButton() {
   );
 }
 
-const TITLEBAR_HEIGHT = "calc(var(--ui-control-height-compact) + 0.5rem)";
+const TITLEBAR_HEIGHT = "var(--ui-pane-header-height)";
 const TITLEBAR_HEIGHT_STYLE = { height: TITLEBAR_HEIGHT, minHeight: TITLEBAR_HEIGHT } as const;
 
 export function TabVisitNav({

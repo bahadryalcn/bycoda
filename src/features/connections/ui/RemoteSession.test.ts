@@ -1414,7 +1414,7 @@ it("keeps an unopened remote conversation docked while its transcript loads", as
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 550));
   });
-  expect(container.textContent).toContain("Loading conversation…");
+  expect(container.textContent).toContain("Loading session…");
   expect(container.textContent).not.toContain("Work on repo.");
 
   await act(async () => {
@@ -1423,7 +1423,7 @@ it("keeps an unopened remote conversation docked while its transcript loads", as
   });
   await settle();
   expect(container.textContent).toContain("Earlier message");
-  expect(container.textContent).not.toContain("Loading conversation…");
+  expect(container.textContent).not.toContain("Loading session…");
   expect(container.querySelector("[data-session-composer]")).toBe(composer);
 });
 

@@ -53,7 +53,7 @@ for (const theme of ["dark", "light"]) {
       // A conversation that is gone says so in its row and keeps the panel open.
       const gone = panel.locator(".notification-history-item").filter({ hasText: "old-gone" });
       await gone.locator(".notification-row-toggle").click();
-      await gone.getByRole("button", { name: "Open conversation", exact: true }).click();
+      await gone.getByRole("button", { name: "Open session", exact: true }).click();
       await expect(gone.getByText("This conversation is no longer available.")).toBeVisible();
       // One entry leaves on its own; the row is still expanded from the failed open.
       const rows = await panel.locator(".notification-history-item").count();

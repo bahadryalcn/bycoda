@@ -1,5 +1,6 @@
 import { TabDirtyDot } from "../../../shared/ui/TabLabel";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { useT, type t } from "../../../shared/i18n";
@@ -576,13 +577,13 @@ export function SurfaceTabs({
   }, [activeFileId, sortable.draggingId, tabNode]);
 
   return (
-    <div ref={rootRef} className="flex h-9 min-w-0 shrink-0 border-b border-stroke">
+    <PaneHeader ref={rootRef} titleAs="div" className="min-w-0">
       <Tabs value={activeFileId} onValueChange={onSelectFile} activation="manual" panels="none">
         <TabList
           ref={lockOverscroll}
           data-surface-pane-id={paneId}
           label={label}
-          className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pl-1.5 pr-2.5"
+          className="scrollbar-none flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overscroll-none pr-1"
         >
           {onPaneDragStart ? (
             <Button
@@ -831,6 +832,6 @@ export function SurfaceTabs({
       {fileActionError ? (
         <FileActionError message={fileActionError} onDismiss={() => setFileActionError(null)} />
       ) : null}
-    </div>
+    </PaneHeader>
   );
 }

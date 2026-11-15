@@ -21,13 +21,9 @@
   }
 }
 
-/* One compact pane/tool header: the title-bar height (compact control + 8px) so pane
-   headers line up with the window title bar at every density. */
+/* One compact pane/tool header at --ui-pane-header-height, the same as the window title bar. */
 .header {
-  --pane-header-height: var(
-    --ui-pane-header-height,
-    calc(var(--ui-control-height-compact) + 0.5rem)
-  );
+  --pane-header-height: var(--ui-pane-header-height);
   box-sizing: border-box;
   block-size: var(--pane-header-height);
   min-block-size: var(--pane-header-height);
@@ -97,4 +93,23 @@
   align-items: center;
   gap: 0.25rem;
   min-inline-size: 0;
+}
+/* Optional second band: a 24px tab strip under the title row, sharing the hairline rhythm. */
+.root {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+.tabs {
+  display: flex;
+  flex: none;
+  align-items: center;
+  box-sizing: border-box;
+  block-size: var(--ui-pane-tabs-height);
+  padding-inline: 0.5rem;
+  min-inline-size: 0;
+}
+.tabs[data-bordered] {
+  border-block-end: 1px solid var(--ui-pane-border);
 }

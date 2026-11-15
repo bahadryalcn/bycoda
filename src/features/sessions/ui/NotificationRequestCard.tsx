@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { motionAttributes } from "../../../shared/ui/Motion";
 import { InlineError } from "../../../shared/ui/InlineError";
+import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { X } from "../../../shared/ui/icons";
@@ -12,6 +13,8 @@ import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import type { Notice } from "./ApprovalToasts";
 import { HarnessIcon } from "./HarnessIcon";
 import { NotificationProjectLabel, NotificationTime } from "./NotificationHistoryItem";
+import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
+import { bycodaToolCall } from "../model/bycodaToolCall";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 
 /**
@@ -35,6 +38,15 @@ export function NotificationRequestCard({
 }) {
   const t = useT();
   const { session, label, requestId } = notice;
+  const block = session.blocks.find(
+    (item) => item.approval?.requestId === requestId && !item.approval.decided,
+  );
+  const detail = block
+    ? (bycodaToolCall(block)?.command ??
+      (block.tool?.preview?.kind === "shell" ? block.tool.preview.title : undefined) ??
+      block.tool?.title ??
+      block.text)
+    : label;
   const title = sessionDisplayTitle(session.title, session.harness);
   const decision = useApprovalDecisionControl(session, requestId, onApproval);
   return (
@@ -121,31 +133,7 @@ export function NotificationRequestCard({
           data-no-drag=""
         >
           <Badge tone="warning">{notice.kind === "question" ? t("Question") : t("Approval")}</Badge>
-          {notice.kind === "approval" ? (
-            <>
-              <Button
-                variant="primary"
-                size="sm"
-                type="button"
-                loading={decision.pending && decision.decision === "allow"}
-                disabled={decision.blocked}
-                onClick={() => void decision.decide("allow")}
-              >
-                {t("Allow")}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                tone="danger"
-                type="button"
-                loading={decision.pending && decision.decision === "deny"}
-                disabled={decision.blocked}
-                onClick={() => void decision.decide("deny")}
-              >
-                {t("Deny")}
-              </Button>
-            </>
-          ) : (
+          {notice.kind === "question" ? (
             <Button
               variant="ghost"
               size="sm"
@@ -154,9 +142,34 @@ export function NotificationRequestCard({
             >
               {t("Answer")}
             </Button>
-          )}
+          ) : null}
         </span>
       </Text>
+      {notice.kind === "approval" ? (
+        <div className="px-3 pb-2">
+          <ApprovalRequest
+            title={t("Needs approval")}
+            detail={detail}
+            details={
+              block && hasToolInspection(block)
+                ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }
+                : undefined
+            }
+            allow={{
+              label: t("Allow"),
+              pending: decision.pending && decision.decision === "allow",
+              disabled: decision.blocked,
+              onClick: () => void decision.decide("allow"),
+            }}
+            deny={{
+              label: t("Deny"),
+              pending: decision.pending && decision.decision === "deny",
+              disabled: decision.blocked,
+              onClick: () => void decision.decide("deny"),
+            }}
+          />
+        </div>
+      ) : null}
       {notice.kind === "approval" && decision.feedback ? (
         decision.danger ? (
           <InlineError className="px-3 pb-2">{decision.feedback}</InlineError>

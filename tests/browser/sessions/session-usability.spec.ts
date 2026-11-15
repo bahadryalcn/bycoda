@@ -291,7 +291,7 @@ for (const mode of ["folders", "imports"] as const)
             ? page.locator("[data-checkbox-row]").filter({ hasText: "extra" })
             : page.getByRole("switch", { name: /Show automation runs/ });
         if (mode === "imports") {
-          await page.getByRole("searchbox", { name: "Filter conversations" }).focus();
+          await page.getByRole("searchbox", { name: "Filter sessions" }).focus();
           await page.getByRole("button", { name: "Conversation filters" }).click();
         }
         await expect(control).toBeVisible();

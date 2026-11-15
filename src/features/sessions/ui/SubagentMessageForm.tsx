@@ -94,7 +94,7 @@ export function SubagentMessageForm({ name, relay }: { name: string; relay: Suba
         </InfoPopover>
         {direct && relay.onOpenConversation ? (
           <Button variant="ghost" onClick={relay.onOpenConversation}>
-            {t("Open conversation")}
+            {t("Open session")}
           </Button>
         ) : null}
         <Button type="submit" variant="primary" disabled={!canSend}>

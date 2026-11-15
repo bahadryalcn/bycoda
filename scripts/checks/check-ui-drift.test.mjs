@@ -16,6 +16,110 @@ import { appearanceRules } from "./ui-drift-appearance.mjs";
 // The appearance ownership rules have their own tests (ui-drift-appearance.test.mjs).
 const notAppearance = (rule) => !(rule in appearanceRules);
 
+test("view primary guard counts files, separates returns and mutually exclusive branches", () => {
+  const file = "src/features/demo/View.tsx";
+  const primary = '<Button variant="primary" />';
+  const count = (source) =>
+    rulesOf(file, source).filter((rule) => rule === "one-primary-per-view").length;
+  assert.equal(count(`function View() { return <>${primary}${primary}${primary}</>; }`), 1);
+  assert.equal(count(`const View = () => <>${primary}${primary}</>;`), 1);
+  assert.equal(count(`function View() { if (open) return ${primary}; return ${primary}; }`), 0);
+  assert.equal(count(`const View = () => open ? ${primary} : ${primary};`), 0);
+  assert.equal(count(`const View = () => ${primary} || ${primary};`), 0);
+  assert.equal(count(`const View = () => <>{open ? ${primary} : ${primary}}${primary}</>;`), 1);
+  assert.equal(count(`const First = () => ${primary}; const Second = () => ${primary};`), 0);
+  assert.equal(count(`const View = () => <>{items.map(() => ${primary})}${primary}</>;`), 0);
+  assert.equal(
+    count(`// return <>${primary}${primary}</>\nconst sample = '${primary}${primary}';`),
+    0,
+  );
+  assert.equal(count(`const View = () => <>${primary}<Button variant={kind} /></>;`), 0);
+  assert.equal(
+    count(
+      `const View = () => (\n// ui-drift-ignore: one-primary-per-view -- independent actions\n<>${primary}${primary}</>);`,
+    ),
+    0,
+  );
+});
+
+test("nested card guard follows JSX ancestry including surfaceAttributes spreads", () => {
+  const count = (source) =>
+    rulesOf("src/features/demo/View.tsx", source).filter((rule) => rule === "nested-card").length;
+  assert.equal(
+    count('<Surface variant="card"><div><Surface variant={"card"} /></div></Surface>'),
+    1,
+  );
+  assert.equal(
+    count('<div {...surfaceAttributes({ variant: "card" })}><Surface variant="card" /></div>'),
+    1,
+  );
+  assert.equal(
+    count(
+      '<Surface variant="card"><div {...surfaceAttributes({ "variant": "card" })} /></Surface>',
+    ),
+    1,
+  );
+  assert.equal(
+    count(
+      '<Surface variant="card"><Surface variant="card"><Surface variant="card" /></Surface></Surface>',
+    ),
+    2,
+  );
+  assert.equal(count('<><Surface variant="card" /><Surface variant="card" /></>'), 0);
+  assert.equal(count('<Surface variant="card"><Surface variant="inset" /></Surface>'), 0);
+  assert.equal(count('<Surface variant="card">{() => <Surface variant="card" />}</Surface>'), 0);
+  assert.equal(
+    count('const example = `<Surface variant="card"><Surface variant="card" /></Surface>`;'),
+    0,
+  );
+  assert.equal(
+    count(
+      '<Surface variant="card">\n{/* ui-drift-ignore: nested-card -- embedded preview */}\n<Surface variant="card" /></Surface>',
+    ),
+    0,
+  );
+});
+
+test("hover reveal guard requires a matching visibility property and independent keyboard path", () => {
+  const count = (classes, file = "src/features/demo/View.tsx") =>
+    rulesOf(file, `<div className="${classes}" />`).filter((rule) => rule === "hover-only-reveal")
+      .length;
+  assert.equal(count("opacity-0 group-hover:opacity-100"), 1);
+  assert.equal(count("invisible hover:visible"), 1);
+  assert.equal(count("opacity-0 group-hover/row:opacity-100", "src/shared/ui/Row.tsx"), 1);
+  for (const focus of [
+    "focus-within",
+    "focus-visible",
+    "group-focus-within",
+    "group-focus-within/row",
+  ])
+    assert.equal(count(`opacity-0 group-hover:opacity-100 ${focus}:opacity-100`), 0);
+  assert.equal(count("invisible hover:visible focus-visible:visible"), 0);
+  assert.equal(count("opacity-0 hover:opacity-100 focus-visible:visible"), 1);
+  assert.equal(count("opacity-0 hover:opacity-100 hover:focus-within:opacity-100"), 1);
+  assert.equal(count("opacity-0 hover:opacity-100 focus-within:opacity-0"), 1);
+  assert.equal(
+    count("opacity-0 invisible hover:opacity-100 hover:visible focus-within:opacity-100"),
+    1,
+  );
+  assert.equal(count("hover:opacity-100"), 0);
+  assert.equal(count("opacity-0 focus-visible:opacity-100"), 0);
+  assert.equal(count("opacity-0 hover:opacity-100", "src/app/View.tsx"), 0);
+  assert.equal(count("opacity-0 hover:opacity-100", "src/shared/ui/Row.test.tsx"), 0);
+  assert.ok(
+    rulesOf(
+      "src/shared/ui/Row.tsx",
+      '<div className={cn("opacity-0", "group-hover:opacity-100")} />',
+    ).includes("hover-only-reveal"),
+  );
+  assert.ok(
+    rulesOf(
+      "src/features/demo/View.tsx",
+      '<div className="opacity-0 hover:opacity-100" data-example="focus-within:opacity-100" />',
+    ).includes("hover-only-reveal"),
+  );
+});
+
 const arcCss = `.bycoda-arc {\n  --radius-control: 4px;\n  --space-2: 0.375rem;\n}\n`;
 const indexCss = `@source "../node_modules/x/dist/*.js";\n:root { --ui-surface: red; --layer-popover: 80; --color-accent: red; --motion-duration-fast: 1s; --motion-ease-out: ease; --motion: cubic-bezier(0, 0, 1, 1); }\n.a { transition: opacity 120ms ease; z-index: 50; }\n`;
 
@@ -195,6 +299,37 @@ test("only counts above the baseline fail, per file and rule", (t) => {
   );
   const fixed = new Map([["src/features/demo/A.tsx", '<p className="text-ui-caption" />\n']]);
   assert.equal(checkUiDrift({ root, overrides: fixed }).improvements.length, 1);
+});
+
+test("view guards use existing per-file regression and improvement budgets", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "bycoda-ui-view-guards-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const file = "src/shared/demo/View.tsx";
+  mkdirSync(dirname(join(root, file)), { recursive: true });
+  mkdirSync(dirname(join(root, baselineFile)), { recursive: true });
+  const primary = '<Button variant="primary" />';
+  const fixtures = [
+    ["one-primary-per-view", `const View = () => <>${primary}${primary}</>;`],
+    ["nested-card", '<Surface variant="card"><Surface variant="card" /></Surface>'],
+    ["hover-only-reveal", '<div className="opacity-0 hover:opacity-100" />'],
+  ];
+  for (const [rule, source] of fixtures) {
+    writeFileSync(join(root, file), source);
+    writeFileSync(join(root, baselineFile), JSON.stringify({ schemaVersion: 1, counts: {} }));
+    const added = checkUiDrift({ root });
+    assert.deepEqual(
+      added.regressions.map(({ rule, count }) => [rule, count]),
+      [[rule, 1]],
+    );
+    writeFileSync(
+      join(root, baselineFile),
+      JSON.stringify({ schemaVersion: 1, counts: { [file]: { [rule]: 1 } } }),
+    );
+    assert.equal(checkUiDrift({ root }).success, true);
+    const fixed = checkUiDrift({ root, overrides: new Map([[file, "const View = () => null;"]]) });
+    assert.equal(fixed.success, true);
+    assert.deepEqual(fixed.improvements, [{ file, rule, baseline: 1, count: 0 }]);
+  }
 });
 
 test("alert container findings use a separate budget from p and span", (t) => {

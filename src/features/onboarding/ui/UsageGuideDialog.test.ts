@@ -115,7 +115,7 @@ it("closes when Done emits the final controlled step event before tour end", asy
 });
 it("renders Turkish copy and closes on skip once", async () => {
   await act(async () => setLanguagePreference("tr"));
-  expect(container.textContent).toContain("Chat başlat");
+  expect(container.textContent).toContain("Oturum başlat");
   await event({});
   expect(container.textContent).toContain("Kuyruktaki mesajlar");
   expect(joyride.locale?.skip).toBe("Rehberi kapat");

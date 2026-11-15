@@ -791,7 +791,7 @@ it("opens a history conversation from its row and reports an unavailable one", a
   act(() => renderWith([], { onOpenHistorySession: open }));
   openHistory();
   expandRow(historyRows()[0]);
-  const body = () => rowButton(historyRows()[0], "Open conversation");
+  const body = () => rowButton(historyRows()[0], "Open session");
   await act(async () => body().click());
   expect(open).toHaveBeenCalledWith("work", "/projects/work");
   expect(document.body.textContent).toContain("This conversation is no longer available");

@@ -3037,7 +3037,7 @@ function SidebarComponent({
           anchor="end"
           expandedWidth={248}
           items={NO_SEARCH_ITEMS}
-          label={t("Search conversations")}
+          label={t("Search sessions")}
           activeLabel={t("Search conversations, filtering by “{p0}”", {
             p0: searchQuery.trim(),
           })}
@@ -3650,7 +3650,7 @@ function SidebarComponent({
               ) : null}
               {lastSessionsData?.loading && !lastSessionsData.rows.length ? (
                 <Text role="status" as="p" size="caption" tone="secondary" className="px-3 py-2">
-                  {t("Loading conversations…")}
+                  {t("Loading sessions…")}
                 </Text>
               ) : lastSessionsData?.error && !lastSessionsData.rows.length ? null : (
                 (() => {
@@ -3766,7 +3766,7 @@ function SidebarComponent({
                       ? remote.machine
                         ? t("Loading sessions from {p0}…", { p0: remote.machine.name })
                         : t("Connecting to this project’s machine…")
-                      : t("Loading conversations…")}
+                      : t("Loading sessions…")}
                   </Text>
                 ) : remoteProject && remote.failed && projectSessions.length === 0 ? (
                   <Alert tone="danger">

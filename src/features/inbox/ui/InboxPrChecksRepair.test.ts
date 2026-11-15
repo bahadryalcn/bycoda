@@ -379,9 +379,7 @@ it("collapses a batch into one conversation card and keeps results in the check 
   };
   await act(async () => root.render(createElement(InboxPrChecks, props)));
   const buttons = () =>
-    [...host.querySelectorAll("button")].filter(
-      (button) => button.textContent === "Open conversation",
-    );
+    [...host.querySelectorAll("button")].filter((button) => button.textContent === "Open session");
   expect(buttons()).toHaveLength(1);
   const toggle = host.querySelector<HTMLElement>(
     '[aria-label="Repair progress"] details > summary',
@@ -493,7 +491,7 @@ it("shows live repair progress and opens the linked conversation", async () => {
   expect(visibleText(host)).toContain("Repair in progress");
   await act(async () =>
     [...host.querySelectorAll("button")]
-      .find((button) => button.textContent === "Open conversation")!
+      .find((button) => button.textContent === "Open session")!
       .click(),
   );
   expect(open).toHaveBeenCalledWith("repair-chat");

@@ -76,9 +76,6 @@
 .automation-start > .automation-start-option.automation-start-option[data-button-hierarchy] {
   padding: 12px;
 }
-.automation-trigger-summary {
-  padding-inline-end: var(--layout-trigger-reserve);
-}
 .automation-template-search {
   inline-size: min(100%, 16rem);
 }

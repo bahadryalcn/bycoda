@@ -66,9 +66,7 @@ export function WorkspaceRecoveryDialog({
       renderContainer={(sessions, chatPending) => {
         const busy = chatPending || draftPending;
         const tabs: RecoveryTab[] = [
-          ...(hasSessions
-            ? [{ value: "sessions", label: t("Conversations"), disabled: busy }]
-            : []),
+          ...(hasSessions ? [{ value: "sessions", label: t("Sessions"), disabled: busy }] : []),
           ...(fileSide
             ? [
                 {

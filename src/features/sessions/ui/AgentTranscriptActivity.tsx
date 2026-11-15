@@ -38,6 +38,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
@@ -983,7 +984,11 @@ function BycodaCallRow({
   const hasResult = !pendingApproval && hasToolInspection(block);
   const hasError = state === "rejected" && hasResult;
   const command = `${PRODUCT_IDENTITY.displayName} app ${call.action}`;
-  const verb = pendingApproval ? t("Run") : state === "pending" ? t("Running") : t("Ran");
+  const verb = pendingApproval
+    ? t("Needs approval")
+    : state === "pending"
+      ? t("Running")
+      : t("Ran");
   const summary = (
     <>
       <span
@@ -1035,11 +1040,6 @@ function BycodaCallRow({
         </p>
       ) : null}
       {errorOpen && hasResult ? <ToolInspectionPanel block={block} /> : null}
-      {pendingApproval ? (
-        <OutputBlock scroll className="max-h-32 min-w-0 break-all py-1 pl-5">
-          {call.command}
-        </OutputBlock>
-      ) : null}
       <ApprovalControls block={block} onApproval={onApproval} />
     </div>
   );
@@ -1406,31 +1406,32 @@ function ConnectedApprovalControls({
   );
   return (
     <div>
-      <div className="mt-1.5 flex gap-2">
-        <Button
-          motion="none"
-          variant="primary"
-          type="button"
-
-          loading={decision.pending && decision.decision === "allow"}
-          disabled={decision.blocked}
-          onClick={() => void decision.decide("allow")}
-        >
-          {t("Allow")}
-        </Button>
-        <Button
-          motion="none"
-          variant="ghost"
-          tone="danger"
-          type="button"
-
-          loading={decision.pending && decision.decision === "deny"}
-          disabled={decision.blocked}
-          onClick={() => void decision.decide("deny")}
-        >
-          {t("Deny")}
-        </Button>
-      </div>
+      <ApprovalRequest
+        title={t("Needs approval")}
+        detail={
+          bycodaToolCall(block)?.command ??
+          (block.tool?.preview?.kind === "shell" ? block.tool.preview.title : undefined) ??
+          block.tool?.title ??
+          block.text
+        }
+        details={
+          hasToolInspection(block)
+            ? { label: t("Details"), content: <ToolInspectionPanel block={block} /> }
+            : undefined
+        }
+        allow={{
+          label: t("Allow"),
+          pending: decision.pending && decision.decision === "allow",
+          disabled: decision.blocked,
+          onClick: () => void decision.decide("allow"),
+        }}
+        deny={{
+          label: t("Deny"),
+          pending: decision.pending && decision.decision === "deny",
+          disabled: decision.blocked,
+          onClick: () => void decision.decide("deny"),
+        }}
+      />
       {decision.feedback ? (
         decision.danger ? (
           <InlineError>{decision.feedback}</InlineError>

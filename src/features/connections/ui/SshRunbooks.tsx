@@ -406,7 +406,7 @@ export function SshRunbooks({
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="min-w-0 break-all">
-                  {t("Run")}: <Code>{runId}</Code>
+                  {t("Run ID")}: <Code>{runId}</Code>
                 </p>
                 <Button disabled={busy} onClick={() => void operation(() => refreshStatus(runId))}>
                   {t("Refresh status")}

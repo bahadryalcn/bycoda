@@ -1,11 +1,12 @@
 import { Text } from "../../../shared/ui/Text";
-import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
+import { useEffect, useRef, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import { t } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
+import { CollectionRow } from "../../../shared/ui/CollectionRow";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Surface, surfaceAttributes } from "../../../shared/ui/Surface";
+import { Surface } from "../../../shared/ui/Surface";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { Star, Terminal } from "../../../shared/ui/icons";
 import { ServerIdentity } from "./ServerIdentity";
@@ -113,6 +114,112 @@ export function ServerItem({
     "data-checked": checked || undefined,
     "data-selection-mode": selectionMode || undefined,
   };
+  const onClick = (event: MouseEvent<HTMLButtonElement>) => {
+    if (held.current && event.detail !== 0) {
+      selectionClick.current = true;
+      held.current = false;
+      return;
+    }
+    if (selectionMode) {
+      selectionClick.current = true;
+      onCheck?.(!checked);
+    } else {
+      if (event.detail < 2) selectionClick.current = false;
+      onSelect(event);
+    }
+  };
+  // Shared by both layouts: row click selects, double-click connects, long-press checks.
+  const rowProps = {
+    "aria-pressed": selectionMode ? checked : selected,
+    disabled: busy,
+    "data-server-row": server.id,
+    "aria-keyshortcuts": canConnect && !selectionMode ? "Enter" : undefined,
+    "aria-description":
+      canConnect && !selectionMode
+        ? t("Double-click or press Enter to connect via SSH. Space shows details.")
+        : undefined,
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      cancelPress();
+      held.current = false;
+      if (event.button !== 0 || !event.isPrimary || busy || !onCheck) return;
+      origin.current = { x: event.clientX, y: event.clientY };
+      press.current = setTimeout(() => {
+        held.current = true;
+        check.current?.(true);
+      }, 500);
+    },
+    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+      if (Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 8)
+        cancelPress();
+    },
+    onPointerUp: cancelPress,
+    onPointerCancel: cancelPress,
+    onPointerLeave: cancelPress,
+    onDragStart: cancelPress,
+    onContextMenu,
+    onDoubleClick: (event: MouseEvent<HTMLButtonElement>) => {
+      if (
+        !canConnect ||
+        selectionMode ||
+        selectionClick.current ||
+        held.current ||
+        event.button !== 0 ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.shiftKey
+      )
+        return;
+      onConnect();
+    },
+    onKeyDown,
+  };
+  const checkbox =
+    onCheck && selectionMode ? (
+      <Checkbox
+        aria-label={t("Select {p0}", { p0: server.name })}
+        checked={checked}
+        disabled={busy}
+        onChange={(event) => onCheck(event.target.checked)}
+        className="server-selection"
+      />
+    ) : null;
+  const moreAction = (
+    <InlineMoreAction
+      reveal="always"
+      disabled={busy}
+      label={t("Actions for {p0}", { p0: server.name })}
+      onOpen={onMenu}
+    />
+  );
+
+  if (!cards) {
+    // The more-menu already carries Connect, so it is the row's one action; Enter, double-click
+    // and long-press stay on the row button.
+    return (
+      <CollectionRow
+        as="li"
+        {...rootProps}
+        className="server-list-row"
+        selected={selectionMode ? checked : selected}
+        before={checkbox}
+        leading={identityIcon}
+        title={server.name}
+        secondary={groupTags ? `${address}, ${groupTags}` : address}
+        trailing={
+          <>
+            {kind}
+            {favorite}
+            {status}
+          </>
+        }
+        action={moreAction}
+        primary={rowProps}
+        onOpen={onClick}
+      />
+    );
+  }
+
   // The badges hold their own "+N" button, which cannot sit inside the identity button: on a
   // card they are a sibling laid over its bottom line (the status moves with them; clicks outside
   // the badges fall through to the identity button) and the button keeps the line's height.
@@ -121,218 +228,45 @@ export function ServerItem({
       data-action-primary=""
       variant="item"
       selected={selectionMode ? checked : selected}
-      aria-pressed={selectionMode ? checked : selected}
-      disabled={busy}
       motion="none"
       controlHeight="auto"
-      padding={cards ? { inline: "none", block: "none" } : { inline: "md", block: "xs" }}
-      data-server-row={server.id}
-      aria-keyshortcuts={canConnect && !selectionMode ? "Enter" : undefined}
-      aria-description={
-        canConnect && !selectionMode
-          ? t("Double-click or press Enter to connect via SSH. Space shows details.")
-          : undefined
-      }
-      className={
-        cards
-          ? "server-identity min-w-0 flex-1 flex-col items-stretch gap-0 text-left"
-          : "server-identity min-w-0 flex-1 items-center gap-3 text-left"
-      }
-      onPointerDown={(event) => {
-        cancelPress();
-        held.current = false;
-        if (event.button !== 0 || !event.isPrimary || busy || !onCheck) return;
-        origin.current = { x: event.clientX, y: event.clientY };
-        press.current = setTimeout(() => {
-          held.current = true;
-          check.current?.(true);
-        }, 500);
-      }}
-      onPointerMove={(event) => {
-        if (Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 8)
-          cancelPress();
-      }}
-      onPointerUp={cancelPress}
-      onPointerCancel={cancelPress}
-      onPointerLeave={cancelPress}
-      onDragStart={cancelPress}
-      onClick={(event) => {
-        if (held.current && event.detail !== 0) {
-          selectionClick.current = true;
-          held.current = false;
-          return;
-        }
-        if (selectionMode) {
-          selectionClick.current = true;
-          onCheck?.(!checked);
-        } else {
-          if (event.detail < 2) selectionClick.current = false;
-          onSelect(event);
-        }
-      }}
-      onContextMenu={onContextMenu}
-      onDoubleClick={(event) => {
-        if (
-          !canConnect ||
-          selectionMode ||
-          selectionClick.current ||
-          held.current ||
-          event.button !== 0 ||
-          event.ctrlKey ||
-          event.metaKey ||
-          event.altKey ||
-          event.shiftKey
-        )
-          return;
-        onConnect();
-      }}
-      onKeyDown={onKeyDown}
+      padding={{ inline: "none", block: "none" }}
+      className="server-identity min-w-0 flex-1 flex-col items-stretch gap-0 text-left"
+      {...rowProps}
+      onClick={onClick}
     >
-      {cards ? (
-        <span className="flex min-w-0 flex-col gap-2 p-3">
-          <span className="server-card-head flex min-w-0 items-center gap-2">
-            {identityIcon}
-            <OverflowTooltip label={server.name}>
-              <Text as="span" size="body" tone="inherit" weight="medium" truncate>
-                {server.name}
-              </Text>
-            </OverflowTooltip>
-            {favorite}
-          </span>
-          <OverflowTooltip label={address}>
-            <Text
-              as="span"
-              size="caption"
-              tone="secondary"
-              truncate={!selected}
-              className={selected ? "break-all whitespace-normal" : undefined}
-            >
-              {address}
+      <span className="flex min-w-0 flex-col gap-2 p-3">
+        <span className="server-card-head flex min-w-0 items-center gap-2">
+          {identityIcon}
+          <OverflowTooltip label={server.name}>
+            <Text as="span" size="body" tone="inherit" weight="medium" truncate>
+              {server.name}
             </Text>
           </OverflowTooltip>
-          {badges.length > 0 ? (
-            <span aria-hidden="true" className={`mbs-1 block ${status ? "h-5" : "h-4"}`} />
-          ) : status ? (
-            <span className="mbs-1 flex min-w-0 items-center justify-end">
-              <span className="flex shrink-0 items-center">{status}</span>
-            </span>
-          ) : null}
+          {favorite}
         </span>
-      ) : (
-        <>
-          {identityIcon}
-          <span className="min-w-0 flex-1">
-            <span className="flex min-w-0 items-center gap-2">
-              <OverflowTooltip label={server.name}>
-                <Text
-                  as="span"
-                  size="body"
-                  tone="inherit"
-                  weight="medium"
-                  truncate
-                  className="block"
-                >
-                  {server.name}
-                </Text>
-              </OverflowTooltip>
-            </span>
-            <OverflowTooltip label={groupTags ? `${address}, ${groupTags}` : address}>
-              <Text
-                as="span"
-                size="caption"
-                tone="secondary"
-                truncate={!selected}
-                className={
-                  selected
-                    ? "block min-w-0 flex-1 break-all whitespace-normal"
-                    : "block min-w-0 flex-1"
-                }
-              >
-                {address}
-              </Text>
-            </OverflowTooltip>
-            {groupTags ? (
-              <Text as="span" size="caption" tone="muted" truncate className="block">
-                {groupTags}
-              </Text>
-            ) : null}
+        <OverflowTooltip label={address}>
+          <Text
+            as="span"
+            size="caption"
+            tone="secondary"
+            truncate={!selected}
+            className={selected ? "break-all whitespace-normal" : undefined}
+          >
+            {address}
+          </Text>
+        </OverflowTooltip>
+        {badges.length > 0 ? (
+          <span aria-hidden="true" className={`mbs-1 block ${status ? "h-5" : "h-4"}`} />
+        ) : status ? (
+          <span className="mbs-1 flex min-w-0 items-center justify-end">
+            <span className="flex shrink-0 items-center">{status}</span>
           </span>
-          <span className="server-row-status flex shrink-0 items-center gap-2">
-            <Text size="caption" tone="muted">
-              {kind}
-            </Text>
-            {favorite}
-            {status}
-          </span>
-        </>
-      )}
+        ) : null}
+      </span>
     </Button>
   );
-  const content = (
-    <>
-      <ActionHost
-        selected={selectionMode ? checked : selected}
-        className={cards ? "w-full min-w-0" : "w-full min-w-0 flex-wrap"}
-      >
-        {onCheck && selectionMode ? (
-          <Checkbox
-            aria-label={t("Select {p0}", { p0: server.name })}
-            checked={checked}
-            disabled={busy}
-            onChange={(event) => onCheck(event.target.checked)}
-            className="server-selection"
-          />
-        ) : null}
-        {cards ? (
-          <div className="relative flex min-w-0 flex-1">
-            {identityButton}
-            {badges.length > 0 ? (
-              <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-between gap-2">
-                <span className="pointer-events-auto min-w-0" onContextMenu={onContextMenu}>
-                  <BadgeList label={t("Tags")} size="xs" items={badges} />
-                </span>
-                {status ? <span className="flex shrink-0 items-center">{status}</span> : null}
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          identityButton
-        )}
-        <div className="server-row-actions">
-          {canConnect ? (
-            cards ? (
-              <InlineAction
-                reveal="always"
-                disabled={busy}
-                label={t("Connect to {p0}", { p0: server.name })}
-                tooltip={t("Connect")}
-                onClick={onConnect}
-              >
-                <Terminal aria-hidden className="icon-sm" />
-              </InlineAction>
-            ) : (
-              <Button
-                variant="secondary"
-                disabled={busy}
-                startIcon={<Terminal aria-hidden className="icon-sm" />}
-                aria-label={t("Connect to {p0}", { p0: server.name })}
-                onClick={onConnect}
-              >
-                {t("Connect")}
-              </Button>
-            )
-          ) : null}
-          <InlineMoreAction
-            reveal="always"
-            disabled={busy}
-            label={t("Actions for {p0}", { p0: server.name })}
-            onOpen={onMenu}
-          />
-        </div>
-      </ActionHost>
-    </>
-  );
-  return cards ? (
+  return (
     <Surface
       as="li"
       variant="card"
@@ -340,11 +274,34 @@ export function ServerItem({
       className="server-card min-w-0 overflow-hidden"
       {...rootProps}
     >
-      {content}
+      <ActionHost selected={selectionMode ? checked : selected} className="w-full min-w-0">
+        {checkbox}
+        <div className="relative flex min-w-0 flex-1">
+          {identityButton}
+          {badges.length > 0 ? (
+            <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-center justify-between gap-2">
+              <span className="pointer-events-auto min-w-0" onContextMenu={onContextMenu}>
+                <BadgeList label={t("Tags")} size="xs" items={badges} />
+              </span>
+              {status ? <span className="flex shrink-0 items-center">{status}</span> : null}
+            </div>
+          ) : null}
+        </div>
+        <div className="server-row-actions">
+          {canConnect ? (
+            <InlineAction
+              reveal="always"
+              disabled={busy}
+              label={t("Connect to {p0}", { p0: server.name })}
+              tooltip={t("Connect")}
+              onClick={onConnect}
+            >
+              <Terminal aria-hidden className="icon-sm" />
+            </InlineAction>
+          ) : null}
+          {moreAction}
+        </div>
+      </ActionHost>
     </Surface>
-  ) : (
-    <li {...surfaceAttributes({ radius: "control" }, "server-list-row")} {...rootProps}>
-      {content}
-    </li>
   );
 }

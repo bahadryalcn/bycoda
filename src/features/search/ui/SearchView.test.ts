@@ -381,7 +381,7 @@ it("dismisses the filters before the search dialog with Escape", async () => {
   await render("/repo", true, { presentation: "dialog", onClose });
   act(() =>
     [...document.body.querySelectorAll("button")]
-      .find((button) => button.textContent === "Conversations")!
+      .find((button) => button.textContent === "Sessions")!
       .click(),
   );
   act(() =>
@@ -404,11 +404,11 @@ it("keeps file index failures scoped to All and Files", async () => {
   await render();
   await typeQuery("needle");
   expect(host.textContent).toContain("File index offline");
-  for (const scope of ["Projects", "Conversations", "Files", "All"]) {
+  for (const scope of ["Projects", "Sessions", "Files", "All"]) {
     await act(async () =>
       [...host.querySelectorAll("button")].find((node) => node.textContent === scope)!.click(),
     );
-    if (scope === "Projects" || scope === "Conversations")
+    if (scope === "Projects" || scope === "Sessions")
       expect(host.textContent).not.toContain("File index offline");
     else expect(host.textContent).toContain("File index offline");
   }
@@ -448,9 +448,7 @@ it("opens contextual conversation search then broadens in the same surface witho
       .getAttribute("aria-checked"),
   ).toBe("true");
   act(() =>
-    [...host.querySelectorAll("button")]
-      .find((node) => node.textContent === "Conversations")!
-      .click(),
+    [...host.querySelectorAll("button")].find((node) => node.textContent === "Sessions")!.click(),
   );
   expect(filters.textContent).toContain("Everywhere");
 });

@@ -1780,7 +1780,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
               truncated={session.rewindHistoryTruncated}
             />
           ) : null}
-          {remoteSessionLoading ? <SurfaceLoading title={t("Loading conversation…")} /> : null}
+          {remoteSessionLoading ? <SurfaceLoading title={t("Loading session…")} /> : null}
           {!remoteSessionLoading && isEmpty ? (
             embedded || session.inboxAsk ? (
               <ScrollArea scrollbar="hidden" className="h-full min-h-0">

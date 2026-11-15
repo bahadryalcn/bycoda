@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { ContextMenu } from "../../../../shared/ui/ContextMenu";
-import { Text } from "../../../../shared/ui/Text";
 import type { AssistantNote } from "../../../../shared/model/host-contracts/assistant";
 import { t } from "../../../../shared/i18n";
-import { ActionHost, actionContentAttributes } from "../../../../shared/ui/ActionHost";
+import { actionContentAttributes } from "../../../../shared/ui/ActionHost";
 import { Badge } from "../../../../shared/ui/Badge";
-import { Button } from "../../../../shared/ui/Button";
+import { CollectionRow } from "../../../../shared/ui/CollectionRow";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { motionAttributes } from "../../../../shared/ui/Motion";
@@ -42,7 +41,7 @@ export function NotesList({
           const preview = notePreview(note.body);
           const isChecked = checked.has(note.id);
           return (
-            <ActionHost
+            <CollectionRow
               as="li"
               key={note.id}
               className={styles.item}
@@ -57,67 +56,42 @@ export function NotesList({
                 const rect = event.currentTarget.getBoundingClientRect();
                 setMenu({ note, x: rect.left, y: rect.bottom });
               }}
-            >
-              <Checkbox
-                {...motionAttributes({ transition: "opacity", easing: "standard" })}
-                {...actionContentAttributes(
-                  {
-                    phase: selectionMode || isChecked ? "always" : "interaction",
-                    hide: "opacity",
-                    focus: "within",
-                  },
-                  styles.check,
-                )}
-                data-action-inline=""
-                data-visible={selectionMode || undefined}
-                aria-label={t("Select {p0}", { p0: note.title })}
-                checked={isChecked}
-                onChange={(event) => onCheck(note.id, event.currentTarget.checked)}
-              />
-              <Button
-                variant="item"
-                aria-current={note.id === selectedId ? "true" : undefined}
-                onClick={() => onSelect(note.id)}
-              >
-                <span className={styles.row}>
-                  <span className={styles.rowTop}>
-                    <Text
-                      as="span"
-                      size="body"
-                      tone="inherit"
-                      weight="medium"
-                      leading="inherit"
-                      truncate
-                      className={styles.rowTitle}
-                    >
-                      {note.title}
-                    </Text>
-                    <Timestamp
-                      className={styles.rowTime}
-                      size="micro"
-                      tone="muted"
-                      leading="inherit"
-                      value={note.updatedAt}
-                      format="relative"
-                      relativeStyle="narrow"
-                    />
-                  </span>
-                  {preview && (
-                    <Text
-                      size="caption"
-                      tone="secondary"
-                      leading="inherit"
-                      weight="regular"
-                      truncate
-                      className={styles.rowPreview}
-                    >
-                      {preview}
-                    </Text>
+              before={
+                <Checkbox
+                  {...motionAttributes({ transition: "opacity", easing: "standard" })}
+                  {...actionContentAttributes(
+                    {
+                      phase: selectionMode || isChecked ? "always" : "interaction",
+                      hide: "opacity",
+                      focus: "within",
+                    },
+                    styles.check,
                   )}
+                  data-action-inline=""
+                  data-visible={selectionMode || undefined}
+                  aria-label={t("Select {p0}", { p0: note.title })}
+                  checked={isChecked}
+                  onChange={(event) => onCheck(note.id, event.currentTarget.checked)}
+                />
+              }
+              title={note.title}
+              secondary={preview || undefined}
+              trailing={
+                <>
                   {dailyNoteDay(note) !== undefined && <Badge size="xs">{t("Daily")}</Badge>}
-                </span>
-              </Button>
-            </ActionHost>
+                  <Timestamp
+                    value={note.updatedAt}
+                    format="relative"
+                    relativeStyle="narrow"
+                    size="micro"
+                    tone="muted"
+                    leading="inherit"
+                  />
+                </>
+              }
+              primary={{ "aria-current": note.id === selectedId ? "true" : undefined }}
+              onOpen={() => onSelect(note.id)}
+            />
           );
         })}
       </ul>

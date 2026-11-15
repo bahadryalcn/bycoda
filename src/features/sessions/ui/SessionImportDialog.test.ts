@@ -195,7 +195,7 @@ describe("SessionImportDialog", () => {
 
   it("clears the common search field through the native event path without losing discovery candidates", async () => {
     await render();
-    const field = document.querySelector<HTMLInputElement>('[aria-label="Filter conversations"]')!;
+    const field = document.querySelector<HTMLInputElement>('[aria-label="Filter sessions"]')!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
         field,

@@ -61,13 +61,13 @@ it("keeps bulk selection and active task through bounded scroll and appended row
   ).toBe(true);
   const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
   await act(async () => {
-    scroller.scrollTop = 36000;
+    scroller.scrollTop = 19000;
     scroller.dispatchEvent(new Event("scroll"));
   });
   expect(container.textContent).toContain("Task 500");
   await render(900);
   await render(1000);
-  expect(scroller.scrollTop).toBe(36000);
+  expect(scroller.scrollTop).toBe(19000);
   expect(container.querySelectorAll(".task-management-row").length).toBeLessThan(64);
   expect(container.textContent).not.toContain("Previous");
   expect(container.textContent).not.toContain("Next");

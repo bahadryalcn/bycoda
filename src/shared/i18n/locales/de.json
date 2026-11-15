@@ -14392,5 +14392,10 @@
   "This folder was removed from {p0} and taken out of the group \"{p1}\". The projects and their sessions are still in the rail:\n\n{p2}": "Dieser Ordner wurde aus {p0} entfernt und aus der Gruppe „{p1}“ genommen. Die Projekte und ihre Sitzungen sind weiterhin in der Leiste:\n\n{p2}",
   "These folders were removed from {p0} and taken out of the group \"{p1}\". The projects and their sessions are still in the rail:\n\n{p2}": "Diese Ordner wurden aus {p0} entfernt und aus der Gruppe „{p1}“ genommen. Die Projekte und ihre Sitzungen sind weiterhin in der Leiste:\n\n{p2}",
   "Could not archive this conversation.": "Diese Unterhaltung konnte nicht archiviert werden.",
-  "Could not delete this conversation.": "Diese Unterhaltung konnte nicht gelöscht werden."
+  "Could not delete this conversation.": "Diese Unterhaltung konnte nicht gelöscht werden.",
+  "Loading sessions…": "Gespräche werden geladen…",
+  "Loading session…": "Konversation wird geladen…",
+  "Run ID": "Ausführung ID",
+  "on {p0}": "auf {p0}",
+  "offline, last known": "offline, zuletzt bekannt"
 }

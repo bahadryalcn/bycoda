@@ -792,6 +792,9 @@ html.theme-light {
   --ui-color-swatch-target: 1.25rem;
   --ui-control-height-compact: 1.75rem;
   --ui-control-height-sm: var(--ui-control-height-compact);
+  /* Panel header contract: one 40px row (density scales it) and an optional 24px tab strip. */
+  --ui-pane-header-height: calc(var(--ui-control-height-compact) + 0.75rem);
+  --ui-pane-tabs-height: var(--ui-control-height-xs);
   --ui-control-height-md: var(--ui-control-height);
   --ui-control-height-lg: 2.5rem;
   --ui-control-radius: 0.5rem;

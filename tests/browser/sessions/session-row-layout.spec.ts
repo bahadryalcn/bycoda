@@ -11,10 +11,8 @@ for (const light of [true, false])
       await page.goto(
         `/tests/browser/sessions/session-row-layout.html?${light ? "light" : "dark"}`,
       );
-      await page.getByRole("button", { name: "Search conversations", exact: true }).click();
-      await page
-        .getByPlaceholder("Search conversations...")
-        .fill("no matching fixture conversation");
+      await page.getByRole("button", { name: "Search sessions", exact: true }).click();
+      await page.getByPlaceholder("Search sessions...").fill("no matching fixture conversation");
       await expect(page.getByText("No matching sessions", { exact: true })).toBeVisible();
       await page.screenshot({
         path: `temp/verification/sessions-callers/no-match-${light ? "light" : "dark"}-${width}.png`,
@@ -428,7 +426,7 @@ for (const light of [false, true]) {
             page.getByText("No sessions in the last 7 days", { exact: true }),
           ).toBeVisible();
         if (state === "loading")
-          await expect(page.getByText("Loading conversations…", { exact: true })).toBeVisible();
+          await expect(page.getByText("Loading sessions…", { exact: true })).toBeVisible();
         if (state === "error") {
           await expect(page.getByRole("alert")).toContainText("Couldn’t load sessions");
           await expect(page.locator('[data-session-card="row-demo"]')).toBeVisible();

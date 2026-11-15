@@ -14392,5 +14392,10 @@
   "This folder was removed from {p0} and taken out of the group \"{p1}\". The projects and their sessions are still in the rail:\n\n{p2}": "此文件夹已从 {p0} 中移除，并已移出分组“{p1}”。这些项目及其会话仍在侧边栏中：\n\n{p2}",
   "These folders were removed from {p0} and taken out of the group \"{p1}\". The projects and their sessions are still in the rail:\n\n{p2}": "这些文件夹已从 {p0} 中移除，并已移出分组“{p1}”。这些项目及其会话仍在侧边栏中：\n\n{p2}",
   "Could not archive this conversation.": "无法归档此对话。",
-  "Could not delete this conversation.": "无法删除此对话。"
+  "Could not delete this conversation.": "无法删除此对话。",
+  "Loading sessions…": "正在加载对话...",
+  "Loading session…": "正在加载对话...",
+  "Run ID": "运行 ID",
+  "on {p0}": "在 {p0}",
+  "offline, last known": "离线，最后已知状态"
 }

@@ -211,7 +211,7 @@ export function HistoryItem({
                 loading={busy === "open"}
                 onClick={() => void run("open")}
               >
-                {entry.target ? t("Open") : t("Open conversation")}
+                {entry.target ? t("Open") : t("Open session")}
               </Button>
             ) : null}
             <Button

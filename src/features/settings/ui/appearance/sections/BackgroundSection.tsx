@@ -326,7 +326,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                       "max-w-[80%] px-2 py-0.5",
                     )}
                   >
-                    {t("Conversation")}
+                    {t("Session")}
                   </Text>
                   <Text
                     size="micro"
@@ -432,7 +432,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               onChange={setPreview}
               options={[
                 { value: "empty", label: t("Empty only") },
-                { value: "conversation", label: t("Conversation") },
+                { value: "conversation", label: t("Session") },
               ]}
             />
           </Row>

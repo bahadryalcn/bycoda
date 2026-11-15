@@ -553,7 +553,7 @@ function Projects({
                               ),
                             )}
                           </span>
-                          <Tooltip label={t("Conversations")} asChild>
+                          <Tooltip label={t("Sessions")} asChild>
                             <Text
                               size="caption"
                               tone="muted"

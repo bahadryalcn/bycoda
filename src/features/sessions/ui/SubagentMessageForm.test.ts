@@ -52,10 +52,10 @@ it("names the message box after the agent and sends through the relay by default
   expect(send).toHaveBeenCalledOnce();
 });
 
-it("uses direct copy for a delegated child: Send, Open conversation, and the direct hint", () => {
+it("uses direct copy for a delegated child: Send, Open session, and the direct hint", () => {
   render(relay({ mode: "direct", onOpenConversation: vi.fn() }));
   expect(buttonLabels()).toContain("Send");
-  expect(buttonLabels()).toContain("Open conversation");
+  expect(buttonLabels()).toContain("Open session");
   expect(buttonLabels()).not.toContain("Relay via main agent");
   expect(buttonLabels()).not.toContain("Open main conversation");
   expect(container.textContent).not.toContain("Via the main agent");
@@ -64,7 +64,7 @@ it("uses direct copy for a delegated child: Send, Open conversation, and the dir
 it("keeps native relay controls without a redundant link to the already open main conversation", () => {
   render(relay({ onOpenConversation: vi.fn() }));
   expect(buttonLabels()).not.toContain("Open main conversation");
-  expect(buttonLabels()).not.toContain("Open conversation");
+  expect(buttonLabels()).not.toContain("Open session");
   expect(buttonLabels()).toContain("Relay via main agent");
 });
 

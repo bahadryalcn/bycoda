@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { scanViewGuards } from "./ui-drift-view-guards.mjs";
 import {
   appearanceRuleOfDeclaration,
   appearanceRules,
@@ -33,8 +34,19 @@ const catalogModule = await import("./ui-catalog.mjs").catch(() => null);
 
 const defaultRoot = fileURLToPath(new URL("../../", import.meta.url));
 export const baselineFile = "scripts/checks/ui-drift-baseline.json";
+export const ruleScopes = {
+  "one-primary-per-view": "TSX in src/app, src/features, src/shared (excluding tests)",
+  "nested-card": "TSX in src/app, src/features, src/shared (excluding tests)",
+  "hover-only-reveal": "TSX in src/features, src/shared (excluding tests)",
+};
 
 export const rules = {
+  "one-primary-per-view":
+    "multiple literal primary Buttons in one JSX return (one finding per file; keep one primary action, use secondary for peers)",
+  "nested-card":
+    "card Surface or surfaceAttributes({ variant: card }) nested lexically inside another card (use page or inset)",
+  "hover-only-reveal":
+    "opacity-0/invisible revealed on hover without a matching keyboard reveal in the same className (add focus-within/focus-visible/group-focus-within)",
   "undefined-var": "var(--x) / Tailwind (--x) with no definition in src CSS or inline style",
   "arc-var-outside-arc":
     "Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root",
@@ -546,7 +558,7 @@ export function scanFile(file, text, definitions) {
   if (!scope) return [];
   const findings = [];
   const isCss = file.endsWith(".css");
-  // Shared/integration code answers import and floating-surface ownership rules only.
+  // Shared code also answers the JSX view guards before the import-only early return.
   const source = isCss ? stripCssComments(text) : stripTsComments(text);
   const starts = lineStarts(text);
   const lines = text.split("\n");
@@ -595,6 +607,7 @@ export function scanFile(file, text, definitions) {
           add("portal-outside-shared", match.index);
     }
   }
+  if (!isCss) scanViewGuards(file, text, add);
   if (scope === "imports") {
     for (const match of source.matchAll(/(?:from\s*|import\s*\(?\s*)["']lucide-react["']/g))
       add("lucide-import", match.index);

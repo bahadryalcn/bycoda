@@ -14,7 +14,7 @@ import {
   useAccountState,
 } from "../../account";
 import { t, useLocale } from "../../../shared/i18n";
-import { useConfirm } from "../../../shared/ui/ConfirmDialog";
+import { usePhoneApprovalRequest } from "./PhoneApprovalRequest";
 import { createAccountPairingCode } from "../model/accountPairingCode";
 import { remoteRequest } from "../model/connections";
 import type { HostDescriptor, RemoteMachine } from "../model/protocol";
@@ -57,7 +57,7 @@ export function PhoneAccountConnect() {
   const account = useAccountState();
   const enabled = useSyncExternalStore(subscribePhoneConnect, isPhoneConnectEnabled);
   const deviceId = isSignedIn(account) ? account.deviceId : null;
-  const { confirm, dialog } = useConfirm();
+  const { confirm, dialog } = usePhoneApprovalRequest();
   const confirmRef = useRef(confirm);
   useLayoutEffect(() => {
     confirmRef.current = confirm;
@@ -98,7 +98,6 @@ export function PhoneAccountConnect() {
           confirmLabel: t("Allow"),
           cancelLabel: t("Deny"),
           pendingLabel: t("Connecting…"),
-          tone: "neutral",
           onConfirm: approve,
         }),
       onError: report,

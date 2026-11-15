@@ -128,7 +128,7 @@ for (const theme of ["light", "dark"])
         path: `${captures}/${theme}-${width}-missing-turn.png`,
         fullPage: true,
       });
-      await transcript.getByRole("button", { name: "Open conversation", exact: true }).click();
+      await transcript.getByRole("button", { name: "Open session", exact: true }).click();
       await expect(page.locator("[data-opened]")).toHaveText("Focused: stable-session");
       await page.getByRole("checkbox", { name: "Missing cited turn" }).uncheck();
       await page.getByRole("checkbox", { name: "Clipboard failure" }).check();

@@ -2,6 +2,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { DiffStat } from "../../../shared/ui/DiffStat";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
 import { Button } from "../../../shared/ui/Button";
+import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -239,48 +240,48 @@ export function UnifiedDiffView({
           : "isolate flex flex-col"
       }
     >
-      <div
+      <PaneHeader
         data-diff-toolbar=""
-        className="flex min-h-9 min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-stroke px-3 py-1 text-ui-caption"
-      >
-        {/* Count and churn truncate first; the view and expand controls never wrap away. */}
-        <span className="flex min-w-0 flex-1 items-center gap-2">
+        titleAs="div"
+        title={
           <OverflowTooltip label={fileLabel}>
-            <span className="min-w-0 truncate text-(--ui-text-secondary)">{fileLabel}</span>
+            <span className="min-w-0 truncate">{fileLabel}</span>
           </OverflowTooltip>
-          <DiffCounts additions={additions} deletions={deletions} />
-        </span>
-        <span
-          role="group"
-          aria-label={t("Diff view")}
-          className="ml-auto flex shrink-0 items-center gap-0.5"
-        >
-          <DiffLayoutToggle className="mr-0.5" />
-          <Button
-            size="sm"
-            iconOnly
-            label={t("Expand all files")}
-            variant="ghost"
-            motion="none"
-            type="button"
-            onClick={() => setOpen(new Set(files.map((file) => file.id)))}
+        }
+        meta={<DiffCounts additions={additions} deletions={deletions} />}
+        actions={
+          <span
+            role="group"
+            aria-label={t("Diff view")}
+            className="flex shrink-0 items-center gap-0.5"
           >
-            <UnfoldVertical className="icon-sm" strokeWidth={1.75} />
-          </Button>
-          <Button
-            size="sm"
-            iconOnly
-            label={t("Collapse all files")}
-            variant="ghost"
-            motion="none"
-            type="button"
-            disabled={open.size === 0}
-            onClick={() => setOpen(new Set())}
-          >
-            <FoldVertical className="icon-sm" strokeWidth={1.75} />
-          </Button>
-        </span>
-      </div>
+            <DiffLayoutToggle className="mr-0.5" />
+            <Button
+              size="sm"
+              iconOnly
+              label={t("Expand all files")}
+              variant="ghost"
+              motion="none"
+              type="button"
+              onClick={() => setOpen(new Set(files.map((file) => file.id)))}
+            >
+              <UnfoldVertical className="icon-sm" strokeWidth={1.75} />
+            </Button>
+            <Button
+              size="sm"
+              iconOnly
+              label={t("Collapse all files")}
+              variant="ghost"
+              motion="none"
+              type="button"
+              disabled={open.size === 0}
+              onClick={() => setOpen(new Set())}
+            >
+              <FoldVertical className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          </span>
+        }
+      />
       <div
         ref={bindScroller}
         onWheel={releaseFocus}

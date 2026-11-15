@@ -106,7 +106,7 @@ export function CrewCoordinatorSession({
         {error}
       </Alert>
     );
-  if (!loaded || !session) return <LoadingText>{t("Loading conversation…")}</LoadingText>;
+  if (!loaded || !session) return <LoadingText>{t("Loading session…")}</LoadingText>;
   return (
     <>
       {dialog}

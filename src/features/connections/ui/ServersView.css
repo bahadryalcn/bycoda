@@ -79,15 +79,6 @@
   }
 }
 @container server-catalog (max-width: 600px) {
-  .server-list-row .server-identity {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 4px 8px;
-  }
-  .server-list-row .server-row-status {
-    grid-column: 1 / -1;
-    flex-wrap: wrap;
-  }
   .server-selection {
     flex-basis: 32px;
   }

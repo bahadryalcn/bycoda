@@ -366,7 +366,7 @@ test("navigation failure retries opening the acknowledged run without starting t
     start.getByText("Conversation temporarily unavailable", { exact: true }),
   ).toBeVisible();
   await expect(page.getByLabel("Started work")).toHaveText("1");
-  await start.getByRole("button", { name: "Open conversation", exact: true }).click();
+  await start.getByRole("button", { name: "Open session", exact: true }).click();
   await expect(start).toHaveCount(0);
   await expect(page.getByLabel("Opened session")).toHaveText("started-1");
   await expect(page.getByLabel("Started work")).toHaveText("1");

@@ -14,6 +14,15 @@ test("every rule in the repository has one definition and a current list entry",
   assert.deepEqual(result.errors, []);
   assert.equal(result.stale, false, "run `node scripts/checks/rule-index.mjs --write`");
   const rules = collectRules();
+  assert.equal(
+    rules.find((rule) => rule.id === "hover-only-reveal").scope,
+    "TSX in src/features, src/shared (excluding tests)",
+  );
+  for (const id of ["one-primary-per-view", "nested-card"])
+    assert.equal(
+      rules.find((rule) => rule.id === id).scope,
+      "TSX in src/app, src/features, src/shared (excluding tests)",
+    );
   for (const engine of Object.keys(engines))
     assert.ok(
       rules.some((rule) => rule.engine === engine),

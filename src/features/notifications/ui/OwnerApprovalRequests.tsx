@@ -3,9 +3,8 @@ import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
-import { Button } from "../../../shared/ui/Button";
-import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
-import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { ApprovalRequest } from "../../../shared/ui/ApprovalRequest";
+import { Modal } from "../../../shared/ui/Modal";
 import { InboxApprovalPreview } from "./InboxApprovalPreview";
 import {
   hasOwnerApprovalChat,
@@ -60,35 +59,33 @@ export function OwnerApprovalChat({
                 "shrink-0 border-(--ui-pane-border) px-4 py-3",
               )}
             >
-              <Text as="strong" size="body" tone="inherit">
-                {request.title}
-              </Text>
-              {request.inbox ? (
-                <div className="my-2 max-h-64 overflow-auto">
-                  <InboxApprovalPreview details={request.inbox} message={request.message} />
-                </div>
-              ) : (
-                <OutputBlock
-                  size="caption"
-                  tone="secondary"
-                  className="my-2 max-h-48 overflow-auto break-words"
-                >
-                  {request.message}
-                </OutputBlock>
-              )}
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={() => settleOwnerApproval(request.id, false)}>
-                  {t(request.cancelLabel)}
-                </Button>
-                {request.inbox ? (
-                  <Button variant="secondary" onClick={() => setReviewing(request.id)}>
-                    {t("Review")}
-                  </Button>
-                ) : null}
-                <Button onClick={() => settleOwnerApproval(request.id, true)}>
-                  {t(request.confirmLabel)}
-                </Button>
-              </div>
+              <ApprovalRequest
+                title={request.title}
+                detail={request.message}
+                allow={{
+                  label: t(request.confirmLabel),
+                  onClick: () => settleOwnerApproval(request.id, true),
+                }}
+                deny={{
+                  label: t(request.cancelLabel),
+                  onClick: () => settleOwnerApproval(request.id, false),
+                }}
+                actions={
+                  request.inbox
+                    ? [{ label: t("Review"), onClick: () => setReviewing(request.id) }]
+                    : undefined
+                }
+                details={
+                  request.inbox
+                    ? {
+                        label: t("Details"),
+                        content: (
+                          <InboxApprovalPreview details={request.inbox} message={request.message} />
+                        ),
+                      }
+                    : undefined
+                }
+              />
               {reviewing === request.id ? (
                 <InboxApprovalDialog request={request} onClose={() => setReviewing(null)} />
               ) : null}
@@ -126,31 +123,16 @@ export function OwnerApprovalChat({
 
 /** Off-screen conversations and non-conversation consent use the existing shared dialog. */
 export function OwnerApprovalInbox() {
-  const t = useT();
   const requests = useSyncExternalStore(subscribeOwnerApprovals, ownerApprovalsSnapshot);
   const secrets = useSyncExternalStore(subscribeOwnerSecretInputs, ownerSecretInputsSnapshot);
   const secret = secrets.find((request) => !hasOwnerApprovalChat(request.sessionId));
   if (secret) return <OwnerSecretDialog key={secret.id} request={secret} />;
   const request = requests.find((request) => !hasOwnerApprovalChat(request.sessionId));
-  if (request?.inbox)
-    return (
-      <InboxApprovalDialog
-        key={request.id}
-        request={request}
-        onClose={() => settleOwnerApproval(request.id, false)}
-      />
-    );
   return request ? (
-    <ConfirmDialog
+    <InboxApprovalDialog
       key={request.id}
-      request={{
-        title: request.title,
-        message: <span className="whitespace-pre-wrap break-words">{request.message}</span>,
-        confirmLabel: t(request.confirmLabel),
-        cancelLabel: t(request.cancelLabel),
-        danger: false,
-      }}
-      onSettle={(approved) => settleOwnerApproval(request.id, approved)}
+      request={request}
+      onClose={() => settleOwnerApproval(request.id, false)}
     />
   ) : null;
 }
@@ -165,25 +147,28 @@ function InboxApprovalDialog({
 }) {
   const t = useT();
   return (
-    <Modal
-      size="lg"
-      fitViewport
-      title={request.title}
-      onClose={onClose}
-      footer={
-        <ModalActions>
-          <Button variant="ghost" onClick={() => settleOwnerApproval(request.id, false)}>
-            {t(request.cancelLabel)}
-          </Button>
-          <Button variant="primary" onClick={() => settleOwnerApproval(request.id, true)}>
-            {t(request.confirmLabel)}
-          </Button>
-        </ModalActions>
-      }
-    >
-      {request.inbox ? (
-        <InboxApprovalPreview details={request.inbox} message={request.message} />
-      ) : null}
+    <Modal size={request.inbox ? "lg" : "sm"} fitViewport title={request.title} onClose={onClose}>
+      <ApprovalRequest
+        title={request.title}
+        detail={request.message}
+        allow={{
+          label: t(request.confirmLabel),
+          onClick: () => settleOwnerApproval(request.id, true),
+        }}
+        deny={{
+          label: t(request.cancelLabel),
+          onClick: () => settleOwnerApproval(request.id, false),
+        }}
+        details={
+          request.inbox
+            ? {
+                label: t("Details"),
+                defaultOpen: true,
+                content: <InboxApprovalPreview details={request.inbox} message={request.message} />,
+              }
+            : undefined
+        }
+      />
     </Modal>
   );
 }

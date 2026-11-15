@@ -81,7 +81,7 @@ describe("application language", () => {
         "This conversation is running in the background on this computer. New messages appear automatically.",
       ),
     ).toBe(
-      "Bu konuşma bu bilgisayarda arka planda devam ediyor. Yeni mesajlar otomatik olarak görünür.",
+      "Bu oturum bu bilgisayarda arka planda devam ediyor. Yeni mesajlar otomatik olarak görünür.",
     );
   });
   it("defaults Git and technical controls to English independently of the application", async () => {
