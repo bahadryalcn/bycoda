@@ -159,6 +159,11 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     tools: ["mobile.access.status"],
     remaining: "Pairing/access enable/disable secrets remain owner-device scoped.",
   },
+  modelRouting: {
+    tools: [],
+    remaining:
+      "Background work routing and caps are owner Settings: they decide which provider accounts and quota run unattended work, so voice cannot read or change them.",
+  },
   models: {
     tools: ["models.pool.list", "models.list"],
     remaining: "Catalog availability is not provider entitlement.",

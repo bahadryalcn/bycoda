@@ -449,7 +449,8 @@ it("fences replacement source, questions and pause during a queued cancellation 
   hold.resolve();
   await blocked;
   expect((await pending).recovery?.state).toBe("unknown");
-  expect(f.provider.cancel).not.toHaveBeenCalled();
+  // Stopping the stalled worker is never fenced; only re-launch and nudges are.
+  expect(f.provider.cancel).toHaveBeenCalledOnce();
   expect(f.turns).toHaveLength(1);
   f.managed.resume();
   const record = await f.store.session(f.sessionId);
@@ -469,7 +470,7 @@ it("fences replacement source, questions and pause during a queued cancellation 
       source: await f.source(),
     }),
   ).rejects.toThrow("exact current worker");
-  expect(f.provider.cancel).not.toHaveBeenCalled();
+  expect(f.provider.cancel).toHaveBeenCalledOnce();
 });
 
 it("preserves questions, approvals, drafts and saved pauses instead of using recovery to bypass owner input", async () => {
@@ -747,7 +748,8 @@ it("admits an owner job Pause while recovery waits for the engine queue and pres
       (value) => value.id === f.job.id,
     )?.status,
   ).toBe("paused");
-  expect(f.provider.cancel).not.toHaveBeenCalled();
+  // Stopping the stalled worker is never fenced; only re-launch and nudges are.
+  expect(f.provider.cancel).toHaveBeenCalledOnce();
 });
 
 it("never revives a queued supervisor request when a job is paused then resumed before its old command reaches the engine", async () => {
@@ -775,5 +777,5 @@ it("never revives a queued supervisor request when a job is paused then resumed 
   await blocked;
   expect((await first).recovery?.state).toBe("unknown");
   expect(await secondResult).toContain("newer owner job hold");
-  expect(f.provider.cancel).not.toHaveBeenCalled();
+  expect(f.provider.cancel).toHaveBeenCalledOnce();
 });

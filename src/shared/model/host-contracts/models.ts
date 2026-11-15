@@ -36,6 +36,7 @@ const account = z.strictObject({
   color: z.string().optional(),
   kind: z.enum(["personal", "work"]).optional(),
   derivedKind: z.enum(["personal", "work"]).optional(),
+  status: z.enum(["ready", "signed-out", "unknown"]).optional(),
 });
 export const HostModelAccountsSchema = z.strictObject({
   codex: z.array(account).optional(),

@@ -12,7 +12,13 @@ import {
   readCuaDriver,
 } from "./cua-driver.mjs";
 
-const license = await readFile(new URL("../../vendor/cua-driver/LICENSE", import.meta.url));
+// The pin hashes the upstream (CRLF) file; the checkout normalizes the vendored copy to LF.
+const license = Buffer.from(
+  (await readFile(new URL("../../vendor/cua-driver/LICENSE", import.meta.url), "utf8")).replace(
+    /\r?\n/g,
+    "\r\n",
+  ),
+);
 const scope = { platform: "win32", arch: "x64" };
 async function directory(t) {
   const path = await mkdtemp(join(tmpdir(), "bycoda-cua-driver-"));

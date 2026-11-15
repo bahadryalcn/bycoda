@@ -8881,6 +8881,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -8888,6 +8941,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -12439,6 +12498,65 @@
                 "cleanupRetryAfter": { "type": "number" },
                 "completedAt": { "type": "number" },
                 "completedWithFindings": { "type": "boolean" },
+                "conflictParent": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": { "type": "number" },
+                    "id": { "type": "string" },
+                    "sourceHead": { "type": "string" },
+                    "targetBranch": { "type": "string" },
+                    "targetDirectory": { "type": "string" },
+                    "targetHead": { "type": "string" },
+                    "workInvocationId": { "type": "string" }
+                  },
+                  "required": [
+                    "id",
+                    "createdAt",
+                    "sourceHead",
+                    "targetHead",
+                    "targetDirectory",
+                    "targetBranch"
+                  ],
+                  "type": "object"
+                },
+                "conflictRecovery": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "childId": { "type": "string" },
+                    "peer": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "commandId": { "type": "string" },
+                        "createdAt": { "type": "number" },
+                        "runId": { "type": "string" },
+                        "sessionId": { "type": "string" },
+                        "taskId": { "type": "string" },
+                        "workInvocationId": { "type": "string" }
+                      },
+                      "required": [
+                        "taskId",
+                        "createdAt",
+                        "workInvocationId",
+                        "sessionId",
+                        "runId",
+                        "commandId"
+                      ],
+                      "type": "object"
+                    },
+                    "sourceHead": { "type": "string" },
+                    "targetBranch": { "type": "string" },
+                    "targetDirectory": { "type": "string" },
+                    "targetHead": { "type": "string" }
+                  },
+                  "required": [
+                    "childId",
+                    "sourceHead",
+                    "targetHead",
+                    "targetDirectory",
+                    "targetBranch"
+                  ],
+                  "type": "object"
+                },
                 "continueUntilDone": { "type": "boolean" },
                 "createdAt": { "type": "number" },
                 "crewDefinitionId": { "type": "string" },
@@ -12446,6 +12564,15 @@
                 "crewReviewFingerprint": { "type": "string" },
                 "crewRunId": { "type": "string" },
                 "crewScopes": { "items": { "type": "string" }, "type": "array" },
+                "crewWorkWait": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "reason": { "type": "string" },
+                    "unstarted": { "type": "boolean" }
+                  },
+                  "required": ["reason", "unstarted"],
+                  "type": "object"
+                },
                 "deliveredCommit": { "type": "string" },
                 "deliveryApprovalRequired": { "type": "boolean" },
                 "deliveryArtifacts": {
@@ -16779,6 +16906,65 @@
                       "cleanupRetryAfter": { "type": "number" },
                       "completedAt": { "type": "number" },
                       "completedWithFindings": { "type": "boolean" },
+                      "conflictParent": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "createdAt": { "type": "number" },
+                          "id": { "type": "string" },
+                          "sourceHead": { "type": "string" },
+                          "targetBranch": { "type": "string" },
+                          "targetDirectory": { "type": "string" },
+                          "targetHead": { "type": "string" },
+                          "workInvocationId": { "type": "string" }
+                        },
+                        "required": [
+                          "id",
+                          "createdAt",
+                          "sourceHead",
+                          "targetHead",
+                          "targetDirectory",
+                          "targetBranch"
+                        ],
+                        "type": "object"
+                      },
+                      "conflictRecovery": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "childId": { "type": "string" },
+                          "peer": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "commandId": { "type": "string" },
+                              "createdAt": { "type": "number" },
+                              "runId": { "type": "string" },
+                              "sessionId": { "type": "string" },
+                              "taskId": { "type": "string" },
+                              "workInvocationId": { "type": "string" }
+                            },
+                            "required": [
+                              "taskId",
+                              "createdAt",
+                              "workInvocationId",
+                              "sessionId",
+                              "runId",
+                              "commandId"
+                            ],
+                            "type": "object"
+                          },
+                          "sourceHead": { "type": "string" },
+                          "targetBranch": { "type": "string" },
+                          "targetDirectory": { "type": "string" },
+                          "targetHead": { "type": "string" }
+                        },
+                        "required": [
+                          "childId",
+                          "sourceHead",
+                          "targetHead",
+                          "targetDirectory",
+                          "targetBranch"
+                        ],
+                        "type": "object"
+                      },
                       "continueUntilDone": { "type": "boolean" },
                       "createdAt": { "type": "number" },
                       "crewDefinitionId": { "type": "string" },
@@ -16786,6 +16972,15 @@
                       "crewReviewFingerprint": { "type": "string" },
                       "crewRunId": { "type": "string" },
                       "crewScopes": { "items": { "type": "string" }, "type": "array" },
+                      "crewWorkWait": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "reason": { "type": "string" },
+                          "unstarted": { "type": "boolean" }
+                        },
+                        "required": ["reason", "unstarted"],
+                        "type": "object"
+                      },
                       "deliveredCommit": { "type": "string" },
                       "deliveryApprovalRequired": { "type": "boolean" },
                       "deliveryArtifacts": {
@@ -28097,6 +28292,7 @@
           },
           "plannerRecoveryPending": { "type": "boolean" },
           "plannerRepairAttempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "plannerRequestId": { "type": "string" },
           "plannerRunId": { "type": "string" },
           "plannerSessionId": { "type": "string" },
           "plannerStartedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -28555,6 +28751,7 @@
           },
           "plannerRecoveryPending": { "type": "boolean" },
           "plannerRepairAttempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "plannerRequestId": { "type": "string" },
           "plannerRunId": { "type": "string" },
           "plannerSessionId": { "type": "string" },
           "plannerStartedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -29168,6 +29365,7 @@
           },
           "plannerRecoveryPending": { "type": "boolean" },
           "plannerRepairAttempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "plannerRequestId": { "type": "string" },
           "plannerRunId": { "type": "string" },
           "plannerSessionId": { "type": "string" },
           "plannerStartedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -29654,6 +29852,7 @@
           },
           "plannerRecoveryPending": { "type": "boolean" },
           "plannerRepairAttempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "plannerRequestId": { "type": "string" },
           "plannerRunId": { "type": "string" },
           "plannerSessionId": { "type": "string" },
           "plannerStartedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -30122,6 +30321,7 @@
               "minimum": 0,
               "type": "integer"
             },
+            "plannerRequestId": { "type": "string" },
             "plannerRunId": { "type": "string" },
             "plannerSessionId": { "type": "string" },
             "plannerStartedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -30582,6 +30782,7 @@
           },
           "plannerRecoveryPending": { "type": "boolean" },
           "plannerRepairAttempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "plannerRequestId": { "type": "string" },
           "plannerRunId": { "type": "string" },
           "plannerSessionId": { "type": "string" },
           "plannerStartedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -31064,6 +31265,7 @@
           },
           "plannerRecoveryPending": { "type": "boolean" },
           "plannerRepairAttempts": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "plannerRequestId": { "type": "string" },
           "plannerRunId": { "type": "string" },
           "plannerSessionId": { "type": "string" },
           "plannerStartedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
@@ -32388,7 +32590,8 @@
                     "id": { "type": "string" },
                     "isDefault": { "type": "boolean" },
                     "kind": { "enum": ["personal", "work"], "type": "string" },
-                    "label": { "type": "string" }
+                    "label": { "type": "string" },
+                    "status": { "enum": ["ready", "signed-out", "unknown"], "type": "string" }
                   },
                   "required": ["id", "label"],
                   "type": "object"
@@ -32404,7 +32607,8 @@
                     "id": { "type": "string" },
                     "isDefault": { "type": "boolean" },
                     "kind": { "enum": ["personal", "work"], "type": "string" },
-                    "label": { "type": "string" }
+                    "label": { "type": "string" },
+                    "status": { "enum": ["ready", "signed-out", "unknown"], "type": "string" }
                   },
                   "required": ["id", "label"],
                   "type": "object"
@@ -39645,6 +39849,19 @@
                   "maxItems": 10,
                   "type": "array"
                 },
+                "widgetContext": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "completedAt": { "type": "number" },
+                    "failureCategory": {
+                      "enum": ["auth_expired", "rate_limited", "crashed", "stopped", "failed"],
+                      "type": "string"
+                    },
+                    "questionPrompt": { "type": "string" },
+                    "startedAt": { "type": "number" }
+                  },
+                  "type": "object"
+                },
                 "workspaceId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
                   "type": "string"
@@ -39986,6 +40203,19 @@
                       },
                       "maxItems": 10,
                       "type": "array"
+                    },
+                    "widgetContext": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "completedAt": { "type": "number" },
+                        "failureCategory": {
+                          "enum": ["auth_expired", "rate_limited", "crashed", "stopped", "failed"],
+                          "type": "string"
+                        },
+                        "questionPrompt": { "type": "string" },
+                        "startedAt": { "type": "number" }
+                      },
+                      "type": "object"
                     },
                     "workspaceId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -46109,6 +46339,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -46116,6 +46399,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -46816,6 +47105,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -46823,6 +47165,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -47447,6 +47795,65 @@
             "cleanupRetryAfter": { "type": "number" },
             "completedAt": { "type": "number" },
             "completedWithFindings": { "type": "boolean" },
+            "conflictParent": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": { "type": "number" },
+                "id": { "type": "string" },
+                "sourceHead": { "type": "string" },
+                "targetBranch": { "type": "string" },
+                "targetDirectory": { "type": "string" },
+                "targetHead": { "type": "string" },
+                "workInvocationId": { "type": "string" }
+              },
+              "required": [
+                "id",
+                "createdAt",
+                "sourceHead",
+                "targetHead",
+                "targetDirectory",
+                "targetBranch"
+              ],
+              "type": "object"
+            },
+            "conflictRecovery": {
+              "additionalProperties": false,
+              "properties": {
+                "childId": { "type": "string" },
+                "peer": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandId": { "type": "string" },
+                    "createdAt": { "type": "number" },
+                    "runId": { "type": "string" },
+                    "sessionId": { "type": "string" },
+                    "taskId": { "type": "string" },
+                    "workInvocationId": { "type": "string" }
+                  },
+                  "required": [
+                    "taskId",
+                    "createdAt",
+                    "workInvocationId",
+                    "sessionId",
+                    "runId",
+                    "commandId"
+                  ],
+                  "type": "object"
+                },
+                "sourceHead": { "type": "string" },
+                "targetBranch": { "type": "string" },
+                "targetDirectory": { "type": "string" },
+                "targetHead": { "type": "string" }
+              },
+              "required": [
+                "childId",
+                "sourceHead",
+                "targetHead",
+                "targetDirectory",
+                "targetBranch"
+              ],
+              "type": "object"
+            },
             "continueUntilDone": { "type": "boolean" },
             "createdAt": { "type": "number" },
             "crewDefinitionId": { "type": "string" },
@@ -47454,6 +47861,12 @@
             "crewReviewFingerprint": { "type": "string" },
             "crewRunId": { "type": "string" },
             "crewScopes": { "items": { "type": "string" }, "type": "array" },
+            "crewWorkWait": {
+              "additionalProperties": false,
+              "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+              "required": ["reason", "unstarted"],
+              "type": "object"
+            },
             "deliveredCommit": { "type": "string" },
             "deliveryApprovalRequired": { "type": "boolean" },
             "deliveryArtifacts": {
@@ -48093,6 +48506,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -48100,6 +48566,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -48727,6 +49199,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -48734,6 +49259,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -49362,6 +49893,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -49369,6 +49953,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -49982,6 +50572,65 @@
               "cleanupRetryAfter": { "type": "number" },
               "completedAt": { "type": "number" },
               "completedWithFindings": { "type": "boolean" },
+              "conflictParent": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": { "type": "number" },
+                  "id": { "type": "string" },
+                  "sourceHead": { "type": "string" },
+                  "targetBranch": { "type": "string" },
+                  "targetDirectory": { "type": "string" },
+                  "targetHead": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "id",
+                  "createdAt",
+                  "sourceHead",
+                  "targetHead",
+                  "targetDirectory",
+                  "targetBranch"
+                ],
+                "type": "object"
+              },
+              "conflictRecovery": {
+                "additionalProperties": false,
+                "properties": {
+                  "childId": { "type": "string" },
+                  "peer": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "commandId": { "type": "string" },
+                      "createdAt": { "type": "number" },
+                      "runId": { "type": "string" },
+                      "sessionId": { "type": "string" },
+                      "taskId": { "type": "string" },
+                      "workInvocationId": { "type": "string" }
+                    },
+                    "required": [
+                      "taskId",
+                      "createdAt",
+                      "workInvocationId",
+                      "sessionId",
+                      "runId",
+                      "commandId"
+                    ],
+                    "type": "object"
+                  },
+                  "sourceHead": { "type": "string" },
+                  "targetBranch": { "type": "string" },
+                  "targetDirectory": { "type": "string" },
+                  "targetHead": { "type": "string" }
+                },
+                "required": [
+                  "childId",
+                  "sourceHead",
+                  "targetHead",
+                  "targetDirectory",
+                  "targetBranch"
+                ],
+                "type": "object"
+              },
               "continueUntilDone": { "type": "boolean" },
               "createdAt": { "type": "number" },
               "crewDefinitionId": { "type": "string" },
@@ -49989,6 +50638,15 @@
               "crewReviewFingerprint": { "type": "string" },
               "crewRunId": { "type": "string" },
               "crewScopes": { "items": { "type": "string" }, "type": "array" },
+              "crewWorkWait": {
+                "additionalProperties": false,
+                "properties": {
+                  "reason": { "type": "string" },
+                  "unstarted": { "type": "boolean" }
+                },
+                "required": ["reason", "unstarted"],
+                "type": "object"
+              },
               "deliveredCommit": { "type": "string" },
               "deliveryApprovalRequired": { "type": "boolean" },
               "deliveryArtifacts": {
@@ -50170,6 +50828,65 @@
                   "cleanupRetryAfter": { "type": "number" },
                   "completedAt": { "type": "number" },
                   "completedWithFindings": { "type": "boolean" },
+                  "conflictParent": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "createdAt": { "type": "number" },
+                      "id": { "type": "string" },
+                      "sourceHead": { "type": "string" },
+                      "targetBranch": { "type": "string" },
+                      "targetDirectory": { "type": "string" },
+                      "targetHead": { "type": "string" },
+                      "workInvocationId": { "type": "string" }
+                    },
+                    "required": [
+                      "id",
+                      "createdAt",
+                      "sourceHead",
+                      "targetHead",
+                      "targetDirectory",
+                      "targetBranch"
+                    ],
+                    "type": "object"
+                  },
+                  "conflictRecovery": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "childId": { "type": "string" },
+                      "peer": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "commandId": { "type": "string" },
+                          "createdAt": { "type": "number" },
+                          "runId": { "type": "string" },
+                          "sessionId": { "type": "string" },
+                          "taskId": { "type": "string" },
+                          "workInvocationId": { "type": "string" }
+                        },
+                        "required": [
+                          "taskId",
+                          "createdAt",
+                          "workInvocationId",
+                          "sessionId",
+                          "runId",
+                          "commandId"
+                        ],
+                        "type": "object"
+                      },
+                      "sourceHead": { "type": "string" },
+                      "targetBranch": { "type": "string" },
+                      "targetDirectory": { "type": "string" },
+                      "targetHead": { "type": "string" }
+                    },
+                    "required": [
+                      "childId",
+                      "sourceHead",
+                      "targetHead",
+                      "targetDirectory",
+                      "targetBranch"
+                    ],
+                    "type": "object"
+                  },
                   "continueUntilDone": { "type": "boolean" },
                   "createdAt": { "type": "number" },
                   "crewDefinitionId": { "type": "string" },
@@ -50177,6 +50894,15 @@
                   "crewReviewFingerprint": { "type": "string" },
                   "crewRunId": { "type": "string" },
                   "crewScopes": { "items": { "type": "string" }, "type": "array" },
+                  "crewWorkWait": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": { "type": "string" },
+                      "unstarted": { "type": "boolean" }
+                    },
+                    "required": ["reason", "unstarted"],
+                    "type": "object"
+                  },
                   "deliveredCommit": { "type": "string" },
                   "deliveryApprovalRequired": { "type": "boolean" },
                   "deliveryArtifacts": {
@@ -51319,6 +52045,65 @@
             "cleanupRetryAfter": { "type": "number" },
             "completedAt": { "type": "number" },
             "completedWithFindings": { "type": "boolean" },
+            "conflictParent": {
+              "additionalProperties": false,
+              "properties": {
+                "createdAt": { "type": "number" },
+                "id": { "type": "string" },
+                "sourceHead": { "type": "string" },
+                "targetBranch": { "type": "string" },
+                "targetDirectory": { "type": "string" },
+                "targetHead": { "type": "string" },
+                "workInvocationId": { "type": "string" }
+              },
+              "required": [
+                "id",
+                "createdAt",
+                "sourceHead",
+                "targetHead",
+                "targetDirectory",
+                "targetBranch"
+              ],
+              "type": "object"
+            },
+            "conflictRecovery": {
+              "additionalProperties": false,
+              "properties": {
+                "childId": { "type": "string" },
+                "peer": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "commandId": { "type": "string" },
+                    "createdAt": { "type": "number" },
+                    "runId": { "type": "string" },
+                    "sessionId": { "type": "string" },
+                    "taskId": { "type": "string" },
+                    "workInvocationId": { "type": "string" }
+                  },
+                  "required": [
+                    "taskId",
+                    "createdAt",
+                    "workInvocationId",
+                    "sessionId",
+                    "runId",
+                    "commandId"
+                  ],
+                  "type": "object"
+                },
+                "sourceHead": { "type": "string" },
+                "targetBranch": { "type": "string" },
+                "targetDirectory": { "type": "string" },
+                "targetHead": { "type": "string" }
+              },
+              "required": [
+                "childId",
+                "sourceHead",
+                "targetHead",
+                "targetDirectory",
+                "targetBranch"
+              ],
+              "type": "object"
+            },
             "continueUntilDone": { "type": "boolean" },
             "createdAt": { "type": "number" },
             "crewDefinitionId": { "type": "string" },
@@ -51326,6 +52111,12 @@
             "crewReviewFingerprint": { "type": "string" },
             "crewRunId": { "type": "string" },
             "crewScopes": { "items": { "type": "string" }, "type": "array" },
+            "crewWorkWait": {
+              "additionalProperties": false,
+              "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+              "required": ["reason", "unstarted"],
+              "type": "object"
+            },
             "deliveredCommit": { "type": "string" },
             "deliveryApprovalRequired": { "type": "boolean" },
             "deliveryArtifacts": {
@@ -51971,6 +52762,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -51978,6 +52822,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -52602,6 +53452,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -52609,6 +53512,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -53222,6 +54131,65 @@
               "cleanupRetryAfter": { "type": "number" },
               "completedAt": { "type": "number" },
               "completedWithFindings": { "type": "boolean" },
+              "conflictParent": {
+                "additionalProperties": false,
+                "properties": {
+                  "createdAt": { "type": "number" },
+                  "id": { "type": "string" },
+                  "sourceHead": { "type": "string" },
+                  "targetBranch": { "type": "string" },
+                  "targetDirectory": { "type": "string" },
+                  "targetHead": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "id",
+                  "createdAt",
+                  "sourceHead",
+                  "targetHead",
+                  "targetDirectory",
+                  "targetBranch"
+                ],
+                "type": "object"
+              },
+              "conflictRecovery": {
+                "additionalProperties": false,
+                "properties": {
+                  "childId": { "type": "string" },
+                  "peer": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "commandId": { "type": "string" },
+                      "createdAt": { "type": "number" },
+                      "runId": { "type": "string" },
+                      "sessionId": { "type": "string" },
+                      "taskId": { "type": "string" },
+                      "workInvocationId": { "type": "string" }
+                    },
+                    "required": [
+                      "taskId",
+                      "createdAt",
+                      "workInvocationId",
+                      "sessionId",
+                      "runId",
+                      "commandId"
+                    ],
+                    "type": "object"
+                  },
+                  "sourceHead": { "type": "string" },
+                  "targetBranch": { "type": "string" },
+                  "targetDirectory": { "type": "string" },
+                  "targetHead": { "type": "string" }
+                },
+                "required": [
+                  "childId",
+                  "sourceHead",
+                  "targetHead",
+                  "targetDirectory",
+                  "targetBranch"
+                ],
+                "type": "object"
+              },
               "continueUntilDone": { "type": "boolean" },
               "createdAt": { "type": "number" },
               "crewDefinitionId": { "type": "string" },
@@ -53229,6 +54197,15 @@
               "crewReviewFingerprint": { "type": "string" },
               "crewRunId": { "type": "string" },
               "crewScopes": { "items": { "type": "string" }, "type": "array" },
+              "crewWorkWait": {
+                "additionalProperties": false,
+                "properties": {
+                  "reason": { "type": "string" },
+                  "unstarted": { "type": "boolean" }
+                },
+                "required": ["reason", "unstarted"],
+                "type": "object"
+              },
               "deliveredCommit": { "type": "string" },
               "deliveryApprovalRequired": { "type": "boolean" },
               "deliveryArtifacts": {
@@ -53410,6 +54387,65 @@
                   "cleanupRetryAfter": { "type": "number" },
                   "completedAt": { "type": "number" },
                   "completedWithFindings": { "type": "boolean" },
+                  "conflictParent": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "createdAt": { "type": "number" },
+                      "id": { "type": "string" },
+                      "sourceHead": { "type": "string" },
+                      "targetBranch": { "type": "string" },
+                      "targetDirectory": { "type": "string" },
+                      "targetHead": { "type": "string" },
+                      "workInvocationId": { "type": "string" }
+                    },
+                    "required": [
+                      "id",
+                      "createdAt",
+                      "sourceHead",
+                      "targetHead",
+                      "targetDirectory",
+                      "targetBranch"
+                    ],
+                    "type": "object"
+                  },
+                  "conflictRecovery": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "childId": { "type": "string" },
+                      "peer": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "commandId": { "type": "string" },
+                          "createdAt": { "type": "number" },
+                          "runId": { "type": "string" },
+                          "sessionId": { "type": "string" },
+                          "taskId": { "type": "string" },
+                          "workInvocationId": { "type": "string" }
+                        },
+                        "required": [
+                          "taskId",
+                          "createdAt",
+                          "workInvocationId",
+                          "sessionId",
+                          "runId",
+                          "commandId"
+                        ],
+                        "type": "object"
+                      },
+                      "sourceHead": { "type": "string" },
+                      "targetBranch": { "type": "string" },
+                      "targetDirectory": { "type": "string" },
+                      "targetHead": { "type": "string" }
+                    },
+                    "required": [
+                      "childId",
+                      "sourceHead",
+                      "targetHead",
+                      "targetDirectory",
+                      "targetBranch"
+                    ],
+                    "type": "object"
+                  },
                   "continueUntilDone": { "type": "boolean" },
                   "createdAt": { "type": "number" },
                   "crewDefinitionId": { "type": "string" },
@@ -53417,6 +54453,15 @@
                   "crewReviewFingerprint": { "type": "string" },
                   "crewRunId": { "type": "string" },
                   "crewScopes": { "items": { "type": "string" }, "type": "array" },
+                  "crewWorkWait": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "reason": { "type": "string" },
+                      "unstarted": { "type": "boolean" }
+                    },
+                    "required": ["reason", "unstarted"],
+                    "type": "object"
+                  },
                   "deliveredCommit": { "type": "string" },
                   "deliveryApprovalRequired": { "type": "boolean" },
                   "deliveryArtifacts": {
@@ -54514,6 +55559,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -54521,6 +55619,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -55191,6 +56295,59 @@
           "cleanupRetryAfter": { "type": "number" },
           "completedAt": { "type": "number" },
           "completedWithFindings": { "type": "boolean" },
+          "conflictParent": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": { "type": "number" },
+              "id": { "type": "string" },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" },
+              "workInvocationId": { "type": "string" }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "sourceHead",
+              "targetHead",
+              "targetDirectory",
+              "targetBranch"
+            ],
+            "type": "object"
+          },
+          "conflictRecovery": {
+            "additionalProperties": false,
+            "properties": {
+              "childId": { "type": "string" },
+              "peer": {
+                "additionalProperties": false,
+                "properties": {
+                  "commandId": { "type": "string" },
+                  "createdAt": { "type": "number" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "taskId": { "type": "string" },
+                  "workInvocationId": { "type": "string" }
+                },
+                "required": [
+                  "taskId",
+                  "createdAt",
+                  "workInvocationId",
+                  "sessionId",
+                  "runId",
+                  "commandId"
+                ],
+                "type": "object"
+              },
+              "sourceHead": { "type": "string" },
+              "targetBranch": { "type": "string" },
+              "targetDirectory": { "type": "string" },
+              "targetHead": { "type": "string" }
+            },
+            "required": ["childId", "sourceHead", "targetHead", "targetDirectory", "targetBranch"],
+            "type": "object"
+          },
           "continueUntilDone": { "type": "boolean" },
           "createdAt": { "type": "number" },
           "crewDefinitionId": { "type": "string" },
@@ -55198,6 +56355,12 @@
           "crewReviewFingerprint": { "type": "string" },
           "crewRunId": { "type": "string" },
           "crewScopes": { "items": { "type": "string" }, "type": "array" },
+          "crewWorkWait": {
+            "additionalProperties": false,
+            "properties": { "reason": { "type": "string" }, "unstarted": { "type": "boolean" } },
+            "required": ["reason", "unstarted"],
+            "type": "object"
+          },
           "deliveredCommit": { "type": "string" },
           "deliveryApprovalRequired": { "type": "boolean" },
           "deliveryArtifacts": {
@@ -69991,6 +71154,65 @@
                     "cleanupRetryAfter": { "type": "number" },
                     "completedAt": { "type": "number" },
                     "completedWithFindings": { "type": "boolean" },
+                    "conflictParent": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "createdAt": { "type": "number" },
+                        "id": { "type": "string" },
+                        "sourceHead": { "type": "string" },
+                        "targetBranch": { "type": "string" },
+                        "targetDirectory": { "type": "string" },
+                        "targetHead": { "type": "string" },
+                        "workInvocationId": { "type": "string" }
+                      },
+                      "required": [
+                        "id",
+                        "createdAt",
+                        "sourceHead",
+                        "targetHead",
+                        "targetDirectory",
+                        "targetBranch"
+                      ],
+                      "type": "object"
+                    },
+                    "conflictRecovery": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "childId": { "type": "string" },
+                        "peer": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "commandId": { "type": "string" },
+                            "createdAt": { "type": "number" },
+                            "runId": { "type": "string" },
+                            "sessionId": { "type": "string" },
+                            "taskId": { "type": "string" },
+                            "workInvocationId": { "type": "string" }
+                          },
+                          "required": [
+                            "taskId",
+                            "createdAt",
+                            "workInvocationId",
+                            "sessionId",
+                            "runId",
+                            "commandId"
+                          ],
+                          "type": "object"
+                        },
+                        "sourceHead": { "type": "string" },
+                        "targetBranch": { "type": "string" },
+                        "targetDirectory": { "type": "string" },
+                        "targetHead": { "type": "string" }
+                      },
+                      "required": [
+                        "childId",
+                        "sourceHead",
+                        "targetHead",
+                        "targetDirectory",
+                        "targetBranch"
+                      ],
+                      "type": "object"
+                    },
                     "continueUntilDone": { "type": "boolean" },
                     "createdAt": { "type": "number" },
                     "crewDefinitionId": { "type": "string" },
@@ -69998,6 +71220,15 @@
                     "crewReviewFingerprint": { "type": "string" },
                     "crewRunId": { "type": "string" },
                     "crewScopes": { "items": { "type": "string" }, "type": "array" },
+                    "crewWorkWait": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "reason": { "type": "string" },
+                        "unstarted": { "type": "boolean" }
+                      },
+                      "required": ["reason", "unstarted"],
+                      "type": "object"
+                    },
                     "deliveredCommit": { "type": "string" },
                     "deliveryApprovalRequired": { "type": "boolean" },
                     "deliveryArtifacts": {
@@ -70183,6 +71414,65 @@
                         "cleanupRetryAfter": { "type": "number" },
                         "completedAt": { "type": "number" },
                         "completedWithFindings": { "type": "boolean" },
+                        "conflictParent": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "createdAt": { "type": "number" },
+                            "id": { "type": "string" },
+                            "sourceHead": { "type": "string" },
+                            "targetBranch": { "type": "string" },
+                            "targetDirectory": { "type": "string" },
+                            "targetHead": { "type": "string" },
+                            "workInvocationId": { "type": "string" }
+                          },
+                          "required": [
+                            "id",
+                            "createdAt",
+                            "sourceHead",
+                            "targetHead",
+                            "targetDirectory",
+                            "targetBranch"
+                          ],
+                          "type": "object"
+                        },
+                        "conflictRecovery": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "childId": { "type": "string" },
+                            "peer": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "commandId": { "type": "string" },
+                                "createdAt": { "type": "number" },
+                                "runId": { "type": "string" },
+                                "sessionId": { "type": "string" },
+                                "taskId": { "type": "string" },
+                                "workInvocationId": { "type": "string" }
+                              },
+                              "required": [
+                                "taskId",
+                                "createdAt",
+                                "workInvocationId",
+                                "sessionId",
+                                "runId",
+                                "commandId"
+                              ],
+                              "type": "object"
+                            },
+                            "sourceHead": { "type": "string" },
+                            "targetBranch": { "type": "string" },
+                            "targetDirectory": { "type": "string" },
+                            "targetHead": { "type": "string" }
+                          },
+                          "required": [
+                            "childId",
+                            "sourceHead",
+                            "targetHead",
+                            "targetDirectory",
+                            "targetBranch"
+                          ],
+                          "type": "object"
+                        },
                         "continueUntilDone": { "type": "boolean" },
                         "createdAt": { "type": "number" },
                         "crewDefinitionId": { "type": "string" },
@@ -70190,6 +71480,15 @@
                         "crewReviewFingerprint": { "type": "string" },
                         "crewRunId": { "type": "string" },
                         "crewScopes": { "items": { "type": "string" }, "type": "array" },
+                        "crewWorkWait": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "reason": { "type": "string" },
+                            "unstarted": { "type": "boolean" }
+                          },
+                          "required": ["reason", "unstarted"],
+                          "type": "object"
+                        },
                         "deliveredCommit": { "type": "string" },
                         "deliveryApprovalRequired": { "type": "boolean" },
                         "deliveryArtifacts": {
@@ -71603,6 +72902,65 @@
                     "cleanupRetryAfter": { "type": "number" },
                     "completedAt": { "type": "number" },
                     "completedWithFindings": { "type": "boolean" },
+                    "conflictParent": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "createdAt": { "type": "number" },
+                        "id": { "type": "string" },
+                        "sourceHead": { "type": "string" },
+                        "targetBranch": { "type": "string" },
+                        "targetDirectory": { "type": "string" },
+                        "targetHead": { "type": "string" },
+                        "workInvocationId": { "type": "string" }
+                      },
+                      "required": [
+                        "id",
+                        "createdAt",
+                        "sourceHead",
+                        "targetHead",
+                        "targetDirectory",
+                        "targetBranch"
+                      ],
+                      "type": "object"
+                    },
+                    "conflictRecovery": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "childId": { "type": "string" },
+                        "peer": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "commandId": { "type": "string" },
+                            "createdAt": { "type": "number" },
+                            "runId": { "type": "string" },
+                            "sessionId": { "type": "string" },
+                            "taskId": { "type": "string" },
+                            "workInvocationId": { "type": "string" }
+                          },
+                          "required": [
+                            "taskId",
+                            "createdAt",
+                            "workInvocationId",
+                            "sessionId",
+                            "runId",
+                            "commandId"
+                          ],
+                          "type": "object"
+                        },
+                        "sourceHead": { "type": "string" },
+                        "targetBranch": { "type": "string" },
+                        "targetDirectory": { "type": "string" },
+                        "targetHead": { "type": "string" }
+                      },
+                      "required": [
+                        "childId",
+                        "sourceHead",
+                        "targetHead",
+                        "targetDirectory",
+                        "targetBranch"
+                      ],
+                      "type": "object"
+                    },
                     "continueUntilDone": { "type": "boolean" },
                     "createdAt": { "type": "number" },
                     "crewDefinitionId": { "type": "string" },
@@ -71610,6 +72968,15 @@
                     "crewReviewFingerprint": { "type": "string" },
                     "crewRunId": { "type": "string" },
                     "crewScopes": { "items": { "type": "string" }, "type": "array" },
+                    "crewWorkWait": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "reason": { "type": "string" },
+                        "unstarted": { "type": "boolean" }
+                      },
+                      "required": ["reason", "unstarted"],
+                      "type": "object"
+                    },
                     "deliveredCommit": { "type": "string" },
                     "deliveryApprovalRequired": { "type": "boolean" },
                     "deliveryArtifacts": {
@@ -71795,6 +73162,65 @@
                         "cleanupRetryAfter": { "type": "number" },
                         "completedAt": { "type": "number" },
                         "completedWithFindings": { "type": "boolean" },
+                        "conflictParent": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "createdAt": { "type": "number" },
+                            "id": { "type": "string" },
+                            "sourceHead": { "type": "string" },
+                            "targetBranch": { "type": "string" },
+                            "targetDirectory": { "type": "string" },
+                            "targetHead": { "type": "string" },
+                            "workInvocationId": { "type": "string" }
+                          },
+                          "required": [
+                            "id",
+                            "createdAt",
+                            "sourceHead",
+                            "targetHead",
+                            "targetDirectory",
+                            "targetBranch"
+                          ],
+                          "type": "object"
+                        },
+                        "conflictRecovery": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "childId": { "type": "string" },
+                            "peer": {
+                              "additionalProperties": false,
+                              "properties": {
+                                "commandId": { "type": "string" },
+                                "createdAt": { "type": "number" },
+                                "runId": { "type": "string" },
+                                "sessionId": { "type": "string" },
+                                "taskId": { "type": "string" },
+                                "workInvocationId": { "type": "string" }
+                              },
+                              "required": [
+                                "taskId",
+                                "createdAt",
+                                "workInvocationId",
+                                "sessionId",
+                                "runId",
+                                "commandId"
+                              ],
+                              "type": "object"
+                            },
+                            "sourceHead": { "type": "string" },
+                            "targetBranch": { "type": "string" },
+                            "targetDirectory": { "type": "string" },
+                            "targetHead": { "type": "string" }
+                          },
+                          "required": [
+                            "childId",
+                            "sourceHead",
+                            "targetHead",
+                            "targetDirectory",
+                            "targetBranch"
+                          ],
+                          "type": "object"
+                        },
                         "continueUntilDone": { "type": "boolean" },
                         "createdAt": { "type": "number" },
                         "crewDefinitionId": { "type": "string" },
@@ -71802,6 +73228,15 @@
                         "crewReviewFingerprint": { "type": "string" },
                         "crewRunId": { "type": "string" },
                         "crewScopes": { "items": { "type": "string" }, "type": "array" },
+                        "crewWorkWait": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "reason": { "type": "string" },
+                            "unstarted": { "type": "boolean" }
+                          },
+                          "required": ["reason", "unstarted"],
+                          "type": "object"
+                        },
                         "deliveredCommit": { "type": "string" },
                         "deliveryApprovalRequired": { "type": "boolean" },
                         "deliveryArtifacts": {
@@ -76936,6 +78371,19 @@
           "maxItems": 10,
           "type": "array"
         },
+        "widgetContext": {
+          "additionalProperties": false,
+          "properties": {
+            "completedAt": { "type": "number" },
+            "failureCategory": {
+              "enum": ["auth_expired", "rate_limited", "crashed", "stopped", "failed"],
+              "type": "string"
+            },
+            "questionPrompt": { "type": "string" },
+            "startedAt": { "type": "number" }
+          },
+          "type": "object"
+        },
         "workspaceId": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
           "type": "string"
@@ -77578,5 +79026,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "81af7910b5d6669dc28ea3cd43088c293f1b57f87cc8e63a8e067a22a5b16ec8"
+  "schemaHash": "2870331271f918ad122102db40aa103d9c82c742d5fee3b33dec697571c8be54"
 }

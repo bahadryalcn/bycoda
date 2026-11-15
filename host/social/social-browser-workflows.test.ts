@@ -1,3 +1,9 @@
+import type {
+  HTMLButtonElement,
+  HTMLElement,
+  HTMLInputElement,
+  HTMLSelectElement,
+} from "happy-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,12 +19,6 @@ import {
   type BrowserPage,
 } from "./social-browser";
 import { Window } from "happy-dom";
-import type {
-  HTMLButtonElement,
-  HTMLElement,
-  HTMLInputElement,
-  HTMLSelectElement,
-} from "happy-dom";
 import {
   SOCIAL_ACCOUNT_TYPES,
   SOCIAL_PLATFORMS,

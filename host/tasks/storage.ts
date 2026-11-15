@@ -563,18 +563,24 @@ export async function write(
         const parent = await context.budgetParent(task);
         const goalId = task.goalId ?? parent?.goalId;
         await context.store.db.checkAuthorization();
+        const registered = await context.store.db
+          .prepare("SELECT value FROM task_run_budget_ledger WHERE session_id=? AND run_id=?")
+          .get(run.sessionId, run.runId);
+        const registeredRole = registered
+          ? (JSON.parse(String(registered.value)) as { role?: "recovery" | "repair" | "worker" })
+              .role
+          : undefined;
         await context.budgets.register({
           taskId: task.id,
           ...(goalId ? { goalId } : {}),
           ...(parent ? { parentTaskId: parent.id } : {}),
+          // Shared Work may have registered this exact run first (an assistant recovery
+          // launch is `task.recovery` without `blockedTakeover`); its role is authoritative.
           role:
             task.status === "verifying"
               ? "reviewer"
-              : task.blockedTakeover
-                ? "recovery"
-                : task.repairAttempts
-                  ? "repair"
-                  : "worker",
+              : (registeredRole ??
+                (task.blockedTakeover ? "recovery" : task.repairAttempts ? "repair" : "worker")),
           sessionId: run.sessionId,
           runId: run.runId,
           startedAt: run.startedAt,

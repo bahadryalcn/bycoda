@@ -1,6 +1,7 @@
 import {
   ModelRoutingItemChoiceSchema,
   type ModelRoutingItemChoice,
+  type ModelRoutingTarget,
 } from "../../../shared/model/host-contracts/model-routing";
 import { NO_VERDICT } from "./taskRules";
 import type { TaskAcceptanceReport } from "./taskAcceptance";
@@ -196,6 +197,8 @@ export type HostTask = HostTaskInput & {
   /** Runtime admission hold; the owner configuration parser never accepts it. */
   modelRoutingWait?: { reason: string; retryAt?: number };
   /** The exact crew coordinator Work occurrence is waiting or has unknown dispatch. */
+  /** Host-resolved reviewer routing target. */
+  reviewerTarget?: ModelRoutingTarget;
   crewWorkWait?: { reason: string; unstarted: boolean };
   /** Owner-only invocation identity; scheduler retries retain the same occurrence. */
   workInvocationId?: string;

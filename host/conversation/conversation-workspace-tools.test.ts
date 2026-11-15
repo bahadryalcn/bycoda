@@ -8,6 +8,7 @@ import { HostStore } from "../store";
 import { HostEngine } from "../engine";
 import { HostNotes } from "../notes/host-notes";
 import { HostAutomations } from "../automations/automations";
+import { HostTasks } from "../tasks/service";
 import { ProviderInboxBridge } from "../providers/provider-inbox";
 import { ConversationWorkspaceTools } from "./conversation-workspace-tools";
 import { validateConversationTool, type ConversationTool } from "./conversation-tools";
@@ -78,6 +79,8 @@ async function setup(managed = false) {
     : undefined;
   await workspaces?.attachEngine(engine);
   const automations = new HostAutomations(store, engine, () => 1000, workspaces);
+  const tasks = new HostTasks(store, engine, () => 1000);
+  automations.bindTasks(tasks);
   const inbox = new ProviderInboxBridge(store.db);
   const approval = vi.fn(async (_operation: Record<string, unknown>) => ({ approved: true }));
   const attention = vi.fn(async (_projectId: string) => [{ id: "attention" }]);
@@ -101,6 +104,8 @@ async function setup(managed = false) {
     );
   };
   cleanup.push(async () => {
+    await automations.close();
+    await tasks.close();
     await engine.close();
     await store.close();
     rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -114,6 +119,7 @@ async function setup(managed = false) {
     other,
     notes,
     automations,
+    tasks,
     inbox,
     store,
     engine,
@@ -269,7 +275,12 @@ describe("direct application workspace tools", () => {
   it("exposes run history and cancellation while preventing an automation from controlling itself", async () => {
     const s = await setup(true);
     await s.call("automations.create", automation);
-    const run = await s.automations.runNow("daily");
+    const pending = await s.automations.runNow("daily");
+    // Automation runs are canonical Tasks; the run gets its session once the Task starts.
+    await s.tasks.startTask(pending.taskId!);
+    await s.tasks.tick();
+    await s.automations.tick();
+    const run = (await s.automations.runs("daily")).find((entry) => entry.id === pending.id)!;
     expect(((await s.call("automations.runs", { automationId: "daily" })) as any).items[0].id).toBe(
       run.id,
     );

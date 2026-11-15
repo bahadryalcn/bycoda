@@ -132,12 +132,17 @@ describe("a task stopped by a provider usage limit", () => {
   it("keeps today's failure handling for a task outside the assistant that did not arm a resume", async () => {
     const s = await setup();
     const started = await s.start();
-    await s.hitLimit(s.clock.now + 60 * 60_000);
+    const sessionId = await s.hitLimit(s.clock.now + 60 * 60_000);
     s.clock.now += 1000;
     await s.tick();
-    // The ordinary path retries the failed run in a fresh session; no wait, no resume.
-    expect((await s.task()).sessionId).not.toBe(started.sessionId);
-    expect((await s.task()).ownerNotices?.[0]).toMatchObject({ kind: "auto_continued" });
+    // The ordinary runtime-error handling applies (here the repair advisor is unavailable, so the
+    // task stops for the owner): no wait is armed and nothing resumes at the reset.
+    expect((await s.store.session(sessionId)).session.usageLimit?.resumeAtReset).toBeFalsy();
+    expect(await s.task()).toMatchObject({
+      status: "blocked",
+      needsInput: true,
+      sessionId: started.sessionId,
+    });
   });
 });
 

@@ -59,8 +59,18 @@ type Invocation = {
   };
 };
 
+const roomRuntimes = new WeakMap<HostStore, ReturnType<typeof createRoomAutomationExecutor>>();
 /** One executor in the existing Host Work runtime; no project identity is fabricated. */
 export function registerRoomAutomationExecutor(store: HostStore, ports: RoomAutomationPorts) {
+  // Like the other Work executors, one per store: a re-created server reuses the registered one.
+  let runtime = roomRuntimes.get(store);
+  if (!runtime) {
+    runtime = createRoomAutomationExecutor(store, ports);
+    roomRuntimes.set(store, runtime);
+  }
+  return runtime;
+}
+function createRoomAutomationExecutor(store: HostStore, ports: RoomAutomationPorts) {
   const ready = store.ready.then(() =>
     store.db.exec(
       "CREATE TABLE IF NOT EXISTS room_work_invocations (work_id TEXT PRIMARY KEY, value TEXT NOT NULL)",

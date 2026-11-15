@@ -3999,7 +3999,8 @@ describe("owner-approved task delivery", () => {
       deliveryApprovalRequired: true,
       deliveryState: "awaitingOwner",
     });
-    expect((await tasks.get("main"))?.autoMerge).toBeUndefined();
+    // Suspension keeps the owner's opt-in; only the approval requirement blocks delivery.
+    expect((await tasks.get("main"))?.autoMerge).toBe(true);
     expect((await tasks.save(input({ autoMerge: false }))).autoMerge).toBeUndefined();
     await expect(tasks.save(input({ id: "bad", autoMerge: "yes" }))).rejects.toThrow(
       "Invalid task options",

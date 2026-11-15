@@ -151,6 +151,16 @@ export const SessionSummarySchema = z.strictObject({
   issue: z.enum(["retrying", "failed"]).optional(),
   issueTurnId: z.string().optional(),
   issueMessage: z.string().optional(),
+  widgetContext: z
+    .strictObject({
+      questionPrompt: z.string().optional(),
+      completedAt: z.number().optional(),
+      startedAt: z.number().optional(),
+      failureCategory: z
+        .enum(["auth_expired", "rate_limited", "crashed", "stopped", "failed"])
+        .optional(),
+    })
+    .optional(),
   cwd: z.string().optional(),
   model: z.string().optional(),
   runtimeMode: SessionRuntimeModeSchema.optional(),

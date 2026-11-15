@@ -101,10 +101,8 @@
     "host/social/social-browser-linkedin-profile.test.ts": 18,
     "host/social/social-browser-messaging.test.ts": 1,
     "host/social/social-browser-profile.test.ts": 1,
-    "host/social/social-browser-registration.test.ts": 56,
     "host/social/social-browser-snapchat-extended.test.ts": 1,
     "host/social/social-browser-telegram.test.ts": 1,
-    "host/social/social-browser-workflows.test.ts": 17,
     "host/social/social-browser.test.ts": 3,
     "host/social/social-peers.test.ts": 1,
     "host/social/social-programs.test.ts": 1,
@@ -287,7 +285,6 @@
     "src/features/sessions/ui/AgentMarkdownMenu.test.ts": 2,
     "src/features/sessions/ui/AgentTabView.test.ts": 2,
     "src/features/sessions/ui/AgentTranscript.retention.test.ts": 14,
-    "src/features/sessions/ui/AgentTranscript.search.test.ts": 7,
     "src/features/sessions/ui/AgentTranscript.userTextPreview.test.ts": 1,
     "src/features/sessions/ui/Composer.attachmentTokens.test.ts": 1,
     "src/features/sessions/ui/Composer.closure.test.ts": 5,
@@ -320,12 +317,11 @@
     "src/features/settings/ui/PoliciesSettings.test.ts": 2,
     "src/features/settings/ui/ProviderBinarySettings.test.ts": 1,
     "src/features/settings/ui/live-background/reactBitsSurface.test.ts": 25,
-    "src/shared/ui/settings/settingsRows.test.ts": 1,
     "src/features/skills/model/skillCatalog.test.ts": 2,
     "src/features/skills/ui/SkillPromptField.test.ts": 1,
     "src/features/skills/ui/SkillsPage.test.ts": 6,
     "src/features/social/model/socialContactTags.test.ts": 5,
-    "src/features/social/ui/command/CommandPanels.test.ts": 4,
+    "src/features/social/ui/command/CommandPanels.test.ts": 3,
     "src/features/social/ui/content/contentPublish.test.ts": 5,
     "src/features/social/ui/content/contentPublishFlow.test.ts": 1,
     "src/features/source-control/model/commitActions.test.ts": 2,
@@ -417,6 +413,7 @@
     "src/shared/ui/Tabs.test.ts": 1,
     "src/shared/ui/lazySurface.test.ts": 1,
     "src/shared/ui/overlay.test.ts": 1,
-    "src/shared/ui/overlayFocusReturn.test.ts": 2
+    "src/shared/ui/overlayFocusReturn.test.ts": 2,
+    "src/shared/ui/settings/settingsRows.test.ts": 1
   }
 }

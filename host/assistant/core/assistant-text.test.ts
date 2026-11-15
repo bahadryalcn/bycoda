@@ -103,10 +103,13 @@ it("opts only the Chief into its durably captured provider thread", async () => 
     expect.objectContaining({
       ephemeral: false,
       threadId: "chief-thread",
-      onThreadId,
+      onThreadId: expect.any(Function),
       intent: "plan",
     }),
   );
+  // The runner wraps the callback (abort checks, model memory), so assert forwarding.
+  await vi.mocked(runHarnessTextPrompt).mock.calls[0]![0].onThreadId!("captured");
+  expect(onThreadId).toHaveBeenCalledWith("captured");
 });
 it("refuses late output after reasoning cancellation", async () => {
   const controller = new AbortController();

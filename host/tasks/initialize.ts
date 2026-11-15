@@ -147,7 +147,7 @@ export function createTaskEngine(
   context: TaskContext,
   store: HostStore,
   engine: SessionRunEngine,
-): SessionRunEngine {
+): SessionRunEngine & Partial<Pick<HostEngine, "waitForRun">> {
   if (engine.withCommandAdmission) bindSessionWork(store, engine, context.limits, context.now);
   context.continueHistory = (
     engine as SessionRunEngine & Partial<Pick<HostEngine, "continueSessionHistory">>
@@ -170,6 +170,10 @@ export function createTaskEngine(
 
   return {
     withMessageAuthor: engine.withMessageAuthor?.bind(engine),
+    // Assistant-session Work may be registered with this engine, so it needs the same
+    // admission and run-wait entry points as the Host engine.
+    withCommandAdmission: engine.withCommandAdmission?.bind(engine),
+    waitForRun: recoveryEngine.waitForRun?.bind(engine),
     command: async (...args) => {
       await store.db.checkAuthorization();
       return engine.command(...args);

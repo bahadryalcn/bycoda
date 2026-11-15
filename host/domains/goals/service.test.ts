@@ -214,7 +214,11 @@ describe("paired goal domain", () => {
     await rejection;
     expect(command).not.toHaveBeenCalled();
     expect(f.provider.send).not.toHaveBeenCalled();
-    expect(await f.stored()).toBeUndefined();
+    // The planner request identity is stored before launch so a later system tick resumes the
+    // same Work occurrence; the denied request itself never launches a planner.
+    const stored = await f.stored();
+    expect(stored).toMatchObject({ status: "planning", plannerRequestId: expect.any(String) });
+    expect(stored?.plannerSessionId).toBeUndefined();
   });
 
   it("finishes accepted storage when only the socket waiter is cancelled", async () => {

@@ -173,7 +173,6 @@ describe("Host HTTP/WS read composition", () => {
       },
       errors: {},
     });
-    vi.spyOn(host.server.tasks, "tick").mockResolvedValue(undefined);
     const socket = await host.ready();
     const projectId = host.project.id;
     const schema = await host.rpc(socket, "crews.schema", { projectId });
@@ -391,10 +390,13 @@ describe("Host HTTP/WS read composition", () => {
     expect(getHostRpcMethod("automations.runNow")!.resultSchema.parse(run.result)).toEqual(
       run.result,
     );
+    // A project automation run is a canonical Task that the owner starts.
+    const started = await host.rpc(socket, "tasks.start", { taskId: run.result.taskId });
+    expect(started.error).toBeUndefined();
     await vi.waitFor(() => expect(send).toHaveBeenCalledOnce(), { timeout: 5000 });
     const history = await host.http("automations.runs", { automationId: automation.id });
     expect(history).toContainEqual(
-      expect.objectContaining({ id: run.result.id, sessionId: run.result.sessionId }),
+      expect.objectContaining({ id: run.result.id, taskId: run.result.taskId }),
     );
     expect(send).toHaveBeenCalledOnce();
   });
