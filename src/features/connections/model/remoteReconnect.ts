@@ -1,4 +1,5 @@
-import { isMachineEnabled } from "./machineEnabled";
+import { isMachineEnabled, subscribeMachineTurnedOff } from "./machineEnabled";
+import { closeTurnedOffMachine } from "./machineTurnOff";
 import { elapsedSince, monotonicNow } from "../../../shared/lib/time/timestamps";
 import {
   knownRemoteMachine,
@@ -346,6 +347,7 @@ export function startRemoteAutoRecovery(): () => void {
     schedule();
   });
   const stopTunnelWatch = watchTunnelExits();
+  const stopTurnOff = subscribeMachineTurnedOff(closeTurnedOffMachine);
   window.addEventListener("focus", retryOnFocus);
   window.addEventListener("online", retryOnline);
   window.addEventListener("offline", pauseOffline);
@@ -357,6 +359,7 @@ export function startRemoteAutoRecovery(): () => void {
     stopInvalidation();
     unsubscribeSetting();
     stopTunnelWatch();
+    stopTurnOff();
     window.removeEventListener("focus", retryOnFocus);
     window.removeEventListener("online", retryOnline);
     window.removeEventListener("offline", pauseOffline);

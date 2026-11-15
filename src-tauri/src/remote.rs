@@ -1524,6 +1524,15 @@ pub fn remote_disconnect(
     Ok(())
 }
 
+/// The owner turned a machine off: close its SSH tunnel and Host WebSocket now. The saved
+/// machine, its credential and learned routes stay, so turning it on dials again.
+#[tauri::command(async)]
+pub fn remote_close_connection(state: State<'_, RemoteConnections>, machine_id: String) {
+    state.invalidate_ws(&machine_id);
+    state.tunnels.remove(&machine_id);
+    folder_access::stop_machine(&machine_id);
+}
+
 /// Caller holds the canonical connection-store lock through write + retirement.
 fn disconnect_saved_machine(
     state: &RemoteConnections,

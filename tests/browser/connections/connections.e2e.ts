@@ -13,8 +13,8 @@ for (const theme of ["light", "dark"]) {
       await expect(root.getByText("Studio Mac", { exact: true })).toBeVisible();
       await expect(root.getByRole("button", { name: "Start tunnel", exact: true })).toHaveCount(0);
       await expect(root.getByText("Unsaved changes", { exact: true })).toHaveCount(0);
-      // Adding is one entry point: the form offers SSH or a host URL.
-      await root.getByRole("button", { name: "Add machine", exact: true }).click();
+      // Adding by hand sits behind the collapsed "Advanced: add manually" disclosure.
+      await root.getByText("Advanced: add manually", { exact: true }).click();
       await expect(root.getByText("Connect to an existing host by URL")).toHaveCount(0);
       await root
         .getByRole("radio", { name: "Host URL", exact: true })
@@ -36,7 +36,7 @@ for (const theme of ["light", "dark"]) {
       await expect(root.locator(".connection-details").last()).toContainText(
         "owner@studio-tailnet",
       );
-      await root.getByRole("button", { name: "Add machine", exact: true }).click();
+      await root.getByText("Advanced: add manually", { exact: true }).click();
       await expect(root.getByRole("radio", { name: "SSH", exact: true })).toBeChecked();
       const address = root.getByRole("textbox", { name: "SSH address", exact: true });
       await address.fill("owner@new-machine");
@@ -51,6 +51,7 @@ for (const theme of ["light", "dark"]) {
       await expect(page.getByRole("dialog", { name: "Connection help", exact: true })).toHaveCount(
         0,
       );
+      await root.getByText("More options", { exact: true }).click();
       await expect(
         root.getByRole("textbox", { name: "Other address (optional)", exact: true }),
       ).toBeVisible();

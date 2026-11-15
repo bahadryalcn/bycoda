@@ -47,6 +47,28 @@ async function describeLocalHost(): Promise<HostDescriptor | null> {
   );
 }
 
+/** The Host's https Quick Tunnel origin from `environment.describe`, if it published one. */
+async function publishedTunnelEndpoint(machine: RemoteMachine): Promise<string | undefined> {
+  const host = await remoteRequest<HostDescriptor>(
+    machine.id,
+    "environment.describe",
+    {},
+    false,
+    false,
+    machine.environmentId,
+  );
+  return host.mobileRoutes?.find((route) => {
+    try {
+      const url = new URL(route.endpoint);
+      return (
+        !route.lanKey && url.protocol === "https:" && url.hostname.endsWith(".trycloudflare.com")
+      );
+    } catch {
+      return false;
+    }
+  })?.endpoint;
+}
+
 /**
  * While signed in and "Let my signed-in phones find this computer" is on: publishes this
  * computer's phone routes to the account and asks the owner before a signed-in phone or computer is allowed
@@ -81,7 +103,11 @@ export function PhoneAccountConnect() {
           api,
           desktopDeviceId: deviceId,
           environmentId: machine.environmentId,
-          createPairingCode: () => createAccountPairingCode(machine),
+          createPairingCode: () =>
+            createAccountPairingCode(machine, undefined, {
+              requester: request.requesterKind === "desktop" ? "desktop" : "phone",
+              tunnelEndpoint: () => publishedTunnelEndpoint(machine),
+            }),
         });
       },
       ask: (request, approve) =>

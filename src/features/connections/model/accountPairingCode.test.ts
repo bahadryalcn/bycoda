@@ -62,4 +62,59 @@ describe("createAccountPairingCode", () => {
       ),
     ).rejects.toThrow("Phone access is not set up");
   });
+
+  describe("for a requesting computer", () => {
+    const tunnel = "https://quiet-fox.trycloudflare.com";
+    const none = {
+      tailscale: { state: "setup-required" },
+      lan: { state: "setup-required" },
+    } as const;
+
+    it("uses the published tunnel when no phone listener is ready", async () => {
+      const mocked = api({ ...none });
+      const { code } = await createAccountPairingCode(machine, mocked, {
+        requester: "desktop",
+        tunnelEndpoint: async () => tunnel,
+      });
+      expect(code).toMatchObject({ endpoint: tunnel, environmentId: "env-1" });
+      expect(mocked.create).toHaveBeenCalledOnce();
+    });
+
+    it("still prefers Tailscale and LAN, and survives a failed LAN check", async () => {
+      const tunnelEndpoint = vi.fn(async () => tunnel);
+      const { code } = await createAccountPairingCode(machine, api({ tailscale, lan }), {
+        requester: "desktop",
+        tunnelEndpoint,
+      });
+      expect(code).toMatchObject({ endpoint: "https://desk.tail.ts.net" });
+      expect(tunnelEndpoint).not.toHaveBeenCalled();
+      const fallback = await createAccountPairingCode(
+        machine,
+        api({ tailscale: new Error("x"), lan: new Error("y") }),
+        { requester: "desktop", tunnelEndpoint: async () => tunnel },
+      );
+      expect(fallback.code).toMatchObject({ endpoint: tunnel });
+    });
+
+    it("fails without issuing a ticket when there is no tunnel either", async () => {
+      const mocked = api({ ...none });
+      await expect(
+        createAccountPairingCode(machine, mocked, {
+          requester: "desktop",
+          tunnelEndpoint: async () => undefined,
+        }),
+      ).rejects.toThrow("Phone access is not set up");
+      expect(mocked.create).not.toHaveBeenCalled();
+    });
+
+    it("never gives a phone the tunnel", async () => {
+      const mocked = api({ ...none });
+      await expect(
+        createAccountPairingCode(machine, mocked, {
+          requester: "phone",
+          tunnelEndpoint: async () => tunnel,
+        }),
+      ).rejects.toThrow("Phone access is not set up");
+    });
+  });
 });

@@ -656,6 +656,7 @@ pub fn run() {
             handoff_history::handoff_history_save,
             handoff_history::handoff_history_read,
             remote::remote_disconnect,
+            remote::remote_close_connection,
             remote::remote_request,
             remote::assistant_native_send,
             remote::assistant_native_finish,
