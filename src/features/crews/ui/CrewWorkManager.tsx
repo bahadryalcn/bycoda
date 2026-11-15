@@ -21,6 +21,7 @@ import {
 import { CrewWorkDetail } from "./CrewWorkDetail";
 import { CrewWorkList, type CrewWorkView } from "./CrewWorkList";
 import { useCrewMachineScope } from "./CrewMachineScope";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 const CrewEditDialog = lazySurface(async () => ({
   default: (await import("./CrewDialogs")).CrewEditDialog,
@@ -153,9 +154,7 @@ export function CrewWorkManager({
         sessionId,
       });
       onClose?.();
-    }).catch((reason: unknown) =>
-      setError(reason instanceof Error ? reason.message : String(reason)),
-    );
+    }).catch((reason: unknown) => setError(presentRemoteError(reason, { explicit: true })));
   };
   const subPage =
     page === "edit" ? (

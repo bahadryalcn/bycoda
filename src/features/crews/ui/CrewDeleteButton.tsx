@@ -6,6 +6,7 @@ import { Trash2 } from "../../../shared/ui/icons";
 import type { CrewDefinition } from "../model/crew";
 import type { useProjectCrews } from "../model/crewClient";
 import { saveCrewAppearance } from "../model/crewAppearance";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** Deletes a saved crew after confirmation; hosts without delete show nothing. */
 export function CrewDeleteButton({
@@ -45,7 +46,7 @@ export function CrewDeleteButton({
             saveCrewAppearance(crew.id, { icon: undefined, color: undefined });
             onDeleted?.();
           } catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
+            setError(presentRemoteError(reason, { explicit: true }));
             throw reason;
           } finally {
             onPendingChange?.(false);

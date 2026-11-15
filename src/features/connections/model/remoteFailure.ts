@@ -1,3 +1,4 @@
+import { t } from "../../../shared/i18n";
 import { TimeoutError } from "../../../shared/lib/withTimeout";
 
 /** Why a request to a connected machine failed, as far as the user can act on it. */
@@ -106,7 +107,8 @@ export function presentRemoteError(
   options: { explicit?: boolean } = {},
 ): string | undefined {
   if (!options.explicit && isTransientTransportError(error)) return undefined;
-  return classifyRemoteError(error).message;
+  // An error with no text still needs a visible message.
+  return classifyRemoteError(error).message || t("Something went wrong. Try again.");
 }
 
 /** How long to wait before asking an unreachable machine again, given how

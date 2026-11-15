@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useId, useRef, useState } from "react";
 import type {
   AssistantJob,
@@ -161,8 +162,7 @@ export function JobOwnerEditDialog({
       localStorage.removeItem(key);
       onSaved();
     } catch (cause) {
-      if (alive.current && live())
-        setError(cause instanceof Error ? t(cause.message) : String(cause));
+      if (alive.current && live()) setError(t(presentRemoteError(cause, { explicit: true })));
     } finally {
       busy.current = false;
       setPending(false);

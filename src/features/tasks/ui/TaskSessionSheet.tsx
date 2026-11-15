@@ -15,6 +15,7 @@ import { remoteRequest } from "../../connections/public/connections";
 import type { HostSession } from "../../connections";
 import type { BackgroundSessionTarget } from "../model/backgroundSession";
 import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** Host-owned transcript preview. Navigation only happens through the explicit action. */
 export function TaskSessionSheet({
@@ -59,7 +60,9 @@ export function TaskSessionSheet({
         if (known.status === "running") timer = setTimeout(load, 3000);
       } catch (reason) {
         if (alive) {
-          setError(reason instanceof Error ? reason.message : String(reason));
+          // The poll retries itself; a passing outage is covered by the global notice.
+          const message = presentRemoteError(reason);
+          if (message) setError(message);
           if (!known || known.status === "running") timer = setTimeout(load, 3000);
         }
       }
@@ -124,7 +127,7 @@ export function TaskSessionSheet({
                 await onOpen(target);
                 onClose();
               } catch (reason) {
-                setError(reason instanceof Error ? reason.message : String(reason));
+                setError(presentRemoteError(reason, { explicit: true }));
               } finally {
                 openingRequest.current = false;
                 setOpening(false);

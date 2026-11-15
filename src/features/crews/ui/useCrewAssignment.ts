@@ -8,6 +8,7 @@ import {
   type BulkAssignmentPlan,
 } from "../model/crewAssignment";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
@@ -72,7 +73,7 @@ export function useCrewAssignment(state: CrewState, data: ProjectCrews) {
         setErrors((current) => ({ ...current, [key]: result.skipped[0]!.reason }));
       return result;
     } catch (reason) {
-      const message = reason instanceof Error ? reason.message : String(reason);
+      const message = presentRemoteError(reason, { explicit: true });
       setErrors((current) => ({ ...current, [key]: message }));
       return undefined;
     } finally {

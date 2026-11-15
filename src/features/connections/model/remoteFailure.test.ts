@@ -135,6 +135,13 @@ describe("classifyRemoteError", () => {
 });
 
 describe("presentRemoteError", () => {
+  it("never returns an empty message for an error without text", () => {
+    expect(presentRemoteError(new Error(""), { explicit: true })).toBe(
+      "Something went wrong. Try again.",
+    );
+    expect(presentRemoteError(new Error(""))).toBe("Something went wrong. Try again.");
+  });
+
   it.each([
     "RPC_WS_INTERRUPTED: Host connection was interrupted",
     "Connection changed while the request was running. Its outcome is unknown; refresh before retrying an action.",

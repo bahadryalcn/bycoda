@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -33,6 +34,7 @@ import {
   retryOwnerQuestionPresentation,
   type OwnerQuestionPresentation,
 } from "../model/assistantOwnerQuestionPresentations";
+const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem" | "removeItem">;
 type Props = {
@@ -291,7 +293,7 @@ function OwnerQuestionCard({
       complete(value);
     } catch (cause) {
       if (alive.current) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(actionError(cause));
         setPending(false);
       }
     } finally {
@@ -318,7 +320,7 @@ function OwnerQuestionCard({
       )
         setResolved(result.ownerQuestion);
     } catch (cause) {
-      if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (alive.current) setError(actionError(cause));
     } finally {
       checking.current = false;
       if (alive.current) setPending(false);

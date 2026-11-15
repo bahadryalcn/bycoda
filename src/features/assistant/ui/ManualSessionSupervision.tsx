@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -158,7 +159,7 @@ export function ManualSessionSupervision({
       else await onOpenSession(sessionId);
     } catch (cause) {
       if (generation === navigation.current)
-        setOpenError(cause instanceof Error ? cause.message : String(cause));
+        setOpenError(presentRemoteError(cause, { explicit: true }));
     } finally {
       if (generation === navigation.current) setOpening("");
     }

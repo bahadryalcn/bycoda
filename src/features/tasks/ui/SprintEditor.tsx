@@ -19,6 +19,7 @@ import {
 } from "../model/hostSprints";
 import { dateNumber, dateValue } from "../model/sprintDates";
 import "./sprints.css";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** Create or edit one sprint. The caller owns persistence and revisions; this only collects fields. */
 export function SprintEditor({
@@ -113,7 +114,7 @@ export function SprintEditor({
               ),
             });
           } catch (reason) {
-            setError(reason instanceof Error ? reason.message : String(reason));
+            setError(presentRemoteError(reason, { explicit: true }));
           } finally {
             pending.current = false;
             setBusy(false);

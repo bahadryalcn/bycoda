@@ -1,5 +1,6 @@
 import type { BoardTask } from "./taskClient";
 import { hasUnmergedBranch, orderTasksForDeletion, taskRequiresInstructions } from "./taskRules";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export type TaskBulkAction = "delete" | "start" | "stop" | "retry";
 export type TaskBulkResult = {
@@ -85,7 +86,7 @@ export async function runTaskBulkAction(
             result = {
               task,
               status: "failed",
-              reason: error instanceof Error ? error.message : String(error),
+              reason: presentRemoteError(error, { explicit: true }),
             };
           }
         }

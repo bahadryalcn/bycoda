@@ -11,6 +11,7 @@ import { commonCandidate } from "../model/crewBulk";
 import { CrewBulkModelBar } from "./CrewBulkModelBar";
 import { CrewBulkTeamAdd } from "./CrewLibraryTeams";
 import type { CrewAssignment } from "./useCrewAssignment";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 export type BulkFailure = { name: string; reason: string };
@@ -44,7 +45,7 @@ export async function applyCandidateToProfiles(
     } catch (reason) {
       failures.push({
         name: agent.name,
-        reason: reason instanceof Error ? reason.message : String(reason),
+        reason: presentRemoteError(reason, { explicit: true }),
       });
     }
   }

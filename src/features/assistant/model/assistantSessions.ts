@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HostSession } from "../../connections/model/protocol";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { captureAssistantHostRead, type AssistantHostRead } from "./assistantHostRead";
 export type AssistantSessionRecord = HostSession & { environmentId: string };
 
@@ -63,7 +64,7 @@ export function useAssistantSession(
           key: bindingKey,
           record: current.key === bindingKey ? current.record : null,
           loading: false,
-          error: cause instanceof Error ? cause.message : String(cause),
+          error: presentRemoteError(cause) ?? current.error,
         }));
     } finally {
       if (epoch.current === request) inFlight.current = false;

@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Code } from "../../../shared/ui/Code";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
@@ -13,6 +14,7 @@ import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { InlineError } from "../../../shared/ui/InlineError";
 import styles from "./AssistantRemoteAccess.module.css";
+const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
 
 type NativeIdentity = {
   installationId: string;
@@ -81,7 +83,7 @@ export function AssistantRemoteAccess({
     try {
       setIdentity(await invoke<NativeIdentity>("room_delegation_native_identity"));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(actionError(cause));
     } finally {
       setPending(false);
     }
@@ -119,7 +121,7 @@ export function AssistantRemoteAccess({
       localStorage.removeItem(requestKey(draftKey));
       setRequest(undefined);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = actionError(cause);
       if (message === "Room delegation cancelled") {
         localStorage.removeItem(requestKey(draftKey));
         setRequest(undefined);
@@ -147,7 +149,7 @@ export function AssistantRemoteAccess({
         `${t("Original request")}: ${status.state}${status.result?.grantId ? ` (${status.result.grantId})` : ""}`,
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(actionError(cause));
     } finally {
       setPending(false);
     }
@@ -167,7 +169,7 @@ export function AssistantRemoteAccess({
       setRetainedGrant("");
       setResult(t("Original grant revoked."));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(actionError(cause));
     } finally {
       setPending(false);
     }
@@ -193,9 +195,7 @@ export function AssistantRemoteAccess({
                   !projectId.trim()
                 }
                 onClick={() => {
-                  void connect().catch((cause: unknown) =>
-                    setError(cause instanceof Error ? cause.message : String(cause)),
-                  );
+                  void connect().catch((cause: unknown) => setError(actionError(cause)));
                 }}
               >
                 {t("Connect")}
@@ -273,9 +273,7 @@ export function AssistantRemoteAccess({
                   <Button
                     disabled={pending}
                     onClick={() => {
-                      void inspect().catch((cause: unknown) =>
-                        setError(cause instanceof Error ? cause.message : String(cause)),
-                      );
+                      void inspect().catch((cause: unknown) => setError(actionError(cause)));
                     }}
                   >
                     {t("Inspect request")}
@@ -285,7 +283,7 @@ export function AssistantRemoteAccess({
                       disabled={pending}
                       onClick={() => {
                         void revokeRetained().catch((cause: unknown) =>
-                          setError(cause instanceof Error ? cause.message : String(cause)),
+                          setError(actionError(cause)),
                         );
                       }}
                     >
@@ -312,9 +310,7 @@ export function AssistantRemoteAccess({
                 loading={pending}
                 disabled={pending}
                 onClick={() => {
-                  void showIdentity().catch((cause) =>
-                    setError(cause instanceof Error ? cause.message : String(cause)),
-                  );
+                  void showIdentity().catch((cause) => setError(actionError(cause)));
                 }}
               >
                 {t("Show native identity for owner enrollment")}

@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { beginAssistantDraftOperation } from "../../model/assistantDraftFlush";
 import {
   preserveAssistantDraft,
@@ -15,6 +16,7 @@ import {
   type ConversationPanelProps,
   type ConversationPanelState,
 } from "./useConversationPanelState";
+const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
 
 export type ConversationPanelMessagesState = ReturnType<typeof useConversationPanelMessages>;
 
@@ -95,8 +97,14 @@ export function useConversationPanelMessages(
       setHasMore((current) => ({ ...current, [id]: list.length === 100 }));
       setLoadedThreads((current) => (current[id] ? current : { ...current, [id]: true }));
     } catch (cause) {
-      if (sequence === messageLoadSequence.current && selected.current === id && threadVisible(id))
-        setError(cause instanceof Error ? t(cause.message) : String(cause));
+      const message = presentRemoteError(cause);
+      if (
+        message &&
+        sequence === messageLoadSequence.current &&
+        selected.current === id &&
+        threadVisible(id)
+      )
+        setError(t(message));
       if (sequence === messageLoadSequence.current)
         setLoadedThreads((current) => (current[id] ? current : { ...current, [id]: true }));
     } finally {
@@ -157,7 +165,7 @@ export function useConversationPanelMessages(
       });
       if (result.thread) setThreadId(result.thread.id);
     } catch (cause) {
-      setError(cause instanceof Error ? t(cause.message) : String(cause));
+      setError(t(actionError(cause)));
     } finally {
       setPending(false);
     }
@@ -196,7 +204,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: cause instanceof Error ? t(cause.message) : String(cause),
+              error: t(actionError(cause)),
             }
           : current,
       );
@@ -212,7 +220,7 @@ export function useConversationPanelMessages(
       loading: true,
     });
     void loadDraftBackups(threadId, environmentId).catch((cause: unknown) =>
-      setError(cause instanceof Error ? t(cause.message) : String(cause)),
+      setError(t(actionError(cause))),
     );
   }
   async function selectDraftBackup(hash: string) {
@@ -254,7 +262,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: cause instanceof Error ? t(cause.message) : String(cause),
+              error: t(actionError(cause)),
             }
           : current,
       );
@@ -328,7 +336,7 @@ export function useConversationPanelMessages(
           ? {
               ...current,
               loading: false,
-              error: cause instanceof Error ? t(cause.message) : String(cause),
+              error: t(actionError(cause)),
             }
           : current,
       );

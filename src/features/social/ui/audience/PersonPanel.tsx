@@ -35,6 +35,7 @@ import {
   type PatchSaver,
 } from "./PersonPanelSections";
 import "./audience.css";
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 
 export type PersonPanelProps = {
   client: SocialClient;
@@ -103,7 +104,7 @@ export function PersonPanel({
       onChanged(updated);
       return true;
     } catch (err) {
-      setError(errorMessage(err));
+      setError(presentRemoteError(err, { explicit: true }));
       return false;
     } finally {
       setBusy(false);

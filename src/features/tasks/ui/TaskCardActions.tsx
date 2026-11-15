@@ -34,6 +34,7 @@ import {
 } from "../../../shared/ui/icons";
 import { isStewardProposal } from "../model/stewardClient";
 import "./task-board.css";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export type TaskActionHandlers = {
   pending?: boolean;
@@ -119,7 +120,7 @@ export function TaskActions({
         setReviewPending(true);
         setReviewError(null);
         void onReviewWorkspace()
-          .catch((cause) => setReviewError(cause instanceof Error ? cause.message : String(cause)))
+          .catch((cause) => setReviewError(presentRemoteError(cause, { explicit: true })))
           .finally(() => setReviewPending(false));
       },
     });

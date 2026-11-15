@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { surfaceAttributes } from "../../../../shared/ui/Surface";
 import { Text } from "../../../../shared/ui/Text";
 import { isTauri } from "@tauri-apps/api/core";
@@ -89,8 +90,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
     loaded: Boolean(loadedThreads[threadId]),
     visibleCount: visible.length,
   });
-  const reportFailure = (cause: unknown) =>
-    setError(cause instanceof Error ? cause.message : String(cause));
+  const reportFailure = (cause: unknown) => setError(presentRemoteError(cause, { explicit: true }));
   return (
     <div className={styles.layout}>
       <ConversationThreadList c={c} onFailure={reportFailure} />

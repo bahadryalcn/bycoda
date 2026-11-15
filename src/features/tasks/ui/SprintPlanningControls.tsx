@@ -8,6 +8,7 @@ import { sprintTaskKey } from "../model/hostSprints";
 import { STORY_POINTS, type SprintBoardController } from "../model/sprintClient";
 import type { BoardTask } from "../model/taskClient";
 import "./tasks-shell.css";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export function SprintPlanningControls({
   board,
@@ -72,7 +73,7 @@ export function SprintPlanningControls({
             {
               id: JSON.stringify([task.machineId, task.projectId, task.id]),
               title: task.title,
-              error: reason instanceof Error ? reason.message : String(reason),
+              error: presentRemoteError(reason, { explicit: true }),
             },
           ]);
         }

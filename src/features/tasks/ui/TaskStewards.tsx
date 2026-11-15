@@ -35,6 +35,7 @@ import { machineName } from "./TaskFormFields";
 import { StewardForm } from "./TaskStewardForm";
 import { StewardRow } from "./TaskStewardRow";
 import "./task-ops.css";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 /** The stewards above the board: one row per project with its schedule and
  * last run, and the form that adds or edits one. */
@@ -255,7 +256,7 @@ export function useTaskStewards({
       setError(null);
       void refresh();
     } catch (reason: unknown) {
-      const message = reason instanceof Error ? reason.message : String(reason);
+      const message = presentRemoteError(reason, { explicit: true });
       setError(message);
       setSaveError(message);
     } finally {

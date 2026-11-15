@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { t } from "../../../../shared/i18n";
@@ -102,8 +103,7 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
   const ready = !native || c.nativeDraftReady === c.nativeDraftKey;
   const draft =
     !native || c.nativeDraftDisplayed === c.nativeDraftKey ? (c.drafts[c.threadId] ?? "") : "";
-  const fail = (cause: unknown) =>
-    c.setError(cause instanceof Error ? cause.message : String(cause));
+  const fail = (cause: unknown) => c.setError(presentRemoteError(cause, { explicit: true }));
   const canReview =
     latest?.role === "assistant" &&
     !c.pending &&

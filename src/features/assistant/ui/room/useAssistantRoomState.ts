@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useEffect, useRef, useState } from "react";
 import type {
   AssistantJob,
@@ -41,6 +42,7 @@ import {
   type Pending,
   type JobDraft,
 } from "./assistantRoomHelpers";
+const actionError = (cause: unknown) => presentRemoteError(cause, { explicit: true });
 
 export type AssistantRoomCore = ReturnType<typeof useAssistantRoomState>;
 
@@ -321,11 +323,8 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
           if (!cancelled) setMemorySearch({ query, results: result.entries ?? [], settled: false });
         })
         .catch((cause) => {
-          if (!cancelled)
-            setError({
-              key: "memory.search",
-              text: cause instanceof Error ? cause.message : String(cause),
-            });
+          const text = presentRemoteError(cause);
+          if (!cancelled && text) setError({ key: "memory.search", text });
         })
         .finally(() => {
           if (!cancelled)
@@ -395,7 +394,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
       if (epoch === scopeEpoch.current.value)
         setError({
           key,
-          text: cause instanceof Error ? cause.message : String(cause),
+          text: actionError(cause),
         });
       return false;
     } finally {
@@ -415,7 +414,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     } catch (cause) {
       setError({
         key: "pauseAll",
-        text: cause instanceof Error ? cause.message : String(cause),
+        text: actionError(cause),
       });
     } finally {
       stoppingRef.current = false;

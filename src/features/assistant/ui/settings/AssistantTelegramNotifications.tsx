@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../../connections/public/remoteFailure";
 import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import type {
@@ -45,7 +46,7 @@ export function AssistantTelegramNotifications({
       setTargets(result.notificationTargets);
       setLoaded(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       setPending(false);
     }

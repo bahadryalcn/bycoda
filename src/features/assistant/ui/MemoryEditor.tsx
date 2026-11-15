@@ -1,3 +1,4 @@
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useId, useRef, useState } from "react";
 import type { AssistantMemory } from "../../../shared/model/host-contracts/assistant";
@@ -64,7 +65,7 @@ export function MemoryEditor({
       )
         onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(presentRemoteError(cause, { explicit: true }));
     } finally {
       setPending(false);
     }

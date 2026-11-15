@@ -19,6 +19,7 @@ import {
   retryableTasks,
   settleOwnerRequest,
 } from "../model/crewOwnerActions";
+import { presentRemoteError } from "../../connections/public/remoteFailure";
 
 export type CrewOwnerTools = {
   machineId: string;
@@ -27,7 +28,7 @@ export type CrewOwnerTools = {
   tasksSupported: boolean;
 };
 
-const message = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason));
+const message = (reason: unknown) => presentRemoteError(reason, { explicit: true });
 
 /** Runs one owner action; a failure keeps its request ID, so retrying the same input cannot duplicate. */
 function useOwnerAction() {
