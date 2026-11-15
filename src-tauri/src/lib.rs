@@ -56,6 +56,8 @@ mod keep_awake;
 mod linear;
 mod link_preview;
 mod local_host;
+#[path = "remote/discovery/mod.rs"]
+mod machine_discovery;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -587,6 +589,7 @@ pub fn run() {
             native_editor_drafts::native_editor_draft_inventory,
             native_editor_drafts::native_editor_draft_clear_saved,
             remote::remote_machines,
+            machine_discovery::discover_machine_candidates,
             server_inventory::server_inventory_list,
             termius_import::termius_import_preview,
             termius_import::termius_import_apply,
