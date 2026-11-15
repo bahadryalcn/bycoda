@@ -134,7 +134,9 @@
 .root[data-variant="step"] > .summary {
   min-block-size: var(--ui-control-height-xs);
   padding-inline: 0.5rem;
-  border-radius: var(--ui-radius-control);
+  border-radius: var(--ui-radius-row);
+  /* A step summary is interface text even inside a monospace log region. */
+  font-family: var(--font-sans);
 }
 .root[data-variant="step"] > .summary > .label {
   display: flex;

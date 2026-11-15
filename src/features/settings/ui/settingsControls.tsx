@@ -127,6 +127,27 @@ export function SettingsFeedback(props: SettingsFeedbackProps) {
   );
 }
 
+/** One info (ⓘ) affordance per title: a hidden description and a plain-string `info` share one popover. */
+function HelpSlot({ description, info }: { description?: ReactNode; info: ReactNode }) {
+  if (description == null || description === "") return <InfoSlot info={info} />;
+  if (info != null && typeof info !== "string") {
+    return (
+      <>
+        <InfoPopover className="shrink-0">
+          <p>{description}</p>
+        </InfoPopover>
+        <InfoSlot info={info} />
+      </>
+    );
+  }
+  return (
+    <InfoPopover className="shrink-0">
+      <p>{description}</p>
+      {info ? <p>{info}</p> : null}
+    </InfoPopover>
+  );
+}
+
 /** A plain-string `info` becomes the standard info popover; custom nodes render as given. */
 function InfoSlot({ info }: { info: ReactNode }) {
   return typeof info === "string" ? (
@@ -469,12 +490,7 @@ export function Group({
             >
               {title}
             </Heading>
-            {hasInfo ? (
-              <InfoPopover className="shrink-0">
-                <p>{description}</p>
-              </InfoPopover>
-            ) : null}
-            <InfoSlot info={info} />
+            <HelpSlot description={hasInfo ? description : undefined} info={info} />
             {modified && onReset ? (
               <SettingResetButton onReset={onReset} label={resetLabel} />
             ) : null}
@@ -654,12 +670,7 @@ export function Row({
               {label}
             </Text>
           )}
-          {hasInfo ? (
-            <InfoPopover className="shrink-0">
-              <p>{description}</p>
-            </InfoPopover>
-          ) : null}
-          <InfoSlot info={info} />
+          <HelpSlot description={hasInfo ? description : undefined} info={info} />
           {modified && onReset ? (
             <SettingResetButton onReset={onReset} label={resetLabel} disabled={inactive} />
           ) : null}

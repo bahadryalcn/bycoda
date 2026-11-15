@@ -173,9 +173,9 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
         <Row
           id="keep-awake"
           label={t("Prevent sleep while agents work")}
-          description={t("Keep this computer awake while an agent is working.")}
           info={
             <InfoPopover className="shrink-0" label={t("Sleep behavior")}>
+              <p>{t("Keep this computer awake while an agent is working.")}</p>
               <p>{sleepBehavior}</p>
             </InfoPopover>
           }

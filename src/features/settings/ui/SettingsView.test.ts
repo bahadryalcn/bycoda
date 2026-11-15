@@ -840,7 +840,7 @@ describe("settings pages", () => {
     expect(localStorage.getItem("bycoda.keepAwakeScreen")).toBe("1");
 
     const sleepGroup = Array.from(container.querySelectorAll("section")).find((section) =>
-      section.textContent?.includes("Keep this computer awake"),
+      section.querySelector('[data-setting-id="keep-awake"]'),
     )!;
     expect(sleepGroup.querySelector('[data-setting-id="keep-awake"]')).not.toBeNull();
     expect(sleepGroup.querySelector('[data-setting-id="keep-awake-screen"]')).not.toBeNull();
