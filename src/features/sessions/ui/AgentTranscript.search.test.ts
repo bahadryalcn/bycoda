@@ -128,8 +128,7 @@ it("hands a revealed phase group back to its header once navigation settles", as
   act(() => {
     expect(navigate?.("tool-1")).toBe(true);
   });
-  const header = () =>
-    container.querySelector<HTMLButtonElement>('button[aria-label*="the steps for"]')!;
+  const header = () => container.querySelector<HTMLElement>('[aria-label*="the steps for"]')!;
   expect(header().getAttribute("aria-expanded")).toBe("true");
   await act(async () => {
     for (let frame = 0; frame < 3; frame++)

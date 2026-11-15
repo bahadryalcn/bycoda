@@ -3860,8 +3860,7 @@ slow("queues a plain Send while the host turn runs, and sends the messages in or
   expect(queueCard()?.textContent).toContain("second follow-up");
 
   endTurn();
-  // The dispatch stub finishes a turn at once, so the second goes out right
-  // after the first, never together with it.
+  // The stub finishes a turn at once, so the second goes out after the first, never with it.
   await vi.waitFor(() => expect(sends()).toHaveLength(2), { timeout: 8_000 });
   expect(sentTexts()).toEqual(["first follow-up", "second follow-up"]);
 });

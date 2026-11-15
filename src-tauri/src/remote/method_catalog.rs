@@ -7,6 +7,7 @@ pub(super) fn supported_remote_method(method: &str) -> bool {
             | "modelRouting.save"
             | "modelRouting.status"
             | "assistant.request"
+            | "assistant.ownerActive"
             | "approvals.mirror"
             | "approvals.list"
             | "approvals.decide"

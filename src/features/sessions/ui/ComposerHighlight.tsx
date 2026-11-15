@@ -138,6 +138,7 @@ export const ComposerHighlight = memo(function ComposerHighlight({
 /** The draft text of the link holding the caret or selection, which then shows in full. */
 function useEditedLink(text: string, field?: RefObject<HTMLTextAreaElement | null>) {
   const [selection, setSelection] = useState<string | null>(null);
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- mirrors the textarea caret via DOM selection and focus listeners
   useEffect(() => {
     const el = field?.current;
     if (!el) return;

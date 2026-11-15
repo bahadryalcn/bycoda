@@ -606,8 +606,7 @@ function ConnectedRemoteSession({
   // Why the last Send was not taken; shown until the next one is.
   const [refusal, setRefusal] = useState("");
   const lastFailureClass = useRef<CommandFailureClass | undefined>(undefined);
-  // Ticks that re-run the pending check: the machine came back, the window
-  // gained focus, or a backoff timer fired.
+  // Ticks that re-run the pending check: machine back, window focused, or backoff fired.
   const [recoveryTick, setRecoveryTick] = useState(0);
   const [focusTick, setFocusTick] = useState(0);
   const [retryTick, setRetryTick] = useState(0);
@@ -761,8 +760,7 @@ function ConnectedRemoteSession({
     !!descriptor?.capabilities.includes("sessions.steer") &&
     !!hostSession &&
     ["codex", "claude", "cursor", "opencode", "pi", "omp", "hermes"].includes(hostSession.harness);
-  // A draft being removed leaves the transcript at once, as it does locally,
-  // and returns if the host turns the removal down.
+  // A removed draft leaves the transcript at once and returns if the host refuses.
   const [removingDraft, setRemovingDraft] = useState<string>();
   // An accepted turn stays on screen until a sync shows the host's copy, so
   // the transcript never drops it for a moment in between. What is shown is
