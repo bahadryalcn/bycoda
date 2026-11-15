@@ -47,3 +47,18 @@ unknown retirement never grants replacement authority. Publish credential-free
 routes through the existing desktop account publisher. Native route learning
 requires the same environmentId over HTTPS before any device credential is sent.
 Managed/named tunnels and paid infrastructure remain outside this contract.
+
+## Machine discovery and account pairing
+
+Recorded 2026-11-15 from owner decisions on the machine-discovery plan.
+
+> manuel ekleme özelliğinide bırakalım bunu kapalı gösteririz otomatik taramayıda sunucu üzerinden yaparız
+
+> her seferinde farklı cloudflare adresi olsa ücretisz olsa giriş yapanların adresleri telefondan girince güncellense
+
+Manual add stays but is collapsed under "Advanced" by default. Automatic discovery
+comes from the account server first, with Tailscale and ssh-config candidates as
+secondary sources; discovery never sends credentials and only proposes. Changing
+free Quick Tunnel URLs are published to the account, so signed-in devices follow them
+without manual entry. Account pairing requires the other computer to allow it and to
+show the matching six-digit code; the account only relays sealed data.
