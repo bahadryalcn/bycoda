@@ -54,6 +54,23 @@ fn probe_answers_for_any_http_status_and_fails_for_a_dead_port() {
 }
 
 #[test]
+fn probe_waits_for_a_slow_host_instead_of_calling_the_tunnel_dead() {
+    use std::io::{Read, Write};
+    use tunnel_probe::{probe_once, Probe, PROBE_TIMEOUT};
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut buffer = [0; 512];
+        let _ = stream.read(&mut buffer);
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+    });
+    assert_eq!(probe_once(port, PROBE_TIMEOUT), Probe::Answered);
+    server.join().unwrap();
+}
+
+#[test]
 fn job_remains_readable_and_writable_after_mutex_poison() {
     let job = Job::new();
     let poisoned = job.clone();

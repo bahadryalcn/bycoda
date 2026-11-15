@@ -12,7 +12,7 @@ import {
   stewardBulkDeleteKeys,
   taskBulkDeleteKeys,
 } from "../transport/http/bulk";
-import { StreamDeltaEncoder } from "../sync/stream-delta";
+import { StreamDeltaEncoder, tailStreamKey, tailStreamSessionId } from "../sync/stream-delta";
 import { HostSubscriptionHub } from "../transport/ws/subscriptions";
 import type { ServerBindings } from "./bindings";
 export function createSubscriptionsRuntime(
@@ -154,7 +154,8 @@ export function createSubscriptionsRuntime(
                   dependencies.engine.store.projectVersion(projectId),
                 );
             }
-            const tailKey = target.tail === true ? `${principalId}:${target.sessionId}` : undefined;
+            const tailKey =
+              target.tail === true ? tailStreamKey(principalId, target.sessionId) : undefined;
             // An incremental read of a windowed tail stream keeps the window's first block.
             const windowStart =
               tailKey && !context.forceSnapshot
@@ -215,7 +216,7 @@ export function createSubscriptionsRuntime(
     const sessions = new Set(
       targets.flatMap((target) => (target.kind === "session" ? [target.sessionId] : [])),
     );
-    streamDeltas.retain((key) => sessions.has(key.slice(key.indexOf(":") + 1)));
+    streamDeltas.retain((key) => sessions.has(tailStreamSessionId(key)));
     for (const id of streamProjects.keys()) if (!sessions.has(id)) streamProjects.delete(id);
     for (const id of streamSessionVersions.keys())
       if (!sessions.has(id)) streamSessionVersions.delete(id);

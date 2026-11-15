@@ -659,7 +659,7 @@ pub fn pairing_script(platform: HostPlatform, name: &str) -> String {
 /// window drops the tunnel in every short sleep and wake cycle of a laptop.
 const TUNNEL_KEEPALIVE_SECS: u32 = 15;
 /// How often a tunnel's ssh process is checked for having exited. Keepalives
-/// take ~15 s to notice a dead link anyway; 1 s keeps idle tunnels cheap.
+/// take ~45 s to notice a dead link anyway; 1 s keeps idle tunnels cheap.
 const WATCH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A tunnel whose ssh process ended without the app closing it.

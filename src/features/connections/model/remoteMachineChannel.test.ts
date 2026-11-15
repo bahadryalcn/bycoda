@@ -4,6 +4,7 @@ import { notifyRemoteRecovered } from "./remoteHealth";
 import { bindMachineEnvironment } from "./remoteLifecycle";
 import { cachedRemoteCapabilities, remoteRequest } from "./connections";
 import {
+  MachineChannelStreamError,
   acquireRemoteHostRuntime,
   resetRemoteMachineChannelsForTests,
   subscribeRemoteMachineChannel,
@@ -946,6 +947,36 @@ it("acknowledges a delta whose transcript read is still in flight as deferred wi
   stop();
 });
 
+it("accepts the consumer baseline advanced by the follow-up read after a deferred receipt", async () => {
+  const { emit, calls } = nativeFixture("ws-deferred-rebase");
+  let observedRevision = 4;
+  const onError = vi.fn();
+  const listener = vi.fn((changes: import("./protocol").MachineChanges) =>
+    changes.sessions[0].revision === 6
+      ? { deferred: true as const }
+      : { appliedRevision: changes.sessions[0].revision },
+  );
+  const stop = subscribeRemoteMachineChannel(
+    "ws-deferred-rebase",
+    () => ({ inlineSync: true, sessions: [{ sessionId: "s", revision: observedRevision }] }),
+    listener,
+    onError,
+  );
+  await flushNative();
+  emit("session", "s", streamView(5));
+  await flushNative();
+  emit("session", "s", streamDelta(5, 6), 2, "delta");
+  await flushNative();
+  // The consumer's follow-up read applied revision 6 on its own.
+  observedRevision = 6;
+  emit("session", "s", streamDelta(6, 7), 3, "delta");
+  await flushNative();
+  expect(listener).toHaveBeenCalledTimes(3);
+  expect(onError).not.toHaveBeenCalled();
+  expect(calls("subscriptions.open")).toHaveLength(1);
+  stop();
+});
+
 it("opens a tail stream only on a capable host and rebuilds its compact deltas", async () => {
   const { emit, calls } = nativeFixture("ws-tail");
   vi.mocked(cachedRemoteCapabilities).mockReturnValue([
@@ -1026,6 +1057,7 @@ it("keeps the other WebSocket streams when one consumer fails with a non-transpo
   emit("session", "s", streamView(5), 3);
   await flushNative();
   expect(errors).toHaveBeenCalledOnce();
+  expect(errors.mock.calls[0]![0]).toBeInstanceOf(MachineChannelStreamError);
   const projectOpens = calls("subscriptions.open").filter(
     ([, params]) => (params as { target: { kind: string } }).target.kind === "project",
   );

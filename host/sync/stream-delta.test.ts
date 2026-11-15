@@ -6,7 +6,7 @@ import {
   rememberStreamDelta,
   rememberStreamSnapshot,
 } from "../../src/features/connections/model/sessionStreamDelta";
-import { StreamDeltaEncoder } from "./stream-delta";
+import { StreamDeltaEncoder, tailStreamKey, tailStreamSessionId } from "./stream-delta";
 
 const view = (revision: number, texts: Record<string, string>, history = false) =>
   ({
@@ -119,4 +119,15 @@ it("rejects an append that does not follow the receiver's text", () => {
     ),
   ).toThrow("previous text");
   expect(() => expandStreamDelta({ blocks: [] }, createStreamDeltaState())).toThrow("block list");
+});
+
+it("keeps a stream whose principal id contains colons while its session is subscribed", () => {
+  const encoder = new StreamDeltaEncoder();
+  const key = tailStreamKey("crew:alpha:7", "session-1");
+  expect(tailStreamSessionId(key)).toBe("session-1");
+  encoder.encode(key, view(4, { w1: "a" }, true));
+  encoder.retain((candidate) => tailStreamSessionId(candidate) === "session-1");
+  expect(encoder.windowStart(key, 4)).toBe("w1");
+  encoder.retain((candidate) => tailStreamSessionId(candidate) === "other");
+  expect(encoder.windowStart(key, 4)).toBeUndefined();
 });

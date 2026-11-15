@@ -14,6 +14,16 @@ type State = {
   firstId?: string;
 };
 
+/** Sender-state key for one principal's tail stream of a session; ids may contain ":". */
+export function tailStreamKey(principalId: string, sessionId: string): string {
+  return JSON.stringify([principalId, sessionId]);
+}
+
+/** The session id inside a `tailStreamKey`. */
+export function tailStreamSessionId(key: string): string {
+  return (JSON.parse(key) as [string, string])[1];
+}
+
 /**
  * Per-stream sender state for the compact delta form of `sessionStreamDelta.ts`.
  * A delta is compacted only when the stream's committed revision equals the

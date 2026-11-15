@@ -2,8 +2,9 @@
 //! that the computer slept so the silence is not read as a dead link.
 use std::time::{Duration, Instant, SystemTime};
 
-/// How long one probe may wait for the Host to answer through the forward.
-pub(super) const PROBE_TIMEOUT: Duration = Duration::from_millis(800);
+/// How long one probe may wait for the Host to answer through the forward. A slow
+/// Host still answers within this; only a silent link exhausts it.
+pub(super) const PROBE_TIMEOUT: Duration = Duration::from_millis(2500);
 /// Probes before a tunnel is declared dead.
 const PROBE_ATTEMPTS: u32 = 2;
 /// Extra probes right after a wake: the network is usually still rejoining.

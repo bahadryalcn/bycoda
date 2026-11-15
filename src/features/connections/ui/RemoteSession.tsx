@@ -99,7 +99,10 @@ import { isModelEnabled } from "../../sessions/public/models";
 import { RemoteBindingGeneration } from "../model/remoteBindingGeneration";
 import { useRemoteModelCatalog } from "../model/useRemoteModelCatalog";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
-import { subscribeRemoteMachineChannel } from "../model/remoteMachineChannel";
+import {
+  MachineChannelStreamError,
+  subscribeRemoteMachineChannel,
+} from "../model/remoteMachineChannel";
 import { ModelSourceContext, type ModelSource } from "../../sessions/public/modelSource";
 import {
   cachedDescriptors,
@@ -1013,6 +1016,12 @@ function ConnectedRemoteSession({
             },
             (reason) => {
               if (stale()) return;
+              if (reason instanceof MachineChannelStreamError) {
+                // One stream refused this consumer; the machine still answers, so
+                // refresh over HTTP without reporting an outage.
+                void poll().catch(() => undefined);
+                return;
+              }
               controlChannelFailed = true;
               setOnline(false);
               reportRemoteMachineStatus(machine.id, false, reason);

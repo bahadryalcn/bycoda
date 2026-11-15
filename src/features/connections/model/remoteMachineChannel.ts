@@ -182,6 +182,13 @@ function failWs(
   }
   schedule(machineId, channel);
 }
+/** A consumer-level stream failure: the machine link itself is fine. */
+export class MachineChannelStreamError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "MachineChannelStreamError";
+  }
+}
 /** A consumer error is not a transport failure: only its own stream falls back to HTTP. */
 function failWsStream(machineId: string, channel: Channel, key: string, error: unknown) {
   if (channel.stopped || channel.wsFailed || !channel.wsSubscriptions.has(key)) return;
@@ -190,7 +197,7 @@ function failWsStream(machineId: string, channel: Channel, key: string, error: u
   channel.wsSubscriptions.delete(key);
   for (const subscriber of channel.subscribers) {
     try {
-      subscriber.onError?.(error);
+      subscriber.onError?.(new MachineChannelStreamError(error));
     } catch {
       /* consumer isolation */
     }
@@ -591,6 +598,11 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                       );
                       if (!input.isCurrent())
                         throw new Error("Host subscription changed during application");
+                      // A deferred delta is applied by the consumer's follow-up read, which
+                      // advances its own revision: forget the stale baseline so the next
+                      // delta is checked against what the consumer actually holds.
+                      if (current.inlineSync === true && receipt && "deferred" in receipt)
+                        subscriber.committedRevisions.delete(id);
                       if (current.inlineSync === true && !(receipt && "deferred" in receipt)) {
                         if (
                           !receipt ||

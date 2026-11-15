@@ -1118,9 +1118,10 @@ fn machine_rpc_for_consumer(
             if let Some(lease) = &lease {
                 // Probe first: a failed request on a live tunnel (a sleep gap, a
                 // slow Host) must not rebuild it.
-                if state.tunnels.invalidate_unless_healthy(&machine.id, lease) {
-                    state.invalidate_ws(&machine.id);
-                }
+                state.tunnels.invalidate_unless_healthy(&machine.id, lease);
+                // Pooled WS links of this machine are retired even when the tunnel
+                // survives, so a half-open socket does not linger.
+                state.invalidate_ws(&machine.id);
             }
         }
         response
