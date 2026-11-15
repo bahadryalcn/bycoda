@@ -3,11 +3,12 @@ import { useT } from "../i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
-import { AlertCircle, ImagePlus, Maximize2, Minus, Plus, X } from "./icons";
+import { ImagePlus, Maximize2, Minus, Plus, X } from "./icons";
 import { useOverlay } from "./overlay";
 import { useImageZoom } from "../hooks/useImageZoom";
 import { ImageCompare } from "./ImageCompare";
 import { Button } from "./Button";
+import { InlineError, InlineMessage } from "./InlineError";
 import { Spinner } from "./Spinner";
 import { MediaToolbar, MediaToolbarButton } from "./MediaToolbar";
 
@@ -168,12 +169,8 @@ function ImageLightboxContent({
             <p>{t("Loading image preview…")}</p>
           </div>
         ) : unavailable ? (
-          <div
-            role="alert"
-            className="text-ui-secondary text-on-solid flex max-w-[40rem] flex-col items-center gap-3 text-center"
-          >
-            <AlertCircle className="icon-lg" aria-hidden />
-            <p className="break-words">{error}</p>
+          <div className="flex max-w-[40rem] flex-col items-center gap-3 text-center">
+            <InlineError overlay>{error}</InlineError>
             {onRetry ? (
               <Button ref={retryRef} data-lightbox-focus="" variant="secondary" onClick={onRetry}>
                 {t("Retry")}
@@ -181,12 +178,8 @@ function ImageLightboxContent({
             ) : null}
           </div>
         ) : failed ? (
-          <div
-            role="alert"
-            className="text-ui-secondary text-on-solid flex flex-col items-center gap-3 text-center"
-          >
-            <AlertCircle className="icon-lg" aria-hidden />
-            <p>{t("Preview unavailable. Try again.")}</p>
+          <div className="flex flex-col items-center gap-3 text-center">
+            <InlineError overlay>{t("Preview unavailable. Try again.")}</InlineError>
             <Button
               ref={retryRef}
               data-lightbox-focus=""
@@ -280,9 +273,14 @@ function ImageLightboxContent({
         )}
       </div>
       {compareError || notice ? (
-        <p role="alert" className="text-ui-secondary text-on-solid shrink-0 text-center">
+        <InlineMessage
+          overlay
+          tone={compareError ? "danger" : "info"}
+          live="assertive"
+          className="shrink-0 justify-center text-center"
+        >
           {compareError ? t("Preview unavailable. Try again.") : notice}
-        </p>
+        </InlineMessage>
       ) : null}
       <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
         {viewing ? (

@@ -164,16 +164,6 @@
   overscroll-behavior: contain;
   padding: 24px clamp(16px, 4vw, 48px);
 }
-.dayDivider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-block: 4px;
-}
-.dayLine {
-  align-self: center;
-  flex: 1;
-}
 .note {
 }
 .detailsList {
@@ -186,11 +176,6 @@
   align-items: flex-start;
   gap: 4px;
 }
-.metaTime {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 .feedback {
   flex: none;
   padding: 4px 20px 0;

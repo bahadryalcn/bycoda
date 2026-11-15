@@ -87,15 +87,14 @@ for (const theme of ["light", "dark"])
       // Chromium rounds the 1.5px cutout to a physical CSS pixel at device scale 1.
       await expect(badge).toHaveCSS("border-top-width", "1px");
       await page.locator(".inbox-row-preview").filter({ hasText: "Demo ürün sorusu" }).click();
-      await expect(page.locator('.inbox-line[data-direction="outbound"] .inbox-bubble')).toHaveCSS(
-        "border-top-width",
-        "1px",
-      );
-      await expect(page.locator('.inbox-line[data-direction="inbound"] .inbox-bubble')).toHaveCSS(
+      // Shared MessageTimeline: borderless bubbles, own messages end-aligned, day separators.
+      const own = page.locator('[data-message-id][data-own="true"] > div').first();
+      await expect(own).toHaveCSS("border-top-width", "0px");
+      await expect(page.locator("[data-message-id]:not([data-own]) > div").first()).toHaveCSS(
         "border-top-width",
         "0px",
       );
-      await expect(page.locator(".inbox-day-label")).toBeVisible();
+      await expect(page.getByRole("separator").first()).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

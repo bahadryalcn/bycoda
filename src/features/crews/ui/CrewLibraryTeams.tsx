@@ -6,7 +6,6 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import type { DropdownMenuAction } from "../../../shared/ui/dropdownMenuModel";
-import { ChevronDown } from "../../../shared/ui/icons";
 import type { CrewDefinition, SavedCrewAgent } from "../model/crew";
 import { planAdd, planRemove } from "../model/crewAssignment";
 import { CrewAvatar } from "./CrewAvatar";
@@ -82,10 +81,9 @@ export function CrewMemberTeamMenu({
       <Button
         ref={trigger}
         variant="ghost"
-        endIcon={<ChevronDown className="icon-sm" />}
         aria-label={t("Teams of {p0}", { p0: agent.name })}
         aria-haspopup="menu"
-        aria-expanded={open}
+        expanded={open}
         loading={assignment.busy === agent.id}
         disabled={assignment.busy !== null}
         onClick={() => {
@@ -168,9 +166,8 @@ export function CrewBulkTeamAdd({
       <Button
         ref={trigger}
         variant="ghost"
-        endIcon={<ChevronDown className="icon-sm" />}
         aria-haspopup="menu"
-        aria-expanded={open}
+        expanded={open}
         loading={assignment.busy === "bulk"}
         disabled={assignment.busy !== null || !selected.length || !definitions.length}
         onClick={() => {

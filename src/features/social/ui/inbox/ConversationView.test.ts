@@ -149,7 +149,7 @@ it("shows the conversation oldest first as plain text and sends nothing on open"
   await mount(fake.client, { threadId: "t1", item: item({ person: undefined }) });
   expect(lineTexts()).toEqual(["First message", "Second <b>bold</b> message"]);
   expect(element.querySelector(".inbox-line-text b")).toBeNull();
-  expect(element.querySelector('[data-direction="outbound"]')?.textContent).toContain("Second");
+  expect(element.querySelector('[data-own="true"]')?.textContent).toContain("Second");
   expect(fake.writes()).toEqual([]);
   expect(fake.calls.some((call) => call.action === "inbox.timeline")).toBe(false);
 });

@@ -35,7 +35,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { prettyParent } from "../../../shared/lib/paths";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { ChevronDown, Search, Plus, X, ImagePlus, Maximize2 } from "../../../shared/ui/icons";
+import { Search, Plus, X, ImagePlus, Maximize2 } from "../../../shared/ui/icons";
 import { QuickProjectIcon, loadQuickProjectAppearance } from "./QuickProjectIcon";
 import {
   getModelSnapshot,
@@ -678,7 +678,7 @@ export function QuickComposer({
           disabled={projects.length === 0}
           tooltip={t("Project")}
           shortcut="Meta+P"
-          aria-expanded={picker === "project"}
+          expanded={picker === "project"}
           className={`ml-auto flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
           {cwd ? (
@@ -691,7 +691,6 @@ export function QuickComposer({
           <Text size="inherit" tone="inherit" truncate>
             {cwd ? projectDisplayName(cwd) : t("No project")}
           </Text>
-          <ChevronDown className="icon-xs shrink-0 opacity-60" />
         </Button>
       </div>
       {attachments.files.length ? (
@@ -846,14 +845,13 @@ export function QuickComposer({
           onClick={() => openPicker("model")}
           tooltip={t("Model")}
           shortcut="Meta+."
-          aria-expanded={picker === "model"}
+          expanded={picker === "model"}
           className={`flex min-w-0 max-w-[40%] items-center gap-1.5 `}
         >
           <HarnessIcon harness={model.harness} className="size-3.5 shrink-0" />
           <Text size="inherit" tone="inherit" truncate>
             {model.name}
           </Text>
-          <ChevronDown className="icon-xs shrink-0 opacity-60" />
         </Button>
         {model.harness !== "fx" ? (
           <Button
@@ -865,14 +863,13 @@ export function QuickComposer({
             onClick={() => openPicker("permissions")}
             tooltip={t("Permissions")}
             aria-label={t("Permissions")}
-            aria-expanded={picker === "permissions"}
+            expanded={picker === "permissions"}
             className={`flex min-w-0 items-center gap-1.5 `}
           >
             <QuickPermissionIcon mode={runtimeMode} className="size-3.5 shrink-0" />
             <Text size="inherit" tone="inherit" truncate className="max-[450px]:hidden">
               {RUNTIME_MODE_LABEL[runtimeMode]}
             </Text>
-            <ChevronDown className="icon-xs shrink-0 opacity-60" />
           </Button>
         ) : null}
         <Text size="micro" tone="secondary" className="ml-auto flex shrink-0 items-center gap-3">

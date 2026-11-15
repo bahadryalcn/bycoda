@@ -7,7 +7,7 @@ import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { Tab, TabList, Tabs } from "../../../shared/ui/Tabs";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
-import { RotateCcw, Star, ChevronDown } from "../../../shared/ui/icons";
+import { RotateCcw, Star } from "../../../shared/ui/icons";
 import {
   findModel,
   getModelSnapshot,
@@ -245,7 +245,7 @@ export function QuickModelSelector({
         ref={modelRowRef}
         variant="item"
         fullWidth
-        aria-expanded={showModels}
+        expanded={showModels}
         aria-label={t("Model")}
         onClick={() => {
           setTab(model.harness);
@@ -258,7 +258,6 @@ export function QuickModelSelector({
         <Text size="inherit" tone="inherit" truncate className="ml-auto">
           {model.name}
         </Text>
-        <ChevronDown className="icon-md shrink-0" />
       </Button>
     </section>
   );

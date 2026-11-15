@@ -23,14 +23,7 @@ import {
   resolveTabGroupLabel,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  CircleAlert,
-  Clock,
-  Internet,
-} from "../../../shared/ui/icons";
+import { Check, CircleAlert, Clock, Internet } from "../../../shared/ui/icons";
 import { RailSectionHeader } from "../../../app/shell/useRailSections";
 import { isRemoteProjectPath } from "../../projects/public/recents";
 import { HarnessIcon } from "./HarnessIcon";
@@ -234,7 +227,7 @@ export function LiveAgentsPreview({
                     variant="item"
                     fullWidth
                     motion="none"
-                    aria-expanded={projectExpanded}
+                    expanded={projectExpanded}
                     aria-controls={`${listId}-project`}
                     onClick={() => setExpandedProject(projectExpanded ? null : currentProjectKey)}
                     aria-label={t("{p0} working in this project", { p0: projectWorkingCount })}
@@ -252,11 +245,6 @@ export function LiveAgentsPreview({
                     <Badge variant="count" size="xs" tone="neutral">
                       {projectWorkingCount}
                     </Badge>
-                    {projectExpanded ? (
-                      <ChevronUp aria-hidden className="icon-sm shrink-0" />
-                    ) : (
-                      <ChevronDown aria-hidden className="icon-sm shrink-0" />
-                    )}
                   </Button>
                 ) : null}
                 <div id={group.key === "working" ? `${listId}-project` : undefined}>
@@ -284,15 +272,11 @@ export function LiveAgentsPreview({
             variant="item"
             motion="none"
             type="button"
-            aria-expanded={expanded}
+            expanded={expanded}
+            chevron="start"
             aria-controls={listId}
             onClick={() => setExpanded((open) => !open)}
           >
-            {expanded ? (
-              <ChevronUp aria-hidden className="icon-sm shrink-0" />
-            ) : (
-              <ChevronDown aria-hidden className="icon-sm shrink-0" />
-            )}
             {expanded ? t("Show less") : t("{p0} more", { p0: extra })}
           </Button>
         ) : null}

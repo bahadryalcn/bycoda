@@ -8,7 +8,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { ChevronDown, ChevronRight, GitBranch, Plus, Trash2 } from "../../../shared/ui/icons";
+import { ChevronDown, GitBranch, Plus, Trash2 } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
 import {
@@ -274,10 +274,10 @@ export function CrewMemberTable({
                           variant="item"
                           motion="none"
                           className="min-w-0"
-                          aria-expanded={open}
+                          expanded={open}
+                          chevron="start"
                           startIcon={
                             <span className="flex shrink-0 items-center gap-1.5">
-                              {open ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
                               <MemberAvatar
                                 traits={looks.get(agent.id)!}
                                 size={24}

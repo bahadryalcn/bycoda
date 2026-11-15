@@ -7,10 +7,8 @@ import { AssistantPresenceIndicator } from "../../../src/features/assistant/ui/A
 import { NotesList } from "../../../src/features/assistant/ui/room/NotesList";
 import { NotesReader } from "../../../src/features/assistant/ui/room/NotesReader";
 import { JobReviewDialog } from "../../../src/features/assistant/ui/room/JobReviewDialog";
-import {
-  ConversationMessage,
-  ConversationDayLabel,
-} from "../../../src/features/assistant/ui/room/ConversationMessage";
+import { conversationMessageItem } from "../../../src/features/assistant/ui/room/ConversationMessage";
+import { MessageTimeline } from "../../../src/shared/ui/MessageTimeline";
 import { BuilderPreview } from "../../../src/features/assistant/ui/builder/BuilderPreview";
 import { NotesTab } from "../../../src/features/assistant/ui/room/NotesTab";
 import { AssistantRoomContext } from "../../../src/features/assistant/ui/room/assistantRoomContext";
@@ -351,26 +349,25 @@ createRoot(document.getElementById("root")!).render(
         </main>
       ) : params.has("conversation-message-fixture") ? (
         <main style={{ padding: 24, maxWidth: 720 }}>
-          <ConversationDayLabel at={Date.now()} />
-          {(["assistant", "user"] as const).map((role) => (
-            <ConversationMessage
-              key={role}
-              message={
-                {
+          <MessageTimeline
+            label="Conversation"
+            items={(["assistant", "user"] as const).map((role) =>
+              conversationMessageItem({
+                message: {
                   id: role,
                   role,
                   text: `${role} message`,
                   createdAt: Date.now(),
                   jobIds: [],
-                } as never
-              }
-              authorName="Assistant"
-              jobs={[]}
-              clearing={false}
-              onJob={() => {}}
-              onDelete={() => {}}
-            />
-          ))}
+                } as never,
+                authorName: "Assistant",
+                jobs: [],
+                clearing: false,
+                onJob: () => {},
+                onDelete: () => {},
+              }),
+            )}
+          />
         </main>
       ) : params.has("builder-preview-fixture") ? (
         <main style={{ padding: 24, maxWidth: 720 }}>

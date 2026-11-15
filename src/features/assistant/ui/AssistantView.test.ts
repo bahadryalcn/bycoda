@@ -854,7 +854,7 @@ it("coalesces conversation draft writes while keeping current input", async () =
       : base(input, environment),
   );
   const textarea = await renderConversationDraft();
-  expect(container.querySelectorAll("article")).toHaveLength(100);
+  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
   const writes = vi.spyOn(localStorage, "setItem");
   const project = vi.spyOn(privacyModel, "projectAssistantSnapshot");
   const messages = vi.spyOn(privacyModel, "visibleAssistantMessages");
@@ -2389,12 +2389,12 @@ it("pages timestamp siblings using the exact oldest loaded message identity", as
     return { messages: Array.from({ length: 100 }, (_, i) => message(i)) };
   });
   await render({ initialTab: "conversations" });
-  expect(container.querySelectorAll("article")).toHaveLength(100);
+  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
   await click("Load earlier messages");
-  expect(container.querySelectorAll("article")).toHaveLength(200);
+  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(200);
   expect(container.textContent).toContain("Timestamp sibling 0");
   expect(container.textContent).toContain("Timestamp sibling 199");
-  const texts = [...container.querySelectorAll("article")].map((row) => row.textContent);
+  const texts = [...container.querySelectorAll("[data-message-id]")].map((row) => row.textContent);
   expect(new Set(texts).size).toBe(200);
 });
 it("keeps loaded history after a cursor error and retries the same canonical zero-timestamp cursor", async () => {
@@ -2437,12 +2437,12 @@ it("keeps loaded history after a cursor error and retries the same canonical zer
   });
   await render({ initialTab: "conversations" });
   await click("Load earlier messages");
-  expect(container.querySelectorAll("article")).toHaveLength(100);
+  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
   expect(container.textContent).toContain("Retained history 0");
   expect(container.textContent).toContain("history cursor changed");
   await click("Load earlier messages");
   expect(olderCalls).toBe(2);
-  expect(container.querySelectorAll("article")).toHaveLength(100);
+  expect(container.querySelectorAll("[data-message-id]")).toHaveLength(100);
   expect(container.textContent).toContain("Retained history 99");
 });
 

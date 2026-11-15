@@ -41,7 +41,7 @@ function editorThemeStyles(dark: boolean) {
       ".cm-gutters": {
         backgroundColor: "transparent",
         color: "var(--ui-editor-gutter-text)",
-        borderRight: "1px solid var(--color-stroke)",
+        borderRight: "1px solid var(--ui-pane-border)",
         paddingLeft: "4px",
       },
       ".cm-lineNumbers .cm-gutterElement": {
@@ -96,7 +96,7 @@ function editorThemeStyles(dark: boolean) {
       ".cm-panels": {
         backgroundColor: "var(--color-background-base)",
         color: "var(--color-content)",
-        borderColor: "var(--color-stroke)",
+        borderColor: "var(--ui-pane-border)",
       },
       ".cm-tooltip": {
         backgroundColor: "var(--ui-surface-floating)",

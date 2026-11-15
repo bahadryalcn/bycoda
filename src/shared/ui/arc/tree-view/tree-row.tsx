@@ -1,4 +1,6 @@
 import type { ComponentPropsWithRef, CSSProperties } from "react";
+import { ChevronRight } from "../../icons";
+import { motionAttributes } from "../../Motion";
 import styles from "./tree-row.module.css";
 
 export type TreeRowProps = ComponentPropsWithRef<"button"> & {
@@ -39,9 +41,30 @@ export function TreeRow({
 type SlotProps = ComponentPropsWithRef<"span">;
 const join = (...names: (string | undefined)[]) => names.filter(Boolean).join(" ");
 
-/** Fixed-width expand/collapse slot. Keeps chevrons and empty leaf rows aligned; decorative by default. */
-export function TreeRowToggle({ className, ...props }: SlotProps) {
-  return <span aria-hidden="true" {...props} className={join(styles.toggle, className)} />;
+/**
+ * Fixed-width expand/collapse slot. Keeps chevrons and empty leaf rows aligned; decorative by default.
+ * `expanded` draws the turning chevron (right, down while open); leave it unset on a leaf row.
+ */
+export function TreeRowToggle({
+  className,
+  expanded,
+  children,
+  ...props
+}: SlotProps & { expanded?: boolean }) {
+  return (
+    <span aria-hidden="true" {...props} className={join(styles.toggle, className)}>
+      {expanded === undefined ? (
+        children
+      ) : (
+        <ChevronRight
+          {...motionAttributes(
+            { transition: "transform", duration: "standard" },
+            expanded ? "rotate-90" : "",
+          )}
+        />
+      )}
+    </span>
+  );
 }
 
 /** Leading icon slot that never shrinks. */

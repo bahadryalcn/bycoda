@@ -89,15 +89,18 @@ export function NoticeGlyph({
   tone,
   size,
   icon,
+  overlay,
 }: {
   tone: NoticeTone;
   size: NoticeSize;
   icon?: ReactNode | null;
+  /** The notice sits on the dark overlay scrim: the glyph takes `--ui-overlay-ink` instead of the tone. */
+  overlay?: boolean;
 }) {
   if (icon === null) return null;
   const Glyph = GLYPH[tone];
   return (
-    <NoticeSlot size={size} className={GLYPH_INK[tone]}>
+    <NoticeSlot size={size} className={overlay ? "text-(--ui-overlay-ink)" : GLYPH_INK[tone]}>
       <span aria-hidden className="flex">
         {icon === undefined ? (
           <Glyph className={size === "inline" ? "icon-sm" : "icon-md"} aria-hidden />

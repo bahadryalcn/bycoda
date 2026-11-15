@@ -6,7 +6,7 @@ import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
-import { ChevronDown, ChevronRight, Minus, Plus } from "../../../shared/ui/icons";
+import { Minus, Plus } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { collator } from "../../../shared/lib/intl";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
@@ -375,17 +375,11 @@ function ChangeDirRow({
           motion="none"
           type="button"
           tooltip={dir.path}
-          aria-expanded={open}
+          expanded={open}
+          chevron="start"
           onClick={() => onToggle(dir.path)}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
         >
-          <Text size="inherit" tone="secondary" className="grid size-4 shrink-0 place-items-center">
-            {open ? (
-              <ChevronDown className="icon-sm" strokeWidth={1.75} />
-            ) : (
-              <ChevronRight className="icon-sm" strokeWidth={1.75} />
-            )}
-          </Text>
           <FileTypeIcon name={dir.name} isDir isOpen={open} />
           <Text
             as="span"

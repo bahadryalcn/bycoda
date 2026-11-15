@@ -11,7 +11,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Heading } from "../../../shared/ui/Heading";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
-import { Timestamp } from "../../../shared/ui/Timestamp";
+import { MessageTimeline, type MessageTimelineItem } from "../../../shared/ui/MessageTimeline";
 import { ExternalLink, MessageMultiple, RefreshCw } from "../../../shared/ui/icons";
 import { useThreadMessages } from "../hooks/useThreadMessages";
 import { splitMessageText } from "../model/messageText";
@@ -20,32 +20,10 @@ import type { MessageThread, MessagingAccount, ThreadMessage } from "../model/me
 import { emailReplyAddress } from "../model/threadMessages";
 import { MessageReplyComposer } from "./MessageReplyComposer";
 import { MessagingProviderMark } from "./MessagingProviderMark";
-import styles from "./messages.module.css";
 
-function MessageBody({
-  body,
-  outbound,
-  onOpenLink,
-}: {
-  body: string;
-  outbound: boolean;
-  onOpenLink: (url: string) => void;
-}) {
+function MessageBody({ body, onOpenLink }: { body: string; onOpenLink: (url: string) => void }) {
   return (
-    <Text
-      as="div"
-      size="body"
-      tone="neutral"
-      {...surfaceAttributes(
-        {
-          variant: "fill-subtle",
-          tone: outbound ? "accent" : undefined,
-          radius: outbound ? "chat-control-end" : "chat-control-start",
-        },
-        styles.bubble,
-      )}
-      dir="auto"
-    >
+    <span className="whitespace-pre-wrap">
       {splitMessageText(body).map((part, index) =>
         part.kind === "link" ? (
           <Button
@@ -63,61 +41,41 @@ function MessageBody({
           <span key={index}>{part.text}</span>
         ),
       )}
-    </Text>
+    </span>
   );
 }
 
-function MessageItem({
-  message,
-  onOpenLink,
-}: {
-  message: ThreadMessage;
-  onOpenLink: (url: string) => void;
-}) {
-  const author = message.outbound
-    ? t("You")
-    : message.author || message.authorAddress || t("Unknown");
-  return (
-    <li className={styles.message} data-outbound={message.outbound ? "true" : undefined}>
-      <Text size="micro" tone="secondary" leading="inherit" className={styles.meta}>
-        <Tooltip label={message.authorAddress || undefined} asChild>
-          <Text size="inherit" tone="inherit" truncate weight="medium" className="min-w-0">
-            {author}
+function messageItem(
+  message: ThreadMessage,
+  onOpenLink: (url: string) => void,
+): MessageTimelineItem {
+  return {
+    id: message.id,
+    own: message.outbound,
+    author: message.author || message.authorAddress || t("Unknown"),
+    // A message without a usable time sorts with the epoch and still renders.
+    time: Number.isFinite(message.at) ? message.at : 0,
+    body: message.body ? <MessageBody body={message.body} onOpenLink={onOpenLink} /> : null,
+    attachments: message.attachments.map((attachment, index) => {
+      const size = attachment.size ? formatAttachmentSize(attachment.size) : null;
+      return (
+        <Tooltip key={`${attachment.name}:${index}`} label={attachment.name} asChild>
+          <Text
+            as="span"
+            size="micro"
+            tone="secondary"
+            truncate
+            {...surfaceAttributes(
+              { frame: "neutral" },
+              "max-w-full rounded-(--ui-radius-control) px-1.5",
+            )}
+          >
+            {size ? t("{p0} ({p1})", { p0: attachment.name, p1: size }) : attachment.name}
           </Text>
         </Tooltip>
-        {Number.isFinite(message.at) && message.at > 0 ? (
-          <Timestamp value={message.at} className="shrink-0" />
-        ) : null}
-      </Text>
-      {message.body ? (
-        <MessageBody body={message.body} outbound={message.outbound} onOpenLink={onOpenLink} />
-      ) : null}
-      {message.attachments.length > 0 ? (
-        <ul className={styles.attachments} aria-label={t("Attachments")}>
-          {message.attachments.map((attachment, index) => {
-            const size = attachment.size ? formatAttachmentSize(attachment.size) : null;
-            return (
-              <Tooltip key={`${attachment.name}:${index}`} label={attachment.name} asChild>
-                <Text
-                  as="li"
-                  size="micro"
-                  tone="secondary"
-                  truncate
-                  key={`${attachment.name}:${index}`}
-                  {...surfaceAttributes(
-                    { frame: "neutral" },
-                    "max-w-full rounded-(--ui-radius-control) px-1.5",
-                  )}
-                >
-                  {size ? t("{p0} ({p1})", { p0: attachment.name, p1: size }) : attachment.name}
-                </Text>
-              </Tooltip>
-            );
-          })}
-        </ul>
-      ) : null}
-    </li>
-  );
+      );
+    }),
+  };
 }
 
 /** One conversation: header, messages oldest to newest and the reply composer. */
@@ -233,11 +191,11 @@ export function MessageThreadView({
                 description={t("No messages in this conversation yet.")}
               />
             ) : (
-              <ol className={styles.timeline} aria-label={t("Messages")}>
-                {messages.map((message) => (
-                  <MessageItem key={message.id} message={message} onOpenLink={openLink} />
-                ))}
-              </ol>
+              <MessageTimeline
+                label={t("Messages")}
+                className="px-4 py-3"
+                items={messages.map((message) => messageItem(message, openLink))}
+              />
             )}
           </>
         )}

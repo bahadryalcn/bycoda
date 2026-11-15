@@ -19,7 +19,6 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
-  ChevronDown,
   ChevronRight,
   FilePlus,
   FolderPlus,
@@ -1017,7 +1016,8 @@ function FileTreeInner({
               type="button"
               data-explorer-root
               data-path={cwd}
-              aria-expanded={rootOpen}
+              expanded={rootOpen}
+              chevron="start"
               tooltip={cwd}
               onClick={() => {
                 onSelect(cwd);
@@ -1030,17 +1030,6 @@ function FileTreeInner({
               }}
               className="min-w-0 flex-1"
             >
-              <Text
-                size="inherit"
-                tone="secondary"
-                className="grid size-4 shrink-0 place-items-center"
-              >
-                {rootOpen ? (
-                  <ChevronDown className="icon-sm" strokeWidth={1.75} />
-                ) : (
-                  <ChevronRight className="icon-sm" strokeWidth={1.75} />
-                )}
-              </Text>
               <Text truncate size="caption" tone="secondary" weight="medium" className="min-w-0">
                 {name}
               </Text>
@@ -1533,15 +1522,7 @@ const TreeNode = memo(function TreeNode({
           }}
           onContextMenu={(e) => onItemContextMenu(entry, e)}
         >
-          <TreeRowToggle>
-            {entry.isDir ? (
-              open ? (
-                <ChevronDown className="icon-sm" strokeWidth={1.75} />
-              ) : (
-                <ChevronRight className="icon-sm" strokeWidth={1.75} />
-              )
-            ) : null}
-          </TreeRowToggle>
+          <TreeRowToggle expanded={entry.isDir ? open : undefined} />
           <TreeRowIcon>
             <FileTypeIcon name={entry.name} isDir={entry.isDir} isOpen={open} />
           </TreeRowIcon>

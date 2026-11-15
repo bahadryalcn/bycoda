@@ -8,6 +8,8 @@ export type InlineMessageTone = NoticeTone;
 
 export type InlineMessageProps = Omit<ComponentPropsWithoutRef<"div">, "role" | "children"> & {
   tone?: InlineMessageTone;
+  /** The message sits on the dark overlay scrim (an image lightbox): copy and glyph use `--ui-overlay-ink`, readable in every theme. */
+  overlay?: boolean;
   /** Copy typography; unset preserves hierarchy and semantic ink. */
   text?: TextRoles;
   children: ReactNode;
@@ -41,7 +43,7 @@ const INK: Record<InlineMessageTone, string> = {
 /**
  * One-line field, row or form message: neutral caption copy, a toned 14px glyph centred on the first
  * line, and structured `retry`, `action` and `secondaryAction` text links after the copy. `live` picks
- * `role="alert"` (danger default), `status` (other tones) or none.
+ * `role="alert"` (danger default), `status` (other tones) or none. `overlay` re-inks copy and glyph for the dark overlay scrim.
  * @group feedback
  * @use A short success, warning, info or neutral note under a field, in a row or in a form.
  * @avoid Failures: InlineError. Boxed notice with a title: Alert. Nothing to show: EmptyState. Region that failed to load: FailureState. Never a bare `<p role="alert">`; never a Button in `action`.
@@ -49,6 +51,7 @@ const INK: Record<InlineMessageTone, string> = {
  */
 export function InlineMessage({
   tone = "info",
+  overlay,
   text,
   live,
   icon,
@@ -69,13 +72,13 @@ export function InlineMessage({
       data-tone={tone}
       className={[
         "flex min-w-0 items-start gap-1.5 font-sans text-ui-caption",
-        INK[tone],
+        overlay ? "text-(--ui-overlay-ink)" : INK[tone],
         className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <NoticeGlyph tone={tone} size="inline" icon={icon} />
+      <NoticeGlyph tone={tone} size="inline" icon={icon} overlay={overlay} />
       {/* Recovery follows the copy on its line and wraps with it, never detached at the far edge. */}
       <span {...optionalTextAttributes(text ?? {}, "min-w-0 flex-1 break-words")}>
         <span className="select-text">{children}</span>

@@ -10,7 +10,7 @@ import { UsageMeter } from "../../../shared/ui/UsageMeter";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { StatusDot } from "../../../shared/ui/StatusDot";
-import { Check, ChevronDown } from "../../../shared/ui/icons";
+import { Check } from "../../../shared/ui/icons";
 import { accountUsageKey, useProviderAccountUsage } from "../../providers/public/accountUsage";
 import {
   providerAccountColorValue,
@@ -196,7 +196,7 @@ export function ModelAccountControl({
       className="min-w-0 max-w-[65%]"
       data-model-account-menu
       aria-haspopup="listbox"
-      aria-expanded={listOpen}
+      expanded={listOpen}
       aria-label={name}
       tooltip={name}
       onMouseDown={(event) => event.preventDefault()}
@@ -217,11 +217,6 @@ export function ModelAccountControl({
         {formatNumber(accounts.length)}
         {elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
       </span>
-      <ChevronDown
-        className={`icon-xs shrink-0 ${listOpen ? "rotate-180" : ""}`}
-        tone="secondary"
-        strokeWidth={1.75}
-      />
     </Button>
   );
 }

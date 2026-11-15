@@ -9,7 +9,6 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useLocale, useT } from "../../../shared/i18n";
-import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   keepSessionChanges,
@@ -318,15 +317,11 @@ function SessionReviewContent({
             fullWidth
             variant="item"
             type="button"
-            aria-expanded={expanded}
+            expanded={expanded}
+            chevron="start"
             onClick={() => setExpanded((open) => !open)}
             className="w-full text-left"
           >
-            {expanded ? (
-              <ChevronDown className="icon-sm" strokeWidth={1.75} />
-            ) : (
-              <ChevronRight className="icon-sm" strokeWidth={1.75} />
-            )}
             <span>
               {expanded
                 ? t("Show fewer files")

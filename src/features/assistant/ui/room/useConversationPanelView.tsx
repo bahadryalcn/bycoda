@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t, useLocale } from "../../../../shared/i18n";
 import { visibleAssistantMessages } from "../../model/assistantPrivacy";
-import { ConversationDayLabel, ConversationMessage } from "./ConversationMessage";
+import { conversationMessageItem } from "./ConversationMessage";
 import type { ConversationPanelProps, ConversationPanelState } from "./useConversationPanelState";
 import type { ConversationPanelMessagesState } from "./useConversationPanelMessages";
 import type { ConversationPanelSendState } from "./useConversationPanelSend";
@@ -154,8 +154,6 @@ export function useConversationPanelView(
     if (!query && followMessages.current && history.current)
       history.current.scrollTop = history.current.scrollHeight;
   }, [threadId, query, lastMessageId]);
-  const day = (timestamp: number) =>
-    formatDate(timestamp, { day: "numeric", month: "long", year: "numeric" });
   const time = (timestamp: number) => formatDate(timestamp, { hour: "2-digit", minute: "2-digit" });
   const deleteMessage = (message: AssistantMessage) =>
     setConfirm({
@@ -180,22 +178,17 @@ export function useConversationPanelView(
     });
   const messageElements = useMemo(
     () =>
-      visible.map((message, index) => (
-        <Fragment key={message.id}>
-          {(index === 0 || day(visible[index - 1].createdAt) !== day(message.createdAt)) && (
-            <ConversationDayLabel at={message.createdAt} />
-          )}
-          <ConversationMessage
-            message={message}
-            authorName={snapshot.profile.name}
-            jobs={snapshot.jobs}
-            clearing={clearing}
-            onOpenSession={onOpenSession}
-            onJob={onJob}
-            onDelete={deleteMessage}
-          />
-        </Fragment>
-      )),
+      visible.map((message) =>
+        conversationMessageItem({
+          message,
+          authorName: snapshot.profile.name,
+          jobs: snapshot.jobs,
+          clearing,
+          onOpenSession,
+          onJob,
+          onDelete: deleteMessage,
+        }),
+      ),
     [
       visible,
       locale,
@@ -229,7 +222,6 @@ export function useConversationPanelView(
     followMessages,
     onHistoryScroll,
     lastMessageId,
-    day,
     time,
     messageElements,
     threadLabel,

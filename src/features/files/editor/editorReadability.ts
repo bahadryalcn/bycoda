@@ -353,7 +353,7 @@ const readabilityTheme = EditorView.baseTheme({
     inlineSize: "0.8em",
     blockSize: "0.8em",
     marginInline: "0.2em",
-    border: "1px solid var(--color-stroke)",
+    border: "1px solid var(--ui-pane-border)",
     borderRadius: "2px",
     verticalAlign: "baseline",
   },

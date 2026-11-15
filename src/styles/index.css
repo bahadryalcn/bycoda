@@ -611,6 +611,13 @@ html.theme-light {
     var(--color-content) calc(5% * var(--appearance-layer-strength, 1)),
     var(--ui-layer-base)
   );
+  /* Message bubble (transcript prompt, MessageTimeline): an ink tint, so it reads on a near-white
+     light canvas where the paper-lifted muted layer would vanish. */
+  --ui-message-bubble: color-mix(
+    in srgb,
+    var(--color-content) calc(5% * var(--appearance-layer-strength, 1)),
+    transparent
+  );
   /* State ladder (T3 Code reference): soft translucent ink steps that stay visible over any host
      (canvas, card, popup). Dark: hover 4%, selected 8%, pressed 10%; light overrides below with
      4 / 12 / 16 so selected clears hover by >= 1.15:1. Strength scales with Appearance > Interaction
@@ -811,6 +818,8 @@ html.theme-light {
   --ui-overlay-backdrop-blur: min(4px, var(--glass-blur));
   --ui-overlay-backdrop-soft: color-mix(in oklab, var(--ui-overlay-backdrop) 60%, transparent);
   --ui-overlay-backdrop-nested: color-mix(in oklab, var(--ui-overlay-backdrop) 40%, transparent);
+  /* Text and glyph ink on the dark overlay scrim (lightbox messages); the scrim is dark in every theme. */
+  --ui-overlay-ink: var(--color-on-solid);
   /* Field and focus tokens (--ui-field-*, --ui-focus-*) have one owner: the contract at the top
      of arc.css. Do not redeclare them here. */
   /* Global motion scale (One component system spec): two durations and one easing.
@@ -1856,7 +1865,7 @@ html.chat-background-layer-off .gradient-blur-background-strong {
 
 /* Neutral reading surface: the accent never paints message bodies. */
 html.has-user-accent .user-message-bubble {
-  background: var(--ui-surface-muted);
+  background: var(--ui-message-bubble);
 }
 
 /*

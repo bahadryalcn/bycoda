@@ -1,5 +1,4 @@
 import { t } from "../../../../shared/i18n";
-import { dateTimeFormat } from "../../../../shared/lib/intl";
 import { SOCIAL_PLATFORM_NAMES } from "../../model/social";
 import { capabilityReasonText } from "../common/capabilityText";
 import type { InboxReplyOptions, InboxStatus, UnreadableAccount } from "./inboxTypes";
@@ -69,42 +68,3 @@ export type MessageLine = {
   direction: "inbound" | "outbound";
   text: string;
 };
-
-/** Messages of one local calendar day, oldest first. */
-export type DayGroup = { key: string; at: number; lines: MessageLine[] };
-
-function dayKey(at: number): string {
-  const date = new Date(at);
-  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-}
-
-/** Splits an ordered message list into local calendar days. Order inside and between days is kept. */
-export function groupByDay(lines: MessageLine[]): DayGroup[] {
-  const groups: DayGroup[] = [];
-  for (const line of lines) {
-    const key = dayKey(line.at);
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) last.lines.push(line);
-    else groups.push({ key, at: line.at, lines: [line] });
-  }
-  return groups;
-}
-
-/** "Today", "Yesterday" or a short date for the separator above a day of messages. */
-export function dayLabel(at: number, now: number, locale: string): string {
-  if (dayKey(at) === dayKey(now)) return t("Today");
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (dayKey(at) === dayKey(yesterday.getTime())) return t("Yesterday");
-  const sameYear = new Date(at).getFullYear() === new Date(now).getFullYear();
-  return dateTimeFormat(locale, {
-    day: "numeric",
-    month: "short",
-    ...(sameYear ? {} : { year: "numeric" }),
-  }).format(new Date(at));
-}
-
-/** Clock time under a message bubble. */
-export function clockTime(at: number, locale: string): string {
-  return dateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(new Date(at));
-}

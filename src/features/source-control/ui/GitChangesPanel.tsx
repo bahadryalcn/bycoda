@@ -15,8 +15,6 @@ import { amendPushedCopy, discardSelectedCopy, discardUnstagedCopy } from "./git
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { openUrlSafely } from "../../../shared/lib/openUrlSafely";
 import {
-  ChevronDown,
-  ChevronRight,
   FileDiff,
   ListFilter,
   FolderTree,
@@ -410,16 +408,12 @@ export function GitChangesPanel({
             size="sm"
             variant="item"
             motion="none"
-            aria-expanded={detailsOpen}
+            expanded={detailsOpen}
+            chevron="start"
             onClick={() => repository.onToggle(!detailsOpen)}
             tooltip={`${repository.name} · ${cwd}`}
             className={styles.disclosure}
           >
-            {detailsOpen ? (
-              <ChevronDown className="icon-xs shrink-0" />
-            ) : (
-              <ChevronRight className="icon-xs shrink-0" />
-            )}
             <CheckoutIdentity
               name={repository.name}
               checkout={repository.checkout}

@@ -23,7 +23,7 @@ import {
   type ImportProvider,
 } from "../../../platform/tauri/sessionImport";
 import { parentPath, prettyCwd, projectName } from "../../../shared/lib/paths";
-import { ChevronDown, ChevronRight, CircleAlert, Clock, Folder } from "../../../shared/ui/icons";
+import { CircleAlert, Clock, Folder } from "../../../shared/ui/icons";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { importedSessionKeys } from "../data/sessionStore";
 import {
@@ -586,15 +586,11 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                             variant="ghost"
                             type="button"
                             align="start"
-                            aria-expanded={missingOpen || searching}
+                            expanded={missingOpen || searching}
+                            chevron="start"
                             onClick={() => setMissingOpen((value) => !value)}
                             className="min-w-0 flex-1"
                           >
-                            {missingOpen || searching ? (
-                              <ChevronDown className="icon-sm shrink-0" tone="secondary" />
-                            ) : (
-                              <ChevronRight className="icon-sm shrink-0" tone="secondary" />
-                            )}
                             <Text
                               size="secondary"
                               tone="secondary"
@@ -786,15 +782,11 @@ function FolderSection({
           variant="ghost"
           type="button"
           align="start"
-          aria-expanded={open}
+          expanded={open}
+          chevron="start"
           onClick={onToggleOpen}
           className="min-w-0 flex-1"
         >
-          {open ? (
-            <ChevronDown className="icon-sm shrink-0" tone="secondary" />
-          ) : (
-            <ChevronRight className="icon-sm shrink-0" tone="secondary" />
-          )}
           <Folder className="icon-sm shrink-0" tone="secondary" />
           <Text size="secondary" weight="medium" truncate className="max-w-[45%] shrink-0">
             {projectName(folder.path)}

@@ -36,13 +36,7 @@ import {
 import { OrchestrationActions } from "./OrchestrationActions";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { Popover } from "../../../shared/ui/Popover";
-import {
-  ChevronDown,
-  ChevronRight,
-  CircleHelp,
-  MessageMultiple,
-  Play,
-} from "../../../shared/ui/icons";
+import { CircleHelp, MessageMultiple, Play } from "../../../shared/ui/icons";
 
 function AssignmentModel({
   task,
@@ -141,7 +135,7 @@ function AssignmentModel({
         ref={anchor}
         aria-label={t("Model for {p0}", { p0: task.title })}
         selected={open}
-        aria-expanded={open}
+        expanded={open}
         aria-haspopup="menu"
         onClick={() => {
           setQuery("");
@@ -154,7 +148,6 @@ function AssignmentModel({
           {selected?.name ?? modelDisplayName(task.model, task.harness)}
           {selectedEffortLabel ? ` · ${selectedEffortLabel}` : ""} · {HARNESS_TITLE[task.harness]}
         </Text>
-        <ChevronDown className="icon-xs shrink-0" />
       </Button>
       {open && (
         <DropdownMenu
@@ -442,7 +435,8 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     type="button"
                     aria-label={t("Details for {p0}", { p0: task.title })}
                     selected={open}
-                    aria-expanded={open}
+                    expanded={open}
+                    chevron="start"
                     onClick={() =>
                       setExpanded((prev) =>
                         open ? prev.filter((id) => id !== task.id) : [...prev, task.id],
@@ -450,11 +444,6 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     }
                     className="min-w-0 flex-1 text-left"
                   >
-                    {open ? (
-                      <ChevronDown className="icon-sm shrink-0" />
-                    ) : (
-                      <ChevronRight className="icon-sm shrink-0" />
-                    )}
                     <OverflowTooltip label={task.title}>
                       <Text
                         size="caption"
@@ -578,11 +567,11 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
         <Button
           variant="item"
           type="button"
-          aria-expanded={showAll}
+          expanded={showAll}
+          chevron="start"
           onClick={() => setShowAll(!showAll)}
           className="w-full text-left"
         >
-          {showAll ? <ChevronDown className="icon-sm" /> : <ChevronRight className="icon-sm" />}
           {showAll
             ? t("Show fewer tasks")
             : t(proposal.tasks.length === 4 ? "Show {p0} more task" : "Show {p0} more tasks", {

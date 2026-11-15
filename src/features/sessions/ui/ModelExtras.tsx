@@ -9,7 +9,7 @@ import { Button } from "../../../shared/ui/Button";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
-import { ChevronDown, SlidersHorizontal } from "../../../shared/ui/icons";
+import { SlidersHorizontal } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
 import {
   defaultModelSettings,
@@ -378,7 +378,7 @@ export function ModelExtras({
         data-model-control
         aria-label={t("Extras")}
         aria-haspopup="dialog"
-        aria-expanded={open}
+        expanded={open}
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
         data-extras-trigger
@@ -400,7 +400,6 @@ export function ModelExtras({
             {active.map((s) => t(settingValueLabel(s, effective))).join(" · ")}
           </Text>
         )}
-        <ChevronDown className="icon-xs" />
       </Button>
       {open && (
         <Popover

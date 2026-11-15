@@ -6,7 +6,6 @@ import { useT } from "../../shared/i18n";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
-import { ChevronDown } from "../../shared/ui/icons";
 import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
 import { IS_MAC } from "../../platform/tauri/platform";
 import { WindowControls, toggleWindowMaximize } from "./WindowControls";
@@ -140,7 +139,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         data-tauri-drag-region="false"
         aria-label={t("Working conversations: {p0}", { p0: summary })}
         aria-haspopup="menu"
-        aria-expanded={open}
+        expanded={open}
         disabled={!count}
         onClick={() => setOpen((value) => !value)}
         onKeyDown={(event) => {
@@ -163,7 +162,6 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         <Text size="inherit" tone="inherit" truncate>
           {summary}
         </Text>
-        <ChevronDown className="icon-xs shrink-0" tone="secondary" aria-hidden="true" />
       </Button>
       <div className="min-w-4 flex-1 self-stretch" aria-hidden="true" />
       {!IS_MAC ? <WindowControls /> : null}

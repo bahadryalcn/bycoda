@@ -717,7 +717,7 @@ const findTheme = EditorView.theme(
       zIndex: "40",
       backgroundColor: "var(--color-background-base)",
       border: "0",
-      borderBottom: "1px solid var(--color-stroke)",
+      borderBottom: "1px solid var(--ui-pane-border)",
       pointerEvents: "auto",
     },
     ".cm-panel.cm-find": {
@@ -773,7 +773,7 @@ const findTheme = EditorView.theme(
       height: "26px",
       padding: "0 4px",
       gap: "2px",
-      border: "1px solid var(--color-stroke)",
+      border: "1px solid var(--ui-pane-border)",
       borderRadius: "6px",
       backgroundColor: "var(--ui-surface-raised)",
     },

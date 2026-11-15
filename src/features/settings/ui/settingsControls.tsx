@@ -23,8 +23,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { motionAttributes } from "../../../shared/ui/Motion";
-import { ChevronRight, RotateCcw } from "../../../shared/ui/icons";
+import { RotateCcw } from "../../../shared/ui/icons";
 
 import { playCue } from "../model/sounds";
 import { t, useLocale } from "../../../shared/i18n";
@@ -340,16 +339,10 @@ export function AdvancedSettings({
           fullWidth
           motion="none"
           {...surfaceAttributes({ radius: "none" }, "settings-advanced-toggle")}
-          aria-expanded={open}
+          expanded={open}
           aria-controls={keepMounted ? contentId : undefined}
           onClick={() => setOpen((current) => !current)}
         >
-          <ChevronRight
-            aria-hidden
-            strokeWidth={1.75}
-            {...motionAttributes({ transition: "transform" }, "icon-xs")}
-            data-open={open || undefined}
-          />
           {title ?? t("Advanced")}
         </Button>
       </Heading>

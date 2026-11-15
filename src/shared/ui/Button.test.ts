@@ -515,3 +515,44 @@ it("retains ghost recovery activation while opting into rest underline", async (
     vi.unstubAllGlobals();
   }
 });
+
+it("draws the leading chevron for a row toggle with chevron=start", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(Button, { expanded: true, chevron: "start" }, "Row")),
+    );
+    const button = container.querySelector("button")!;
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.querySelectorAll("svg")).toHaveLength(1);
+    expect(button.firstElementChild?.querySelector("svg")?.classList.contains("rotate-90")).toBe(
+      true,
+    );
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+it("owns aria-expanded and the turning chevron for a menu or section trigger", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(Button, { expanded: false }, "Menu")));
+    const button = container.querySelector("button")!;
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(button.querySelector("svg")?.classList.contains("rotate-180")).toBe(false);
+    await act(async () => root.render(createElement(Button, { expanded: true }, "Menu")));
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.querySelector("svg")?.classList.contains("rotate-180")).toBe(true);
+    await act(async () => root.render(createElement(Button, {}, "Menu")));
+    expect(button.hasAttribute("aria-expanded")).toBe(false);
+    expect(button.querySelector("svg")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

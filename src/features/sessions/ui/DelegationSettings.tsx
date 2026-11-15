@@ -101,7 +101,7 @@ export function DelegationSubagentsControl({
           type="button"
           aria-label={label}
           aria-haspopup="menu"
-          aria-expanded={open}
+          expanded={open}
           disabled={disabled}
           onClick={() => setOpen((next) => !next)}
           className="w-[52%] max-w-[11.5rem] min-w-0 shrink-0"
@@ -109,7 +109,6 @@ export function DelegationSubagentsControl({
           <Text size="inherit" tone="inherit" truncate className="min-w-0">
             {summary}
           </Text>
-          <ChevronDown className="icon-xs shrink-0" />
         </Button>
       )}
       {open ? (

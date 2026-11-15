@@ -2484,7 +2484,7 @@ function UserMessageBlock({
           data-draft={block.draft ? "true" : undefined}
           data-follow-up-delivery={delivery}
           data-bycoda={bycoda ? "true" : undefined}
-          className={`user-message-bubble relative min-w-0 bg-(--ui-surface-muted) px-3 py-2 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
+          className={`user-message-bubble relative min-w-0 bg-(--ui-message-bubble) px-3 py-2 font-sans text-(--ui-text-secondary) transition-[background-color] duration-200 ${editing ? "edit-last-turn-bubble" : ""} w-fit ${chat ? "max-w-[min(100%,36rem)]" : "max-w-full"} rounded-(--ui-radius-popup)`}
         >
           <ChatCitationList citations={citations} text={text} />
           {block.turnOutcome === "stopped" ? (

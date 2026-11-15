@@ -1,7 +1,6 @@
 import { useId, type ReactNode } from "react";
 import { t } from "../../../../shared/i18n";
-import { Text } from "../../../../shared/ui/Text";
-import { surfaceAttributes } from "../../../../shared/ui/Surface";
+import type { MessageTimelineItem } from "../../../../shared/ui/MessageTimeline";
 import { PromptField } from "../../../../shared/ui/PromptField";
 import { AgentMarkdown } from "../../../sessions/public/AgentMarkdown";
 import {
@@ -11,59 +10,70 @@ import {
   userTextParts,
 } from "../../../sessions/public/chatPresentation";
 import type { FloatingButtonGroupAction } from "../../../../shared/ui/FloatingButtonGroup";
-import styles from "./AssistantChat.module.css";
 
-/** Room and job discussions share the normal chat renderer; their owners keep data and authority. */
-export function AssistantChatMessage({
+function AssistantChatBody({
   role,
   text,
-  author,
-  metadata,
-  actions,
   children,
 }: {
   role: "user" | "assistant" | "system";
   text: string;
-  author?: string;
-  metadata?: ReactNode;
-  actions?: FloatingButtonGroupAction[];
   children?: ReactNode;
 }) {
   const messageId = useId();
   return (
-    <article className={`${styles.message} message-hover-zone`} data-author={role}>
-      <div
-        {...surfaceAttributes(
-          { variant: "fill-subtle", radius: role === "user" ? "chat-end" : "chat-start" },
-          styles.content,
-        )}
-      >
-        {role === "user" ? (
-          <UserTextPreview
-            parts={userTextParts(text)}
-            messageId={messageId}
-            renderActions={() => <TurnOutputActions getText={() => text} />}
-          />
-        ) : (
-          <AgentMarkdown text={text} revealOnMount={false} hardBreaks />
-        )}
-        {children}
-      </div>
-      <div className={styles.footer}>
-        <Text as="div" size="caption" tone="secondary" className={styles.author}>
-          {author && (
-            <Text as="span" size="caption" weight="medium">
-              {author}
-            </Text>
-          )}
-          {metadata}
-        </Text>
-        <div className={`${styles.actions} message-hover-actions`}>
-          <TurnOutputActions getText={() => text} extraItems={actions} />
-        </div>
-      </div>
-    </article>
+    <>
+      {role === "user" ? (
+        <UserTextPreview
+          parts={userTextParts(text)}
+          messageId={messageId}
+          renderActions={() => <TurnOutputActions getText={() => text} />}
+        />
+      ) : (
+        <AgentMarkdown text={text} revealOnMount={false} hardBreaks />
+      )}
+      {children}
+    </>
   );
+}
+
+/**
+ * Room and job discussions share the normal chat renderer on the shared message timeline;
+ * their owners keep data and authority. The user's messages are the owner's own.
+ */
+export function assistantChatItem({
+  id,
+  role,
+  text,
+  time,
+  author,
+  meta,
+  actions,
+  children,
+}: {
+  id: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  time: number;
+  author?: string;
+  meta?: ReactNode;
+  actions?: FloatingButtonGroupAction[];
+  children?: ReactNode;
+}): MessageTimelineItem {
+  return {
+    id,
+    time,
+    own: role === "user",
+    plain: role === "assistant",
+    author,
+    meta,
+    actions: <TurnOutputActions getText={() => text} extraItems={actions} />,
+    body: (
+      <AssistantChatBody role={role} text={text}>
+        {children}
+      </AssistantChatBody>
+    ),
+  };
 }
 
 /** Controlled text-only chat: no session queue, attachments or model ownership is invented. */

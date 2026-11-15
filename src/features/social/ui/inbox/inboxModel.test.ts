@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dayLabel, groupByDay, replyBlockedText, statusText, unreadableText } from "./inboxModel";
+import { replyBlockedText, statusText, unreadableText } from "./inboxModel";
 import { unifiedFilterInput } from "./inboxApi";
 
 describe("reply block reasons", () => {
@@ -80,41 +80,6 @@ describe("status labels and filter input", () => {
       accountId: "x-1",
       query: "vip",
     });
-  });
-});
-
-describe("day grouping", () => {
-  const at = (day: number, hour: number) => new Date(2026, 4, day, hour, 0).getTime();
-  const line = (id: string, time: number) => ({
-    id,
-    at: time,
-    direction: "inbound" as const,
-    text: id,
-  });
-
-  it("keeps order and starts a group on each new local day", () => {
-    const groups = groupByDay([
-      line("a", at(1, 9)),
-      line("b", at(1, 23)),
-      line("c", at(2, 0)),
-      line("d", at(4, 12)),
-    ]);
-    expect(groups.map((group) => group.lines.map((entry) => entry.id))).toEqual([
-      ["a", "b"],
-      ["c"],
-      ["d"],
-    ]);
-  });
-
-  it("returns no groups for no messages", () => {
-    expect(groupByDay([])).toEqual([]);
-  });
-
-  it("labels today and yesterday and falls back to a date", () => {
-    const now = at(10, 15);
-    expect(dayLabel(at(10, 1), now, "en")).toBe("Today");
-    expect(dayLabel(at(9, 23), now, "en")).toBe("Yesterday");
-    expect(dayLabel(at(2, 12), now, "en")).toContain("2");
   });
 });
 

@@ -32,14 +32,7 @@ import type { Worktree } from "../../source-control/model/worktrees";
 import { MOD, SHIFT } from "../../../platform/tauri/platform";
 import { prettyCwd } from "../../../shared/lib/paths";
 import type { WorkspaceMode } from "../../sessions/model/session";
-import {
-  ChevronDown,
-  ChevronRight,
-  Folder,
-  FolderTree,
-  GitBranch,
-  Settings,
-} from "../../../shared/ui/icons";
+import { ChevronRight, Folder, FolderTree, GitBranch, Settings } from "../../../shared/ui/icons";
 import { GitPickerTrigger } from "../../source-control/ui/GitPickerTrigger";
 import { LAYER } from "../../../shared/lib/layers";
 import { keybindingPressed, keybindingShortcutTokens } from "../../settings/model/settings";
@@ -361,7 +354,7 @@ function WorkspaceModePicker({
           aria-label={t("Workspace {p0}", { p0: label })}
           aria-keyshortcuts={shortcutTokens ?? undefined}
           aria-haspopup="dialog"
-          aria-expanded={open}
+          expanded={open}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             if (open) {
@@ -376,7 +369,6 @@ function WorkspaceModePicker({
           <Text size="inherit" tone="inherit" truncate>
             {label}
           </Text>
-          <ChevronDown className="icon-xs shrink-0" tone="secondary" />
         </Button>
       ) : null}
       <PickerPopover

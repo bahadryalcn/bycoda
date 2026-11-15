@@ -2,12 +2,6 @@
   "schemaVersion": 1,
   "purpose": "Existing UI drift counted per file and rule by scripts/checks/check-ui-drift.mjs. Counts may only fall; regenerate with --update-baseline after reducing them.",
   "counts": {
-    "src/app/shell/DetachedWorkingBar.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/app/shell/LastSessionsSection.tsx": {
-      "hand-rolled-disclosure": 1
-    },
     "src/app/shell/ProjectRail.tsx": {
       "hand-rolled-disclosure": 1
     },
@@ -16,24 +10,6 @@
     },
     "src/app/shell/Sidebar.tsx": {
       "theme-palette-literal": 1
-    },
-    "src/features/assistant/ui/AssistantView.tsx": {
-      "hand-rolled-disclosure": 2
-    },
-    "src/features/crews/ui/CrewLibraryTeams.tsx": {
-      "hand-rolled-disclosure": 2
-    },
-    "src/features/crews/ui/CrewMemberTable.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/decision-models/ui/SourceOrderPicker.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/files/ui/FileTree.tsx": {
-      "hand-rolled-disclosure": 2
-    },
-    "src/features/host-tools/SessionHostTools.tsx": {
-      "hand-rolled-disclosure": 1
     },
     "src/features/inbox/ui/InboxPrOverview.tsx": {
       "hand-rolled-disclosure": 1
@@ -44,17 +20,11 @@
     "src/features/inbox/ui/InboxView.tsx": {
       "hand-rolled-disclosure": 1
     },
-    "src/features/notes/ui/SessionNotesPanel.tsx": {
-      "hand-rolled-disclosure": 1
-    },
     "src/features/notifications/ui/NotificationMuteControl.tsx": {
       "hand-rolled-disclosure": 1
     },
     "src/features/notifications/ui/ProjectNotificationSettings.tsx": {
       "hand-rolled-disclosure": 1
-    },
-    "src/features/orchestration/ui/OrchestrationPreview.tsx": {
-      "hand-rolled-disclosure": 3
     },
     "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
       "hand-rolled-disclosure": 1
@@ -71,12 +41,6 @@
     "src/features/projects/ui/SearchableProjectPicker.tsx": {
       "hand-rolled-disclosure": 1
     },
-    "src/features/quick-composer/ui/QuickComposer.tsx": {
-      "hand-rolled-disclosure": 3
-    },
-    "src/features/quick-composer/ui/QuickModelSelector.tsx": {
-      "hand-rolled-disclosure": 1
-    },
     "src/features/sessions/ui/ActivityDock.tsx": {
       "hand-rolled-disclosure": 1
     },
@@ -87,30 +51,9 @@
       "hand-rolled-disclosure": 1
     },
     "src/features/sessions/ui/DelegationSettings.tsx": {
-      "hand-rolled-disclosure": 2
-    },
-    "src/features/sessions/ui/LiveAgentsPreview.tsx": {
-      "hand-rolled-disclosure": 2
-    },
-    "src/features/sessions/ui/ModelAccountSwitcher.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/sessions/ui/ModelExtras.tsx": {
       "hand-rolled-disclosure": 1
     },
     "src/features/sessions/ui/ModelPicker.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/sessions/ui/ModelSettingsColumn.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/sessions/ui/ProviderAccountMenu.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/sessions/ui/SessionImportDialog.tsx": {
-      "hand-rolled-disclosure": 2
-    },
-    "src/features/sessions/ui/SessionReview.tsx": {
       "hand-rolled-disclosure": 1
     },
     "src/features/sessions/ui/SubagentCards.tsx": {
@@ -185,34 +128,16 @@
     "src/features/settings/ui/appearance/controls/StateLadder.tsx": {
       "theme-palette-literal": 2
     },
-    "src/features/settings/ui/providerDefaultsTargetsPicker.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/settings/ui/settingsControls.tsx": {
-      "hand-rolled-disclosure": 1
-    },
     "src/features/source-control/model/gitGraph.ts": {
       "theme-palette-literal": 7
     },
     "src/features/source-control/ui/ChangeRow.tsx": {
       "raw-native-control": 1
     },
-    "src/features/source-control/ui/FileSection.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/source-control/ui/GitChangesList.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/source-control/ui/GitChangesPanel.tsx": {
-      "hand-rolled-disclosure": 1
-    },
     "src/features/source-control/ui/SidebarWorktreeSwitcher.tsx": {
       "hand-rolled-disclosure": 1
     },
     "src/features/source-control/ui/UnifiedDiffView.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/source-control/ui/WorkspaceSourceControl.tsx": {
       "hand-rolled-disclosure": 1
     },
     "src/features/terminal/model/terminalRenderingPolicy.ts": {
@@ -225,9 +150,6 @@
       "hand-rolled-disclosure": 1
     },
     "src/features/voice/ui/VoiceTurnControl.tsx": {
-      "hand-rolled-disclosure": 1
-    },
-    "src/features/workspace/ui/WorkspacePicker.tsx": {
       "hand-rolled-disclosure": 1
     },
     "src/shared/ui/DateRangePicker.tsx": {

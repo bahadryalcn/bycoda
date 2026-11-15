@@ -475,7 +475,7 @@ const scrollbarTheme = EditorView.theme({
     bottom: "0",
     width: `${RAIL_WIDTH}px`,
     boxSizing: "border-box",
-    borderLeft: "1px solid var(--color-stroke)",
+    borderLeft: "1px solid var(--ui-pane-border)",
     background: "transparent",
     cursor: "default",
     userSelect: "none",

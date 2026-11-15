@@ -442,15 +442,9 @@
   padding-inline: 16px;
   justify-content: flex-start;
 }
-.settings-advanced-toggle svg {
-  order: 1;
+/* The shared trailing chevron sits at the row end. */
+.settings-advanced-toggle > :last-child {
   margin-inline-start: auto;
-}
-.settings-advanced-toggle svg {
-  flex-shrink: 0;
-}
-.settings-advanced-toggle svg[data-open] {
-  transform: rotate(90deg);
 }
 @media (prefers-reduced-motion: reduce) {
   .bycoda-settings-workbench

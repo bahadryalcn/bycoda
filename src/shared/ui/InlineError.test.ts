@@ -98,3 +98,20 @@ it("blocks a pending action and shows details behind a link only when needed", a
     short.done();
   }
 });
+
+it("re-inks copy and glyph with the overlay ink on a dark scrim", async () => {
+  const { container, done } = await mount(
+    createElement(InlineError, { overlay: true, children: "Could not load" }),
+  );
+  try {
+    const root = container.firstElementChild!;
+    expect(root.getAttribute("role")).toBe("alert");
+    expect(root.className).toContain("--ui-overlay-ink");
+    expect(root.className).not.toContain("--ui-tone-danger-fg");
+    expect(root.querySelector("svg")!.parentElement!.parentElement!.className).toContain(
+      "--ui-overlay-ink",
+    );
+  } finally {
+    done();
+  }
+});

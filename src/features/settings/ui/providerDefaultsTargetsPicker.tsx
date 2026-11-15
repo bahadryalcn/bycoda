@@ -10,7 +10,7 @@ import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { ChevronDown, Globe } from "../../../shared/ui/icons";
+import { Globe } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import type { SearchableSelectOption } from "../../../shared/ui/SearchableSelect";
 
@@ -113,9 +113,8 @@ export function DefaultsTargetsPicker({
         size="sm"
         aria-label={t("Save in")}
         startIcon={<Globe className="icon-sm" />}
-        endIcon={<ChevronDown className="icon-sm" />}
         aria-haspopup="dialog"
-        aria-expanded={open}
+        expanded={open}
         onClick={() => {
           setMode(hasOverrides ? "projects" : "default");
           setOpen(!open);

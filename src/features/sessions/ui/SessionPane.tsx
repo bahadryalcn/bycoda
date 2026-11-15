@@ -108,7 +108,6 @@ import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { ActivityDock } from "./ActivityDock";
 import { sessionSubagents } from "../model/sessionSubagents";
 import { InterruptedNotice } from "./InterruptedNotice";
-import { ComposerNoticeStack } from "./ComposerNoticeStack";
 import { CONTINUE_PROMPT } from "../model/inFlight";
 import { useSubagentSheet } from "./SubagentSheet";
 import { SessionSubagentSheet, useDockActions } from "./SessionSubagentSheet";
@@ -1246,18 +1245,33 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const providerGoalCommand = useStableCallback((command: "/goal resume" | "/goal clear") =>
     onSubmit(session.id, command, [], { intent: "default" }),
   );
+  // Stable order in the one notice stack above the card: interrupted turn, then provider retry.
+  const composerNotices = (
+    <>
+      <InterruptedNotice
+        session={stableSession}
+        interruptedTurn={interruptedTurn}
+        blockedReason={sendBlockedReason}
+        message={remote ? "The host stopped this turn before it finished." : undefined}
+        onContinue={continueInterruptedTurn}
+      />
+      {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
+        <ProviderRetryNotice
+          key={session.id}
+          provider={HARNESS_TITLE[session.harness]}
+          message={session.retryMessage}
+          onStop={() => onStop(session.id)}
+          onRefresh={
+            session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
+              ? () => onRefreshAdoptedSession(session.id)
+              : undefined
+          }
+        />
+      ) : null}
+    </>
+  );
   const composerChildren = (
     <>
-      {/* Stable order above the writing box: question/approval and blocker, then activity, queue, input. */}
-      <ComposerNoticeStack>
-        <InterruptedNotice
-          session={stableSession}
-          interruptedTurn={interruptedTurn}
-          blockedReason={sendBlockedReason}
-          message={remote ? "The host stopped this turn before it finished." : undefined}
-          onContinue={continueInterruptedTurn}
-        />
-      </ComposerNoticeStack>
       {/* Above the queue and the input, below any blocker. */}
       <ActivityDock
         sessionId={session.id}
@@ -1302,6 +1316,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const crewManaged = useCrewManagedSession(session.id);
   const ownerComposer = (
     <Composer
+      notices={composerNotices}
       key={session.id}
       disabled={
         rewindingMessage ||
@@ -1706,21 +1721,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 onDeleteSession && !crewManaged ? () => onDeleteSession(session.id) : undefined
               }
             />
-          ) : null}
-          {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
-            <ComposerNoticeStack>
-              <ProviderRetryNotice
-                key={session.id}
-                provider={HARNESS_TITLE[session.harness]}
-                message={session.retryMessage}
-                onStop={() => onStop(session.id)}
-                onRefresh={
-                  session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
-                    ? () => onRefreshAdoptedSession(session.id)
-                    : undefined
-                }
-              />
-            </ComposerNoticeStack>
           ) : null}
           {savedDraftProjection.failed ? (
             <Alert

@@ -3,13 +3,7 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { Text } from "../../../shared/ui/Text";
-import {
-  ChevronDown,
-  ChevronRight,
-  FolderTree,
-  ListBullet,
-  MoreHorizontal,
-} from "../../../shared/ui/icons";
+import { FolderTree, ListBullet, MoreHorizontal } from "../../../shared/ui/icons";
 import type { ChangesView } from "../../settings";
 import styles from "./CheckoutHeader.module.css";
 
@@ -75,17 +69,13 @@ export function FileSection({
           variant="item"
           motion="none"
           type="button"
-          aria-expanded={open}
+          expanded={open}
+          chevron="start"
           tooltip={title}
           tooltipWhen="overflow"
           onClick={onToggle}
           className="flex min-w-28 flex-1 basis-28 items-center gap-1 text-left"
         >
-          {open ? (
-            <ChevronDown className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
-          ) : (
-            <ChevronRight className="icon-sm shrink-0" tone="secondary" strokeWidth={1.75} />
-          )}
           <Text
             data-file-section-title
             size="caption"

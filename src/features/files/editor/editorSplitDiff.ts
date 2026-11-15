@@ -151,7 +151,7 @@ export function createSplitDiff(options: {
   split.dom.style.overscrollBehavior = "none";
   const afterPane = split.b.dom.parentElement;
   if (afterPane) {
-    afterPane.style.borderLeft = "1px solid var(--color-stroke)";
+    afterPane.style.borderLeft = "1px solid var(--ui-pane-border)";
   }
   return split;
 }

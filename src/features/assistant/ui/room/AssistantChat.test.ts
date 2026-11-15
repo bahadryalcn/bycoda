@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { MessageTimeline } from "../../../../shared/ui/MessageTimeline";
 import { afterEach, expect, it, vi } from "vitest";
-import { AssistantChatComposer, AssistantChatMessage } from "./AssistantChat";
+import { AssistantChatComposer, assistantChatItem } from "./AssistantChat";
 
 vi.mock("../../../sessions/public/AgentMarkdown", () => ({ AgentMarkdown: () => null }));
-vi.mock("../../../../shared/i18n", () => ({
+vi.mock(import("../../../../shared/i18n"), async (importOriginal) => ({
+  ...(await importOriginal()),
   t: (key: string) => key,
   useT: () => (key: string) => key,
   useLocale: () => "en",
@@ -23,13 +25,24 @@ it("preserves literal user source through the session text renderer", async () =
   document.body.append(container);
   root = createRoot(container);
   const text = "<button>literal</button>\n**keep these markers**";
-  await act(async () => root!.render(createElement(AssistantChatMessage, { role: "user", text })));
+  await act(async () =>
+    root!.render(
+      createElement(MessageTimeline, {
+        label: "Messages",
+        items: [assistantChatItem({ id: "m", role: "user", text, time: 1000 })],
+      }),
+    ),
+  );
   expect(container.querySelector("pre")?.textContent).toBe(text);
   expect(container.querySelector("strong")).toBeNull();
 });
 
 async function render(
-  options: { pending?: boolean; readOnly?: boolean; sendDisabled?: boolean } = {},
+  options: {
+    pending?: boolean;
+    readOnly?: boolean;
+    sendDisabled?: boolean;
+  } = {},
 ) {
   container = document.createElement("div");
   document.body.append(container);

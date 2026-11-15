@@ -30,7 +30,6 @@ import {
   PanelRight,
   RefreshCw,
   Folder,
-  ChevronDown,
 } from "../../shared/ui/icons";
 import { Button } from "../../shared/ui/Button";
 import { Tab, TabList, Tabs } from "../../shared/ui/Tabs";
@@ -333,7 +332,7 @@ function ConversationHostTools({
                 label={t("Conversation tool selection")}
                 tooltip={t("Conversation tool selection")}
                 aria-haspopup="menu"
-                aria-expanded={toolMenuOpen}
+                expanded={toolMenuOpen}
                 className="host-tools-compact-trigger"
                 onClick={() => setToolMenuOpen((value) => !value)}
               >
@@ -350,7 +349,6 @@ function ConversationHostTools({
                 >
                   {t(toolLabels[tab])}
                 </Text>
-                <ChevronDown className="icon-sm" aria-hidden />
               </Button>
               {toolMenuOpen ? (
                 <DropdownMenu

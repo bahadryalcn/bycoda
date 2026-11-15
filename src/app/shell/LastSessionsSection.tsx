@@ -11,14 +11,7 @@ import { ActionHost } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { useLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ChevronDown,
-  CircleAlert,
-  Clock,
-  FolderOpen,
-  Internet,
-  PenLine,
-} from "../../shared/ui/icons";
+import { CircleAlert, Clock, FolderOpen, Internet, PenLine } from "../../shared/ui/icons";
 import { basename } from "../../platform/tauri/fs";
 import { projectKey, projectName } from "../../shared/lib/paths";
 import { useRemoteProject } from "../../features/connections/public/useRemoteProject";
@@ -266,13 +259,12 @@ function CountPicker({
         tooltip={t("Sessions shown")}
         aria-label={t("Sessions shown: {p0}", { p0: recentCountLabel(count) })}
         aria-haspopup="menu"
-        aria-expanded={open}
+        expanded={open}
         onClick={() => setOpen((value) => !value)}
         size="sm"
         className="shrink-0 tabular-nums"
       >
         {count === 50 ? t("All") : count}
-        <ChevronDown className="icon-xs" strokeWidth={1.75} />
       </Button>
       {open ? (
         <DropdownMenu

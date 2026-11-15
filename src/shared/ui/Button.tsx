@@ -12,8 +12,9 @@ import {
   type SyntheticEvent,
 } from "react";
 import type { PopoverAlign, PopoverSide } from "../lib/popover";
-import { Check } from "./icons";
+import { Check, ChevronDown, ChevronRight } from "./icons";
 import { LiveText } from "./LiveText";
+import { motionAttributes } from "./Motion";
 import { textAttributes, type TextRoles, type TextLeading } from "./Text";
 import { useTooltip } from "./Tooltip";
 import {
@@ -156,6 +157,12 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   /** Toggle state: sets `aria-pressed` and the selected look. Use for on/off tools;
    *  `selected` stays visual only. An explicit `aria-pressed` still wins. */
   pressed?: boolean;
+  /** Menu, popover or section trigger state: sets `aria-expanded` and draws the trailing chevron
+   *  (turned while open) unless `endIcon` is given. An explicit `aria-expanded` still wins. */
+  expanded?: boolean;
+  /** With `expanded`: `start` draws the chevron before the label (right, turning down while open)
+   *  for a row or section toggle instead of the trailing one. Default `end`. */
+  chevron?: "start" | "end";
   /** Fires once when the primary pointer stays down for `longPressDelay` ms (touch and
    *  mouse). The click that follows that press is suppressed. Keyboard and the plain
    *  click are unchanged, so the long-press action needs an equivalent menu or shortcut. */
@@ -266,6 +273,8 @@ export function Button({
   align,
   inset = false,
   pressed,
+  expanded,
+  chevron = "end",
   onLongPress,
   longPressDelay = 500,
   truncate = false,
@@ -474,6 +483,7 @@ export function Button({
     "aria-label": accessibleName,
     "aria-busy": loading || props["aria-busy"] || undefined,
     "aria-pressed": props["aria-pressed"] ?? pressed,
+    "aria-expanded": props["aria-expanded"] ?? expanded,
     "aria-disabled": blocked || props["aria-disabled"] || undefined,
     "data-disabled": explained || undefined,
     "data-button-variant": variant,
@@ -623,8 +633,19 @@ export function Button({
     onDragOver: guard(props.onDragOver),
     onDrop: guard(props.onDrop),
   };
+  const startChevron = expanded !== undefined && chevron === "start" && endIcon == null;
   const content = (
     <>
+      {startChevron ? (
+        <span className={styles.icon} aria-hidden="true">
+          <ChevronRight
+            {...motionAttributes(
+              { transition: "transform", duration: "standard" },
+              expanded ? "rotate-90" : "",
+            )}
+          />
+        </span>
+      ) : null}
       {inlineProgress ? (
         <span
           className={styles.progressIcon}
@@ -671,9 +692,16 @@ export function Button({
       ) : (
         contentLabel
       )}
-      {endIcon != null ? (
+      {endIcon != null || (expanded !== undefined && !startChevron) ? (
         <span className={styles.icon} aria-hidden="true">
-          {endIcon}
+          {endIcon ?? (
+            <ChevronDown
+              {...motionAttributes(
+                { transition: "transform", duration: "standard" },
+                expanded ? "rotate-180" : "",
+              )}
+            />
+          )}
         </span>
       ) : null}
     </>

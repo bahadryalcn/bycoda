@@ -8,7 +8,6 @@ import { NoteBodyField } from "./NoteBodyField";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Sash } from "../../../shared/ui/Sash";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { motionAttributes } from "../../../shared/ui/Motion";
 import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
@@ -24,7 +23,7 @@ import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n";
-import { ChevronDown, Copy, File, Link, Plus, Trash2, X } from "../../../shared/ui/icons";
+import { Copy, File, Link, Plus, Trash2, X } from "../../../shared/ui/icons";
 import {
   memo,
   useCallback,
@@ -343,7 +342,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           ref={listButton}
           variant="ghost"
           motion="none"
-          aria-expanded={listOpen}
+          expanded={listOpen}
           aria-label={t("Switch note")}
           aria-haspopup="dialog"
           tooltip={selected?.title ?? t("Switch note")}
@@ -358,14 +357,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           <Text size="inherit" tone="inherit" truncate className="min-w-0 flex-1">
             {selected?.title ?? t("Notes")}
           </Text>
-          <ChevronDown
-            {...motionAttributes(
-              { transition: "transform", duration: "standard" },
-              `icon-xs shrink-0 ${listOpen ? "rotate-180" : ""}`,
-            )}
-            tone="secondary"
-            strokeWidth={1.75}
-          />
         </Button>
         <Button
           variant="ghost"

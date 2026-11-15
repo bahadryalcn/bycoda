@@ -7,7 +7,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Popover } from "../../../shared/ui/Popover";
 import { Text } from "../../../shared/ui/Text";
 import { TextField } from "../../../shared/ui/TextField";
-import { ArrowUp, ArrowDown, ChevronDown } from "../../../shared/ui/icons";
+import { ArrowUp, ArrowDown } from "../../../shared/ui/icons";
 import type { DecisionSource } from "../model/decisionTypes";
 import { moveSource, sourceOptions } from "../model/routingEditor";
 import { SourceKindIcon } from "./SourceIcon";
@@ -39,10 +39,9 @@ export function SourceOrderPicker({
         label={label}
         aria-label={label}
         aria-haspopup="dialog"
-        aria-expanded={anchor !== null}
+        expanded={anchor !== null}
         disabled={disabled}
         onClick={(event) => setAnchor(event.currentTarget)}
-        endIcon={<ChevronDown />}
       >
         <span className="flex min-w-0 items-center gap-1">
           {value.length

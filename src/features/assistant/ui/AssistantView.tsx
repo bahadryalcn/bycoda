@@ -33,7 +33,6 @@ import {
   Trash2,
   RefreshCw,
   X,
-  ChevronDown,
 } from "../../../shared/ui/icons";
 import { assistantRequest as ownerRequest } from "../model/assistantClient";
 import { AssistantPresenceStatus } from "./AssistantPresenceStatus";
@@ -198,12 +197,11 @@ export function AssistantView(props: AssistantViewProps) {
                 variant="ghost"
                 label={t("Assistant status")}
                 aria-haspopup="dialog"
-                aria-expanded={Boolean(healthAnchor)}
+                expanded={Boolean(healthAnchor)}
                 onClick={(event) => setHealthAnchor(event.currentTarget)}
               >
                 <StatusDot tone={mode.tone} />
                 {mode.label}
-                <ChevronDown className="icon-xs" />
               </Button>
             )}
           </div>
@@ -215,7 +213,7 @@ export function AssistantView(props: AssistantViewProps) {
                   variant="ghost"
                   label={t("Presence")}
                   aria-haspopup="dialog"
-                  aria-expanded={Boolean(presenceAnchor)}
+                  expanded={Boolean(presenceAnchor)}
                   onClick={(event) => setPresenceAnchor(event.currentTarget)}
                 >
                   <AssistantPresenceStatus
@@ -223,7 +221,6 @@ export function AssistantView(props: AssistantViewProps) {
                     compact
                     offline={Boolean(readError)}
                   />
-                  <ChevronDown className="icon-xs" />
                 </Button>
                 <Button
                   variant={snapshot.paused ? "secondary" : "ghost"}

@@ -11,9 +11,8 @@ export { ComposerAction } from "./ComposerAction";
 import { MessageQueue } from "./MessageQueue";
 import { RemoteOriginMark } from "./RemoteOriginMark";
 import { ComposerHighlight } from "./ComposerHighlight";
-import { Alert } from "../../../shared/ui/Alert";
 import { registerVoiceDraftReader } from "../../voice/model/voiceDraftContext";
-import { DeliveryProgressNotice, DeliveryProgressIndicator } from "./DeliveryProgressNotice";
+import { DeliveryProgressIndicator } from "./DeliveryProgressNotice";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
@@ -48,6 +47,7 @@ import { extractChatCitations, withChatCitations, type ChatCitation } from "../m
 import { TranslationResultDialog } from "./TranslationResultDialog";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { useT } from "../../../shared/i18n";
+import { MicrophoneRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
 import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
@@ -208,8 +208,7 @@ import {
 } from "../../settings/public/settings";
 import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
 import { useResolvedTabGroupLogo } from "../../workspace/model/tabGroups";
-import { UsageLimitNotice } from "./UsageLimitNotice";
-import { ComposerNoticeStack } from "./ComposerNoticeStack";
+import { ComposerNotices } from "./ComposerNotices";
 import {
   supportsProviderAccounts,
   type ProviderAccountProvider,
@@ -283,13 +282,11 @@ import { workItemMentionOf } from "../model/workItemMentionRows";
 import { rememberWorkItemMention } from "../../inbox/public/workItemMentions";
 import { WorkItemMentionCwd } from "./WorkItemMentionChip";
 import { keepEqualToken } from "./keepEqualToken";
-import { recheckSessionFolderState } from "./recheckSessionFolderState";
 import { useComposerWorkMode } from "./useComposerWorkMode";
 import { useComposerSlashInventory } from "./useComposerSlashInventory";
 import { applyTextareaEdit, insertDictatedText } from "./composerTextareaEdit";
 import { installAttachmentSelectionPolicy } from "./attachmentSelectionPolicy";
 import { DictationButton } from "../../voice/ui/DictationButton";
-import { MicrophoneRecoveryAction } from "../../voice/ui/MicrophoneRecoveryAction";
 import { useEditingLastTurn } from "./useEditingLastTurn";
 import {
   useAttachmentSink,
@@ -457,6 +454,8 @@ type Props = {
   onEditingLastTurnChange?: (editing: boolean) => void;
   /** Shown in the workspace row when the conversation was started from another device. */
   remoteOrigin?: "running" | "idle";
+  /** Pane-level notices rendered first in the one notice stack above the card. */
+  notices?: ReactNode;
   children?: ReactNode;
 };
 type SubmissionRun = {
@@ -629,6 +628,7 @@ export const Composer = memo(function Composer({
   editingLastTurn,
   onEditingLastTurnChange,
   remoteOrigin,
+  notices,
   children,
 }: Props) {
   const t = useT();
@@ -3071,49 +3071,32 @@ export const Composer = memo(function Composer({
           }}
         />
       ) : null}
-      <ComposerNoticeStack>
-        {usageLimit ? (
-          <UsageLimitNotice
-            limit={usageLimit}
-            provider={accountProvider}
-            accountId={providerAccountId}
-            onResume={
-              onUsageLimitResume
-                ? () => {
-                    mutateParentInput(parentChanged, onUsageLimitResume);
-                  }
-                : undefined
-            }
-            onResumeAtReset={
-              onUsageLimitResumeAtReset
-                ? (...args) => {
-                    mutateParentInput(parentChanged, () => onUsageLimitResumeAtReset(...args));
-                  }
-                : undefined
-            }
-            onSwitchAccount={
-              accountProvider && onSelectProviderAccount
-                ? (accountId) => {
-                    mutateParentInput(parentChanged, () =>
-                      onSelectProviderAccount(accountProvider, accountId),
-                    );
-                  }
-                : undefined
-            }
-            onSwitchModel={() => setModelPickerRequest((count) => count + 1)}
-            onDismiss={
-              onUsageLimitDismiss
-                ? () => {
-                    mutateParentInput(parentChanged, onUsageLimitDismiss);
-                  }
-                : undefined
-            }
-          />
-        ) : null}
-        {queuedMessages.length === 0 ? (
-          <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
-        ) : null}
-      </ComposerNoticeStack>
+      <ComposerNotices
+        leading={notices}
+        sessionId={sessionId}
+        queuedMessages={queuedMessages}
+        usageLimit={usageLimit}
+        accountProvider={accountProvider}
+        providerAccountId={providerAccountId}
+        guard={(run) => mutateParentInput(parentChanged, run)}
+        onUsageLimitResume={onUsageLimitResume}
+        onUsageLimitResumeAtReset={onUsageLimitResumeAtReset}
+        onUsageLimitDismiss={onUsageLimitDismiss}
+        onSelectProviderAccount={onSelectProviderAccount}
+        onSwitchModel={() => setModelPickerRequest((count) => count + 1)}
+        pasteError={pasteError}
+        pasteErrorAction={
+          pasteError ? <MicrophoneRecoveryAction message={pasteError} /> : undefined
+        }
+        sessionFolderError={sessionFolderError}
+        sessionFolderMutationBlocked={sessionFolderMutationBlocked}
+        sessionFolderPending={sessionFolderPending}
+        sessionFolderSaving={sessionFolderSaving}
+        onSessionFolderRecovered={(message) => {
+          if (!message) setSessionFolderMutationBlocked(false);
+          setSessionFolderError(message);
+        }}
+      />
       <MessageQueue
         parentSessionId={logicalParentSessionId}
         key={sessionId}
@@ -3427,37 +3410,6 @@ export const Composer = memo(function Composer({
                 />
               ))}
             </div>
-          ) : null}
-
-          {pasteError ? (
-            <Alert tone="danger" extra={<MicrophoneRecoveryAction message={pasteError} />}>
-              {pasteError}
-            </Alert>
-          ) : null}
-          {sessionFolderError ? (
-            <Alert
-              tone="danger"
-              action={
-                sessionFolderMutationBlocked
-                  ? {
-                      label: t("Check again"),
-                      onClick: () => {
-                        void recheckSessionFolderState()
-                          .then((message) => {
-                            if (!message) setSessionFolderMutationBlocked(false);
-                            setSessionFolderError(message);
-                          })
-                          .catch((error: unknown) => setSessionFolderError(String(error)));
-                      },
-                    }
-                  : undefined
-              }
-            >
-              {sessionFolderError}
-            </Alert>
-          ) : null}
-          {sessionFolderPending ? (
-            <Alert>{sessionFolderSaving ? t("Saving…") : t("Loading folders…")}</Alert>
           ) : null}
 
           {inboxCard ? (

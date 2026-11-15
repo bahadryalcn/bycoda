@@ -1,7 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { useFormat, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import {
@@ -82,7 +81,7 @@ export function ProviderAccountMenu({
             : t("Continue this conversation with another account")
         }
         aria-label={variant === "pill" ? t("Account: {p0}", { p0: label }) : t("Switch account")}
-        aria-expanded={open}
+        expanded={open}
         aria-haspopup="menu"
         data-model-control={variant === "pill" ? true : undefined}
         onMouseDown={(event) => event.preventDefault()}
@@ -100,11 +99,6 @@ export function ProviderAccountMenu({
         >
           {variant === "pill" ? label : t("Switch account")}
         </Text>
-        <ChevronDown
-          className={`icon-xs shrink-0 ${open ? "rotate-180" : ""}`}
-          tone="secondary"
-          strokeWidth={1.75}
-        />
       </Button>
       {open ? (
         <DropdownMenu

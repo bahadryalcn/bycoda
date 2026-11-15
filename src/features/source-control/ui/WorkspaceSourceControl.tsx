@@ -19,7 +19,7 @@ import {
   type GitFileDiffKind,
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
-import { ChevronDown, ChevronRight, FolderTree, RefreshCw } from "../../../shared/ui/icons";
+import { FolderTree, RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
 import { GitPanelSections } from "./GitPanelSections";
 import { useProjectDiffStats } from "../hooks/useProjectDiffStats";
@@ -219,15 +219,11 @@ export function WorkspaceSourceControl({
               variant="item"
               motion="none"
               className="w-auto shrink-0 gap-1"
-              aria-expanded={listOpen}
+              expanded={listOpen}
+              chevron="start"
               aria-controls={repositoryListId}
               onClick={() => setListOpen((open) => !open)}
             >
-              {listOpen ? (
-                <ChevronDown className="icon-xs" />
-              ) : (
-                <ChevronRight className="icon-xs" />
-              )}
               {t("Repository")}
             </Button>
           ) : null}

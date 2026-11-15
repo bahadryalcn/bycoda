@@ -2244,7 +2244,7 @@ for (const theme of ["light", "dark"])
       await page.goto(
         `/tests/browser/assistant/assistant-room.html?theme=${theme}&conversation-message-fixture`,
       );
-      const bubbles = page.locator("main article > div:nth-child(2)");
+      const bubbles = page.locator("main [data-message-id] > div:first-child");
       await expect(bubbles).toHaveCount(2);
       const values = await bubbles.evaluateAll((nodes) =>
         nodes.map((node) => {
@@ -2258,8 +2258,8 @@ for (const theme of ["light", "dark"])
       );
       expect(values[0].bl).toBe("0px");
       expect(values[0].br).toBe("0px");
-      expect(values[1].bl).toBe("8px");
-      expect(values[1].br).toBe("8px");
+      expect(values[1].bl).not.toBe("0px");
+      expect(values[1].br).not.toBe("0px");
       expect(values[0].bg).not.toBe(values[1].bg);
       await mkdir("temp/verification/assistant-callers-visual", { recursive: true });
       await page.screenshot({

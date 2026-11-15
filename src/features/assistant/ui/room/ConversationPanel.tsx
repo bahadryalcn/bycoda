@@ -9,6 +9,7 @@ import { Skeleton } from "../../../../shared/ui/Skeleton";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { InlineError } from "../../../../shared/ui/InlineError";
 import { LiveText } from "../../../../shared/ui/LiveText";
+import { MessageTimeline } from "../../../../shared/ui/MessageTimeline";
 import styles from "./Conversation.module.css";
 import { ConversationComposer } from "./ConversationComposer";
 import { ConversationDraftRecovery } from "./ConversationDraftRecovery";
@@ -133,7 +134,9 @@ export function ConversationPanel(props: ConversationPanelProps) {
               )}
             />
           )}
-          {messageElements}
+          {messageElements.length > 0 && (
+            <MessageTimeline label={t("Messages")} items={messageElements} />
+          )}
         </div>
         <LiveText className="sr-only" mode="assertive" text={error} />
         <LiveText

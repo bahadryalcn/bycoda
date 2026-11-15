@@ -8,7 +8,8 @@ import { InlineError } from "../../../../shared/ui/InlineError";
 import { LoadingText } from "../../../../shared/ui/LoadingText";
 import { ScrollArea } from "../../../../shared/ui/ScrollArea";
 import { CheckList, RefreshCw } from "../../../../shared/ui/icons";
-import { AssistantChatComposer, AssistantChatMessage } from "./AssistantChat";
+import { MessageTimeline } from "../../../../shared/ui/MessageTimeline";
+import { AssistantChatComposer, assistantChatItem } from "./AssistantChat";
 import { ConversationDraftRecovery } from "./ConversationDraftRecovery";
 import { useAssistantRoom } from "./assistantRoomContext";
 import {
@@ -127,14 +128,18 @@ function JobDiscussionConversation({ thread }: { thread: AssistantThread }) {
               {t("Load earlier messages")}
             </Button>
           )}
-          {c.visible.map((message) => (
-            <AssistantChatMessage
-              key={message.id}
-              role={message.role}
-              text={message.text}
-              author={message.role === "assistant" ? room.identity.name : t("You")}
-            />
-          ))}
+          <MessageTimeline
+            label={t("Messages")}
+            items={c.visible.map((message) =>
+              assistantChatItem({
+                id: message.id,
+                role: message.role,
+                text: message.text,
+                time: message.createdAt,
+                author: message.role === "assistant" ? room.identity.name : undefined,
+              }),
+            )}
+          />
         </ScrollArea>
       )}
       {c.error && (
