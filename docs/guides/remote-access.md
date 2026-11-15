@@ -69,8 +69,11 @@ after restart or verified unexpected exit. Stopping the tunnel disables this set
 
 With account computer discovery enabled and the desktop signed in, URL changes
 are published within the next five-second check. Paired desktop clients re-fetch
-account routes during reconnect and verify the Host environment identity before
-sending their saved credential. Account listing permission remains required.
+account routes during reconnect and require a nonce-based HMAC-SHA256 possession
+proof before sending their saved credential. The proof uses the device credential's
+SHA-256 hash, stays bound to the expected environment and a Host-owned published
+origin, and never discloses the credential or its hash. Public environment identity
+alone does not authenticate a Host. Account listing permission remains required.
 Pairing and device permissions still apply. A headless Host does not run the
 desktop account publisher. Quick Tunnels have no uptime guarantee and do not
 support SSE; HTTP RPC remains the fallback transport.
@@ -81,7 +84,15 @@ encrypted request through the account; the other computer shows the requester's 
 platform and a six-digit code to compare, with Allow and Deny. On Allow, that computer
 issues a device credential, seals it to the requester's one-time key and the account
 only relays the sealed box. The requester verifies the Host identity on the published
-HTTPS route before sending the one-time ticket, then saves and connects the machine.
+HTTPS route with a possession proof derived from the sealed ticket before sending
+the one-time ticket, then saves and connects the machine. Phone pairing and its
+redemption protocol remain unchanged; the proof endpoint is additive.
+Turning a machine off blocks SSH, direct HTTP and WebSocket admission on this
+desktop and skips its background polls. Turning it on keeps its saved credential.
+Requests prefer the route used by the latest successful probe. A failed account
+tunnel is retired; a discovery probe can try SSH next. A write with an unknown
+outcome is never replayed on another route. Closing the pairing dialog cancels
+pending setup and status waits before a ticket can be redeemed.
 Plain HTTP is used only for loopback. The other computer must be signed in with the same
 account, online, and have "Let my signed-in phones find this computer" on; pairing needs
 its phone access (Tailscale or local network) to be set up once.

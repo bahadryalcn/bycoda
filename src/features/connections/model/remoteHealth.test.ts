@@ -11,6 +11,7 @@ import {
   subscribeRemoteRecovered,
 } from "./remoteHealth";
 import { remotePath } from "./remoteProjects";
+import { setMachineEnabled } from "./machineEnabled";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -37,6 +38,15 @@ beforeEach(() => {
   resetRemoteHealth();
 });
 afterEach(() => vi.useRealTimers());
+
+it("skips background polls for disabled machines, including healthy direct routes", () => {
+  setMachineEnabled("env", false);
+  expect(remotePollDue(project)).toBe(false);
+  vi.advanceTimersByTime(60_000);
+  expect(remotePollDue(project)).toBe(false);
+  setMachineEnabled("env", true);
+  expect(remotePollDue(project)).toBe(true);
+});
 
 it("slows polling while unreachable and resumes after one success", () => {
   const recovered = vi.fn();

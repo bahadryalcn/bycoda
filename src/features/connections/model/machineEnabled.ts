@@ -1,4 +1,5 @@
 import { createStoredSetting } from "../../../shared/lib/storedSetting";
+import { invoke } from "@tauri-apps/api/core";
 
 /** Machines the owner turned off on this computer, by environment id. Turning one
  * off only stops this computer from connecting; the saved credential, learned
@@ -18,6 +19,18 @@ const stored = createStoredSetting<readonly string[]>({
 
 export const loadDisabledMachines = stored.load;
 export const subscribeDisabledMachines = stored.subscribe;
+
+function syncNativeDisabledMachines(): void {
+  try {
+    void Promise.resolve(
+      invoke("remote_set_disabled_machines", { environmentIds: stored.load() }),
+    ).catch(() => undefined);
+  } catch {
+    // Browser fixtures have no native transport.
+  }
+}
+stored.subscribe(syncNativeDisabledMachines);
+syncNativeDisabledMachines();
 
 export function isMachineEnabled(environmentId: string): boolean {
   return !stored.load().includes(environmentId);

@@ -23,6 +23,7 @@ export type DesktopPairDeps = {
   randomBytes?: PairRandomBytes;
   pollMs?: number;
   now?: () => number;
+  signal?: AbortSignal;
 };
 
 export type DesktopPairRequest = {
@@ -46,6 +47,15 @@ export async function requestDesktopPair(
 ): Promise<DesktopPairRequest> {
   const keypair = await generatePairKeypair(deps.randomBytes);
   const forget = () => keypair.privateKey.fill(0);
+  if (deps.signal?.aborted) {
+    forget();
+    return {
+      code: "",
+      expiresAt: "",
+      outcome: Promise.resolve({ state: "cancelled" }),
+      cancel: forget,
+    };
+  }
   let created: { id: string; expiresAt: string };
   try {
     created = await deps.api.createPairRequest({
@@ -57,8 +67,14 @@ export async function requestDesktopPair(
     throw error;
   }
   const { id } = created;
-  let cancelled = false;
+  let cancelled = deps.signal?.aborted ?? false;
   let wake: (() => void) | undefined;
+  const cancel = () => {
+    cancelled = true;
+    forget();
+    wake?.();
+  };
+  deps.signal?.addEventListener("abort", cancel, { once: true });
   const sleep = () =>
     new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, deps.pollMs ?? DESKTOP_PAIR_POLL_MS);
@@ -72,6 +88,7 @@ export async function requestDesktopPair(
     for (;;) {
       if (cancelled) return { state: "cancelled" };
       const status = await deps.api.getPairRequest({ params: { id } });
+      if (cancelled) return { state: "cancelled" };
       if (status.state === "sealed") {
         if (!status.desktopPublicKey || !status.sealed) return { state: "expired" };
         const ticketJson = openPairTicket(
@@ -90,14 +107,19 @@ export async function requestDesktopPair(
     }
   }
 
-  const outcome = settle().finally(forget);
+  const outcome = settle()
+    .catch((error): DesktopPairOutcome => {
+      if (cancelled) return { state: "cancelled" };
+      throw error;
+    })
+    .finally(() => {
+      deps.signal?.removeEventListener("abort", cancel);
+      forget();
+    });
   return {
     code: pairSasCode(id, keypair.publicKey),
     expiresAt: created.expiresAt,
     outcome,
-    cancel: () => {
-      cancelled = true;
-      wake?.();
-    },
+    cancel,
   };
 }

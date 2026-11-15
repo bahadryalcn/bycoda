@@ -123,7 +123,7 @@ impl NativeServiceChannel {
         let caller = state
             .native_service_ws
             .capture_service(
-                NativeRoute::new(
+                account_routes::native_route(
                     &machine.id,
                     &machine.environment_id,
                     &machine.endpoint,
@@ -194,7 +194,7 @@ impl NativeServiceChannel {
             let caller = state
                 .native_service_ws
                 .capture_service(
-                    NativeRoute::new(
+                    account_routes::native_route(
                         &machine.id,
                         &machine.environment_id,
                         &machine.endpoint,
@@ -355,7 +355,7 @@ impl NativeServiceChannel {
             state
                 .native_service_ws
                 .capture_peer_service(
-                    NativeRoute::new(
+                    account_routes::native_route(
                         &selection.machine.id,
                         &selection.machine.environment_id,
                         &selection.endpoint,
@@ -823,7 +823,7 @@ impl NativeServiceChannel {
         let broker = crate::host_ws::native_profile::NativeProfileBroker::default();
         let caller = broker
             .capture_service(
-                NativeRoute::new(
+                account_routes::native_route(
                     "fixture",
                     "fixture-environment",
                     "http://127.0.0.1:3774",
@@ -975,7 +975,7 @@ mod tests {
             let broker = NativeProfileBroker::default();
             let caller = broker
                 .capture_service(
-                    NativeRoute::new(
+                    account_routes::native_route(
                         &machine.id,
                         &machine.environment_id,
                         &endpoint,

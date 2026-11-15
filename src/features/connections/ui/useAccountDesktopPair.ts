@@ -30,6 +30,7 @@ export function useAccountDesktopPair(plan: AccountPairPlan) {
   useEffect(() => {
     if (!deviceId) return;
     let current = true;
+    const controller = new AbortController();
     let cancel: (() => void) | undefined;
     const show = (next: AccountPairView) => {
       if (current) setView(next);
@@ -38,9 +39,12 @@ export function useAccountDesktopPair(plan: AccountPairPlan) {
       show({ step: "starting" });
       const api = accountApi();
       const { name: deviceName } = await accountDeviceInfo();
+      if (!current) return;
       const flow = await startAccountDesktopPair(plan, {
-        request: (target) => requestDesktopPair(target, { api, deviceId }),
+        request: (target) =>
+          requestDesktopPair(target, { api, deviceId, signal: controller.signal }),
         deviceName,
+        signal: controller.signal,
       });
       cancel = flow.cancel;
       if (!current) flow.cancel();
@@ -55,6 +59,7 @@ export function useAccountDesktopPair(plan: AccountPairPlan) {
     });
     return () => {
       current = false;
+      controller.abort();
       cancel?.();
     };
   }, [plan, deviceId, attempt]);

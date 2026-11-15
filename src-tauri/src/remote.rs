@@ -3,6 +3,7 @@
 use crate::host_ws::{HostWsBroker, NativeRoute, RequestOptions, WsFailure, WsReply};
 use crate::remote_routes::{port_may_have_moved, reported_port};
 use crate::remote_ssh::{self, Job, JobView, SshTarget, Tunnel, Tunnels};
+use account_routes::native_ws_route;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -16,6 +17,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) mod account_pairing;
 pub(crate) mod account_routes;
+pub(crate) mod host_proof;
 
 #[path = "remote_changes.rs"]
 mod changes;
@@ -716,13 +718,18 @@ fn rpc_timed(
     timeout: std::time::Duration,
 ) -> Result<Value, String> {
     if let Some(environment_id) = environment_id {
+        account_routes::require_environment_enabled(environment_id)?;
         if crate::remote_routes::account_tunnel(endpoint).is_some() {
-            crate::remote_routes::verify_account_endpoint(endpoint, environment_id).map_err(
-                |_| "Machine is unreachable. Account route identity could not be verified.",
-            )?;
+            crate::remote_routes::verify_account_endpoint(endpoint, environment_id, token)
+                .map_err(|_| {
+                    "Machine is unreachable. Account route identity could not be verified."
+                })?;
         }
     }
     let agent = rpc_agent();
+    if let Some(environment_id) = environment_id {
+        account_routes::require_environment_enabled(environment_id)?;
+    }
     let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params }).to_string();
     let exchange = transport_health::Exchange::new(endpoint, environment_id, method, timeout);
     let response = exchange.send(|timeout| {
@@ -1035,6 +1042,7 @@ fn machine_rpc_for_consumer(
     consumer: Option<(&AppHandle, &str)>,
     retained: Option<&Mutex<Option<crate::host_ws::ReplyGuard>>>,
 ) -> Result<Value, String> {
+    account_routes::require_machine_enabled(machine)?;
     account_routes::with_routes(machine, method, |account_endpoint| {
         with_refused_tunnel_retry(
             allow_connect && machine.ssh.is_some() && account_endpoint.is_none(),
@@ -1056,20 +1064,10 @@ fn machine_rpc_for_consumer(
                     .as_ref()
                     .map(|lease| lease.endpoint.as_str())
                     .unwrap_or_else(|| account_endpoint.unwrap_or(&machine.endpoint));
-                // Check rotating saved routes before WebSocket authentication too.
-                if crate::remote_routes::account_tunnel(endpoint).is_some() {
-                    crate::remote_routes::verify_account_endpoint(
-                        endpoint,
-                        &machine.environment_id,
-                    )
-                    .map_err(|_| {
-                        "Machine is unreachable. Account route identity could not be verified."
-                    })?;
-                }
                 let response = if let Some((app, consumer)) =
                     consumer.filter(|_| state.ws_request_compatible(machine, method, &params))
                 {
-                    let route = NativeRoute::new(
+                    let route = account_routes::native_route(
                         &machine.id,
                         &machine.environment_id,
                         endpoint,
@@ -2164,34 +2162,6 @@ fn with_current_ws_machine<T>(
     admit()
 }
 
-fn native_ws_route(
-    state: &RemoteConnections,
-    machine: &StoredMachine,
-    allow_connect: bool,
-) -> Result<NativeRoute, WsFailure> {
-    let lease = machine
-        .ssh
-        .as_ref()
-        .map(|target| {
-            state
-                .tunnels
-                .endpoint(&machine.id, &machine.environment_id, target, allow_connect)
-        })
-        .transpose()
-        .map_err(|_| WsFailure::local("RPC_WS_SSH", "Verified native SSH tunnel is unavailable"))?;
-    let endpoint = lease
-        .as_ref()
-        .map(|lease| lease.endpoint.as_str())
-        .unwrap_or(&machine.endpoint);
-    NativeRoute::new(
-        &machine.id,
-        &machine.environment_id,
-        endpoint,
-        &machine.token,
-        &ws_fingerprint(machine),
-    )
-}
-
 /// Blocking Host-connection work off Tauri's async workers: a hung Host must
 /// not occupy the threads that stop and write commands need.
 async fn run_ws_blocking<T: Send + 'static>(
@@ -2533,6 +2503,7 @@ fn require_machine_environment(
     machine: &StoredMachine,
     expected: Option<&str>,
 ) -> Result<(), String> {
+    account_routes::require_machine_enabled(machine)?;
     if expected.is_some_and(|expected| expected != machine.environment_id) {
         return Err(
             "The owning Host environment changed; reconnect this conversation before sending"
@@ -2723,7 +2694,7 @@ impl NativeWorkspaceTransport {
             {
                 return Ok(None);
             }
-            let route = NativeRoute::new(
+            let route = account_routes::native_route(
                 &self.machine.id,
                 &self.machine.environment_id,
                 &self.machine.endpoint,

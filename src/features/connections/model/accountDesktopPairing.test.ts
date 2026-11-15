@@ -45,6 +45,28 @@ function flow(outcome: DesktopPairOutcome, redeem = vi.fn(async (_input: unknown
 }
 
 describe("startAccountDesktopPair", () => {
+  it("never redeems after cancellation during claim generation", async () => {
+    let release!: (bytes: Uint8Array) => void;
+    const redeem = vi.fn(async () => MACHINE);
+    const started = await startAccountDesktopPair(PLAN, {
+      request: async () => ({
+        code: "123456",
+        expiresAt: "",
+        cancel: vi.fn(),
+        outcome: Promise.resolve({ state: "sealed", ticketJson: ticketJson() }),
+      }),
+      randomBytes: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      redeem,
+      deviceName: "Laptop",
+    });
+    started.cancel();
+    release(new Uint8Array(32));
+    await expect(started.result).resolves.toEqual({ state: "cancelled" });
+    expect(redeem).not.toHaveBeenCalled();
+  });
   it("redeems the opened ticket over the published routes and returns the saved machine", async () => {
     const f = flow({ state: "sealed", ticketJson: ticketJson() });
     const started = await f.start();

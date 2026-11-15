@@ -21,8 +21,8 @@ fn route_origin(route: &str) -> Option<String> {
     endpoint(route).ok()
 }
 
-/// The Host's public identity must match before anything secret is sent to the route.
-fn verify_identity(origin: &str, environment_id: &str) -> Result<(), String> {
+/// Public identity plus ticket possession must match before sending the ticket.
+fn verify_identity(origin: &str, environment_id: &str, ticket: &str) -> Result<(), String> {
     let response = agent(IDENTITY_TIMEOUT)
         .get(&format!("{origin}/.well-known/bycoda-host"))
         .call()
@@ -32,7 +32,7 @@ fn verify_identity(origin: &str, environment_id: &str) -> Result<(), String> {
     if descriptor.get("environmentId").and_then(Value::as_str) != Some(environment_id) {
         return Err("This address belongs to a different computer".into());
     }
-    Ok(())
+    host_proof::verify(origin, environment_id, ticket, "pairing")
 }
 
 fn redeem_body(environment_id: &str, ticket: &str, claim_id: &str, device_name: &str) -> Value {
@@ -99,18 +99,27 @@ pub async fn remote_pair_account(
             .collect();
         let mut last = "Could not reach this computer on its published address".to_string();
         for (index, origin) in origins.iter().enumerate() {
-            if let Err(error) = verify_identity(origin, &environment_id) {
+            if let Err(error) = verify_identity(origin, &environment_id, &ticket) {
                 last = error;
                 continue;
             }
             let token = redeem(origin, &environment_id, &ticket, &claim_id, &device_name)?;
             let state = app.state::<RemoteConnections>();
-            let machine = connect_host(app.clone(), state, name, origin.clone(), token, false)?;
+            let machine = connect_host(
+                app.clone(),
+                state,
+                name,
+                origin.clone(),
+                token.clone(),
+                false,
+            )?;
             if machine.environment_id != environment_id {
                 return Err("Host identity changed".into());
             }
             for other in origins.iter().skip(index + 1) {
-                if crate::remote_routes::verify_account_endpoint(other, &environment_id).is_ok() {
+                if crate::remote_routes::verify_account_endpoint(other, &environment_id, &token)
+                    .is_ok()
+                {
                     crate::remote_routes::learn_account_endpoint(&environment_id, other.clone());
                     break;
                 }

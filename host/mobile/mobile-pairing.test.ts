@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { hostProof } from "./host-proof";
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { once } from "node:events";
 import { MOBILE_PAIRING_TTL_MS } from "../../src/integrations/mobile-pairing";
@@ -24,6 +25,8 @@ function setup() {
     {
       environmentId: "test-environment",
       hasDeviceHash: (hash) => deviceHashes.has(hash),
+      deviceProofKeys: async () => [...deviceHashes],
+      proofOrigins: async () => ["https://host.test"],
       issueDevice,
     },
     () => time,
@@ -120,6 +123,108 @@ it("serializes asynchronous claims and never replays an issuance with an uncerta
 });
 
 describe("short-lived mobile pairing", () => {
+  it("proves ticket and saved-device possession without receiving either secret or hash", async () => {
+    const { manager, owner, deviceHashes, issueDevice } = setup();
+    const ticket = await manager.create(owner);
+    const base = await listen(manager);
+    for (const [kind, key] of [
+      ["pairing", digest(ticket.ticket)],
+      ["device", digest(owner)],
+    ] as const) {
+      const nonce = randomBytes(32).toString("hex");
+      const challenge = {
+        kind,
+        nonce,
+        environmentId: ticket.environmentId,
+        origin: "https://host.test",
+        proof: hostProof(key, kind, "request", nonce, ticket.environmentId, "https://host.test"),
+      };
+      const response = await fetch(`${base}/.well-known/bycoda-host/proof`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(challenge),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        result: {
+          proof: hostProof(key, kind, "response", nonce, ticket.environmentId, "https://host.test"),
+        },
+      });
+      expect(JSON.stringify(challenge)).not.toContain(key);
+    }
+    expect(issueDevice).not.toHaveBeenCalled();
+    deviceHashes.delete(digest(owner));
+    const nonce = randomBytes(32).toString("hex");
+    const refused = await fetch(`${base}/.well-known/bycoda-host/proof`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "device",
+        nonce,
+        environmentId: ticket.environmentId,
+        origin: "https://host.test",
+        proof: hostProof(
+          digest(owner),
+          "device",
+          "request",
+          nonce,
+          ticket.environmentId,
+          "https://host.test",
+        ),
+      }),
+    });
+    expect(refused.status).toBe(403);
+  });
+
+  it("refuses forged, cancelled and expired pairing proofs and rate limits challenges", async () => {
+    const { manager, owner, advance } = setup();
+    const ticket = await manager.create(owner);
+    const base = await listen(manager);
+    const nonce = randomBytes(32).toString("hex");
+    const body = {
+      kind: "pairing",
+      nonce,
+      environmentId: ticket.environmentId,
+      origin: "https://host.test",
+      proof: hostProof(
+        digest(ticket.ticket),
+        "pairing",
+        "request",
+        nonce,
+        ticket.environmentId,
+        "https://host.test",
+      ),
+    };
+    const send = (input = body) =>
+      fetch(`${base}/.well-known/bycoda-host/proof`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    expect((await send({ ...body, proof: "0".repeat(64) })).status).toBe(403);
+    expect(
+      (
+        await send({
+          ...body,
+          origin: "https://attacker.trycloudflare.com",
+          proof: hostProof(
+            digest(ticket.ticket),
+            "pairing",
+            "request",
+            nonce,
+            ticket.environmentId,
+            "https://attacker.trycloudflare.com",
+          ),
+        })
+      ).status,
+    ).toBe(403);
+    await manager.cancel(owner, ticket.pairingId);
+    expect((await send()).status).toBe(403);
+    advance(MOBILE_PAIRING_TTL_MS);
+    expect((await send()).status).toBe(403);
+    for (let i = 0; i < 119; i++) await send();
+    expect((await send()).status).toBe(429);
+  });
   it("creates a high entropy ticket without issuing a device or exposing secrets in status", async () => {
     const { manager, owner, issueDevice } = setup();
     const ticket = await manager.create(owner, { name: "My phone" });
