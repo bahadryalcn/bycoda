@@ -328,7 +328,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
         {...surfaceAttributes(
           {
             variant: state?.error ? "danger" : "card",
-            frame: state?.error ? "danger" : "neutral",
+            frame: state?.error ? "danger" : "pane",
             radius: compact ? "pill" : "panel",
           },
           styles.panel,
@@ -535,7 +535,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
                 text={state?.notice ?? ""}
               />
             </div>
-            <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, styles.actions)}>
+            <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.actions)}>
               {status === "live" && (
                 <VoiceTurnControl
                   menuSurface="native"
@@ -608,7 +608,7 @@ export function VoiceOverlayWindow({ owner }: { owner: string }) {
           ref={sideScroller}
           aria-label={t("Question")}
           {...surfaceAttributes(
-            { frame: "neutral", edge: "all", radius: "panel", variant: "card" },
+            { frame: "card", edge: "all", radius: "panel", variant: "card" },
             styles.side,
           )}
         >

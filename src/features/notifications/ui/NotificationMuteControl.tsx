@@ -11,7 +11,7 @@ import { notificationMuteLabel } from "./notificationMuteLabel";
 import { NotificationMuteDatePicker } from "./NotificationMuteDatePicker";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import { Popover } from "../../../shared/ui/Popover";
-import { BellOff, ChevronDown } from "../../../shared/ui/icons";
+import { BellOff } from "../../../shared/ui/icons";
 import { updateNotificationPreferences } from "../model/notificationPreferences";
 
 type Props = {
@@ -41,6 +41,8 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
       : projectIds.length > 1
         ? t("{p0} of {p1} projects muted", { p0: muted.length, p1: projectIds.length })
         : notificationMuteLabel(preferences[projectIds[0]], t);
+
+  const menuOpen = open === "custom" || (open === "menu" && !unavailable);
 
   const close = (restoreFocus = true) => {
     setOpen(null);
@@ -85,17 +87,13 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
         tooltip={compact && status ? status : undefined}
         aria-label={muted.length ? t("Change mute duration") : t("Mute notifications")}
         aria-haspopup={open === "custom" ? "dialog" : "menu"}
-        aria-expanded={open === "custom" || (open === "menu" && !unavailable)}
+        expanded={compact ? undefined : menuOpen}
+        aria-expanded={menuOpen}
         disabled={!projectIds.length || unavailable}
         onClick={() => setOpen(open ? null : "menu")}
       >
         <BellOff className="icon-sm" aria-hidden="true" />
-        {compact ? null : (
-          <>
-            {muted.length ? t("Muted") : t("Mute")}
-            <ChevronDown className="icon-xs" tone="secondary" aria-hidden="true" />
-          </>
-        )}
+        {compact ? null : <>{muted.length ? t("Muted") : t("Mute")}</>}
       </Button>
       {error ? (
         <Alert tone="danger" className="w-full">

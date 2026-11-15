@@ -223,7 +223,7 @@ export function ProviderList({
         </Disclosure>
       ) : null}
       {generic ? (
-        <div {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "provider-cli-add")}>
+        <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "provider-cli-add")}>
           {item(generic)}
         </div>
       ) : null}

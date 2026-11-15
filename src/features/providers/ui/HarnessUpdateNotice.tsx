@@ -113,7 +113,7 @@ export function HarnessUpdateNotice() {
         pending.length > 1 ? [{ label: t("Update all"), onClick: () => start(pending) }] : undefined
       }
     >
-      <div {...surfaceAttributes({ dividers: "stroke" })}>
+      <div {...surfaceAttributes({ dividers: "pane" })}>
         {updates.map((update) => (
           <HarnessUpdateRow
             key={update.harness}

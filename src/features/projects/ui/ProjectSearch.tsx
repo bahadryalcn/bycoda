@@ -13,8 +13,6 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useLocale, useT } from "../../../shared/i18n";
 import {
   CaseSensitive,
-  ChevronDown,
-  ChevronRight,
   MoreHorizontal,
   Replace,
   ChevronLeft,
@@ -268,7 +266,7 @@ function ProjectSearchContent({
       {showHeader ? (
         <div
           {...surfaceAttributes(
-            { frame: "stroke", edge: "bottom" },
+            { frame: "pane", edge: "bottom" },
             "flex shrink-0 items-center gap-1 px-1.5 py-1",
           )}
         >
@@ -281,10 +279,7 @@ function ProjectSearchContent({
         </div>
       ) : null}
       <div
-        {...surfaceAttributes(
-          { frame: "stroke", edge: "bottom" },
-          "min-w-0 shrink-0 space-y-1 p-2",
-        )}
+        {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "min-w-0 shrink-0 space-y-1 p-2")}
       >
         <div className="flex min-w-0 items-stretch gap-1">
           <Button
@@ -295,16 +290,10 @@ function ProjectSearchContent({
             stretch
             className="w-4 shrink-0"
             label={t("Toggle Replace")}
-            aria-expanded={replaceExpanded}
+            expanded={replaceExpanded}
             aria-controls={replaceId}
             onClick={() => setReplaceExpanded((value) => !value)}
-          >
-            {replaceExpanded ? (
-              <ChevronDown className="icon-sm" />
-            ) : (
-              <ChevronRight className="icon-sm" />
-            )}
-          </Button>
+          />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <SearchInputGroup appearance="field" className="min-w-0 flex-1">
               <SearchInput
@@ -465,7 +454,7 @@ function ProjectSearchContent({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-none">
         {groups.map((group) => (
-          <section key={group.path} {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "")}>
+          <section key={group.path} {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "")}>
             {/* Keep exact file identity readable without hover, including duplicate basenames. */}
             <div className="flex min-w-0 items-start gap-1.5 px-2 py-1">
               <FileTypeIcon name={group.name} isDir={false} size="md" />

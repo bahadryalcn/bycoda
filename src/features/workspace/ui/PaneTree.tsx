@@ -702,7 +702,7 @@ function PaneTreeComponent({
                   <TabList
                     label={t("Pane sessions")}
                     {...surfaceAttributes(
-                      { frame: "stroke", edge: "bottom" },
+                      { frame: "pane", edge: "bottom" },
                       "flex shrink-0 overflow-x-auto",
                     )}
                   >

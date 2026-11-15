@@ -168,7 +168,7 @@ export function LinkedWorkItemUpdateNotice({
         {card.entries.length > 0 ? (
           <div
             {...surfaceAttributes(
-              { frame: "neutral", edge: "top", dividers: "stroke" },
+              { frame: "pane", edge: "top", dividers: "pane" },
               "max-h-52 overflow-y-auto",
             )}
           >
@@ -220,7 +220,7 @@ export function LinkedWorkItemUpdateNotice({
         ) : null}
 
         {terminalState ? (
-          <div {...surfaceAttributes({ frame: "neutral", edge: "top" }, "pt-2")}>
+          <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "pt-2")}>
             <Text as="div" size="micro" tone="inherit" className="flex items-center gap-2">
               <Badge
                 tone={terminalState === "pr_merged" ? "accent" : "success"}
@@ -277,7 +277,7 @@ export function LinkedWorkItemUpdateNotice({
           size="micro"
           tone="inherit"
           {...surfaceAttributes(
-            { frame: "neutral", edge: "top" },
+            { frame: "pane", edge: "top" },
             "flex min-w-0 items-center gap-1.5 pt-2",
           )}
         >

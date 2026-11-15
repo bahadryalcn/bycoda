@@ -291,7 +291,7 @@ for (const theme of ["light", "dark"]) {
       const panel = page.getByRole("tabpanel", { name: "Email" });
       const account = panel.getByRole("listitem").filter({ hasText: "Work email" });
       await account.getByRole("button", { name: "Edit" }).click();
-      const actions = panel.locator('.integration-actions[data-surface-frame="settings"]');
+      const actions = panel.locator('.integration-actions[data-surface-frame="pane"]');
       await expect(actions).toBeVisible();
       await expect(actions).toHaveCSS("border-block-start-width", "1px");
       await actions.scrollIntoViewIfNeeded();

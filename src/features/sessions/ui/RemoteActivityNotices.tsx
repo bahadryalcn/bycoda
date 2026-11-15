@@ -90,7 +90,7 @@ function RemoteActivity({ notice }: { notice: RemoteActivityNotice }) {
     .join(" ");
   return (
     <div
-      {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-2")}
+      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-2")}
       data-remote-activity={notice.kind}
     >
       <InlineMessage

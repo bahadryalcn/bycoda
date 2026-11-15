@@ -71,7 +71,7 @@ export function BrowserSettings({
   if (!saved || !draft) {
     return (
       <section
-        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
         aria-label={t("Browser")}
       >
         {loadError ? (
@@ -106,7 +106,7 @@ export function BrowserSettings({
 
   return (
     <section
-      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Browser")}
     >
       {needsHuman ? (

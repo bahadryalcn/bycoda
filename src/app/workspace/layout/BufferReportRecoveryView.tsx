@@ -150,7 +150,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             </Text>
           )}
         </div>
-        <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "recovery-footer")}>
+        <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
           <Text as="p" size="caption" tone="secondary">
             {t(
               "Check recovery copies or the original window for edited text. Matching file names alone do not settle this report.",
@@ -332,7 +332,7 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
           />
         )}
       </div>
-      <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "recovery-footer")}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
         <Text as="p" size="caption" tone="secondary">
           {t("Inspect earlier file reports without changing files or removing their protection.")}
         </Text>

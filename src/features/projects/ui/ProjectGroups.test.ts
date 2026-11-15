@@ -570,8 +570,8 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   expect(group.classList).not.toContain("bg-content/3");
   expect(group.getAttribute("style")).toBeNull();
   expect(group.querySelector("[data-project-group-items]")?.classList).toContain("p-1");
-  expect(group.querySelector("[data-group-chevron]")).not.toBeNull();
-  expect(group.querySelector("[data-group-mascot]")).toBeNull();
+  expect(group.querySelector("[data-button-chevron]")).not.toBeNull();
+  expect(group.querySelector("[data-button-resting-icon]")).toBeNull();
 
   act(() => header.click());
   // Closing rows stay mounted until height has animated to zero, but are inert.
@@ -591,12 +591,12 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   expect(collapsedGroup.classList).not.toContain("bg-content/3");
   expect(collapsedGroup.querySelector("[data-project-group-items]")).toBeNull();
   expect(
-    collapsedGroup.querySelector("[data-group-mascot]")?.getAttribute("data-action-content"),
+    collapsedGroup.querySelector("[data-button-resting-icon]")?.getAttribute("data-action-content"),
   ).toBe("rest");
   expect(
-    collapsedGroup.querySelector("[data-group-chevron]")?.getAttribute("data-action-content"),
+    collapsedGroup.querySelector("[data-button-chevron]")?.getAttribute("data-action-content"),
   ).toBe("interaction");
-  for (const selector of ["[data-group-mascot]", "[data-group-chevron]"])
+  for (const selector of ["[data-button-resting-icon]", "[data-button-chevron]"])
     expect(collapsedGroup.querySelector(selector)?.getAttribute("data-action-hide")).toBe(
       "display",
     );

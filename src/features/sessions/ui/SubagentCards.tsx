@@ -7,7 +7,7 @@ import { createContext, useContext, useEffect } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import type { CrewMemberChild } from "../../../shared/model/host-contracts/delegation";
-import { Check, ChevronRight, ExternalLink, Square } from "../../../shared/ui/icons";
+import { Check, ExternalLink, Square } from "../../../shared/ui/icons";
 import { crewMemberOf, delegationParentOf } from "../model/delegatedAgents";
 import { delegationResultFor } from "../model/delegationNotice";
 import { delegatedChildIdOf } from "../model/delegatedBlockId";
@@ -332,7 +332,7 @@ function SubagentPanel({
           variant="item"
           type="button"
           selected={open}
-          aria-expanded={open}
+          expanded={open}
           aria-label={
             open ? t("Hide {p0}'s work", { p0: name }) : t("Show {p0}'s work", { p0: name })
           }
@@ -343,14 +343,6 @@ function SubagentPanel({
           {marks}
           {label}
           {stateLine}
-          <ChevronRight
-            {...motionAttributes(
-              { transition: "transform", duration: "standard" },
-              `icon-sm shrink-0 ${open ? "rotate-90" : ""}`,
-            )}
-            tone="secondary"
-            aria-hidden
-          />
         </Button>
         <Button
           motion="none"

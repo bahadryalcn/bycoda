@@ -195,7 +195,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
         <div className="flex min-h-0 flex-1 flex-col">
           <div
             {...surfaceAttributes(
-              { frame: "stroke", edge: "bottom" },
+              { frame: "pane", edge: "bottom" },
               "flex shrink-0 items-center gap-2 p-3 pe-12",
             )}
           >
@@ -251,7 +251,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           <nav
             aria-label={t("Locations")}
             {...surfaceAttributes(
-              { frame: "stroke", edge: "bottom" },
+              { frame: "pane", edge: "bottom" },
               "flex shrink-0 flex-wrap gap-1 px-3 py-2",
             )}
           >
@@ -387,7 +387,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           {newName !== null ? (
             <form
               {...surfaceAttributes(
-                { frame: "stroke", edge: "top" },
+                { frame: "pane", edge: "top" },
                 "flex shrink-0 flex-wrap items-center gap-2 px-3 py-2",
               )}
               onSubmit={(event) => {
@@ -451,7 +451,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           ) : null}
           <div
             {...surfaceAttributes(
-              { frame: "stroke", edge: "top" },
+              { frame: "pane", edge: "top" },
               "flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-2",
             )}
           >

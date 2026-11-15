@@ -34,7 +34,7 @@ export function GoalList({
       ref={disclosure}
       variant="row"
       size="sm"
-      {...surfaceAttributes({ frame: "neutral", edge: "bottom" }, "task-goals-disclosure")}
+      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "task-goals-disclosure")}
       summary={t("Epics")}
       count={goals.goals.length}
     >

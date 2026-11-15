@@ -525,7 +525,7 @@ export function Group({
         {feedback ? (
           <div
             {...surfaceAttributes(
-              { frame: "settings", edge: "block-start" },
+              { frame: "pane", edge: "block-start" },
               "settings-group-feedback",
             )}
           >

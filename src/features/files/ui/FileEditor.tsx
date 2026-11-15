@@ -1266,7 +1266,7 @@ export function FileEditor({
           size="caption"
           tone="primary"
           {...surfaceAttributes(
-            { frame: "stroke", edge: "bottom" },
+            { frame: "pane", edge: "bottom" },
             "flex shrink-0 flex-wrap items-center gap-2 px-2.5 py-1",
           )}
         >
@@ -1348,7 +1348,7 @@ export function FileEditor({
           as="p"
           size="secondary"
           tone="secondary"
-          {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-1")}
+          {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-1")}
         >
           {gitDiff.kind === "staged" ? t("Staged") : t("Unstaged")}
           {t(" line-ending changes. Line breaks are normalized in this view.")}
@@ -1412,9 +1412,7 @@ export function FileEditor({
         />
       )}
       {chromeError ? (
-        <InlineError
-          {...surfaceAttributes({ frame: "stroke", edge: "top" }, "shrink-0 px-2.5 py-1")}
-        >
+        <InlineError {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 px-2.5 py-1")}>
           {chromeError}
         </InlineError>
       ) : null}
@@ -1423,7 +1421,7 @@ export function FileEditor({
         size="micro"
         tone="muted"
         {...surfaceAttributes(
-          { frame: "stroke", edge: "top" },
+          { frame: "pane", edge: "top" },
           `flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center gap-1 px-2.5 ${saveState.status === "error" ? "flex-wrap" : ""}`,
         )}
       >

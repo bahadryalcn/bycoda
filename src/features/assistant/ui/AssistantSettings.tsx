@@ -467,7 +467,7 @@ export function AssistantSettings({
         }}
       >
         <div
-          {...surfaceAttributes({ frame: "neutral", edge: "block-end" }, settingsStyles.navigation)}
+          {...surfaceAttributes({ frame: "pane", edge: "block-end" }, settingsStyles.navigation)}
         >
           <TabStrip
             className={settingsStyles.tabs}

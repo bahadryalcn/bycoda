@@ -5,7 +5,7 @@ import { Button } from "../../../shared/ui/Button";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Text } from "../../../shared/ui/Text";
-import { ChevronRight, RefreshCw } from "../../../shared/ui/icons";
+import { RefreshCw } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { type ShellProfiles } from "../../terminal/public/terminalProfiles";
 import { RevealedSetting, settingDomId } from "./settingsControls";
@@ -164,17 +164,11 @@ export function HostShellRow({
             iconOnly
             label={t("Available shells on {p0}", { p0: name })}
             tooltip={t("Available shells")}
-            aria-expanded={expanded}
+            expanded={expanded}
             aria-controls={detailPanel}
             disabled={!listed || noShells}
             onClick={() => setOpen((current) => !current)}
-          >
-            <ChevronRight
-              aria-hidden
-              className={`icon-sm ${expanded ? "rotate-90" : ""}`}
-              strokeWidth={1.75}
-            />
-          </Button>
+          />
         </div>
       </ActionHost>
       {feedback ? (

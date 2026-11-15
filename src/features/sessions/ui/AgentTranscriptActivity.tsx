@@ -10,7 +10,6 @@ import {
 import { t, useFormat, useLocale, useT, type BoundFormat } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import {
-  ChevronRight,
   CircleDashed,
   Minus,
   PenLine,
@@ -913,7 +912,7 @@ function ActivityToolRow({
           <InlineAction
             motion="none"
             reveal={errorDetail ? "always" : "interaction"}
-            aria-expanded={errorOpen}
+            expanded={errorOpen}
             label={t(
               errorOpen
                 ? errorDetail
@@ -925,13 +924,7 @@ function ActivityToolRow({
               { p2: label },
             )}
             onClick={() => setErrorOpen((value) => !value)}
-          >
-            <ChevronRight
-              className={`icon-sm transition-transform ${errorOpen ? "rotate-90" : ""}`}
-              strokeWidth={1.75}
-              aria-hidden
-            />
-          </InlineAction>
+          />
         </ActionHost>
       ) : (
         <div
@@ -1007,12 +1000,6 @@ function BycodaCallRow({
         </OverflowTooltip>
       </span>
       <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
-      {hasResult ? (
-        <ChevronRight
-          className={`icon-sm shrink-0 ${hasError ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} transition-transform ${errorOpen ? "rotate-90" : ""}`}
-          strokeWidth={1.75}
-        />
-      ) : null}
     </>
   );
   return (
@@ -1023,7 +1010,7 @@ function BycodaCallRow({
           fullWidth
           variant="item"
           type="button"
-          aria-expanded={errorOpen}
+          expanded={errorOpen}
           aria-label={t(
             hasError
               ? errorOpen

@@ -392,7 +392,7 @@ export function ServersTerminalWorkspace({
           >
             <div
               {...surfaceAttributes(
-                { frame: "stroke", edge: "bottom" },
+                { frame: "pane", edge: "bottom" },
                 "flex h-10 min-w-0 shrink-0 items-center",
               )}
             >
@@ -435,7 +435,7 @@ export function ServersTerminalWorkspace({
             >
               <TabList
                 {...surfaceAttributes(
-                  { frame: "stroke", edge: "bottom", variant: "workspace-panel" },
+                  { frame: "pane", edge: "bottom", variant: "workspace-panel" },
                   "flex shrink-0 gap-1 overflow-x-auto px-2 py-1",
                 )}
                 label={t("SSH terminals")}

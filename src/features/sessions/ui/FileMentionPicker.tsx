@@ -113,7 +113,7 @@ export function FileMentionPicker({
       padding="none"
       data-mention-picker
       radius="card"
-      frame="neutral"
+      frame="card"
       edge="all"
       className="overflow-hidden"
     >

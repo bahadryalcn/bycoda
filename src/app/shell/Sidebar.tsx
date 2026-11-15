@@ -6364,7 +6364,7 @@ const SessionCard = memo(function SessionCard({
             size="caption"
             tone="secondary"
             {...surfaceAttributes(
-              { frame: "frosted", edge: "top" },
+              { frame: "pane", edge: "top" },
               "mt-2.5 flex min-w-0 items-center gap-2 pt-2",
             )}
           >

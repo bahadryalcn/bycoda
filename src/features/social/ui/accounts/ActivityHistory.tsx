@@ -116,7 +116,7 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
 
   return (
     <section
-      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Activity")}
     >
       <Heading size="item">{t("Activity")}</Heading>

@@ -208,7 +208,7 @@ function LocalAgentTabView({
         size="micro"
         tone="secondary"
         {...surfaceAttributes(
-          { frame: "neutral", edge: "top" },
+          { frame: "pane", edge: "top" },
           "flex shrink-0 items-center gap-1.5  border-(--ui-tone-neutral-border) px-3 py-1.5 font-sans",
         )}
       >

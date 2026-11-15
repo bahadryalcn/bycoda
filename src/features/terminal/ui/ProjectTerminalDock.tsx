@@ -253,7 +253,7 @@ function ProjectTerminalDockComponent({
       data-project-terminal-dock=""
       {...surfaceAttributes(
         {
-          frame: "stroke",
+          frame: "pane",
           edge:
             dock.side === "top"
               ? "bottom"
@@ -447,7 +447,7 @@ function ProjectTerminalDockComponent({
               aria-hidden={!visibleIds.includes(file.id)}
               onMouseDown={() => onSelectTerminal(file.id)}
               {...surfaceAttributes(
-                visibleIds.indexOf(file.id) > 0 ? { frame: "terminal", edge: "inline-start" } : {},
+                visibleIds.indexOf(file.id) > 0 ? { frame: "pane", edge: "inline-start" } : {},
                 visibleIds.includes(file.id) ? "terminal-split-pane" : "hidden",
               )}
               style={

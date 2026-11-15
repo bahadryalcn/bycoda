@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuAction } from "../../../shared/ui/DropdownMenu";
 import { HarnessIcon } from "../../../shared/ui/identity";
-import { AudioLines, Brain, ChevronUp, Globe, Languages, Laptop } from "../../../shared/ui/icons";
+import { AudioLines, Brain, Globe, Languages, Laptop } from "../../../shared/ui/icons";
 import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import {
@@ -109,14 +109,13 @@ export function DictationOptions({
         label={t("Dictation options")}
         tooltip={t("Recognition, model and language")}
         aria-haspopup="menu"
-        aria-expanded={open}
+        expanded={open}
+        opens="up"
         disabled={disabled}
         // Keep the caret in the message box.
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setOpen((value) => !value)}
-      >
-        <ChevronUp className="icon-xs" />
-      </Button>
+      />
       {open ? (
         <DropdownMenu
           anchor={trigger}

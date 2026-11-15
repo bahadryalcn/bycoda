@@ -159,7 +159,7 @@ function VoiceReadouts({
   }, [live, level]);
   return (
     <div className={styles.readouts}>
-      <div {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, styles.readout)}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.readout)}>
         <Text size="caption" tone="muted" leading="none">
           {t("Voice engine")}
         </Text>
@@ -171,7 +171,7 @@ function VoiceReadouts({
       </div>
       {live ? (
         <>
-          <div {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, styles.readout)}>
+          <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.readout)}>
             <Text size="caption" tone="muted" leading="none">
               {t("Input")}
             </Text>
@@ -184,7 +184,7 @@ function VoiceReadouts({
               </span>
             </>
           </div>
-          <div {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, styles.readout)}>
+          <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.readout)}>
             <Text size="caption" tone="muted" leading="none">
               {t("Session")}
             </Text>

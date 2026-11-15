@@ -915,7 +915,7 @@ export function ToolsWorkspace({
               {roomPane && (
                 <section
                   {...surfaceAttributes(
-                    { frame: "stroke", edge: "block-end" },
+                    { frame: "pane", edge: "block-end" },
                     "tools-workspace-pane",
                   )}
                   key={roomPane.id}
@@ -959,7 +959,7 @@ export function ToolsWorkspace({
               {panes.map((pane) => (
                 <section
                   {...surfaceAttributes(
-                    { frame: "stroke", edge: "block-end" },
+                    { frame: "pane", edge: "block-end" },
                     "tools-workspace-pane",
                   )}
                   key={pane.id}

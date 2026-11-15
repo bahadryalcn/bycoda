@@ -292,7 +292,7 @@ export function InboxDetail({
       data-inbox-detail-fixed-header={panel ? "" : undefined}
       {...surfaceAttributes(
         {
-          frame: panel ? "neutral" : undefined,
+          frame: panel ? "pane" : undefined,
           edge: panel ? "bottom" : undefined,
         },
         `flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${panel ? "h-9 shrink-0 px-4 pe-10" : ""}`,
@@ -343,7 +343,7 @@ export function InboxDetail({
           <div
             data-inbox-detail-header
             {...surfaceAttributes(
-              { frame: "neutral", edge: "bottom" },
+              { frame: "pane", edge: "bottom" },
               `relative ${panel ? "" : "shrink-0"}`,
             )}
           >

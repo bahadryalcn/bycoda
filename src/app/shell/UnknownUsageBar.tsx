@@ -11,7 +11,7 @@ export function UnknownUsageBar({ label, loading = false }: { label: string; loa
         size="caption"
         tone="secondary"
         {...surfaceAttributes(
-          { radius: "sm", variant: "inset", frame: "stroke", borderStyle: "dashed" },
+          { radius: "sm", variant: "inset", frame: "pane", borderStyle: "dashed" },
           "inline-flex h-4 min-w-12 items-center justify-center px-1",
         )}
       >

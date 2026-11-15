@@ -519,7 +519,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                 size="micro"
                 tone="secondary"
                 {...surfaceAttributes(
-                  { frame: "neutral", edge: "bottom" },
+                  { frame: "pane", edge: "bottom" },
                   "flex items-center gap-2.5  border-(--ui-tone-neutral-border) px-3 py-1.5",
                 )}
               >
@@ -573,7 +573,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
                       />
                     ))}
                     {missingFolders.length > 0 ? (
-                      <section {...surfaceAttributes({ frame: "neutral", edge: "top" })}>
+                      <section {...surfaceAttributes({ frame: "pane", edge: "top" })}>
                         <div className="flex items-center gap-2 px-3 py-0.5">
                           <Checkbox
                             aria-label={t("Select all missing folders")}
@@ -626,10 +626,7 @@ export function SessionImportDialog({ onClose, onImported, initialContext }: Pro
             </Surface>
 
             <div
-              {...surfaceAttributes(
-                { frame: "neutral", edge: "top" },
-                "flex flex-col gap-2.5 pt-3",
-              )}
+              {...surfaceAttributes({ frame: "pane", edge: "top" }, "flex flex-col gap-2.5 pt-3")}
             >
               <div className="flex min-w-0 items-center gap-2">
                 <Switch
@@ -766,7 +763,7 @@ function FolderSection({
     // Offscreen folders skip layout and paint, so ~3k conversations stay cheap to scroll and filter.
     <section
       {...surfaceAttributes(
-        { frame: divider ? "neutral" : "none", edge: "bottom" },
+        { frame: divider ? "pane" : "none", edge: "bottom" },
         "[contain-intrinsic-size:auto_36px] [content-visibility:auto]",
       )}
     >

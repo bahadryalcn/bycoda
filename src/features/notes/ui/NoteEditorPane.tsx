@@ -65,7 +65,7 @@ export function NoteEditorPane({
       {...surfaceAttributes(
         {
           ...(readingPane && split
-            ? { frame: "editor" as const, edge: "inline-start" as const }
+            ? { frame: "pane" as const, edge: "inline-start" as const }
             : {}),
           ...(readingPane ? { variant: "page" as const } : {}),
         },
@@ -79,7 +79,7 @@ export function NoteEditorPane({
           tone="secondary"
           leading="inherit"
           weight="medium"
-          {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "note-pane-label")}
+          {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "note-pane-label")}
         >
           {label}
         </Text>

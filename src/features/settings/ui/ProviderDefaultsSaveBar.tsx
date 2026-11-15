@@ -193,7 +193,7 @@ export function ProviderDefaultsSaveBar({
   return (
     <div
       {...surfaceAttributes(
-        { variant: "canvas", frame: "settings", edge: "block-start" },
+        { variant: "canvas", frame: "pane", edge: "block-start" },
         "provider-defaults-save-bar",
       )}
     >

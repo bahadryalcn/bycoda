@@ -87,7 +87,7 @@ export function SheetGridView({
           as="div"
           size="micro"
           tone="secondary"
-          {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-1")}
+          {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-1")}
         >
           {t("Showing the first ")}
           {format.formatNumber(grid.rowCount, { maximumFractionDigits: 0 })}
@@ -165,7 +165,7 @@ export function SheetGridView({
             size="inherit"
             tone="secondary"
             {...surfaceAttributes(
-              { frame: "stroke", edge: "bottom", variant: "canvas" },
+              { frame: "pane", edge: "bottom", variant: "canvas" },
               "sheet-document-header sticky top-0 z-2 flex",
             )}
           >
@@ -174,7 +174,7 @@ export function SheetGridView({
               aria-colindex={1}
               aria-label={t("Row")}
               {...surfaceAttributes(
-                { frame: "stroke", edge: "right", variant: "canvas" },
+                { frame: "pane", edge: "right", variant: "canvas" },
                 "sticky left-0 z-1 shrink-0 [width:var(--layout-width)]",
               )}
               style={
@@ -190,7 +190,7 @@ export function SheetGridView({
                 role="columnheader"
                 aria-colindex={column + 2}
                 {...surfaceAttributes(
-                  { frame: "stroke", edge: "right" },
+                  { frame: "pane", edge: "right" },
                   "shrink-0 text-center [width:var(--layout-width)]",
                 )}
                 style={
@@ -217,7 +217,7 @@ export function SheetGridView({
                   role="row"
                   aria-rowindex={index + 2}
                   {...surfaceAttributes(
-                    { frame: "stroke", edge: "bottom" },
+                    { frame: "pane", edge: "bottom" },
                     "sheet-document-row absolute left-0 flex",
                   )}
                   style={
@@ -233,7 +233,7 @@ export function SheetGridView({
                     size="inherit"
                     tone="secondary"
                     {...surfaceAttributes(
-                      { frame: "stroke", edge: "right", variant: "canvas" },
+                      { frame: "pane", edge: "right", variant: "canvas" },
                       "sheet-document-row-header sticky left-0 z-1 shrink-0 text-right tabular-nums",
                     )}
                   >
@@ -258,7 +258,7 @@ export function SheetGridView({
                         size="inherit"
                         tone="primary"
                         {...surfaceAttributes(
-                          { frame: "stroke", edge: "right", selectionRing: "document" },
+                          { frame: "pane", edge: "right", selectionRing: "document" },
                           "sheet-document-cell shrink-0",
                         )}
                       >

@@ -88,7 +88,7 @@ export function ComposerCitations({
     <div className={styles.root} role="group" aria-label={t("Quoted reply")}>
       {citations.map((citation, index) => (
         <div
-          {...surfaceAttributes({ frame: "stroke", edge: "all", radius: "card" }, styles.row)}
+          {...surfaceAttributes({ frame: "card", edge: "all", radius: "card" }, styles.row)}
           key={`${citation.id}:${index}`}
         >
           <Button

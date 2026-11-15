@@ -127,7 +127,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
 
   return (
     <section
-      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Reply rules")}
     >
       <div className="social-card-head">
@@ -171,7 +171,7 @@ export function ReplyRules({ client, account, projects, disabled }: ReplyRulesPr
         </div>
       ))}
       {proposal ? (
-        <div {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}>
+        <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}>
           <Text as="p" tone="muted" leading="snug" className="social-card-description">
             {t("AI suggests these narrower rules. Nothing changes until you edit a rule.")}
           </Text>

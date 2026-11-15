@@ -105,7 +105,7 @@ function TextCard({
         <Modal padding="none" title={label} size="lg" onClose={dismiss}>
           <div
             {...surfaceAttributes(
-              { frame: "neutral", edge: "bottom", variant: "floating" },
+              { frame: "pane", edge: "bottom", variant: "floating" },
               "sticky top-0 z-1 flex flex-wrap items-center gap-2 px-4 py-3",
             )}
           >

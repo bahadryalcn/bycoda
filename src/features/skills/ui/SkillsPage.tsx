@@ -1183,7 +1183,7 @@ export function SkillsPage({
                     <div className={split ? styles.split : styles.editPane}>
                       <section
                         {...surfaceAttributes(
-                          split ? { frame: "stroke", edge: "responsive-end" } : {},
+                          split ? { frame: "pane", edge: "responsive-end" } : {},
                           styles.rawPane,
                         )}
                         aria-label={editable ? t("Skill instructions") : t("Source")}

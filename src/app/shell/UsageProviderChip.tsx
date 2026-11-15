@@ -421,7 +421,7 @@ function UsageProviderDetails({
             <div className="flex items-start gap-2 px-1 pb-2 pt-0.5">
               <span
                 {...surfaceAttributes(
-                  { variant: "inset", radius: "card", ring: "stroke" },
+                  { variant: "inset", radius: "card", ring: "pane" },
                   "grid size-6 shrink-0 place-items-center",
                 )}
               >
@@ -645,7 +645,7 @@ function ProviderAccountPicker({
             {
               radius: "card",
               variant: selected ? "selected" : "inset",
-              ring: selected ? "tone-accent" : "stroke",
+              ring: selected ? "tone-accent" : "pane",
             },
             "pointer-events-none relative flex w-full items-center gap-3 px-2.5 py-2 text-left",
           );
@@ -998,7 +998,7 @@ function BankedResets({
   const showTitles = new Set(rows.map((credit) => credit?.title?.trim() ?? "")).size > 1;
   const refreshing = limits.status === "fetching";
   return (
-    <section {...surfaceAttributes({ frame: "stroke", edge: "top" }, "mbs-2 pbs-1.5")}>
+    <section {...surfaceAttributes({ frame: "pane", edge: "top" }, "mbs-2 pbs-1.5")}>
       <div className="flex items-center justify-between gap-2 px-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <SectionLabel as="h3" size="micro">
@@ -1031,7 +1031,7 @@ function BankedResets({
         role="list"
         aria-label={t("Available banked resets")}
       >
-        <div {...surfaceAttributes({ dividers: "stroke" }, "flex flex-col")}>
+        <div {...surfaceAttributes({ dividers: "pane" }, "flex flex-col")}>
           {rows.map((credit, index) => {
             const rowKey = credit?.id ?? `unlisted-${index}`;
             const selected = activeResetKey === rowKey;

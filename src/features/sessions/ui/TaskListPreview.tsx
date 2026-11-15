@@ -27,7 +27,7 @@ export function TaskListPreview({ items, explanation }: Props) {
     >
       <div
         {...surfaceAttributes(
-          { frame: "neutral", edge: "bottom" },
+          { frame: "pane", edge: "bottom" },
           "flex items-start gap-2 px-2.5 py-2",
         )}
       >

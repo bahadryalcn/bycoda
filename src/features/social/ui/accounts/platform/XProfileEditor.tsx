@@ -90,7 +90,7 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
 
   return (
     <section
-      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("X profile")}
     >
       <Heading size="item">{t("X profile and following")}</Heading>
@@ -109,7 +109,7 @@ export function XProfileEditor({ client, accountId, accountName }: XProfileEdito
       </Button>
       {values ? (
         <form
-          {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
           onSubmit={(event) => {
             event.preventDefault();
             if (!saveGate.disabled) save();

@@ -271,7 +271,7 @@ function Fixture() {
         <span className="min-w-0 flex-1 truncate text-xs">Chat layout fixture</span>
         <div
           {...surfaceAttributes(
-            { frame: "stroke", edge: "inline-start" },
+            { frame: "pane", edge: "inline-start" },
             "min-w-0 max-w-[48%] flex-[0_1_auto] ps-2.5",
           )}
         >

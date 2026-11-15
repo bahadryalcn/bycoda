@@ -312,7 +312,7 @@ export function UsageFooter({
       tone="secondary"
       aria-label={ariaLabel}
       {...surfaceAttributes(
-        embedded ? {} : { frame: "stroke", edge: "top" },
+        embedded ? {} : { frame: "pane", edge: "top" },
         `@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 ${embedded ? "flex-1" : "shrink-0 px-1.5"}`,
       )}
     >

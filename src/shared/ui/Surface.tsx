@@ -79,35 +79,27 @@ export type SurfaceAppearance = {
     | "settings-rows"
     | "settings-account-list";
   /** One hairline after each direct child except the last; no outer frame or layout.
-   * `pane` uses the pane border; stroke and card retain their own tokens.
+   * `pane` uses the pane border, `card` the card border.
    * Replaces vertical divide-y lists. Horizontal splits keep Divider. */
-  dividers?: "stroke" | "card" | "pane" | "neutral" | "settings-group";
+  dividers?: "pane" | "card";
   /** A settings hairline before this box only when its previous sibling also opts in. */
   separator?: "block" | "pane-block";
   /** Static ground only; workspace variants inherit artwork and transparency preferences. */
   variant?: SurfaceVariant;
   /** Opt-in frame: none removes border space; other roles retain a 1px boundary.
-   * `frosted` preserves the divider role over translucent workspace artwork;
+   * Hairlines are two roles: `pane` for edges between panes, rows and lists, `card` around a whole card.
    * `transparent` reserves border space without painting a boundary; `danger` frames an error summary.
    * `focus` marks a detaching surface; `muted` frames a hollow progress marker. */
   frame?:
     | "none"
     | "pane"
-    | "pane-stroke"
     | "card"
-    | "stroke"
-    | "neutral"
-    | "neutral-metadata"
     | "base-cutout"
     | "content-strong"
-    | "terminal"
     | "neutral-marker"
-    | "settings"
-    | "frosted"
     | "transparent"
     | "danger"
     | "accent"
-    | "editor"
     | "focus"
     | "muted";
   /** Framed edge(s), default all. Logical edges follow writing direction; top/bottom/left/right preserve physical edges.
@@ -173,7 +165,7 @@ export type SurfaceAppearance = {
    *  box-shadow, so it adds no border width; it replaces `ring-1 ring-inset ring-*` classes.
    *  `pane-outer` draws outside instead; `base-outer` is a 2px base cutout around an account dot. */
   ring?:
-    | "stroke"
+    | "pane"
     | "accent"
     | "tone-accent"
     | "tone-neutral"

@@ -159,7 +159,7 @@ function MachineRouteDetails({ machine }: { machine: RemoteMachine }) {
           </div>
         ) : null}
       </div>
-      <Surface as="ul" variant="card" padding="none" dividers="stroke" className="flex flex-col">
+      <Surface as="ul" variant="card" padding="none" dividers="card" className="flex flex-col">
         {routes.routes.map((route) => {
           const inUse = route.address === routes.active;
           const reachable = checks?.[route.address];

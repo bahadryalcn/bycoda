@@ -250,7 +250,7 @@ export function MessagesPanel({
       <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           {...surfaceAttributes(
-            { frame: "neutral", edge: "bottom" },
+            { frame: "pane", edge: "bottom" },
             "inbox-detail-back shrink-0 px-2 py-1",
           )}
         >

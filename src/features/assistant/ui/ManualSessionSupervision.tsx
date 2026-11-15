@@ -258,10 +258,7 @@ export function ManualSessionSupervision({
           />
         </Row>
         <div
-          {...surfaceAttributes(
-            { frame: "settings", edge: "responsive-start" },
-            panelStyles.notices,
-          )}
+          {...surfaceAttributes({ frame: "pane", edge: "responsive-start" }, panelStyles.notices)}
         >
           <LiveText
             size="micro"
@@ -361,10 +358,7 @@ export function ManualSessionSupervision({
         </Row>
         {!saveRef && (
           <div
-            {...surfaceAttributes(
-              { frame: "settings", edge: "block-start" },
-              panelStyles.footerAction,
-            )}
+            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, panelStyles.footerAction)}
           >
             <Text as="p" size="micro" tone="secondary" leading="inherit" className={styles.muted}>
               {t(
@@ -455,7 +449,7 @@ export function ManualSessionSupervision({
             enabled && chief && data?.policy.projectIds.includes(grant.source.projectId);
           return (
             <div
-              {...surfaceAttributes({ frame: "settings", edge: "block-end" }, panelStyles.row)}
+              {...surfaceAttributes({ frame: "pane", edge: "block-end" }, panelStyles.row)}
               key={grant.id}
             >
               <div className={panelStyles.rowText}>
@@ -535,7 +529,7 @@ export function ManualSessionSupervision({
           const inScope = data?.policy.projectIds.includes(candidate.projectId);
           return (
             <div
-              {...surfaceAttributes({ frame: "settings", edge: "block-end" }, panelStyles.row)}
+              {...surfaceAttributes({ frame: "pane", edge: "block-end" }, panelStyles.row)}
               key={candidate.sessionId}
             >
               <div className={panelStyles.rowText}>

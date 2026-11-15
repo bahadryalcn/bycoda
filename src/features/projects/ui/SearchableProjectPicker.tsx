@@ -26,8 +26,7 @@ import {
   useResolvedTabGroupLogos,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import { ChevronDown, Plus } from "../../../shared/ui/icons";
-import { motionAttributes } from "../../../shared/ui/Motion";
+import { Plus } from "../../../shared/ui/icons";
 import { ProjectLogoIcon } from "./ProjectLogoIcon";
 import { ProjectMascot } from "./ProjectMascot";
 
@@ -209,6 +208,7 @@ export function SearchableProjectPicker({
             : t("Choose project for note")
         }
         selected={open || appearance === "filled"}
+        expanded={compact ? undefined : open}
         aria-expanded={open}
         aria-haspopup="dialog"
         data-tauri-drag-region="false"
@@ -244,14 +244,6 @@ export function SearchableProjectPicker({
             <Text truncate size="inherit" tone="primary" weight="medium" className="min-w-0">
               {label}
             </Text>
-            <ChevronDown
-              tone="muted"
-              {...motionAttributes(
-                { transition: "transform", duration: "standard", easing: "sheen" },
-                `icon-xs shrink-0 ${open ? "rotate-180" : ""}`,
-              )}
-              strokeWidth={1.75}
-            />
           </>
         )}
       </Button>

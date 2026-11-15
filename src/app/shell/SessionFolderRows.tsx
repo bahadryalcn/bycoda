@@ -1,6 +1,5 @@
 import { actionContentAttributes } from "../../shared/ui/ActionHost";
 import { Text } from "../../shared/ui/Text";
-import { motionAttributes } from "../../shared/ui/Motion";
 import {
   useEffect,
   useRef,
@@ -17,7 +16,7 @@ import { ActionHost, InlineAction, InlineMoreAction } from "../../shared/ui/Acti
 import { Button } from "../../shared/ui/Button";
 import { TextField } from "../../shared/ui/TextField";
 import { useT } from "../../shared/i18n";
-import { Check, ChevronRight, CircleAlert, Folder, FolderOpen, Plus } from "../../shared/ui/icons";
+import { Check, CircleAlert, Folder, FolderOpen, Plus } from "../../shared/ui/icons";
 import { isImeComposition } from "../../shared/lib/keyboard";
 
 export function FolderRow({
@@ -57,10 +56,6 @@ export function FolderRow({
   const count = sessions.length;
   const accent = folderAccent(folder.colorIndex, folder.customColor);
   const actionCount = (onNewSession ? 1 : 0) + (onOpenMenu ? 1 : 0);
-  const disclosureMotion = motionAttributes(
-    { transition: "transform", duration: "standard", easing: "rise" },
-    `icon-sm ${expanded ? "rotate-90" : ""}`,
-  );
   const header = (
     <Button
       variant="item"
@@ -71,7 +66,24 @@ export function FolderRow({
       tooltipDetails={[busy ? t("Working") : null, needsApproval ? t("Needs input") : null]}
       tooltipWide
       data-folder-row=""
-      aria-expanded={expanded}
+      expanded={expanded}
+      chevron="start"
+      restingIcon={
+        <Text
+          as="span"
+          size="inherit"
+          tone={accent ? "inherit" : "muted"}
+          aria-hidden
+          style={accent ? { color: accent } : undefined}
+        >
+          {groupIcon ??
+            (expanded ? (
+              <FolderOpen className="icon-sm" strokeWidth={1.75} />
+            ) : (
+              <Folder className="icon-sm" strokeWidth={1.75} />
+            ))}
+        </Text>
+      }
       data-tauri-drag-region="false"
       onPointerDown={onPointerDown}
       onClick={onToggle}
@@ -94,29 +106,6 @@ export function FolderRow({
       padding={{ inline: "lg", block: "xs" }}
       className="group relative flex w-full min-w-0 touch-none items-center gap-1.5 text-start"
     >
-      <Text
-        as="span"
-        size="inherit"
-        tone={accent ? "inherit" : "muted"}
-        aria-hidden
-        className="relative grid size-4 shrink-0 place-items-center"
-        style={accent ? { color: accent } : undefined}
-      >
-        <span {...actionContentAttributes({ phase: "rest" }, "contents")}>
-          {groupIcon ??
-            (expanded ? (
-              <FolderOpen className="icon-sm" strokeWidth={1.75} />
-            ) : (
-              <Folder className="icon-sm" strokeWidth={1.75} />
-            ))}
-        </span>
-        <ChevronRight
-          tone="secondary"
-          strokeWidth={1.75}
-          {...disclosureMotion}
-          {...actionContentAttributes({ phase: "interaction" }, disclosureMotion.className)}
-        />
-      </Text>
       <Text
         as="span"
         truncate

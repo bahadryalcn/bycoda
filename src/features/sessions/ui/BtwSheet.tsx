@@ -531,7 +531,7 @@ export function BtwSheet({
       header={
         <div
           {...surfaceAttributes(
-            { frame: "neutral", edge: "bottom" },
+            { frame: "pane", edge: "bottom" },
             "flex h-11 shrink-0 items-center gap-1  border-(--ui-tone-neutral-border) pr-2 pl-2.5",
           )}
         >

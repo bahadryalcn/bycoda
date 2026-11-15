@@ -62,7 +62,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
           as="div"
           tone="inherit"
           {...surfaceAttributes(
-            { frame: "stroke", edge: "bottom" },
+            { frame: "pane", edge: "bottom" },
             "flex shrink-0 items-center justify-end gap-2 px-3 py-1",
           )}
         >
@@ -92,7 +92,7 @@ export function SshRunbookQueue({ openRequest = 0 }: { openRequest?: number }) {
                 as="div"
                 tone="inherit"
                 {...surfaceAttributes(
-                  { frame: "stroke", edge: "bottom" },
+                  { frame: "pane", edge: "bottom" },
                   "flex min-w-0 flex-wrap items-center justify-between gap-2 py-2",
                 )}
               >

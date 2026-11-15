@@ -126,7 +126,7 @@ export function ServerOrganization({
       as="section"
       size="caption"
       tone="inherit"
-      {...surfaceAttributes({ frame: "stroke", edge: "top" }, "mbs-4 pbs-4")}
+      {...surfaceAttributes({ frame: "pane", edge: "top" }, "mbs-4 pbs-4")}
     >
       <SectionLabel as="h3">{title}</SectionLabel>
       {content}
@@ -135,7 +135,7 @@ export function ServerOrganization({
     <Disclosure
       size="sm"
       textSize="caption"
-      {...surfaceAttributes({ frame: "stroke", edge: "top" }, "mbs-4 pbs-4")}
+      {...surfaceAttributes({ frame: "pane", edge: "top" }, "mbs-4 pbs-4")}
       summary={title}
     >
       <Text as="div" size="caption" tone="inherit">

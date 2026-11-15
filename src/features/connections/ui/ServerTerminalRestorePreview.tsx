@@ -68,7 +68,7 @@ export function ServerTerminalRestorePreview({
           </Button>
         ) : null}
       </div>
-      <ul {...surfaceAttributes({ dividers: "stroke" }, "flex max-h-64 flex-col overflow-y-auto")}>
+      <ul {...surfaceAttributes({ dividers: "pane" }, "flex max-h-64 flex-col overflow-y-auto")}>
         {restore.tabs.map((tab, index) => {
           const server = servers.find((record) => record.id === tab.serverId);
           const endpoint = server?.effectiveSshEndpoint ?? server?.sshEndpoint;

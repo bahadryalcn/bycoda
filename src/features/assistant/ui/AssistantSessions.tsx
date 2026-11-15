@@ -175,7 +175,7 @@ function ManagedSessionRow({
             : t("Unknown");
   return (
     <ActionHost
-      {...surfaceAttributes({ frame: "settings", edge: "block-end" }, sessionStyles.jobRow)}
+      {...surfaceAttributes({ frame: "pane", edge: "block-end" }, sessionStyles.jobRow)}
       data-assistant-session={id}
     >
       <div className={sessionStyles.jobText}>

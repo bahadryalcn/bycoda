@@ -131,7 +131,7 @@ function LargeTextFileView({
         size="micro"
         tone="muted"
         {...surfaceAttributes(
-          { frame: "stroke", edge: "bottom" },
+          { frame: "pane", edge: "bottom" },
           "flex min-h-[var(--ui-control-height-compact)] shrink-0 flex-wrap items-center gap-1 px-2.5",
         )}
       >

@@ -13,7 +13,7 @@ import {
 import styles from "./Surface.module.css";
 
 const css = readFileSync("src/shared/ui/Surface.module.css", "utf8");
-it.each(["stroke", "card"] as const)(
+it.each(["pane", "card"] as const)(
   "divides direct children with the %s frame token",
   (dividers) => {
     expect(surfaceAttributes({ dividers })["data-surface-dividers"]).toBe(dividers);
@@ -21,7 +21,7 @@ it.each(["stroke", "card"] as const)(
       `data-surface-dividers="${dividers}"`,
     );
     expect(css).toContain(`[data-surface-dividers="${dividers}"]`);
-    const token = dividers === "stroke" ? "--color-stroke" : "--ui-card-border";
+    const token = dividers === "pane" ? "--ui-pane-border" : "--ui-card-border";
     const dividerRule = css.match(
       new RegExp(`\\[data-surface-dividers="${dividers}"\\][^{]*\\{([^}]+)\\}`),
     );
@@ -81,31 +81,21 @@ it.each(variants)("paints %s through the existing semantic ground", (variant, to
   expect(block).not.toMatch(/padding|display|height|opacity/);
 });
 
-it.each([
-  "none",
-  "pane",
-  "card",
-  "stroke",
-  "neutral",
-  "settings",
-  "frosted",
-  "transparent",
-  "danger",
-  "accent",
-  "editor",
-] as const)("supports opt-in frame %s", (frame) => {
-  expect(surfaceAttributes({ frame })["data-surface-frame"]).toBe(frame);
-  expect(renderToStaticMarkup(createElement(Surface, { frame }))).toContain(
-    `data-surface-frame="${frame}"`,
-  );
-  expect(css).toContain(`[data-surface-frame="${frame}"]`);
-});
+it.each(["none", "pane", "card", "transparent", "danger", "accent"] as const)(
+  "supports opt-in frame %s",
+  (frame) => {
+    expect(surfaceAttributes({ frame })["data-surface-frame"]).toBe(frame);
+    expect(renderToStaticMarkup(createElement(Surface, { frame }))).toContain(
+      `data-surface-frame="${frame}"`,
+    );
+    expect(css).toContain(`[data-surface-frame="${frame}"]`);
+  },
+);
 
 it.each([
   ["transparent", "transparent"],
   ["danger", "var(--ui-tone-danger-border)"],
   ["accent", "var(--ui-tone-accent-border)"],
-  ["editor", "var(--ui-editor-border)"],
 ] as const)("preserves the %s frame colour and reserved geometry", (frame, colour) => {
   const block = css.slice(css.indexOf(`.surface[data-surface-frame="${frame}"]`)).split("}")[0];
   expect(block).toContain(`border: 1px solid ${colour}`);
@@ -143,11 +133,11 @@ it.each(["none", "xs", "sm", "row", "control", "card", "panel", "popup", "pill"]
 );
 
 it("moves a responsive start frame with the owning layout's stacked flag", () => {
+  expect(surfaceAttributes({ frame: "pane", edge: "responsive-start" })["data-surface-edge"]).toBe(
+    "responsive-start",
+  );
   expect(
-    surfaceAttributes({ frame: "stroke", edge: "responsive-start" })["data-surface-edge"],
-  ).toBe("responsive-start");
-  expect(
-    renderToStaticMarkup(createElement(Surface, { frame: "stroke", edge: "responsive-start" })),
+    renderToStaticMarkup(createElement(Surface, { frame: "pane", edge: "responsive-start" })),
   ).toContain('data-surface-edge="responsive-start"');
   const block = css
     .slice(css.indexOf('[data-surface-edge="responsive-start"]'))
@@ -236,7 +226,7 @@ it("floats a static panel with the shared elevation token", () => {
 });
 
 const rings = [
-  ["stroke", "--color-stroke"],
+  ["pane", "--ui-pane-border"],
   ["accent", "--ui-border-accent"],
   ["tone-accent", "--ui-tone-accent-border"],
   ["tone-neutral", "--ui-tone-neutral-border"],
@@ -263,19 +253,10 @@ it("keeps the new roles out of the default render", () => {
   );
 });
 
-it("supports the pane divider token without changing stroke or card", () => {
+it("supports the pane divider token", () => {
   expect(surfaceAttributes({ dividers: "pane" })["data-surface-dividers"]).toBe("pane");
   expect(css).toMatch(
     /\[data-surface-dividers="pane"\][^{]*\{[^}]*border-color: var\(--ui-pane-border\)/,
-  );
-});
-
-it("uses the settings group border for settings group dividers", () => {
-  expect(surfaceAttributes({ dividers: "settings-group" })["data-surface-dividers"]).toBe(
-    "settings-group",
-  );
-  expect(css).toMatch(
-    /\[data-surface-dividers="settings-group"\][^{]*\{[^}]*border-color: var\(--ui-settings-group-border\)/,
   );
 });
 
@@ -293,15 +274,6 @@ it("supports a combined logical start corner frame", () => {
   expect(surfaceAttributes({ frame: "pane", edge: "start" })["data-surface-edge"]).toBe("start");
   expect(css).toMatch(
     /\[data-surface-edge="start"\][^{]*\{[^}]*border-width: 0;[^}]*border-block-start-width: 1px;[^}]*border-inline-start-width: 1px/s,
-  );
-});
-
-it("preserves the subtle work item metadata divider", () => {
-  expect(
-    surfaceAttributes({ variant: "inset", frame: "neutral-metadata" })["data-surface-frame"],
-  ).toBe("neutral-metadata");
-  expect(css.replace(/\s/g, "")).toContain(
-    "border:1pxsolidcolor-mix(inoklab,var(--ui-tone-neutral-border)7%,transparent)",
   );
 });
 
@@ -340,15 +312,6 @@ it("supports the field radius and flat settings group corners", () => {
     /\[data-surface-radius="field"\][^{]*\{[^}]*border-radius: var\(--radius-control\)/,
   );
   expect(css).toContain('data-surface-layout="settings-group-flat"');
-});
-
-it("supports pane-to-stroke responsive physical left boundaries", () => {
-  const attrs = surfaceAttributes({ frame: "pane-stroke", edge: "responsive-left" });
-  expect(attrs["data-surface-frame"]).toBe("pane-stroke");
-  expect(attrs["data-surface-edge"]).toBe("responsive-left");
-  expect(css).toContain("border-left-color: var(--ui-pane-border)");
-  expect(css).toContain("border-top-color: var(--color-stroke)");
-  expect(css).toContain('[data-surface-edge="responsive-left"]');
 });
 
 it("supports transparency checkerboards", () => {
@@ -521,20 +484,6 @@ it("supports settings search reveal and marked provider sibling boundaries", () 
   expect(css).toContain('[data-settings-part="narrow-picker"]');
   expect(css).toContain("settings-surface-reveal");
   expect(css).toContain("var(--ui-surface-selected)");
-});
-
-it("uses terminal border for terminal splits", () => {
-  expect(surfaceAttributes({ frame: "terminal" })["data-surface-frame"]).toBe("terminal");
-  expect(css).toMatch(
-    /\[data-surface-frame="terminal"\][^{]*\{[^}]*border: 1px solid var\(--terminal-border\)/s,
-  );
-});
-
-it("divides neutral evidence rows using the neutral boundary token", () => {
-  expect(surfaceAttributes({ dividers: "neutral" })["data-surface-dividers"]).toBe("neutral");
-  expect(css).toMatch(
-    /\[data-surface-dividers="neutral"\][^{]*\{[^}]*border-color: var\(--ui-tone-neutral-border\)/s,
-  );
 });
 
 it("supports evidence rails and marked frames", () => {

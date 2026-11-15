@@ -93,7 +93,7 @@ export function MessageReplyComposer({
       onSubmit={onSubmit}
       aria-busy={sending}
       {...surfaceAttributes(
-        { frame: "neutral", edge: "top" },
+        { frame: "pane", edge: "top" },
         "flex shrink-0 flex-col gap-1.5 px-4 py-2",
       )}
     >

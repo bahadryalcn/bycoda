@@ -795,7 +795,7 @@ export function scanFile(file, text, definitions) {
       hasJsxInActionSlot(tag.span)
     )
       add("feedback-action-slot", tag.start);
-    if (/\saria-expanded\b/.test(attributes) && /Chevron/.test(subtreeOf(source, tag)))
+    if (/\saria-expanded\b/.test(attributes) && /Chevron(?!sUpDown)/.test(subtreeOf(source, tag)))
       add("hand-rolled-disclosure", tag.start);
     if (tag.name === "a" && /\shref=/.test(attributes)) add("raw-anchor", tag.start);
     if (/\starget=\{?["']_blank["']/.test(attributes)) add("target-blank", tag.start);

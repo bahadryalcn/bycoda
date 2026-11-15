@@ -712,7 +712,7 @@ export function JiraBoardView({
         selected={issue.id === selectedIssueId}
         key={issue.identifier}
         {...surfaceAttributes(
-          { frame: "neutral", radius: "card" },
+          { frame: "card", radius: "card" },
           "jira-board-card flex flex-col items-stretch gap-1 p-2",
         )}
         data-dragging={dragKey === issue.identifier || undefined}
@@ -1163,7 +1163,7 @@ export function JiraBoardView({
               <Surface
                 as="section"
                 variant="page"
-                frame="neutral"
+                frame="pane"
                 edge="top"
                 radius="none"
                 padding="sm"

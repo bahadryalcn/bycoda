@@ -255,7 +255,7 @@ export function SshServerEditor({
             />
           </div>
         </FieldGroup>
-        <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "min-w-0 pbs-3")}>
+        <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "min-w-0 pbs-3")}>
           <FieldGroup legend={t("Credentials")}>
             <TextField
               label={t("SSH user")}
@@ -289,7 +289,7 @@ export function SshServerEditor({
             server?.sshEndpoint?.jumpHosts?.length ||
             server?.sshEndpoint?.jumpPolicies?.length,
           )}
-          {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pbs-3")}
+          {...surfaceAttributes({ frame: "pane", edge: "top" }, "pbs-3")}
           textSize="caption"
           tone="muted"
           summary={t("Advanced SSH settings")}
@@ -397,7 +397,7 @@ export function SshServerEditor({
                 aria-label={t("Endpoint preview")}
                 as="div"
                 tone="inherit"
-                {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pbs-3")}
+                {...surfaceAttributes({ frame: "pane", edge: "top" }, "pbs-3")}
               >
                 <Text wrap="anywhere" as="p" size="inherit" tone="inherit" weight="medium">
                   {sshEndpointPreview(endpoint)}

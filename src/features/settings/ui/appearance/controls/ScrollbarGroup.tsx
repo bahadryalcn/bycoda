@@ -93,7 +93,7 @@ export function ScrollbarGroup() {
                 >
                   <span
                     {...surfaceAttributes(
-                      { frame: "stroke", edge: "all", radius: "circle", variant: "user-color" },
+                      { frame: "pane", edge: "all", radius: "circle", variant: "user-color" },
                       "state-custom-dot",
                     )}
                     style={{ "--surface-user-color": customColor } as React.CSSProperties}
@@ -167,7 +167,7 @@ export function ScrollbarGroup() {
         </div>
         <div
           {...surfaceAttributes(
-            { frame: "settings", edge: "inline-start" },
+            { frame: "pane", edge: "inline-start" },
             "interface-scrollbar-sample",
           )}
         >

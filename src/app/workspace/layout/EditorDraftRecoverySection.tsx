@@ -122,7 +122,7 @@ export function EditorDraftRecoverySection({
       ) : null}
       <div className="recovery-body">
         {rows.length ? (
-          <ul {...surfaceAttributes({ dividers: "stroke" })} aria-label={t("File recovery copies")}>
+          <ul {...surfaceAttributes({ dividers: "pane" })} aria-label={t("File recovery copies")}>
             {rows.map((row) => {
               const key = editorDraftRecoveryKey(row);
               const pending = recovery.pendingKeys.has(key);
@@ -219,7 +219,7 @@ export function EditorDraftRecoverySection({
           />
         )}
       </div>
-      <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "recovery-footer")}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
         <Text as="p" size="caption" tone="secondary">
           {t(
             "Open a separate unsaved file tab. The original recovery copy stays available; files are not written until you save.",

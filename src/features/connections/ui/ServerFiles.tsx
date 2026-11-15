@@ -239,7 +239,7 @@ export function ServerFiles({
           ) : null}
           {upload ? (
             <div
-              {...surfaceAttributes({ frame: "stroke", edge: "block" }, "flex flex-col gap-2 py-3")}
+              {...surfaceAttributes({ frame: "pane", edge: "block" }, "flex flex-col gap-2 py-3")}
             >
               <TextField
                 label={t("Remote filename")}
@@ -305,7 +305,7 @@ export function ServerFiles({
           ) : null}
           {recoveries.length ? (
             <div
-              {...surfaceAttributes({ frame: "stroke", edge: "block" }, "flex flex-col gap-2 py-2")}
+              {...surfaceAttributes({ frame: "pane", edge: "block" }, "flex flex-col gap-2 py-2")}
             >
               <SectionLabel count={recoveries.length}>{t("Paused transfers")}</SectionLabel>
               <div className="flex flex-col gap-2">
@@ -363,10 +363,7 @@ export function ServerFiles({
               as="section"
               size="caption"
               tone="inherit"
-              {...surfaceAttributes(
-                { frame: "stroke", edge: "bottom" },
-                "flex flex-col gap-2 pb-3",
-              )}
+              {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "flex flex-col gap-2 pb-3")}
               aria-label={t("Resume transfer review")}
             >
               <p className="break-all">
@@ -433,7 +430,7 @@ export function ServerFiles({
                 as="div"
                 tone="inherit"
                 {...surfaceAttributes(
-                  { frame: "stroke", edge: "bottom" },
+                  { frame: "pane", edge: "bottom" },
                   "flex items-center gap-2 py-1.5",
                 )}
               >

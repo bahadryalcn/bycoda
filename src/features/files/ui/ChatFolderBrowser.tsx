@@ -211,7 +211,7 @@ export function ChatFolderBrowser({
       <div className="min-w-0">
         <div
           {...surfaceAttributes(
-            { frame: "stroke", edge: "bottom" },
+            { frame: "pane", edge: "bottom" },
             "flex min-w-0 items-center gap-2 pb-2",
           )}
         >
@@ -274,7 +274,7 @@ export function ChatFolderBrowser({
           <Text as="div" size="body" tone="inherit">
             <form
               id={mappingFormId}
-              {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "grid gap-2 pb-3")}
+              {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "grid gap-2 pb-3")}
               onSubmit={(event) => {
                 event.preventDefault();
                 void saveMapping();

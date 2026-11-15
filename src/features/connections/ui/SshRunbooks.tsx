@@ -400,7 +400,7 @@ export function SshRunbooks({
               tone="inherit"
               aria-label={t("SSH execution status")}
               {...surfaceAttributes(
-                { frame: "stroke", edge: "top" },
+                { frame: "pane", edge: "top" },
                 "flex min-w-0 flex-col gap-2 pbs-3",
               )}
             >
@@ -659,7 +659,7 @@ export function SshRunbooks({
               tone="inherit"
               aria-label={t("SSH execution review")}
               {...surfaceAttributes(
-                { frame: "stroke", edge: "top" },
+                { frame: "pane", edge: "top" },
                 "flex min-w-0 flex-col gap-2 pbs-3",
               )}
             >

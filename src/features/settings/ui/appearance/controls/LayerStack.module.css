@@ -27,7 +27,7 @@
   width: 100%;
   min-width: 0;
   display: grid;
-  grid-template-columns: 2.25rem minmax(0, 1fr) auto 1rem;
+  grid-template-columns: 2.25rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.75rem;
 }
@@ -83,15 +83,6 @@
 
 .layer[data-disabled] .name {
   opacity: 0.6;
-}
-
-.chevron {
-  width: 1rem;
-  height: 1rem;
-}
-
-.chevron[data-open] {
-  transform: rotate(90deg);
 }
 
 .content {

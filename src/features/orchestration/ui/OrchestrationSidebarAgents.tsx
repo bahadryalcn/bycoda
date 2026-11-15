@@ -12,7 +12,7 @@ import { orchestrationTaskLabel, type OrchestrationSummary } from "../model/orch
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { OrchestrationActions, OrchestrationWorkers } from "./OrchestrationActions";
-import { Check, ChevronDown, ChevronRight, CircleAlert } from "../../../shared/ui/icons";
+import { Check, CircleAlert } from "../../../shared/ui/icons";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 
 export function OrchestrationSidebarAgents({
@@ -132,20 +132,10 @@ export function OrchestrationSidebarAgents({
                 fullWidth
                 className="min-w-0"
                 selected={open}
-                aria-expanded={open}
+                expanded={open}
+                chevron="start"
                 onClick={() => toggle(task.sessionId, open)}
               >
-                <Text
-                  size="inherit"
-                  tone="secondary"
-                  className="grid icon-sm shrink-0 place-items-center"
-                >
-                  {open ? (
-                    <ChevronDown className="icon-xs" strokeWidth={1.75} />
-                  ) : (
-                    <ChevronRight className="icon-xs" strokeWidth={1.75} />
-                  )}
-                </Text>
                 <HarnessIcon harness={task.harness} className="icon-sm shrink-0" />
                 <Text
                   size="caption"
@@ -254,7 +244,7 @@ export function OrchestrationSidebarAgents({
       {run?.status === "paused" && (
         <div
           {...surfaceAttributes(
-            { frame: "neutral", edge: "top" },
+            { frame: "pane", edge: "top" },
             "mt-1.5 space-y-1.5 border-(--ui-tone-neutral-border) pt-1.5",
           )}
         >

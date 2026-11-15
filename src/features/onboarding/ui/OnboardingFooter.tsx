@@ -16,7 +16,7 @@ export function OnboardingFooter({
   return (
     <footer
       {...surfaceAttributes(
-        { frame: "stroke", edge: "block-start", variant: "canvas" },
+        { frame: "pane", edge: "block-start", variant: "canvas" },
         "onboarding-footer",
       )}
     >

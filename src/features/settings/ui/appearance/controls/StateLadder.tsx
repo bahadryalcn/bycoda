@@ -102,7 +102,7 @@ export function StateLadder() {
                 >
                   <span
                     {...surfaceAttributes(
-                      { frame: "stroke", edge: "all", radius: "circle", variant: "user-color" },
+                      { frame: "pane", edge: "all", radius: "circle", variant: "user-color" },
                       "state-custom-dot",
                     )}
                     style={

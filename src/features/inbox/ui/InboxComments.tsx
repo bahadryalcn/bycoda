@@ -166,7 +166,7 @@ export function InboxComments({
   const moreOn = providerLabel(provider);
 
   return (
-    <section {...surfaceAttributes({ frame: "neutral", edge: "top" }, "flex flex-col gap-3 pt-5")}>
+    <section {...surfaceAttributes({ frame: "pane", edge: "top" }, "flex flex-col gap-3 pt-5")}>
       <Text as="div" size="caption" tone="secondary" className="flex items-center gap-2">
         {thread.commits ? (
           <>
@@ -340,7 +340,7 @@ export function InboxCommentForm({
   return (
     <form
       onSubmit={onFormSubmit}
-      {...surfaceAttributes({ frame: "neutral", edge: "top" }, "flex flex-col gap-2 pt-5")}
+      {...surfaceAttributes({ frame: "pane", edge: "top" }, "flex flex-col gap-2 pt-5")}
     >
       {replyTo ? (
         <Text as="div" size="caption" tone="secondary" className="flex items-center gap-2">
@@ -421,7 +421,7 @@ export function InboxCommentForm({
 function CommentsPending() {
   useLocale();
   return (
-    <LoadingText {...surfaceAttributes({ frame: "neutral", edge: "top" }, "pt-5")}>
+    <LoadingText {...surfaceAttributes({ frame: "pane", edge: "top" }, "pt-5")}>
       {t("Loading comments")}
     </LoadingText>
   );
@@ -469,7 +469,7 @@ function InboxComment({
         as="header"
         {...surfaceAttributes(
           {
-            frame: !nested && (hasBody || hasReplies) ? "neutral" : undefined,
+            frame: !nested && (hasBody || hasReplies) ? "pane" : undefined,
             edge: !nested && (hasBody || hasReplies) ? "bottom" : undefined,
           },
           `flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 ${
@@ -561,13 +561,13 @@ function InboxComment({
         </SurfaceSelection>
       ) : null}
       {hasReplies ? (
-        <div {...surfaceAttributes({ frame: "neutral", edge: "top" }, "px-3")}>
+        <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "px-3")}>
           {comment.replies.map((reply, index) => (
             <div
               key={reply.id}
               {...surfaceAttributes(
                 {
-                  frame: index > 0 ? "neutral" : undefined,
+                  frame: index > 0 ? "pane" : undefined,
                   edge: index > 0 ? "top" : undefined,
                 },
                 "py-2.5",

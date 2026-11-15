@@ -117,7 +117,7 @@ export function PoliciesSettings() {
           ref={reader}
           {...scrollAreaAttributes({ gutter: "stable" }, "policy-reader")}
           {...surfaceAttributes(
-            { frame: "stroke", edge: "responsive-start" },
+            { frame: "pane", edge: "responsive-start" },
             scrollAreaAttributes({ gutter: "stable" }, "policy-reader").className,
           )}
           labelledBy={settingDomId(activePolicy.id)}

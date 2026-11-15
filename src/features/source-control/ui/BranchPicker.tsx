@@ -438,7 +438,7 @@ export function BranchPicker({
             />
           }
           footer={
-            <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "shrink-0 p-1 px-1.5")}>
+            <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 p-1 px-1.5")}>
               {createRow ? (
                 <Button
                   variant="item"
@@ -490,7 +490,7 @@ export function BranchPicker({
           {error ? (
             <InlineError
               {...surfaceAttributes(
-                { frame: "stroke", edge: "top" },
+                { frame: "pane", edge: "top" },
                 "max-h-16 shrink-0 overflow-y-auto whitespace-pre-wrap px-2.5 py-2",
               )}
             >

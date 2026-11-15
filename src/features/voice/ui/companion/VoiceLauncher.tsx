@@ -140,7 +140,7 @@ export function VoiceLauncher({
         iconOnly={compact}
         {...(slot
           ? { className: styles.launcherButton }
-          : surfaceAttributes({ variant: "floating", frame: "neutral" }, styles.launcherButton))}
+          : surfaceAttributes({ variant: "floating", frame: "pane" }, styles.launcherButton))}
         data-docked={slot ? "" : undefined}
         label={label}
         tooltip={compact ? label : name ? t("Voice assistant") : undefined}

@@ -192,7 +192,7 @@ export function TaskMetricsComparison({ tasks }: { tasks: HostTask[] }) {
             <li
               key={group.key}
               {...surfaceAttributes(
-                { frame: "neutral", edge: "bottom" },
+                { frame: "pane", edge: "bottom" },
                 "min-w-0 space-y-2 border-(--ui-tone-neutral-border) pb-3",
               )}
             >

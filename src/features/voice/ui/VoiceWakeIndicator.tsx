@@ -37,7 +37,7 @@ export function VoiceWakeIndicator({
       tone="secondary"
       leading="inherit"
       {...surfaceAttributes(
-        { frame: "neutral", edge: "all", radius: "pill", variant: "floating" },
+        { frame: "pane", edge: "all", radius: "pill", variant: "floating" },
         styles.indicator,
       )}
       data-state={state.kind}

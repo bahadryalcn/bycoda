@@ -106,7 +106,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
       {models.length > 5 || query.length > 0 ? (
         <div
           {...surfaceAttributes(
-            { variant: "canvas", frame: "settings", edge: "block-end" },
+            { variant: "canvas", frame: "pane", edge: "block-end" },
             "provider-models-search",
           )}
         >
@@ -119,7 +119,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
           />
         </div>
       ) : null}
-      <div {...surfaceAttributes({ frame: "settings", edge: "block" }, "provider-models-list")}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block" }, "provider-models-list")}>
         {models.length === 0 ? (
           <Row
             label={
@@ -161,9 +161,7 @@ export function ProviderModelsGroup({ harness }: { harness: HarnessId }) {
           })
         )}
       </div>
-      <div
-        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "provider-models-source")}
-      >
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "provider-models-source")}>
         <CatalogReceiptStatus harness={harness} available={isHarnessAvailable(harness)} />
       </div>
     </Group>

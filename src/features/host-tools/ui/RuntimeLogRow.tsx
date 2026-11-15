@@ -58,7 +58,7 @@ export const RuntimeLogRow = memo(function RuntimeLogRow({
   return (
     <li
       {...surfaceAttributes(
-        { variant: selectedCount > 0 ? "selected" : undefined, frame: "stroke", edge: "block-end" },
+        { variant: selectedCount > 0 ? "selected" : undefined, frame: "pane", edge: "block-end" },
         "runtime-log-row",
       )}
       data-level={runtimeLogDisplayLevel(entry)}

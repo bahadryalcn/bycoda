@@ -147,7 +147,7 @@ it("asks for a branch name before creating from the fixed action", async () => {
   )!;
   const list = picker.querySelector('[role="listbox"][aria-label="Branches"]')!;
   expect(list.contains(create)).toBe(false);
-  expect(create.parentElement?.getAttribute("data-surface-frame")).toBe("stroke");
+  expect(create.parentElement?.getAttribute("data-surface-frame")).toBe("pane");
   expect(create.parentElement?.getAttribute("data-surface-edge")).toBe("top");
   expect(create.parentElement?.className).toContain("shrink-0");
   expect(create.parentElement).toBe(picker.lastElementChild);
@@ -249,7 +249,7 @@ it("updates the branch creation row with the entered name", async () => {
     (button) => button.textContent === "Create and checkout feature/picker",
   );
   expect(create).not.toBeUndefined();
-  expect(create?.parentElement?.getAttribute("data-surface-frame")).toBe("stroke");
+  expect(create?.parentElement?.getAttribute("data-surface-frame")).toBe("pane");
   expect(create?.parentElement?.getAttribute("data-surface-edge")).toBe("top");
 });
 

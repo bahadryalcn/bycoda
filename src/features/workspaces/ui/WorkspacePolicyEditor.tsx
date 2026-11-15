@@ -136,7 +136,7 @@ export function WorkspacePolicyEditor({
         id="setting-workspace-retention"
         data-setting-id="workspace-retention"
         aria-labelledby={retentionHeadingId}
-        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, styles.block)}
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.block)}
       >
         <Heading size="item" id={retentionHeadingId} className={styles.subheading}>
           {t("Automatic cleanup")}
@@ -197,7 +197,7 @@ export function WorkspacePolicyEditor({
         id="setting-workspace-disk-policy"
         data-setting-id="workspace-disk-policy"
         aria-labelledby={limitsHeadingId}
-        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, styles.block)}
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.block)}
       >
         <Heading size="item" id={limitsHeadingId} className={styles.subheading}>
           {t("Limits")}

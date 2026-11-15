@@ -72,7 +72,7 @@ export function InboxScopeCollection({
   return (
     <div
       {...surfaceAttributes(
-        { variant: "card", frame: "settings", radius: "card" },
+        { variant: "card", frame: "card", radius: "card" },
         "settings-collection",
       )}
     >

@@ -40,7 +40,7 @@ export function QuickPermissions({
   return (
     <div
       {...surfaceAttributes(
-        { frame: embedded ? undefined : "stroke", edge: embedded ? undefined : "top" },
+        { frame: embedded ? undefined : "pane", edge: embedded ? undefined : "top" },
         "min-h-0 overflow-y-auto overscroll-none p-2",
       )}
       onKeyDown={(event) => {

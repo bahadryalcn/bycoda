@@ -7,11 +7,10 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { ClampText } from "../../../shared/ui/ClampText";
-import { motionAttributes } from "../../../shared/ui/Motion";
 import { surfaceAttributes, Surface } from "../../../shared/ui/Surface";
 import { t, useLocale } from "../../../shared/i18n";
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
+import { ChevronRight } from "../../../shared/ui/icons";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
@@ -132,17 +131,11 @@ export function InboxDescriptionSummary({
       <Button
         variant="link"
         type="button"
-        aria-expanded={expanded}
+        expanded={expanded}
+        chevron="start"
         onClick={() => setExpanded((current) => !current)}
         className="self-start"
       >
-        <ChevronDown
-          {...motionAttributes(
-            { transition: "transform", duration: "standard", easing: "sheen" },
-            `icon-sm ${expanded ? "rotate-180" : ""}`,
-          )}
-          strokeWidth={1.75}
-        />
         {expanded ? t("Show less") : t("Show full description")}
         {!expanded && excerpt.images > 0 ? (
           <Text size="inherit" tone="secondary">
@@ -206,7 +199,7 @@ export function InboxPrChangesGlance({
           as="ul"
           variant="card"
           padding="none"
-          dividers="neutral"
+          dividers="card"
           className="flex flex-col overflow-hidden"
         >
           {shown.map((file) => {

@@ -2,8 +2,6 @@ import { surfaceAttributes } from "../../../../../shared/ui/Surface";
 import { Text } from "../../../../../shared/ui/Text";
 import { useContext, useId, useState, type ReactNode } from "react";
 import { Button } from "../../../../../shared/ui/Button";
-import { motionAttributes } from "../../../../../shared/ui/Motion";
-import { ChevronRight } from "../../../../../shared/ui/icons";
 import { LayerEditorHeadings, RevealedSetting, settingDomId, Toggle } from "../../settingsControls";
 import styles from "./LayerStack.module.css";
 
@@ -89,7 +87,7 @@ function LayerRow({
           fullWidth
           motion="none"
           className={styles.disclosure}
-          aria-expanded={open}
+          expanded={open}
           aria-controls={contentId}
           onClick={onOpen}
         >
@@ -128,15 +126,6 @@ function LayerRow({
             >
               {layer.strength}
             </Text>
-            <ChevronRight
-              aria-hidden
-              tone="secondary"
-              {...motionAttributes(
-                { transition: "transform", duration: "standard", easing: "sheen" },
-                styles.chevron,
-              )}
-              data-open={open || undefined}
-            />
           </span>
         </Button>
         <span className={styles.toggle}>

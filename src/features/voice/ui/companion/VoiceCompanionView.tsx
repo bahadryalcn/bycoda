@@ -101,7 +101,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
     <>
       <header
         {...surfaceAttributes(
-          { frame: p.compact ? "none" : p.error ? "danger" : "neutral", edge: "block-end" },
+          { frame: p.compact ? "none" : p.error ? "danger" : "pane", edge: "block-end" },
           styles.header,
         )}
         {...p.headerDrag}
@@ -256,7 +256,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               {p.jobReview}
             </VoiceSidePanel>
           ) : null}
-          <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, styles.actions)}>
+          <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.actions)}>
             <VoiceCompanionControls
               status={p.status}
               startDisabled={p.startDisabled}

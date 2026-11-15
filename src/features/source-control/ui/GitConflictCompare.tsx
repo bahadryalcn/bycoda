@@ -132,7 +132,7 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
               as="p"
               size="caption"
               tone="secondary"
-              {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-4 py-1.5")}
+              {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-4 py-1.5")}
             >
               {notes.join(" ")}
             </Text>

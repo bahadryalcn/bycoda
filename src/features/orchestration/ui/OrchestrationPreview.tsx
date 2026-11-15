@@ -408,7 +408,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
       {!!proposal.tasks.length && (
         <ul
           {...surfaceAttributes(
-            { frame: "neutral", edge: "top" },
+            { frame: "pane", edge: "top" },
             "border-(--ui-tone-neutral-border) py-1",
           )}
         >
@@ -586,7 +586,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           size="micro"
           tone="secondary"
           {...surfaceAttributes(
-            { frame: "neutral", edge: "top" },
+            { frame: "pane", edge: "top" },
             "flex flex-wrap items-center justify-between gap-2 border-(--ui-tone-neutral-border) px-3 py-2",
           )}
         >

@@ -369,14 +369,14 @@ export function RoutingTable({
           })}
       </div>
       {saveError !== null ? (
-        <div {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "px-4 py-2.5")}>
+        <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "px-4 py-2.5")}>
           <ErrorNotice error={saveError} onRetry={save} />
         </div>
       ) : null}
       {dirty || saved || busy ? (
         <div
           {...surfaceAttributes(
-            { frame: "settings", edge: "block-start" },
+            { frame: "pane", edge: "block-start" },
             "flex min-w-0 items-center justify-end gap-3 px-4 py-2.5",
           )}
         >

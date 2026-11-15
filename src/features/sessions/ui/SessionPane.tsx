@@ -1497,7 +1497,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // (`onPaneDragStart` is always supplied by the pane tree, so it can't decide this.)
   const hasPaneHeader = inSplit;
   const paneHeaderSurface = surfaceAttributes(
-    { frame: "neutral", edge: "bottom" },
+    { frame: "pane", edge: "bottom" },
     "session-pane-header shrink-0 touch-none items-center gap-1.5 px-2 select-none",
   );
   const paneHeaderDrag = actionDragAttributes(

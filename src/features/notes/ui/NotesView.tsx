@@ -996,7 +996,7 @@ export function NotesView({
         </Popover>
       ) : null}
       {selectionMode ? (
-        <div {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "note-bulk-actions")}>
+        <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "note-bulk-actions")}>
           <Checkbox
             aria-label={t("Select all filtered notes")}
             disabled={bulkDeleting || visible.length === 0}
@@ -1259,7 +1259,7 @@ export function NotesView({
           </Text>
         </ToolHeader>
       </PaneHeader>
-      <div {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "note-mobile-navigation")}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "note-mobile-navigation")}>
         <TabStrip
           label={t("Notes sections")}
           value={mobileListVisible ? "list" : "editor"}
@@ -1282,7 +1282,7 @@ export function NotesView({
               size="caption"
               tone="secondary"
               {...surfaceAttributes(
-                { frame: "stroke", edge: "bottom" },
+                { frame: "pane", edge: "bottom" },
                 "flex flex-wrap items-center gap-2 px-5 py-2",
               )}
             >
@@ -2210,7 +2210,7 @@ function NoteEditor({
                     as="div"
                     weight="medium"
                     {...surfaceAttributes(
-                      { frame: "stroke", edge: "block-end" },
+                      { frame: "pane", edge: "block-end" },
                       "note-details-title wrap-anywhere",
                     )}
                   >

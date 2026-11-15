@@ -1040,7 +1040,7 @@ export function InboxView({
       {pullRequestsOnly && needsLocalProject && projects.length === 0 && onOpenProject ? (
         <header
           {...surfaceAttributes(
-            { frame: "neutral", edge: "bottom" },
+            { frame: "pane", edge: "bottom" },
             "flex shrink-0 flex-wrap items-center gap-2 px-3 py-2",
           )}
         >
@@ -1132,7 +1132,7 @@ export function InboxView({
           <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
             <div
               {...surfaceAttributes(
-                { frame: "neutral", edge: "bottom" },
+                { frame: "pane", edge: "bottom" },
                 "inbox-detail-back shrink-0 px-2 py-1",
               )}
             >

@@ -74,13 +74,13 @@ export function VoiceSidePanel({
     return (
       <div
         ref={scroller as RefObject<HTMLDivElement>}
-        {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, styles.dock)}
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.dock)}
       >
         {children}
       </div>
     );
   const appearance = surfaceAttributes(
-    { frame: "neutral", edge: "all", radius: "panel", variant: "floating", elevation: "floating" },
+    { frame: "pane", edge: "all", radius: "panel", variant: "floating", elevation: "floating" },
     styles.side,
   );
   return (

@@ -108,7 +108,7 @@ export function TelegramChannelConnect({
     }).catch(() => undefined);
 
   return (
-    <div {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}>
+    <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}>
       <Text as="p" tone="muted" leading="snug" className="social-muted">
         {t(
           "Create the Telegram channel with your existing account and add the configured bot as an administrator with permission to post. Connecting here does not change those permissions.",

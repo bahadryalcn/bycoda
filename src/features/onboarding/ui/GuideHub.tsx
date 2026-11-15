@@ -152,14 +152,14 @@ export default function GuideHub({
         size="body"
         tone="primary"
         leading="normal"
-        {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "bycoda-arc guide-hub")}
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "bycoda-arc guide-hub")}
       >
         <Text
           as="div"
           size="caption"
           tone="inherit"
           leading="normal"
-          {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "guide-hub-start")}
+          {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "guide-hub-start")}
           role="group"
           aria-label={t("First steps")}
         >
@@ -227,7 +227,7 @@ export default function GuideHub({
           </div>
         </Text>
         <nav
-          {...surfaceAttributes({ frame: "stroke", edge: "responsive-end" }, "guide-hub-nav")}
+          {...surfaceAttributes({ frame: "pane", edge: "responsive-end" }, "guide-hub-nav")}
           aria-label={t("Guide topics")}
         >
           {groups.map((group) => (

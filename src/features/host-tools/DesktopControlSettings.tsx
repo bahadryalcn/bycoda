@@ -494,7 +494,7 @@ export function DesktopControlSettings({
   const errorLine = error && (
     <div
       {...surfaceAttributes(
-        { frame: embedded ? "settings" : undefined, edge: "block-start" },
+        { frame: embedded ? "pane" : undefined, edge: "block-start" },
         embedded ? styles.embeddedError : undefined,
       )}
     >

@@ -39,10 +39,7 @@ export function RoutingSaveBar({
   const t = useT();
   return (
     <div
-      {...surfaceAttributes(
-        { variant: "canvas", frame: "settings", edge: "block-start" },
-        styles.bar,
-      )}
+      {...surfaceAttributes({ variant: "canvas", frame: "pane", edge: "block-start" }, styles.bar)}
     >
       {children ? <div className={styles.notes}>{children}</div> : null}
       <div className={styles.row}>

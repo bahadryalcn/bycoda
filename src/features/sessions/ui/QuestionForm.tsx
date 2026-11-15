@@ -513,7 +513,7 @@ function QuestionFormContent({
           </div>
         </FieldGroup>
         <div
-          {...surfaceAttributes({ variant: "inset", frame: "editor", edge: "top" }, styles.footer)}
+          {...surfaceAttributes({ variant: "inset", frame: "pane", edge: "top" }, styles.footer)}
         >
           {canAttach ? (
             <Button

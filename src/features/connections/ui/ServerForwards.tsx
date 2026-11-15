@@ -115,7 +115,7 @@ export function ServerForwards({
             <div
               key={rule.id}
               {...surfaceAttributes(
-                { frame: "stroke", edge: "bottom" },
+                { frame: "pane", edge: "bottom" },
                 "flex min-w-0 flex-col gap-2 pbe-3",
               )}
             >

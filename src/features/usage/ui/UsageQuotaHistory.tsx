@@ -147,7 +147,7 @@ export function QuotaHistory({
       {rows.length ? (
         <>
           <div
-            {...surfaceAttributes({ frame: "stroke", edge: "block" }, "usage-quota-plot")}
+            {...surfaceAttributes({ frame: "pane", edge: "block" }, "usage-quota-plot")}
             role="img"
             aria-label={`${t("Limit history")}: ${rows.length} ${t("recorded samples")}`}
           >

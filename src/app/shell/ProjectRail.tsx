@@ -28,8 +28,6 @@ import {
   Globe,
   BellOff,
   Check,
-  ChevronDown,
-  ChevronRight,
   FolderPlus,
   FolderTree,
   GitBranch,
@@ -1850,7 +1848,17 @@ function ProjectGroupSection({
           variant="ghost"
           motion="none"
           type="button"
-          aria-expanded={expanded}
+          expanded={expanded}
+          restingIcon={
+            collapsed ? (
+              <ProjectMascot
+                project={group.id}
+                color={projectGroupColor(group)}
+                name={group.mascot ?? null}
+                className="size-3"
+              />
+            ) : undefined
+          }
           aria-label={
             locked ? t("{p0}, locked", { p0: group.name }) : `${group.name}, ${countLabel}`
           }
@@ -1859,32 +1867,7 @@ function ProjectGroupSection({
           onClick={onToggleCollapsed}
           iconTarget="compact"
           className="shrink-0 @max-[140px]/rail:flex-1"
-        >
-          <div className="grid size-4 shrink-0 place-items-center">
-            {collapsed ? (
-              <>
-                <span
-                  data-group-mascot
-                  {...actionContentAttributes({ phase: "rest" }, "grid size-4 place-items-center")}
-                >
-                  <ProjectMascot
-                    project={group.id}
-                    color={projectGroupColor(group)}
-                    name={group.mascot ?? null}
-                    className="size-3"
-                  />
-                </span>
-                <ChevronRight
-                  data-group-chevron
-                  {...actionContentAttributes({ phase: "interaction" }, "icon-sm")}
-                  strokeWidth={1.75}
-                />
-              </>
-            ) : (
-              <ChevronDown data-group-chevron className="icon-sm" strokeWidth={1.75} />
-            )}
-          </div>
-        </Button>
+        />
         {/* The name keeps a readable minimum while hover reveals the group actions beside it. */}
         <div
           data-group-labels

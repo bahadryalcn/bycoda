@@ -221,7 +221,7 @@ export function WorktreePicker({
             as="div"
             size="caption"
             tone="inherit"
-            {...surfaceAttributes({ frame: "stroke", edge: "top" }, "shrink-0 p-1")}
+            {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 p-1")}
           >
             <Button
               variant="item"

@@ -87,7 +87,7 @@ export function ServerTerminalRestoreControls({
       size="caption"
       tone="inherit"
       aria-label={t("Saved SSH tabs")}
-      {...surfaceAttributes({ frame: "stroke", edge: "top" }, "shrink-0 px-3")}
+      {...surfaceAttributes({ frame: "pane", edge: "top" }, "shrink-0 px-3")}
     >
       <SectionLabel
         collapsible

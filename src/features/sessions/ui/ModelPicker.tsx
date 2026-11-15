@@ -8,7 +8,7 @@ import { Tooltip } from "../../../shared/ui/Tooltip";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { clampActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { useLocale, useT } from "../../../shared/i18n";
-import { Check, ChevronDown, Gauge, Zap } from "../../../shared/ui/icons";
+import { Check, Gauge, Zap } from "../../../shared/ui/icons";
 import {
   useEffect,
   useId,
@@ -681,7 +681,7 @@ export function ModelPicker({
                   current.provider ? `, ${current.provider.name},` : ""
                 } ${currentLabel}${triggerEffortLabel ? `, effort ${triggerEffortLabel}` : ""}${triggerFastOn ? `, ${t("Fast")}` : ""}`
           }
-          aria-expanded={open || recentOpen}
+          expanded={open || recentOpen}
           aria-haspopup="dialog"
           onPointerEnter={() => void preloadModelPicker().catch(() => {})}
           onFocus={() => void preloadModelPicker().catch(() => {})}
@@ -749,16 +749,6 @@ export function ModelPicker({
               />
             ) : null}
           </span>
-
-          <ChevronDown
-            className={`icon-xs shrink-0 ${open ? "rotate-180" : ""} ${
-              field ? "bycoda-arc-select-chevron" : ""
-            }`}
-
-            tone="secondary"
-
-            strokeWidth={1.75}
-          />
         </Trigger>
       </Tooltip>
 

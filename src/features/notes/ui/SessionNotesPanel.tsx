@@ -327,7 +327,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       data-notes-panel
       onKeyDown={onKeyDown}
       {...surfaceAttributes(
-        { frame: "pane-stroke", edge: "responsive-left", variant: "page" },
+        { frame: "pane", edge: "responsive-left", variant: "page" },
         "relative flex h-full min-h-0 min-w-0 shrink-0 flex-col",
       )}
     >
@@ -536,10 +536,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         <SurfaceLoading className="min-h-0 flex-1" title={t("Loading notes…")} />
       )}
       <div
-        {...surfaceAttributes(
-          { frame: "stroke", edge: "block-start" },
-          "session-notes-library-link",
-        )}
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "session-notes-library-link")}
       >
         <Button
           variant="ghost"

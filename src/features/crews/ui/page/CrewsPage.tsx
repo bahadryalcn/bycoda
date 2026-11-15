@@ -133,7 +133,7 @@ export function CrewsPage({
         >
           {navigation}
         </PaneHeader>
-        <div {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "px-3 py-1.5")}>
+        <div {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "px-3 py-1.5")}>
           <TabList
             label={t("Crews sections")}
             items={crewsTabs(supported ? activeItems?.length : null)}

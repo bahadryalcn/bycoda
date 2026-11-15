@@ -142,12 +142,12 @@ export default function OnboardingDialog({
       onClose={busy ? () => undefined : onFinish}
     >
       <div className="onboarding-layout" ref={body}>
-        <header {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "onboarding-header")}>
+        <header {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "onboarding-header")}>
           <div className="onboarding-topline">
             <div className="onboarding-brand">
               <img src={PRODUCT_IDENTITY.logoSrc} alt="" />
               <span>{PRODUCT_IDENTITY.displayName}</span>
-              <small {...surfaceAttributes({ frame: "stroke", edge: "inline-start" })}>
+              <small {...surfaceAttributes({ frame: "pane", edge: "inline-start" })}>
                 {t("Quick setup")}
               </small>
             </div>
@@ -458,10 +458,7 @@ function Projects({
                 size="caption"
                 tone="secondary"
                 leading="inherit"
-                {...surfaceAttributes(
-                  { frame: "stroke", edge: "block-end" },
-                  "onboarding-selection",
-                )}
+                {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "onboarding-selection")}
               >
                 <Checkbox
                   aria-label={t("Select all")}
@@ -494,7 +491,7 @@ function Projects({
                   </Text>
                 ) : null}
               </Text>
-              <div {...surfaceAttributes({ dividers: "stroke" }, "onboarding-projects")}>
+              <div {...surfaceAttributes({ dividers: "pane" }, "onboarding-projects")}>
                 {folders.map((folder) => {
                   const parent = parentPath(folder.path);
                   return (

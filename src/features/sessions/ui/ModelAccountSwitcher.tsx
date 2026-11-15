@@ -210,7 +210,7 @@ export function ModelAccountControl({
       {current && current.id === defaultAccountId ? <DefaultMark /> : null}
       <span
         {...surfaceAttributes(
-          { frame: "neutral", edge: "left" },
+          { frame: "pane", edge: "left" },
           "flex shrink-0 items-center gap-1 pl-1.5 ui-caption-text",
         )}
       >

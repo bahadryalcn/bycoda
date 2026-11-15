@@ -141,7 +141,7 @@ function UsageGuidePanel({
         size="caption"
         tone="secondary"
         leading="normal"
-        {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "usage-guide-toolbar")}
+        {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "usage-guide-toolbar")}
       >
         <span>{t("Usage guide")}</span>
         <LiveText
@@ -177,7 +177,7 @@ function UsageGuidePanel({
         </div>
         {step.content}
       </ScrollArea>
-      <footer {...surfaceAttributes({ frame: "stroke", edge: "top" }, "usage-guide-footer")}>
+      <footer {...surfaceAttributes({ frame: "pane", edge: "top" }, "usage-guide-footer")}>
         <Stepper
           label={t("Usage guide")}
           steps={Array.from({ length: size }, (_, position) => ({

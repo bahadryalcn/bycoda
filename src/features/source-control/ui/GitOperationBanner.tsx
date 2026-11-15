@@ -71,7 +71,7 @@ export function GitOperationBanner({ cwd, operation, conflictCount, onChanged }:
   return (
     <div
       {...surfaceAttributes(
-        { frame: "stroke", edge: "bottom" },
+        { frame: "pane", edge: "bottom" },
         "flex shrink-0 items-center gap-1 px-3 py-1.5",
       )}
     >

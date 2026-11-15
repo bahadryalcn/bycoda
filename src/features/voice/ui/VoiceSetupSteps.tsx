@@ -251,7 +251,7 @@ export function VoiceSetupSteps({
             />
           </div>
           <Disclosure
-            {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, styles.details)}
+            {...surfaceAttributes({ frame: "pane", edge: "block-start" }, styles.details)}
             summary={t("Voice settings")}
             onOpenChange={setAdvanced}
           >

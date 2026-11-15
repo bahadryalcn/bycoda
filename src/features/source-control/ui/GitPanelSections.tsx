@@ -111,7 +111,7 @@ export function GitPanelSections({
         <div
           ref={graphBoxRef}
           {...surfaceAttributes(
-            { frame: "stroke", edge: "top" },
+            { frame: "pane", edge: "top" },
             `shrink-0 overflow-hidden ${graphExpanded ? "min-h-0" : "h-7"}`,
           )}
           // Cap the shown height, not the saved one, so a shorter window keeps the

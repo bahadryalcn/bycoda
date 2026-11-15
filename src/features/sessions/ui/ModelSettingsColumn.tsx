@@ -84,7 +84,7 @@ export function ModelSettingHelp({
     <div
       data-model-setting-help
       {...surfaceAttributes(
-        { frame: "frosted", edge: "top" },
+        { frame: "pane", edge: "top" },
         "flex shrink-0 items-center gap-2 px-3 py-1 ui-caption-text",
       )}
     >
@@ -205,7 +205,7 @@ export function ModelSettingsColumn({
         }
       }}
       {...surfaceAttributes(
-        { frame: "neutral", edge: "responsive-start" },
+        { frame: "pane", edge: "responsive-start" },
         "flex min-h-0 min-w-0 flex-1 flex-col @max-[32rem]/model-panel:min-h-60 @max-[32rem]/model-panel:w-full @max-[32rem]/model-panel:shrink-0 @max-[32rem]/model-panel:[--surface-frame-stacked:1]",
       )}
     >
@@ -486,7 +486,7 @@ function SettingRow({
                 size="caption"
                 tone="neutral"
                 {...surfaceAttributes(
-                  { frame: "neutral", edge: "bottom" },
+                  { frame: "pane", edge: "bottom" },
                   "flex min-w-0 items-center gap-2 py-0.5 ps-1 pe-0.5",
                 )}
               >

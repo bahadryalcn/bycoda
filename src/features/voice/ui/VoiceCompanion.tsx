@@ -3099,7 +3099,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       {...surfaceAttributes(
         {
           variant: "floating",
-          frame: detaching ? "focus" : shownError ? "danger" : "neutral",
+          frame: detaching ? "focus" : shownError ? "danger" : "pane",
           radius: compact ? "pill" : "panel",
         },
         styles.panel,

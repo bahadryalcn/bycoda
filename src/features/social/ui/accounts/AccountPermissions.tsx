@@ -88,7 +88,7 @@ export function AccountPermissions({
 
   return (
     <section
-      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Who can use this account")}
     >
       <Text as="p" tone="muted" leading="snug" className="social-card-description">

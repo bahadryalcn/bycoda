@@ -171,7 +171,7 @@ export default function UsageGuideDialog({
           {current.shortcuts.length > 0 ? (
             <div
               {...surfaceAttributes(
-                { frame: "stroke", edge: "block-start" },
+                { frame: "pane", edge: "block-start" },
                 "usage-guide-shortcut-section",
               )}
             >

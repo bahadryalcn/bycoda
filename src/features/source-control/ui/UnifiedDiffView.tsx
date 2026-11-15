@@ -8,7 +8,6 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
   ChevronDown,
-  ChevronRight,
   ChevronUp,
   FoldVertical,
   MessageSquarePlus,
@@ -378,7 +377,6 @@ const FileSection = memo(function FileSection({
   onNeeded,
 }: FileSectionProps) {
   useLocale();
-  const Chevron = expanded ? ChevronDown : ChevronRight;
   const name = basename(file.path);
   const sectionRef = useRef<HTMLElement | null>(null);
   const [near, setNear] = useState(false);
@@ -460,11 +458,11 @@ const FileSection = memo(function FileSection({
           variant="ghost"
           motion="none"
           type="button"
-          aria-expanded={expanded}
+          expanded={expanded}
+          chevron="start"
           onClick={() => onToggle(file.id)}
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <Chevron className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
           <FileTypeIcon name={name} isDir={false} />
           <MiddleTruncate
             mode="path"

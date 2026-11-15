@@ -72,7 +72,7 @@ export function DelegationSubagentsControl({
           type="button"
           aria-label={label}
           aria-haspopup="menu"
-          aria-expanded={open}
+          expanded={open}
           data-state={open ? "open" : "closed"}
           data-disabled={disabled || undefined}
           disabled={disabled}
@@ -89,10 +89,6 @@ export function DelegationSubagentsControl({
               {summary}
             </Text>
           </span>
-          <ChevronDown
-            className={`bycoda-arc-select-chevron icon-sm shrink-0 ${open ? "rotate-180" : ""}`}
-            strokeWidth={1.75}
-          />
         </SelectTrigger>
       ) : (
         <Button

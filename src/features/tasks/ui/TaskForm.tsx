@@ -421,7 +421,7 @@ export function TaskForm({
           </div>
         </FieldGroup>
       </div>
-      <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, "task-form-footer")}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-form-footer")}>
         <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
         </Button>

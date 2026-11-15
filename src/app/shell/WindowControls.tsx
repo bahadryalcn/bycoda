@@ -54,7 +54,7 @@ function NativeWindowControls() {
     <div
       data-window-controls
       {...surfaceAttributes(
-        { frame: "stroke", edge: "inline-start" },
+        { frame: "pane", edge: "inline-start" },
         "flex h-full shrink-0 items-stretch",
       )}
       data-tauri-drag-region="false"

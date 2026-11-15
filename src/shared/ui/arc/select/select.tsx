@@ -7,6 +7,7 @@ import type { Variants } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./select.module.css";
 import { ComboboxItem } from "../combobox/combobox";
+import { ChevronDown } from "../../icons";
 
 /** The shown value rolls in the direction of the list: a later option rises from below, an earlier one drops from above. */
 const valueRoll: Variants = {
@@ -26,18 +27,32 @@ const valueRoll: Variants = {
   }),
 };
 
-/** Composable parts for bycoda's existing native/web overlay lifecycle. */
-export const SelectTrigger = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button">>(
-  function SelectTrigger({ className, ...props }, ref) {
-    return (
-      <button
-        {...props}
-        ref={ref}
-        className={[styles.trigger, "bycoda-arc", className].filter(Boolean).join(" ")}
-      />
-    );
-  },
-);
+/**
+ * Composable parts for bycoda's existing native/web overlay lifecycle. `expanded` sets
+ * `aria-expanded` and draws the turning trailing chevron after the children; leave it unset
+ * when the caller draws its own end mark.
+ */
+export const SelectTrigger = forwardRef<
+  HTMLButtonElement,
+  ComponentPropsWithoutRef<"button"> & { expanded?: boolean }
+>(function SelectTrigger({ className, expanded, children, ...props }, ref) {
+  return (
+    <button
+      aria-expanded={expanded}
+      {...props}
+      ref={ref}
+      className={[styles.trigger, "bycoda-arc", className].filter(Boolean).join(" ")}
+    >
+      {children}
+      {expanded === undefined ? null : (
+        <ChevronDown
+          className={`bycoda-arc-select-chevron size-3.5 shrink-0 ${expanded ? "rotate-180" : ""}`}
+          strokeWidth={1.75}
+        />
+      )}
+    </button>
+  );
+});
 
 /** The popup row shared with SearchableSelect (see ComboboxItem), so short and searchable pickers read alike. */
 export const SelectOption = ComboboxItem;

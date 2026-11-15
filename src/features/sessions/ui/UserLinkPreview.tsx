@@ -412,7 +412,7 @@ function GithubWorkItemCard({
         size="caption"
         tone="secondary"
         {...surfaceAttributes(
-          { frame: "neutral-metadata", edge: "top" },
+          { frame: "pane", edge: "top" },
           "mt-3 flex items-center gap-1.5 pt-2",
         )}
       >
@@ -460,7 +460,7 @@ function GithubAvatar({
         weight="medium"
         aria-hidden="true"
         {...surfaceAttributes(
-          { radius: "pill", frame: "neutral", edge: "all", variant: "card" },
+          { radius: "pill", frame: "card", edge: "all", variant: "card" },
           "grid shrink-0 place-items-center size-(--avatar-size) border-(--ui-tone-neutral-border)",
         )}
         style={
@@ -484,7 +484,7 @@ function GithubAvatar({
       draggable={false}
       onError={() => setFailed(true)}
       {...surfaceAttributes(
-        { radius: "circle", frame: "neutral", variant: "card" },
+        { radius: "circle", frame: "card", variant: "card" },
         "shrink-0 object-cover [width:var(--layout-width)] [height:var(--layout-height)]",
       )}
       style={

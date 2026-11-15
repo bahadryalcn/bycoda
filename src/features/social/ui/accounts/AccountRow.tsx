@@ -83,7 +83,7 @@ export function AccountRow({
             leading="inherit"
             truncate
             {...surfaceAttributes(
-              { frame: "settings", edge: "block-start" },
+              { frame: "pane", edge: "block-start" },
               "social-account-row-caps",
             )}
           >

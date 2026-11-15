@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, popupNativeDropdownMenu } from "../../../shared/ui/DropdownMenu";
-import { Check, ChevronDown, MoreHorizontal } from "../../../shared/ui/icons";
+import { Check, MoreHorizontal } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 
 export type VoiceTurnAction = {
@@ -120,8 +120,8 @@ export function VoiceTurnControl({
         variant="secondary"
         aria-label={current}
         aria-haspopup="menu"
+        expanded={Boolean(anchor)}
         aria-expanded={menuSurface === "native" ? undefined : Boolean(anchor)}
-        endIcon={<ChevronDown className="icon-xs" />}
         onClick={(event) => open(event.currentTarget)}
       >
         {current}

@@ -31,7 +31,7 @@ export function ObjectInspector({ value }: { value: unknown }) {
           <Code>{`${Array.isArray(item) ? t("Array") : t("Object")} (${entries.length})`}</Code>
         }
       >
-        <ul {...surfaceAttributes({ frame: "stroke", edge: "inline-start" })}>
+        <ul {...surfaceAttributes({ frame: "pane", edge: "inline-start" })}>
           {entries.slice(0, 30).map(([key, child]) => (
             <li key={key}>
               <Code tone="info">{key}:</Code>
@@ -48,7 +48,7 @@ export function ObjectInspector({ value }: { value: unknown }) {
     );
   };
   return (
-    <div {...surfaceAttributes({ frame: "stroke", radius: "control" }, "runtime-log-object-tree")}>
+    <div {...surfaceAttributes({ frame: "pane", radius: "control" }, "runtime-log-object-tree")}>
       {render(value, 0)}
     </div>
   );

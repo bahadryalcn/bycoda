@@ -1282,9 +1282,7 @@ function ChangedFiles({
 
   return (
     <aside className={`flex min-h-0 min-w-0 flex-col ${fill ? "flex-1" : "shrink-0"}`}>
-      <div
-        {...surfaceAttributes({ frame: fill ? "stroke" : undefined, edge: "bottom" }, "shrink-0")}
-      >
+      <div {...surfaceAttributes({ frame: fill ? "pane" : undefined, edge: "bottom" }, "shrink-0")}>
         <div className="flex flex-col gap-1.5 p-2">
           <div className="relative min-w-0">
             <TextareaField

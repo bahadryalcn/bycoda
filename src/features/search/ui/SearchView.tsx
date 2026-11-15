@@ -753,7 +753,7 @@ export function SearchView({
         size="caption"
         tone="secondary"
         leading="inherit"
-        {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "app-search-footer")}
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "app-search-footer")}
       >
         <span>
           <ShortcutKbd size="xs" tone="primary">

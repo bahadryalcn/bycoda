@@ -646,7 +646,7 @@ function AutomationsContent({
         {showList ? (
           <aside
             {...surfaceAttributes(
-              { frame: "neutral", edge: "responsive-end" },
+              { frame: "pane", edge: "responsive-end" },
               "automation-list flex shrink-0 flex-col",
             )}
           >
@@ -1396,7 +1396,7 @@ function AutomationEditor({
       <Tabs value={tab} onValueChange={setTab} panels="shared">
         <div
           {...surfaceAttributes(
-            { frame: "neutral", edge: "block-end" },
+            { frame: "pane", edge: "block-end" },
             "automation-editor-header shrink-0 px-3 pt-2 sm:px-6",
           )}
         >
@@ -1794,7 +1794,7 @@ function AutomationEditor({
                     <span className="text-right">{t("Duration")}</span>
                   </Text>
                   <Divider decorative />
-                  <ul {...surfaceAttributes({ dividers: "stroke" })}>
+                  <ul {...surfaceAttributes({ dividers: "pane" })}>
                     {runs.slice(0, 100).map((run) => (
                       <RunRow
                         key={run.id}

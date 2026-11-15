@@ -208,7 +208,7 @@ export function OnboardingAgents({
         ) : null}
         <div
           {...surfaceAttributes(
-            { frame: "stroke", edge: "block", dividers: "stroke" },
+            { frame: "pane", edge: "block", dividers: "pane" },
             "onboarding-agent-list",
           )}
         >

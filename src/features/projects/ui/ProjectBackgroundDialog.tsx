@@ -229,7 +229,7 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
         </div>
 
         {path ? (
-          <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pt-4")}>
+          <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "pt-4")}>
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
                 <Text size="secondary" tone="primary" weight="medium">
@@ -331,7 +331,7 @@ function ProjectBackgroundRow({ label, children }: { label: string; children: Re
   return (
     <div
       {...surfaceAttributes(
-        { frame: "stroke", edge: "top" },
+        { frame: "pane", edge: "top" },
         "flex items-center justify-between gap-4 pt-4",
       )}
     >

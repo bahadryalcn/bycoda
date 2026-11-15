@@ -49,7 +49,7 @@ function ImageSide({
   return (
     <figure
       {...surfaceAttributes(
-        { frame: divider ? "stroke" : undefined, edge: "inline-end" },
+        { frame: divider ? "pane" : undefined, edge: "inline-end" },
         "m-0 flex min-h-0 min-w-0 flex-col",
       )}
     >
@@ -57,7 +57,7 @@ function ImageSide({
         as="figcaption"
         tone="inherit"
         {...surfaceAttributes(
-          { frame: "stroke", edge: "bottom" },
+          { frame: "pane", edge: "bottom" },
           "flex shrink-0 items-center gap-2 px-4 py-1.5",
         )}
       >

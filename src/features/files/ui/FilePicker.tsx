@@ -317,7 +317,7 @@ export function FilePicker({
             size="inherit"
             tone="secondary"
             {...surfaceAttributes(
-              { frame: "stroke", edge: "bottom" },
+              { frame: "pane", edge: "bottom" },
               "flex items-center gap-2 py-2.5 px-2",
             )}
           >

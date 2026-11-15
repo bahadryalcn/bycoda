@@ -203,7 +203,7 @@ export const TranscriptFind = memo(function TranscriptFind({
           role="search"
           aria-label={t("Find in conversation")}
           {...surfaceAttributes(
-            { variant: "floating", frame: "neutral", radius: "card", elevation: "floating" },
+            { variant: "floating", frame: "card", radius: "card", elevation: "floating" },
             "pointer-events-auto flex w-[min(360px,calc(100cqw-24px))] items-center gap-1 p-1",
           )}
         >

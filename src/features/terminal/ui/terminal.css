@@ -2,7 +2,6 @@
   --terminal-canvas: var(--ui-workspace-canvas, var(--color-background-base));
   --terminal-text: var(--color-content);
   --terminal-muted: var(--ui-text-secondary);
-  --terminal-border: var(--color-stroke);
   --terminal-selected: var(--ui-surface-selected);
   flex-direction: column;
   container-type: inline-size;

@@ -366,7 +366,7 @@ export function SshGroupSettings({
           <section
             aria-label={t("Group defaults")}
             {...surfaceAttributes(
-              { frame: "stroke", edge: "top" },
+              { frame: "pane", edge: "top" },
               "flex min-w-0 flex-col gap-2 pbs-3",
             )}
           >

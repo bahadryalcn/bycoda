@@ -168,7 +168,7 @@ export function ScanSettings({
       </Row>
       <div
         {...surfaceAttributes(
-          { frame: "settings", edge: "top" },
+          { frame: "pane", edge: "top" },
           "flex min-w-0 flex-col gap-2 px-4 py-2.5",
         )}
       >

@@ -61,7 +61,7 @@ export function DeviceInspector({
         <p>{t("This device does not provide a structured accessibility tree.")}</p>
       ) : (
         <div
-          {...surfaceAttributes({ frame: "stroke", edge: "block" }, "device-panel-nodes")}
+          {...surfaceAttributes({ frame: "pane", edge: "block" }, "device-panel-nodes")}
           aria-label={t("Accessibility nodes")}
         >
           {filteredNodes.length ? (

@@ -76,7 +76,7 @@ export function DesktopControlStripView({
       leading="inherit"
       {...surfaceAttributes(
         {
-          frame: "neutral",
+          frame: "pane",
           edge: floating ? "all" : "block-end",
           variant: floating ? "card" : undefined,
           radius: floating ? "card" : undefined,

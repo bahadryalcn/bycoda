@@ -460,9 +460,7 @@ for (const theme of ["light", "dark"]) {
       await page.goto(
         `/tests/browser/voice/voice-visual-styles.html?setup-step=provider&theme=${theme}&lang=en`,
       );
-      const details = page.locator(
-        '[data-surface-frame="neutral"][data-surface-edge="block-start"]',
-      );
+      const details = page.locator('[data-surface-frame="pane"][data-surface-edge="block-start"]');
       await expect(details).toBeVisible();
       await expect(details).toHaveCSS("border-block-start-width", "1px");
       await details.screenshot({ path: info.outputPath(`setup-${theme}-${width}.png`) });
@@ -527,7 +525,7 @@ for (const theme of ["light", "dark"])
       await page.goto(`/tests/browser/voice/voice-visual-styles.html?theme=${theme}`);
       const button = page.getByRole("button", { name: "Talk to Arif", exact: true });
       await expect(button).toHaveAttribute("data-surface-variant", "floating");
-      await expect(button).toHaveAttribute("data-surface-frame", "neutral");
+      await expect(button).toHaveAttribute("data-surface-frame", "pane");
       await expect(button).toHaveCSS("border-top-width", "1px");
       const box = await button.boundingBox();
       await button.hover();

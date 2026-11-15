@@ -430,7 +430,7 @@ export function SessionRecoveryPanel({
       <div className="recovery-body">
         {shown.length ? (
           <ul
-            {...surfaceAttributes({ dividers: "stroke" }, "recovery-list")}
+            {...surfaceAttributes({ dividers: "pane" }, "recovery-list")}
             aria-label={t("Recovered sessions")}
           >
             {shown.map(({ stub, title, status, machine, activityAt, verification, readError }) => (
@@ -540,7 +540,7 @@ export function SessionRecoveryPanel({
           />
         )}
       </div>
-      <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "recovery-footer")}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
         {openError ? (
           <Alert tone="danger">
             {openError}

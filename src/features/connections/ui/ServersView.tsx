@@ -429,7 +429,7 @@ export function ServersView({
       </PaneHeader>
       <div
         {...surfaceAttributes(
-          { frame: "stroke", edge: "bottom" },
+          { frame: "pane", edge: "bottom" },
           "flex flex-wrap items-center gap-2 px-3 py-2",
         )}
       >
@@ -496,7 +496,7 @@ export function ServersView({
                       checked={favoritesOnly}
                       onCheckedChange={setFavoritesOnly}
                     />
-                    <div {...surfaceAttributes({ frame: "stroke", edge: "top" }, "pt-3")}>
+                    <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "pt-3")}>
                       <Switch
                         label={t("Recently used first")}
                         checked={recentFirst}
@@ -819,7 +819,7 @@ export function ServersView({
                 header={
                   <div
                     {...surfaceAttributes(
-                      { frame: "stroke", edge: "bottom" },
+                      { frame: "pane", edge: "bottom" },
                       "flex min-w-0 shrink-0 items-center gap-2 px-4 py-3",
                     )}
                   >

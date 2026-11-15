@@ -43,13 +43,13 @@ it("renders dl with grouped dt/dd pairs", async () => {
 
 it("forwards semantic and shared surface attributes to its list", async () => {
   await render({
-    ...surfaceAttributes({ frame: "stroke" }),
+    ...surfaceAttributes({ frame: "pane" }),
     "aria-label": "Usage",
     children: null,
   });
   const list = host.querySelector("dl")!;
   expect(list.getAttribute("aria-label")).toBe("Usage");
-  expect(list.getAttribute("data-surface-frame")).toBe("stroke");
+  expect(list.getAttribute("data-surface-frame")).toBe("pane");
 });
 
 it("exposes the column mode and size", async () => {

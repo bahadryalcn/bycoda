@@ -556,3 +556,39 @@ it("owns aria-expanded and the turning chevron for a menu or section trigger", a
     vi.unstubAllGlobals();
   }
 });
+
+it("draws the turning chevron as the icon of an icon-only toggle and swaps a resting icon", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(createElement(Button, { iconOnly: true, label: "Toggle", expanded: true })),
+    );
+    const button = container.querySelector("button")!;
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(button.querySelectorAll("svg")).toHaveLength(1);
+    expect(button.querySelector("svg")?.classList.contains("rotate-90")).toBe(true);
+    await act(async () =>
+      root.render(
+        createElement(Button, {
+          iconOnly: true,
+          label: "Toggle",
+          expanded: false,
+          restingIcon: createElement("i", { "data-rest": "" }),
+        }),
+      ),
+    );
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(button.querySelector("[data-rest]")).not.toBeNull();
+    expect(button.querySelectorAll("svg")).toHaveLength(1);
+    await act(async () =>
+      root.render(createElement(Button, { iconOnly: true, label: "Menu", expanded: undefined })),
+    );
+    expect(button.hasAttribute("aria-expanded")).toBe(false);
+    expect(button.querySelector("svg")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

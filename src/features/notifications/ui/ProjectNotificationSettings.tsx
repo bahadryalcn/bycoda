@@ -4,7 +4,7 @@ import { ScrollArea } from "../../../shared/ui/ScrollArea";
 import { Text } from "../../../shared/ui/Text";
 import { useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, Folder } from "../../../shared/ui/icons";
+import { Folder } from "../../../shared/ui/icons";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Switch } from "../../../shared/ui/Switch";
 import { NotificationMuteControl } from "./NotificationMuteControl";
@@ -201,7 +201,7 @@ export function ProjectNotificationSettings({
         {...surfaceAttributes(
           {
             variant: highlighted ? "selected" : "card",
-            frame: "settings",
+            frame: "card",
             radius: "card",
           },
           "project-notification-collection settings-collection",
@@ -388,7 +388,7 @@ export function ProjectNotificationSettings({
                             p0: `${project.name} (${project.detail})`,
                           })}
                           tooltip={t("Notification categories for {p0}", { p0: project.name })}
-                          aria-expanded={isExpanded}
+                          expanded={isExpanded}
                           aria-controls={panelId}
                           onClick={() => setExpanded(isExpanded ? null : project.id)}
                           className="project-notification-trigger"
@@ -444,11 +444,6 @@ export function ProjectNotificationSettings({
                                   : t("{p0} categories", { p0: enabledCount })}
                             </Text>
                           </div>
-                          <ChevronRight
-                            className={`icon-sm shrink-0 ${isExpanded ? "rotate-90" : ""}`}
-                            tone="secondary"
-                            aria-hidden="true"
-                          />
                         </Button>
                       </div>
                       <div className="settings-collection-actions">

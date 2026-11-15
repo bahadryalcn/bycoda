@@ -45,7 +45,6 @@ import { SessionErrorNotice } from "./SessionErrorNotice";
 import { useFormat, useLocale, useT } from "../../../shared/i18n";
 import {
   Check,
-  ChevronRight,
   Copy,
   FilePlusCorner,
   MessageMultiple,
@@ -2707,18 +2706,10 @@ function WorkFoldLine({
   const t = useT();
   const icon = (
     <span className="relative flex size-3.5 shrink-0 items-center justify-center">
-      {open ? (
-        // Open, the chevron stays put: it is the way back, and hunting for it
-        // under the cursor is no way to close what you opened.
-        <ChevronRight className="icon-sm rotate-90 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      {harness ? (
+        <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
       ) : (
-        <>
-          {harness ? (
-            <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
-          ) : (
-            <ActivityPhaseIcon kind={kind} />
-          )}
-        </>
+        <ActivityPhaseIcon kind={kind} />
       )}
     </span>
   );
@@ -2749,16 +2740,16 @@ function WorkFoldLine({
       variant="ghost"
       type="button"
       selected={open}
-      aria-expanded={open}
+      // Open, the chevron leads in the icon's place: it is the way back, and hunting for it
+      // under the cursor is no way to close what you opened.
+      expanded={open}
+      chevron={open ? "start" : "end"}
       aria-label={open ? t("Hide the work") : t("Show the work")}
       aria-live={live ? "polite" : undefined}
       onClick={onToggle}
     >
-      {icon}
+      {open ? null : icon}
       {label}
-      {open ? null : (
-        <ChevronRight className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-      )}
     </Button>
   );
 }

@@ -8,7 +8,6 @@ import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { ClampText } from "../../../shared/ui/ClampText";
-import { motionAttributes } from "../../../shared/ui/Motion";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { useDelegatedRunDiscovery } from "../../connections/public/delegatedRuns";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -19,7 +18,7 @@ import {
   supportsProviderAccounts,
   type ProviderAccount,
 } from "../../providers/public/providerAccounts";
-import { Check, ChevronRight, ChevronUp, CircleAlert, Square, X } from "../../../shared/ui/icons";
+import { Check, ChevronRight, CircleAlert, Square, X } from "../../../shared/ui/icons";
 import { useActivityDock, useDockCountLabel, useStopAllControl } from "../model/reactiveReads";
 import { type ActivityDock as ActivityDockModel, type DockAgent } from "../model/activityDock";
 import { canStopAgent } from "../model/backgroundStop";
@@ -323,7 +322,8 @@ function DockBody({
               <Button
                 variant="ghost"
                 type="button"
-                aria-expanded={open}
+                expanded={open}
+                opens="up"
                 aria-controls={listId}
                 data-dock-toggle=""
                 label={t(
@@ -335,13 +335,6 @@ function DockBody({
                 className="shrink-0"
               >
                 <span className="tabular-nums">{counts}</span>
-                <ChevronUp
-                  {...motionAttributes(
-                    { transition: "transform", duration: "standard" },
-                    `icon-xs shrink-0 ${open ? "rotate-180" : ""}`,
-                  )}
-                  strokeWidth={1.75}
-                />
               </Button>
             </>
           ) : dock.agents.length > 0 && counts ? (

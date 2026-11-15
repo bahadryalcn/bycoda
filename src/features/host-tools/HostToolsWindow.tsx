@@ -523,7 +523,7 @@ export default function HostToolsWindow(props: HostToolsWindowProps) {
         "host-tools-window body-glass tools-hub font-sans",
       )}
     >
-      <header {...surfaceAttributes({ frame: "stroke", edge: "block-end" }, "tools-hub-header")}>
+      <header {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "tools-hub-header")}>
         <Wrench className="icon-sm" aria-hidden />
         <Text size="caption" tone="secondary" leading="inherit" className="tools-hub-title">
           {t("Conversation tools")}

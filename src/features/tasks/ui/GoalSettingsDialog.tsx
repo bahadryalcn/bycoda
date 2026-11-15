@@ -128,7 +128,7 @@ function GoalSettingsForm({
           </Alert>
         ) : null}
       </div>
-      <div {...surfaceAttributes({ frame: "neutral", edge: "block-start" }, "task-form-footer")}>
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "task-form-footer")}>
         <Button variant="ghost" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
         </Button>

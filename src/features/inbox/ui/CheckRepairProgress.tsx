@@ -409,7 +409,7 @@ function RepairCard({
           as="div"
           size="micro"
           tone="secondary"
-          {...surfaceAttributes({ frame: "neutral", edge: "top" }, "space-y-2 py-2.5")}
+          {...surfaceAttributes({ frame: "pane", edge: "top" }, "space-y-2 py-2.5")}
         >
           <p>{t("Included checks")}</p>
           <ul className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto">

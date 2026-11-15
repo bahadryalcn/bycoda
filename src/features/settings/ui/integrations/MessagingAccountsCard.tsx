@@ -112,7 +112,7 @@ export function MessagingAccountsCard({
           <EmptyState
             size="inline"
             {...surfaceAttributes(
-              { variant: "card", frame: "settings", radius: "card" },
+              { variant: "card", frame: "card", radius: "card" },
               "settings-collection settings-collection-empty",
             )}
             descriptionText={{ size: "caption", tone: "secondary", leading: "normal" }}
@@ -121,7 +121,7 @@ export function MessagingAccountsCard({
         ) : (
           <div
             {...surfaceAttributes(
-              { variant: "card", frame: "settings", radius: "card" },
+              { variant: "card", frame: "card", radius: "card" },
               "settings-collection",
             )}
           >
@@ -277,9 +277,7 @@ export function AccountFormActions({
 }) {
   return (
     <>
-      <div
-        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "integration-actions")}
-      >
+      <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "integration-actions")}>
         {children}
         <Button
           variant="primary"

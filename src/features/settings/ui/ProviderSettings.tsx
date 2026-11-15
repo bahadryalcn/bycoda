@@ -471,7 +471,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
               />
               <div
                 {...surfaceAttributes(
-                  { frame: "settings", edge: "responsive-start" },
+                  { frame: "pane", edge: "responsive-start" },
                   "provider-cli-detail",
                 )}
               >

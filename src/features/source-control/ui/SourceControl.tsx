@@ -55,7 +55,7 @@ export function SourceControl({
         size="caption"
         tone="inherit"
         {...surfaceAttributes(
-          { frame: "stroke", edge: "bottom" },
+          { frame: "pane", edge: "bottom" },
           "flex shrink-0 flex-wrap items-center gap-x-2 px-2 py-0.5",
         )}
       >

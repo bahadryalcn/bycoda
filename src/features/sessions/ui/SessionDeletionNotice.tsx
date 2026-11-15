@@ -67,7 +67,7 @@ function DeletionNotice({ status }: { status: SessionDeletionStatus }) {
   };
   return (
     <div
-      {...surfaceAttributes({ frame: "stroke", edge: "bottom" }, "shrink-0 px-3 py-2")}
+      {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-2")}
       data-session-deletion-detail
     >
       <InlineMessage

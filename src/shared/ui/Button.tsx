@@ -12,7 +12,8 @@ import {
   type SyntheticEvent,
 } from "react";
 import type { PopoverAlign, PopoverSide } from "../lib/popover";
-import { Check, ChevronDown, ChevronRight } from "./icons";
+import { actionContentAttributes } from "./ActionHost";
+import { Check, ChevronDown, ChevronRight, ChevronUp } from "./icons";
 import { LiveText } from "./LiveText";
 import { motionAttributes } from "./Motion";
 import { textAttributes, type TextRoles, type TextLeading } from "./Text";
@@ -158,11 +159,21 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
    *  `selected` stays visual only. An explicit `aria-pressed` still wins. */
   pressed?: boolean;
   /** Menu, popover or section trigger state: sets `aria-expanded` and draws the trailing chevron
-   *  (turned while open) unless `endIcon` is given. An explicit `aria-expanded` still wins. */
+   *  (turned while open) unless `endIcon` is given. An explicit `aria-expanded` still wins,
+   *  even `undefined` (the chevron still draws).
+   *  An icon-only button without children draws the turning start chevron as its icon.
+   *  `undefined` draws nothing and sets no attribute (a trigger whose surface owns the state). */
   expanded?: boolean;
   /** With `expanded`: `start` draws the chevron before the label (right, turning down while open)
    *  for a row or section toggle instead of the trailing one. Default `end`. */
   chevron?: "start" | "end";
+  /** With `expanded`: `up` for a trigger whose popup opens above it (a bottom bar, a composer
+   *  control). The trailing chevron points up at rest and turns down while open. Default `down`. */
+  opens?: "down" | "up";
+  /** With a start chevron: an identity icon (folder, mascot) shown at rest and swapped for the
+   *  chevron while the owning `ActionHost` row is hovered or focused. Pass `undefined` to keep
+   *  the chevron always visible (for example while open). */
+  restingIcon?: ReactNode;
   /** Fires once when the primary pointer stays down for `longPressDelay` ms (touch and
    *  mouse). The click that follows that press is suppressed. Keyboard and the plain
    *  click are unchanged, so the long-press action needs an equivalent menu or shortcut. */
@@ -275,6 +286,8 @@ export function Button({
   pressed,
   expanded,
   chevron = "end",
+  opens = "down",
+  restingIcon,
   onLongPress,
   longPressDelay = 500,
   truncate = false,
@@ -483,7 +496,8 @@ export function Button({
     "aria-label": accessibleName,
     "aria-busy": loading || props["aria-busy"] || undefined,
     "aria-pressed": props["aria-pressed"] ?? pressed,
-    "aria-expanded": props["aria-expanded"] ?? expanded,
+    // An explicit aria-expanded wins, including undefined (a native menu owns that state).
+    "aria-expanded": "aria-expanded" in props ? props["aria-expanded"] : expanded,
     "aria-disabled": blocked || props["aria-disabled"] || undefined,
     "data-disabled": explained || undefined,
     "data-button-variant": variant,
@@ -633,18 +647,44 @@ export function Button({
     onDragOver: guard(props.onDragOver),
     onDrop: guard(props.onDrop),
   };
-  const startChevron = expanded !== undefined && chevron === "start" && endIcon == null;
+  const iconChevron = iconOnly && children == null && startIcon == null;
+  const startChevron =
+    expanded !== undefined &&
+    endIcon == null &&
+    (chevron === "start" || (iconChevron && opens === "down"));
+  const EndChevron = opens === "up" ? ChevronUp : ChevronDown;
+  const swapMotion = motionAttributes(
+    { transition: "transform", duration: "standard", easing: "rise" },
+    `icon-sm ${expanded ? "rotate-90" : ""}`,
+  );
   const content = (
     <>
       {startChevron ? (
-        <span className={styles.icon} aria-hidden="true">
-          <ChevronRight
-            {...motionAttributes(
-              { transition: "transform", duration: "standard" },
-              expanded ? "rotate-90" : "",
-            )}
-          />
-        </span>
+        restingIcon != null ? (
+          <span className={`${styles.icon} ${styles.swapIcon}`} aria-hidden="true">
+            <span
+              data-button-resting-icon=""
+              {...actionContentAttributes({ phase: "rest" }, "contents")}
+            >
+              {restingIcon}
+            </span>
+            <ChevronRight
+              data-button-chevron=""
+              {...swapMotion}
+              {...actionContentAttributes({ phase: "interaction" }, swapMotion.className)}
+            />
+          </span>
+        ) : (
+          <span className={styles.icon} aria-hidden="true">
+            <ChevronRight
+              data-button-chevron=""
+              {...motionAttributes(
+                { transition: "transform", duration: "standard" },
+                expanded ? "rotate-90" : "",
+              )}
+            />
+          </span>
+        )
       ) : null}
       {inlineProgress ? (
         <span
@@ -695,7 +735,7 @@ export function Button({
       {endIcon != null || (expanded !== undefined && !startChevron) ? (
         <span className={styles.icon} aria-hidden="true">
           {endIcon ?? (
-            <ChevronDown
+            <EndChevron
               {...motionAttributes(
                 { transition: "transform", duration: "standard" },
                 expanded ? "rotate-180" : "",

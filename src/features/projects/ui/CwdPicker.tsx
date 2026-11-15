@@ -1,9 +1,7 @@
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Text } from "../../../shared/ui/Text";
 import { Button } from "../../../shared/ui/Button";
-import { motionAttributes } from "../../../shared/ui/Motion";
 import { useT } from "../../../shared/i18n";
-import { ChevronDown } from "../../../shared/ui/icons";
 import { useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { basename } from "../../../platform/tauri/fs";
@@ -204,6 +202,7 @@ export function CwdPicker({
         tooltip={cwd}
         aria-label={t("Project {p0}", { p0: label })}
         selected={open}
+        expanded={chevron ? open : undefined}
         aria-expanded={open}
         aria-haspopup="menu"
         disabled={!enabled}
@@ -230,16 +229,6 @@ export function CwdPicker({
             </Text>
           </>
         )}
-        {chevron ? (
-          <ChevronDown
-            tone="secondary"
-            {...motionAttributes(
-              { transition: "transform", duration: "standard", easing: "sheen" },
-              `icon-xs shrink-0 ${open ? "rotate-180" : ""}`,
-            )}
-            strokeWidth={1.75}
-          />
-        ) : null}
       </Button>
       {open ? (
         <DropdownMenu

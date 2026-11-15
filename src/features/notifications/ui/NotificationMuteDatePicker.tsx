@@ -81,7 +81,7 @@ export function NotificationMuteDatePicker({ projectIds, onChanged, onCancel }: 
       ) : null}
       <div
         {...surfaceAttributes(
-          { frame: "stroke", edge: "top" },
+          { frame: "pane", edge: "top" },
           "mt-3 flex items-center justify-between gap-2 pt-2.5",
         )}
       >

@@ -13,7 +13,7 @@ import { createWorktree } from "../model/worktrees";
 import { pathKey, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
-import { ChevronsUpDown, FolderTree, GitBranch, Plus } from "../../../shared/ui/icons";
+import { FolderTree, GitBranch, Plus } from "../../../shared/ui/icons";
 
 /** The sidebar title. Picking a worktree narrows the sidebar, and the
  * sessions opened from it, to that working copy and names it here. */
@@ -190,9 +190,18 @@ export function SidebarWorktreeSwitcher({
         data-tauri-drag-region="false"
         aria-label={t("Switch working copy")}
         aria-haspopup="dialog"
-        aria-expanded={open}
+        expanded={open}
         aria-busy={pending || creating}
         disabled={creating}
+        endIcon={
+          pending || creating ? (
+            <Spinner
+              label={creating ? t("Creating worktree") : t("Switching working copy")}
+              className="shrink-0"
+              tone="muted"
+            />
+          ) : undefined
+        }
         tooltip={fullTitle}
         tooltipDetails={focus ? [prettyCwd(focus.path)] : undefined}
         tooltipWhen={focus ? "always" : "overflow"}
@@ -218,15 +227,6 @@ export function SidebarWorktreeSwitcher({
             {copyName}
           </MiddleTruncate>
         ) : null}
-        {pending || creating ? (
-          <Spinner
-            label={creating ? t("Creating worktree") : t("Switching working copy")}
-            className="shrink-0"
-            tone="muted"
-          />
-        ) : (
-          <ChevronsUpDown className="icon-sm shrink-0" tone="muted" />
-        )}
       </Button>
       {open ? (
         <Popover

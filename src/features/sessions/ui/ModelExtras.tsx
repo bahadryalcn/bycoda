@@ -186,7 +186,7 @@ export function ModelExtrasPanel({
       <div
         key={setting.id}
         {...surfaceAttributes(
-          { frame: dependent ? "neutral" : undefined, edge: "left" },
+          { frame: dependent ? "pane" : undefined, edge: "left" },
           dependent ? "ml-2  border-(--ui-tone-neutral-border) pl-2.5" : undefined,
         )}
       >
@@ -277,7 +277,7 @@ export function ModelExtrasPanel({
       {!compact && (
         <div
           {...surfaceAttributes(
-            { frame: "neutral", edge: "bottom", variant: "floating" },
+            { frame: "pane", edge: "bottom", variant: "floating" },
             "sticky top-0 z-(--layer-pane-sheet)  border-(--ui-tone-neutral-border) px-3 pt-2.5 pb-2",
           )}
         >

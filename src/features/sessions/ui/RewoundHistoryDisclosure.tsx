@@ -20,7 +20,7 @@ export function RewoundHistoryDisclosure({
       size="sm"
       summary={t("Rewound history ({p0})", { p0: history.length })}
       {...surfaceAttributes(
-        { frame: "neutral", edge: "bottom" },
+        { frame: "pane", edge: "bottom" },
         "mx-auto max-h-64 w-full max-w-4xl shrink-0 overflow-y-auto px-3 py-2",
       )}
     >

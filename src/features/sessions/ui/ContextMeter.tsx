@@ -161,7 +161,7 @@ export function ContextMeter({
       </section>
       {agents.size > 0 ? (
         <section
-          {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "context-meter-agents")}
+          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-agents")}
           aria-label={t("Subagents")}
         >
           <Text
@@ -200,7 +200,7 @@ export function ContextMeter({
       {sessionUsage ? (
         <DescriptionList
           size="sm"
-          {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "context-meter-stats")}
+          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-stats")}
         >
           <DescriptionItem term={t("Cost")}>{formatCost(sessionUsage.costUsd)}</DescriptionItem>
           {sessionUsage.apiMs > 0 ? (
@@ -212,7 +212,7 @@ export function ContextMeter({
       ) : null}
       {onCompact ? (
         <div
-          {...surfaceAttributes({ frame: "stroke", edge: "block-start" }, "context-meter-actions")}
+          {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "context-meter-actions")}
         >
           <Button
             fullWidth

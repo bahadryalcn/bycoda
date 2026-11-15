@@ -102,7 +102,7 @@ export function ServersConnectionTools({
       <Tabs id={panelId} value={panel} onValueChange={setPanel}>
         <div
           {...surfaceAttributes(
-            { variant: "reading-base", frame: "stroke", edge: "bottom" },
+            { variant: "reading-base", frame: "pane", edge: "bottom" },
             "sticky inset-bs-0 z-1 flex flex-col gap-1 pbe-2",
           )}
         >

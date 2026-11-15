@@ -281,7 +281,7 @@ export function SshSettings({
                 onReset={() => setKeySearch("")}
               />
             ) : null}
-            <div {...surfaceAttributes({ dividers: "stroke" }, "flex min-w-0 flex-col")}>
+            <div {...surfaceAttributes({ dividers: "pane" }, "flex min-w-0 flex-col")}>
               {matchingKeys.map((key) => (
                 <div
                   className="flex min-w-0 flex-wrap items-center gap-3 py-3"

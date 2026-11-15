@@ -82,12 +82,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                 <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
               </Button>
             </div>
-            <Surface
-              variant="card"
-              padding="none"
-              dividers="settings-group"
-              className="usage-accounts"
-            >
+            <Surface variant="card" padding="none" dividers="card" className="usage-accounts">
               {accounts
                 .filter(
                   (account) =>

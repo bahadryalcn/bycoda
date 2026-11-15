@@ -133,7 +133,7 @@ function CheckAnnotation({
           size="caption"
           tone="secondary"
           {...surfaceAttributes(
-            { frame: "neutral", edge: "bottom", variant: "inset" },
+            { frame: "pane", edge: "bottom", variant: "inset" },
             "flex min-w-0 items-center gap-1.5 px-3 py-2",
           )}
         >
@@ -192,7 +192,7 @@ function CheckAnnotation({
       <div
         {...surfaceAttributes(
           {
-            frame: excerpt.length ? "neutral" : undefined,
+            frame: excerpt.length ? "pane" : undefined,
             edge: excerpt.length ? "top" : undefined,
           },
           "flex min-w-0 items-start gap-2 px-3 py-3",

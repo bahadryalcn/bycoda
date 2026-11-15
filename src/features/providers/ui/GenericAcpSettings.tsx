@@ -100,7 +100,7 @@ function AcpSettingsShell({
     >
       <div
         {...surfaceAttributes(
-          { frame: "neutral", edge: "bottom" },
+          { frame: "pane", edge: "bottom" },
           "flex flex-wrap items-center justify-between gap-2 px-3 py-2",
         )}
       >
@@ -332,7 +332,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           <div
             key={config.id}
             {...surfaceAttributes(
-              { frame: "neutral", edge: "block-end" },
+              { frame: "pane", edge: "block-end" },
               "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2",
             )}
           >
@@ -367,7 +367,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
               </Button>
               <span
                 {...surfaceAttributes(
-                  { frame: "stroke", edge: "inline-start" },
+                  { frame: "pane", edge: "inline-start" },
                   "ms-1 shrink-0 ps-2",
                 )}
               >
@@ -563,7 +563,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           id="setting-acp-registry"
           data-setting-id="acp-registry"
           {...surfaceAttributes(
-            { frame: "neutral", edge: "top" },
+            { frame: "pane", edge: "top" },
             "border-(--ui-tone-neutral-border)",
           )}
         >
@@ -577,7 +577,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
             <div
               id="setting-acp-registry-results"
               {...surfaceAttributes(
-                { frame: "neutral", edge: "top" },
+                { frame: "pane", edge: "top" },
                 "border-(--ui-tone-neutral-border)",
               )}
             >
@@ -593,7 +593,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 <Alert tone="info">{t("Loading ACP registry…")}</Alert>
               ) : registryState === "error" ? null : registryState === "loaded" &&
                 registry.length > 0 ? (
-                <div {...surfaceAttributes({ dividers: "stroke" })}>
+                <div {...surfaceAttributes({ dividers: "pane" })}>
                   {registry.map((entry) => (
                     <div
                       key={`${entry.id}:${entry.version}`}

@@ -139,7 +139,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
   if (!policy || !draft) {
     return (
       <section
-        {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+        {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
         aria-label={t("Autonomy")}
       >
         {loadError ? (
@@ -223,7 +223,7 @@ export function AutonomySettings({ client, account, disabled, onChanged }: Auton
 
   return (
     <section
-      {...surfaceAttributes({ frame: "settings", edge: "block-start" }, "social-card")}
+      {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "social-card")}
       aria-label={t("Autonomy")}
     >
       <Text as="p" tone="muted" leading="snug" className="social-card-description">

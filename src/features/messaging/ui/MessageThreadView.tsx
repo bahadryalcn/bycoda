@@ -66,7 +66,7 @@ function messageItem(
             tone="secondary"
             truncate
             {...surfaceAttributes(
-              { frame: "neutral" },
+              { frame: "pane" },
               "max-w-full rounded-(--ui-radius-control) px-1.5",
             )}
           >
@@ -117,7 +117,7 @@ export function MessageThreadView({
     >
       <header
         {...surfaceAttributes(
-          { frame: "neutral", edge: "bottom" },
+          { frame: "pane", edge: "bottom" },
           "flex shrink-0 items-start gap-2 px-4 py-2",
         )}
       >

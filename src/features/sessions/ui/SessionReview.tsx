@@ -278,7 +278,7 @@ function SessionReviewContent({
               asChild
             >
               <span
-                {...surfaceAttributes({ frame: "stroke", edge: "inline-start" }, "ms-1.5 ps-1.5")}
+                {...surfaceAttributes({ frame: "pane", edge: "inline-start" }, "ms-1.5 ps-1.5")}
               >
                 <ConfirmMorph
                   label={t("Undo")}
@@ -296,7 +296,7 @@ function SessionReviewContent({
           as="ul"
           scrollbar="hidden"
           {...surfaceAttributes(
-            { frame: "neutral", edge: "top" },
+            { frame: "pane", edge: "top" },
             `py-1 ${expanded ? "max-h-64 overflow-y-auto" : ""}`,
           )}
         >

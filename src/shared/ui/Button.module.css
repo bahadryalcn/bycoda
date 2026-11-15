@@ -234,6 +234,12 @@
 .control[data-button-size="lg"] {
   --button-icon-size: var(--ui-icon-md);
 }
+.swapIcon {
+  display: inline-grid;
+}
+.swapIcon > * {
+  grid-area: 1 / 1;
+}
 .icon > svg {
   inline-size: var(--button-icon-size);
   block-size: var(--button-icon-size);

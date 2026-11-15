@@ -313,7 +313,7 @@ export function TemplatesSettings() {
               {selected ? (
                 <div
                   {...surfaceAttributes(
-                    { frame: "stroke", edge: "responsive-start" },
+                    { frame: "pane", edge: "responsive-start" },
                     "template-manager-editor",
                   )}
                 >

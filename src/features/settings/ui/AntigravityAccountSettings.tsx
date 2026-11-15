@@ -139,7 +139,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
           <span className="flex min-w-0 items-center gap-2.5 py-3">
             <span
               {...surfaceAttributes(
-                { variant: "inset", radius: "card", ring: "stroke" },
+                { variant: "inset", radius: "card", ring: "pane" },
                 "grid size-7 shrink-0 place-items-center",
               )}
             >
