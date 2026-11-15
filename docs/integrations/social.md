@@ -548,8 +548,17 @@ a conversation or a session tool.
   code, the password and suspicious-login screens stay with the owner and are only reported.
   x.com returns HTTP 403 to headless automation, so the form layout is a documented fixture
   and unverified live.
+- YouTube signup opens `https://www.youtube.com/channel_switcher`. Signed out, Google's
+  sign-in page appears: the owner signs in there with an existing account, or enters the name
+  for a new Google account in Bycoda and presses Continue, which opens Google's account
+  creation (`service=youtube`, returning to the channel switcher). Bycoda fills only the
+  owner's first and last name, birth date (day, year and the month list) and existing email
+  address. Every Next, the gender choice, the Gmail address choice, the password, phone and
+  verification code steps stay with the owner. Google keeps a hidden reCAPTCHA frame on each
+  step; only a visible one is reported as a challenge. Observed live 2026-11-15 (tr-TR)
+  without submitting; afterwards Bycoda opens the observed "Create a channel" link and leaves the final channel confirmation to the owner.
 - Generic signup is not brand provisioning. A Facebook signup does not create a Page; a
-  Google account does not create a YouTube channel; an Instagram API connection needs a
+  Google account alone does not create a YouTube channel; an Instagram API connection needs a
   professional account.
 
 Owner RPC methods: `social.browser.workflow.begin` (`accountId`, `intent`, optional
