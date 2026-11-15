@@ -165,7 +165,7 @@ export function QuickWorkspaceControls({
   };
   const disabled = !enabled || !ready || !branches?.current;
   const Icon = resolvedMode === "worktree" ? FolderTree : Folder;
-  const label = resolvedMode === "worktree" ? "New worktree" : "Current checkout";
+  const label = resolvedMode === "worktree" ? t("New worktree") : t("Current checkout");
   return (
     <div className="flex min-w-0 items-center gap-2 pl-1.5">
       <Button

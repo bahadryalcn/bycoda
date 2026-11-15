@@ -113,13 +113,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
     var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 1.5),
     transparent
   );
-  /* Interactive fills keep their dark-theme contrast but use gentler ink in
-     light mode. Prefer these over content opacity for selected/raised UI. */
-  --color-selection-subtle: color-mix(
-    in srgb,
-    var(--color-content) var(--selection-subtle-strength),
-    transparent
-  );
+  /* Find-match highlights only (file preview search, Surface "selection"). Rows and chips use the
+     state ladder (--ui-surface-hover|selected|pressed) and --ui-fill-* instead. */
   --color-selection: color-mix(
     in srgb,
     var(--color-content) var(--selection-strength),
@@ -128,16 +123,6 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --color-selection-strong: color-mix(
     in srgb,
     var(--color-content) var(--selection-strong-strength),
-    transparent
-  );
-  --color-selection-hover: color-mix(
-    in srgb,
-    var(--color-content) var(--selection-hover-strength),
-    transparent
-  );
-  --color-selection-emphasis: color-mix(
-    in srgb,
-    var(--color-content) var(--selection-emphasis-strength),
     transparent
   );
   /* One hue for every "on / running / working" state (switches, Working labels, spinners). */
@@ -618,6 +603,8 @@ html.theme-light {
     var(--color-content) calc(5% * var(--appearance-layer-strength, 1)),
     transparent
   );
+  /* Role split: hover/selected/pressed are state roles and only ever fill the host row; chips, wells
+     and tracks use --ui-fill-* or the tone subtle fills, never a state role. */
   /* State ladder (T3 Code reference): soft translucent ink steps that stay visible over any host
      (canvas, card, popup). Dark: hover 4%, selected 8%, pressed 10%; light overrides below with
      4 / 12 / 16 so selected clears hover by >= 1.15:1. Strength scales with Appearance > Interaction
@@ -812,6 +799,8 @@ html.theme-light {
        so a disabled primary never reads as a translucent enabled one.
      Pair a disabled action with its reason through the shared Tooltip, not opacity alone. */
   --ui-disabled-opacity: 0.5;
+  /* Message actions at rest: quiet but discoverable; full ink on hover or focus. */
+  --ui-rest-hint-opacity: 0.5;
   --ui-overlay-backdrop: var(--palette-oklch_0_08_0_none_0_68);
   /* Modal focus layer. The blur softens the work beneath, so it carries a lighter dim than the
      plain scrim (kept as the readable fallback). Light, dark and custom themes share these values:
@@ -910,11 +899,8 @@ html.theme-light {
   --chat-background-blur: 0px;
   /* Ink alpha over the surface, ordered like the state ladder: hover (12%) < subtle < selected
      (20%) < strong < emphasis. */
-  --selection-hover-strength: 12%;
-  --selection-subtle-strength: 14%;
   --selection-strength: 20%;
   --selection-strong-strength: 24%;
-  --selection-emphasis-strength: 28%;
   --background-lightness: var(--theme-dark-lightness);
   /* The palette ground every derived layer mixes from. The painted canvas
      (--color-background-base) equals it unless the Pure background is active. */
@@ -1097,11 +1083,8 @@ html.theme-light {
   --color-skill: var(--palette-hexa07c10);
   --color-mention: var(--palette-hex0284c7);
   --color-markdown-heading: var(--palette-hexbe185d);
-  --selection-hover-strength: 4%;
-  --selection-subtle-strength: 6%;
   --selection-strength: 10%;
   --selection-strong-strength: 13%;
-  --selection-emphasis-strength: 16%;
   /* Diff text keeps 3:1 on a mid-tone ground: ink is mixed in as the ground darkens (none from
      92% up, so the default paper ground keeps the palette hues). */
   --ui-diff-fg-ink: clamp(0%, calc((92% - var(--ui-ground-lightness)) * 1.4), 60%);
@@ -1127,12 +1110,12 @@ html[data-canvas-background="pure"] {
   --color-background-base: var(--palette-canvasPureDark);
   --ui-chat-canvas: var(--color-background-base);
   /* Every floating container (dialogs, sheets, popovers, menus, tooltips, toasts, floating panels)
-     stays near the pure ground instead of a mid gray slab, but one visible step above it. The mix
+     stays near the pure ground instead of a mid gray slab, at the surface step (10%), above the composer (9%), cards (4%) and selected rows (8%) it holds, so dark layers get lighter as they rise. The mix
      is in srgb: an oklab mix this close to black rounds to the canvas itself. Controls inside
      keep their steps. */
   --ui-surface-floating: color-mix(
     in srgb,
-    var(--color-content) calc(6% * var(--appearance-layer-strength, 1)),
+    var(--color-content) calc(10% * var(--appearance-layer-strength, 1)),
     var(--color-background-base)
   );
   /* Groups and cards read as cards on the black ground: a faint ink fill over whatever surface
@@ -1810,7 +1793,7 @@ html.chat-background-layer-off .gradient-blur-background-strong {
     top: 100%;
     right: 0;
     z-index: 1;
-    opacity: 0;
+    opacity: var(--ui-rest-hint-opacity);
     transition: opacity var(--motion-duration-fast) ease;
   }
 
@@ -1837,7 +1820,7 @@ html.chat-background-layer-off .gradient-blur-background-strong {
  * focus on a fine pointer, always visible on touch. The actions keep their layout box. */
 @media (hover: hover) and (pointer: fine) {
   .message-hover-actions {
-    opacity: 0;
+    opacity: var(--ui-rest-hint-opacity);
     transition: opacity var(--motion-duration-fast) ease;
   }
 
@@ -2022,6 +2005,8 @@ html.theme-light .bycoda-sparkles {
   }
 }
 
+/* Bespoke surfaces: the celebration bursts (plan, orchestrator, /btw) and the explorer drag preview
+   are global one-off effects owned here on purpose; feature CSS may not choose colour or motion. */
 /*
  * Plan and Orchestrator turns share the /operator bloom and upward exit.
  * Numbered plan marks and a small agent network keep their own shapes and

@@ -16,7 +16,7 @@ import { planSmartSetup, type SmartSetupResult } from "../../model/smartSetupAi"
  * draft editor's error line.
  */
 export function SmartSetupAction({
-  variant = "primary",
+  variant = "secondary",
   onEdit,
 }: {
   variant?: "primary" | "secondary";

@@ -1,4 +1,4 @@
-import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Surface } from "../../../shared/ui/Surface";
 import { OutputBlock } from "../../../shared/ui/OutputBlock";
 import { Text } from "../../../shared/ui/Text";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -51,13 +51,14 @@ export function OwnerApprovalChat({
         requests
           .filter((request) => request.sessionId === sessionId)
           .map((request) => (
-            <section
+            <Surface
+              as="div"
               key={request.id}
-              aria-label={request.title}
-              {...surfaceAttributes(
-                { frame: "pane", edge: "top" },
-                "shrink-0 border-(--ui-pane-border) px-4 py-3",
-              )}
+              variant="canvas"
+              frame="pane"
+              edge="top"
+              padding="md"
+              className="shrink-0"
             >
               <ApprovalRequest
                 title={request.title}
@@ -89,20 +90,22 @@ export function OwnerApprovalChat({
               {reviewing === request.id ? (
                 <InboxApprovalDialog request={request} onClose={() => setReviewing(null)} />
               ) : null}
-            </section>
+            </Surface>
           ))}
       {visible &&
         sessionId &&
         secrets
           .filter((request) => request.sessionId === sessionId)
           .map((request) => (
-            <section
+            <Surface
+              as="section"
               key={request.id}
               aria-label={t("Secret request")}
-              {...surfaceAttributes(
-                { frame: "pane", edge: "top" },
-                "shrink-0 border-(--ui-pane-border) px-4 py-3",
-              )}
+              variant="canvas"
+              frame="pane"
+              edge="top"
+              padding="md"
+              className="shrink-0"
             >
               <Text as="strong" size="body" tone="inherit">
                 {t("Secret request")}
@@ -115,7 +118,7 @@ export function OwnerApprovalChat({
                 {request.message}
               </OutputBlock>
               <OwnerSecretForm request={request} />
-            </section>
+            </Surface>
           ))}
     </>
   );

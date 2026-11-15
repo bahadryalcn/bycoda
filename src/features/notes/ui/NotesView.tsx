@@ -840,8 +840,7 @@ export function NotesView({
           </Button>
         ) : null}
         <Button
-          variant="secondary"
-          size="sm"
+          variant="primary"
           loading={creating}
           onClick={() => void onCreate()}
           startIcon={<Plus className="icon-sm" />}
@@ -1415,7 +1414,6 @@ function NoteCard({
   const validDate = Number.isFinite(date.timestamp) && date.timestamp > 0;
   const project = noteSourceProject(note.sourceCwd);
   const match = noteLibraryMatchLocation(note, query, bodyMatches);
-  const hint = [note.title, note.sourceCwd || project, ...note.tags].filter(Boolean).join(" · ");
   const preview = match === "content" ? t("Match in note") : note.preview || t("No preview");
   const secondary = [grouping !== "project" ? project : "", preview].filter(Boolean).join(" · ");
   return (
@@ -1448,7 +1446,6 @@ function NoteCard({
       }
       onOpen={onSelect}
       primary={{
-        tooltip: hint,
         "aria-current": active ? "true" : undefined,
         "aria-haspopup": "menu",
         "data-note-id": note.id,

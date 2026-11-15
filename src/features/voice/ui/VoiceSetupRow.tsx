@@ -87,7 +87,7 @@ export function VoiceSetupRow({
               </Button>
             ) : null}
             {setup.gpuUpgrade ? (
-              <Button variant="primary" onClick={() => setup.install()}>
+              <Button variant="secondary" onClick={() => setup.install()}>
                 {t("Install GPU support")}
               </Button>
             ) : null}
@@ -152,7 +152,7 @@ export function VoiceSetupRow({
           size="md"
           onClose={setup.closeLocate}
           footer={
-            <Button variant="primary" onClick={setup.closeLocate}>
+            <Button variant="secondary" onClick={setup.closeLocate}>
               {t("Done")}
             </Button>
           }

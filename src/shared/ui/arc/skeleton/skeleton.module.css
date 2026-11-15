@@ -11,7 +11,7 @@
   display: block;
   flex: 0 0 auto;
   border-radius: var(--radius-control);
-  background: var(--ui-surface-selected);
+  background: var(--ui-fill-muted);
 }
 .avatar {
   inline-size: var(--ui-control-height);

@@ -3,10 +3,11 @@ import { EmptyState } from "../../shared/ui/EmptyState";
 import { Surface } from "../../shared/ui/Surface";
 import { Heading } from "../../shared/ui/Heading";
 import { SectionLabel } from "../../shared/ui/SectionLabel";
-import { OverflowTooltip } from "../../shared/ui/Tooltip";
 import { Badge } from "../../shared/ui/Badge";
 import { BadgeList } from "../../shared/ui/BadgeList";
+import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { Alert } from "../../shared/ui/Alert";
+import { ErrorDetails } from "../../shared/ui/ErrorDetails";
 import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
 import { Text } from "../../shared/ui/Text";
@@ -485,6 +486,8 @@ function ProjectDevServersPanel({
   // Confirmation state belongs to the server it was requested for, never the highlighted row.
   const selectedDetails =
     details && selected && details.server.id === selected.id ? details : undefined;
+  // The empty state owns the only "Start server" action; the header one appears with a list.
+  const listEmpty = !!scan && scan.servers.length === 0 && !scanError;
   const choose = (server: DevServer) => {
     setSelectedId(server.id);
     if (server.id === selected?.id) return;
@@ -530,6 +533,8 @@ function ProjectDevServersPanel({
       });
     if (id === "share" && endpoint) setSharing(endpoint.url);
     if (id === "kill") void select(selected, "kill");
+    if (id === "stop") void select(selected, "stop");
+    if (id === "details") void select(selected, "details");
   };
   const renderServer = (server: DevServer) => (
     <li
@@ -559,12 +564,7 @@ function ProjectDevServersPanel({
           {[...new Set(server.endpoints.map((item) => `:${item.port}`))].join(" ") ||
             t("No listening ports")}
         </Code>
-        <Text
-          size="micro"
-          tone="inherit"
-          leading="inherit"
-          className="host-tool-muted dev-server-meta"
-        >
+        <Text size="micro" tone="secondary" leading="inherit" className="dev-server-meta">
           {server.process ? `PID ${server.process.pid}` : t("Process not started")}
           {" · "}
           {server.managed ? t("Managed") : t("External")}
@@ -618,7 +618,12 @@ function ProjectDevServersPanel({
       </DescriptionList>
       {current.descendants.length ? (
         <>
-          <div className="host-tool-muted flex min-w-0 items-center gap-1.5">
+          <Text
+            size="caption"
+            tone="secondary"
+            as="div"
+            className="flex min-w-0 items-center gap-1.5"
+          >
             <span className="shrink-0">{t("Child processes")}:</span>
             <BadgeList
               label={t("Child processes")}
@@ -631,7 +636,7 @@ function ProjectDevServersPanel({
                 title: `${process.name} (PID ${process.pid})`,
               }))}
             />
-          </div>
+          </Text>
           <Checkbox
             disabled={disabled || intent === "restart"}
             checked={tree}
@@ -643,9 +648,9 @@ function ProjectDevServersPanel({
       ) : null}
       {intent === "restart" && !current.server.managed ? (
         <Surface variant="card" className="dev-server-form">
-          <p className="host-tool-muted">
+          <Text as="p" size="caption" tone="secondary">
             {t("Define the exact command and working directory to restart this external server.")}
-          </p>
+          </Text>
           <TextField
             label={t("Restart command")}
             value={restartCommand}
@@ -671,7 +676,7 @@ function ProjectDevServersPanel({
         <div className="dev-server-actions">
           {intent === "stop" && !requiresForce ? (
             <Button
-              variant="danger"
+              tone="danger"
               loading={operation === `${current.server.id}:stop`}
               disabled={unavailable(`${current.server.id}:stop`) || !canControl(current.server)}
               onClick={() => void control("stop")}
@@ -681,7 +686,7 @@ function ProjectDevServersPanel({
           ) : null}
           {intent === "kill" || requiresForce ? (
             <Button
-              variant="danger"
+              tone="danger"
               loading={operation === `${current.server.id}:kill`}
               disabled={unavailable(`${current.server.id}:kill`) || !hasIdentity(current.server)}
               onClick={() => void control("kill")}
@@ -726,13 +731,13 @@ function ProjectDevServersPanel({
             {logs.output || t("No log output yet.")}
           </OutputBlock>
         ) : (
-          <p className="host-tool-muted">
+          <Text as="p" size="caption" tone="secondary">
             {t(
               current.server.managed
                 ? "Logs are unavailable for this process."
                 : "Logs are unavailable for this external process.",
             )}
-          </p>
+          </Text>
         )
       ) : null}
     </section>
@@ -745,7 +750,7 @@ function ProjectDevServersPanel({
         </Heading>
         <StateBadge state={server.state} />
       </div>
-      <p className="host-tool-muted">
+      <Text as="p" size="caption" tone="secondary">
         {server.process
           ? `PID ${server.process.pid} · ${server.process.name}`
           : t("Process not started")}
@@ -755,7 +760,7 @@ function ProjectDevServersPanel({
         {server.association === "uncertain"
           ? t("Project association uncertain")
           : (server.projectName ?? server.projectId ?? t("Current project"))}
-      </p>
+      </Text>
       {server.endpoints.length > 1 && endpoint ? (
         <Text size="caption" tone="inherit" leading="inherit" as="div" className="host-tool-field">
           <span>{t("Address")}</span>
@@ -804,28 +809,6 @@ function ProjectDevServersPanel({
 
         <Button
           iconOnly
-          label={t("Process details")}
-          disabled={unavailable(`${server.id}:select:details`)}
-          loading={operation === `${server.id}:select:details`}
-          onClick={() => void select(server, "details")}
-        >
-          <Info className="icon-sm" aria-hidden />
-        </Button>
-        <Button
-          iconOnly
-          label={t("Stop")}
-          loading={operation === `${server.id}:select:stop`}
-          disabled={
-            unavailable(`${server.id}:select:stop`) ||
-            !canControl(server) ||
-            server.state === "stopped"
-          }
-          onClick={() => void select(server, "stop")}
-        >
-          <Square className="icon-sm" aria-hidden />
-        </Button>
-        <Button
-          iconOnly
           label={t("Restart")}
           loading={operation === `${server.id}:select:restart`}
           disabled={unavailable(`${server.id}:select:restart`) || !canControl(server)}
@@ -838,7 +821,10 @@ function ProjectDevServersPanel({
           iconOnly
           label={t("Actions")}
           loading={
-            operation === `${server.id}:openHost` || operation === `${server.id}:select:kill`
+            operation === `${server.id}:openHost` ||
+            operation === `${server.id}:select:kill` ||
+            operation === `${server.id}:select:stop` ||
+            operation === `${server.id}:select:details`
           }
           aria-haspopup="menu"
           aria-expanded={!!menu}
@@ -871,7 +857,25 @@ function ProjectDevServersPanel({
               icon: <Share className="icon-sm" />,
               disabled: disabled || server.state !== "running" || !endpoint,
             },
+            {
+              kind: "item",
+              id: "details",
+              label: t("Process details"),
+              icon: <Info className="icon-sm" />,
+              disabled: unavailable(`${server.id}:select:details`),
+            },
             { kind: "sep" },
+            {
+              kind: "item",
+              id: "stop",
+              label: t("Stop"),
+              icon: <Square className="icon-sm" />,
+              danger: true,
+              disabled:
+                unavailable(`${server.id}:select:stop`) ||
+                !canControl(server) ||
+                server.state === "stopped",
+            },
             {
               kind: "item",
               id: "kill",
@@ -886,9 +890,9 @@ function ProjectDevServersPanel({
         />
       ) : null}
       {!canControl(server) ? (
-        <p className="host-tool-muted">
+        <Text as="p" size="caption" tone="secondary">
           {t("Process identity unavailable; process control is disabled.")}
-        </p>
+        </Text>
       ) : null}
       {!selectedDetails &&
       (server.command ?? server.process?.command ?? server.cwd ?? server.process?.cwd) ? (
@@ -933,6 +937,31 @@ function ProjectDevServersPanel({
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
+        <Text
+          size="caption"
+          tone="secondary"
+          leading="inherit"
+          as="div"
+          className="dev-servers-status"
+          role="status"
+          data-paused={autoRefresh ? undefined : ""}
+        >
+          <span className="dev-servers-count">
+            {scanning && !scan
+              ? t("Scanning servers…")
+              : scanError
+                ? t("Scan failed")
+                : !scan
+                  ? t("Refresh to discover servers.")
+                  : t("{p0} servers", { p0: visibleServers.length })}
+          </span>
+          {autoRefresh ? null : (
+            <Text size="inherit" tone="primary" weight="medium" className="dev-servers-paused">
+              <Pause className="icon-sm" aria-hidden />
+              {t("Paused")}
+            </Text>
+          )}
+        </Text>
         <div className="dev-server-actions">
           {scanError ? (
             <Button
@@ -985,67 +1014,27 @@ function ProjectDevServersPanel({
           >
             <Share className="icon-sm" aria-hidden />
           </Button>
-          <Button
-            variant="primary"
-            iconOnly
-            label={t("Start server")}
-            disabled={disabled}
-            aria-expanded={showStart}
-            onClick={() => setShowStart((value) => !value)}
-          >
-            <Plus className="icon-sm" aria-hidden />
-          </Button>
+          {listEmpty ? null : (
+            <Button
+              startIcon={<Plus />}
+              disabled={disabled}
+              aria-expanded={showStart}
+              onClick={() => setShowStart((value) => !value)}
+            >
+              {t("Start server")}
+            </Button>
+          )}
         </div>
       </header>
-      <Text
-        size="caption"
-        tone="secondary"
-        leading="inherit"
-        as="div"
-        className="dev-servers-status"
-        role="status"
-        data-paused={autoRefresh ? undefined : ""}
-      >
-        <span className="dev-servers-count">
-          {scanning && !scan
-            ? t("Scanning servers…")
-            : scanError
-              ? t("Scan failed")
-              : !scan
-                ? t("Refresh to discover servers.")
-                : t("{p0} servers", { p0: visibleServers.length })}
-        </span>
-        {autoRefresh ? null : (
-          <Text size="inherit" tone="primary" weight="medium" className="dev-servers-paused">
-            <Pause className="icon-sm" aria-hidden />
-            {t("Paused")}
-          </Text>
-        )}
-        <OverflowTooltip label={cwd}>
-          <Text
-            size="caption"
-            tone="inherit"
-            leading="inherit"
-            className="host-tool-location dev-servers-location"
-          >
-            {cwd}
-          </Text>
-        </OverflowTooltip>
-      </Text>
       {scanError ? (
-        <Alert tone="danger">
-          <strong>{t("Could not refresh servers.")}</strong>
-          <p className="host-tool-muted">
-            {scan
-              ? t("Showing the last successful scan. Retry to update.")
-              : t("Check the host connection and retry the scan.")}
-          </p>
-          {failures.current >= MAX_FAILURES && !autoRefresh ? (
-            <p className="host-tool-muted">
-              {t("Automatic refresh paused after repeated failures.")}
-            </p>
-          ) : null}
-          <p className="host-tool-muted">{scanError}</p>
+        <Alert
+          tone="danger"
+          title={t("Could not refresh servers.")}
+          extra={<ErrorDetails title={t("Could not refresh servers.")} detail={scanError} />}
+        >
+          {scan
+            ? t("Showing the last successful scan. Retry to update.")
+            : t("Check the host connection and retry the scan.")}
         </Alert>
       ) : null}
       {error ? (
@@ -1118,9 +1107,11 @@ function ProjectDevServersPanel({
               />
             </div>
             <div className="dev-server-form-footer">
-              <Text as="p" size="caption" tone="secondary">
-                {t("Set the port in the command too; no flags are added.")}
-              </Text>
+              <InfoPopover>
+                <Text as="p" size="caption" tone="secondary">
+                  {t("Set the port in the command too; no flags are added.")}
+                </Text>
+              </InfoPopover>
               <Button
                 type="submit"
                 variant="primary"
@@ -1143,9 +1134,9 @@ function ProjectDevServersPanel({
           <Alert tone="danger">
             {t("Port {p0} is already in use.", { p0: startResult.conflict.port })}
           </Alert>
-          <p className="host-tool-muted">
+          <Text as="p" size="caption" tone="secondary">
             {t("Inspect and stop the existing process, or define a command using another port.")}
-          </p>
+          </Text>
           <ul className="dev-server-list">{startResult.conflict.servers.map(renderServer)}</ul>
           <Button disabled={disabled} onClick={() => setShowStart(true)}>
             {t("Use another port")}
@@ -1161,7 +1152,7 @@ function ProjectDevServersPanel({
       ) : scan && visibleServers.length === 0 && query ? (
         <EmptyState
           kind="filtered"
-          description={t("No servers match your search.")}
+          description={t("No matching servers")}
           onReset={() => setSearch("")}
           resetLabel={t("Clear search")}
         />

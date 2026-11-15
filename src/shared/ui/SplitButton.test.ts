@@ -179,7 +179,6 @@ it.each([
   ["primary", "gap"],
   ["secondary", "shared"],
   [undefined, "shared"],
-  ["danger", "shared"],
   ["ghost", "none"],
 ] as const)("marks the primary and menu parts and a %s seam for %s", async (variant, seam) => {
   await render({ variant, actions: [{ id: "squash", label: "Squash", onSelect: vi.fn() }] });

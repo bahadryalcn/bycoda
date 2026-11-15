@@ -257,12 +257,7 @@ export function CrewRailSection({
                   </span>
                 ) : null}
                 {runs.length > 1 ? (
-                  <Badge
-                    variant="count"
-                    size="xs"
-                    aria-hidden
-                    className="shrink-0 @max-[140px]/rail:hidden"
-                  >
+                  <Badge variant="count" size="xs" aria-hidden className="shrink-0">
                     {runs.length}
                   </Badge>
                 ) : null}

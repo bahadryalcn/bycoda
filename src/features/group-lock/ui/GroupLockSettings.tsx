@@ -183,7 +183,7 @@ export function GroupLockSettings({
               description={t("Reset protection. Your projects and hidden preferences stay saved.")}
             >
               <Button className="shrink-0" onClick={() => setDialog({ kind: "forgot" })}>
-                {t("Forgot password…")}
+                {t("Reset…")}
               </Button>
             </Row>
             {/* The only destructive action of the group; it keeps its password confirmation. */}
@@ -193,11 +193,11 @@ export function GroupLockSettings({
               description={t("Removes the password and all group locks.")}
             >
               <Button
-                variant="danger"
+                tone="danger"
                 className="shrink-0"
                 onClick={() => setDialog({ kind: "remove" })}
               >
-                {t("Remove password…")}
+                {t("Remove…")}
               </Button>
             </Row>
           </>
@@ -223,9 +223,7 @@ export function GroupLockSettings({
           feedback={unsavedNote("relock")}
         >
           <Toggle
-            label={t("Lock groups again when {p0} starts", {
-              p0: PRODUCT_IDENTITY.displayName,
-            })}
+            label={t("Lock on startup")}
             on={lock.settings.relockOnLaunch}
             disabled={Boolean(pendingWrites.relock)}
             onChange={(on) => commit("relock", () => setRelockOnLaunch(on))}
@@ -257,7 +255,7 @@ export function GroupLockSettings({
           feedback={unsavedNote("together")}
         >
           <Toggle
-            label={t("Unlocking one group unlocks all")}
+            label={t("Unlock groups together")}
             on={lock.settings.unlockAll}
             disabled={Boolean(pendingWrites.together)}
             onChange={(on) => commit("together", () => setUnlockAll(on))}

@@ -48,7 +48,7 @@ export function DeviceInspector({
         value={inspectionSearch}
         onChange={(event) => onSearch(event.target.value)}
       />
-      <p className="host-tool-muted">
+      <Text as="p" size="caption" tone="secondary">
         {platform === "android"
           ? t(
               "Native accessibility snapshot · Point at the preview to inspect. Select a node, then press it explicitly.",
@@ -56,7 +56,7 @@ export function DeviceInspector({
           : t(
               "Native accessibility snapshot · Preview bounds unavailable for this coordinate space.",
             )}
-      </p>
+      </Text>
       {!inspection || inspection.supported === false ? (
         <p>{t("This device does not provide a structured accessibility tree.")}</p>
       ) : (

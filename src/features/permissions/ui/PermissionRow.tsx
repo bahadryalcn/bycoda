@@ -18,7 +18,7 @@ import styles from "./PermissionRow.module.css";
  * One OS permission. A ready permission shows only its badge. "Allow" shows
  * the OS prompt in place and opens the guide only when access is still
  * missing afterwards; "Review access" opens the guide, which launches the
- * settings pane and watches for the grant.
+ * settings pane and watches for the grant. A failed status read offers only "Check again".
  */
 export function PermissionRow({
   id,
@@ -35,7 +35,6 @@ export function PermissionRow({
   } = usePermissionStatus([id]);
   const [setup, setSetup] = useState(false);
   const [requesting, setRequesting] = useState(false);
-  const [animate, setAnimate] = useState(true);
   const info = permissionInfo(id);
   const ready = permissionReady(entry.state);
 
@@ -66,7 +65,7 @@ export function PermissionRow({
               {t("Status unavailable")}
             </Badge>
           ) : (
-            <PermissionStatusBadge state={entry.state} animate={animate} />
+            <PermissionStatusBadge state={entry.state} animate />
           )}
           {helperState && (
             <Badge size="xs" tone={permissionBadge(helperState).tone}>
@@ -76,26 +75,21 @@ export function PermissionRow({
         </span>
         {!ready && (
           <span className={styles.actions}>
-            {entry.canRequest && (
+            {failed && (
+              <Button loading={loading} onClick={() => void refresh()}>
+                {t("Check again")}
+              </Button>
+            )}
+            {!failed && entry.canRequest && (
               <Button loading={requesting} disabled={requesting} onClick={() => void allow()}>
                 {t("Allow")}
               </Button>
             )}
-            {!entry.canRequest && (
+            {!failed && !entry.canRequest && (
               <Button onClick={() => setSetup(true)}>
                 {entry.canOpenSettings ? t("Review access…") : t("Setup guide")}
               </Button>
             )}
-            <Button
-              loading={loading}
-              onClick={(event) => {
-                // Keyboard-triggered refreshes stay instant; pointer clicks may fade.
-                setAnimate(event.detail !== 0);
-                void refresh();
-              }}
-            >
-              {t("Check again")}
-            </Button>
           </span>
         )}
       </Row>

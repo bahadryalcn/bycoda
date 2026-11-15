@@ -362,7 +362,9 @@ export function BrowserControlsPopover({
           </Button>
         </ButtonGroup>
         {state?.open && !state.controlling ? (
-          <p className="host-tool-muted">{t("View only · take control to interact")}</p>
+          <Text as="p" size="caption" tone="secondary">
+            {t("View only · take control to interact")}
+          </Text>
         ) : null}
       </section>
       {error ? <InlineError details={error}>{errorSummary}</InlineError> : null}

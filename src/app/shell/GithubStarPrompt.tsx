@@ -55,6 +55,7 @@ type PromptProps = {
   action?: ReactNode;
   icon?: boolean;
   compact?: boolean;
+  oncePerVersion?: boolean;
 };
 
 /** Opens only the configured product repository; never acts on an upstream account. */
@@ -63,10 +64,25 @@ export function GithubStarPrompt({ version = appVersion, ...rest }: Partial<Prom
   return <GithubStarPromptBody key={version} version={version} {...rest} />;
 }
 
-function GithubStarPromptBody({ version, action, icon = false, compact = false }: PromptProps) {
+function GithubStarPromptBody({
+  version,
+  action,
+  icon = false,
+  compact = false,
+  oncePerVersion = false,
+}: PromptProps) {
   const t = useT();
   const star = useGithubStar(version);
   const { visible } = star;
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- Persist the mounted dialog impression in localStorage so reopening it does not repeat this version.
+  useEffect(() => {
+    if (!oncePerVersion || !visible) return;
+    try {
+      localStorage.setItem(dismissedKey(version), "1");
+    } catch {
+      /* The prompt remains dismissible when storage is unavailable. */
+    }
+  }, [oncePerVersion, version, visible]);
   if (!visible && !action) return null;
   const buttons = visible ? (
     <>

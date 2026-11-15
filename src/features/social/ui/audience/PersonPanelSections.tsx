@@ -220,7 +220,7 @@ export function PersonDataSection({
           {t("Export")}
         </Button>
         <Button
-          variant="danger"
+          tone="danger"
           size="sm"
           disabled={disabled}
           onClick={() => void deletePerson().catch((err: unknown) => setError(errorMessage(err)))}

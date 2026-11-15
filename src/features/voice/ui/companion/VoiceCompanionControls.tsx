@@ -66,7 +66,7 @@ export function VoiceCompanionControls({
           {t(status === "idle" ? "Start voice" : "Talk")}
         </Button>
         {status !== "idle" && (
-          <Button iconOnly variant="danger" label={t("Disconnect voice")} onClick={onClose}>
+          <Button iconOnly tone="danger" label={t("Disconnect voice")} onClick={onClose}>
             <Square className="icon-sm" />
           </Button>
         )}
@@ -107,7 +107,7 @@ export function VoiceCompanionControls({
       >
         {speakerMuted ? <VolumeX className="icon-sm" /> : <Volume2 className="icon-sm" />}
       </Button>
-      <Button iconOnly variant="danger" label={t("Disconnect voice")} onClick={onClose}>
+      <Button iconOnly tone="danger" label={t("Disconnect voice")} onClick={onClose}>
         <Square className="icon-sm" />
       </Button>
     </div>

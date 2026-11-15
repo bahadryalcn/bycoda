@@ -32,7 +32,6 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew,
   onDismissUpdate,
   noticesOnly = false,
-  repositoryPrompt = false,
   icon = false,
   compact = false,
 }: {
@@ -40,6 +39,7 @@ export function SidebarUpdateFooter({
   onOpenWhatsNew?: (version: string) => void;
   onDismissUpdate?: () => void;
   noticesOnly?: boolean;
+  /** Legacy fixture option; repository prompts now live inside the update dialog. */
   repositoryPrompt?: boolean;
   /** Footer icon button: only the download icon (dot while an update waits) and its dialog. */
   icon?: boolean;
@@ -75,8 +75,8 @@ export function SidebarUpdateFooter({
       : t("Update to {p0}", { p0: snapshot.availableVersion });
 
   if (noticesOnly) return card;
-  if (!card && !actionable && !repositoryPrompt && !icon) return null;
-  if (icon && !actionable && !repositoryPrompt) return null;
+  if (!card && !actionable && !icon) return null;
+  if (icon && !actionable) return null;
 
   const actionText =
     snapshot.phase === "downloading"
@@ -105,10 +105,10 @@ export function SidebarUpdateFooter({
     <Button
       {...(icon && !compact
         ? { label: actionLabel, revealLabel: true, startIcon: actionIcon }
-        : repositoryPrompt || icon
+        : icon
           ? { iconOnly: true as const, label: actionLabel }
           : { label: actionLabel })}
-      variant={repositoryPrompt || icon ? "ghost" : "secondary"}
+      variant={icon ? "ghost" : "secondary"}
       tone={snapshot.phase === "error" ? "warning" : "neutral"}
       motion="none"
       tooltip={actionLabel}
@@ -122,7 +122,7 @@ export function SidebarUpdateFooter({
       ) : (
         <>
           {actionIcon}
-          {!repositoryPrompt && !icon ? (
+          {!icon ? (
             <Text
               size="caption"
               tone="inherit"
@@ -141,7 +141,7 @@ export function SidebarUpdateFooter({
 
   return (
     <div
-      className={`flex min-w-0 flex-col gap-1.5 empty:hidden ${repositoryPrompt && !icon ? "w-full" : icon ? "shrink-0" : "items-end"}`}
+      className={`flex min-w-0 flex-col gap-1.5 empty:hidden ${icon ? "shrink-0" : "items-end"}`}
     >
       {promptOpen && actionable ? (
         <Modal
@@ -150,12 +150,15 @@ export function SidebarUpdateFooter({
           onClose={dismissPrompt}
           footer={
             <ModalActions>
-              <Button onClick={dismissPrompt}>{`${t("Later")} (${t("24 hours")})`}</Button>
+              <Button variant="ghost" tooltip={t("24 hours")} onClick={dismissPrompt}>
+                {t("Later")}
+              </Button>
               <SidebarUpdate snapshot={snapshot} onSnapshot={setSnapshot} compact />
             </ModalActions>
           }
         >
           <div className="flex flex-col gap-3">
+            <GithubStarPrompt oncePerVersion version={snapshot.currentVersion} />
             <Text as="p" size="body" tone="primary">
               v{snapshot.currentVersion} → v{snapshot.availableVersion}
             </Text>
@@ -176,11 +179,7 @@ export function SidebarUpdateFooter({
         </Modal>
       ) : null}
       {card}
-      {repositoryPrompt ? (
-        <GithubStarPrompt action={updateAction} icon={icon} compact={compact} />
-      ) : (
-        updateAction
-      )}
+      {updateAction}
     </div>
   );
 }
@@ -228,7 +227,7 @@ export function SidebarUpdate({
     <Button
       onClick={onClick}
       disabled={busy}
-      variant="secondary"
+      variant="primary"
       fullWidth={!compact}
       motion="none"
       label={label}

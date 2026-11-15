@@ -1,7 +1,7 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Heading } from "../../../shared/ui/Heading";
+import { OnboardingHeading } from "./OnboardingHeading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Switch } from "../../../shared/ui/Switch";
 import { lazy, Suspense, useState, useSyncExternalStore, type ReactNode } from "react";
@@ -99,14 +99,10 @@ export function OnboardingWorkspace() {
   );
   return (
     <>
-      <div className="onboarding-heading">
-        <Heading size="page" level={3}>
-          {t("A workspace that fits you")}
-        </Heading>
-        <Text as="p" size="inherit" tone="muted" leading="normal">
-          {t("Choose the tools you want close by. You can change these in Settings anytime.")}
-        </Text>
-      </div>
+      <OnboardingHeading
+        title={t("Workspace")}
+        info={t("Choose the tools you want close by. You can change these in Settings anytime.")}
+      />
       <div className="onboarding-scroll">
         <div className="onboarding-feature-grid">
           <div
@@ -156,13 +152,11 @@ export function OnboardingWorkspace() {
             />
           ))}
         </div>
-        <Section title={t("Behavior")}>
-          <SwitchRow
-            label={t("Prevent sleep while agents work")}
-            checked={keepAwake}
-            onChange={saveKeepAwakeEnabled}
-          />
-        </Section>
+        <SwitchRow
+          label={t("Prevent sleep while agents work")}
+          checked={keepAwake}
+          onChange={saveKeepAwakeEnabled}
+        />
       </div>
     </>
   );
@@ -225,20 +219,14 @@ export function OnboardingAppearance() {
     },
     { value: "none", title: t("No crew"), caption: t("Keep the workspace quiet") },
   ];
+  const crewDetail = crewChoices.find((choice) => choice.value === crew)?.detail;
   return (
     <>
-      <div className="onboarding-heading">
-        <Heading size="page" level={3}>
-          {t("Make yourself at home")}
-        </Heading>
-        <Text as="p" size="inherit" tone="muted" leading="normal">
-          {t("Choose your appearance and the crew that keeps you company.")}
-        </Text>
-      </div>
+      <OnboardingHeading title={t("Appearance")} />
       <div className="onboarding-scroll">
-        <Section title={t("Appearance")}>
+        <Section title={t("Mode")}>
           <RadioTiles
-            label={t("Appearance")}
+            label={t("Mode")}
             className="onboarding-mode-grid"
             tileClassName={`${CHOICE_FRAME_CLASS} onboarding-choice onboarding-mode`}
             tile={{ selectionIndicator: "accent-inset" }}
@@ -285,11 +273,10 @@ export function OnboardingAppearance() {
                 saveCrewSceneEnabled(true);
               }
             }}
-            options={crewChoices.map(({ value, title, caption, detail }) => ({
+            options={crewChoices.map(({ value, title, caption }) => ({
               value,
               id: `onboarding-crew-${value}`,
               data: CHOICE_FRAME_DATA,
-              tooltip: detail,
               children: (
                 <>
                   {value === "none" ? (
@@ -325,14 +312,17 @@ export function OnboardingAppearance() {
               ),
             }))}
           />
+          {crewDetail ? (
+            <Text as="p" size="caption" tone="muted" leading="normal">
+              {crewDetail}
+            </Text>
+          ) : null}
         </Section>
-        <Section title={t("Behavior")}>
-          <SwitchRow
-            label={t("Decorative animations")}
-            checked={motion}
-            onChange={saveDecorativeMotionEnabled}
-          />
-        </Section>
+        <SwitchRow
+          label={t("Decorative animations")}
+          checked={motion}
+          onChange={saveDecorativeMotionEnabled}
+        />
       </div>
     </>
   );

@@ -55,7 +55,7 @@ export function CommandScreen({ client, machineId, projectId, active, target }: 
         <AiSetupCard busy={state.busy === "model"} onSave={state.saveModel} />
       ) : null}
       {state.error && !modelRequired ? <InlineError>{state.error}</InlineError> : null}
-      <SummaryCards summary={state.summary} approvalCount={approvalCount} />
+      <SummaryCards summary={state.summary} />
       <div className="command-layout">
         <div className="command-main">
           {state.plan ? (

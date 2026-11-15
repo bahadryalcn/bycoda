@@ -1,4 +1,3 @@
-import { Text } from "../../../shared/ui/Text";
 import { useT } from "../../../shared/i18n";
 import { hostBufferReportKey } from "../../../features/files/data/hostBufferRecovery";
 import { useHostBufferRecovery } from "../files/useHostBufferRecovery";
@@ -22,13 +21,6 @@ export function HostBufferRecoverySection({
   };
   return (
     <>
-      {recovery.visible && recovery.available ? (
-        <div className="px-3 pt-3">
-          <Text as="p" size="caption" tone="secondary">
-            {t("Reports retained by this desktop profile's Host.")}
-          </Text>
-        </div>
-      ) : null}
       <BufferReportRecoveryView
         recovery={viewRecovery}
         reportKey={hostBufferReportKey}

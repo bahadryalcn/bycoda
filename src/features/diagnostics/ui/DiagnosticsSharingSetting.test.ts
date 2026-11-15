@@ -24,33 +24,30 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
 });
+const press = async (label: string) =>
+  act(async () => {
+    [...document.body.querySelectorAll("button")]
+      .find((button) => button.textContent === label)!
+      .click();
+  });
 function typeNote(text: string) {
-  const field = container.querySelector("input")!;
+  const field = document.body.querySelector("input")!;
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, text);
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-it.each([false, true])(
-  "retires only the submitted unchanged note after upload, newer edit: %s",
-  async (newer) => {
-    let complete!: (status: string) => void;
-    send.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          complete = resolve;
-        }),
-    );
-    await act(async () => root.render(createElement(DiagnosticsSharingSetting)));
-    typeNote("Original problem");
-    await act(async () => {
-      [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Send logs now")!
-        .click();
-    });
-    expect(send).toHaveBeenCalledWith({ trigger: "manual", note: "Original problem" });
-    if (newer) typeNote("New unsent problem");
-    await act(async () => complete("sent"));
-    expect(container.querySelector("input")!.value).toBe(newer ? "New unsent problem" : "");
-  },
-);
+it("asks for the note in a dialog and sends it with the manual trigger", async () => {
+  send.mockResolvedValueOnce("sent");
+  await act(async () => root.render(createElement(DiagnosticsSharingSetting)));
+  expect(container.querySelector("input")).toBeNull();
+  await press("Send logs now");
+  typeNote("Original problem");
+  await act(async () => {
+    [...document.body.querySelectorAll("button")]
+      .filter((button) => button.textContent === "Send logs now")
+      .at(-1)!
+      .click();
+  });
+  expect(send).toHaveBeenCalledWith({ trigger: "manual", note: "Original problem" });
+});

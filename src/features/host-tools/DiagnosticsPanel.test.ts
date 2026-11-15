@@ -125,7 +125,7 @@ it("routes explicit machine samples without a conversation identity and drops pr
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="Measurement details"]')!.click(),
   );
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("This computer");
+  expect(container.textContent).toContain("This computer");
   await act(async () => container.querySelector("button")!.click());
   expect(hostToolRequest).toHaveBeenLastCalledWith(
     "remote://macbook/repo",

@@ -57,11 +57,6 @@
   flex: 1;
   min-inline-size: 0;
 }
-.count {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
 .listPane {
   display: flex;
   flex-direction: column;
@@ -69,10 +64,6 @@
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
-}
-.libraryFooter {
-  flex: none;
-  padding: 0.5rem;
 }
 .groupHeader {
   z-index: var(--layer-pane-sheet);

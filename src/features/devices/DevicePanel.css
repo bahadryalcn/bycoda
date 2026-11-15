@@ -175,9 +175,6 @@
 .device-panel-popover > header {
   margin-block-end: 8px;
 }
-.device-panel-popover .host-tool-muted {
-  margin-block: 8px 0;
-}
 /* Options popover: icon-led action rows, then one zoom row under a hairline. */
 .device-panel-menu-actions,
 .device-panel-command,
@@ -221,7 +218,7 @@
   flex: 1;
   min-inline-size: 0;
 }
-.device-panel-popover .device-panel-setup-summary > .host-tool-muted {
+.device-panel-popover .device-panel-setup-summary > .device-panel-setup-count {
   display: block;
   margin: 0;
 }
@@ -269,9 +266,6 @@
 }
 .device-panel-state p {
   margin: 0;
-}
-.device-panel-connect .host-tool-muted {
-  max-inline-size: 42ch;
 }
 .device-panel-state-icon {
   inline-size: 28px;

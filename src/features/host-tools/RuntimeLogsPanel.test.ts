@@ -599,7 +599,7 @@ it("keeps retained logs readable when the host disconnects and recovers with Ref
   vi.mocked(hostToolRequest).mockRejectedValueOnce(new Error("Host is offline"));
   await act(async () => vi.advanceTimersByTimeAsync(1_500));
   expect(container.textContent).toContain("Disconnected");
-  expect(container.querySelector('[role="alert"] p')?.textContent).toBe(
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
     "Could not read logs. Check the host connection and retry.",
   );
   await act(async () =>

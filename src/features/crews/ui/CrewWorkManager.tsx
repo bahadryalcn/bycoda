@@ -5,6 +5,9 @@ import { Heading } from "../../../shared/ui/Heading";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { FailureState } from "../../../shared/ui/FailureState";
+import { InlineMessage } from "../../../shared/ui/InlineError";
+import { LoadingText } from "../../../shared/ui/LoadingText";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
@@ -272,18 +275,23 @@ export function CrewWorkManager({
           </div>
         </div>
         {crew && !savedCrew ? (
-          <Text as="p" className="-mt-1 px-4 pb-2">
+          <InlineMessage tone="neutral" live="off" className="px-4 pb-2">
             {t("This crew was deleted. Its work and conversations are kept.")}
-          </Text>
+          </InlineMessage>
         ) : null}
         {!data ? (
           <div className="p-4">
-            <Alert tone={state.error ? "danger" : "info"}>
-              {state.error?.message ?? t("Loading crews…")}
-            </Alert>
-            <Button variant="ghost" onClick={() => void state.refetch()}>
-              {t("Retry")}
-            </Button>
+            {state.error ? (
+              <FailureState
+                context="panel"
+                title={t("Could not load crews")}
+                error={state.error}
+                retryLabel={t("Retry")}
+                onRetry={() => state.refetch()}
+              />
+            ) : (
+              <LoadingText layout="fill">{t("Loading crews…")}</LoadingText>
+            )}
           </div>
         ) : noWork ? (
           <div className="px-4 pb-4">
@@ -306,15 +314,6 @@ export function CrewWorkManager({
               context="panel"
               kind="empty"
               title={t("No crew work yet")}
-              description={
-                savedCrew
-                  ? t(
-                      "Use New work to give this crew a delivery. Its progress and decisions appear here.",
-                    )
-                  : crew
-                    ? t("This crew has no work history.")
-                    : t("Create a crew, then start work with it.")
-              }
               action={
                 savedCrew
                   ? {

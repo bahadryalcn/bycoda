@@ -19,6 +19,7 @@ export type * as modelMcpSettingsCacheApi from "./public/mcpSettingsCache";
 export type * as modelModelsSettingsLinkApi from "./public/modelsSettingsLink";
 export type * as modelNewThreadBackgroundEffectsApi from "./public/newThreadBackgroundEffects";
 export type * as modelProjectSidebarTabApi from "./public/projectSidebarTab";
+export type * as modelSettingsLinkApi from "./public/settingsLink";
 export type * as modelSettingsApi from "./public/settings";
 export type * as modelSoundsApi from "./public/sounds";
 export type * as modelUseKeybindingShortcutApi from "./public/useKeybindingShortcut";

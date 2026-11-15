@@ -461,3 +461,9 @@ it("retains shared search text when a contextual entry omits a query", async () 
   });
   expect(host.querySelector("input")!.value).toBe("draft");
 });
+
+it("keeps empty search compact without repeating its placeholder or scope", async () => {
+  await render();
+  expect(host.textContent).not.toContain("Find files, conversations, messages, and projects.");
+  expect(host.querySelector(".app-search-scope-summary")).toBeNull();
+});

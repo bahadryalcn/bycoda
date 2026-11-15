@@ -272,19 +272,14 @@ const column = (status: string) =>
 const statusLine = (scope: ParentNode) =>
   scope.querySelector<HTMLButtonElement>("button[data-task-status-line]")!;
 async function allProjects() {
-  const previousSection = container.querySelector(
-    '[role="tab"][aria-selected="true"]',
-  )?.textContent;
-  // The empty backlog hides collection filters; Sprints still exposes project scope.
-  if (!container.querySelector('header.task-board-toolbar button[aria-label^="Project:"]'))
-    await act(async () => button(container, "Sprints")!.click());
+  await act(async () => button(container, "Scope")!.click());
   await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('header.task-board-toolbar button[aria-label^="Project:"]')!
-      .click(),
+    document.querySelector<HTMLButtonElement>('[aria-label^="Project:"]')!.click(),
   );
   await act(async () => button(document.body, "All projects")!.click());
-  if (previousSection) await act(async () => button(container, previousSection)?.click());
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
 }
 async function pickAction(scope: ParentNode, label: string) {
   const direct = button(scope, label);
@@ -403,10 +398,9 @@ it("starts across all projects and creates in the explicitly selected project", 
   expect(list()?.textContent).toContain("Project B work");
   await allProjects();
   expect(list()?.textContent).toContain("Project B work");
+  await act(async () => button(container, "Scope")!.click());
   await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('header.task-board-toolbar button[aria-label^="Project:"]')!
-      .click(),
+    document.querySelector<HTMLButtonElement>('[aria-label^="Project:"]')!.click(),
   );
   const choice = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
     (option) => option.textContent?.includes("other ·"),
@@ -546,7 +540,7 @@ it("lays tasks out in six columns with the actions each status allows", async ()
   await act(async () => statusLine(column("blocked")).click());
   expect(document.body.textContent).toContain("Not signed in");
   await act(async () => button(document.body.querySelector('[role="dialog"]')!, "Close")!.click());
-  expect(column("queued").textContent).toContain("on this computer");
+  expect(column("queued").textContent).not.toContain("on this computer");
 });
 
 it("searches goal filters in the compact popover, marks active scope and resets without writes", async () => {
@@ -656,7 +650,7 @@ it("explains a genuinely empty board once, with the one New task action inside i
       (entry) => buttonText(entry) === "New task",
     ),
   ).toHaveLength(1);
-  expect(container.querySelector('ol[aria-label="How it works"]')?.children).toHaveLength(3);
+  expect(container.querySelector('ol[aria-label="How it works"]')).toBeNull();
   expect(button(container, "Select tasks")).toBeUndefined();
   expect(button(container, "Filters")).toBeUndefined();
   expect(container.querySelector('input[type="search"]')).toBeNull();
@@ -863,7 +857,7 @@ it("shows a task being verified under Running", async () => {
   await render();
   expect(container.querySelectorAll("[data-task-column]")).toHaveLength(6);
   expect(column("running").textContent).toContain("Verifying");
-  expect(column("running").textContent).toContain("mc/abcd1234");
+  expect(column("running").textContent).not.toContain("mc/abcd1234");
   expect(Array.from(column("running").querySelectorAll("button"), buttonName)).toEqual([
     "Review changes",
     "Stop",
@@ -888,7 +882,7 @@ it("offers to merge a reviewed branch and shows what was checked", async () => {
   await render();
   const card = column("review");
   expect(button(card, "Approve")).toBeUndefined();
-  expect(card.textContent).toContain("mc/abcd1234");
+  expect(card.textContent).not.toContain("mc/abcd1234");
   expect(card.textContent).not.toContain("1 file changed");
   expect(card.textContent).toContain("Delivery is blocked");
   expect(statusLine(card).textContent).toContain("The project has uncommitted changes.");
@@ -900,7 +894,7 @@ it("offers to merge a reviewed branch and shows what was checked", async () => {
   expect(details.querySelector("details pre")!.textContent).toBe("12 tests passed");
   expect(details.textContent).toContain("The project has uncommitted changes.");
   await act(async () => button(details, "Close")!.click());
-  expect(card.textContent).toContain("Implementation finished");
+  expect(card.textContent).not.toContain("Implementation finished");
   expect(card.textContent).toContain("Delivery is blocked");
   await act(async () => button(card, "Review changes")!.click());
   expect(card.textContent).toContain(
@@ -1504,7 +1498,7 @@ it("shows a plan waiting for approval and asks the goal's machine to approve it"
   expect(card.getAttribute("data-goal-status")).toBe("running");
 });
 
-it("labels a goal's tasks and says what a task waits for", async () => {
+it("keeps goal and dependency details reachable from a compact task card", async () => {
   host(
     [
       task({
@@ -1524,10 +1518,12 @@ it("labels a goal's tasks and says what a task waits for", async () => {
   const card = container.querySelector<HTMLElement>('article[aria-label="Launch the beta"]')!;
   expect(card.textContent).toContain("0/2 done");
   const queued = column("queued");
-  expect(queued.textContent).toContain("Waiting for: Add the endpoint");
-  expect(
-    Array.from(queued.querySelectorAll("[data-task-goal]"), (label) => label.textContent),
-  ).toEqual(["Launch the beta"]);
+  expect(queued.querySelector("[data-task-goal]")).toBeNull();
+  await act(async () =>
+    queued.querySelector<HTMLElement>('article[aria-label="Call the endpoint"]')!.click(),
+  );
+  expect(panel()!.textContent).toContain("Launch the beta");
+  expect(panel()!.textContent).toContain("Add the endpoint");
 });
 
 it("defaults a new goal to direct work with final acceptance on and plan/task review off", async () => {
@@ -1783,7 +1779,7 @@ it("shows automatic takeover for a blocked task without asking the owner to retr
   expect(card("Ship the report").textContent).not.toContain("Needs input");
 });
 
-it("renders a structured task as a readable brief with a short card summary", async () => {
+it("keeps the structured brief in task details", async () => {
   host([
     task({
       prompt: JSON.stringify({
@@ -1797,9 +1793,7 @@ it("renders a structured task as a readable brief with a short card summary", as
     }),
   ]);
   await render();
-  expect(card("Ship the report").querySelector("[data-task-description]")?.textContent).toBe(
-    "Fix playback",
-  );
+  expect(card("Ship the report").querySelector("[data-task-description]")).toBeNull();
   await act(async () => card("Ship the report").click());
   const description = panel()!.querySelector("[data-task-detail-description]")!;
   expect(description.textContent).toContain("Acceptance criteria");
@@ -1839,7 +1833,7 @@ it("opens a task's details from its card, and closes them with Escape", async ()
   ]);
   await render();
   expect(panel()).toBeNull();
-  expect(card("Ship the report").textContent).toContain("Write the weekly report");
+  expect(card("Ship the report").textContent).not.toContain("Write the weekly report");
   await act(async () => card("Ship the report").click());
   await act(async () => {});
   const details = panel()!;
@@ -1883,11 +1877,9 @@ it("shows new review notes and saves read/fixed states while opening the source 
     }),
   ]);
   await render(openReview);
-  expect(card("Ship the report").querySelector("[data-task-review-notes]")!.textContent).toContain(
-    "1 new review note",
-  );
-  expect(container.querySelector("[data-new-review-notes]")!.textContent).toContain(
-    "1 new review note",
+  expect(card("Ship the report").querySelector('[aria-label="1 new review note"]')).not.toBeNull();
+  expect(container.querySelector('[role="tab"][data-tab-value="backlog"]')?.textContent).toContain(
+    "1",
   );
   await act(async () => card("Ship the report").click());
   const notes = panel()!.querySelector('[aria-label="Review notes"]')!;
@@ -1906,10 +1898,7 @@ it("shows new review notes and saves read/fixed states while opening the source 
     taskId: "main",
     noteIds: ["note-1"],
   });
-  expect(container.querySelector("[data-new-review-notes]")).toBeNull();
-  expect(card("Ship the report").querySelector("[data-task-review-notes]")!.textContent).toContain(
-    "1 review note",
-  );
+  expect(card("Ship the report").querySelector('[aria-label="1 new review note"]')).toBeNull();
   await act(async () => button(notes, "Mark fixed")!.click());
   expect(notes.textContent).toContain("0 open");
   expect(
@@ -2667,7 +2656,9 @@ it("disables unrelated task, goal, steward and note mutations while a board acti
   expect(button(notes, "Mark fixed")!.disabled).toBe(true);
   const goalCard = container.querySelector('article[aria-label="Launch the beta"]')!;
   expect(button(goalCard, "Approve")!.disabled).toBe(true);
-  await act(async () => button(container, "Backlog")!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[role="tab"][data-tab-value="backlog"]')!.click(),
+  );
   const stewardRow = stewardCard()!;
   expect(button(stewardRow, "Run now")!.disabled).toBe(true);
   expect(
@@ -2829,7 +2820,9 @@ it("keeps the sprint collection separate from an unscoped backlog", async () => 
   const board = container.querySelector<HTMLElement>(".\\@container\\/task-area");
   expect(board?.classList.contains("hidden")).toBe(true);
   expect(button(container, "New task")).toBeUndefined();
-  await act(async () => button(container, "Backlog")!.click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[role="tab"][data-tab-value="backlog"]')!.click(),
+  );
   expect(button(container, "Backlog task")).toBeTruthy();
 });
 

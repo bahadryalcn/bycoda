@@ -25,7 +25,6 @@ import { revealPath } from "../../../platform/tauri/fs";
 import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
 import type { RecentProject } from "../../projects";
 import { Button } from "../../../shared/ui/Button";
-import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { ContinuousList, CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { Surface } from "../../../shared/ui/Surface";
@@ -388,7 +387,6 @@ function McpConnections({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <Heading size="section">{t("MCP connections")}</Heading>
             <Text
               size="caption"
               tone="muted"
@@ -424,6 +422,7 @@ function McpConnections({
         <div className={styles.actions}>
           <Button
             type="button"
+            variant="ghost"
             iconOnly
             label={t("Refresh")}
             loading={loading}
@@ -432,14 +431,9 @@ function McpConnections({
           >
             <RefreshCw className="icon-sm" />
           </Button>
-          <Button
-            type="button"
-            aria-label={t("Add MCP server")}
-            variant="primary"
-            onClick={() => setAddOpen(true)}
-          >
+          <Button type="button" variant="primary" onClick={() => setAddOpen(true)}>
             <Plus className="icon-sm" />
-            <span>{t("Add")}</span>
+            <span>{t("Add server")}</span>
           </Button>
         </div>
       </div>
@@ -670,15 +664,18 @@ function McpConnections({
                         {t("Sign in")}
                       </Button>
                     ) : null}
+                    {!canToggle(server) ? (
+                      <Text size="caption" tone="muted" leading="inherit" truncate>
+                        {globalOnly && server.provider === "claude"
+                          ? t("Select a project to change Claude Code permissions.")
+                          : t("Edit in provider config")}
+                      </Text>
+                    ) : null}
                     <Tooltip
                       label={
-                        !canToggle(server)
-                          ? globalOnly && server.provider === "claude"
-                            ? t("Select a project to change Claude Code permissions.")
-                            : t("Edit in provider config")
-                          : server.provider === "claude"
-                            ? t("Applies to this project for Claude Code.")
-                            : undefined
+                        canToggle(server) && server.provider === "claude"
+                          ? t("Applies to this project for Claude Code.")
+                          : undefined
                       }
                     >
                       <span className={styles.toggle}>

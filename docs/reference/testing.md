@@ -215,6 +215,16 @@ event/receipt that proves completion; avoid sleeps, retries and raised timeouts 
 hide races. Shared infrastructure regressions deserve meaningful harness tests;
 labels, constants and pure visual spacing do not each need new mirror assertions.
 
+## Visual acceptance matrix
+
+UI rounds use one capture set instead of per-round fixture scripts: every screen
+archetype in [DESIGN.md](DESIGN.md) "Screen archetypes" in light and dark at 1280 and 800 px,
+against the browser fixture server (`node scripts/checks/ui-acceptance-matrix.mjs --list`, then
+`--out temp/verification/<id>/matrix`). Fixtures carry the worst-case data where they model it
+(long names, Turkish, RTL, emoji; empty, one, many, error). Inspect hover, selection and keyboard
+focus on their real hosts in the captures. The output is fixture evidence, not installed-app
+acceptance.
+
 ## Built web, native and manual acceptance
 
 The built-web entry serves existing files with a loopback static server and blocks

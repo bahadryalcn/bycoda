@@ -5,7 +5,6 @@ import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { Heading } from "../../../shared/ui/Heading";
 import { Stepper } from "../../../shared/ui/Stepper";
 import { Progress } from "../../../shared/ui/Progress";
 import { Button } from "../../../shared/ui/Button";
@@ -70,6 +69,7 @@ import { parentPath, prettyCwd, projectName } from "../../../shared/lib/paths";
 import { OnboardingWorkspace, OnboardingAppearance } from "./OnboardingPreferences";
 import { OnboardingAgents } from "./OnboardingAgents";
 import { OnboardingFooter } from "./OnboardingFooter";
+import { OnboardingHeading } from "./OnboardingHeading";
 import { OnboardingAccount } from "./OnboardingAccount";
 import { OnboardingStatistics } from "./OnboardingStatistics";
 import { OnboardingConnections } from "./OnboardingConnections";
@@ -77,6 +77,9 @@ import { markAccountStepSeen } from "../model/onboarding";
 import { useOnboardingSteps } from "../model/useOnboardingSteps";
 import { loadOnboardingProviders, addOnboardingProviders } from "../model/onboardingProviders";
 import "./onboarding.css";
+
+/** Steps whose choices persist the moment they change; the footer says so only there. */
+const SAVES_ON_CHANGE: ReadonlySet<string> = new Set(["Statistics", "Workspace", "Appearance"]);
 
 type Props = {
   onStartGuide?: () => void;
@@ -154,7 +157,7 @@ export default function OnboardingDialog({
             <div className="onboarding-topline-actions">
               {onStartGuide && !busy ? (
                 <Button onClick={onStartGuide} variant="ghost" type="button">
-                  {t("Usage guide")}
+                  {t("Guide")}
                 </Button>
               ) : null}
               <div className="onboarding-language">
@@ -182,27 +185,13 @@ export default function OnboardingDialog({
               disabled={busy}
               onStepSelect={goTo}
             />
-            <Text
-              as="p"
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              className="onboarding-step-caption"
-              aria-hidden="true"
-            >
-              {t("Step {p0} of {p1} · {p2}", {
-                p0: step + 1,
-                p1: steps.length,
-                p2: t(current),
-              })}
-            </Text>
           </div>
         </header>
         {current !== "Projects" ? (
           <div className="onboarding-stage">
             <div className="onboarding-body" key={step}>
               {error ? <Alert tone="danger">{error}</Alert> : null}
-              {current === "Account" ? <OnboardingAccount onGuest={() => goTo(step + 1)} /> : null}
+              {current === "Account" ? <OnboardingAccount /> : null}
               {current === "Statistics" ? <OnboardingStatistics /> : null}
               {current === "Workspace" ? <OnboardingWorkspace /> : null}
               {current === "Appearance" ? <OnboardingAppearance /> : null}
@@ -242,7 +231,7 @@ export default function OnboardingDialog({
                   )}
                 </Button>
               }
-              note={t("Changes save automatically")}
+              note={SAVES_ON_CHANGE.has(current) ? t("Changes save automatically") : undefined}
             >
               <Button onClick={() => goTo(step + 1)} variant="primary" type="button">
                 {t("Continue")}
@@ -422,16 +411,12 @@ function Projects({
   return (
     <>
       <div className="onboarding-body">
-        <div className="onboarding-heading">
-          <Heading size="page" level={3}>
-            {t("Choose your projects")}
-          </Heading>
-          <Text as="p" size="inherit" tone="muted" leading="normal">
-            {t(
-              "Import local projects and conversations from Claude Code and Codex, or choose a folder.",
-            )}
-          </Text>
-        </div>
+        <OnboardingHeading
+          title={t("Projects")}
+          info={t(
+            "Import local projects and conversations from Claude Code and Codex, or choose a folder.",
+          )}
+        />
         <div className="onboarding-scroll">
           {error ? (
             <Alert tone="danger">
@@ -473,12 +458,7 @@ function Projects({
                     )
                   }
                 />
-                <span>
-                  {selected.size}
-                  {t(" of ")}
-                  {folders.length}
-                  {t(" selected")}
-                </span>
+                <span>{t("{p0} of {p1} selected", { p0: selected.size, p1: folders.length })}</span>
                 {hiddenTemporary > 0 ? (
                   <Text
                     as="small"
@@ -610,16 +590,16 @@ function Projects({
           {summary ? (
             <div role="status">
               <Text as="p" size="inherit" tone="muted" leading="normal">
-                {summary.imported}
-                {t(" conversations imported across ")}
-                {summary.projects} {t("projects.")}
-                {summary.cancelled ? t(" Import cancelled.") : ""}
+                {t("{p0} conversations imported across {p1} projects.", {
+                  p0: summary.imported,
+                  p1: summary.projects,
+                })}
+                {summary.cancelled ? ` ${t("Import cancelled.")}` : ""}
               </Text>
               {summary.failed.length ? (
                 <Alert tone="danger">
                   <Text as="p" size="inherit" tone="muted" leading="normal">
-                    {summary.failed.length}
-                    {t(" conversations could not be imported.")}
+                    {t("{p0} conversations could not be imported.", { p0: summary.failed.length })}
                   </Text>
                   {summary.failed.map((failure, index) => (
                     <Text as="p" key={index} size="inherit" tone="muted" leading="normal">
@@ -630,19 +610,19 @@ function Projects({
               ) : null}
               {summary.readOnly || summary.truncated ? (
                 <Text as="p" size="inherit" tone="muted" leading="normal">
-                  {summary.readOnly}
-                  {t(" history-only conversations ·")} {summary.truncated}
-                  {t(" shortened transcripts")}
+                  {t("{p0} history-only conversations · {p1} shortened transcripts", {
+                    p0: summary.readOnly,
+                    p1: summary.truncated,
+                  })}
                 </Text>
               ) : null}
             </div>
           ) : null}
           {addedFolders.length ? (
             <div role="status">
-              <p>
-                {addedFolders.length}
-                {t(" project folders added.")}
-              </p>
+              <Text as="p" size="inherit" tone="muted" leading="normal">
+                {t("{p0} project folders added.", { p0: addedFolders.length })}
+              </Text>
               {addedFolders.map((path) => (
                 <div className="onboarding-project" key={path}>
                   <Check aria-hidden tone="muted" className="icon-sm onboarding-project-icon" />
@@ -697,7 +677,7 @@ function Projects({
           </Button>
         }
       >
-        {!summary ? (
+        {!summary && selected.size ? (
           <Button disabled={busy} onClick={onFinish} variant="ghost" type="button">
             {t("Skip import")}
           </Button>

@@ -176,8 +176,8 @@ On the Pure background the chat composer writing area is one quiet step above th
 ground, slightly lifted in dark mode and faintly tinted in light mode, with its
 border keeping the writing area distinct.
 
-Settings groups and collections have no gray fill. The group interior is the page
-canvas, framed by a thin rounded border, with hairline dividers between rows.
+Settings groups and collections use the page canvas with a thin rounded border and
+hairline dividers. On Pure dark, grouped cards use a faint translucent fill.
 Inputs, selected rows, focus rings and drag targets keep their own boundary roles.
 Appearance previews, danger zones and code or path views stay colored or filled.
 
@@ -376,3 +376,26 @@ around the same status.
   overlay/focus system.
 - Ask the owner before adopting an agent-proposed improvement beyond the agreed
   design direction. Treat a proposal as a proposal until the owner chooses it.
+
+## Screen archetypes
+
+- **Collection:** PaneHeader, at most one filter row, continuous list, and in-place empty, loading and failure states. Place the primary action in the header.
+- **List and detail:** a selectable master list and detail pane separated by a Sash. Put the detail action and status in its header; show empty, loading and failure states in the affected pane.
+- **Settings:** page header followed by Group and Row controls; keep optional explanations behind info. Place any primary action with the relevant group.
+- **Panel with toolbar:** at most two chrome bands: header and one toolbar. Put status in the header and the primary action in either band. Render content states in place.
+- **Dialog or sheet form:** Modal or Sheet with FieldGroup and footer actions. Put the primary action in the footer; show validation and pending state by the affected control.
+- **State pane:** use shared empty, loading and failure components in the content region. Keep recovery with the failure and avoid hand-written substitutes.
+
+## Review checklist
+
+Review redundancy, hierarchy, containment, density, consistency, states, copy, visual finish and accessibility. Check that status appears once, one primary action leads each view, controls retain keyboard access, and color never carries meaning alone. Keep optional help behind an info control; required errors and recovery remain visible. Fix repeated defects at the shared token or component default before local workarounds.
+
+Classify unreadable information, lost state or broken primary controls as S1; visible consistency and usability defects as S2; polish as S3. Route fixes through theme tokens, shared components, shared compositions, and drift checks before feature-local changes. A UI round ends by promoting recurring findings into the appropriate shared contract or check, or documenting why promotion is unnecessary.
+
+For visual acceptance, capture affected archetypes in light and dark at 1280 and 800 pixels. Exercise empty, single, populated, loading and error states where applicable, with long names, Turkish, RTL and emoji. Inspect hover, selection and keyboard focus on their actual hosts; fixture evidence is separate from installed-app acceptance.
+
+## Status, confirmation and copy
+
+Use StatusText for concise icon-and-word status. Use ConfirmMorph for in-place single-item removal; use ConfirmDialog when consequences, typed confirmation or acknowledgement need review. Keep destructive intent explicit.
+
+Use Run for executing work, Start for beginning a persistent process, Remove for detaching an item, and Delete for permanently removing it. Cancel abandons an unfinished action; Close dismisses a view; Dismiss removes a notice. Use Settings for configuration and Options for choices within an action.

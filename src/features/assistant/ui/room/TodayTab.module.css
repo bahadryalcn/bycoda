@@ -74,29 +74,6 @@
   min-inline-size: 0;
 }
 
-.tiles {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  min-inline-size: 0;
-}
-
-.tile {
-  min-inline-size: 0;
-  overflow: hidden;
-}
-
-.tileBody {
-  display: grid;
-  gap: 2px;
-  min-inline-size: 0;
-  padding: 10px 12px;
-}
-
-.tileValue {
-  font-variant-numeric: tabular-nums;
-}
-
 .charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));

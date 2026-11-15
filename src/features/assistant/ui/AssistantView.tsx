@@ -35,7 +35,6 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import { assistantRequest as ownerRequest } from "../model/assistantClient";
-import { AssistantPresenceStatus } from "./AssistantPresenceStatus";
 import { useVisibleProjects } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
 import { assistantJobVisible } from "../model/assistantJobs";
@@ -109,8 +108,6 @@ export function AssistantView(props: AssistantViewProps) {
     setMenu,
     healthAnchor,
     setHealthAnchor,
-    presenceAnchor,
-    setPresenceAnchor,
     query,
     setQuery,
     setFilter,
@@ -208,20 +205,6 @@ export function AssistantView(props: AssistantViewProps) {
           <div className={shell.actions}>
             {snapshot?.profile.setupComplete && (
               <>
-                <Button
-                  className={shell.presence}
-                  variant="ghost"
-                  label={t("Presence")}
-                  aria-haspopup="dialog"
-                  expanded={Boolean(presenceAnchor)}
-                  onClick={(event) => setPresenceAnchor(event.currentTarget)}
-                >
-                  <AssistantPresenceStatus
-                    snapshot={snapshot}
-                    compact
-                    offline={Boolean(readError)}
-                  />
-                </Button>
                 <Button
                   variant={snapshot.paused ? "secondary" : "ghost"}
                   tone={snapshot.paused ? "neutral" : "danger"}

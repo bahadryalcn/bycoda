@@ -3,6 +3,7 @@ import { Text } from "../../../shared/ui/Text";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n/technical";
 import { Button } from "../../../shared/ui/Button";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Smartphone } from "../../../shared/ui/icons";
 import type { DeviceSummary } from "../types";
@@ -32,21 +33,25 @@ export function DeviceConnectState({
       className="device-panel-state device-panel-connect"
     >
       <Smartphone className="device-panel-state-icon" tone="secondary" aria-hidden />
-      <Text
-        as="p"
-        size="body"
-        tone="primary"
-        weight="medium"
-        leading="inherit"
-        className="device-panel-state-title"
-      >
-        {t("Connect a device")}
-      </Text>
-      <Text as="p" size="caption" tone="secondary" leading="relaxed" className="host-tool-muted">
-        {t(
-          "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
-        )}
-      </Text>
+      <div className="flex items-center gap-1">
+        <Text
+          as="p"
+          size="body"
+          tone="primary"
+          weight="medium"
+          leading="inherit"
+          className="device-panel-state-title"
+        >
+          {t("Connect a device")}
+        </Text>
+        <InfoPopover label={t("How to connect")}>
+          <Text as="p" size="caption" tone="secondary" leading="relaxed">
+            {t(
+              "Connect an Android phone with USB debugging, or use an emulator. iOS simulators require a Mac with Xcode.",
+            )}
+          </Text>
+        </InfoPopover>
+      </div>
       <div className="device-panel-state-actions">
         <Button
           variant="primary"

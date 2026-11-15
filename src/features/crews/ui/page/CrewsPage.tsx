@@ -121,7 +121,7 @@ export function CrewsPage({
           meta={navigation ? undefined : t("Teams, members and work for this project")}
           actions={
             <Button
-              variant="primary"
+              variant={tab === "members" ? "secondary" : "primary"}
               startIcon={<Plus className="icon-sm" />}
               disabled={!state.data}
               onClick={() => setDialog({ kind: "edit", createScope: "project" })}

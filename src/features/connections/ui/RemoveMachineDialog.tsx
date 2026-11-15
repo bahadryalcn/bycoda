@@ -41,7 +41,7 @@ export function RemoveMachineDialog({
           <Button
             stableWidth
             type="button"
-            variant="danger"
+            tone="danger"
             loading={revoking}
             onClick={() => onConfirm(mode === "revoke")}
           >

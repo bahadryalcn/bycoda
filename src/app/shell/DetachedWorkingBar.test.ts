@@ -143,8 +143,8 @@ describe("detached working header", () => {
       }),
     ]);
     const trigger = container.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!;
-    expect(trigger.textContent).toContain("1 conversation");
-    expect(trigger.textContent).not.toContain("1 conversations");
+    expect(trigger.textContent).toContain("1 session");
+    expect(trigger.textContent).not.toContain("1 sessions");
     pointer(trigger, "pointerdown", 10, 10);
     pointer(window, "pointermove", 30, 10);
     expect(native.startDragging).not.toHaveBeenCalled();
@@ -165,7 +165,7 @@ describe("detached working header", () => {
   it("supports keyboard navigation, Escape, and completed status", () => {
     render([agent("one"), agent("two", { done: true })]);
     const trigger = container.querySelector<HTMLButtonElement>("[aria-haspopup=menu]")!;
-    expect(trigger.textContent).toContain("2 conversations");
+    expect(trigger.textContent).toContain("2 sessions");
     act(() =>
       trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
     );

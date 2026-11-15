@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { Divider } from "../../../shared/ui/Divider";
 import { Text } from "../../../shared/ui/Text";
@@ -262,15 +263,15 @@ export function TabGroupMenu({
               fallbackStrokeWidth={1.75}
             />
           </Button>
-          <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             <Text as="p" size="caption" tone="muted">
-              {t("Project logo")}
+              {t("Logo")}
             </Text>
-            <Text as="p" size="secondary" tone="secondary" truncate>
+            <InfoPopover>
               {logoPath
                 ? t("Shown in tabs and composer")
                 : t("Optional. Replaces the folder icon.")}
-            </Text>
+            </InfoPopover>
           </div>
           {logoPath ? (
             <Button

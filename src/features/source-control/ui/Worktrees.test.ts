@@ -982,7 +982,9 @@ it.each(["partial", "rejected", "worktree", "refresh"] as const)(
         ...result(),
         worktrees: [{ ...tree, sessionIds }],
       });
-      await act(async () => button("Refresh").click());
+      await act(async () =>
+        container.querySelector<HTMLButtonElement>('[aria-label="Refresh worktrees"]')!.click(),
+      );
     }
     await act(async () => refresh.resolve({ ...result(), worktrees: [{ ...tree, sessionIds }] }));
     expect(unavailable(remove())).toBe(false);

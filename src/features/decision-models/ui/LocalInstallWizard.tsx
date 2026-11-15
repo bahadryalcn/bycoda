@@ -123,6 +123,24 @@ export function LocalInstallWizard({
     },
   ];
   const installed = result?.state === "installed" || result?.state === "running";
+  // One primary action per step keeps the footer a single decision.
+  const primary =
+    step === 0
+      ? { label: t("Continue"), disabled: !loaded, onClick: () => setStep(1) }
+      : step === 1 && offer === "install"
+        ? { label: t("Continue"), disabled: !readyToInstall, onClick: () => setStep(2) }
+        : step === 1 && offer === "api"
+          ? { label: t("Choose an API provider"), onClick: onChooseApi }
+          : step === 2 && !installed
+            ? {
+                label: t("Install"),
+                loading: installing,
+                disabled: installing || !modelId || !readyToInstall || result !== null,
+                onClick: install,
+              }
+            : step === 2 && installed
+              ? { label: t("Done"), onClick: onClose }
+              : null;
 
   return (
     <Modal
@@ -147,34 +165,14 @@ export function LocalInstallWizard({
           >
             {t("Back")}
           </Button>
-          {step === 0 ? (
-            <Button variant="primary" disabled={!loaded} onClick={() => setStep(1)}>
-              {t("Continue")}
-            </Button>
-          ) : null}
-          {step === 1 && offer === "install" ? (
-            <Button variant="primary" disabled={!readyToInstall} onClick={() => setStep(2)}>
-              {t("Continue")}
-            </Button>
-          ) : null}
-          {step === 1 && offer === "api" ? (
-            <Button variant="primary" onClick={onChooseApi}>
-              {t("Choose an API provider")}
-            </Button>
-          ) : null}
-          {step === 2 && !installed ? (
+          {primary ? (
             <Button
               variant="primary"
-              loading={installing}
-              disabled={installing || !modelId || !readyToInstall || result !== null}
-              onClick={install}
+              loading={primary.loading}
+              disabled={primary.disabled}
+              onClick={primary.onClick}
             >
-              {t("Install")}
-            </Button>
-          ) : null}
-          {step === 2 && installed ? (
-            <Button variant="primary" onClick={onClose}>
-              {t("Done")}
+              {primary.label}
             </Button>
           ) : null}
         </ModalActions>

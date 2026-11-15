@@ -159,7 +159,7 @@ it("shows the four summary cards from ai.summary", async () => {
   const client = fakeClient();
   render(client);
   await settle();
-  const values = [...element.querySelectorAll(".command-card-value")].map(
+  const values = [...element.querySelectorAll("[role=group] > div > :nth-child(2)")].map(
     (node) => node.textContent,
   );
   expect(values).toEqual(["3", "1", "2", "50%"]);

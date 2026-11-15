@@ -341,15 +341,7 @@ export function ModelPicker({
     triggerFastSetting?.kind === "toggle" && settingValue(triggerFastSetting, values) === "true";
   const triggerTitle = inheritSelected
     ? inherit.label
-    : [
-        HARNESS_TITLE[current.harness],
-        current.provider?.name,
-        currentLabel,
-        triggerEffortLabel,
-        triggerFastOn ? t("Fast") : undefined,
-      ]
-        .filter(Boolean)
-        .join(" · ");
+    : [HARNESS_TITLE[current.harness], current.provider?.name].filter(Boolean).join(" · ");
   const providerKey = pickerHarnesses.join(",");
   const visibleTab = coerceModelPickerTab(tab, (id) => pickerHarnesses.includes(id));
   const accountFor = (target: HarnessId) =>
@@ -679,7 +671,7 @@ export function ModelPicker({
               ? inherit.label
               : `${HARNESS_TITLE[current.harness]}${
                   current.provider ? `, ${current.provider.name},` : ""
-                } ${currentLabel}${triggerEffortLabel ? `, effort ${triggerEffortLabel}` : ""}${triggerFastOn ? `, ${t("Fast")}` : ""}`
+                } ${currentLabel}${triggerEffortLabel ? `, ${t("effort {p0}", { p0: triggerEffortLabel })}` : ""}${triggerFastOn ? `, ${t("Fast")}` : ""}`
           }
           expanded={open || recentOpen}
           aria-haspopup="dialog"

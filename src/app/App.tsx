@@ -3560,9 +3560,6 @@ function Workspace({
                       automationsViewOpen={automationsViewOpen}
                       settingsOpen={settingsPageOpen}
                       settingsSection={settingsSection}
-                      pullRequestsOnly={pullRequestsOnly}
-                      setPullRequestsOnly={setPullRequestsOnly}
-                      onOpenInbox={onOpenInbox}
                       openSettings={openSettings}
                       active={active}
                       projectCwd={projectCwd}

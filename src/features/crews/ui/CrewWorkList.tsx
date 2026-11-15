@@ -145,7 +145,7 @@ export function CrewWorkList({
         {!runs.length ? (
           <Text as="p" className="px-2 py-3">
             {query.trim() && listedCount
-              ? t("No matching crew work.")
+              ? t("No matching crew work")
               : view === "ongoing"
                 ? t("No ongoing crew work.")
                 : t("No finished crew work.")}

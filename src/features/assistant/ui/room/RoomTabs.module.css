@@ -44,12 +44,8 @@
   }
 }
 
-.primary,
-.secondary {
+.primary {
   min-inline-size: 0;
   inline-size: max-content;
   max-inline-size: 100%;
-}
-.secondary {
-  padding-block-end: 4px;
 }

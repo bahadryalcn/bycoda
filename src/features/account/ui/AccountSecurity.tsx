@@ -1,3 +1,4 @@
+import { openSettingsSection } from "../../settings/public/settingsLink";
 import { Text } from "../../../shared/ui/Text";
 import type { User } from "@bycoda/account-contracts";
 import { useState } from "react";
@@ -6,7 +7,6 @@ import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
-import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
@@ -87,29 +87,10 @@ export function AccountSecurity({
   onShowDevices: () => void;
 }) {
   useLocale();
-  const { query, revokeOthers } = useDevices();
-  const { confirm, dialog } = useConfirm();
+  const { query } = useDevices();
   const [error, setError] = useState("");
   const url = securityUrl();
   const active = query.data?.filter((device) => !device.revokedAt) ?? [];
-
-  const signOutOthers = async () => {
-    const ok = await confirm({
-      title: t("Sign out of all other devices?"),
-      message: t(
-        "Every device except this computer will be signed out of your bycoda account the next time it connects.",
-      ),
-      confirmLabel: t("Sign out others"),
-      pendingLabel: t("Signing out…"),
-    });
-    if (!ok) return;
-    setError("");
-    try {
-      await revokeOthers.mutateAsync();
-    } catch (failure) {
-      setError(errorText(failure));
-    }
-  };
 
   return (
     <>
@@ -166,24 +147,15 @@ export function AccountSecurity({
             {t("Review devices")}
           </Button>
         </Row>
-        {active.length > 1 ? (
-          <Row
-            label={t("Sign out everywhere else")}
-            description={t("Keeps this computer signed in.")}
-          >
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={revokeOthers.isPending}
-              onClick={() => signOutOthers().catch(() => undefined)}
-            >
-              {t("Sign out others")}
-            </Button>
-          </Row>
-        ) : null}
+      </Group>
+      <Group title={t("Privacy and security")}>
+        <Row label={t("Privacy settings")}>
+          <Button variant="secondary" size="sm" onClick={() => openSettingsSection("groupLock")}>
+            {t("Open settings")}
+          </Button>
+        </Row>
       </Group>
       <SecurityActivity />
-      {dialog}
     </>
   );
 }

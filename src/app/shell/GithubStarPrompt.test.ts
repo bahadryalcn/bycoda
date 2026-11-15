@@ -120,3 +120,20 @@ it("dismisses mounted compact and wide copies together", async () => {
   );
   expect(container.querySelectorAll('[aria-label="View bycoda on GitHub"]')).toHaveLength(0);
 });
+
+it("shows a dialog prompt once per version even without an explicit dismissal", async () => {
+  mocks.identity.repositoryUrl = "https://github.com/example/bycoda";
+  await act(async () =>
+    root.render(createElement(GithubStarPrompt, { version: "once-test", oncePerVersion: true })),
+  );
+  expect(container.querySelector('[aria-label="View bycoda on GitHub"]')).not.toBeNull();
+  act(() => root.render(null));
+  await act(async () =>
+    root.render(createElement(GithubStarPrompt, { version: "once-test", oncePerVersion: true })),
+  );
+  expect(container.innerHTML).toBe("");
+  await act(async () =>
+    root.render(createElement(GithubStarPrompt, { version: "next-test", oncePerVersion: true })),
+  );
+  expect(container.querySelector('[aria-label="View bycoda on GitHub"]')).not.toBeNull();
+});

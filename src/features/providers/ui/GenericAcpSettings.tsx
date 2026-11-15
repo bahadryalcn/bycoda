@@ -643,7 +643,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                         {installingId === entry.id ? (
                           <Button
                             className="shrink-0"
-                            variant="danger"
+                            tone="danger"
                             disabled={cancelingInstallId === entry.id}
                             loading={cancelingInstallId === entry.id}
                             onClick={() => void cancelInstallation(entry.id)}

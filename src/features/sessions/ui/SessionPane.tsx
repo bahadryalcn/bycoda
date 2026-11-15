@@ -637,6 +637,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   // Find and the outline read live text only while a search or a card is open.
   const [findSearching, setFindSearching] = useState(false);
   const [findAction, setFindAction] = useState<ExpandingButtonGroupItem | null>(null);
+  const [outlineAction, setOutlineAction] = useState<ExpandingButtonGroupItem | null>(null);
   const [outlineOpen, setOutlineOpen] = useState(false);
   const draftBlock = useMemo(() => sessionDraftBlock(stableSession), [stableSession]);
   const savedDraftProjection = useSavedDraftProjection(
@@ -1245,34 +1246,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const providerGoalCommand = useStableCallback((command: "/goal resume" | "/goal clear") =>
     onSubmit(session.id, command, [], { intent: "default" }),
   );
-  // Stable order in the one notice stack above the card: interrupted turn, then provider retry.
+  // One status stack above the card: running work, goal, interrupted turn, provider retry.
   const composerNotices = (
     <>
-      <InterruptedNotice
-        session={stableSession}
-        interruptedTurn={interruptedTurn}
-        blockedReason={sendBlockedReason}
-        message={remote ? "The host stopped this turn before it finished." : undefined}
-        onContinue={continueInterruptedTurn}
-      />
-      {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
-        <ProviderRetryNotice
-          key={session.id}
-          provider={HARNESS_TITLE[session.harness]}
-          message={session.retryMessage}
-          onStop={() => onStop(session.id)}
-          onRefresh={
-            session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
-              ? () => onRefreshAdoptedSession(session.id)
-              : undefined
-          }
-        />
-      ) : null}
-    </>
-  );
-  const composerChildren = (
-    <>
-      {/* Above the queue and the input, below any blocker. */}
       <ActivityDock
         sessionId={session.id}
         harness={session.harness}
@@ -1311,6 +1287,26 @@ const LocalSessionPane = memo(function LocalSessionPane({
         }
         onCommand={providerGoalCommand}
       />
+      <InterruptedNotice
+        session={stableSession}
+        interruptedTurn={interruptedTurn}
+        blockedReason={sendBlockedReason}
+        message={remote ? "The host stopped this turn before it finished." : undefined}
+        onContinue={continueInterruptedTurn}
+      />
+      {session.retryMessage && (session.busy || session.continuingElsewhere) ? (
+        <ProviderRetryNotice
+          key={session.id}
+          provider={HARNESS_TITLE[session.harness]}
+          message={session.retryMessage}
+          onStop={() => onStop(session.id)}
+          onRefresh={
+            session.continuingElsewhere && !session.busy && onRefreshAdoptedSession
+              ? () => onRefreshAdoptedSession(session.id)
+              : undefined
+          }
+        />
+      ) : null}
     </>
   );
   const crewManaged = useCrewManagedSession(session.id);
@@ -1480,9 +1476,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onRecalledMessageApplied={recalledMessageApplied}
       editingLastTurn={editingLastTurn}
       onEditingLastTurnChange={setEditingLastTurn}
-    >
-      {composerChildren}
-    </Composer>
+    />
   );
   // A live crew runs this conversation: it is read here and managed from Crews.
   const composer =
@@ -1515,6 +1509,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const closeShortcut = useKeybindingShortcut("Pane: Close");
   const paneActions: ExpandingButtonGroupItem[] = [
     ...(!session.inboxAsk && findAction ? [findAction] : []),
+    ...(outlineAction ? [outlineAction] : []),
     ...(notesEnabled && visible && focused && !showNotesPanel
       ? [
           {
@@ -1933,6 +1928,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   <PromptOutline
                     blocks={outlineBlocks}
                     onOpenChange={setOutlineOpen}
+                    onTriggerChange={setOutlineAction}
                     scope={transcriptScope}
                     scroller={transcriptScroller}
                     visible={visible}

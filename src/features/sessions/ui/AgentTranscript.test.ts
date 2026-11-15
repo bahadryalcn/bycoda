@@ -418,8 +418,7 @@ describe("AgentTranscript collapsed work", () => {
     ) as Block;
     const markup = render([block]);
     expect(markup).toContain('data-follow-up-delivery="uncertain"');
-    expect(markup).toContain("may already have been delivered");
-    expect(markup).toContain("Inspect the conversation before retrying");
+    expect(markup).toContain("May have been delivered");
     expect(markup).not.toContain(">Draft</span>");
   });
 

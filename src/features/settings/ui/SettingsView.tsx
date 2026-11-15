@@ -12,7 +12,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CrewsSettings } from "../../crews/ui/CrewsSettings";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/public/ConnectionsSettings";
-import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "../../../shared/ui/icons";
+import { ArrowLeft, Maximize2, Minimize2 } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState, type ComponentProps } from "react";
 import "./BycodaSettings.css";
 import { AccountScreen } from "../../account";
@@ -332,39 +332,34 @@ export function SettingsView({
           <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
           {headerAction}
-          {pageReset ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              iconOnly
-              label={
-                section === "appearance"
-                  ? t("Reset all appearance settings")
-                  : t("Restore defaults")
-              }
-              onClick={() =>
-                void confirmPageReset({
-                  title: t("Restore defaults"),
-                  message:
-                    section === "appearance"
-                      ? t(
-                          "Reset every Appearance setting to its default? Saved themes and your background image library are kept. Each tab also keeps its own reset buttons.",
-                        )
-                      : t(
-                          "Restore this page's settings to their defaults? Other pages are not affected.",
-                        ),
-                  confirmLabel: t("Restore defaults"),
-                  onConfirm: pageReset.run,
-                })
-              }
-            >
-              <RotateCcw aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
-            </Button>
-          ) : null}
           <SettingsPageHelp
             description={settingsSectionDescription(section)}
             automaticSave={AUTOMATIC_SAVE_SECTIONS.includes(section)}
+            reset={
+              pageReset
+                ? {
+                    label:
+                      section === "appearance"
+                        ? t("Reset all appearance settings")
+                        : t("Restore defaults"),
+                    onClick: () => {
+                      void confirmPageReset({
+                        title: t("Restore defaults"),
+                        message:
+                          section === "appearance"
+                            ? t(
+                                "Reset every Appearance setting to its default? Saved themes and your background image library are kept. Each tab also keeps its own reset buttons.",
+                              )
+                            : t(
+                                "Restore this page's settings to their defaults? Other pages are not affected.",
+                              ),
+                        confirmLabel: t("Restore defaults"),
+                        onConfirm: pageReset.run,
+                      });
+                    },
+                  }
+                : undefined
+            }
           />
           {onToggleMaximize ? (
             <Button

@@ -384,13 +384,13 @@ it("filters names and addresses and distinguishes no matches from an empty inven
   await search("ME@HOME");
   expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
   await search("absent");
-  expect(document.body.textContent).toContain("No matching servers.");
+  expect(document.body.textContent).toContain("No matching servers");
   expect(document.body.textContent).not.toContain("No machines connected.");
   // A search with no match offers a reset, not creation.
   expect(document.body.querySelector('[data-kind="filtered"]')).toBeTruthy();
   await click("Reset filters");
   expect(document.body.querySelectorAll("[data-server-row]")).toHaveLength(1);
-  expect(document.body.textContent).not.toContain("No matching servers.");
+  expect(document.body.textContent).not.toContain("No matching servers");
   fixture.machines = [];
   await render();
   expect(document.body.textContent).toContain("No machines connected.");

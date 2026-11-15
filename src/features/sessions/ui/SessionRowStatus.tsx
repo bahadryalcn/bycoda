@@ -57,7 +57,7 @@ const TONES: Record<SessionRowStatusKind, BadgeTone> = {
   waiting: "neutral",
   opening: "neutral",
   done: "success",
-  draft: "warning",
+  draft: "neutral",
   idle: "neutral",
 };
 

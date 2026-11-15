@@ -1,0 +1,22 @@
+{
+  "purpose": "Same intent, same word. Rules over English catalog keys in use (docs/reference/DESIGN.md, Status, confirmation and copy). Keys already offending are listed in glossary-baseline.json; a new offender fails check-locales.",
+  "rules": [
+    {
+      "id": "three-dot-ellipsis",
+      "pattern": "[^.]\\.\\.\\.(?:$|\\s|[^.])",
+      "use": "the single ellipsis character"
+    },
+    {
+      "id": "preferences-word",
+      "pattern": "\\bpreferences?\\b",
+      "maxWords": 3,
+      "use": "Settings"
+    },
+    {
+      "id": "terminate-word",
+      "pattern": "\\bterminate\\b",
+      "maxWords": 3,
+      "use": "Stop"
+    }
+  ]
+}

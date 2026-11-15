@@ -28,6 +28,10 @@ import {
 } from "../model/promptOutline";
 import type { Block } from "../model/session";
 import { Popover } from "../../../shared/ui/Popover";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { Menu } from "../../../shared/ui/icons";
+import { observeResize } from "../../../shared/lib/observeResize";
+import type { ExpandingButtonGroupItem } from "../../../shared/ui/ButtonGroup";
 
 const OPEN_DELAY_MS = 25;
 const SCROLL_INSET_PX = 8;
@@ -36,7 +40,7 @@ const MIN_PROMPTS = 2;
 const BAR_HEIGHT_PX = 2;
 const BAR_WIDTH_PX = 11;
 const BAR_WIDTH_LIFTED_PX = 24;
-const BAR_OPACITY_IDLE = 0.15;
+const BAR_OPACITY_IDLE = 0.4;
 const BAR_OPACITY_LIT = 0.85;
 const RIPPLE_STEP_MS = 18;
 const BAR_GAP_PX = 10;
@@ -59,7 +63,12 @@ type Props = {
   revealBlock?: (blockId: string) => boolean;
   /** Tells the owner when the hover card needs the live reply text. */
   onOpenChange?: (open: boolean) => void;
+  /** Below the rail's width the pane header gets a prompt menu instead (same prompts, same jump). */
+  onTriggerChange?: (item: ExpandingButtonGroupItem | null) => void;
 };
+
+/** The rail hides below this container width (`@max-[58rem]` on the rail). */
+const RAIL_MIN_REM = 58;
 
 export const PromptOutline = memo(function PromptOutline({
   blocks,
@@ -68,6 +77,7 @@ export const PromptOutline = memo(function PromptOutline({
   visible = true,
   revealBlock,
   onOpenChange,
+  onTriggerChange,
 }: Props) {
   const t = useT();
   const prompts = promptBlocks(blocks);
@@ -238,6 +248,64 @@ export const PromptOutline = memo(function PromptOutline({
     window.requestAnimationFrame(align);
   };
 
+  const [narrow, setNarrow] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  // Mirrors the rail's container query so the header menu shows exactly when the rail is hidden.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- resize observer on the transcript scope element
+  useEffect(() => {
+    const el = scope.current;
+    if (!el) return;
+    return observeResize(el, () =>
+      setNarrow(
+        el.clientWidth <
+          RAIL_MIN_REM * parseFloat(getComputedStyle(document.documentElement).fontSize),
+      ),
+    );
+  }, [scope]);
+  const menuShown = !!onTriggerChange && visible && narrow && prompts.length >= MIN_PROMPTS;
+  const menuLabel = t("Prompts");
+  // Publishes the header action to the pane while the rail is hidden; removes it otherwise.
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- registers the header action in the pane's action slot while mounted and unregisters on unmount
+  useEffect(() => {
+    if (!onTriggerChange) return;
+    onTriggerChange(
+      menuShown
+        ? {
+            id: "prompt-outline",
+            label: menuLabel,
+            icon: <Menu className="icon-sm" strokeWidth={1.75} />,
+            render: (renderTrigger) =>
+              renderTrigger({
+                ref: setMenuAnchor,
+                "aria-haspopup": "menu",
+                "aria-expanded": menuOpen,
+                onSelect: () => setMenuOpen((value) => !value),
+              }),
+          }
+        : null,
+    );
+    return () => onTriggerChange(null);
+  }, [onTriggerChange, menuShown, menuLabel, menuOpen]);
+  const headerMenu =
+    menuShown && menuOpen && menuAnchor ? (
+      <DropdownMenu
+        anchor={menuAnchor}
+        label={menuLabel}
+        width={320}
+        maxHeight={360}
+        items={prompts.map((prompt) => ({
+          kind: "item" as const,
+          id: prompt.id,
+          label: promptLabel(prompt),
+          selectionRole: "radio" as const,
+          checked: prompt.id === activeId,
+        }))}
+        onPick={jumpTo}
+        onClose={() => setMenuOpen(false)}
+      />
+    ) : null;
+
   if (prompts.length < MIN_PROMPTS) return null;
 
   const activeIndex = prompts.findIndex((prompt) => prompt.id === activeId);
@@ -259,104 +327,107 @@ export const PromptOutline = memo(function PromptOutline({
   };
 
   return (
-    <div
-      ref={rail}
-      role="toolbar"
-      aria-label={t("Prompts")}
-      aria-orientation="vertical"
-      style={
-        {
-          "--outline-width": `${BAR_WIDTH_LIFTED_PX}px`,
-          "--outline-max-height": `${stackBudget}px`,
-        } as React.CSSProperties
-      }
-      onMouseEnter={() => {
-        pointerInside.current = true;
-      }}
-      onMouseLeave={leaveRail}
-      onBlur={blurRail}
-      onKeyDown={onKeyDown}
-      // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
-      className="absolute top-1/2 right-4 z-(--layer-pane-sheet) flex -translate-y-1/2 flex-col items-end w-(--outline-width) max-h-(--outline-max-height) @max-[58rem]:hidden"
-    >
-      {bars.map((prompt, index) => {
-        const lift = barLift(index, hoverIndex);
-        const distance = hoverIndex < 0 ? 0 : Math.abs(index - hoverIndex);
-        // The pointer owns the fill while it is on the rail. Off the rail, the
-        // fill goes back to marking the scroll position.
-        const lit = hoverIndex >= 0 ? index === hoverIndex : prompt.id === activeId;
-        return (
-          <Button
-            fullWidth
-            iconOnly
-            label={promptLabel(prompt)}
-            title=""
-            variant="item"
-            key={prompt.id}
-            type="button"
-            data-prompt-bar={prompt.id}
-            tabIndex={prompt.id === tabId ? 0 : -1}
-            aria-label={promptLabel(prompt)}
-            aria-current={prompt.id === activeId ? "true" : undefined}
-            onMouseEnter={(event) => hoverBar(prompt.id, event.currentTarget)}
-            onFocus={(event) => {
-              setFocusId(prompt.id);
-              // A click focuses the bar too, and the pointer already opened
-              // the card. Only arrow keys and Tab open it from here.
-              if (event.currentTarget.matches(":focus-visible")) {
-                showBar(prompt.id, event.currentTarget);
-              }
-            }}
-            onClick={() => jumpTo(prompt.id)}
-            style={{ "--bar-pitch": `${BAR_HEIGHT_PX + stack.gap}px` } as CSSProperties}
-            className="prompt-outline-bar w-full shrink-0"
-          >
-            <span
-              aria-hidden="true"
-              style={
-                {
-                  "--bar-height": `${BAR_HEIGHT_PX}px`,
-                  "--bar-width": `${BAR_WIDTH_PX + (BAR_WIDTH_LIFTED_PX - BAR_WIDTH_PX) * lift}px`,
-                  "--bar-opacity": lit ? BAR_OPACITY_LIT : BAR_OPACITY_IDLE,
-                  // The wave reaches the outer bars a beat after the hovered one.
-                  "--bar-delay": `${Math.min(distance, RIPPLE_SPAN) * RIPPLE_STEP_MS}ms`,
-                } as CSSProperties
-              }
-              className="prompt-outline-mark rounded-full bg-(--ui-tone-neutral-solid) transition-[width,opacity] duration-200 ease-out"
-            />
-          </Button>
-        );
-      })}
-      {open && preview && hoverIndex >= 0 ? (
-        <Popover
-          anchor={hover?.el ?? null}
-          side="left"
-          align="center"
-          gap={10}
-          width={POPOVER_WIDTH}
-          solid
-          onDismiss={close}
-          aria-label={t("Prompt preview")}
-          className="pointer-events-none flex flex-col gap-1 p-3 font-sans"
-        >
-          <Text as="p" size="body" tone="primary" weight="medium" leading="snug" truncate>
-            {preview.title}
-          </Text>
-          {preview.reply ? (
-            <ClampText
-              as="p"
-              lines={2}
-              expandable={false}
-              size="body"
-              tone="secondary"
-              leading="snug"
+    <>
+      <div
+        ref={rail}
+        role="toolbar"
+        aria-label={t("Prompts")}
+        aria-orientation="vertical"
+        style={
+          {
+            "--outline-width": `${BAR_WIDTH_LIFTED_PX}px`,
+            "--outline-max-height": `${stackBudget}px`,
+          } as React.CSSProperties
+        }
+        onMouseEnter={() => {
+          pointerInside.current = true;
+        }}
+        onMouseLeave={leaveRail}
+        onBlur={blurRail}
+        onKeyDown={onKeyDown}
+        // z-30: in-pane overlay above the transcript; no in-pane layer scale exists, so the literal stays.
+        className="absolute top-1/2 right-4 z-(--layer-pane-sheet) flex -translate-y-1/2 flex-col items-end w-(--outline-width) max-h-(--outline-max-height) @max-[58rem]:hidden"
+      >
+        {bars.map((prompt, index) => {
+          const lift = barLift(index, hoverIndex);
+          const distance = hoverIndex < 0 ? 0 : Math.abs(index - hoverIndex);
+          // The pointer owns the fill while it is on the rail. Off the rail, the
+          // fill goes back to marking the scroll position.
+          const lit = hoverIndex >= 0 ? index === hoverIndex : prompt.id === activeId;
+          return (
+            <Button
+              fullWidth
+              iconOnly
+              label={promptLabel(prompt)}
+              title=""
+              variant="item"
+              key={prompt.id}
+              type="button"
+              data-prompt-bar={prompt.id}
+              tabIndex={prompt.id === tabId ? 0 : -1}
+              aria-label={promptLabel(prompt)}
+              aria-current={prompt.id === activeId ? "true" : undefined}
+              onMouseEnter={(event) => hoverBar(prompt.id, event.currentTarget)}
+              onFocus={(event) => {
+                setFocusId(prompt.id);
+                // A click focuses the bar too, and the pointer already opened
+                // the card. Only arrow keys and Tab open it from here.
+                if (event.currentTarget.matches(":focus-visible")) {
+                  showBar(prompt.id, event.currentTarget);
+                }
+              }}
+              onClick={() => jumpTo(prompt.id)}
+              style={{ "--bar-pitch": `${BAR_HEIGHT_PX + stack.gap}px` } as CSSProperties}
+              className="prompt-outline-bar w-full shrink-0"
             >
-              {[preview.reply, preview.detail].filter(Boolean).join(" ")}
-            </ClampText>
-          ) : null}
-        </Popover>
-      ) : null}
-    </div>
+              <span
+                aria-hidden="true"
+                style={
+                  {
+                    "--bar-height": `${BAR_HEIGHT_PX}px`,
+                    "--bar-width": `${BAR_WIDTH_PX + (BAR_WIDTH_LIFTED_PX - BAR_WIDTH_PX) * lift}px`,
+                    "--bar-opacity": lit ? BAR_OPACITY_LIT : BAR_OPACITY_IDLE,
+                    // The wave reaches the outer bars a beat after the hovered one.
+                    "--bar-delay": `${Math.min(distance, RIPPLE_SPAN) * RIPPLE_STEP_MS}ms`,
+                  } as CSSProperties
+                }
+                className="prompt-outline-mark rounded-full bg-(--ui-tone-neutral-solid) transition-[width,opacity] duration-200 ease-out"
+              />
+            </Button>
+          );
+        })}
+        {open && preview && hoverIndex >= 0 ? (
+          <Popover
+            anchor={hover?.el ?? null}
+            side="left"
+            align="center"
+            gap={10}
+            width={POPOVER_WIDTH}
+            solid
+            onDismiss={close}
+            aria-label={t("Prompt preview")}
+            className="pointer-events-none flex flex-col gap-1 p-3 font-sans"
+          >
+            <Text as="p" size="body" tone="primary" weight="medium" leading="snug" truncate>
+              {preview.title}
+            </Text>
+            {preview.reply ? (
+              <ClampText
+                as="p"
+                lines={2}
+                expandable={false}
+                size="body"
+                tone="secondary"
+                leading="snug"
+              >
+                {[preview.reply, preview.detail].filter(Boolean).join(" ")}
+              </ClampText>
+            ) : null}
+          </Popover>
+        ) : null}
+      </div>
+      {headerMenu}
+    </>
   );
 });
 

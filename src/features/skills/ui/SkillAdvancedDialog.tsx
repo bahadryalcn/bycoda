@@ -6,7 +6,7 @@ import styles from "./SkillsPage.module.css";
 
 export function SkillAdvancedDialog({ onClose }: { onClose: () => void }) {
   return (
-    <Modal title={t("Advanced: skill controls and folders")} size="md" onClose={onClose}>
+    <Modal title={t("Skill folders")} size="md" onClose={onClose}>
       <Text
         as="p"
         size="secondary"

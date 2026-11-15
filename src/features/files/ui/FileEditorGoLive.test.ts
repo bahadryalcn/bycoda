@@ -100,7 +100,7 @@ describe("HTML Go Live", () => {
   }
   const button = () =>
     [...container.querySelectorAll<HTMLButtonElement>('button, [role="tab"]')].find(
-      (item) => item.textContent === "Go Live",
+      (item) => item.textContent === "Open in Chrome",
     );
   const opened = () =>
     bridge.invoke.mock.calls.filter(([command]) => command === "open_html_in_chrome");

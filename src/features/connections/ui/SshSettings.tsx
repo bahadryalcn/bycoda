@@ -277,7 +277,7 @@ export function SshSettings({
                 size="inline"
                 kind="filtered"
                 className="mbs-2"
-                description={t("No matching SSH keys.")}
+                description={t("No matching SSH keys")}
                 onReset={() => setKeySearch("")}
               />
             ) : null}

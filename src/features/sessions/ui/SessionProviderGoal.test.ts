@@ -84,7 +84,7 @@ it.each([
 );
 
 it.each([
-  ["active", "Goal set"],
+  ["active", "Pursuing goal"],
   ["paused", "Goal paused"],
   ["blocked", "Goal blocked"],
   ["usageLimited", "Goal hit a usage limit"],
@@ -122,7 +122,7 @@ it("retains complete Turkish, RTL and emoji objective text and updates native st
     providerGoal: { ...goal("paused"), objective },
   });
   expect(host.textContent).toContain("Goal paused");
-  expect(host.textContent).not.toContain("Goal set");
+
   expect(host.textContent).toContain(objective);
   await act(async () => setLanguagePreference("tr"));
   expect(host.textContent).toContain(objective);
@@ -183,7 +183,6 @@ it("distinguishes pursuing work from an idle goal and formats unbudgeted usage",
   expect(host.textContent).toContain("Pursuing goal");
   expect(host.textContent).toContain("123 tokens");
   expect(host.textContent).not.toContain(" / ");
-  expect(host.textContent).not.toContain("Goal set");
 });
 
 it("preserves permission blockers for both goal actions", async () => {

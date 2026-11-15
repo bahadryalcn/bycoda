@@ -1,6 +1,7 @@
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { Text } from "../../../../shared/ui/Text";
+import { StatRow, StatTile } from "../../../../shared/ui/StatTile";
 import type { ReactNode } from "react";
 import type {
   AssistantActivity,
@@ -9,10 +10,8 @@ import type {
 import { formatDate, formatNumber, t } from "../../../../shared/i18n";
 import { useMinuteNow } from "../../../../shared/hooks/useMinuteNow";
 import { BarChart, DonutChart } from "../../../../shared/ui/Charts";
-import { Button } from "../../../../shared/ui/Button";
 import { Heading } from "../../../../shared/ui/Heading";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
-import { Surface } from "../../../../shared/ui/Surface";
 import { statusLabel } from "./assistantRoomHelpers";
 import {
   activityPerDay,
@@ -24,37 +23,6 @@ import {
 import styles from "./TodayTab.module.css";
 
 const CHART_HEIGHT = 120;
-
-function Tile({ value, caption, onOpen }: { value: number; caption: string; onOpen?: () => void }) {
-  const body = (
-    <>
-      <Text
-        as="span"
-        size="heading"
-        tone="inherit"
-        weight="medium"
-        leading="tight"
-        className={styles.tileValue}
-      >
-        {formatNumber(value)}
-      </Text>
-      <Text size="caption" tone="muted" leading="inherit">
-        {caption}
-      </Text>
-    </>
-  );
-  return (
-    <Surface variant="card" padding="none" className={styles.tile}>
-      {onOpen ? (
-        <Button variant="item" layout="stacked" align="start" onClick={onOpen}>
-          {body}
-        </Button>
-      ) : (
-        <div className={styles.tileBody}>{body}</div>
-      )}
-    </Surface>
-  );
-}
 
 function ChartBlock({
   title,
@@ -104,28 +72,28 @@ export function TodayGlance({
   return (
     <section className={styles.glance} aria-label={t("Today at a glance")}>
       <SectionLabel as="h2">{t("Today at a glance")}</SectionLabel>
-      <div className={styles.tiles}>
-        <Tile
-          value={counts.waiting}
-          caption={t("Waiting for you")}
+      <StatRow label={t("Today at a glance")}>
+        <StatTile
+          value={formatNumber(counts.waiting)}
+          label={t("Waiting for you")}
           onOpen={onOpenJobs && (() => onOpenJobs("waiting"))}
         />
-        <Tile
-          value={counts.working}
-          caption={t("Working")}
+        <StatTile
+          value={formatNumber(counts.working)}
+          label={t("Working")}
           onOpen={onOpenJobs && (() => onOpenJobs("working"))}
         />
-        <Tile
-          value={counts.doneToday}
-          caption={t("Done today")}
+        <StatTile
+          value={formatNumber(counts.doneToday)}
+          label={t("Done today")}
           onOpen={onOpenJobs && (() => onOpenJobs("doneToday"))}
         />
-        <Tile
-          value={updatesSince(activity, dayStart)}
-          caption={t("Updates today")}
+        <StatTile
+          value={formatNumber(updatesSince(activity, dayStart))}
+          label={t("Updates today")}
           onOpen={onOpenHistory}
         />
-      </div>
+      </StatRow>
       <Disclosure
         summary={t("Recent activity")}
         variant="row"

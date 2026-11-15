@@ -185,24 +185,33 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
               </Badge>
             ) : null;
           })}
-          {!pending && !visible.length && !editor && !error ? (
-            <EmptyState
-              size="inline"
-              kind="empty"
-              description={t("No usage budgets. Add a project, session or workspace budget.")}
-            />
-          ) : null}
         </div>
-        <Button
-          ref={addButton}
-          onClick={() => {
-            setEditor("new");
-            setSaved(false);
-          }}
-        >
-          {t("Add budget")}
-        </Button>
+        {visible.length || editor ? (
+          <Button
+            ref={addButton}
+            onClick={() => {
+              setEditor("new");
+              setSaved(false);
+            }}
+          >
+            {t("Add budget")}
+          </Button>
+        ) : null}
       </div>
+      {!pending && !visible.length && !editor && !error ? (
+        <EmptyState
+          size="inline"
+          kind="empty"
+          description={t("No usage budgets. Add a project, session or workspace budget.")}
+          action={{
+            label: t("Add budget"),
+            onClick: () => {
+              setEditor("new");
+              setSaved(false);
+            },
+          }}
+        />
+      ) : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {saved ? <Alert tone="info">{t("Budget saved")}</Alert> : null}
       {editor && editorVisible ? (
@@ -302,6 +311,22 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                         ? "Approaching budget"
                         : "Within budget",
                   )}
+                  {!pending ? (
+                    <>
+                      {" · "}
+                      <Timestamp value={now} format="relative" />
+                    </>
+                  ) : null}
+                  {budget.metric === "accountPercent" && reading.resetsAt != null ? (
+                    <>
+                      {` · ${formatResetCountdown(reading.resetsAt - now)} · `}
+                      <Timestamp
+                        value={reading.resetsAt}
+                        format="datetime-seconds"
+                        tooltip={false}
+                      />
+                    </>
+                  ) : null}
                 </Text>
               </>
             ) : (
@@ -313,34 +338,11 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 )}
               </Alert>
             )}
-            {pending && known ? (
-              <LoadingText size="caption" tone="secondary">
-                {t("Refreshing usage… Previous results remain visible.")}
-              </LoadingText>
-            ) : null}
-            {!pending && known ? (
-              <Text as="p">
-                {t("Last observed")}: <Timestamp value={now} format="relative" />
-              </Text>
-            ) : null}
             {budget.metric === "accountPercent" ? (
               <Text as="p">
                 {budget.provider} ·{" "}
                 {providerAccounts(budget.provider).find((a) => a.id === budget.accountId)?.label ??
-                  t("Account unavailable")}{" "}
-                · {t("Account-wide threshold, not attributed scope consumption.")}
-                {reading?.resetsAt != null ? (
-                  <>
-                    {` · ${formatResetCountdown(reading.resetsAt - now)} · `}
-                    <Timestamp value={reading.resetsAt} format="datetime-seconds" tooltip={false} />
-                  </>
-                ) : null}
-              </Text>
-            ) : null}
-            {budget.scope === "workspace" &&
-            !loadProjectGroups().some((g) => g.id === budget.target) ? (
-              <Text as="p" tone="danger">
-                {t("Workspace unavailable")}
+                  t("Account unavailable")}
               </Text>
             ) : null}
           </Surface>

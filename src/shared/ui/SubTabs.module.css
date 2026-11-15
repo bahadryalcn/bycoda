@@ -1,0 +1,24 @@
+/* Secondary navigation: the shared Tabs strip, one step lighter. Text only, no fill at rest,
+   a hairline underline on the selected tab. Unlayered so it wins over the Button `tab` look. */
+.list {
+  gap: var(--space-1);
+}
+.list [role="tab"] {
+  min-block-size: var(--ui-control-height-xs);
+  block-size: var(--ui-control-height-xs);
+  padding-inline: var(--space-2);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  box-shadow: inset 0 calc(var(--ui-focus-width) * -1) 0 transparent;
+}
+.list [role="tab"]:hover:not([aria-disabled="true"], [aria-selected="true"]) {
+  background: transparent;
+  color: var(--foreground);
+}
+.list [role="tab"][aria-selected="true"] {
+  background: transparent;
+  color: var(--foreground);
+  box-shadow: inset 0 calc(var(--ui-focus-width) * -1) 0 currentColor;
+}

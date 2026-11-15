@@ -78,7 +78,7 @@ export function SidebarAccountFooter({
             </Badge>
           </Tooltip>
         ) : null}
-        <SidebarUpdateFooter repositoryPrompt icon compact={compact} />
+        <SidebarUpdateFooter icon compact={compact} />
         <div {...surfaceAttributes(compact ? { frame: "pane", edge: "top" } : {}, styles.personal)}>
           {settings}
           {account}

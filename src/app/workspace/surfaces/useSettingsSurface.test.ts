@@ -1,3 +1,4 @@
+import { openSettingsSection } from "../../../features/settings/public/settingsLink";
 import { openModelsSettings } from "../../../features/settings/ui/models/modelsSettingsLink";
 // @vitest-environment happy-dom
 import { act, createElement } from "react";
@@ -40,6 +41,8 @@ it("returns to Servers after opening and changing settings sections", () => {
   const root = createRoot(container);
   try {
     act(() => root.render(createElement(Harness)));
+    act(() => openSettingsSection("groupLock"));
+    expect(deps.setSettingsSection).toHaveBeenLastCalledWith("groupLock");
     act(() => actions.openSettings("connections"));
     expect(deps.setServersViewOpen).toHaveBeenLastCalledWith(false);
     deps.settingsOpenRef.current = true;

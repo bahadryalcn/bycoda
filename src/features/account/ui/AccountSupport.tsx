@@ -1,15 +1,13 @@
-import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { openExternal } from "../../../platform/tauri/openExternal";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
-import { Divider } from "../../../shared/ui/Divider";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Select } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { TextField } from "../../../shared/ui/TextField";
+import { Group, Row } from "../../settings/public/settingsControls";
 import { accountApi, reportAccountFailure } from "../model/accountApi";
 import {
   EMPTY_SUPPORT_DRAFT,
@@ -64,6 +62,7 @@ export function ContactByEmail() {
       <div className={styles.actions}>
         <Button
           variant="secondary"
+          size="sm"
           onClick={() => {
             setFailed(false);
             openExternal(`mailto:${address}`).catch(() => setFailed(true));
@@ -93,19 +92,16 @@ export function ProjectLinks() {
 export function GuestSupport() {
   useLocale();
   return (
-    <section className={styles.section} aria-labelledby="account-guest-support">
-      <SectionLabel labelId="account-guest-support">{t("Support")}</SectionLabel>
-      <Text as="p" size="body" tone="secondary" className={styles.lead}>
-        {t("Questions or problems? Write to us.")}
-      </Text>
-      <div className={styles.actions}>
-        <Button variant="secondary" onClick={openFeedbackDialog}>
-          {t("Send feedback")}
-        </Button>
-      </div>
-      <ContactByEmail />
-      <ProjectLinks />
-    </section>
+    <Group title={t("Support")}>
+      <Row label={t("Questions or problems? Write to us.")}>
+        <ContactByEmail />
+      </Row>
+      {PRODUCT_IDENTITY.repositoryUrl ? (
+        <Row label={t("GitHub")}>
+          <ProjectLinks />
+        </Row>
+      ) : null}
+    </Group>
   );
 }
 
@@ -140,60 +136,77 @@ export function AccountSupport() {
   };
 
   return (
-    <section className={styles.section} aria-labelledby="account-support">
-      <SectionLabel labelId="account-support">{t("Contact support")}</SectionLabel>
-      <Text as="p" size="body" tone="secondary" className={styles.lead}>
-        {t(
+    <>
+      <Group
+        title={t("Contact support")}
+        action={
+          <Button variant="primary" size="sm" loading={busy} onClick={send}>
+            {t("Send to support")}
+          </Button>
+        }
+        description={t(
           "Nothing from your sessions, code, logs or file paths is attached automatically. Do not paste passwords, tokens or other secrets.",
         )}
-      </Text>
-      {result?.status === "sent" ? (
-        <InlineMessage tone="success">
-          {t("Your request was sent. Reference: {p0}", { p0: result.reference })}
-        </InlineMessage>
-      ) : null}
-      <Select
-        label={t("Category")}
-        value={draft.category}
-        options={SUPPORT_CATEGORIES.map((value) => ({ value, label: categoryLabel(value) }))}
-        onValueChange={(value) => setDraft({ ...draft, category: value as SupportCategory })}
-      />
-      <TextField
-        label={t("Subject")}
-        value={draft.subject}
-        error={issue("subject-missing", "subject-long")}
-        onChange={(event) => setDraft({ ...draft, subject: event.target.value })}
-      />
-      <TextareaField
-        label={t("Message")}
-        value={draft.body}
-        minRows={5}
-        maxRows={14}
-        autosize
-        error={issue("body-missing", "body-long")}
-        onChange={(event) => setDraft({ ...draft, body: event.target.value })}
-      />
-      {result?.status === "rate-limited" ? (
-        <InlineError>
-          {t("Too many requests. Wait a little and try again; your message is kept.")}
-        </InlineError>
-      ) : null}
-      {result?.status === "failed" ? (
-        <InlineError>{t("Could not send your request. Your message is kept.")}</InlineError>
-      ) : null}
-      <div className={styles.actions}>
-        <Button variant="primary" loading={busy} onClick={send}>
-          {t("Send to support")}
-        </Button>
-      </div>
-      <Divider />
-      <div className={styles.actions}>
-        <Button variant="secondary" onClick={openFeedbackDialog}>
-          {t("Send feedback")}
-        </Button>
-        <ContactByEmail />
-        <ProjectLinks />
-      </div>
-    </section>
+        feedback={
+          result?.status === "sent" ? (
+            <InlineMessage tone="success">
+              {t("Your request was sent. Reference: {p0}", { p0: result.reference })}
+            </InlineMessage>
+          ) : result?.status === "rate-limited" ? (
+            <InlineError>
+              {t("Too many requests. Wait a little and try again; your message is kept.")}
+            </InlineError>
+          ) : result?.status === "failed" ? (
+            <InlineError>{t("Could not send your request. Your message is kept.")}</InlineError>
+          ) : undefined
+        }
+      >
+        <Row label={t("Category")}>
+          <Select
+            label={t("Category")}
+            hideLabel
+            value={draft.category}
+            options={SUPPORT_CATEGORIES.map((value) => ({ value, label: categoryLabel(value) }))}
+            onValueChange={(value) => setDraft({ ...draft, category: value as SupportCategory })}
+          />
+        </Row>
+        <Row label={t("Subject")} stacked>
+          <TextField
+            label={t("Subject")}
+            hideLabel
+            value={draft.subject}
+            error={issue("subject-missing", "subject-long")}
+            onChange={(event) => setDraft({ ...draft, subject: event.target.value })}
+          />
+        </Row>
+        <Row label={t("Message")} stacked>
+          <TextareaField
+            label={t("Message")}
+            hideLabel
+            value={draft.body}
+            minRows={5}
+            maxRows={14}
+            autosize
+            error={issue("body-missing", "body-long")}
+            onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+          />
+        </Row>
+      </Group>
+      <Group title={null}>
+        <Row label={t("Feedback")}>
+          <Button variant="secondary" size="sm" onClick={openFeedbackDialog}>
+            {t("Send feedback")}
+          </Button>
+        </Row>
+        <Row label={t("E-mail")}>
+          <ContactByEmail />
+        </Row>
+        {PRODUCT_IDENTITY.repositoryUrl ? (
+          <Row label={t("GitHub")}>
+            <ProjectLinks />
+          </Row>
+        ) : null}
+      </Group>
+    </>
   );
 }

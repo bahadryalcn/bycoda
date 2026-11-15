@@ -10,8 +10,7 @@ import { EmptyState } from "../../../../shared/ui/EmptyState";
 import { FailureState } from "../../../../shared/ui/FailureState";
 import { FieldGroup } from "../../../../shared/ui/FieldGroup";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
-import { LoadingText } from "../../../../shared/ui/LoadingText";
-import { Group } from "../../../settings/public/settingsControls";
+import { Group, SettingsFeedback } from "../../../settings/public/settingsControls";
 import { defaultModelSettings } from "../../../sessions/public/models";
 import { useModelSource } from "../../../sessions/public/modelSource";
 import { isRemoteProvider } from "../../../connections/public/protocol";
@@ -38,11 +37,9 @@ export function ModelOrderSettings({ machineId, supported }: ModelOrderSettingsP
   const t = useT();
   if (!supported || !machineId)
     return (
-      <FailureState
-        size="inline"
-        title={t("Model order is unavailable on this Host.")}
-        description=""
-      />
+      <SettingsFeedback state="error">
+        {t("Model order is unavailable on this Host.")}
+      </SettingsFeedback>
     );
   return <OrderSettingsLoader key={machineId} machineId={machineId} />;
 }
@@ -52,21 +49,23 @@ function OrderSettingsLoader({ machineId }: { machineId: string }) {
   const client = useQueryClient();
   const settings = useOrderSettings(machineId);
   if (settings.routing.loading || settings.limits.isPending)
-    return <LoadingText>{t("Loading models and limits…")}</LoadingText>;
+    return <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>;
   if (!settings.routing.state || !settings.limits.data)
     return (
-      <FailureState
-        size="inline"
-        title={t("Models and limits could not be read.")}
-        description=""
-        error={settings.routing.error ?? settings.limits.error}
-        onRetry={async () => {
-          await Promise.all([
-            settings.limits.refetch(),
-            client.refetchQueries({ queryKey: [HOST_MODEL_ROUTING, machineId], exact: true }),
-          ]);
+      <SettingsFeedback
+        state="error"
+        action={{
+          label: t("Retry"),
+          onClick: async () => {
+            await Promise.all([
+              settings.limits.refetch(),
+              client.refetchQueries({ queryKey: [HOST_MODEL_ROUTING, machineId], exact: true }),
+            ]);
+          },
         }}
-      />
+      >
+        {t("Models and limits could not be read.")}
+      </SettingsFeedback>
     );
   return (
     <OrderSettingsForm

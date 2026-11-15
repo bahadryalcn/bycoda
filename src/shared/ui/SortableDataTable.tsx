@@ -76,7 +76,7 @@ export function DataTable({
  * Cells or a spanning group heading in DataTable; native table semantics stay in shared UI.
  * @group data
  * @use Stateful record rows inside DataTable, with optional detail content below the row.
- * @avoid Standalone lists: ListItem. Sorting: SortableDataTable.
+ * @avoid Standalone lists: CollectionRow. Sorting: SortableDataTable.
  */
 export function DataTableRow({
   cells,

@@ -58,10 +58,10 @@ export function ProviderDetailHeader({
       {harness === "cursor" || harness === "grok" ? (
         <Text as="span" size="caption" tone="secondary">
           {harness === "grok"
-            ? `${t("Sign-in")}: ${grokAuth.label}`
+            ? t("Sign-in: {p0}", { p0: grokAuth.label })
             : signInCompleted
               ? t("CLI sign-in completed")
-              : `${t("Sign-in")}: ${t("Not checked")}`}
+              : t("Sign-in: Not checked")}
         </Text>
       ) : null}
     </header>

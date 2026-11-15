@@ -47,6 +47,7 @@ import {
   saveUsageDisplayAccount,
   useUsageDisplayAccount,
 } from "../../features/providers/model/usageDisplayAccount";
+import { openSettingsSection } from "../../features/settings/public/settingsLink";
 import { WORKSPACE_REFRESH_EVENT } from "./WorkspaceControls";
 import { PiUsage } from "./PiUsage";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
@@ -290,9 +291,7 @@ export function UsageFooter({
   const showTerminals = terminals.length > 0;
   const showTerminalButton = Boolean(onNewTerminal || onShowTerminal || terminalUnavailableReason);
   const terminalLabel =
-    projectTerminalActive || terminalUnavailableReason
-      ? t("Terminal")
-      : t("New Terminal ({p0}`)", { p0: MOD });
+    projectTerminalActive || terminalUnavailableReason ? t("Terminal") : t("New Terminal");
   const onTerminalClick = projectTerminalActive
     ? (onShowTerminal ?? onNewTerminal)
     : (onNewTerminal ?? onShowTerminal);
@@ -328,6 +327,7 @@ export function UsageFooter({
           <>
             {wantClaude ? (
               <UsageProviderChip
+                onShowUsage={() => openSettingsSection("usage")}
                 limits={claude}
                 usageOnly
                 now={now}
@@ -347,6 +347,7 @@ export function UsageFooter({
             ) : null}
             {wantCodex ? (
               <UsageProviderChip
+                onShowUsage={() => openSettingsSection("usage")}
                 limits={codex}
                 usageOnly
                 now={now}
@@ -367,6 +368,7 @@ export function UsageFooter({
             ) : null}
             {showOpencodeChip ? (
               <UsageProviderChip
+                onShowUsage={() => openSettingsSection("usage")}
                 limits={opencode}
                 now={now}
                 project={project}
@@ -376,6 +378,7 @@ export function UsageFooter({
             ) : null}
             {showGrokChip ? (
               <UsageProviderChip
+                onShowUsage={() => openSettingsSection("usage")}
                 limits={grok}
                 now={now}
                 project={project}
@@ -401,6 +404,9 @@ export function UsageFooter({
             <Button
               iconOnly
               label={terminalLabel}
+              shortcut={
+                !projectTerminalActive && !terminalUnavailableReason ? MOD + "+`" : undefined
+              }
               variant="ghost"
               motion="none"
               type="button"

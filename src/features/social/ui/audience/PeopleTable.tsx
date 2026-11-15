@@ -40,7 +40,15 @@ function UpdatedDate({ value }: { value: number }) {
   );
 }
 
-type PersonRow = { id: string; name: string; person: SocialPerson };
+/** The sortable columns read their value from the row by key; the cells render from `person`. */
+type PersonRow = {
+  id: string;
+  name: string;
+  stage: string;
+  score: number;
+  updatedAt: number;
+  person: SocialPerson;
+};
 
 function PersonCell({ person, onOpen }: { person: SocialPerson; onOpen: (id: string) => void }) {
   const handle = person.handles.find((item) => item.username)?.username;
@@ -117,7 +125,11 @@ function TagsCell({ person }: { person: SocialPerson }) {
   );
 }
 
-/** Compact people table. Rows open the person panel; checkboxes select for bulk actions. */
+/**
+ * Compact people table. Rows open the person panel; checkboxes select for bulk actions.
+ * Name, Status, Score and Updated sort the loaded rows.
+ */
+// shortcut: sorting covers only the loaded page, move it to the Host query when lists grow past one page.
 export function PeopleTable({
   people,
   selected,
@@ -130,7 +142,15 @@ export function PeopleTable({
   onLoadMore,
 }: PeopleTableProps) {
   const rows = useMemo<PersonRow[]>(
-    () => people.map((person) => ({ id: person.id, name: person.name, person })),
+    () =>
+      people.map((person) => ({
+        id: person.id,
+        name: person.name,
+        stage: stageLabel(person.stage),
+        score: person.score?.value ?? 0,
+        updatedAt: person.updatedAt,
+        person,
+      })),
     [people],
   );
   const columns = useMemo<DataColumn<PersonRow>[]>(
@@ -139,7 +159,6 @@ export function PeopleTable({
         key: "name",
         sizing: "flex",
         label: t("Name"),
-        sortable: false,
         render: (_, row) => <PersonCell person={row.person} onOpen={onOpen} />,
       },
       {
@@ -154,7 +173,6 @@ export function PeopleTable({
         key: "stage",
         sizing: "content",
         label: t("Status"),
-        sortable: false,
         render: (_, row) => (
           <Badge size="sm" tone={stageTone(row.person.stage)}>
             {stageLabel(row.person.stage)}
@@ -165,7 +183,6 @@ export function PeopleTable({
         key: "score",
         sizing: "content",
         label: t("Score"),
-        sortable: false,
         numeric: true,
         hideBelow: "md",
         render: (_, row) => <ScoreCell person={row.person} />,
@@ -182,7 +199,6 @@ export function PeopleTable({
         key: "updatedAt",
         sizing: "content",
         label: t("Updated"),
-        sortable: false,
         render: (_, row) => <UpdatedDate value={row.person.updatedAt} />,
       },
     ],

@@ -4,7 +4,6 @@ import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import { dateTimeFormat } from "../../../../shared/lib/intl";
 import { t } from "../../../../shared/i18n";
-import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
 import { Sheet } from "../../../../shared/ui/Sheet";
 import { EmptyHint } from "../common/EmptyHint";
@@ -75,11 +74,6 @@ export function AccountsScreen({
         <Text size="caption" tone="secondary">
           {t("Last checked: {p1}", { p1: dateTimeFormat().format(data.checkedAt) })}
         </Text>
-      ) : null}
-      {snapshot && !hostOnline ? (
-        <InlineMessage tone="warning" live="off">
-          {t("Scheduling is offline. Scheduled posts and replies wait until the Host is back.")}
-        </InlineMessage>
       ) : null}
       <section className="social-accounts-section" aria-label={t("Accounts")}>
         {!snapshot && data.loading ? (

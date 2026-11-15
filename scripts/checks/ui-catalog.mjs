@@ -82,6 +82,8 @@ export function readUiCatalogSource(file, source) {
       statement.exportClause &&
       ts.isNamedExports(statement.exportClause)
     ) {
+      // A re-export without its own JSDoc aliases a component catalogued at its definition.
+      if (statement.moduleSpecifier && !statement.jsDoc?.length) continue;
       for (const item of statement.exportClause.elements) {
         if (item.isTypeOnly || !isComponentName(item.name.text)) continue;
         const original = (item.propertyName ?? item.name).text;

@@ -4,7 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { UsageMeter } from "../../../shared/ui/UsageMeter";
-import { t, useLocale } from "../../../shared/i18n";
+import { formatDate, t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import "./UsagePage.css";
 import { RefreshCw, MoreHorizontal } from "../../../shared/ui/icons";
@@ -132,7 +132,7 @@ function AccountLimits({
   refresh: number;
   identity?: ProviderAccountIdentity | null;
 }) {
-  const locale = useLocale();
+  useLocale();
   const menuButton = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const { id: accountId } = account;
@@ -196,7 +196,9 @@ function AccountLimits({
               value={limits.updatedAt}
               format="relative"
               relativeStyle="short"
-              title={`${t("Last observed")}: ${new Date(limits.updatedAt).toLocaleString(locale)}`}
+              title={t("Last observed: {p0}", {
+                p0: formatDate(limits.updatedAt, { dateStyle: "medium", timeStyle: "short" }),
+              })}
             />
           </Text>
         ) : null}

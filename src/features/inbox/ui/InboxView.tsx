@@ -1,3 +1,4 @@
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { InboxCollectionStatus } from "./InboxCollectionStatus";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
@@ -15,7 +16,6 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { PaneHeader } from "../../../shared/ui/PaneHeader";
 import { Sash } from "../../../shared/ui/Sash";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
@@ -129,6 +129,7 @@ let rememberedWidth = DEFAULT_WIDTH;
 
 type Props = {
   pullRequestsOnly?: boolean;
+  onPullRequestsOnlyChange?: (value: boolean) => void;
   onOpenProject?: () => void | Promise<void>;
   onAsk: (item: InboxItem) => Promise<string>;
   onAskRestart: (item: InboxItem) => Promise<string>;
@@ -152,6 +153,7 @@ type Props = {
 
 export function InboxView({
   pullRequestsOnly = false,
+  onPullRequestsOnlyChange,
   onOpenProject,
   onAsk,
   onAskRestart,
@@ -595,35 +597,6 @@ export function InboxView({
     />
   );
 
-  const viewRow =
-    !pullRequestsOnly && source === "github" ? (
-      <div className="flex shrink-0 items-center px-2 py-1">
-        <SegmentedControl
-          label={t("Type")}
-          value={
-            activeFilters.hiddenKinds.length >= 2
-              ? ""
-              : activeFilters.hiddenKinds.length === 0
-                ? "all"
-                : activeFilters.hiddenKinds.includes("issue")
-                  ? "pr"
-                  : "issue"
-          }
-          onValueChange={(next) =>
-            onFiltersChange({
-              ...activeFilters,
-              hiddenKinds: next === "all" ? [] : next === "pr" ? ["issue"] : ["pr"],
-            })
-          }
-          options={[
-            { value: "all", label: t("All") },
-            { value: "pr", label: t("Pull requests") },
-            { value: "issue", label: t("Issues") },
-          ]}
-        />
-      </div>
-    ) : null;
-
   const toolbarActions = (
     <ButtonGroup
       aria-label={source === "jira" ? t("Jira view") : t("Inbox")}
@@ -682,9 +655,6 @@ export function InboxView({
           label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
           variant="ghost"
           type="button"
-          aria-label={t("Mark loaded {p0} items as read", {
-            p0: INBOX_SOURCE_LABELS[source],
-          })}
           disabled={!sourceHasUnseen}
           onClick={() => {
             setFailedReadItem(null);
@@ -709,7 +679,6 @@ export function InboxView({
         label={t("Refresh")}
         variant="ghost"
         type="button"
-        aria-label={t("Refresh")}
         loading={refreshAction === "toolbar"}
         disabled={refreshAction === "retry"}
         onClick={() => requestRefresh("toolbar")}
@@ -729,7 +698,6 @@ export function InboxView({
       )}
     >
       {sourceRow}
-      {viewRow}
       {noSourcesConnected ? null : (
         <div className="inbox-collection-toolbar flex shrink-0 flex-wrap items-center gap-2 px-2 py-1.5">
           {showCollectionTools ? (
@@ -835,15 +803,13 @@ export function InboxView({
           ) : null}
         </Alert>
       ) : null}
-      {seenStorageStatus.state === "loading" ? (
-        <LoadingText>{t("Loading Inbox read status…")}</LoadingText>
-      ) : seenStorageStatus.state === "error" ? (
-        <Alert tone="danger">
+      {seenStorageStatus.state === "error" ? (
+        <InlineMessage
+          tone="warning"
+          action={{ label: t("Retry"), onClick: retryInboxSeenStorage }}
+        >
           {t("Inbox read status is unavailable. Unread indicators may be incomplete.")}
-          <Button variant="secondary" onClick={retryInboxSeenStorage}>
-            {t("Retry")}
-          </Button>
-        </Alert>
+        </InlineMessage>
       ) : null}
       {sourceError ? (
         <InboxLoadError
@@ -1010,9 +976,28 @@ export function InboxView({
           besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />
         }
         icon={toolNavigation ? undefined : <Inbox strokeWidth={1.75} />}
-        title={toolNavigation ? undefined : pullRequestsOnly ? t("Pull Requests") : t("Inbox")}
+        title={
+          toolNavigation
+            ? undefined
+            : pullRequestsOnly && !onPullRequestsOnlyChange
+              ? t("Pull Requests")
+              : t("Inbox")
+        }
         titleAs="h1"
-        trailing={IS_MAC ? null : <WindowControls />}
+        trailing={
+          <>
+            {onPullRequestsOnlyChange ? (
+              <Button
+                variant="tab"
+                pressed={pullRequestsOnly}
+                onClick={() => onPullRequestsOnlyChange(!pullRequestsOnly)}
+              >
+                {t("Pull requests")}
+              </Button>
+            ) : null}
+            {IS_MAC ? null : <WindowControls />}
+          </>
+        }
         className={toolNavigation ? "items-stretch" : undefined}
       >
         {toolNavigation ? <ToolNavigation /> : null}

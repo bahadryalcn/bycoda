@@ -94,30 +94,32 @@ afterEach(async () => {
 });
 
 describe("onboarding account step", () => {
-  it("leads the first run with sign-in and a guest choice", async () => {
+  it("leads the first run with one secondary sign-in beside the footer Continue", async () => {
     await render();
-    expect(text()).toContain("Sign in to sync your stats across devices");
     expect(text()).toContain("Sign in with browser");
-    expect(text()).toContain("Continue as guest");
+    expect(text()).not.toContain("Continue as guest");
+    expect(
+      [...container.querySelectorAll("button")].find((item) => item.textContent === "Continue"),
+    ).toBeTruthy();
   });
 
-  it("continues as guest, persists the choice and moves on to the local setup", async () => {
+  it("continues without an account, persists the choice and moves on to the local setup", async () => {
     await render();
-    await click("Continue as guest");
+    await click("Continue");
     expect(text()).toContain("Workspace body");
     expect(localStorage.getItem(KEY)).not.toBeNull();
     expect(account.signIn).not.toHaveBeenCalled();
     await act(async () => root.unmount());
     root = createRoot(container);
     await render();
-    expect(text()).not.toContain("Sign in to sync your stats");
+    expect(text()).not.toContain("Sign in with browser");
   });
 
   it("asks about anonymous statistics after the account step until answered", async () => {
     account.stats = null;
     await render();
-    await click("Continue as guest");
-    expect(text()).toContain("Share anonymous statistics?");
+    await click("Continue");
+    expect(text()).toContain("Statistics");
     expect(text()).toContain("Never sent: your sessions, prompts, code");
     await click("Don't share");
     expect(account.setStats).toHaveBeenCalledWith("off");
@@ -151,11 +153,11 @@ describe("onboarding account step", () => {
     expect(text()).toContain("Workspace body");
   });
 
-  it("returns to the step with the error and keeps the guest option on failure", async () => {
+  it("returns to the step with the error and keeps Continue on failure", async () => {
     account.state = { phase: "signed-out", notice: "sign-in-failed", message: "Network down" };
     await render();
     expect(text()).toContain("Network down");
-    expect(text()).toContain("Continue as guest");
+    expect(text()).toContain("Continue");
     account.state = { phase: "signed-out", notice: "declined", message: null };
     await render();
     expect(text()).toContain("Sign-in was cancelled.");
@@ -165,7 +167,7 @@ describe("onboarding account step", () => {
   it("is hidden when accounts are not available in the build", async () => {
     account.state = { phase: "unavailable" };
     await render();
-    expect(text()).not.toContain("Sign in to sync your stats");
+    expect(text()).not.toContain("Sign in with browser");
     expect(text()).toContain("Workspace body");
   });
 

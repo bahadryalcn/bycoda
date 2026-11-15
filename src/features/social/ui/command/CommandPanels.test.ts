@@ -20,9 +20,9 @@ afterEach(() => {
 
 it("labels the four summary cards and shows dashes before the first load", () => {
   act(() => root.render(createElement(SummaryCards, {})));
-  const cards = [...element.querySelectorAll(".command-card")].map((card) => [
-    card.querySelector(".command-card-label")?.textContent,
-    card.querySelector(".command-card-value")?.textContent,
+  const cards = [...element.querySelectorAll("[role=group] > div")].map((card) => [
+    card.children[0]?.textContent,
+    card.children[1]?.textContent,
   ]);
   expect(cards).toEqual([
     ["Sent today", "—"],
@@ -40,12 +40,9 @@ it("shows a loaded zero as 0, not as a dash", () => {
       }),
     ),
   );
-  expect([...element.querySelectorAll(".command-card-value")].map((n) => n.textContent)).toEqual([
-    "0",
-    "0",
-    "0",
-    "0%",
-  ]);
+  expect(
+    [...element.querySelectorAll("[role=group] > div > :nth-child(2)")].map((n) => n.textContent),
+  ).toEqual(["0", "0", "0", "0%"]);
 });
 
 it("keeps the owner queue section and renders the browser checks inside it", () => {
@@ -64,23 +61,18 @@ it("keeps the owner queue section and renders the browser checks inside it", () 
   expect(section?.querySelector(".command-muted")).toBeNull();
 });
 
-it("says how many actions wait for approval, with the number filled in", () => {
+it("states the waiting count once, on the Waiting for you badge", () => {
   act(() => root.render(createElement(WaitingForYou, { approvalCount: 2 }, null)));
-  expect(element.textContent).toContain("2 actions wait for your approval.");
-  expect(element.textContent).not.toContain("{count}");
+  expect(element.querySelector('[aria-label="2 waiting for you"]')?.textContent).toBe("2");
+  expect(element.textContent).not.toContain("wait for your approval");
 });
 
-it("uses the singular for exactly one waiting action", () => {
-  act(() => root.render(createElement(WaitingForYou, { approvalCount: 1 }, null)));
-  expect(element.textContent).toContain("1 action waits for your approval.");
-});
-
-it("shows the reply rate with a meter and names the approvals on the Pending tile", () => {
+it("shows the reply rate with a meter", () => {
   const summary = { sentToday: 3, pending: 2, newPeople: 5, replyRate: 0.25, waitingForYou: 0 };
-  act(() => root.render(createElement(SummaryCards, { summary, approvalCount: 2 })));
+  act(() => root.render(createElement(SummaryCards, { summary })));
   const meter = element.querySelector('[role="meter"]');
   expect(meter?.getAttribute("aria-valuenow")).toBe("25");
-  expect(element.querySelector(".command-card-note")?.textContent).toBe("2 waiting for approval");
+  expect(element.querySelector(".command-card-note")).toBeNull();
 });
 
 it("adds approvals and browser checks into one count badge", () => {

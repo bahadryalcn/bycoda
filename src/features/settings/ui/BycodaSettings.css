@@ -171,14 +171,6 @@
   }
 }
 
-/* The header row replaces PageHeader on the settings pages; the standalone form stays supported. */
-.settings-page-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-block-end: 20px;
-}
-
 /* One section rhythm: a heading above a framed topic, --settings-group-gap between topics.
    The frame is a thin border with hairline row dividers and no fill (owner decision 2026-10-31,
    V3-013); its roles are --ui-settings-group-* and --ui-settings-hairline in styles/index.css. */

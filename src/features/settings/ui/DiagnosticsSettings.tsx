@@ -95,7 +95,7 @@ export function DiagnosticsGroup() {
   };
 
   return (
-    <Group title={t("Diagnostics")}>
+    <Group title={null}>
       <Row
         id="performance-trace"
         label={t("Performance trace")}

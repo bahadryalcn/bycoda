@@ -7,7 +7,6 @@ import type { AssistantSnapshot } from "../../../../shared/model/host-contracts/
 
 const room = vi.hoisted(() => ({
   healthAnchor: {} as HTMLElement,
-  presenceAnchor: null,
   readError: "Host disconnected",
   roomPrivacy: { pending: false },
 }));
@@ -24,7 +23,11 @@ it("shows read failure as offline inside the health popover, then recovers", asy
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const snapshot = { lastHeartbeatAt: 1, usage: { total: 0 } } as AssistantSnapshot;
+  const snapshot = {
+    lastHeartbeatAt: 1,
+    usage: { total: 0 },
+    presence: { state: "present" },
+  } as AssistantSnapshot;
   try {
     await act(async () => root.render(createElement(RoomStatusPopovers, { snapshot })));
     expect(container.textContent).toContain("Offline");

@@ -1065,7 +1065,6 @@ function ProjectBrowserPanel({
           <Button
             motion="none"
             type="button"
-            variant="primary"
             disabled={busy || state?.runtime?.installing}
             onClick={() => void action(() => request("browser.setup"))}
           >

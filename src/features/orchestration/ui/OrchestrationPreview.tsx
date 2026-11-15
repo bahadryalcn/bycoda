@@ -340,8 +340,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
             <HarnessIcon harness={proposal.author.harness} className="icon-xs shrink-0" />
             <Tooltip label={HARNESS_TITLE[proposal.author.harness]} asChild>
               <Text size="inherit" tone="inherit" truncate>
-                {t("Lead · ")}
-                {proposal.author.name}
+                {t("Lead · {p0}", { p0: proposal.author.name })}
               </Text>
             </Tooltip>
             {!!proposal.tasks.length && (
@@ -396,15 +395,6 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
           )}
         </div>
       </div>
-      {planning && (
-        <Text as="p" size="caption" tone="secondary" leading="relaxed" className="px-3 pb-2.5">
-          {proposal.settings.choices.length
-            ? t(
-                "Your lead is choosing tasks and worker models. Review the assignments here before starting.",
-              )
-            : t("Checking available harnesses and models…")}
-        </Text>
-      )}
       {!!proposal.tasks.length && (
         <ul
           {...surfaceAttributes(
@@ -542,7 +532,7 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
                     )}
                     {!!task.dependsOn.length && (
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <span className="shrink-0">{t("After ·")}</span>
+                        <span className="shrink-0">{t("After")}</span>
                         <BadgeList
                           label={t("After")}
                           size="xs"
@@ -612,25 +602,24 @@ export function OrchestrationPreview({ block, busy }: { block: Block; busy?: boo
               </>
             ) : (
               <span>
-                {proposal.settings.maxWorkers}
-                {t(" parallel")}
+                {t(
+                  proposal.settings.maxWorkers === 1
+                    ? "{p0} parallel worker"
+                    : "{p0} parallel workers",
+                  { p0: proposal.settings.maxWorkers },
+                )}
               </span>
             )}
             <WorkerHelp />
           </div>
           <span>
-            {[
-              run?.status
-                ? t(run.status.charAt(0).toUpperCase() + run.status.slice(1))
-                : proposal.status === "approved"
-                  ? t("Approved")
-                  : proposal.status === "ready"
-                    ? t("Awaiting confirmation")
-                    : "",
-              t("Shared project folder"),
-            ]
-              .filter(Boolean)
-              .join(" · ")}
+            {run?.status
+              ? t(run.status.charAt(0).toUpperCase() + run.status.slice(1))
+              : proposal.status === "approved"
+                ? t("Approved")
+                : proposal.status === "ready"
+                  ? t("Awaiting confirmation")
+                  : ""}
           </span>
         </Text>
       )}

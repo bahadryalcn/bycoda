@@ -157,7 +157,6 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   const [trash, setTrash] = useState(false);
   const [menu, setMenu] = useState<HTMLElement | null>(null);
   const [healthAnchor, setHealthAnchor] = useState<HTMLElement | null>(null);
-  const [presenceAnchor, setPresenceAnchor] = useState<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("");
   const [jobProjectFilter, setJobProjectFilter] = useState("");
@@ -477,8 +476,6 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     setMenu,
     healthAnchor,
     setHealthAnchor,
-    presenceAnchor,
-    setPresenceAnchor,
     query,
     setQuery,
     filter,

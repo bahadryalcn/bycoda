@@ -68,7 +68,7 @@ it("shares one check and one download across both entry points and retains insta
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     expect(document.querySelector("details")?.textContent).toContain("Release details");
     const later = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent === "Later (24 hours)",
+      (button) => button.textContent === "Later",
     )!;
     await act(async () => later.click());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -82,7 +82,7 @@ it("shares one check and one download across both entry points and retains insta
     await act(async () => manualTrigger.click());
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     const dismiss = Array.from(document.querySelectorAll("button")).find(
-      (button) => button.textContent === "Later (24 hours)",
+      (button) => button.textContent === "Later",
     )!;
     await act(async () => dismiss.click());
     await act(async () =>

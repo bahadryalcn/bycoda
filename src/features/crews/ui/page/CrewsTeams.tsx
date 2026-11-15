@@ -82,7 +82,7 @@ export function CrewsTeams({
         <EmptyState
           context="panel"
           kind="filtered"
-          description={t("No crews match your filter.")}
+          description={t("No matching crews")}
           onReset={() => setQuery("")}
         />
       ) : (

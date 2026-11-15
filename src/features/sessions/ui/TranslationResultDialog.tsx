@@ -196,7 +196,7 @@ export function TranslationResultDialog({
             </Button>
           ) : null}
           {error ? (
-            <Button variant="primary" onClick={() => setAttempt(attempt + 1)}>
+            <Button variant="secondary" onClick={() => setAttempt(attempt + 1)}>
               {t("Retry")}
             </Button>
           ) : null}

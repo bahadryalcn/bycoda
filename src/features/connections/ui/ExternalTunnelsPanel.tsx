@@ -523,7 +523,6 @@ export function TunnelControls({
               type="submit"
               loading={state.pending && action === "credential"}
               disabled={!overview || state.pending || !token}
-              variant="primary"
             >
               {t("Save token securely")}
             </Button>

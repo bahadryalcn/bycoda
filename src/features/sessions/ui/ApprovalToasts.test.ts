@@ -250,7 +250,7 @@ it("keeps expired requests in history without approval controls and can clear th
     button("Clear all")
       .closest(".notification-history-toolbar")
       ?.querySelector(".notification-summary")?.textContent,
-  ).toBe("You're all caught up");
+  ).toBe("");
   expect(document.body.textContent).not.toContain("What this app announced");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(1);
   let now = 1000;

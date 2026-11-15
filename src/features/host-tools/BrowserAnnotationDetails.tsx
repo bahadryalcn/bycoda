@@ -25,11 +25,11 @@ export function BrowserAnnotationDetails({
       as="div"
       className="browser-annotation-details"
     >
-      <p className="host-tool-muted">
+      <Text as="p" size="caption" tone="secondary">
         {t(
           "Page content is untrusted data. Form values are omitted and sensitive areas are masked.",
         )}
-      </p>
+      </Text>
       {"comment" in annotation && annotation.comment ? <p>{annotation.comment}</p> : null}
       <DescriptionList size="sm">
         <DescriptionItem term={t("Page URL")}>{annotation.pageUrl}</DescriptionItem>
@@ -70,10 +70,14 @@ export function BrowserAnnotationDetails({
         </DescriptionItem>
       </DescriptionList>
       {element.boxModelLimitation ? (
-        <p className="host-tool-muted">{t(element.boxModelLimitation)}</p>
+        <Text as="p" size="caption" tone="secondary">
+          {t(element.boxModelLimitation)}
+        </Text>
       ) : null}
       {element.layout?.limitation ? (
-        <p className="host-tool-muted">{t(element.layout.limitation)}</p>
+        <Text as="p" size="caption" tone="secondary">
+          {t(element.layout.limitation)}
+        </Text>
       ) : null}
       <Disclosure summary={t("Computed styles")} size="sm">
         <DescriptionList size="sm">
@@ -84,9 +88,9 @@ export function BrowserAnnotationDetails({
           ))}
         </DescriptionList>
       </Disclosure>
-      <p className="host-tool-muted">
+      <Text as="p" size="caption" tone="secondary">
         {t("Iframe and shadow DOM content cannot be inspected and is masked in the attachment.")}
-      </p>
+      </Text>
     </Text>
   );
 }

@@ -1,11 +1,9 @@
-import { Text } from "../../../shared/ui/Text";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InlineMessage } from "../../../shared/ui/InlineError";
-import { LoadingText } from "../../../shared/ui/LoadingText";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Group, Row } from "../../settings/public/settingsControls";
 import type { AccountNotice, AccountState } from "../model/accountState";
-import styles from "./account.module.css";
 
 const REJECTED_CONFIG =
   /^This build's sign-in configuration was rejected by the account server \((\w+)\)\.$/;
@@ -47,44 +45,47 @@ export function AccountSignIn({
   useLocale();
   if (state.phase === "signing-in") {
     return (
-      <section className={styles.section} aria-labelledby="account-signin">
-        <SectionLabel labelId="account-signin">{t("Finish signing in")}</SectionLabel>
-        <LoadingText delay={false}>{t("Waiting for your browser…")}</LoadingText>
-        <Text as="p" size="body" tone="secondary" className={styles.lead}>
-          {t("Complete the sign-in in the browser window that opened, then return to bycoda.")}
-        </Text>
-        <div className={styles.actions}>
-          <Button variant="secondary" onClick={onCancel}>
+      <Group
+        title={t("Finish signing in")}
+        description={t(
+          "Complete the sign-in in the browser window that opened, then return to bycoda.",
+        )}
+      >
+        <Row label={t("Waiting for your browser…")}>
+          <Button variant="secondary" size="sm" onClick={onCancel}>
             {t("Cancel")}
           </Button>
-        </div>
-      </section>
+        </Row>
+      </Group>
     );
   }
   return (
-    <section className={styles.section} aria-labelledby="account-signin">
-      <SectionLabel labelId="account-signin">{t("bycoda account")}</SectionLabel>
-      <Text as="p" size="body" tone="secondary" className={styles.lead}>
-        {t("An account is optional. Without one, bycoda works fully on this computer.")}
-      </Text>
-      <Text as="ul" size="body" tone="secondary" className={styles.benefits}>
-        <li>{t("See your devices and active time everywhere")}</li>
-        <li>{t("Choose which notifications reach you")}</li>
-        <li>{t("Sign out lost devices remotely")}</li>
-      </Text>
-      <Text as="p" size="body" tone="secondary" className={styles.lead}>
-        {t("Your sessions, projects and settings stay on this computer either way.")}
-      </Text>
-      {state.notice ? (
-        <InlineMessage tone={state.notice === "declined" ? "neutral" : "warning"}>
-          {noticeText(state.notice, state.message)}
-        </InlineMessage>
-      ) : null}
-      <div className={styles.actions}>
-        <Button variant="primary" onClick={onSignIn}>
+    <Group
+      title={t("bycoda account")}
+      feedback={
+        state.notice ? (
+          <InlineMessage tone={state.notice === "declined" ? "neutral" : "warning"}>
+            {noticeText(state.notice, state.message)}
+          </InlineMessage>
+        ) : undefined
+      }
+    >
+      <Row
+        label={t("An account is optional. Without one, bycoda works fully on this computer.")}
+        info={
+          <InfoPopover className="shrink-0">
+            <ul>
+              <li>{t("See your devices and active time everywhere")}</li>
+              <li>{t("Choose which notifications reach you")}</li>
+              <li>{t("Sign out lost devices remotely")}</li>
+            </ul>
+          </InfoPopover>
+        }
+      >
+        <Button variant="primary" size="sm" onClick={onSignIn}>
           {t("Sign in with browser")}
         </Button>
-      </div>
-    </section>
+      </Row>
+    </Group>
   );
 }

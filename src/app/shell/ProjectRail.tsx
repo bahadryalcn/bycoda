@@ -40,7 +40,6 @@ import {
   Pin,
   PinOff,
   CircleAlert,
-  File,
   FileDiff,
   StickyNote,
   Sparkles,
@@ -1764,8 +1763,8 @@ function ProjectGroupSection({
   const [overviewFromMenu, setOverviewFromMenu] = useState(false);
   const gitTitle =
     gitSummary.known > 0
-      ? `${gitSummary.dirty} of ${gitSummary.local} ${gitSummary.local === 1 ? "project has" : "projects have"} uncommitted changes`
-      : "Git overview";
+      ? t("Changed projects: {p0}/{p1}", { p0: gitSummary.dirty, p1: gitSummary.local })
+      : t("Git overview");
   const openGitOverview = (fromMenu = false) => {
     if (workspaceRoot)
       window.dispatchEvent(new CustomEvent(OPEN_PROJECT_CHANGES_EVENT, { detail: workspaceRoot }));
@@ -1917,8 +1916,8 @@ function ProjectGroupSection({
               {group.name}
             </Text>
           )}
-          {group.workspaceFile && !locked ? (
-            <Tooltip label={t("Workspace")}>
+          {group.workspaceFile && !locked && !linkStatus ? (
+            <Tooltip label={t("Linked to {p0}", { p0: group.workspaceFile })}>
               <Text
                 role="img"
                 aria-label={t("Workspace")}
@@ -1926,8 +1925,8 @@ function ProjectGroupSection({
                 size="inherit"
                 tone="secondary"
                 {...actionContentAttributes(
-                  { phase: "rest" },
-                  "grid size-4 shrink-0 place-items-center @max-[200px]/rail:hidden @min-[200px]/group-section:[--action-rest-active-display:grid]",
+                  { phase: "always" },
+                  "grid size-4 shrink-0 place-items-center @max-[140px]/rail:hidden",
                 )}
               >
                 <FolderTree className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
@@ -1953,7 +1952,7 @@ function ProjectGroupSection({
         </div>
         {/* Status shares the trailing column with hover actions. */}
         {gitSummary.dirty > 0 ? (
-          <Tooltip label={group.name} details={[gitTitle]}>
+          <Tooltip label={gitTitle}>
             <Badge
               variant="count"
               size="xs"
@@ -1975,24 +1974,10 @@ function ProjectGroupSection({
           )}
         >
           <div data-action-slot="collapse" className="flex items-center gap-0.5">
-            {group.workspaceFile && !locked && !linkStatus ? (
-              <Tooltip label={t("Linked to {p0}", { p0: group.workspaceFile })} wide>
-                <Text
-                  role="img"
-                  aria-label={t("Linked to {p0}", { p0: group.workspaceFile })}
-                  size="inherit"
-                  tone="secondary"
-                  className="grid size-5 shrink-0 place-items-center"
-                >
-                  <File className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
-                </Text>
-              </Tooltip>
-            ) : null}
             {localPaths.length > 0 || (workspaceRoot && !locked) ? (
               <InlineAction
                 label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
-                tooltip={group.name}
-                tooltipDetails={[gitTitle]}
+                tooltip={gitTitle}
                 ref={gitAnchor}
                 motion="none"
                 type="button"

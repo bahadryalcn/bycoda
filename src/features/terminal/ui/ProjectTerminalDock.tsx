@@ -284,8 +284,6 @@ function ProjectTerminalDockComponent({
       <PaneHeader
         as="header"
         className="terminal-header"
-        titleAs="div"
-        title={t("Terminals")}
         actions={
           <>
             <IconButton
@@ -327,13 +325,9 @@ function ProjectTerminalDockComponent({
                 <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             </div>
-            {/* Hide keeps every shell running; X closes every terminal and the panel,
-                asking first only when work is running. */}
+            {/* Hide keeps every shell running; Close All lives in the actions menu. */}
             <IconButton label={t("Hide Terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
               {hideIcon(dock.side)}
-            </IconButton>
-            <IconButton label={t("Close All Terminals")} onClick={() => onCloseTerminals()}>
-              <X className="icon-sm" strokeWidth={1.75} />
             </IconButton>
           </>
         }
@@ -614,7 +608,7 @@ function ProjectTerminalDockComponent({
               label: t("Close Others"),
               disabled: dock.pane.files.length < 2,
             },
-            { kind: "item", id: "close-all", label: t("Close All Terminals") },
+            { kind: "item", id: "close-all", label: t("Close All Terminals"), danger: true },
             { kind: "sep" },
             {
               kind: "item",

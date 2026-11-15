@@ -72,9 +72,17 @@ html[data-input-modality="keyboard"]:root {
   --info: var(--ui-tone-info-fg);
   --warning: var(--ui-tone-warning-fg);
   --success: var(--ui-tone-success-fg);
-  --control-on: var(--color-active);
-  --control-fill: var(--color-active);
-  --control-glyph: var(--color-on-solid);
+  /* Switch, checkbox, radio and slider on-state: the Appearance accent when one is set, else a
+     neutral mid ink step, so the default workbench keeps one restrained hue (no saturated blue). */
+  --control-on: var(
+    --user-accent-solid,
+    var(
+      --user-accent-color,
+      color-mix(in oklab, var(--color-content) 58%, var(--color-background-base))
+    )
+  );
+  --control-fill: var(--control-on);
+  --control-glyph: var(--user-accent-foreground, var(--color-background-base));
   --control-track: color-mix(in oklch, var(--color-content) 20%, transparent);
   --control-track-hover: color-mix(in oklch, var(--color-content) 28%, transparent);
   --control-thumb: var(--ui-control-thumb);

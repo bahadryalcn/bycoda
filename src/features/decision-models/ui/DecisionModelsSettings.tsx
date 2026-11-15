@@ -3,7 +3,6 @@ import { DecisionTarget } from "./DecisionTarget";
 import { matchingTest, testedSources, type SourceTestSnapshot } from "../model/routingEditor";
 import { connectedCandidate } from "../model/presentation";
 import { Text } from "../../../shared/ui/Text";
-import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useId, useRef, useState } from "react";
 import { formatNumber, t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -11,7 +10,7 @@ import { Disclosure } from "../../../shared/ui/Disclosure";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { RefreshCw, Lock } from "../../../shared/ui/icons";
 import { Switch } from "../../../shared/ui/Switch";
-import { Group, Row } from "../../settings/public/settingsControls";
+import { Group, Row, SettingsFeedback } from "../../settings/public/settingsControls";
 import { useDecisionModels } from "../hooks/useDecisionModels";
 import type { DecisionModelsClient } from "../model/decisionModelsClient";
 import type { DecisionSource, DiscoveryCandidate } from "../model/decisionTypes";
@@ -181,10 +180,7 @@ export function DecisionModelsSettings({
   );
   return (
     <DecisionTarget.Provider value={remote ? hostName : undefined}>
-      <div
-        className="decision-models-page"
-        style={{ "--settings-group-gap": "var(--space-1)" } as React.CSSProperties}
-      >
+      <div className="decision-models-page">
         <Group title={null}>
           <Row
             label={
@@ -196,7 +192,6 @@ export function DecisionModelsSettings({
               </span>
             }
             controlId={model.routingLoaded ? privacyControlId : undefined}
-            description={hostName ? t("Host: {p1}", { p1: hostName }) : undefined}
             info={t(
               "Messages, profiles and contacts are sent only to local sources when this is on.",
             )}
@@ -220,7 +215,7 @@ export function DecisionModelsSettings({
             ) : model.routingError !== null ? (
               <Text>{t("Unavailable")}</Text>
             ) : (
-              <LoadingText>{t("Loading…")}</LoadingText>
+              <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
             )}
           </Row>
         </Group>
@@ -269,7 +264,7 @@ export function DecisionModelsSettings({
             actions={actions}
             isPending={model.isPending}
             emptyAction={
-              <Button variant="primary" size="sm" onClick={() => pick("folder")}>
+              <Button variant="secondary" size="sm" onClick={() => pick("folder")}>
                 {t("Add from folder")}
               </Button>
             }
@@ -283,12 +278,11 @@ export function DecisionModelsSettings({
           summary={
             model.found === null
               ? remote
-                ? t("Found on Host {p1}", { p1: hostName ?? "" })
+                ? t("Found on the Host")
                 : t("Found on this computer")
               : remote
-                ? t("Found on Host {p1}: {p2} not added", {
-                    p1: hostName ?? "",
-                    p2: formatNumber(
+                ? t("Found on the Host: {p1} not added", {
+                    p1: formatNumber(
                       model.found.filter(
                         (candidate) => !connectedCandidate(candidate, sources ?? []),
                       ).length,
@@ -318,19 +312,19 @@ export function DecisionModelsSettings({
                 onAdd={addCandidate}
               />
             </Group>
-            <Disclosure summary={t("Scan settings")} variant="row">
-              <ScanSettings
-                hostId={hostId}
-                client={client}
-                onScan={actions.scan}
-                scanning={model.scanning}
-              />
-            </Disclosure>
           </div>
+        </Disclosure>
+        <Disclosure summary={t("Scan settings")} variant="row">
+          <ScanSettings
+            hostId={hostId}
+            client={client}
+            onScan={actions.scan}
+            scanning={model.scanning}
+          />
         </Disclosure>
         <Group title={t("Task routing")}>
           {!model.routingLoaded && model.routingError === null ? (
-            <LoadingText className="px-4 py-2.5">{t("Loading…")}</LoadingText>
+            <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
           ) : null}
           {model.routingLoaded && sources?.length ? (
             <RoutingTable

@@ -101,7 +101,7 @@ export function ComposerAction({
           </>
         ) : null}
         <Button
-          variant="primary"
+          variant="secondary"
           tone="danger"
           motion="none"
           iconOnly

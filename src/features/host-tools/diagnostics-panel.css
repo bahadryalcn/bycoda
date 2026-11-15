@@ -27,6 +27,8 @@
   display: grid;
   gap: 8px;
   min-inline-size: 0;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--color-stroke);
 }
 .resource-card h3 {
   margin: 0;

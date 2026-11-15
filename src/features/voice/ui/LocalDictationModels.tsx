@@ -201,7 +201,7 @@ export function LocalDictationModels({
         <EmptyState
           size="inline"
           kind="filtered"
-          description={t("No matching models.")}
+          description={t("No matching models")}
           onReset={() => setFilter("")}
         />
       ) : null}

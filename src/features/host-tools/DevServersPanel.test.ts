@@ -117,6 +117,12 @@ const menuItem = async (text: string) => {
     value.textContent?.includes(text),
   )!;
 };
+const openDetails = () =>
+  act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((value) => value.getAttribute("aria-label")?.startsWith("Details"))!
+      .click(),
+  );
 const mount = (cwd = "/repo") =>
   act(async () => root.render(createElement(DevServersPanel, { cwd })));
 const setInput = (label: string, value: string) => {
@@ -199,7 +205,7 @@ it("groups ports by process and discloses uncertain project association and unav
   expect(container.textContent).toContain("http://127.0.0.1:4100/");
   expect(container.textContent).toContain("PID 41 · node");
   expect(container.textContent).toContain("Project association uncertain");
-  await act(async () => button("Process details").click());
+  await act(async () => (await menuItem("Process details")).click());
   await act(async () => button("Show logs").click());
   expect(container.textContent).toContain("Logs are unavailable for this external process.");
 });
@@ -208,7 +214,7 @@ it.each(["Process details", "Stop", "Restart"])(
   "reveals the selected controls after clicking %s",
   async (label) => {
     await mount();
-    await act(async () => button(label).click());
+    await act(async () => (label === "Restart" ? button(label) : await menuItem(label)).click());
     expect(document.activeElement).toBe(container.querySelector(".dev-server-details"));
     if (label === "Stop") expect(button("Confirm graceful stop")).toBeDefined();
     if (label === "Restart") expect(button("Confirm restart")).toBeDefined();
@@ -218,13 +224,13 @@ it.each(["Process details", "Stop", "Restart"])(
 it("reveals a failed process request and restores the row after a failed stop", async () => {
   await mount();
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Process identity changed"));
-  await act(async () => button("Process details").click());
+  await act(async () => (await menuItem("Process details")).click());
   expect(document.activeElement?.textContent).toBe("Process identity changed");
   expect(document.activeElement?.tagName).toBe("DIV");
   expect(document.activeElement?.getAttribute("role")).toBe("alert");
   expect(document.activeElement?.classList.contains("bycoda-arc")).toBe(true);
   expect(document.activeElement?.classList.contains("host-tool-error-payload")).toBe(true);
-  await act(async () => button("Stop").click());
+  await act(async () => (await menuItem("Stop")).click());
   vi.mocked(hostFeatureRequest).mockRejectedValueOnce(new Error("Host disconnected"));
   await act(async () => button("Confirm graceful stop").click());
   expect(document.activeElement?.textContent).toBe("Host disconnected");
@@ -259,12 +265,13 @@ it("distinguishes an empty successful scan from a failed scan", async () => {
   await act(async () => button("Refresh").click());
   expect(container.textContent).toContain("Scan failed");
   expect(container.textContent).not.toContain("No servers found");
-  expect(container.textContent).toContain("Permission denied");
+  await openDetails();
+  expect(document.body.textContent).toContain("Permission denied");
 });
 
 it("shows affected ports before graceful stop and requires a separate explicit force choice", async () => {
   await mount();
-  await act(async () => button("Stop").click());
+  await act(async () => (await menuItem("Stop")).click());
   expect(container.textContent).toContain("Affected ports");
   expect(container.querySelector(".dev-server-details")!.textContent).toContain("4100, 4101");
   expect(
@@ -447,7 +454,8 @@ it("preserves the last successful rows and scroll position when a background sca
   expect(container.querySelector(".dev-server-row")).toBe(row);
   expect(container.scrollTop).toBe(420);
   expect(container.textContent).toContain("Showing the last successful scan. Retry to update.");
-  expect(container.textContent).toContain("Host disconnected");
+  await openDetails();
+  expect(document.body.textContent).toContain("Host disconnected");
   expect(button("Open in preview").disabled).toBe(false);
   await act(async () => button("Retry scan").click());
   expect(container.textContent).not.toContain("Host disconnected");
@@ -478,7 +486,7 @@ it("searches the server name, process, port and URL without making host requests
     ).toBe("Payments API");
   }
   await act(async () => setInput("Find server", "missing"));
-  expect(container.textContent).toContain("No servers match your search.");
+  expect(container.textContent).toContain("No matching servers");
   await act(async () => setInput("Find server", ""));
   expect(container.querySelectorAll(".dev-server-list .dev-server-row")).toHaveLength(2);
   expect(hostFeatureRequest).toHaveBeenCalledTimes(1);
@@ -523,7 +531,7 @@ it("backs off after failures and pauses after three failed scans until explicit 
   expect(hostFeatureRequest).toHaveBeenCalledTimes(3);
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(4);
-  expect(container.textContent).toContain("Automatic refresh paused after repeated failures.");
+  expect(container.textContent).toContain("Paused");
   await act(async () => vi.advanceTimersByTimeAsync(600_000));
   expect(hostFeatureRequest).toHaveBeenCalledTimes(4);
   await act(async () => button("Retry scan").click());
@@ -558,9 +566,10 @@ it("waits for an active scan before a process operation without duplicating the 
     }),
   );
   await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  const stop = await menuItem("Stop");
   await act(async () => {
-    button("Stop").click();
-    button("Stop").click();
+    stop.click();
+    stop.click();
   });
   expect(
     vi.mocked(hostFeatureRequest).mock.calls.filter((call) => call[2] === "devServers.details"),
@@ -573,7 +582,7 @@ it("waits for an active scan before a process operation without duplicating the 
 
 it("blocks duplicate destructive actions before React paints the busy state", async () => {
   await mount();
-  await act(async () => button("Stop").click());
+  await act(async () => (await menuItem("Stop")).click());
   let finish!: (value: unknown) => void;
   vi.mocked(hostFeatureRequest).mockReturnValueOnce(
     new Promise((resolve) => {
@@ -599,7 +608,7 @@ it("disables process control when a birth identity is unavailable", async () => 
     scannedAt: 1,
   });
   await mount();
-  expect(button("Stop").disabled).toBe(true);
+  expect((await menuItem("Stop")).disabled).toBe(true);
   expect((await menuItem("Force terminate")).disabled).toBe(true);
   expect(button("Restart").disabled).toBe(true);
 });
@@ -639,7 +648,7 @@ it("drops a pending confirmation when another server is selected", async () => {
     scannedAt: 1,
   });
   await mount();
-  await act(async () => button("Stop").click());
+  await act(async () => (await menuItem("Stop")).click());
   expect(button("Confirm graceful stop")).toBeDefined();
   vi.mocked(hostFeatureRequest).mockResolvedValueOnce({
     status: "ok",

@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Text } from "../../../shared/ui/Text";
 import { useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
@@ -178,6 +179,9 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
   return (
     <section className="recovery-pane" aria-label={t("Earlier file reports")}>
       <div className="recovery-toolbar">
+        <InfoPopover>
+          {t("Inspecting a report never changes files or removes its protection.")}
+        </InfoPopover>
         {sourceControl}
         <SegmentedControl
           label={t("Report filters")}
@@ -324,18 +328,10 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
             action={{ label: t("Show all reports"), onClick: () => setFilter("all") }}
           />
         ) : (
-          <EmptyState
-            context="panel"
-            kind="empty"
-            title={t("No earlier file reports.")}
-            description={t("Inspecting a report never changes files or removes its protection.")}
-          />
+          <EmptyState context="panel" kind="empty" title={t("No earlier file reports.")} />
         )}
       </div>
       <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "recovery-footer")}>
-        <Text as="p" size="caption" tone="secondary">
-          {t("Inspect earlier file reports without changing files or removing their protection.")}
-        </Text>
         <CollectionFooter
           loading={recovery.loading}
           error={

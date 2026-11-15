@@ -270,12 +270,19 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-async function show(cwd = "/work/project", target?: LinkedWorkItem) {
+async function show(
+  cwd = "/work/project",
+  target?: LinkedWorkItem,
+  onPullRequestsOnlyChange?: (value: boolean) => void,
+  pullRequestsOnly = false,
+) {
   await act(async () =>
     root.render(
       createElement(InboxView, {
         cwd,
         target,
+        onPullRequestsOnlyChange,
+        pullRequestsOnly,
         recents: [],
         onAsk: async () => "session",
         onAskRestart: async () => "session",
@@ -337,4 +344,21 @@ it("returns from the narrow detail view without clearing the selected item or li
   );
   expect(second.getAttribute("aria-current")).toBe("true");
   expect(scroller.scrollTop).toBe(420);
+});
+
+it("offers the pull-request mode inside Inbox and keeps the all-items route reachable", async () => {
+  const change = vi.fn();
+  await show("/work/project", undefined, change);
+  const toggle = () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Pull requests",
+    )!;
+  expect(toggle().getAttribute("aria-pressed")).toBe("false");
+  await act(async () => toggle().click());
+  expect(change).toHaveBeenLastCalledWith(true);
+  await show("/work/project", undefined, change, true);
+  expect(toggle().getAttribute("aria-pressed")).toBe("true");
+  expect(container.querySelector("h1")?.textContent).toBe("Inbox");
+  await act(async () => toggle().click());
+  expect(change).toHaveBeenLastCalledWith(false);
 });

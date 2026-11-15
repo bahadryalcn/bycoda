@@ -30,6 +30,10 @@ vi.mock("../../../shared/model/appConfirm", () => ({
 }));
 
 let container: HTMLDivElement;
+const addServerButton = () =>
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Add server",
+  ) ?? null;
 let root: Root;
 
 beforeEach(async () => {
@@ -189,7 +193,7 @@ it("shows unsupported remote targets without local discovery or Add and permits 
     ),
   );
   expect(container.textContent).toContain("only available for projects on this computer");
-  expect(container.querySelector('[aria-label="Add MCP server"]')).toBeNull();
+  expect(addServerButton()).toBeNull();
   expect(invoke).not.toHaveBeenCalled();
   const picker = container.querySelector<HTMLButtonElement>(
     '[aria-label^="Switch project, current project"]',
@@ -203,7 +207,7 @@ it("shows unsupported remote targets without local discovery or Add and permits 
   await act(async () => local.click());
   expect(invoke).toHaveBeenCalledWith("mcp_discover", { cwd: "/local-project" });
   expect(invoke.mock.calls.every(([, args]) => !args?.cwd?.startsWith("remote://"))).toBe(true);
-  expect(container.querySelector('[aria-label="Add MCP server"]')).not.toBeNull();
+  expect(addServerButton()).not.toBeNull();
 });
 
 async function selectProject(path: string) {
@@ -354,9 +358,7 @@ it("adds a standard mcpServers entry to the selected provider and project", asyn
     ),
   );
   await selectProject("/other");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Add MCP server"]')!.click(),
-  );
+  await act(async () => addServerButton()!.click());
   expect(document.body.textContent).toContain("Add MCP server");
   const provider = document.body.querySelector<HTMLButtonElement>(
     '[aria-label="Provider: Claude Code"]',
@@ -393,9 +395,7 @@ it("adds a standard mcpServers entry to the selected provider and project", asyn
 
 it("navigates provider choices with arrow keys", async () => {
   await act(async () => root.render(createElement(McpSettings, { cwd: "/repo" })));
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Add MCP server"]')!.click(),
-  );
+  await act(async () => addServerButton()!.click());
   await act(async () =>
     document.body.querySelector<HTMLButtonElement>('[aria-label="Provider: Claude Code"]')!.click(),
   );

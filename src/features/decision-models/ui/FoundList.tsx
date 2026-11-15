@@ -66,9 +66,7 @@ export function FoundList({
       {items.length > 0 ? (
         <ul
           className="flex min-w-0 flex-col"
-          aria-label={
-            target ? t("Found on Host {p1}", { p1: target }) : t("Found on this computer")
-          }
+          aria-label={target ? t("Found on the Host") : t("Found on this computer")}
         >
           {items.map((candidate) => (
             <li

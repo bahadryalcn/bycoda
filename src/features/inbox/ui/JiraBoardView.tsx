@@ -1,9 +1,14 @@
 import { useJiraBoardPan } from "../hooks/useJiraBoardPan";
 import { JiraBoardToolbar } from "./JiraBoardToolbar";
+import { StatusText } from "../../../shared/ui/StatusText";
 import { Text } from "../../../shared/ui/Text";
 import { Alert } from "../../../shared/ui/Alert";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
+import {
+  ActionHost,
+  InlineMoreAction,
+  actionContentAttributes,
+} from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { InboxAvatar } from "./InboxPresentation";
 import { Badge } from "../../../shared/ui/Badge";
@@ -712,7 +717,7 @@ export function JiraBoardView({
         selected={issue.id === selectedIssueId}
         key={issue.identifier}
         {...surfaceAttributes(
-          { frame: "card", radius: "card" },
+          { radius: "row" },
           "jira-board-card flex flex-col items-stretch gap-1 p-2",
         )}
         data-dragging={dragKey === issue.identifier || undefined}
@@ -747,7 +752,20 @@ export function JiraBoardView({
             {issue.title}
           </Heading>
           <Text size="caption" tone="secondary">
-            {issue.identifier}
+            {issue.identifier} ·{" "}
+            <StatusText
+              tone={
+                issue.stateType === "done"
+                  ? "done"
+                  : issue.stateType === "indeterminate"
+                    ? "running"
+                    : "idle"
+              }
+            >
+              {issue.state === issue.state.toUpperCase()
+                ? issue.state.charAt(0) + issue.state.slice(1).toLowerCase()
+                : issue.state}
+            </StatusText>
           </Text>
         </Button>
         <div className="flex min-w-0 items-center gap-1">
@@ -757,7 +775,6 @@ export function JiraBoardView({
             tone="secondary"
             className="flex min-w-0 flex-1 items-center gap-1.5"
           >
-            {!column || column.statusIds.length > 1 ? <span>{issue.state}</span> : null}
             {issue.assignees.length === 0 ? <span>{t("Unassigned")}</span> : null}
             {issue.assignees.length > 0 ? (
               <BadgeList
@@ -783,7 +800,10 @@ export function JiraBoardView({
             motion="none"
             tooltip={rankHint}
             data-jira-drag-handle=""
-            className="jira-board-drag-handle shrink-0"
+            {...actionContentAttributes(
+              { phase: "interaction", hide: "opacity" },
+              "jira-board-drag-handle shrink-0",
+            )}
           >
             <GripVertical className="icon-sm" aria-hidden="true" />
           </Button>

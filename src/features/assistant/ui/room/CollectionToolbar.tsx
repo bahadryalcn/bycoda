@@ -80,7 +80,7 @@ export function CollectionToolbar({ snapshot }: { snapshot: AssistantSnapshot })
         <div className={styles.collectionTools}>
           <Heading size="page" level={2} className={styles.pageTitle}>
             {view === "History"
-              ? t("What I did")
+              ? t("History")
               : view === "Notes"
                 ? t("Notes")
                 : view === "Sessions"

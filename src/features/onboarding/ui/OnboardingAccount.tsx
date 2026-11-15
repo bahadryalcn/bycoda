@@ -1,32 +1,28 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Heading } from "../../../shared/ui/Heading";
+import { OnboardingHeading } from "./OnboardingHeading";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Text } from "../../../shared/ui/Text";
 import { useAccount } from "../../account";
 
 /**
- * Optional sign-in step. Guest stays fully local; signing in only adds cross-device stats.
+ * Optional sign-in step. Skipping stays fully local; signing in only adds cross-device stats.
  * The account service owns the browser flow, this step only starts and reports it.
  */
-export function OnboardingAccount({ onGuest }: { onGuest: () => void }) {
+export function OnboardingAccount() {
   useLocale();
   const { state, signIn, cancelSignIn } = useAccount();
   const signedOut = state.phase === "signed-out" ? state : null;
   const failed = signedOut?.notice === "sign-in-failed" || signedOut?.notice === "session-ended";
   return (
     <>
-      <div className="onboarding-heading">
-        <Heading size="page" level={3}>
-          {t("Sign in to sync your stats across devices")}
-        </Heading>
-        <Text as="p" size="inherit" tone="muted" leading="normal">
-          {t(
-            "An account is optional. Your sessions, projects and settings stay on this computer either way.",
-          )}
-        </Text>
-      </div>
+      <OnboardingHeading
+        title={t("Sign in")}
+        info={t(
+          "An account is optional and only syncs your stats across devices. Your sessions, projects and settings stay on this computer either way. You can sign in later in Settings → Account.",
+        )}
+      />
       <div className="onboarding-scroll">
         {state.phase === "starting" ? <LoadingText>{t("Loading account…")}</LoadingText> : null}
         {state.phase === "signed-in" ? (
@@ -60,20 +56,10 @@ export function OnboardingAccount({ onGuest }: { onGuest: () => void }) {
               <Alert tone="info">{t("Sign-in was cancelled.")}</Alert>
             ) : null}
             <div className="onboarding-actions">
-              <Button
-                variant="primary"
-
-                onClick={() => signIn().catch(() => undefined)}
-              >
+              <Button variant="secondary" onClick={() => signIn().catch(() => undefined)}>
                 {t("Sign in with browser")}
               </Button>
-              <Button variant="secondary" onClick={onGuest}>
-                {t("Continue as guest")}
-              </Button>
             </div>
-            <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
-              {t("You can sign in later in Settings → Account.")}
-            </Text>
           </>
         ) : null}
       </div>

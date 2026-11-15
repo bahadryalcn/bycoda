@@ -1,6 +1,4 @@
-import { Text } from "../../../../shared/ui/Text";
 import { getLocale, t } from "../../../../shared/i18n";
-import { Badge } from "../../../../shared/ui/Badge";
 import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { Folder, Laptop } from "../../../../shared/ui/icons";
 import { SearchableSelect } from "../../../../shared/ui/SearchableSelect";
@@ -28,7 +26,7 @@ function computerName(machine: RemoteMachine): string {
   return isLocalSyncMachine(machine) ? t("This computer") : machine.name;
 }
 
-/** The one workspace selector (computer and project) and the global AI stop or resume. */
+/** The one workspace selector (computer and project) and the one AI status control, which opens the confirmed stop or resume. It lives in the header row. */
 export function SocialShellBar({
   client,
   machines,
@@ -89,7 +87,7 @@ export function SocialShellBar({
   };
 
   return (
-    <div className="social-shell-bar">
+    <div className="social-shell-bar" data-no-drag="">
       <div className="social-shell-workspace">
         <SearchableSelect
           hideLabel
@@ -103,29 +101,11 @@ export function SocialShellBar({
         />
       </div>
       <div className="social-shell-ai">
-        {loading || !hostOnline ? (
-          <Badge tone="neutral" size="sm">
-            {loading ? t("Checking…") : t("Host offline")}
-          </Badge>
-        ) : aiStopped ? (
-          <Badge tone="warning" size="sm">
-            {t("AI stopped")}
-          </Badge>
-        ) : (
-          <Text
-            size="secondary"
-            tone="secondary"
-            leading="inherit"
-            className="social-shell-ai-state"
-          >
-            <StatusDot tone="success" />
-            {t("AI active")}
-          </Text>
-        )}
         <DisabledReason
-          variant="secondary"
+          variant="ghost"
           size="sm"
-          tone={aiStopped ? "success" : "danger"}
+          tooltip={aiStopped ? t("Resume AI") : t("Stop all AI")}
+          startIcon={<StatusDot tone={aiStopped ? "warning" : "success"} />}
           onClick={toggleAi}
           {...gateProps(
             client && hostOnline && !loading
@@ -140,7 +120,13 @@ export function SocialShellBar({
                 },
           )}
         >
-          {aiStopped ? t("Resume AI") : t("Stop all AI")}
+          {!loading && !hostOnline
+            ? t("Host offline")
+            : loading
+              ? t("Checking…")
+              : aiStopped
+                ? t("AI stopped")
+                : t("AI active")}
         </DisabledReason>
       </div>
       {dialog}

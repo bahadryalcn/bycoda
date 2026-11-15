@@ -109,24 +109,24 @@ export function SocialShell({
           as="div"
           size="secondary"
           tone="inherit"
-          className="flex min-w-0 flex-1 items-center gap-2 px-3"
+          className="flex shrink-0 items-center gap-2 px-3"
         >
           <Globe className="icon-sm" tone="secondary" aria-hidden />
           <span>{t("Social Media")}</span>
         </Text>
+        <SocialShellBar
+          client={client}
+          machines={workspace.machines}
+          machineId={machineId}
+          projects={workspace.projects}
+          projectId={workspace.projectId}
+          aiStopped={shell.aiStopped}
+          hostOnline={shell.hostOnline}
+          loading={!loaded}
+          onWorkspaceChange={workspace.selectWorkspace}
+          onAiStateChange={workspace.setAiStopped}
+        />
       </Header>
-      <SocialShellBar
-        client={client}
-        machines={workspace.machines}
-        machineId={machineId}
-        projects={workspace.projects}
-        projectId={workspace.projectId}
-        aiStopped={shell.aiStopped}
-        hostOnline={shell.hostOnline}
-        loading={!loaded}
-        onWorkspaceChange={workspace.selectWorkspace}
-        onAiStateChange={workspace.setAiStopped}
-      />
       {workspace.error ? (
         <InlineError retry={{ onRetry: workspace.retry, label: t("Try again") }}>
           {workspace.error}

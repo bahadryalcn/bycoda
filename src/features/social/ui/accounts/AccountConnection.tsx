@@ -52,6 +52,9 @@ function browserStatusText(status: string): string {
   }
 }
 
+/** The browser, OAuth and token flows are mutually exclusive, so only one connect action shows. */
+const CONNECT_VARIANT = "primary";
+
 /**
  * How one account is connected: the capability list with its Connect action, the flow that fits the
  * account (browser sign-in, OAuth in the browser, a token, or the Telegram channel review) and the
@@ -154,7 +157,7 @@ export function AccountConnection({
             />
           ) : null}
           <Button
-            variant="primary"
+            variant={CONNECT_VARIANT}
             size="sm"
             loading={is("connect:browser")}
             disabled={locked || (needsPageTarget && !resourceId.trim())}
@@ -247,7 +250,7 @@ export function AccountConnection({
               />
             ) : null}
             <Button
-              variant="primary"
+              variant={CONNECT_VARIANT}
               size="sm"
               loading={is("connect:oauth")}
               disabled={
@@ -298,7 +301,7 @@ export function AccountConnection({
       ) : null}
       {isToken && !isTelegram ? (
         <Button
-          variant="primary"
+          variant={CONNECT_VARIANT}
           size="sm"
           loading={is("connect:token")}
           disabled={locked}

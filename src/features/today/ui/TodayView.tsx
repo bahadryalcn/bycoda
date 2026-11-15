@@ -36,7 +36,7 @@ const range = (from: Date, to: Date) =>
 
 function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: ReactNode }) {
   return (
-    <Surface variant="card" padding="md" className={styles.stat}>
+    <Surface variant="page" padding="md" className={styles.stat}>
       <Text size="caption" tone="secondary" leading="inherit">
         {label}
       </Text>
@@ -123,17 +123,7 @@ export function TodayView() {
       {!data ? (
         <LoadingText>{t("Loading activity")}</LoadingText>
       ) : empty ? (
-        <>
-          <div className={styles.stats}>{activeStat}</div>
-          <ActivitySources overview={overview} />
-          <Surface variant="card" padding="md" className={styles.chart}>
-            <TodayBars bars={activity ? activityBars(activity) : null} />
-          </Surface>
-          <EmptyState
-            title={t("No agent activity yet")}
-            description={t("Sessions you run will show up here.")}
-          />
-        </>
+        <div className={styles.stats}>{activeStat}</div>
       ) : (
         <>
           <div className={styles.stats}>
@@ -190,7 +180,7 @@ function TodayCharts({ data, activity }: { data: TodayData; activity: BarChartDa
   const bars = week ? days : activity;
   return (
     <div className={styles.charts}>
-      <Surface variant="card" padding="md" className={styles.chart}>
+      <Surface variant="page" padding="md" className={styles.chart}>
         <SectionLabel>{t("Agent run time by project")}</SectionLabel>
         {projects.length ? (
           <DonutChart
@@ -205,7 +195,7 @@ function TodayCharts({ data, activity }: { data: TodayData; activity: BarChartDa
           <EmptyState size="inline" description={t("No recorded run time")} />
         )}
       </Surface>
-      <Surface variant="card" padding="md" className={styles.chart}>
+      <Surface variant="page" padding="md" className={styles.chart}>
         <TodayBars
           bars={bars}
           agentPeriod={

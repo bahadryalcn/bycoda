@@ -190,7 +190,7 @@ export function CrewMemberPicker({
             ) : null}
             {matches.length === 0 ? (
               <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2">
-                <EmptyState size="inline" kind="filtered" description={t("No matching members.")} />
+                <EmptyState size="inline" kind="filtered" description={t("No matching members")} />
                 <Button variant="ghost" size="sm" onClick={clearFilters}>
                   {t("Clear filters")}
                 </Button>

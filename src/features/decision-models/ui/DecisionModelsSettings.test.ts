@@ -1110,7 +1110,7 @@ it("names the selected remote Host in uninstall confirmation without uninstallin
 
   await settleDecisionUi();
 
-  expect(bodyText()).toContain("Host: Remote A");
+  expect(bodyText()).toContain("Personal data stays on Host Remote A");
 
   clickIconButton("More actions");
 

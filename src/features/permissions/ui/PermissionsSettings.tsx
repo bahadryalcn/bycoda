@@ -14,7 +14,7 @@ export function PermissionsSettings() {
   );
   return (
     <div className="settings-topics">
-      <Group title={t("Permissions")}>
+      <Group title={null}>
         {PERMISSION_IDS.filter((id) => !notRequired.includes(id)).map((id) => (
           <PermissionRow key={id} id={id} />
         ))}

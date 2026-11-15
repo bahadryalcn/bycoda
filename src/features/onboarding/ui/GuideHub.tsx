@@ -9,7 +9,6 @@ import { Heading } from "../../../shared/ui/Heading";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
-  ArrowLeft,
   Check,
   CheckList,
   ChevronRight,
@@ -35,7 +34,6 @@ import { usePendingHighlights } from "../model/useFeatureHighlights";
 import {
   guideSignals,
   loadDoneGuideSteps,
-  loadSeenGuideTopics,
   markGuideTopicSeen,
   runGuideAction,
   setGuideStepDone,
@@ -99,17 +97,14 @@ export default function GuideHub({
   const [activeId, setActiveId] = useState(
     topics.some((entry) => entry.id === initialTopic) ? (initialTopic as string) : topics[0].id,
   );
-  const [seen, setSeen] = useState(loadSeenGuideTopics);
   const [doneSteps, setDoneSteps] = useState(loadDoneGuideSteps);
   const index = Math.max(
     0,
     topics.findIndex((topic) => topic.id === activeId),
   );
   const topic = topics[index];
-  const previous = topics[index - 1];
-  const next = topics[index + 1];
   useEffect(() => {
-    setSeen(markGuideTopicSeen(topic.id));
+    markGuideTopicSeen(topic.id);
   }, [topic.id]);
   const signals = guideSignals(projectCwd);
   const stepDone = (step: GuideStep) => isStepDone(step, doneSteps, signals);
@@ -132,7 +127,6 @@ export default function GuideHub({
   };
   const allSteps = topics.flatMap((item) => item.steps);
   const finished = allSteps.filter(stepDone).length;
-  const topicFinished = topic.steps.filter(stepDone).length;
   const firstSteps = gettingStartedSteps().map((item) => ({
     ...item,
     done: allSteps.some((step) => step.id === item.stepId && stepDone(step)),
@@ -197,9 +191,6 @@ export default function GuideHub({
               </li>
             ))}
           </ol>
-          <Text size="inherit" tone="secondary" className="guide-hub-start-next" role="status">
-            {upNext ? t("Up next: {p0}", { p0: upNext.label }) : t("All set")}
-          </Text>
           <div className="guide-hub-start-tour">
             {hasNews ? (
               <Button
@@ -222,7 +213,7 @@ export default function GuideHub({
                 startTour("first-run");
               }}
             >
-              {tourState.startsWith("paused:") ? t("Resume tour") : t("Take the tour")}
+              {tourState.startsWith("paused:") ? t("Resume tour") : t("Tour")}
             </Button>
           </div>
         </Text>
@@ -256,12 +247,6 @@ export default function GuideHub({
                         className="icon-sm guide-hub-complete"
                         aria-label={t("Done")}
                       />
-                    ) : seen.includes(item.id) ? (
-                      <Check
-                        tone="muted"
-                        className="icon-sm guide-hub-seen"
-                        aria-label={t("Viewed")}
-                      />
                     ) : null}
                   </Button>
                 );
@@ -274,9 +259,6 @@ export default function GuideHub({
             <Heading size="page" level={2} id="guide-hub-title">
               {topic.title}
             </Heading>
-            <Text size="caption" tone="muted" leading="normal" className="guide-hub-count">
-              {t("{p0} of {p1} done", { p0: topicFinished, p1: topic.steps.length })}
-            </Text>
           </header>
           <Text as="p" size="inherit" tone="secondary" className="guide-hub-summary">
             {topic.summary}
@@ -296,7 +278,7 @@ export default function GuideHub({
                 startIcon={<Play className="icon-sm" />}
                 onClick={() => onStartTour(topic.id)}
               >
-                {t("Quick tour")}
+                {t("Tour")}
               </Button>
             ) : null}
           </div>
@@ -394,28 +376,6 @@ export default function GuideHub({
               <GuideShortcuts items={topic.shortcuts} />
             </section>
           ) : null}
-          <nav className="guide-hub-pager" aria-label={t("Guide pages")}>
-            {previous ? (
-              <Button
-                variant="ghost"
-                startIcon={<ArrowLeft className="icon-sm" />}
-                onClick={() => setActiveId(previous.id)}
-              >
-                {t("Previous: {p0}", { p0: previous.title })}
-              </Button>
-            ) : (
-              <span />
-            )}
-            {next ? (
-              <Button
-                variant="ghost"
-                endIcon={<ChevronRight className="icon-sm" />}
-                onClick={() => setActiveId(next.id)}
-              >
-                {t("Next: {p0}", { p0: next.title })}
-              </Button>
-            ) : null}
-          </nav>
         </article>
       </Text>
     </Modal>

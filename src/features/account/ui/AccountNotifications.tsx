@@ -5,9 +5,7 @@ import type {
   NotificationSettings,
 } from "@bycoda/account-contracts";
 import { t, useLocale } from "../../../shared/i18n";
-import { InlineError } from "../../../shared/ui/InlineError";
-import { LoadingText } from "../../../shared/ui/LoadingText";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { Group, Row, SettingsFeedback, Toggle } from "../../settings/public/settingsControls";
 import { Switch } from "../../../shared/ui/Switch";
 import { TimePicker } from "../../../shared/ui/TimePicker";
 import { localTimeZone, useNotificationSettings } from "../hooks/useAccountData";
@@ -62,7 +60,7 @@ function eventLabel(event: NotificationEventKey): string {
 
 type ChangeHandler = (change: (current: NotificationSettings) => NotificationSettings) => void;
 
-function QuietHoursControls({
+function QuietHoursRow({
   settings,
   onChange,
 }: {
@@ -72,15 +70,10 @@ function QuietHoursControls({
   const quiet = settings.quietHours;
   const zone = quiet?.timeZone ?? localTimeZone();
   return (
-    <div className={layout.setting}>
-      <Switch
-        label={t("Quiet hours")}
-        description={t("Hold non-urgent notifications during these hours.")}
-        checked={quiet !== null}
-        onCheckedChange={(on) =>
-          onChange((s) => setQuietHours(s, on ? defaultQuietHours(zone) : null))
-        }
-      />
+    <Row
+      label={t("Quiet hours")}
+      description={t("Hold non-urgent notifications during these hours.")}
+    >
       {quiet ? (
         <div className={layout.times}>
           <TimePicker
@@ -99,11 +92,16 @@ function QuietHoursControls({
           />
         </div>
       ) : null}
-    </div>
+      <Toggle
+        label={t("Quiet hours")}
+        on={quiet !== null}
+        onChange={(on) => onChange((s) => setQuietHours(s, on ? defaultQuietHours(zone) : null))}
+      />
+    </Row>
   );
 }
 
-function DailySummaryControls({
+function DailySummaryRow({
   settings,
   onChange,
 }: {
@@ -112,17 +110,18 @@ function DailySummaryControls({
 }) {
   if (!settings.emailDigest) return null;
   return (
-    <div className={layout.setting}>
-      <Text size="secondary" tone="secondary">
-        {t("One e-mail a day with your activity, sent at the time you choose.")}
-      </Text>
+    <Row
+      label={t("Daily summary")}
+      description={t("One e-mail a day with your activity, sent at the time you choose.")}
+    >
       <TimePicker
         className={layout.time}
         label={t("Send at")}
+        hideLabel
         value={settings.dailySummaryTime ?? ""}
         onChange={(value) => onChange((s) => setDailySummaryTime(s, value))}
       />
-    </div>
+    </Row>
   );
 }
 
@@ -166,60 +165,78 @@ export function AccountNotifications() {
   const settings = query.data;
   const update: ChangeHandler = (change) => save.mutate(change);
   return (
-    <section className={styles.section} aria-labelledby="account-notifications">
-      <SectionLabel labelId="account-notifications">{t("Notifications")}</SectionLabel>
-      {query.isPending ? <LoadingText>{t("Loading notification settings…")}</LoadingText> : null}
-      {query.isError ? (
-        <InlineError retry={{ onRetry: () => query.refetch(), pending: query.isFetching }}>
-          {t("Could not load your notification settings.")}
-        </InlineError>
-      ) : null}
+    <Group
+      title={t("Notifications")}
+      description={t(
+        "Sign-ins from a new device always notify you, so they cannot be switched off.",
+      )}
+      feedback={
+        query.isPending ? (
+          <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+        ) : query.isError ? (
+          <SettingsFeedback
+            state="error"
+            action={{ label: t("Retry"), onClick: () => query.refetch() }}
+          >
+            {t("Could not load your notification settings.")}
+          </SettingsFeedback>
+        ) : save.isError ? (
+          <SettingsFeedback state="error">
+            {t("Could not save. Your previous choice was kept.")}
+          </SettingsFeedback>
+        ) : undefined
+      }
+    >
       {settings ? (
         <>
-          <div className={layout.matrixScroll}>
-            <div
-              className={layout.matrix}
-              role="group"
-              aria-label={t("Notifications by event and channel")}
-            >
-              <Text size="caption" tone="secondary" leading="inherit" className={styles.gridHead}>
-                {t("Event")}
-              </Text>
-              {NOTIFICATION_CHANNELS.map((channel) => (
-                <Text
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  key={channel}
-                  className={styles.gridHead}
-                >
-                  {channelLabel(channel)}
+          <Row label={t("Notifications by event and channel")} stacked>
+            <div className={layout.matrixScroll}>
+              <div
+                className={layout.matrix}
+                role="group"
+                aria-label={t("Notifications by event and channel")}
+              >
+                <Text size="caption" tone="secondary" leading="inherit" className={styles.gridHead}>
+                  {t("Event")}
                 </Text>
-              ))}
-              {userNotificationEvents().map((event) => (
-                <EventRow key={event.key} event={event.key} settings={settings} onChange={update} />
-              ))}
+                {NOTIFICATION_CHANNELS.map((channel) => (
+                  <Text
+                    size="caption"
+                    tone="secondary"
+                    leading="inherit"
+                    key={channel}
+                    className={styles.gridHead}
+                  >
+                    {channelLabel(channel)}
+                  </Text>
+                ))}
+                {userNotificationEvents().map((event) => (
+                  <EventRow
+                    key={event.key}
+                    event={event.key}
+                    settings={settings}
+                    onChange={update}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
-          <Text as="p" size="caption" tone="secondary" leading="inherit">
-            {t("Sign-ins from a new device always notify you, so they cannot be switched off.")}
-          </Text>
-          <DailySummaryControls settings={settings} onChange={update} />
-          <QuietHoursControls settings={settings} onChange={update} />
-          <Switch
+          </Row>
+          <DailySummaryRow settings={settings} onChange={update} />
+          <QuietHoursRow settings={settings} onChange={update} />
+          <Row
             label={t("Show details in phone notifications")}
             description={t(
               "Off by default: phone notifications then say only that something needs you, without project or session names.",
             )}
-            checked={settings.pushShowDetails}
-            onCheckedChange={(on) => update((s) => setPushDetails(s, on))}
-          />
-          {save.isPending ? <LoadingText delay={false}>{t("Saving…")}</LoadingText> : null}
-          {save.isError ? (
-            <InlineError>{t("Could not save. Your previous choice was kept.")}</InlineError>
-          ) : null}
+          >
+            <Toggle
+              label={t("Show details in phone notifications")}
+              on={settings.pushShowDetails}
+              onChange={(on) => update((s) => setPushDetails(s, on))}
+            />
+          </Row>
         </>
       ) : null}
-    </section>
+    </Group>
   );
 }

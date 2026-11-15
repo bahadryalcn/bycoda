@@ -278,24 +278,31 @@ function SubagentPanel({
   );
 
   const stopButton = delegated?.onStop ? (
-    <Button
-      motion="none"
-      iconOnly
-      variant="ghost"
-      type="button"
-      label={
-        delegated.stopping
-          ? t("Stopping {p0}…", { p0: name })
-          : delegated.stopFailed
-            ? t("Could not stop. Retry")
-            : t("Stop {p0}", { p0: name })
-      }
-      disabled={delegated.stopping}
-      onClick={delegated.onStop}
-      className="shrink-0"
-    >
-      <Square className="icon-xs" strokeWidth={1.75} aria-hidden />
-    </Button>
+    <>
+      {delegated.stopFailed ? (
+        <Text as="span" size="caption" tone="danger" className="shrink-0">
+          {t("Stop failed. Retry")}
+        </Text>
+      ) : null}
+      <Button
+        motion="none"
+        iconOnly
+        variant="ghost"
+        type="button"
+        label={
+          delegated.stopping
+            ? t("Stopping {p0}…", { p0: name })
+            : delegated.stopFailed
+              ? t("Could not stop. Retry")
+              : t("Stop {p0}", { p0: name })
+        }
+        disabled={delegated.stopping}
+        onClick={delegated.onStop}
+        className="shrink-0"
+      >
+        <Square className="icon-xs" strokeWidth={1.75} aria-hidden />
+      </Button>
+    </>
   ) : null;
 
   // A run can report its first step late (or never). Its prompt and status

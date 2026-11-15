@@ -163,7 +163,7 @@ export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompani
               <Button
                 touchTarget="control"
                 iconOnly
-                variant="danger"
+                tone="danger"
                 label={t("Disconnect voice")}
                 onClick={p.onClose}
               >

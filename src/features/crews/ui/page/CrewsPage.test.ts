@@ -82,6 +82,17 @@ function mount(onOpenSession = opened) {
 }
 const tabs = () => [...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
 
+it("leaves the primary action to the member collection on its tab", () => {
+  const page = mount();
+  act(() => openCrewsPageAt({ tab: "members" }));
+  const create = [...page.querySelectorAll("button")].find(
+    (button) => button.textContent === "New crew",
+  )!;
+  expect(create.getAttribute("data-button-variant")).toBe("secondary");
+  act(() => openCrewsPageAt({ tab: "teams" }));
+  expect(create.getAttribute("data-button-variant")).toBe("primary");
+});
+
 afterEach(() => {
   act(() => root?.unmount());
   host?.remove();

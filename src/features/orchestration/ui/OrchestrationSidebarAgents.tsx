@@ -248,8 +248,14 @@ export function OrchestrationSidebarAgents({
             "mt-1.5 space-y-1.5 border-(--ui-tone-neutral-border) pt-1.5",
           )}
         >
-          {stopping || leadBusy ? (
-            <Text as="p" size="micro" tone="secondary" leading="relaxed" className="px-0.5">
+          {resumeBlocker && (
+            <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
+              {resumeBlocker.title || t("Another conversation")}
+              {t(" is still running in this project.")}
+            </Text>
+          )}
+          <div className="-mr-1.5 flex items-center justify-end gap-1">
+            <InfoPopover>
               {stopping
                 ? t("Stopping interrupted work before this run can resume.")
                 : leadBusy
@@ -259,22 +265,7 @@ export function OrchestrationSidebarAgents({
                   : t(
                       "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
                     )}
-            </Text>
-          ) : null}
-          {resumeBlocker && (
-            <Text as="p" size="micro" tone="warning" leading="relaxed" className="px-0.5">
-              {resumeBlocker.title || t("Another conversation")}
-              {t(" is still running in this project.")}
-            </Text>
-          )}
-          <div className="-mr-1.5 flex items-center justify-end gap-1">
-            {!stopping && !leadBusy ? (
-              <InfoPopover>
-                {t(
-                  "Resume continues interrupted workers from their retained checkouts and starts queued work. Policy-blocked tasks stay stopped for review.",
-                )}
-              </InfoPopover>
-            ) : null}
+            </InfoPopover>
             {resumeBlocker && actions && (
               <Button
                 variant="ghost"

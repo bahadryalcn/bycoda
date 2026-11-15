@@ -1,6 +1,10 @@
 import sectionStyles from "./accountSections.module.css";
 import { Text } from "../../../shared/ui/Text";
-import type { DataSummary, RetentionKey } from "@bycoda/account-contracts";
+import {
+  DELETION_GRACE_DAYS,
+  type DataSummary,
+  type RetentionKey,
+} from "@bycoda/account-contracts";
 import { useState } from "react";
 import { dateTimeFormat, getLocale, t, useLocale } from "../../../shared/i18n";
 import { formatDays, formatDuration } from "../../../shared/i18n/format";
@@ -10,14 +14,13 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Group, Row } from "../../settings/public/settingsControls";
 import { useDataExport, useDataSummary } from "../hooks/useAccountData";
-import { AccountPrivacy } from "./AccountPrivacy";
 
 export function retentionLabel(key: RetentionKey): string {
   switch (key) {
     case "account_lifetime":
       return t("Kept while your account exists");
     case "deleted_14_days_after_request":
-      return t("Deleted 14 days after you ask");
+      return t("Deleted {p0} days after you ask", { p0: DELETION_GRACE_DAYS });
     case "backups_30_days":
       return t("Backups kept 30 days");
     case "expires_7_days_after_request":
@@ -157,26 +160,23 @@ export function AccountData() {
   const query = useDataSummary();
   const summary = query.data;
   return (
-    <>
-      <Group
-        title={t("Your data")}
-        description={t(
-          "bycoda never stores your sessions, prompts, code, file names or project names.",
-        )}
-        feedback={
-          query.isPending ? (
-            <LoadingText>{t("Loading your data summary…")}</LoadingText>
-          ) : query.isError ? (
-            <InlineError retry={{ onRetry: () => query.refetch(), pending: query.isFetching }}>
-              {t("Could not load your data summary.")}
-            </InlineError>
-          ) : undefined
-        }
-      >
-        {summary ? <StoredData summary={summary} /> : null}
-        <DataExportRow />
-      </Group>
-      <AccountPrivacy />
-    </>
+    <Group
+      title={t("Your data")}
+      description={t(
+        "bycoda never stores your sessions, prompts, code, file names or project names.",
+      )}
+      feedback={
+        query.isPending ? (
+          <LoadingText>{t("Loading your data summary…")}</LoadingText>
+        ) : query.isError ? (
+          <InlineError retry={{ onRetry: () => query.refetch(), pending: query.isFetching }}>
+            {t("Could not load your data summary.")}
+          </InlineError>
+        ) : undefined
+      }
+    >
+      {summary ? <StoredData summary={summary} /> : null}
+      <DataExportRow />
+    </Group>
   );
 }

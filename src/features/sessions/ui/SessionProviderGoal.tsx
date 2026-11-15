@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Session } from "../model/session";
+import { HARNESS_TITLE, type Session } from "../model/session";
 import { isSessionGoal, type SessionGoal } from "../model/providerGoal";
 import { useFormat, useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -63,7 +63,7 @@ export function SessionProviderGoal({
     }
   };
   return (
-    <div data-provider-goal={goal.status} className="flex min-w-0 flex-col gap-1 px-4 py-2">
+    <div data-provider-goal={goal.status} className="flex min-w-0 flex-col gap-1">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
         <Text
           as="span"
@@ -73,7 +73,7 @@ export function SessionProviderGoal({
           className="flex items-center gap-2"
         >
           <CircleDot className="icon-sm shrink-0" aria-hidden />
-          {t(goal.status === "active" && !session.busy ? "Goal set" : status.label)}
+          {t(status.label)}
         </Text>
         {usage.length ? (
           <Text as="span" size="caption" tone="muted">
@@ -114,7 +114,9 @@ export function SessionProviderGoal({
       </ClampText>
       {goal.status === "blocked" ? (
         <Text size="caption" tone="muted">
-          {t("Codex did not provide a reason for this goal's blocked state.")}
+          {t("{p0} did not provide a reason for this goal's blocked state.", {
+            p0: HARNESS_TITLE[session.harness],
+          })}
         </Text>
       ) : null}
       {failed ? (

@@ -45,7 +45,9 @@ it("shows a source request inside its chat and moves it into the shared dialog w
     await act(async () => root.render(render(false)));
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Command: pwd");
     await act(async () => {
-      (document.querySelector("[data-confirm-cancel]") as HTMLButtonElement).click();
+      [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+        .find((button) => button.textContent?.trim() === "Cancel")!
+        .click();
     });
     expect(await answer).toBe(false);
   } finally {

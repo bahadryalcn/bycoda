@@ -313,7 +313,8 @@ it("extends Button without changing its danger, ref or submit contract", async (
         Button,
         {
           ref,
-          variant: "danger",
+          variant: "secondary",
+          tone: "danger",
           iconOnly: true,
           label: "Delete note",
           shape: "pill",
@@ -325,7 +326,7 @@ it("extends Button without changing its danger, ref or submit contract", async (
   );
   expect(ref.current!.type).toBe("submit");
   expect(ref.current!.getAttribute("aria-label")).toBe("Delete note");
-  expect(ref.current!.getAttribute("data-button-variant")).toBe("danger");
+  expect(ref.current!.getAttribute("data-button-tone")).toBe("danger");
 });
 
 it("keeps hidden field labels, refs, validation descriptions and native form values", async () => {

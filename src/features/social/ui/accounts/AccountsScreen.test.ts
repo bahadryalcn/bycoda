@@ -220,7 +220,7 @@ it("says why a new account cannot be connected while this computer cannot be rea
   expect(reasons).toContain("Could not reach this computer.");
 });
 
-it("warns that scheduled work waits while the Host is offline", async () => {
+it("leaves the offline Host notice to the shell", async () => {
   const offline = { ...snapshot([account("a1")]), hostOnline: false } as SocialSnapshot;
   act(() =>
     root.render(
@@ -231,9 +231,7 @@ it("warns that scheduled work waits while the Host is offline", async () => {
     ),
   );
   await flush();
-  expect(element.textContent).toContain(
-    "Scheduling is offline. Scheduled posts and replies wait until the Host is back.",
-  );
+  expect(element.textContent).not.toContain("Scheduling is offline");
 });
 
 it("shows unknown health and retry when intervention read fails", async () => {

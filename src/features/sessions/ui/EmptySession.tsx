@@ -45,7 +45,7 @@ export function EmptySession({ cwd, composer, hasChatBackground }: Props) {
         ? resolveTabGroupLabel(projectKey(cwd), loadTabGroupLabels(), basename(cwd))
         : null,
   );
-  const title = project ? t("Work on {p0}.", { p0: project }) : t("Start a new task.");
+  const title = project ?? t("New session");
 
   return (
     <div

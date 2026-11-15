@@ -249,9 +249,7 @@ export function AssistantSettings({
     if (draft.permissionLevel && consentChanged.current) {
       if (!consentEnvironment) throw new Error(t("Selected Host is unavailable."));
       if (consentRevision.current === null)
-        throw new Error(
-          t("Native consent is unavailable. Reopen settings before saving permissions."),
-        );
+        throw new Error(t("Permission is unavailable. Reopen settings before saving permissions."));
       const consent = await invoke<{ revision: number }>("assistant_consent_set", {
         environmentId: consentEnvironment,
         expectedRevision: consentRevision.current,
@@ -280,7 +278,7 @@ export function AssistantSettings({
     } catch (cause) {
       if (nativeSaved)
         throw new Error(
-          t("Native consent saved. Host settings were not confirmed; review before retrying."),
+          t("Permission saved. Host settings were not confirmed; review before retrying."),
         );
       throw cause;
     }
@@ -375,7 +373,7 @@ export function AssistantSettings({
                     {t("Keep editing")}
                   </Button>
                   <Button
-                    variant="danger"
+                    tone="danger"
                     disabled={busy}
                     onClick={() => {
                       const target = leave;
@@ -587,9 +585,9 @@ export function AssistantSettings({
                   />
                   {draft.permissionLevel && (
                     <Row
-                      label={t("Native consent")}
+                      label={t("Computer access")}
                       description={t(
-                        "Native consent stays with this installation and selected Host until changed. Host credential changes require new consent. Host profile settings alone grant no native approval.",
+                        "This permission stays with this installation and the selected Host until changed. Host credential changes ask again.",
                       )}
                     >
                       <Button

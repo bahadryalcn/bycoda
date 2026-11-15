@@ -58,7 +58,8 @@
   color: var(--ui-tone-danger-fg);
 }
 
-/* Keyboard-active reads like hover; an open submenu parent holds the same fill. */
+/* Keyboard-active reads like hover; an open submenu parent holds the same fill. A checked menu item
+   (menuitemcheckbox / menuitemradio) shows its check glyph only, never the selected fill. */
 .row:is([data-highlighted], [data-active], [aria-expanded="true"], :focus-visible):not(
     :disabled,
     [aria-disabled="true"]
@@ -72,11 +73,11 @@
 }
 /* Selected comes after hover so a committed row keeps its fill under the pointer. A keyboard-active option
    (aria-selected for aria-activedescendant, no committed selection) keeps the hover fill above. */
-.row:is([aria-selected="true"], [aria-checked="true"], [data-selected="true"]):not(
-    :disabled,
-    [aria-disabled="true"],
-    [data-active]:not([data-selected="true"])
-  ) {
+.row:is(
+    [aria-selected="true"],
+    [aria-checked="true"]:not([role^="menuitem"]),
+    [data-selected="true"]
+  ):not(:disabled, [aria-disabled="true"], [data-active]:not([data-selected="true"])) {
   background: var(--ui-surface-selected);
 }
 /* Pressed outranks hover, keyboard highlight and selection. */

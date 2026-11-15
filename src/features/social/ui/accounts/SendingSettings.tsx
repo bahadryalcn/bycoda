@@ -97,7 +97,8 @@ export function SendingSettings({ client, snapshot, hostOnline, onChanged }: Sen
         description={snapshot.stopped ? t("Pending jobs are kept") : undefined}
       >
         <DisabledReason
-          variant={snapshot.stopped ? "secondary" : "danger"}
+          variant="secondary"
+          tone={snapshot.stopped ? "neutral" : "danger"}
           size="sm"
           loading={is("sending.stop")}
           onClick={() =>

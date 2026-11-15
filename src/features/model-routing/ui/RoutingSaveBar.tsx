@@ -8,7 +8,7 @@ import styles from "./RoutingSaveBar.module.css";
 
 /**
  * One save bar for the Models routing tabs: sticks to the bottom of the settings scroller so
- * Save stays reachable on long lists, and states plainly whether anything is unsaved.
+ * Save stays reachable on long lists, and says "Unsaved changes" only while the draft is dirty.
  */
 export function RoutingSaveBar({
   dirty,
@@ -45,9 +45,7 @@ export function RoutingSaveBar({
       <div className={styles.row}>
         <div className={styles.status}>
           {dirty ? <StatusDot tone="warning" /> : null}
-          <Text size="secondary" tone={dirty ? "primary" : "muted"}>
-            {dirty ? t("Unsaved changes") : t("No unsaved changes")}
-          </Text>
+          {dirty ? <Text size="secondary">{t("Unsaved changes")}</Text> : null}
         </div>
         <Button
           size="sm"

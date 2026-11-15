@@ -14,7 +14,7 @@ import {
   CheckCircle,
   ChevronLeft,
   ChevronRight,
-  DashboardSquare,
+  PanelRight,
   Inbox,
   Menu,
   PanelLeft,
@@ -1249,7 +1249,7 @@ function TitleBarComponent({
               command="App: Toggle Session Sidebar"
               onClick={onToggleSessionSidebar}
             >
-              <DashboardSquare className="icon-sm" strokeWidth={1.75} />
+              <PanelRight className="icon-sm" strokeWidth={1.75} />
             </IconButton>
           </div>
         </>

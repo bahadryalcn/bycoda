@@ -1,4 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
+import { Popover } from "../../../shared/ui/Popover";
 import { Text } from "../../../shared/ui/Text";
 import { Heading } from "../../../shared/ui/Heading";
 import { useState } from "react";
@@ -14,7 +15,8 @@ import { TextField } from "../../../shared/ui/TextField";
 import {
   Bot,
   CheckList,
-  CircleHelp,
+  TriangleAlert,
+  ChartBreakoutSquare,
   DashboardSquare,
   Gauge,
   LayoutGrid,
@@ -125,6 +127,7 @@ export type TaskToolbarProps = {
 export function TaskToolbar(props: TaskToolbarProps) {
   const t = useT();
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [scopeAnchor, setScopeAnchor] = useState<HTMLElement | null>(null);
   const { section, filters, menu, status } = props;
   return (
     <header {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "task-board-toolbar")}>
@@ -135,34 +138,59 @@ export function TaskToolbar(props: TaskToolbarProps) {
         label={t("Task sections")}
         value={section}
         items={[
-          { value: "backlog", label: t("Backlog") },
+          {
+            value: "backlog",
+            label: t("Backlog"),
+            count: props.newReviewNotes || undefined,
+            countLabel: t(
+              props.newReviewNotes === 1 ? "{p0} new review note" : "{p0} new review notes",
+              { p0: props.newReviewNotes },
+            ),
+          },
           { value: "sprints", label: t("Sprints") },
           // Reports have nothing to show before the first sprint.
           ...(props.showReports ? [{ value: "reports" as const, label: t("Reports") }] : []),
         ]}
         onValueChange={props.onSection}
       />
-      <div className="task-project-scope">
-        <SearchableSelect
-          hideLabel
-          label={t("Server")}
-          value={filters.values.machine}
-          onChange={filters.onMachine}
-          options={[
-            { value: "all", label: t("All servers"), pinned: true },
-            ...filters.machines.map((machine) => ({ value: machine.id, label: machine.name })),
-          ]}
-        />
-      </div>
-      <div className="task-project-scope">
-        <SearchableSelect
-          hideLabel
-          label={t("Project")}
-          value={props.projectFilter}
-          options={props.projectOptions}
-          onChange={props.onProject}
-        />
-      </div>
+      <Button
+        variant="ghost"
+        aria-haspopup="dialog"
+        aria-expanded={!!scopeAnchor}
+        onClick={(event) => setScopeAnchor(scopeAnchor ? null : event.currentTarget)}
+      >
+        {t("Scope")}
+      </Button>
+      {scopeAnchor ? (
+        <Popover
+          anchor={scopeAnchor}
+          kind="dialog"
+          aria-label={t("Scope")}
+          flow="scroll"
+          onDismiss={() => setScopeAnchor(null)}
+          className="grid gap-2 p-3"
+        >
+          <div className="task-project-scope">
+            <SearchableSelect
+              label={t("Server")}
+              value={filters.values.machine}
+              onChange={filters.onMachine}
+              options={[
+                { value: "all", label: t("All servers"), pinned: true },
+                ...filters.machines.map((machine) => ({ value: machine.id, label: machine.name })),
+              ]}
+            />
+          </div>
+          <div className="task-project-scope">
+            <SearchableSelect
+              label={t("Project")}
+              value={props.projectFilter}
+              options={props.projectOptions}
+              onChange={props.onProject}
+            />
+          </div>
+        </Popover>
+      ) : null}
       {props.search.visible ? (
         <TextField
           fieldClassName="task-search-field"
@@ -201,19 +229,6 @@ export function TaskToolbar(props: TaskToolbarProps) {
             onValueChange={(value) => props.view.onList(value === "list")}
           />
         ) : null}
-        {props.newReviewNotes > 0 ? (
-          <Text
-            size="micro"
-            tone="warning"
-            leading="inherit"
-            data-new-review-notes
-            className="task-review-notes"
-          >
-            {props.newReviewNotes}
-            {t(" new review ")}
-            {props.newReviewNotes === 1 ? t("note") : t("notes")}
-          </Text>
-        ) : null}
         {filters.visible ? (
           <TaskToolbarFilters
             values={filters.values}
@@ -225,18 +240,6 @@ export function TaskToolbar(props: TaskToolbarProps) {
             onSprint={filters.onSprint}
             onReset={filters.onReset}
           />
-        ) : null}
-        {props.select.visible ? (
-          <Button
-            variant="ghost"
-            aria-label={t("Select tasks")}
-            aria-pressed={props.select.active}
-            disabled={props.select.disabled}
-            startIcon={<CheckList className="icon-sm" strokeWidth={1.75} />}
-            onClick={props.select.onToggle}
-          >
-            <span className="task-toolbar-label">{t("Select tasks")}</span>
-          </Button>
         ) : null}
         <Button
           variant="ghost"
@@ -254,6 +257,18 @@ export function TaskToolbar(props: TaskToolbarProps) {
             anchor={menuAnchor}
             label={t("More actions")}
             items={[
+              ...(props.select.visible
+                ? [
+                    {
+                      kind: "item" as const,
+                      id: "select",
+                      label: t("Select tasks"),
+                      checked: props.select.active,
+                      disabled: props.select.disabled,
+                      icon: <CheckList className="icon-sm" />,
+                    },
+                  ]
+                : []),
               {
                 kind: "item",
                 id: "summary",
@@ -265,7 +280,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
                 kind: "item",
                 id: "metrics",
                 label: t("Compare accepted results"),
-                icon: <Gauge className="icon-sm" />,
+                icon: <ChartBreakoutSquare className="icon-sm" />,
               },
               ...(menu.showStewards
                 ? [
@@ -298,7 +313,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
               },
             ]}
             onClose={() => setMenuAnchor(null)}
-            onPick={menu.onPick}
+            onPick={(id) => (id === "select" ? props.select.onToggle() : menu.onPick(id))}
           />
         ) : null}
         <div className="task-board-status" data-remote-data-state={status.phase}>
@@ -308,7 +323,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
               onClick={status.onDetails}
               tone={status.problem ? "warning" : "neutral"}
             >
-              <CircleHelp className="icon-sm" strokeWidth={1.75} />
+              <TriangleAlert className="icon-sm" strokeWidth={1.75} />
               <LiveText
                 text={
                   status.failed

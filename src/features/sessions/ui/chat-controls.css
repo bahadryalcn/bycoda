@@ -1,9 +1,4 @@
 /* Chat controls reuse the application's surfaces, typography and contrast tokens. */
-.tool-command-label {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 .user-message-attachments {
   padding-block-end: 0.25rem;
 }

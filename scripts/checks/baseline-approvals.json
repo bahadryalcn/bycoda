@@ -293,6 +293,20 @@
       "from": 0,
       "to": 0,
       "reason": "New Phase 5 guard rule hover-only-reveal records existing debt on 2026-11-15; future per-file counts may only fall via --ratchet."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "nested-surface",
+      "from": 0,
+      "to": 5,
+      "reason": "New rule nested-surface (settings Group nested in a Group or card Surface) widens the view guards on 2026-11-15 and records existing debt; future per-file counts may only fall via --ratchet."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "tooltip-repeats-label",
+      "from": 0,
+      "to": 0,
+      "reason": "New rule tooltip-repeats-label (tooltip that only repeats the visible label) widens the view guards on 2026-11-15 and records existing debt; future per-file counts may only fall via --ratchet."
     }
   ]
 }

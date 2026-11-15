@@ -2,7 +2,7 @@ import { StatusDot } from "../../shared/ui/StatusDot";
 import { surfaceAttributes } from "../../shared/ui/Surface";
 import { Text } from "../../shared/ui/Text";
 import { Button } from "../../shared/ui/Button";
-import { useT } from "../../shared/i18n";
+import { useFormat, useT } from "../../shared/i18n";
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { LiveAgent } from "../../features/sessions/model/liveAgents";
@@ -22,8 +22,8 @@ export function detachedAgentStatus(agent: LiveAgent, t: (text: string) => strin
 
 /** The working picker is navigation, not a terminal preview. Never put tool
  * command text in its rows or tooltips. */
-export function detachedAgentTitle(title: string): string {
-  const normalized = title.replace(/\s+/g, " ").trim() || "Untitled session";
+export function detachedAgentTitle(title: string, fallback: string): string {
+  const normalized = title.replace(/\s+/g, " ").trim() || fallback;
   return normalized.length > 72 ? `${normalized.slice(0, 71)}…` : normalized;
 }
 
@@ -31,13 +31,17 @@ const interactive = "button, a, input, select, textarea, [role=menu], [data-no-w
 
 export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const t = useT();
+  const { formatNumber } = useFormat();
   const [open, setOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [windowError, setWindowError] = useState<string | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const dragCleanup = useRef<(() => void) | undefined>(undefined);
   const count = agents.length;
-  const summary = `${count} ${count === 1 ? "conversation" : "conversations"}`;
+  const summary =
+    count === 1
+      ? t("{p0} session", { p0: formatNumber(count) })
+      : t("{p0} sessions", { p0: formatNumber(count) });
   // The menu cannot stay open with nothing to list. Closed while rendering so it
   // does not reopen when agents return.
   if (!count && open) setOpen(false);
@@ -87,7 +91,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const menuItems: DropdownMenuItem[] = agents.map((agent) => ({
     kind: "item",
     id: agent.id,
-    label: detachedAgentTitle(agent.title),
+    label: detachedAgentTitle(agent.title, t("Untitled session")),
     description: `${detachedAgentStatus(agent, t)}${
       agent.ownerWindowLabel ? t(" · Other window") : t(" · This window")
     }`,
@@ -137,7 +141,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
         ref={trigger}
         type="button"
         data-tauri-drag-region="false"
-        aria-label={t("Working conversations: {p0}", { p0: summary })}
+        aria-label={t("Working sessions: {p0}", { p0: summary })}
         aria-haspopup="menu"
         expanded={open}
         disabled={!count}
@@ -178,7 +182,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
           anchor={trigger}
           align="start"
           width={320}
-          label={t("Working conversations")}
+          label={t("Working sessions")}
           items={menuItems}
           onPick={onSelectAgent}
           onClose={() => setOpen(false)}

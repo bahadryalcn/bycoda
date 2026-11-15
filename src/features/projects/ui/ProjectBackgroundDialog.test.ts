@@ -217,9 +217,12 @@ describe("project background dialog", () => {
     const heading = Array.from(dialog.querySelectorAll("span")).find(
       (node) => node.textContent === "Background effect",
     )!;
-    expect(heading.nextElementSibling?.textContent).toBe("Shows the original artwork.");
+    const info = heading.nextElementSibling as HTMLButtonElement;
+    await act(async () => info.click());
+    expect(document.body.textContent).toContain("Shows the original artwork.");
+    await act(async () => info.click());
     expect(
-      heading.parentElement?.nextElementSibling?.querySelector(
+      heading.parentElement?.parentElement?.nextElementSibling?.querySelector(
         '[aria-label="Project background effect: None"]',
       ),
     ).not.toBeNull();

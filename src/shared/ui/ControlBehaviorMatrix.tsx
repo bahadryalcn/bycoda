@@ -43,7 +43,7 @@ import {
 export type ControlMatrixLayout = "default" | "narrow" | "short";
 
 const SIZES = ["sm", "md", "lg"] as const;
-const VARIANTS = ["primary", "secondary", "ghost", "danger", "link"] as const;
+const VARIANTS = ["primary", "secondary", "ghost", "link"] as const;
 
 function ActionsMatrix() {
   const t = useT();

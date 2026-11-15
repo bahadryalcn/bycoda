@@ -253,9 +253,12 @@ it("keeps the confirmed availability while the owner's presence change is pendin
       : base(input),
   );
   await render();
-  const presence = () => container.querySelector('header [role="status"]')?.textContent;
+  const presence = () =>
+    document
+      .querySelector('[role="status"][aria-label^="Current availability"]')
+      ?.getAttribute("aria-label");
+  await click("Assistant status");
   expect(presence()).toContain("Here");
-  await click("Presence");
   await click("I'm back");
   expect(presence()).toContain("Here");
   await act(async () => reject(new Error("Unconfirmed owner update")));
@@ -318,8 +321,7 @@ it("removes hidden jobs, selected counts, details, history and trash after live 
   expect(document.body.textContent).not.toContain("secret-session");
   expect(container.textContent).not.toContain("1 selected");
   expect(mock.snapshot!.jobs).toHaveLength(2);
-  await click("Records");
-  await click("What I did");
+  await click("History");
   expect(container.textContent).not.toContain("Secret timeline");
   await click("More options");
   const trashItem = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
@@ -461,11 +463,11 @@ it("shows recorded actions with their transcript and hides the whole row when a 
   await act(async () => sourceThread.click());
   expect(container.textContent).toContain("Accepted owner request with recorded activity");
   expect(container.querySelector("details summary")?.textContent).toContain("Recorded actions");
-  expect(container.textContent).toContain("tasks.get");
+  expect(container.textContent).toContain("Get tasks");
   expect(container.textContent).toContain("accepted-job");
   await render({ initialTab: "conversations", projectPath: "/one", visibleProjectPaths: ["/one"] });
   expect(container.textContent).not.toContain("Accepted owner request with recorded activity");
-  expect(container.textContent).not.toContain("tasks.get");
+  expect(container.textContent).not.toContain("Get tasks");
   expect(container.textContent).not.toContain("accepted-job");
 });
 it("keeps global emergency-stop uncertainty visible without leaking a hidden source after a lock", async () => {
@@ -1943,7 +1945,7 @@ it("marks the owner returned and prepares the current daily briefing without sta
     input.op === "snapshot" ? { snapshot: mock.snapshot } : base(input),
   );
   await render();
-  await click("Presence");
+  await click("Assistant status");
   await click("I'm back");
   const ops = mock.request.mock.calls.map(([input]) => input.op);
   expect(ops.indexOf("presence.set")).toBeLessThan(ops.indexOf("briefing.daily"));

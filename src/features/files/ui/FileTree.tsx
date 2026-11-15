@@ -1774,26 +1774,10 @@ function NameIssueView({
         body = t("A file or folder name cannot start with a slash.");
         break;
       case "exists":
-        body = (
-          <>
-            {t("A file or folder ")}
-            <Text size="inherit" tone="inherit" weight="medium">
-              {issue.name}
-            </Text>{" "}
-            {t("already exists at this location. Please choose a different name.")}
-          </>
-        );
+        body = t("{p0} already exists at this location", { p0: issue.name });
         break;
       case "invalid":
-        body = (
-          <>
-            {t("The name ")}
-            <Text size="inherit" tone="inherit" weight="medium">
-              {issue.name}
-            </Text>
-            {t(" is not valid as a file or folder name. Please choose a different name.")}
-          </>
-        );
+        body = t("{p0} is not a valid name", { p0: issue.name });
         break;
       case "whitespace":
         body = t("Leading or trailing whitespace detected in file or folder name.");

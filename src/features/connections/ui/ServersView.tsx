@@ -473,16 +473,6 @@ export function ServersView({
                   <div className="flex flex-col gap-3 p-3">
                     <SearchableSelect
                       hideLabel
-                      label={t("Group")}
-                      value={group}
-                      options={[
-                        { value: "", label: t("All groups") },
-                        ...groups.map((value) => ({ value, label: value })),
-                      ]}
-                      onChange={setGroup}
-                    />
-                    <SearchableSelect
-                      hideLabel
                       label={t("Tags")}
                       value={tag}
                       options={[
@@ -542,13 +532,16 @@ export function ServersView({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {openQuick ? (
-            <Button variant="primary" onClick={() => setQuickConnect(true)}>
+            <Button
+              variant={loaded && servers.length === 0 ? "secondary" : "primary"}
+              onClick={() => setQuickConnect(true)}
+            >
               {t("Quick connect")}
             </Button>
           ) : null}
           <Button
             ref={actionsAnchor}
-            variant={openQuick ? "secondary" : "primary"}
+            variant={openQuick || (loaded && servers.length === 0) ? "secondary" : "primary"}
             aria-expanded={actionsOpen}
             aria-haspopup="menu"
             startIcon={<Plus aria-hidden className="icon-sm" />}
@@ -653,9 +646,6 @@ export function ServersView({
               kind="empty"
               icon={<Server aria-hidden className="icon-lg" />}
               title={t("No machines connected.")}
-              description={t(
-                "Add an SSH server for terminal access, or a machine running bycoda Host.",
-              )}
               action={{ label: t("Add SSH server"), onClick: () => setEditor("new") }}
             />
           ) : null}
@@ -664,7 +654,7 @@ export function ServersView({
               context="panel"
               kind="filtered"
               icon={null}
-              description={t("No matching servers.")}
+              description={t("No matching servers")}
               onReset={resetNarrowing}
               resetLabel={t("Reset filters")}
             />
@@ -734,7 +724,7 @@ export function ServersView({
                       {t("Favorite")}
                     </Button>
                     <Button
-                      variant="danger"
+                      tone="danger"
                       disabled={bulkBusy}
                       onClick={() => {
                         setActionError("");

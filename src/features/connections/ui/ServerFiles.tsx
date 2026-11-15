@@ -508,7 +508,7 @@ export function ServerFiles({
               <EmptyState
                 size="inline"
                 kind="filtered"
-                description={t("No matching files.")}
+                description={t("No matching files")}
                 onReset={() => setFileSearch("")}
               />
             ) : null}

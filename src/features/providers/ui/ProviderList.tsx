@@ -2,11 +2,12 @@ import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Text } from "../../../shared/ui/Text";
 import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { Badge } from "../../../shared/ui/Badge";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost } from "../../../shared/ui/ActionHost";
-import { Check, Bot } from "../../../shared/ui/icons";
+import { Bot } from "../../../shared/ui/icons";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
 import { Toggle } from "../../settings/ui/settingsControls";
@@ -111,11 +112,14 @@ function ProviderListItem({
               {title}
             </Text>
             {entry.isDefault ? (
-              <Tooltip label={t("New conversations start with this provider")}>
-                <Text tone="secondary" className="shrink-0" aria-label={t("Default provider")}>
-                  <Check className="icon-sm" aria-hidden />
-                </Text>
-              </Tooltip>
+              <Badge size="xs" tone="neutral" className="shrink-0">
+                {t("Default")}
+              </Badge>
+            ) : null}
+            {entry.updateAvailable ? (
+              <Badge size="xs" tone="warning" className="shrink-0">
+                {t("Update available")}
+              </Badge>
             ) : null}
           </Text>
           {meta ? (

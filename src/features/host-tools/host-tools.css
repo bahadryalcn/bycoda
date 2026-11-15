@@ -164,24 +164,6 @@
   flex-basis: 0;
   min-inline-size: 0;
 }
-.host-tool-intro {
-  display: grid;
-  gap: 5px;
-}
-.host-tool-intro h3 {
-  font-size: var(--ui-font-title);
-  font-weight: 500;
-}
-.host-tool-intro p,
-.host-tool-muted {
-  color: var(--host-tool-muted);
-  font-size: var(--ui-font-caption);
-  line-height: 1.6;
-}
-.host-tool-intro p {
-  max-inline-size: 75ch;
-  text-wrap: pretty;
-}
 .host-tool-section {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -200,9 +182,6 @@
   align-items: end;
   gap: 8px;
 }
-.host-tool-toolbar > .host-tool-muted {
-  align-self: center;
-}
 .host-tool-grow {
   flex: 1 1 220px;
   min-inline-size: 0;
@@ -219,22 +198,6 @@
   gap: 7px;
   font-size: var(--ui-font-caption);
 }
-.host-tool-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: var(--ui-control-radius);
-  background: var(--ui-surface-selected);
-}
-.host-tool-status::before {
-  content: "";
-  inline-size: 5px;
-  block-size: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
 .host-tools :is(summary, [role="tabpanel"]):focus-visible {
   outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: var(--ui-focus-offset);
@@ -242,14 +205,6 @@
 .host-tool-error-payload {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-}
-.host-tool-empty {
-  border: 1px dashed var(--ui-card-border);
-  border-radius: var(--ui-radius-card);
-  padding: 16px;
-  color: var(--host-tool-muted);
-  line-height: 1.7;
-  font-size: var(--ui-font-caption);
 }
 .host-tool-help {
   border-block-start: 1px solid var(--color-stroke);
@@ -379,10 +334,6 @@
   padding: 0;
   background: none;
 }
-.host-browser-controls .host-tool-muted {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-}
 .host-browser-controls .host-tool-actions {
   gap: 2px;
 }
@@ -424,11 +375,6 @@
   display: grid;
   gap: 2px;
   min-inline-size: 0;
-}
-.host-browser-state .host-tool-status {
-  padding: 0;
-  background: none;
-  font-weight: 500;
 }
 @container host-browser (min-width: 960px) {
   .host-browser-workspace[data-has-selection="true"] {

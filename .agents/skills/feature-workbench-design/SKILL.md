@@ -48,4 +48,4 @@ Run focused tests for changed shell/workspace owners, such as `pnpm exec vitest 
 - [Design language](../../../docs/reference/DESIGN.md) for product hierarchy and [Workbench guide](../../../docs/guides/workbench.md) for user behavior.
 - [Shared UI](../feature-shared-ui/SKILL.md) and [Theme](../feature-theme-foundation/SKILL.md) for reusable presentation.
 - [Feature routing](references/features.md) only when the affected domain is unclear.
-- [Owner design decisions](references/decisions.md) before reconsidering the shell direction.
+- [Owner design decisions](../feature-shared-ui/references/decisions.md) ("Shell and workbench") before reconsidering the shell direction.

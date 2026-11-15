@@ -5955,7 +5955,7 @@ const SessionCard = memo(function SessionCard({
       ) : null}
       {onDelete ? (
         <InlineAction
-          label={`Delete ${title}`}
+          label={t("Delete {p0}", { p0: title })}
           tooltip={t("Delete")}
           tooltipDetails={[title]}
           tone="danger"
@@ -5963,7 +5963,7 @@ const SessionCard = memo(function SessionCard({
           type="button"
           data-no-drag
           data-tauri-drag-region="false"
-          aria-label={`Delete ${title}`}
+          aria-label={t("Delete {p0}", { p0: title })}
           onClick={() => {
             onDelete(session.id);
           }}

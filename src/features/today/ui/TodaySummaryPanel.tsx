@@ -3,6 +3,8 @@ import { t } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { Text } from "../../../shared/ui/Text";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { formatUsageCost } from "../../providers/public/providerUsage";
@@ -86,12 +88,16 @@ export function SummaryPanel({
     );
   return (
     <div className="grid gap-2">
-      <SectionLabel>{t("Summary")}</SectionLabel>
-      <p>
-        {t(
-          "Only the text below is sent to your own provider when you press Send. Nothing else leaves this computer.",
-        )}
-      </p>
+      <div className="flex items-center gap-1">
+        <SectionLabel>{t("Summary")}</SectionLabel>
+        <InfoPopover>
+          <Text>
+            {t(
+              "Only the text below is sent to your own provider when you press Send. Nothing else leaves this computer.",
+            )}
+          </Text>
+        </InfoPopover>
+      </div>
       <Checkbox
         label={t("Include session titles")}
         checked={includeTitles}
@@ -107,17 +113,6 @@ export function SummaryPanel({
         monospace
         fieldSize="sm"
       />
-      <p>
-        {estimate.cost == null
-          ? t("Estimated cost: unknown for this model (about {p0} tokens in)", {
-              p0: estimate.inputTokens,
-            })
-          : t("Estimated cost: about {p0} (about {p1} tokens in, {p2} out)", {
-              p0: formatUsageCost(estimate.cost),
-              p1: estimate.inputTokens,
-              p2: estimate.outputTokens,
-            })}
-      </p>
       <div className="flex items-center gap-2">
         <Button
           variant="primary"
@@ -128,6 +123,17 @@ export function SummaryPanel({
         >
           {t("Send")}
         </Button>
+        <Text size="caption" tone="muted">
+          {estimate.cost == null
+            ? t("Estimated cost: unknown for this model (about {p0} tokens in)", {
+                p0: estimate.inputTokens,
+              })
+            : t("Estimated cost: about {p0} (about {p1} tokens in, {p2} out)", {
+                p0: formatUsageCost(estimate.cost),
+                p1: estimate.inputTokens,
+                p2: estimate.outputTokens,
+              })}
+        </Text>
         <Button
           size="sm"
           variant="ghost"

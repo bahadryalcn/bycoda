@@ -112,6 +112,18 @@ function button(label: string): HTMLButtonElement {
 }
 
 describe("UsageProviderChip", () => {
+  it("retains Pi-owned details while linking onward to provider usage", async () => {
+    const onShowUsage = vi.fn();
+    act(() =>
+      root.render(createElement(UsageProviderChip, { limits: codexLimits(), now, onShowUsage })),
+    );
+    await act(async () => button("Codex usage details").click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => button("Provider usage").click());
+    expect(onShowUsage).toHaveBeenCalledOnce();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
   it("keeps an unknown Claude quota distinct from zero capacity", async () => {
     const limits: ProviderRateLimits = {
       ...codexLimits(),

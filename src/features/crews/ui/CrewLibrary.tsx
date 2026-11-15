@@ -21,7 +21,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { TextField } from "../../../shared/ui/TextField";
 import { MoreHorizontal, Plus, Trash2 } from "../../../shared/ui/icons";
-import { Group, Row } from "../../settings/ui/settingsControls";
+import { Group } from "../../settings/ui/settingsControls";
 import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import { memberOf } from "../model/crewMembership";
 import { parseCrewAgent, type CrewAgent, type SavedCrewAgent } from "../model/crew";
@@ -76,20 +76,23 @@ export function CrewLibrary({
       <Group
         title={t("Member library")}
         action={
-          <Button
-            variant="ghost"
-            startIcon={<Plus className="icon-sm" />}
-            onClick={() => setEditing("new")}
-          >
-            {t("New member")}
-          </Button>
+          data.agents.length ? (
+            <Button
+              variant="primary"
+              startIcon={<Plus className="icon-sm" />}
+              onClick={() => setEditing("new")}
+            >
+              {t("New member")}
+            </Button>
+          ) : undefined
         }
       >
         {!data.agents.length ? (
-          <Row
-            label={t("No library members yet")}
-            description={t("Create one here, or save a crew member to the library from its crew.")}
-            descriptionVisible
+          <EmptyState
+            context="panel"
+            kind="empty"
+            title={t("No library members yet")}
+            action={{ label: t("New member"), onClick: () => setEditing("new") }}
           />
         ) : (
           <div
@@ -159,7 +162,7 @@ export function CrewLibrary({
                 <EmptyState
                   size="inline"
                   kind="filtered"
-                  description={t("No matching members.")}
+                  description={t("No matching members")}
                   resetLabel={t("Clear filters")}
                   onReset={() => {
                     setQuery("");
@@ -566,7 +569,8 @@ function GroupDialog({
             {t("Cancel")}
           </Button>
           <Button
-            variant={kind === "delete" ? "danger" : "primary"}
+            variant={kind === "delete" ? "secondary" : "primary"}
+            tone={kind === "delete" ? "danger" : undefined}
             loading={pending}
             disabled={pending || (kind === "rename" && !name.trim())}
             onClick={() => void apply()}

@@ -216,10 +216,7 @@ it.each(["undelivered", "uncertain"] as const)(
     expect(remove.disabled).toBe(false);
     if (followUpDelivery === "uncertain") {
       expect(host.querySelector('[role="status"]')?.textContent).toContain(
-        "may already have been delivered",
-      );
-      expect(host.querySelector('[role="status"]')?.textContent).toContain(
-        "Inspect the conversation before retrying",
+        "May have been delivered",
       );
     } else {
       expect(host.querySelector('[role="status"]')?.textContent).toContain("Not delivered");

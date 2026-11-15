@@ -118,13 +118,7 @@ export function WorkspacePolicyEditor({
           />
         </FieldGroup>
       </Row>
-      <Row
-        id="workspace-pinning"
-        label={t("Pin workspaces")}
-        description={t(
-          "Pinned workspaces are never cleaned up automatically. Applies to existing workspaces too.",
-        )}
-      >
+      <Row id="workspace-pinning" label={t("Pin workspaces")}>
         <Switch
           aria-label={t("Pin workspaces")}
           checked={draft.pinned}
@@ -140,9 +134,7 @@ export function WorkspacePolicyEditor({
       >
         <Heading size="item" id={retentionHeadingId} className={styles.subheading}>
           {t("Automatic cleanup")}
-          <Text as="span" size="caption" tone="secondary" weight="regular" leading="inherit">
-            {t("Active and pinned workspaces are excluded")}
-          </Text>
+          <InfoPopover>{t("Active and pinned workspaces are excluded")}</InfoPopover>
         </Heading>
         <div className={styles.grid4}>
           {retentionStates.map((state) => {

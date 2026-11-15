@@ -16,8 +16,8 @@ function figures(totals: { today: number; week: number }) {
 export function activitySourceNote(overview: ActivityOverview): string {
   if (overview.source === "cloud") {
     return overview.devices.length > 1
-      ? t("All your devices ({p0})", { p0: overview.devices.length })
-      : t("All your devices");
+      ? t("All my devices ({p0})", { p0: overview.devices.length })
+      : t("All my devices");
   }
   const connected = overview.machines.filter((machine) => !machine.local).length;
   if (connected === 0) return t("This machine only");
@@ -27,7 +27,7 @@ export function activitySourceNote(overview: ActivityOverview): string {
 }
 
 /**
- * Scope switch (signed in only), the source note and the per-machine or per-device breakdown
+ * Scope switch (signed in only; it replaces the note for the cloud scope) and the per-machine or per-device breakdown
  * for `useActivityOverview`. Unreachable machines show as unavailable and never hide the rest.
  */
 export function ActivitySources({ overview }: { overview: ActivityOverview }) {
@@ -57,9 +57,11 @@ export function ActivitySources({ overview }: { overview: ActivityOverview }) {
           ]}
         />
       ) : null}
-      <Text as="p" size="secondary" tone="muted">
-        {activitySourceNote(overview)}
-      </Text>
+      {overview.canChooseScope && overview.source === "cloud" ? null : (
+        <Text as="p" size="secondary" tone="muted">
+          {activitySourceNote(overview)}
+        </Text>
+      )}
       {rows.length > 1 ? (
         <DescriptionList size="sm">
           {rows.map((row) => (

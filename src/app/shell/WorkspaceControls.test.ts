@@ -18,71 +18,48 @@ vi.mock("@tauri-apps/api/window", () => ({
 it("opens each destination and refreshes without reloading the app", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
-  const onHiddenGroups = vi.fn(),
-    onPullRequests = vi.fn(),
-    onUsage = vi.fn(),
-    reload = vi.fn();
+  const reload = vi.fn();
   window.addEventListener(WORKSPACE_REFRESH_EVENT, reload);
   try {
-    await act(async () =>
-      root.render(
-        createElement(WorkspaceControls, {
-          onHiddenGroups,
-          onPullRequests,
-          onUsage,
-          active: "usage",
-        }),
-      ),
-    );
+    await act(async () => root.render(createElement(WorkspaceControls, {})));
+    document.body.append(host);
     expect(
       [...host.querySelectorAll("button")].map((button) => button.getAttribute("aria-label")),
-    ).toEqual([
-      "Pull requests",
-      "Provider usage",
-      "Manage hidden groups",
-      "Sounds",
-      "Refresh current view",
-      "Full screen",
-    ]);
-    for (const button of host.querySelectorAll("button")) {
-      expect(button.getAttribute("data-button-size")).toBe("sm");
-    }
-    expect(host.querySelector("nav")!.classList.contains("px-2")).toBe(false);
-    for (const label of [
-      "Manage hidden groups",
-      "Pull requests",
-      "Provider usage",
-      "Refresh current view",
-    ]) {
-      await act(async () =>
-        host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click(),
+    ).toEqual(["Workspace controls", "Sounds", "Full screen"]);
+    const openMenu = async () =>
+      act(async () =>
+        host.querySelector<HTMLButtonElement>('button[aria-label="Workspace controls"]')!.click(),
       );
+    for (const label of ["Refresh current view"]) {
+      await openMenu();
+      const item = [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find(
+        (item) => item.textContent?.includes(label),
+      );
+      expect(item, label).toBeDefined();
+      await act(async () => item!.click());
     }
-    expect(onHiddenGroups).toHaveBeenCalledOnce();
-    expect(onPullRequests).toHaveBeenCalledOnce();
-    expect(onUsage).toHaveBeenCalledOnce();
     expect(reload).toHaveBeenCalledOnce();
-    const fullscreen = host.querySelector('[aria-label="Full screen"]');
-    expect(fullscreen).not.toBeNull();
-    expect(fullscreen).toBe(host.querySelector("nav")!.lastElementChild);
-    expect(host.querySelector('[aria-label="Provider usage"]')?.getAttribute("aria-pressed")).toBe(
-      "true",
-    );
+    expect(document.body.textContent).not.toContain("Manage hidden groups");
+    expect(document.body.textContent).not.toContain("Provider usage");
+    expect(document.body.textContent).not.toContain("Pull requests");
     await act(async () =>
       root.render(
         createElement(WorkspaceControls, {
-          onHiddenGroups,
-          onPullRequests,
-          onUsage,
           canRefresh: false,
         }),
       ),
     );
-    host.querySelector<HTMLButtonElement>('[aria-label="Refresh current view"]')!.click();
+    await openMenu();
+    const refresh = [...document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.includes("Refresh current view"),
+    )!;
+    expect((refresh as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => refresh.click());
     expect(reload).toHaveBeenCalledOnce();
   } finally {
     await act(async () => root.unmount());
     window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
+    host.remove();
   }
 });
 
@@ -91,15 +68,7 @@ it("persists the sound toggle, follows Settings changes and retains state on fai
   const host = document.createElement("div");
   const root = createRoot(host);
   try {
-    await act(async () =>
-      root.render(
-        createElement(WorkspaceControls, {
-          onHiddenGroups: () => {},
-          onPullRequests: () => {},
-          onUsage: () => {},
-        }),
-      ),
-    );
+    await act(async () => root.render(createElement(WorkspaceControls, {})));
     const button = host.querySelector<HTMLButtonElement>('[data-workspace-control="sounds"]')!;
     expect(button.getAttribute("aria-pressed")).toBe("true");
     await act(async () => button.click());

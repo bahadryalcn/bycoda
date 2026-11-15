@@ -6,7 +6,8 @@ import { useConfirm } from "../../../../shared/ui/ConfirmDialog";
 import { DropdownMenu } from "../../../../shared/ui/DropdownMenu";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
 import { SearchInput } from "../../../../shared/ui/SearchInput";
-import { TabList, TabPanel, Tabs } from "../../../../shared/ui/Tabs";
+import { SubTabs } from "../../../../shared/ui/SubTabs";
+import { TabPanel, Tabs } from "../../../../shared/ui/Tabs";
 import { MoreHorizontal } from "../../../../shared/ui/icons";
 import type { SocialList, SocialPerson } from "../../model/audience";
 import type { SocialScreenProps } from "../shell/screens";
@@ -208,9 +209,6 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
   const findState = findReason
     ? { disabled: true as const, reason: findReason }
     : { disabled: false as const };
-  const findGate: ActionGate = noAccounts
-    ? { disabled: true, disabledReason: t("Connect an account in Accounts & Settings first.") }
-    : { disabled: false };
   const fillGate: ActionGate = noAccounts
     ? { disabled: true, disabledReason: t("Connect an account in Accounts & Settings first.") }
     : aiBusy
@@ -272,10 +270,13 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
 
   return (
     <section className="audience-screen" aria-label={t("Audience")}>
-      <Tabs value={section} onValueChange={setSection}>
+      <Tabs value={section} onValueChange={setSection} id="audience">
         <div className="audience-toolbar">
-          <TabList
+          <SubTabs
+            id="audience"
             label={t("Audience sections")}
+            value={section}
+            onValueChange={setSection}
             items={[
               { value: "people", label: t("People") },
               { value: "rules", label: t("Capture rules") },
@@ -374,11 +375,6 @@ export function AudienceScreen({ client, onNavigate, projectId }: SocialScreenPr
                   message={t(
                     "No people yet. Find people who engage with your posts, or import a list.",
                   )}
-                  action={{
-                    label: t("Find people"),
-                    onClick: () => setDialog({ kind: "find" }),
-                    ...findGate,
-                  }}
                   fillWithAi={{
                     onClick: () => void fillWithAi().catch(() => undefined),
                     ...fillGate,

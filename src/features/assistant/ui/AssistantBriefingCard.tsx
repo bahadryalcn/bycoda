@@ -257,11 +257,12 @@ export function AssistantBriefingCard({
       ))}
       <div className={briefingStyles.actions}>
         {!snapshot.profile.voiceSetupComplete ? (
-          <Button startIcon={<Mic />} onClick={onSetupVoice}>
+          <Button variant="primary" startIcon={<Mic />} onClick={onSetupVoice}>
             {t("Set up voice")}
           </Button>
         ) : speaking === "idle" ? (
           <Button
+            variant="primary"
             startIcon={<Volume2 />}
             disabled={activeVoice || unknownLanguage}
             disabledReason={
@@ -285,10 +286,11 @@ export function AssistantBriefingCard({
             {t("Stop listening")}
           </Button>
         )}
-        <Button startIcon={<File />} onClick={onOpenNotes}>
+        <Button variant="ghost" startIcon={<File />} onClick={onOpenNotes}>
           {t("Open notes")}
         </Button>
         <Button
+          variant="ghost"
           startIcon={<Check />}
           loading={busy === "approvals"}
           disabled={!!busy}

@@ -1,7 +1,7 @@
 import { Text } from "../../../shared/ui/Text";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Heading } from "../../../shared/ui/Heading";
+import { OnboardingHeading } from "./OnboardingHeading";
 import { AppWindow, Globe } from "../../../shared/ui/icons";
 import { Surface } from "../../../shared/ui/Surface";
 
@@ -15,14 +15,10 @@ export function OnboardingConnections({
 }) {
   return (
     <>
-      <div className="onboarding-heading">
-        <Heading size="page" level={3}>
-          {t("Connect your computers")}
-        </Heading>
-        <Text as="p" size="inherit" tone="muted" leading="normal">
-          {t("Work here, connect another computer, or pair your phone. This step is optional.")}
-        </Text>
-      </div>
+      <OnboardingHeading
+        title={t("Connections")}
+        info={t("Remote agents stay on their own computer. Add connections later in Settings.")}
+      />
       <div className="onboarding-scroll">
         <Surface variant="card" padding="md" className="onboarding-card">
           <AppWindow aria-hidden className="icon-lg" />
@@ -34,7 +30,7 @@ export function OnboardingConnections({
               {t("Your local projects and agents")}
             </Text>
           </div>
-          <Text size="micro" tone="muted" leading="inherit" className="onboarding-status">
+          <Text size="micro" tone="muted" leading="inherit">
             {t("Local")}
           </Text>
         </Surface>
@@ -60,9 +56,6 @@ export function OnboardingConnections({
             {t("Manage connections…")}
           </Button>
         </div>
-        <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
-          {t("Remote agents stay on their own computer. Add connections later in Settings.")}
-        </Text>
       </div>
     </>
   );

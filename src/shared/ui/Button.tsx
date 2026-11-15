@@ -27,7 +27,7 @@ import arcStyles from "./arc/button/button.module.css";
 import styles from "./Button.module.css";
 
 export type { ButtonSize } from "./arc/button/button";
-export type ButtonVariant = ArcButtonVariant | "link" | "item" | "tab";
+export type ButtonVariant = Exclude<ArcButtonVariant, "danger"> | "link" | "item" | "tab";
 export type ButtonShape = "default" | "pill";
 export type ButtonTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
 
@@ -65,14 +65,14 @@ export function controlPaddingStyle(padding?: ControlPadding): import("react").C
 
 type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: ButtonVariant;
-  /** Semantic intent, independent of hierarchy. `error` is a legacy danger alias. */
-  tone?: ButtonTone | "error";
+  /** Semantic intent, independent of hierarchy. A destructive action is `tone="danger"`. */
+  tone?: ButtonTone;
   size?: ButtonSize;
   /** Opt-in padding roles; logical inline variables may be set by an ancestor container layout. */
   padding?: ControlPadding;
   /** Space for an overlaid end action: inline 20px action plus 8px gap; control uses compact control height. */
   reserveEndAction?: "inline" | "control" | "interaction";
-  /** Compact icon target (24px); independent from glyph size and typography. */
+  /** Compact icon target (28px, --ui-control-height-compact); independent from glyph size and typography. */
   iconTarget?: "compact";
   /** Coarse-pointer controls may opt into the density-aware full control hit target. */
   touchTarget?: "control";
@@ -238,6 +238,7 @@ const isTrue = (value: unknown) => value === true || value === "true";
  * For confirmed async results, set `success` and translated `successLabel`; the action owns its check, label and announcement. At rest the button shows only its label (no reserved icon slot); the confirmed width, check included, is reserved inside the label. Clear success when its draft or target changes.
  * @group actions
  * @use Any click that runs an action, opens something or navigates. Use padding roles and reserveEndAction for row geometry; controlHeight and controlMinHeight preserve content and density.
+ * Default is variant="secondary" size="sm"; toolbar and icon-only actions pass variant="ghost", a destructive action is tone="danger". Size md has one caller and lg none: use sm or xs.
  * @avoid Choosing between modes: SegmentedControl or RadioGroup. Navigation to an external page: Button variant="link" with openExternal. Icon action inside a row/tab host: InlineAction. Joined related actions: ButtonGroup.
  */
 export function Button({
@@ -357,10 +358,8 @@ export function Button({
   };
   useEffect(() => () => void clearLongPress(), []);
   const insetText = inset === "text";
-  // Keep legacy aliases at this boundary; render one hierarchy/tone implementation.
-  const hierarchy = variant === "danger" ? "secondary" : variant;
-  const resolvedTone: ButtonTone =
-    tone === "error" ? "danger" : (tone ?? (variant === "danger" ? "danger" : "neutral"));
+  const hierarchy = variant;
+  const resolvedTone: ButtonTone = tone ?? "neutral";
   const structural = variant === "item" || variant === "tab";
   // A text action with a start icon swaps that icon for the spinner in the same slot.
   // Without an icon nothing is reserved at rest (no empty gap); while pending, the

@@ -15,6 +15,7 @@ export function InboxCollectionStatus({
   total?: number;
 }) {
   useLocale();
+  if (!limited && !partial) return null;
   return (
     <Text
       as="div"

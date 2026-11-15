@@ -245,7 +245,7 @@ export function ProjectNotificationSettings({
             >
               <InfoPopover label={t("About project notifications")}>
                 {t(
-                  "Choose categories per project. Sounds and desktop alerts follow the application settings above.",
+                  "Choose categories per project. Sounds and desktop alerts follow the application settings above. Mute pauses alerts without changing categories; unread items stay in Inbox.",
                 )}
               </InfoPopover>
               <Segmented
@@ -448,11 +448,6 @@ export function ProjectNotificationSettings({
                       </div>
                       <div className="settings-collection-actions">
                         <NotificationMuteControl projectIds={[project.id]} compact />
-                        <InfoPopover label={t("About muting notifications")}>
-                          {t(
-                            "Mute pauses alerts without changing categories. Unread items stay in Inbox.",
-                          )}
-                        </InfoPopover>
                       </div>
                     </ActionHost>
                     {error?.projectId === project.id ? (

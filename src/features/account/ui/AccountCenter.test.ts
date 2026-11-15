@@ -1,3 +1,4 @@
+import { OPEN_SETTINGS_EVENT } from "../../settings/public/settingsLink";
 // @vitest-environment happy-dom
 import type { AccountContext } from "@bycoda/account-contracts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -138,7 +139,7 @@ describe("account center", () => {
     await render(AccountScreen);
     expect(tabs()).toEqual([]);
     expect(button("Sign in with browser")).toBeTruthy();
-    expect(container.textContent).toContain("stay on this computer");
+    expect(container.textContent).toContain("works fully on this computer");
   });
 
   it("explains a rejected sign-in configuration and a browser cancel", async () => {
@@ -169,6 +170,29 @@ describe("account center", () => {
       "Account status",
     ]);
     expect(container.textContent).toContain("ada@example.com");
+  });
+
+  it("links Security privacy controls to the Settings owner", async () => {
+    mocks.state = signedIn();
+    const open = vi.fn();
+    window.addEventListener(OPEN_SETTINGS_EVENT, open);
+    try {
+      await render(AccountScreen);
+      await click(
+        [...container.querySelectorAll('[role="tab"]')].find(
+          (tab) => tab.textContent === "Security",
+        ),
+      );
+      await click(
+        [...container.querySelectorAll("button")].find(
+          (button) => button.textContent === "Open settings",
+        ),
+      );
+      expect(open).toHaveBeenCalledOnce();
+      expect((open.mock.calls[0][0] as CustomEvent).detail).toBe("groupLock");
+    } finally {
+      window.removeEventListener(OPEN_SETTINGS_EVENT, open);
+    }
   });
 
   it("opens the web security page from the Security tab", async () => {

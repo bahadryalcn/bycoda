@@ -243,6 +243,8 @@ describe("orchestration composer and card", () => {
       ),
     ).toBe(true);
     expect(container.textContent).toContain("Preserved instructions");
+    expect(container.textContent).toContain("2 parallel workers");
+    expect(container.textContent).not.toContain("Shared project folder");
     expect(container.querySelector("input")).toBeNull();
   });
   it("toggles a badge through the plus menu and submits without a team setup or execution", async () => {
@@ -593,6 +595,15 @@ describe("orchestration composer and card", () => {
     );
     expect(container.querySelector("[data-orchestration-review]")).toBeNull();
     expect(container.textContent).not.toContain("Confirm & start");
+    await act(async () =>
+      root.render(
+        createElement(OrchestrationPreview, {
+          block: { id: "draft", role: "plan", text: "", orchestration: proposal },
+        }),
+      ),
+    );
+    expect(container.textContent).toContain("Planning assignments…");
+    expect(container.textContent).not.toContain("Checking available harnesses and models…");
   });
   it("opens worker panes from View agents instead of the sidebar", async () => {
     const open = vi.fn();

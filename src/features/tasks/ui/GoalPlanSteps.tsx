@@ -93,7 +93,7 @@ export function GoalApprovalBar({
       <div className="goal-card-buttons">
         {awaiting ? (
           <Button
-            variant="primary"
+            variant={replanning ? "secondary" : "primary"}
             size="sm"
             startIcon={<Check />}
             disabled={busy}

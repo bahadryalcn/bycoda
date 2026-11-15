@@ -243,6 +243,8 @@ fall. Suppress one line only, always with a reason.
   - title= tooltip (use tooltip=, Tooltip or OverflowTooltip)
 - `nested-card` (`TSX in src/app, src/features, src/shared (excluding tests)`)
   - card Surface or surfaceAttributes({ variant: card }) nested lexically inside another card (use page or inset)
+- `nested-surface` (`TSX in src/app, src/features, src/shared (excluding tests)`)
+  - settings Group nested in a Group or card Surface, or a card Surface inside a Group (a Group is already a framed card; flatten to rows or use one container)
 - `one-primary-per-view` (`TSX in src/app, src/features, src/shared (excluding tests)`)
   - multiple literal primary Buttons in one JSX return (one finding per file; keep one primary action, use secondary for peers)
 - `popover-menu` (`src/app, src/features, shared stylesheets`)
@@ -273,6 +275,8 @@ fall. Suppress one line only, always with a reason.
   - truncation written in feature code: text-overflow, line-clamp, truncate, text-ellipsis (one line: Text truncate; several lines: ClampText, with expandable={false} for a cut without the Show more action; a path or id: MiddleTruncate)
 - `theme-palette-literal` (`src/app, src/features, shared stylesheets`)
   - themePalette.hex…/rgb…/hsl…/oklch… literal in feature or app code (use a semantic token: a --color-*/--ui-* CSS role or a semantic themePalette role)
+- `tooltip-repeats-label` (`TSX in src/app, src/features, src/shared (excluding tests)`)
+  - tooltip= (or \<Tooltip label>) whose static text equals the visible label of the same control (a hint must add a shortcut, detail or reason; drop it or use tooltipWhen="overflow")
 - `typography` (`src/app, src/features, shared stylesheets`)
   - literal font size: text-[Npx], text-xs..xl, text-[length:], CSS font-size px
 - `ui-wrapper-import` (`src/app, src/features, shared stylesheets`)

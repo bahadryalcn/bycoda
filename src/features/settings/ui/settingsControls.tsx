@@ -23,7 +23,8 @@ import { Button } from "../../../shared/ui/Button";
 import { Heading } from "../../../shared/ui/Heading";
 import { SettingsOperationFeedback, type SettingsFeedbackProps } from "./SettingsFeedback";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { RotateCcw } from "../../../shared/ui/icons";
+import { Popover } from "../../../shared/ui/Popover";
+import { Info, RotateCcw } from "../../../shared/ui/icons";
 
 import { playCue } from "../model/sounds";
 import { t, useLocale } from "../../../shared/i18n";
@@ -364,46 +365,75 @@ export function AdvancedSettings({
   );
 }
 
-export function PageHeader({
-  title,
-  description,
-  automaticSave = false,
-}: {
-  title: string;
-  description: string;
-  /** The page saves every change itself; say so once, here, instead of on every group. */
-  automaticSave?: boolean;
-}) {
-  return (
-    <header className="settings-page-header">
-      <Heading size="page" className="settings-page-title">
-        {title}
-      </Heading>
-      <SettingsPageHelp description={description} automaticSave={automaticSave} />
-    </header>
-  );
-}
-
-/** Shared page help moves into the category toolbar on narrow settings layouts. */
+/** Shared page help and optional page reset, reachable by pointer and keyboard. */
 export function SettingsPageHelp({
   description,
   automaticSave = false,
   className = "",
+  reset,
 }: {
   description?: string;
   automaticSave?: boolean;
   className?: string;
+  reset?: { label: string; onClick: () => void };
 }) {
   useLocale();
-  return description || automaticSave ? (
-    <InfoPopover
-      className={`settings-page-help shrink-0 ${className}`}
-      label={t("About this page")}
-    >
-      {description ? <p>{description}</p> : null}
-      {automaticSave ? <p>{t("Changes save automatically")}</p> : null}
-    </InfoPopover>
-  ) : null;
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  if (!description && !automaticSave && !reset) return null;
+  return (
+    <>
+      <Button
+        ref={anchor}
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label={t("About this page")}
+        className={`settings-page-help shrink-0 ${className}`}
+        aria-haspopup="dialog"
+        expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Info aria-hidden className="icon-sm" />
+      </Button>
+      {open ? (
+        <Popover
+          anchor={anchor}
+          kind="dialog"
+          aria-label={t("About this page")}
+          autoFocus
+          tabIndex={-1}
+          flow="scroll"
+          onDismiss={() => setOpen(false)}
+          className="flex flex-col gap-2 p-3"
+        >
+          {description ? (
+            <Text as="p" tone="secondary">
+              {description}
+            </Text>
+          ) : null}
+          {automaticSave ? (
+            <Text as="p" tone="secondary">
+              {t("Changes save automatically")}
+            </Text>
+          ) : null}
+          {reset ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setOpen(false);
+                reset.onClick();
+              }}
+            >
+              <RotateCcw aria-hidden className="icon-sm" />
+              {reset.label}
+            </Button>
+          ) : null}
+        </Popover>
+      ) : null}
+    </>
+  );
 }
 
 /**

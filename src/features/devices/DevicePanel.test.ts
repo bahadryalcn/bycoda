@@ -574,7 +574,7 @@ it("clears the last running runtime observation when a status refresh fails", as
   await act(async () => root.render(createElement(DevicePanel, { api })));
   await openSetup();
   vi.mocked(api.status).mockRejectedValueOnce(new Error("Status refresh failed"));
-  await clickButton("Status");
+  await clickButton("Refresh status");
   expect(document.body.textContent).not.toContain("Device host running");
   expect(api.start).not.toHaveBeenCalled();
 });
@@ -805,7 +805,7 @@ it("refreshes support and setup state without restarting the device host", async
   await act(async () => container.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
   expect(container.textContent).toContain("Run setup with control enabled");
   await openSetup();
-  await act(async () => button("Status").click());
+  await act(async () => button("Refresh status").click());
   expect(container.textContent).not.toContain("Run setup with control enabled");
   expect(api.status).toHaveBeenCalledTimes(2);
   expect(api.start).not.toHaveBeenCalled();

@@ -57,10 +57,10 @@ export function DeviceSetupPanel({
           <Text
             as="span"
             size="caption"
-            tone="inherit"
+            tone="secondary"
             leading="relaxed"
             weight="regular"
-            className="host-tool-muted"
+            className="device-panel-setup-count"
           >
             {deviceCount === undefined
               ? `${t("Devices")} · ${t("Unknown")}`
@@ -77,14 +77,13 @@ export function DeviceSetupPanel({
         <Button
           variant="ghost"
           size="sm"
-          iconOnly
-          label={t("Status")}
-          tooltip={t("Refresh status")}
+          label={t("Refresh status")}
           loading={refresh.loading}
           disabled={refresh.disabled}
           onClick={refresh.onClick}
         >
           <RefreshCw className="icon-sm" aria-hidden />
+          {t("Refresh status")}
         </Button>
       </div>
       <ul

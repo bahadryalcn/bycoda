@@ -16,8 +16,6 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
     setSettings,
     healthAnchor,
     setHealthAnchor,
-    presenceAnchor,
-    setPresenceAnchor,
     pending,
     mutate,
     returnToAssistant,
@@ -67,18 +65,6 @@ export function RoomStatusPopovers({ snapshot }: { snapshot: AssistantSnapshot }
             <Text as="p" leading="normal">
               {t("Work tracking continues while voice is off.")}
             </Text>
-          </Text>
-        </Popover>
-      )}
-      {presenceAnchor && (
-        <Popover
-          anchor={presenceAnchor}
-          onDismiss={() => setPresenceAnchor(null)}
-          kind="dialog"
-          flow="scroll"
-          aria-label={t("Presence")}
-        >
-          <Text as="div" size="caption" tone="inherit" leading="inherit" className={styles.popover}>
             <Select
               hideLabel
               label={t("Presence")}

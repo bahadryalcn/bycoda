@@ -3497,12 +3497,7 @@ export const Composer = memo(function Composer({
                       ? t("Add a message, or send…")
                       : handoffCard
                         ? t("Add context, or send to continue…")
-                        : (placeholder ??
-                          (harness === "codex"
-                            ? t("Ask, build, / for commands, $ for skills, @ for references...")
-                            : t(
-                                "Ask, build, / for commands and skills, @ for references, ! to run a command... ",
-                              )))
+                        : (placeholder ?? t("Message"))
               }
               aria-label={inputAriaLabel}
               disabled={disabled}

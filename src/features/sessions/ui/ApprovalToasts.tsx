@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { NotificationRequestCount } from "./NotificationRequestCount";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
@@ -358,7 +359,7 @@ export function ApprovalToasts({
                       ? t("{p0} waiting for your answer", { p0: count })
                       : newCount > 0
                         ? t("{p0} new", { p0: newCount })
-                        : t("You're all caught up")
+                        : ""
                   }
                 />
               </Text>
@@ -416,11 +417,11 @@ export function ApprovalToasts({
                   {t("All notification settings…")}
                 </Button>
               ) : null}
-              <Text as="p" size="caption" tone="secondary" leading="relaxed">
+              <InfoPopover>
                 {t("Only the latest {p0} notifications are kept on this device.", {
                   p0: MAX_NOTIFICATION_HISTORY,
                 })}
-              </Text>
+              </InfoPopover>
             </Popover>
           ) : null}
           <ScrollArea
@@ -498,7 +499,6 @@ export function ApprovalToasts({
                 context="list"
                 icon={<Bell className="size-6" aria-hidden />}
                 title={t("All clear")}
-                description={t("New notifications will appear here.")}
               />
             ) : null}
           </ScrollArea>

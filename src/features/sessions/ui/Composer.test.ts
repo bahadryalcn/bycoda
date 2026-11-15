@@ -1066,7 +1066,7 @@ describe("Composer question focus", () => {
       "codex",
     );
     const textarea = document.querySelector("textarea")!;
-    expect(textarea.placeholder).toContain("$ for skills");
+    expect(textarea.placeholder).toBe("Message");
     await act(async () => textarea.dispatchEvent(new Event("input", { bubbles: true })));
     const goal = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
       (button) => button.textContent?.includes("/goal"),

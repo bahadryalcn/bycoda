@@ -1,5 +1,5 @@
 import { DELETION_GRACE_DAYS, type User } from "@bycoda/account-contracts";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { dateTimeFormat, getLocale, t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { Button } from "../../../shared/ui/Button";
@@ -30,7 +30,8 @@ export function AccountStatus({
   useLocale();
   const { confirm, dialog } = useConfirm();
   const { schedule, cancel } = useDeletion();
-  const [reason, setReason] = useState("");
+  // Typed inside the confirm dialogs; the dialog body is a snapshot, so the text lives in a ref.
+  const reason = useRef("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const deactivated = isDeactivated(user);
@@ -48,19 +49,35 @@ export function AccountStatus({
     }
   };
 
+  const reasonField = (
+    <TextareaField
+      label={t("Reason (optional)")}
+      maxLength={500}
+      minRows={2}
+      placeholder={t("Tell us why you are leaving. It helps us improve bycoda.")}
+      onChange={(event) => {
+        reason.current = event.currentTarget.value;
+      }}
+    />
+  );
+
   const deactivate = async () => {
+    reason.current = "";
     const ok = await confirm({
+      body: reasonField,
       title: t("Deactivate your account?"),
       message: t(
         "Your data is kept. Every device is signed out and notifications stop until you reactivate.",
       ),
       confirmLabel: t("Deactivate"),
     });
-    if (ok) await run(() => onDeactivate(reason.trim() || undefined));
+    if (ok) await run(() => onDeactivate(reason.current.trim() || undefined));
   };
 
   const scheduleDeletion = async () => {
+    reason.current = "";
     const ok = await confirm({
+      body: reasonField,
       title: t("Delete your bycoda account?"),
       message: t(
         "Your profile, devices, active time, notifications and support requests are deleted after {p0} days. Until then you can undo it here. Sessions, projects and files on your computers are not touched.",
@@ -70,16 +87,12 @@ export function AccountStatus({
       pendingLabel: t("Scheduling…"),
       tone: "danger",
     });
-    if (ok) await run(() => schedule.mutateAsync(reason.trim() || undefined));
+    if (ok) await run(() => schedule.mutateAsync(reason.current.trim() || undefined));
   };
 
   return (
     <>
-      <Group
-        title={t("Account status")}
-        description={t("Pause your account without losing anything, or come back to it.")}
-        feedback={error ? <InlineError>{error}</InlineError> : undefined}
-      >
+      <Group title={null} feedback={error ? <InlineError>{error}</InlineError> : undefined}>
         {deactivated ? (
           <Row
             label={t("Deactivated")}
@@ -94,7 +107,6 @@ export function AccountStatus({
           <>
             <Row
               label={t("Deactivate account")}
-              descriptionVisible
               description={t(
                 "Keeps your data, signs all your devices out and silences notifications. You can reactivate any time.",
               )}
@@ -109,21 +121,10 @@ export function AccountStatus({
                 {t("Deactivate…")}
               </Button>
             </Row>
-            <Row label={t("Reason (optional)")} stacked>
-              <TextareaField
-                label={t("Reason (optional)")}
-                hideLabel
-                value={reason}
-                maxLength={500}
-                minRows={2}
-                placeholder={t("Tell us why you are leaving. It helps us improve bycoda.")}
-                onChange={(event) => setReason(event.currentTarget.value)}
-              />
-            </Row>
           </>
         )}
       </Group>
-      <Group title={t("Delete account")}>
+      <Group title={null}>
         {deletion ? (
           <Row
             label={t("Deletion scheduled")}
@@ -133,7 +134,7 @@ export function AccountStatus({
             })}
           >
             <Button
-              variant="primary"
+              variant="secondary"
               size="sm"
               loading={cancel.isPending}
               onClick={() => run(() => cancel.mutateAsync())}
@@ -143,12 +144,14 @@ export function AccountStatus({
           </Row>
         ) : (
           <Row
-            label={t("You have {p0} days to change your mind.", { p0: DELETION_GRACE_DAYS })}
-            descriptionVisible
-            description={t("Removes everything bycoda stores about you after a grace period.")}
+            label={t("Delete account")}
+            description={t(
+              "Removes everything bycoda stores about you. You have {p0} days to change your mind.",
+              { p0: DELETION_GRACE_DAYS },
+            )}
           >
             <Button
-              variant="danger"
+              tone="danger"
               size="sm"
               loading={schedule.isPending}
               onClick={() => scheduleDeletion().catch(() => undefined)}

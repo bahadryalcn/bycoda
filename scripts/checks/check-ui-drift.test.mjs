@@ -80,6 +80,47 @@ test("nested card guard follows JSX ancestry including surfaceAttributes spreads
   );
 });
 
+test("nested surface guard treats a settings Group as a framed card", () => {
+  const imported = 'import { Group } from "./settingsControls";\n';
+  const count = (source) =>
+    rulesOf("src/features/demo/View.tsx", imported + source).filter(
+      (rule) => rule === "nested-surface",
+    ).length;
+  assert.equal(count("<Group><Group /></Group>"), 1);
+  assert.equal(count('<Group><Surface variant="card" /></Group>'), 1);
+  assert.equal(count('<Surface variant="card"><Group /></Surface>'), 1);
+  assert.equal(count("<><Group /><Group /></>"), 0);
+  assert.equal(count('<Group><Surface variant="inset" /></Group>'), 0);
+  assert.equal(
+    rulesOf("src/features/demo/View.tsx", "<Group><Group /></Group>").includes("nested-surface"),
+    false,
+  );
+  assert.equal(
+    count("<Group>\n{/* ui-drift-ignore: nested-surface -- embedded editor */}\n<Group /></Group>"),
+    0,
+  );
+});
+
+test("tooltip guard flags hints that only restate the visible label", () => {
+  const count = (source) =>
+    rulesOf("src/features/demo/View.tsx", source).filter((rule) => rule === "tooltip-repeats-label")
+      .length;
+  assert.equal(count('<Button tooltip="Delete">Delete</Button>'), 1);
+  assert.equal(count('<Button tooltip={t("Delete")}>{t("Delete…")}</Button>'), 1);
+  assert.equal(count('<Tooltip label="Copy link"><Button>Copy link</Button></Tooltip>'), 1);
+  assert.equal(count('<Button tooltip="Delete" />'), 0);
+  assert.equal(count('<Button tooltip="Delete this note">Delete</Button>'), 0);
+  assert.equal(count('<Button tooltip="Delete" tooltipDetails={[name]}>Delete</Button>'), 0);
+  assert.equal(count('<Button tooltip="Delete" tooltipWhen="overflow">Delete</Button>'), 0);
+  assert.equal(count('<Tooltip label="Copy" shortcut="Mod+C"><Button>Copy</Button></Tooltip>'), 0);
+  assert.equal(
+    count(
+      '{/* ui-drift-ignore: tooltip-repeats-label -- clipped label */}\n<Button tooltip="Delete">Delete</Button>',
+    ),
+    0,
+  );
+});
+
 test("hover reveal guard requires a matching visibility property and independent keyboard path", () => {
   const count = (classes, file = "src/features/demo/View.tsx") =>
     rulesOf(file, `<div className="${classes}" />`).filter((rule) => rule === "hover-only-reveal")

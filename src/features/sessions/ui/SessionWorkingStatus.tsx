@@ -39,7 +39,7 @@ export function SessionWorkingStatus({
   const word = t(wait ? "Waiting" : "Working");
   const reason = wait ? sessionWaitReason(wait) : word;
   return (
-    <Tooltip label={[reason, elapsed].filter(Boolean).join(", ")} asChild>
+    <Tooltip label={labelled ? undefined : [reason, elapsed].filter(Boolean).join(", ")} asChild>
       <Text
         as="span"
         size={labelled ? "inherit" : "micro"}

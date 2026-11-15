@@ -164,13 +164,9 @@ export function WorktreesPage({
                   }}
                 >
                   <RefreshCw className="icon-sm" />
-                  <span className="sr-only">{t("Refresh")}</span>
                 </Button>
               </div>
             </div>
-            <Text as="p" size="caption" tone="muted" leading="inherit" className={styles.scope}>
-              {prettyCwd(project || "~")}
-            </Text>
             {data && (
               <Text
                 as="p"

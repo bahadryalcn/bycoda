@@ -351,7 +351,7 @@ export function BranchManagerDialog({ cwd, onClose }: Props) {
           <EmptyState
             size="inline"
             kind={needle ? "filtered" : "empty"}
-            description={needle ? t("No branches match") : t("No branches")}
+            description={needle ? t("No matching branches") : t("No branches")}
           />
         ) : (
           <ul className="min-h-0 overflow-y-auto">

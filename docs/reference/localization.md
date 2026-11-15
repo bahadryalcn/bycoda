@@ -60,7 +60,11 @@ content. Operating-system dialogs use the OS language.
   requiring editorial review before a public release.
 - `node scripts/i18n/check-locales.mjs` validates source coverage, complete catalogs,
   nonempty translations, matching interpolation slots and preservation of the
-  Turkish editorial corrections.
+  Turkish editorial corrections, and that no new key breaks the copy glossary
+  (`scripts/i18n/glossary.json`: one ellipsis character, Settings not Preferences,
+  Stop not Terminate; keys already offending sit in `glossary-baseline.json`, and
+  `--update-glossary-baseline` only after a cleanup lowers it). Verb choices are in
+  [DESIGN.md](DESIGN.md) "Status, confirmation and copy".
 - `pnpm test src/shared/i18n/i18n.test.ts` checks persistence, system-language
   selection, window synchronization, interpolation, formatting and input state.
 - `pnpm exec playwright test tests/browser/settings/localization.spec.ts --project=chromium`

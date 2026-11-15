@@ -91,16 +91,12 @@ export function DeviceBar({
         <Text
           as="p"
           size="caption"
-          tone="inherit"
+          tone="secondary"
           leading="relaxed"
-          className="host-tool-muted device-panel-bar-text"
+          className="device-panel-bar-text"
           role="status"
         >
-          {loading
-            ? t("Loading devices…")
-            : t(
-                "No devices found. Connect an Android phone with USB debugging enabled, or create an emulator or simulator, then refresh.",
-              )}
+          {loading ? t("Loading devices…") : t("No devices")}
         </Text>
       )}
       <span className="device-panel-bar-actions">

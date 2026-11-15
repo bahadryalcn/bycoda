@@ -226,7 +226,8 @@ it("restores each computer's own section when the workspace changes back", () =>
 
 it("stops all AI only after the owner confirms, then records the new state", async () => {
   render();
-  act(() => buttonWithText("Stop all AI")?.click());
+  expect(buttonWithText("Stop all AI")).toBeUndefined();
+  act(() => buttonWithText("AI active")?.click());
   await flush();
   expect(stop).not.toHaveBeenCalled();
   act(() => confirmButton("Stop all AI")?.click());
@@ -237,8 +238,8 @@ it("stops all AI only after the owner confirms, then records the new state", asy
 
 it("offers Resume AI while AI is stopped and resumes only after confirmation", async () => {
   render({ shell: { hostOnline: true, unreachable: false, aiStopped: true } });
-  expect(buttonWithText("Stop all AI")).toBeUndefined();
-  act(() => buttonWithText("Resume AI")?.click());
+  expect(buttonWithText("AI stopped")).toBeTruthy();
+  act(() => buttonWithText("AI stopped")?.click());
   await flush();
   expect(resume).not.toHaveBeenCalled();
   act(() => confirmButton("Resume AI")?.click());
@@ -251,7 +252,7 @@ it("warns when the Host is offline and offers a retry", () => {
   render({ shell: { hostOnline: false, unreachable: false, aiStopped: false }, loaded: true });
   expect(element.textContent).toContain("Scheduling is offline");
   expect(element.textContent).not.toContain("AI active");
-  expect(buttonWithText("Stop all AI")?.disabled).toBe(true);
+  expect(buttonWithText("Host offline")?.disabled).toBe(true);
   act(() => buttonWithText("Try again")?.click());
   expect(retry).toHaveBeenCalledTimes(1);
 });
@@ -268,9 +269,9 @@ it("shows the connection error with a retry when no Host is available", () => {
   expect(retry).toHaveBeenCalledTimes(1);
 });
 
-it("disables Stop all AI with its reason when no Host client exists", () => {
+it("disables the AI status with its reason when no Host client exists", () => {
   render({ machineId: "", client: null });
-  expect(buttonWithText("Stop all AI")?.disabled).toBe(true);
+  expect(buttonWithText("AI active")?.disabled).toBe(true);
   expect(element.textContent).toContain("Connect a bycoda Host first.");
 });
 

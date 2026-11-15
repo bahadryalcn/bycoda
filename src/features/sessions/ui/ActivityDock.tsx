@@ -259,7 +259,7 @@ function DockBody({
       data-activity-dock={dock.state}
       {...surfaceAttributes(
         { radius: "card", variant: "floating" },
-        `activity-dock mb-1.5 overflow-hidden  font-sans ${
+        `activity-dock overflow-hidden font-sans ${
           dock.state === "done" ? "activity-dock-done" : ""
         }`,
       )}
@@ -280,13 +280,7 @@ function DockBody({
               }
               truncate
             >
-              {dock.state === "working" ? (
-                <WorkingIndicator truncate glyph={false}>
-                  {label}
-                </WorkingIndicator>
-              ) : (
-                label
-              )}
+              {label}
             </Text>
             {clock ? <DockClock startedAt={clockOrigin} /> : null}
             {/* Inside the summary: a narrow dock gives the summary a full row, and the

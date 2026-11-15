@@ -1,6 +1,6 @@
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
-import { ClampText } from "../../../shared/ui/ClampText";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Alert } from "../../../shared/ui/Alert";
 import { Slider } from "../../../shared/ui/Slider";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -209,22 +209,26 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
               </Text>
             )}
           </div>
-          <Button
-            variant="secondary"
-            motion="none"
-            type="button"
-            loading={busy}
-            onClick={() => void choose()}
-            disabled={busy}
-            className="mt-2 flex w-full items-center justify-center gap-1.5"
-          >
-            {path ? t("Change image") : t("Choose image")}
-          </Button>
-          <Text as="p" size="micro" tone="muted" leading="relaxed" className="mt-1.5">
-            {path
-              ? t("This image overrides the global background for this project.")
-              : t("This project currently follows the global Appearance setting.")}
-          </Text>
+          <div className="mt-2 flex items-center gap-1">
+            <Button
+              variant="secondary"
+              motion="none"
+              type="button"
+              loading={busy}
+              onClick={() => void choose()}
+              disabled={busy}
+              className="flex min-w-0 flex-1 items-center justify-center gap-1.5"
+            >
+              {path ? t("Change image") : t("Choose image")}
+            </Button>
+            <InfoPopover>
+              <Text as="p" size="caption" tone="secondary" leading="relaxed">
+                {path
+                  ? t("This image overrides the global background for this project.")
+                  : t("This project currently follows the global Appearance setting.")}
+              </Text>
+            </InfoPopover>
+          </div>
           {error ? <Alert tone="danger">{error}</Alert> : null}
         </div>
 
@@ -232,12 +236,16 @@ export function ProjectBackgroundDialog({ project, name, onClose }: Props) {
           <div {...surfaceAttributes({ frame: "pane", edge: "top" }, "pt-4")}>
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0 flex-1">
-                <Text size="secondary" tone="primary" weight="medium">
-                  {t("Background effect")}
-                </Text>
-                <ClampText as="p" lines={1} expandable={false} size="micro" tone="muted">
-                  {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
-                </ClampText>
+                <div className="flex items-center gap-1">
+                  <Text size="secondary" tone="primary" weight="medium">
+                    {t("Background effect")}
+                  </Text>
+                  <InfoPopover label={NEW_THREAD_BACKGROUND_EFFECT_LABELS[effect]}>
+                    <Text as="p" size="caption" tone="secondary" leading="relaxed">
+                      {NEW_THREAD_BACKGROUND_EFFECT_DESCRIPTIONS[effect]}
+                    </Text>
+                  </InfoPopover>
+                </div>
               </div>
               <div className="w-36 shrink-0">
                 <SearchableSelect

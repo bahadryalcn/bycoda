@@ -1,3 +1,4 @@
+import { OPEN_SETTINGS_EVENT } from "../../../features/settings/public/settingsLink";
 import {
   OPEN_MODELS_SETTINGS_EVENT,
   MODELS_TABS,
@@ -152,6 +153,14 @@ export function useSettingsSurfaceActions({
     };
     window.addEventListener(OPEN_MODELS_SETTINGS_EVENT, openModels);
     return () => window.removeEventListener(OPEN_MODELS_SETTINGS_EVENT, openModels);
+  }, [openSettings]);
+
+  // oxlint-disable-next-line bycoda/effect-names-its-sync -- keeps the section-link window listener attached to the settings surface
+  useEffect(() => {
+    const openSection = (event: Event) =>
+      openSettings((event as CustomEvent<SettingsSectionId>).detail);
+    window.addEventListener(OPEN_SETTINGS_EVENT, openSection);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, openSection);
   }, [openSettings]);
 
   const onOpenSettings = useCallback(() => openSettings(), [openSettings]);

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
+import { DIAGNOSTIC_RETENTION_DAYS } from "@bycoda/account-contracts";
 import {
   isAnonymousStatsEnabled,
   setAnonymousStatsEnabled,
@@ -31,15 +31,7 @@ export function PrivacyStartupSettings() {
   };
   return (
     <>
-      <Group
-        title={t("Privacy")}
-        scope={t("Applies to this computer.")}
-        description={
-          t("Privacy controls affect what appears in ") +
-          PRODUCT_IDENTITY.displayName +
-          t(". Project files and transcripts on disk are not encrypted.")
-        }
-      >
+      <Group title={t("Privacy")} scope={t("Applies to this computer.")}>
         <Row
           id="start-in-privacy-mode"
           label={t("Start in privacy mode")}
@@ -106,8 +98,10 @@ export function PrivacyStartupSettings() {
         </Row>
         <Row
           label={t("Share diagnostic logs")}
-          description={t("Help us fix crashes by sending redacted app logs.")}
-          stacked
+          description={t(
+            "Diagnostic logs are the app and Host logs, with secrets, e-mail addresses and your user name removed on this computer. They never include your conversations, prompts or code. They are kept {p0} days.",
+            { p0: DIAGNOSTIC_RETENTION_DAYS },
+          )}
         >
           <DiagnosticsSharingSetting />
         </Row>

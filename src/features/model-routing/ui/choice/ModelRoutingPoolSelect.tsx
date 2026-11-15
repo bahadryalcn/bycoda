@@ -25,7 +25,7 @@ export function ModelRoutingPoolSelect({
         ...(includeOrder ? [{ value: "", label: t("Model order") }] : []),
         ...pools.map((pool) => ({ value: pool.id, label: pool.name })),
         ...(value && !pools.some((pool) => pool.id === value)
-          ? [{ value, label: t("Missing pool ({p0})", { p0: value }), disabled: true }]
+          ? [{ value, label: t("Deleted pool"), disabled: true }]
           : []),
       ]}
       onValueChange={onChange}

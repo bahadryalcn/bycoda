@@ -71,6 +71,29 @@ if (process.argv.includes("--extract")) {
 }
 const issues = [];
 for (const key of used) if (!(key in source)) issues.push(`Missing source: ${key}`);
+// Same intent, same word: new keys must follow the glossary; existing offenders are baselined.
+const glossary = JSON.parse(fs.readFileSync("scripts/i18n/glossary.json", "utf8"));
+const glossaryBaseline = new Set(
+  JSON.parse(fs.readFileSync("scripts/i18n/glossary-baseline.json", "utf8")).keys,
+);
+const glossaryOffenders = new Set();
+for (const key of used)
+  for (const rule of glossary.rules)
+    if (
+      new RegExp(rule.pattern, "i").test(key) &&
+      (!rule.maxWords || key.trim().split(/\s+/).length <= rule.maxWords)
+    ) {
+      glossaryOffenders.add(key);
+      if (!glossaryBaseline.has(key)) issues.push(`Glossary ${rule.id} (use ${rule.use}): ${key}`);
+    }
+if (process.argv.includes("--update-glossary-baseline")) {
+  fs.writeFileSync(
+    "scripts/i18n/glossary-baseline.json",
+    JSON.stringify({ keys: [...glossaryOffenders].sort() }, null, 2) + "\n",
+  );
+  console.log(`Glossary baseline: ${glossaryOffenders.size} keys`);
+  process.exit(0);
+}
 const slots = (text) => (text.match(/\{p\d+\}/g) ?? []).sort().join(",");
 const turkishEditorial = JSON.parse(fs.readFileSync("src/shared/i18n/tr-overrides.json", "utf8"));
 for (const locale of ["tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {

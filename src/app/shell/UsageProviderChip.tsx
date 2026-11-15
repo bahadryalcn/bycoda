@@ -108,6 +108,7 @@ type UsageProviderChipProps = {
   onSelectUsageAccount?: (accountId: string) => void;
   onAddAccount?: (label: string) => Promise<ProviderAccount>;
   onManageAccounts?: () => void;
+  onShowUsage?: () => void;
   onConsumeReset?: (creditId?: string) => Promise<CodexRateLimitResetOutcome>;
   onReconnect?: () => Promise<void>;
   onRefresh?: (accountId?: string) => Promise<void>;
@@ -211,6 +212,7 @@ function UsageProviderDetails({
   onSelectUsageAccount,
   onAddAccount,
   onManageAccounts,
+  onShowUsage,
   onConsumeReset,
   onReconnect,
   onRefresh,
@@ -335,6 +337,18 @@ function UsageProviderDetails({
       className={`overflow-y-auto ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
     >
       <Text as="div" size="inherit" tone="primary">
+        {onShowUsage ? (
+          <Button
+            variant="link"
+            size="sm"
+            onClick={() => {
+              close();
+              onShowUsage();
+            }}
+          >
+            {t("Provider usage")}
+          </Button>
+        ) : null}
         <UsageRefreshButton
           accountId={detailAccountId}
           onRefresh={onRefresh}

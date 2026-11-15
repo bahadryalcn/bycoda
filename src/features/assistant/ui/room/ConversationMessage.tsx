@@ -4,9 +4,20 @@ import { t } from "../../../../shared/i18n";
 import type { MessageTimelineItem } from "../../../../shared/ui/MessageTimeline";
 import { Button } from "../../../../shared/ui/Button";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
+import { Tooltip } from "../../../../shared/ui/Tooltip";
 import { Trash2 } from "../../../../shared/ui/icons";
 import { assistantChatItem } from "./AssistantChat";
 import styles from "./Conversation.module.css";
+
+/** "tasks.get" reads as the verb phrase "Get tasks"; the raw id stays in the tooltip. */
+function recordedActionLabel(action: string): string {
+  const words = action
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .reverse()
+    .join(" ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 /** One room message as a shared timeline item. */
 export function conversationMessageItem({
@@ -54,8 +65,10 @@ export function conversationMessageItem({
             <ul className={styles.detailsList}>
               {message.toolActions.map((action) => (
                 <li key={action.id}>
-                  {action.family} · {action.action} —{" "}
-                  {t(action.status === "completed" ? "Completed" : "Outcome unknown")}
+                  <Tooltip label={`${action.family}.${action.action}`} asChild>
+                    <span>{recordedActionLabel(action.action)}</span>
+                  </Tooltip>
+                  {action.status === "completed" ? "" : ` · ${t("Outcome unknown")}`}
                 </li>
               ))}
             </ul>

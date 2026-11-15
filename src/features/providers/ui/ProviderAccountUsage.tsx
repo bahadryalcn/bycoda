@@ -1,6 +1,6 @@
 import { optionalTextAttributes, Text, type TextRoles } from "../../../shared/ui/Text";
 import { OverflowTooltip, Tooltip } from "../../../shared/ui/Tooltip";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { formatDate, t, useLocale } from "../../../shared/i18n";
 import {
   clampUsedPercent,
   formatResetDuration,
@@ -178,7 +178,9 @@ export function UsageMeter({
       label={
         window.resetsAt == null
           ? undefined
-          : t("Resets {p0}", { p0: new Date(window.resetsAt).toLocaleString(getLocale()) })
+          : t("Resets {p0}", {
+              p0: formatDate(window.resetsAt, { dateStyle: "medium", timeStyle: "short" }),
+            })
       }
       asChild
     >

@@ -73,19 +73,8 @@ export function RailAction({
       aria-label={ariaLabel ?? label}
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
-      {badge != null ? (
-        <Badge
-          variant="count"
-          size="sm"
-          max={99}
-          aria-hidden
-          className="absolute left-1 top-1/2 -translate-y-1/2"
-        >
-          {badge}
-        </Badge>
-      ) : null}
       <Icon
-        className={`icon-sm shrink-0 ${badge != null ? "ml-4" : ""}`}
+        className="icon-sm shrink-0"
         tone={active ? "primary" : "secondary"}
         strokeWidth={1.75}
       />
@@ -99,6 +88,17 @@ export function RailAction({
       >
         {label}
       </Text>
+      {badge != null ? (
+        <Badge
+          variant="count"
+          size="sm"
+          max={99}
+          aria-hidden
+          className="shrink-0 @max-[140px]/rail:absolute @max-[140px]/rail:right-1 @max-[140px]/rail:top-1"
+        >
+          {badge}
+        </Badge>
+      ) : null}
       {dot ? (
         <StatusDot
           label={ariaLabel ?? label}

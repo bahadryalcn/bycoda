@@ -33,6 +33,7 @@ vi.mock("../../model/modelProfile", () => ({
 }));
 vi.mock("./useOrderDraft", () => ({ useOrderSettings: vi.fn(), useOrderDraft: vi.fn() }));
 vi.mock("../../../settings/public/settingsControls", () => ({
+  SettingsFeedback: ({ children }: { children: ReactNode }) => createElement("p", null, children),
   Group: ({ children }: { children: ReactNode }) => createElement("section", null, children),
   Row: ({ label, children }: { label: ReactNode; children: ReactNode }) =>
     createElement("div", null, label, children),

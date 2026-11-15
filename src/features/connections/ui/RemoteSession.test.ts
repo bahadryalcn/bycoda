@@ -1861,7 +1861,7 @@ it("transport: removes a draft-only conversation with its draft, as a local one"
   expect(deletedSessions).toEqual([sessionId]);
   expect(commands.some((command) => command.type === "removeDraft")).toBe(false);
   expect(remoteSessionFor("shell")).toBeUndefined();
-  expect(container.textContent).toContain("Work on repo.");
+  expect(container.textContent).not.toContain("Work on repo.");
 });
 
 it("transport: keeps a sent message visible until the host sync confirms it", async () => {
@@ -3816,7 +3816,6 @@ slow("queues a message sent during a host turn and sends it when the turn ends",
   await settle();
   expect(commands).toHaveLength(0);
   expect(queueCard()?.textContent).toContain("Also update the docs");
-  expect(queueCard()?.textContent).toContain("while bycoda is open");
   // A host turn cannot be steered.
   expect(queueCard()?.textContent).not.toContain("Steer");
   expect(container.querySelector("textarea")!.value).toBe("");

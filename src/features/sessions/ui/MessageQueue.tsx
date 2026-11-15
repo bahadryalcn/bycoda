@@ -1,3 +1,4 @@
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { actionDragAttributes } from "../../../shared/ui/ActionHost";
 import { Text } from "../../../shared/ui/Text";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
@@ -478,11 +479,6 @@ export function MessageQueue({
                 {activeFeedback.text}
               </Text>
             ) : null}
-            {!delivery && busy && !activeFeedback ? (
-              <Text size="inherit" tone="muted" truncate className="min-w-0">
-                {t("Waiting for the running response to finish")}
-              </Text>
-            ) : null}
           </Text>
         ) : null}
         <DeliveryProgressNotice sessionId={sessionId} messages={messages} embedded />
@@ -727,11 +723,11 @@ export function MessageQueue({
           <InlineError className="py-1">{activeFeedback.text}</InlineError>
         ) : null}
         {remote ? (
-          <Text as="div" size="micro" tone="secondary" className="pt-1">
+          <InfoPopover>
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
               p0: PRODUCT_IDENTITY.displayName,
             })}
-          </Text>
+          </InfoPopover>
         ) : null}
       </div>
       {editingMessage ? (

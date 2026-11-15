@@ -1703,7 +1703,6 @@ function TurnDuration({
       </span>
       {labelHidden ? null : (
         <span className="flex min-w-0 items-center gap-2.5">
-          {dot}
           <span className="flex min-w-0 items-center gap-1.5">
             {harness ? <HarnessIcon harness={harness} className="size-3.5 shrink-0" /> : null}
             <OverflowTooltip label={label}>
@@ -1714,7 +1713,7 @@ function TurnDuration({
       )}
       {completedAt != null ? (
         <span className="flex shrink-0 items-center gap-2.5">
-          {dot}
+          {labelHidden ? null : dot}
           <Timestamp value={completedAt} className="shrink-0 text-(--ui-text-secondary)" />
         </span>
       ) : null}
@@ -2371,7 +2370,7 @@ function UserMessageBlock({
       : delivery === "undelivered"
         ? t("Not delivered")
         : delivery === "uncertain"
-          ? deliveryDescription
+          ? t("May have been delivered")
           : t("Draft");
   const heldActionTitle =
     delivery === "pending"
@@ -2576,9 +2575,6 @@ function UserMessageBlock({
               className="mt-2 min-w-0 border-t border-(--ui-tone-neutral-border) pt-2"
               onClick={(event) => event.stopPropagation()}
             >
-              <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
-                {t("CI instructions and failure details included with this request.")}
-              </p>
               <OutputBlock frame="filled" scroll className="mt-2 max-h-72">
                 {block.ciContext}
               </OutputBlock>

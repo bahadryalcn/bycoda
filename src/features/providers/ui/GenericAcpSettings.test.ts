@@ -229,7 +229,7 @@ it("retains install cancellation across a language change for the original opera
     await act(async () => {
       await setLanguagePreference("tr");
     });
-    const cancel = button("Kurulumu iptal et");
+    const cancel = button("Kurulumu durdur");
     expect(cancel).toBeDefined();
     await act(async () => cancel.click());
     expect(mock.invoke).toHaveBeenCalledWith("generic_acp_cancel_install", { id: "test-install" });

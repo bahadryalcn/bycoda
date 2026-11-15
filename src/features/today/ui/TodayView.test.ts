@@ -38,13 +38,14 @@ vi.mock("../../activity", async (importOriginal) => ({
 }));
 import { TodayView } from "./TodayView";
 
-it("keeps active time and its scope note when there is no agent activity", () => {
+it("shows only active time when there is no agent activity", () => {
   const markup = renderToStaticMarkup(createElement(TodayView));
-  expect(markup).toContain("No agent activity yet");
+  expect(markup).not.toContain("No agent activity yet");
   expect(markup).toContain("Active time");
   expect(markup).toContain("42");
-  expect(markup).toContain("This machine only");
-  expect(markup).toContain("Active time, last 7 days");
-  expect(markup).toContain("3h 27m");
+  expect(markup).not.toContain("This machine only");
+  expect(markup).not.toContain("Active time, last 7 days");
+  expect(markup).not.toContain("3h 27m");
+  expect(markup).not.toContain('data-surface-role="card"');
   expect(markup).not.toContain("Activity on this computer");
 });

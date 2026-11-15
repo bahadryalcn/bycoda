@@ -437,7 +437,7 @@ export function RecommendedSkills({
           <Text as="p" size="secondary" leading="relaxed" className={styles.note}>
             {view === "available" && matching.length
               ? t("Every matching skill is already installed on the selected computer.")
-              : t("No matching skills.")}
+              : t("No matching skills")}
           </Text>
         ) : null}
       </div>

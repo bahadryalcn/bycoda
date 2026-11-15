@@ -49,7 +49,7 @@ it("keeps CLI versions out of Accounts metadata and marks default and auth seman
       onSetup: vi.fn(),
     }),
   );
-  expect(html).toContain('aria-label="Default provider"');
+  expect(html).toContain(">Default<");
   expect(html).toContain('aria-label="Codex, Signed in, Default provider"');
   expect(html).toContain('aria-current="true"');
   expect(html).toContain("Show Codex in the model picker");

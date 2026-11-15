@@ -929,33 +929,23 @@ function ScopedRuntimeLogsPanel({
                         monitorOperation?.method === "stop" && monitorOperation.id === monitor.id
                       }
                       label={t("Stop monitor")}
-                      tooltip={t("Stop monitor")}
                       onClick={() => void monitorAction("stop", { id: monitor.id })}
                     >
                       <Square className="icon-sm" />
-                      <span className="runtime-logs-sr">{t("Stop monitor")}</span>
                     </Button>
                   </li>
                 ))}
               </ul>
             ) : null}
-            <p className="host-tool-muted">
+            <Text as="p" size="caption" tone="secondary">
               {t("Opens a separate browser. Capture continues until you stop the website monitor.")}
-            </p>
+            </Text>
           </section>
         </Popover>
       ) : null}
       {error ? (
-        <Alert
-          tone="danger"
-          extra={
-            <ErrorDetails
-              title={t("Could not read logs. Check the host connection and retry.")}
-              detail={error}
-            />
-          }
-        >
-          <p>{t("Could not read logs. Check the host connection and retry.")}</p>
+        <Alert tone="danger" extra={<ErrorDetails detail={error} />}>
+          {t("Could not read logs. Check the host connection and retry.")}
         </Alert>
       ) : null}
       {actionError ? (

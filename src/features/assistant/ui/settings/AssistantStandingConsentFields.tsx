@@ -40,7 +40,7 @@ export function AssistantStandingConsentFields({
         label={t("Assistant authority")}
         descriptionVisible
         description={t(
-          "Native consent applies to this workspace and selected Host. Coding conversations keep their own permissions.",
+          "Applies to this workspace and the selected Host. Coding conversations keep their own permissions.",
         )}
         stacked
       >

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { Heading } from "../../../shared/ui/Heading";
+import { OnboardingHeading } from "./OnboardingHeading";
 import { Text } from "../../../shared/ui/Text";
 import { getStatsChoice, setStatsChoice, subscribeAnonymousStats } from "../../account";
 
@@ -12,16 +12,12 @@ export function OnboardingStatistics() {
   const choice = useSyncExternalStore(subscribeAnonymousStats, getStatsChoice);
   return (
     <>
-      <div className="onboarding-heading">
-        <Heading size="page" level={3}>
-          {t("Share anonymous statistics?")}
-        </Heading>
-        <Text as="p" size="inherit" tone="muted" leading="normal">
-          {t(
-            "Once a day bycoda can send a small signal that helps count installs and plan support. It is off unless you say yes.",
-          )}
-        </Text>
-      </div>
+      <OnboardingHeading
+        title={t("Statistics")}
+        info={t(
+          "Once a day bycoda can send a small signal that helps count installs and plan support. It is off unless you say yes. You can change this any time in Settings → Account → Privacy & data, or in Settings → Privacy without an account.",
+        )}
+      />
       <div className="onboarding-scroll">
         <Text as="ul" size="caption" tone="inherit" leading="inherit" className="onboarding-hint">
           <li>
@@ -48,11 +44,6 @@ export function OnboardingStatistics() {
             {choice === "on" ? t("Thank you. Statistics are on.") : t("Statistics stay off.")}
           </Alert>
         ) : null}
-        <Text as="p" size="caption" tone="muted" leading="normal" className="onboarding-hint">
-          {t(
-            "You can change this any time in Settings → Account → Privacy & data, or in Settings → Privacy without an account.",
-          )}
-        </Text>
       </div>
     </>
   );

@@ -361,7 +361,7 @@ export function CrewMemberTable({
                 })}
               </ul>
             ) : all.length ? (
-              <EmptyState size="inline" kind="filtered" description={t("No matching members.")} />
+              <EmptyState size="inline" kind="filtered" description={t("No matching members")} />
             ) : (
               <Button
                 variant="secondary"

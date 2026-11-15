@@ -404,7 +404,8 @@ function GithubPrActionsForItem({
               {t("Cancel")}
             </Button>
             <Button
-              variant={confirmation.action === "close" ? "danger" : "primary"}
+              variant={confirmation.action === "close" ? "secondary" : "primary"}
+              tone={confirmation.action === "close" ? "danger" : undefined}
               type="button"
               loading={busy}
               loadingLabel={t(confirmCopy.progress)}

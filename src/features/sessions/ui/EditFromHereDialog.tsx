@@ -47,7 +47,7 @@ export function EditFromHereDialog({
             {t("Cancel")}
           </Button>
           <Button
-            variant="danger"
+            tone="danger"
             disabled={!!pending || !!unavailable}
             disabledReason={unavailable}
             loading={pending === "files"}

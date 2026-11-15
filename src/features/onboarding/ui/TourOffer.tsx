@@ -25,7 +25,7 @@ export function TourOffer({ onStart, onLater }: { onStart: () => void; onLater: 
       message={t(
         "New here? A one-minute tour shows where everything is. You can start it later from the Guide.",
       )}
-      aria-label={t("Welcome tour")}
+      aria-label={t("Tour")}
       durationMs={null}
       onDismiss={onLater}
     >
@@ -34,7 +34,7 @@ export function TourOffer({ onStart, onLater }: { onStart: () => void; onLater: 
           {t("Later")}
         </Button>
         <Button variant="primary" size="sm" data-tour-offer-start onClick={onStart}>
-          {t("Take a 1-minute tour")}
+          {t("Start tour")}
         </Button>
       </div>
     </TransientNotice>

@@ -5,38 +5,14 @@
     "src/app/shell/Sidebar.tsx": {
       "theme-palette-literal": 1
     },
-    "src/features/account/ui/AccountStatus.tsx": {
-      "one-primary-per-view": 1
-    },
-    "src/features/connections/ui/ExternalTunnelsPanel.tsx": {
-      "one-primary-per-view": 1
-    },
-    "src/features/crews/ui/CrewTablePortrait.tsx": {
-      "nested-card": 1
-    },
-    "src/features/decision-models/ui/LocalInstallWizard.tsx": {
-      "one-primary-per-view": 1
-    },
-    "src/features/devices/DevicePanel.tsx": {
-      "one-primary-per-view": 1
-    },
-    "src/features/host-tools/BrowserPanel.tsx": {
-      "one-primary-per-view": 1
-    },
-    "src/features/host-tools/DevServersPanel.tsx": {
-      "one-primary-per-view": 1
+    "src/features/assistant/ui/AssistantSettings.tsx": {
+      "nested-surface": 1
     },
     "src/features/inbox/ui/InboxProviderMark.tsx": {
       "theme-palette-literal": 5
     },
     "src/features/projects/model/projectCodeIcons.ts": {
       "theme-palette-literal": 56
-    },
-    "src/features/sessions/ui/ComposerAction.tsx": {
-      "one-primary-per-view": 1
-    },
-    "src/features/sessions/ui/TranslationResultDialog.tsx": {
-      "one-primary-per-view": 1
     },
     "src/features/sessions/ui/crewCharacters.ts": {
       "theme-palette-literal": 135
@@ -92,6 +68,12 @@
     "src/features/settings/model/themePalettes.ts": {
       "theme-palette-literal": 6
     },
+    "src/features/settings/ui/ArchiveSettings.tsx": {
+      "nested-surface": 2
+    },
+    "src/features/settings/ui/TerminalSettings.tsx": {
+      "nested-surface": 1
+    },
     "src/features/settings/ui/appearance/controls/AccentColorPicker.tsx": {
       "theme-palette-literal": 6
     },
@@ -101,8 +83,8 @@
     "src/features/settings/ui/appearance/controls/StateLadder.tsx": {
       "theme-palette-literal": 2
     },
-    "src/features/social/ui/accounts/AccountConnection.tsx": {
-      "one-primary-per-view": 1
+    "src/features/settings/ui/appearance/sections/BackgroundSection.tsx": {
+      "nested-surface": 1
     },
     "src/features/source-control/model/gitGraph.ts": {
       "theme-palette-literal": 7
@@ -110,17 +92,11 @@
     "src/features/source-control/ui/ChangeRow.tsx": {
       "raw-native-control": 1
     },
-    "src/features/tasks/ui/GoalPlanSteps.tsx": {
-      "one-primary-per-view": 1
-    },
     "src/features/terminal/model/terminalRenderingPolicy.ts": {
       "theme-palette-literal": 1
     },
     "src/features/terminal/runtime/terminalTheme.ts": {
       "theme-palette-literal": 37
-    },
-    "src/features/voice/ui/VoiceSetupRow.tsx": {
-      "one-primary-per-view": 1
     },
     "src/shared/ui/ControlBehaviorMatrix.tsx": {
       "one-primary-per-view": 1

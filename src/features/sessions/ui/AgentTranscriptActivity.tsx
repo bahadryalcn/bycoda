@@ -43,12 +43,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 import type { ApprovalDecision } from "../../../integrations/harness";
-import {
-  isEditTool,
-  isReadTool,
-  isSearchTool,
-  stubFilePreview,
-} from "../../../integrations/harness/core/preview";
+import { isEditTool, stubFilePreview } from "../../../integrations/harness/core/preview";
 import { useToolCallDisplay } from "../model/reactiveReads";
 import {
   HARNESS_TITLE,
@@ -79,7 +74,6 @@ import { bycodaToolCall, bycodaWorkSummary, type BycodaToolCall } from "../model
 import { NEAR_BOTTOM_PX } from "./transcriptScroll";
 import { useClampOverflow } from "./useClampOverflow";
 import { useRetainedDisclosure } from "./useRetainedDisclosure";
-import { OutputBlock } from "../../../shared/ui/OutputBlock";
 /*
  * Tool calls often land in a burst. Each arrival waits for the one before it
  * to finish its whole entrance — rail, branch, row — before starting its own.
@@ -997,7 +991,7 @@ function BycodaCallRow({
         {verb}
       </span>
       <span
-        className={`flex min-w-0 max-w-full items-center gap-1 rounded bg-(--ui-surface-raised) px-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        className={`flex min-w-0 max-w-full items-center gap-1 rounded px-1 font-mono text-ui-secondary ${state === "rejected" ? "text-(--ui-tone-danger-fg)" : "text-(--color-content)"}`}
       >
         <BycodaMark className="size-3.5" />
         <OverflowTooltip label={command}>
@@ -1120,121 +1114,43 @@ export function ToolCall({
   onOpenDiff?: (path: string) => void;
   embedded?: boolean;
 }) {
-  const t = useT();
-  const [open, setOpen] = useRetainedDisclosure<boolean>(`ToolCall:${block.id}`, false);
   const preview = block.tool?.preview;
   const label = toolCallLabel(block, cwd);
-  const detail = block.tool?.detail?.trim();
-  const expanded = detail && detail !== label ? detail : label;
   const state = toolCallState(block);
-  const stateLabel =
-    state === "accepted" ? t("Accepted") : state === "rejected" ? t("Rejected") : t("Pending");
-  const editTool = isEditTool(block.tool?.kind, block.text || block.tool?.title, preview);
-  const compact =
-    isReadTool(block.tool?.kind, label, preview) || isSearchTool(block.tool?.kind, label, preview);
-  const expandable = !compact && !!detail && detail !== label;
-
   const frame = embedded ? "py-0.5" : "px-4 py-1";
+  const pending = needsApproval(block);
+  const editTool = isEditTool(block.tool?.kind, block.text || block.tool?.title, preview);
 
-  const appCall = bycodaToolCall(block);
-  if (appCall) {
+  // A pending edit shows its proposed change; every other step is one row.
+  if (pending && editTool && !bycodaToolCall(block)) {
     return (
       <div className={frame}>
-        <BycodaCallRow block={block} call={appCall} onApproval={onApproval} />
-      </div>
-    );
-  }
-
-  if (!needsApproval(block)) {
-    if (isIncompleteTool(block, label, state)) return null;
-    return (
-      <div className={frame}>
-        <ActivityToolRow block={block} cwd={cwd} onOpenFile={onOpenFile} onOpenDiff={onOpenDiff} />
-      </div>
-    );
-  }
-
-  if (editTool) {
-    return (
-      <div className={frame}>
-        {needsApproval(block) ? (
-          <FilePreview
-            preview={preview ?? stubFilePreview(block.tool?.kind, label)}
-            status={state}
-            cwd={cwd}
-            onOpenFile={onOpenDiff ?? onOpenFile}
-          />
-        ) : (
-          <div className="flex min-w-0 items-center gap-2 py-1">
-            <ToolCallIcon state={state} />
-            <ToolCallSummary
-              label={label}
-              wrap={block.tool?.kind === "shell"}
-              preview={preview}
-              cwd={cwd}
-              failed={state === "rejected"}
-              status={state}
-              onOpenFile={onOpenFile}
-              onOpenDiff={onOpenDiff}
-            />
-          </div>
-        )}
+        <FilePreview
+          preview={preview ?? stubFilePreview(block.tool?.kind, label)}
+          status={state}
+          cwd={cwd}
+          onOpenFile={onOpenDiff ?? onOpenFile}
+        />
         <ApprovalControls block={block} onApproval={onApproval} />
       </div>
     );
   }
-
-  if (isIncompleteTool(block, label, state)) return null;
-
+  if (!bycodaToolCall(block) && isIncompleteTool(block, label, state)) return null;
   return (
     <div className={frame}>
-      {expandable ? (
-        <Disclosure
-          variant="step"
-          chevron="end"
-          open={open}
-          onOpenChange={setOpen}
-          summaryLabel={t("{p0} tool call: {p1}", { p0: stateLabel, p1: label })}
-          summary={
-            <>
-              <ToolCallIcon state={state} />
-              <ToolCallSummary
-                label={label}
-                wrap={block.tool?.kind === "shell"}
-                preview={preview}
-                cwd={cwd}
-                failed={state === "rejected"}
-                onOpenFile={onOpenFile}
-              />
-            </>
-          }
-        >
-          {open ? <OutputBlock className="mt-1.5 min-w-0 px-2.5">{expanded}</OutputBlock> : null}
-        </Disclosure>
-      ) : (
-        <div
-          aria-label={t("{p0} tool call: {p1}", { p0: stateLabel, p1: label })}
-          className="flex w-full min-w-0 items-center gap-2"
-        >
-          <ToolCallIcon state={state} />
-          <ToolCallSummary
-            label={label}
-            wrap={block.tool?.kind === "shell"}
-            preview={preview}
-            cwd={cwd}
-            failed={state === "rejected"}
-            onOpenFile={onOpenFile}
-          />
-        </div>
-      )}
-      <ApprovalControls block={block} onApproval={onApproval} />
+      <ActivityToolRow
+        block={block}
+        cwd={cwd}
+        onApproval={onApproval}
+        onOpenFile={onOpenFile}
+        onOpenDiff={onOpenDiff}
+      />
     </div>
   );
 }
 
 function ToolCallSummary({
   label,
-  wrap = false,
   preview,
   cwd,
   onOpenFile,
@@ -1245,7 +1161,6 @@ function ToolCallSummary({
   status = "accepted",
 }: {
   label: string;
-  wrap?: boolean;
   preview?: ToolPreview;
   cwd?: string;
   onOpenFile?: (path: string) => void;
@@ -1256,7 +1171,7 @@ function ToolCallSummary({
   failed?: boolean;
   status?: ToolCallState;
 }) {
-  useLocale();
+  const t = useT();
   const { action, target, fileName, filePath, isFile, previewMatchesFile } = useToolCallDisplay(
     label,
     preview,
@@ -1266,12 +1181,8 @@ function ToolCallSummary({
     return (
       <OverflowTooltip label={label}>
         <span
-          className={`min-w-0 flex-1 ${wrap ? "tool-command-label line-clamp-3" : "truncate"} font-mono text-ui-secondary ${
-            failed
-              ? "text-(--ui-tone-danger-fg)"
-              : chip
-                ? "text-(--ui-text-secondary)"
-                : "text-(--ui-text-secondary)"
+          className={`min-w-0 flex-1 truncate font-mono text-ui-secondary ${
+            failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"
           }`}
         >
           {label}
@@ -1288,15 +1199,11 @@ function ToolCallSummary({
     previewMatchesFile &&
     (preview.contentOnly || preview.lines?.some((line) => line.kind !== "context"));
   const actionTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)";
-  const targetTone = failed
-    ? "text-(--ui-tone-danger-fg)"
-    : chip
-      ? "text-(--ui-text-secondary)"
-      : "text-(--ui-text-secondary)";
+  const targetTone = failed ? "text-(--ui-tone-danger-fg)" : "text-(--color-content)";
 
   return (
     <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-ui-secondary">
-      <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>{action}</span>
+      <span className={`shrink-0 font-sans text-ui-body ${actionTone}`}>{t(action)}</span>
       {isFile ? (
         canPreview ? (
           <ToolDiffPreview
@@ -1307,7 +1214,7 @@ function ToolCallSummary({
             onOpen={openFile && filePath ? () => openFile(filePath) : undefined}
             onOpenFile={onOpenFile}
             className={`-my-0.5 flex min-w-0 cursor-pointer items-center gap-1 rounded px-1 py-0.5 text-left hover:text-(--ui-tone-info-fg) ${
-              chip ? `max-w-full bg-(--ui-surface-raised) ${targetTone}` : `flex-1 ${targetTone}`
+              chip ? `max-w-full ${targetTone}` : `flex-1 ${targetTone}`
             }`}
           >
             <FileTypeIcon name={fileName} isDir={false} />
@@ -1335,7 +1242,7 @@ function ToolCallSummary({
           <OverflowTooltip label={target}>
             <span
               className={`flex min-w-0 items-center gap-1 rounded px-1 ${
-                chip ? `max-w-full bg-(--ui-surface-raised) ${targetTone}` : `flex-1 ${targetTone}`
+                chip ? `max-w-full ${targetTone}` : `flex-1 ${targetTone}`
               }`}
             >
               <FileTypeIcon name={fileName} isDir={action === "List"} />
@@ -1352,19 +1259,6 @@ function ToolCallSummary({
       )}
     </span>
   );
-}
-
-function ToolCallIcon({ state }: { state: ToolCallState }) {
-  useLocale();
-  if (state === "rejected") {
-    return <X className="icon-sm shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
-  }
-  if (state === "pending") {
-    return (
-      <CircleDashed className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
-    );
-  }
-  return null;
 }
 
 function ApprovalControls({
@@ -1496,6 +1390,7 @@ export function HandoffDivider({ block }: { block: Block }) {
           ) : (
             <>
               <HarnessIcon harness={meta.to} className="size-3.5 shrink-0" />
+              <span>{label}</span>
             </>
           )}
         </div>

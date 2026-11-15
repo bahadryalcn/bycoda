@@ -1,4 +1,5 @@
 import { Text as UiText } from "../../../shared/ui/Text";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { t, useLocale } from "../../../shared/i18n/technical";
@@ -1270,10 +1271,15 @@ export function FileEditor({
             "flex shrink-0 flex-wrap items-center gap-2 px-2.5 py-1",
           )}
         >
-          <span className="min-w-0 flex-1">
-            {t(
-              "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
-            )}
+          <span className="flex min-w-0 flex-1 items-center gap-1">
+            {t("Unsaved draft found")}
+            <InfoPopover>
+              <UiText as="p" size="caption" tone="secondary">
+                {t(
+                  "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
+                )}
+              </UiText>
+            </InfoPopover>
           </span>
           <Button
             size="sm"
@@ -1350,8 +1356,9 @@ export function FileEditor({
           tone="secondary"
           {...surfaceAttributes({ frame: "pane", edge: "bottom" }, "shrink-0 px-3 py-1")}
         >
-          {gitDiff.kind === "staged" ? t("Staged") : t("Unstaged")}
-          {t(" line-ending changes. Line breaks are normalized in this view.")}
+          {t("{p0} line-ending changes. Line breaks are normalized in this view.", {
+            p0: gitDiff.kind === "staged" ? t("Staged") : t("Unstaged"),
+          })}
         </UiText>
       )}
       {hasMarkdownShell ? (
@@ -1458,12 +1465,12 @@ export function FileEditor({
             onClick={() => void goLive()}
             tooltip={
               isRemoteProjectPath(path)
-                ? t("Go Live is available for local HTML files.")
+                ? t("Open in Chrome is available for local HTML files.")
                 : t("Save and open this HTML file in Google Chrome")
             }
             className="shrink-0"
           >
-            {t("Go Live")}
+            {t("Open in Chrome")}
           </Button>
         ) : null}
         <InlineBlameToggle reason={footerBlameReason} />

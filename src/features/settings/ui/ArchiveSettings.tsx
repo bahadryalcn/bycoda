@@ -317,7 +317,7 @@ export function ArchivePage({
                     {onDeleteProject ? (
                       <Button
                         className="shrink-0"
-                        variant="danger"
+                        tone="danger"
                         disabled={!!pending[`restore:${project.path}`]}
                         onClick={() => setDeleting(project)}
                       >

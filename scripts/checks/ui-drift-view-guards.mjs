@@ -31,6 +31,66 @@ function isCard(opening) {
   });
 }
 
+const isSettingsGroup = (opening, source) =>
+  opening.tagName.getText() === "Group" && /from\s+["'][^"']*settingsControls["']/.test(source);
+
+/** Compile-time text of a JSX child or attribute value: literal, plain template or `t("...")`. */
+function staticText(node) {
+  if (node && ts.isJsxExpression(node)) node = node.expression;
+  if (!node) return null;
+  if (ts.isStringLiteralLike(node)) return node.text;
+  if (
+    ts.isCallExpression(node) &&
+    node.expression.getText() === "t" &&
+    node.arguments[0] &&
+    ts.isStringLiteralLike(node.arguments[0])
+  )
+    return node.arguments[0].text;
+  return null;
+}
+
+const normalizedText = (text) =>
+  text
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[\s.\u2026:]+$/u, "")
+    .trim();
+
+/** Visible static strings among the children; `deep` also walks nested elements. */
+function visibleTexts(element, deep) {
+  const texts = [];
+  const walk = (node) => {
+    for (const child of node.children) {
+      if (ts.isJsxText(child)) {
+        if (child.text.trim()) texts.push(child.text);
+      } else if (ts.isJsxElement(child)) {
+        if (deep) walk(child);
+      } else {
+        const text = staticText(child);
+        if (text) texts.push(text);
+      }
+    }
+  };
+  if (ts.isJsxElement(element)) walk(element);
+  return texts;
+}
+
+/** A hint that only restates the visible label adds nothing (owner rule: no redundant tooltips). */
+function tooltipRepeatsLabel(node, opening) {
+  const isTooltip = opening.tagName.getText() === "Tooltip";
+  const [hint, when, extra] = isTooltip
+    ? ["label", "when", ["details", "shortcut"]]
+    : ["tooltip", "tooltipWhen", ["tooltipDetails", "tooltipShortcut"]];
+  const text = staticText(attribute(opening, hint)?.initializer);
+  if (!text || !ts.isJsxElement(node)) return false;
+  if (literal(attribute(opening, when)?.initializer) === "overflow") return false;
+  if (extra.some((name) => attribute(opening, name))) return false;
+  const wanted = normalizedText(text);
+  const shown = visibleTexts(node, isTooltip).map(normalizedText);
+  if (shown.length > 1) shown.push(normalizedText(shown.join(" ")));
+  return wanted.length > 0 && shown.includes(wanted);
+}
+
 /** Maximum literal primary buttons rendered together in one expression. */
 function primaryCount(node) {
   if (!node || ts.isFunctionLike(node)) return 0;
@@ -97,11 +157,11 @@ function hoverOnly(className) {
 export function scanViewGuards(file, source, add) {
   if (!file.endsWith(".tsx") || !/^src\/(?:app|features|shared)\//.test(file)) return;
   // Avoid parsing most source files; comments and string examples are rejected by the AST.
-  if (!/primary|card|opacity-0|invisible/.test(source)) return;
+  if (!/primary|card|opacity-0|invisible|Group|tooltip|Tooltip/.test(source)) return;
   const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let primaryReported = false;
-  const visit = (node, cards = 0) => {
-    if (ts.isFunctionLike(node)) cards = 0;
+  const visit = (node, cards = 0, groups = 0) => {
+    if (ts.isFunctionLike(node)) cards = groups = 0;
     let returned = ts.isReturnStatement(node)
       ? node.expression
       : ts.isArrowFunction(node) && !ts.isBlock(node.body)
@@ -118,17 +178,27 @@ export function scanViewGuards(file, source, add) {
         ? node
         : null;
     if (opening) {
-      if (isCard(opening)) {
-        if (cards > 0) add("nested-card", opening.getStart(tree));
-        cards++;
-      }
+      const card = isCard(opening);
+      const group = isSettingsGroup(opening, source);
+      if (card && cards > 0) add("nested-card", opening.getStart(tree));
+      // A settings Group is already a framed card: no card or Group inside it, no Group in a card.
+      else if ((card && groups > 0) || (group && cards + groups > 0))
+        add("nested-surface", opening.getStart(tree));
+      if (card) cards++;
+      if (group) groups++;
+      if (
+        (opening.attributes.properties.length && attribute(opening, "tooltip")) ||
+        opening.tagName.getText() === "Tooltip"
+      )
+        if (tooltipRepeatsLabel(node, opening))
+          add("tooltip-repeats-label", opening.getStart(tree));
       if (/^src\/(?:features|shared)\//.test(file)) {
         const className = attribute(opening, "className");
         if (className?.initializer && hoverOnly(className.initializer))
           add("hover-only-reveal", className.getStart(tree));
       }
     }
-    ts.forEachChild(node, (child) => visit(child, cards));
+    ts.forEachChild(node, (child) => visit(child, cards, groups));
   };
   visit(tree);
 }

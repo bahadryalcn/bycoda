@@ -38,6 +38,8 @@ export const ruleScopes = {
   "one-primary-per-view": "TSX in src/app, src/features, src/shared (excluding tests)",
   "nested-card": "TSX in src/app, src/features, src/shared (excluding tests)",
   "hover-only-reveal": "TSX in src/features, src/shared (excluding tests)",
+  "nested-surface": "TSX in src/app, src/features, src/shared (excluding tests)",
+  "tooltip-repeats-label": "TSX in src/app, src/features, src/shared (excluding tests)",
 };
 
 export const rules = {
@@ -47,6 +49,10 @@ export const rules = {
     "card Surface or surfaceAttributes({ variant: card }) nested lexically inside another card (use page or inset)",
   "hover-only-reveal":
     "opacity-0/invisible revealed on hover without a matching keyboard reveal in the same className (add focus-within/focus-visible/group-focus-within)",
+  "nested-surface":
+    "settings Group nested in a Group or card Surface, or a card Surface inside a Group (a Group is already a framed card; flatten to rows or use one container)",
+  "tooltip-repeats-label":
+    'tooltip= (or <Tooltip label>) whose static text equals the visible label of the same control (a hint must add a shortcut, detail or reason; drop it or use tooltipWhen="overflow")',
   "undefined-var": "var(--x) / Tailwind (--x) with no definition in src CSS or inline style",
   "arc-var-outside-arc":
     "Arc-only variable (.bycoda-arc block in arc.css) used outside an Arc root",

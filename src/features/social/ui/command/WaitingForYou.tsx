@@ -31,13 +31,6 @@ export function WaitingForYou({ approvalCount, humanCount = 0, children }: Waiti
           </Badge>
         ) : null}
       </header>
-      {approvalCount > 0 ? (
-        <p className="sr-only">
-          {approvalCount === 1
-            ? t("{p0} action waits for your approval.", { p0: approvalCount })
-            : t("{p0} actions wait for your approval.", { p0: approvalCount })}
-        </p>
-      ) : null}
       <div {...surfaceAttributes({ frame: "pane", edge: "block-start" }, "command-frame-body")}>
         {children}
       </div>

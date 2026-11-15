@@ -1,4 +1,3 @@
-import { Tooltip } from "../../shared/ui/Tooltip";
 import { Text } from "../../shared/ui/Text";
 import { EmptyState } from "../../shared/ui/EmptyState";
 import { Alert } from "../../shared/ui/Alert";
@@ -253,21 +252,12 @@ function ProjectDiagnosticsPanel({
         >
           {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
         </Text>
-        <Tooltip
-          label={t(
-            "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
-          )}
-          asChild
-        >
-          <Text size="caption" tone="secondary" leading="inherit" className="resource-scope">
-            {hostLabel ?? t("Host process")} · {t("Node process only")}
-          </Text>
-        </Tooltip>
+        <Text size="caption" tone="secondary" leading="inherit" className="resource-scope">
+          {hostLabel ?? t("Host process")}
+        </Text>
         <InfoPopover label={t("Measurement details")}>
-          <p>{hostLabel ?? t("Host process")}</p>
           {sample ? (
             <DescriptionList size="sm">
-              <DescriptionItem term={t("Sampled at")}>{time(sample.at)}</DescriptionItem>
               <DescriptionItem term={t("Node heap")}>
                 {mib(sample.process.heapUsedBytes)}
               </DescriptionItem>
@@ -295,7 +285,7 @@ function ProjectDiagnosticsPanel({
       {sample ? (
         <>
           <div className="resource-cards">
-            <Surface as="article" variant="card" className="resource-card">
+            <Surface as="article" variant="page" className="resource-card">
               <SectionLabel as="h3">{t("bycoda host CPU")}</SectionLabel>
               <strong className="resource-value">
                 {sample?.process.cpuPercent != null
@@ -304,7 +294,7 @@ function ProjectDiagnosticsPanel({
               </strong>
               <ResourceChart samples={samples} metric="cpu" label={t("bycoda host CPU")} />
             </Surface>
-            <Surface as="article" variant="card" className="resource-card">
+            <Surface as="article" variant="page" className="resource-card">
               <SectionLabel as="h3">{t("bycoda host memory")}</SectionLabel>
               <strong className="resource-value">
                 {sample ? mib(sample.process.rssBytes) : "—"}
@@ -312,7 +302,7 @@ function ProjectDiagnosticsPanel({
               <ResourceChart samples={samples} metric="memory" label={t("bycoda host memory")} />
             </Surface>
           </div>
-          <Surface as="article" variant="card" className="resource-card resource-system-memory">
+          <Surface as="article" variant="page" className="resource-card resource-system-memory">
             <Text
               size="caption"
               tone="inherit"

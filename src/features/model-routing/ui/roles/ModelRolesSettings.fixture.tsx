@@ -20,6 +20,18 @@ vi.mock("../../model/modelRoutingClient", () => ({
   resolveModelRouting: mocks.resolve,
 }));
 vi.mock("../../../settings/public/settingsControls", () => ({
+  SettingsFeedback: ({
+    children,
+    action,
+  }: {
+    children: ReactNode;
+    action?: { label: string; onClick: () => void };
+  }) => (
+    <p>
+      {children}
+      {action ? <button onClick={action.onClick}>{action.label}</button> : null}
+    </p>
+  ),
   Group: ({ title, children }: { title: ReactNode; children: ReactNode }) => (
     <section>
       {title}
@@ -224,7 +236,7 @@ it("maps Pool to main order, lists named pools, and preserves missing pools", as
   await click("Pool");
   expect(onChange).toHaveBeenLastCalledWith({ kind: "order" });
   await render(field({ value: { kind: "pool", poolId: "gone" }, onChange }));
-  expect(container.textContent).toContain("Missing pool (gone)");
+  expect(container.textContent).toContain("Deleted pool");
   const select = container.querySelector("select")!;
   await act(async () => {
     select.value = "p";
@@ -467,7 +479,7 @@ it("offers retry when initial roles read fails", async () => {
   });
   await render(<ModelRolesSettings machineId="host" supported />);
   expect(container.textContent).toContain("Model routing could not be loaded.");
-  await click("Try again");
+  await click("Retry");
   expect(refetch).toHaveBeenCalledOnce();
 });
 
@@ -509,7 +521,7 @@ it("keeps originating Host pending save across remount and isolates another Host
     roles: { "task.worker": { kind: "pool" as const, poolId: "p" } },
   };
   await act(async () => finish(acknowledged));
-  expect(container.textContent).toContain("No unsaved changes");
+  expect(container.textContent).not.toContain("Unsaved changes");
   await render(<ModelRolesSettings machineId="host-b" supported />);
   expect(selected(container.querySelector('section[aria-label="Task worker"]')!)).toBe(
     "Model order",

@@ -3,6 +3,7 @@
   flex-direction: column;
   min-width: 0;
   gap: var(--space-1);
+  --settings-group-gap: var(--space-1);
 }
 .decision-discovery-body {
   display: flex;

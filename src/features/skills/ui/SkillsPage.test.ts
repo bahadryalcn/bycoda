@@ -81,6 +81,15 @@ async function click(label: string) {
   return target;
 }
 
+async function chooseFromMenu(trigger: string, item: string) {
+  await click(trigger);
+  const row = Array.from(document.querySelectorAll<HTMLElement>('[role^="menuitem"]')).find(
+    (entry) => entry.textContent?.trim() === item,
+  );
+  expect(row, `Menu item: ${item}`).toBeDefined();
+  await act(async () => row!.click());
+}
+
 // Existing preview scenarios explicitly switch from the default editor to rendered Markdown.
 async function openPreview(label: string) {
   const target = await click(label);
@@ -99,8 +108,8 @@ it("keeps Advanced controls outside the single skill scroller", async () => {
   const scroller = container.querySelector("[data-skill-list]")!;
   expect(container.querySelectorAll("[data-skill-list]")).toHaveLength(1);
   expect(scroller.querySelector("[data-continuous-list]")).toBeNull();
-  expect(scroller.textContent).not.toContain("Advanced: skill controls and folders");
-  await click("Advanced: skill controls and folders");
+  expect(scroller.textContent).not.toContain("Skill folders");
+  await chooseFromMenu("More", "Skill folders");
   const dialog = document.querySelector('[role="dialog"]')!;
   expect(dialog.textContent).toContain("Disabled skills stay on disk.");
   expect(scroller.contains(dialog)).toBe(false);
@@ -168,7 +177,7 @@ it("opens New skill as a dialog without copying the search text into the name", 
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(filter, "aawd");
     filter.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await click("New skill");
+  await chooseFromMenu("New", "New skill");
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   expect(document.querySelector<HTMLInputElement>('input[aria-label="Skill name"]')?.value).toBe(
     "",
@@ -189,7 +198,7 @@ it("keeps policy explanations collapsed without changing owner restrictions", as
       .querySelector('[role="switch"][aria-label="Enable Project guide in bycoda"]')
       ?.getAttribute("aria-checked"),
   ).toBe("false");
-  await click("Advanced: skill controls and folders");
+  await chooseFromMenu("More", "Skill folders");
   expect(
     document.querySelector('[role="dialog"] [data-setting-id="skill-folders"]'),
   ).not.toBeNull();
@@ -490,7 +499,7 @@ describe("Settings skill preview", () => {
       );
       if (preview) await openPreview("Project guide");
       const previewPanel = container.querySelector('[aria-label="Skill preview"]');
-      await click("New skill");
+      await chooseFromMenu("New", "New skill");
       expect(document.activeElement?.getAttribute("aria-label")).toBe("Skill name");
       if (control !== "Skill name") {
         const input = document.querySelector<HTMLInputElement>('[aria-label="Skill name"]')!;
@@ -529,7 +538,7 @@ describe("Settings skill preview", () => {
       expect(document.querySelector("form")).toBeNull();
       expect(container.querySelector('[aria-label="Skill preview"]')).toBe(previewPanel);
       await act(async () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
-      expect(document.activeElement === button("New skill")).toBe(true);
+      expect(document.activeElement === button("New")).toBe(true);
       expect(closeSettings).not.toHaveBeenCalled();
       if (preview) {
         escape();

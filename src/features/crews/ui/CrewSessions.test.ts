@@ -143,6 +143,11 @@ it("keeps recovery inside Crew management's modal even when a shared notice prov
     );
   await renderDialog(new Error("Machine is unreachable"));
   const dialog = document.body.querySelector('[role="dialog"]')!;
+  await act(async () => {
+    [...dialog.querySelectorAll("button")]
+      .find((button) => button.textContent === "Show details")!
+      .click();
+  });
   expect(dialog.textContent).toContain("Machine is unreachable");
   const retry = [...dialog.querySelectorAll("button")].find(
     (button) => button.textContent === "Retry",
@@ -158,7 +163,8 @@ it("keeps recovery inside Crew management's modal even when a shared notice prov
   expect(document.body.textContent).toContain("Crew storage unavailable");
   expect(document.body.textContent).not.toContain("Not connected");
   await renderDialog(null);
-  expect(document.body.textContent).toContain("Loading crews…");
+  expect(dialog.querySelector('[data-loading-layout="fill"]')).not.toBeNull();
+  expect(dialog.textContent).not.toContain("Retry");
   expect(document.body.textContent).not.toContain("Not connected");
 });
 

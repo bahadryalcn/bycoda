@@ -84,7 +84,7 @@ export function ModelRoleRow({
       ? [
           {
             value: `${POOL_PREFIX}${missingPool}`,
-            label: t("Missing pool ({p0})", { p0: missingPool }),
+            label: t("Deleted pool"),
             disabled: true,
           },
         ]

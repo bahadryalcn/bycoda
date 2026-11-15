@@ -42,12 +42,16 @@ afterEach(() => {
 });
 
 describe("AudienceScreen empty state", () => {
-  it("shows one sentence, the single Find people action and Fill with AI", async () => {
+  it("shows one sentence and Fill with AI beside the toolbar Find people", async () => {
     render();
     await flush();
     await flush();
     expect(bodyText()).toContain("No people yet.");
-    expect(buttonByText("Find people")).toBeTruthy();
+    expect(
+      [...document.querySelectorAll("button")].filter(
+        (b) => b.textContent?.trim() === "Find people",
+      ),
+    ).toHaveLength(1);
     expect(buttonByText("Fill with AI")).toBeTruthy();
   });
 

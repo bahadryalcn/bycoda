@@ -48,17 +48,15 @@ it("swaps confirmed success in place, gives pending priority and resets when edi
   }
 });
 
-it("preserves legacy danger and error aliases while letting explicit intent win", async () => {
+it("keeps hierarchy and tone independent", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   const root = createRoot(container);
   try {
     const cases: [ButtonProps, string, string][] = [
       [{ variant: "primary" }, "primary", "neutral"],
-      [{ variant: "danger" }, "secondary", "danger"],
-      [{ variant: "danger", tone: "info" }, "secondary", "info"],
-      [{ variant: "danger", tone: "warning" }, "secondary", "warning"],
-      [{ variant: "ghost", tone: "error" }, "ghost", "danger"],
+      [{ tone: "danger" }, "secondary", "danger"],
+      [{ variant: "ghost", tone: "danger" }, "ghost", "danger"],
       [{ variant: "tab", tone: "warning", selected: true }, "tab", "warning"],
     ];
     for (const [props, hierarchy, tone] of cases) {

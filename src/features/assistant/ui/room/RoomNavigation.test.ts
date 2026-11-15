@@ -9,7 +9,7 @@ vi.mock("../../../../shared/i18n", async (importOriginal) => ({
   t: (key: string) => key,
 }));
 
-it("keeps a deep-linked record selected and exposes each record destination", async () => {
+it("shows every Room destination in one strip and keeps a deep link selected", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");
   document.body.append(container);
@@ -21,26 +21,26 @@ it("keeps a deep-linked record selected and exposes each record destination", as
         createElement(RoomNavigation, { view: "History", onChange: change, activeJobs: 2 }),
       ),
     );
-    const selected = [...container.querySelectorAll('[role="tab"][aria-selected="true"]')];
-    expect(selected.map((item) => item.textContent)).toEqual(["Records", "What I did"]);
-    const memory = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
-      (item) => item.textContent === "Memory",
+    const tabs = () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    expect(tabs().map((item) => item.textContent?.replace(/\d+$/, ""))).toEqual([
+      "Today",
+      "Jobs",
+      "Sessions",
+      "Conversations",
+      "Notes",
+      "Memory",
+      "History",
+    ]);
+    expect(container.querySelectorAll('[role="tablist"]')).toHaveLength(1);
+    expect(tabs().find((item) => item.getAttribute("aria-selected") === "true")?.textContent).toBe(
+      "History",
     );
-    await act(async () => memory!.click());
-    expect(change).toHaveBeenCalledWith("Memory");
     await act(async () =>
-      root.render(
-        createElement(RoomNavigation, { view: "Sessions", onChange: change, activeJobs: 2 }),
-      ),
+      tabs()
+        .find((item) => item.textContent === "Memory")!
+        .click(),
     );
-    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain(
-      "Work",
-    );
-    expect(
-      [...container.querySelectorAll('[role="tab"]')].some(
-        (item) => item.textContent === "Sessions",
-      ),
-    ).toBe(true);
+    expect(change).toHaveBeenCalledWith("Memory");
   } finally {
     await act(async () => root.unmount());
     container.remove();

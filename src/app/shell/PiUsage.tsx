@@ -1,3 +1,4 @@
+import { openSettingsSection } from "../../features/settings/public/settingsLink";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
@@ -88,6 +89,7 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
     <>
       <UsageProviderChip
         limits={limits}
+        onShowUsage={() => openSettingsSection("usage")}
         now={now}
         presentation={{
           sourceLabel: "Pi's saved OAuth account",

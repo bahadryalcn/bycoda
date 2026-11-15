@@ -23,7 +23,6 @@ import { AccountDevices } from "./AccountDevices";
 import { AccountHeader } from "./AccountHeader";
 import { AccountNews } from "./AccountNews";
 import { AccountNotifications } from "./AccountNotifications";
-import { AccountPrivacy } from "./AccountPrivacy";
 import { AccountProfile } from "./AccountProfile";
 import { AccountSecurity } from "./AccountSecurity";
 import { AccountSignIn } from "./AccountSignIn";
@@ -123,8 +122,6 @@ export function AccountScreen() {
         />
         <Divider />
         <TodayView />
-        <Divider />
-        <AccountPrivacy />
         <Divider />
         <GuestSupport />
       </div>

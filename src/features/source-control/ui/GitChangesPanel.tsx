@@ -1,6 +1,5 @@
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { GitCommitActions } from "./GitCommitActions";
 import { Text } from "../../../shared/ui/Text";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -458,24 +457,19 @@ export function GitChangesPanel({
         ) : null}
         <div className={repository ? styles.actions : "ms-auto flex min-w-0 items-center gap-1"}>
           {repository && index ? (
-            <Tooltip
-              label={`${t("Changes")}: ${files.length}; ${t("Merge Conflicts")}: ${conflicts.length}`}
-              asChild
-            >
-              <Text size="caption" leading="inherit" tone="secondary" className={styles.summary}>
-                <FileDiff aria-hidden className="icon-xs" />
-                <span aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
-                  {files.length + conflicts.length}
-                </span>
-                {conflicts.length > 0 ? (
-                  <Text size="inherit" tone="warning" className={styles.conflicts}>
-                    {t("Merge Conflicts")}: {conflicts.length}
-                  </Text>
-                ) : null}
-                {!detailsOpen && (index.ahead ?? 0) > 0 ? <span>↑{index.ahead}</span> : null}
-                {!detailsOpen && (index.behind ?? 0) > 0 ? <span>↓{index.behind}</span> : null}
-              </Text>
-            </Tooltip>
+            <Text size="caption" leading="inherit" tone="secondary" className={styles.summary}>
+              <FileDiff aria-hidden className="icon-xs" />
+              <span aria-label={`${t("Changes")}: ${files.length + conflicts.length}`}>
+                {files.length + conflicts.length}
+              </span>
+              {conflicts.length > 0 ? (
+                <Text size="inherit" tone="warning" className={styles.conflicts}>
+                  {t("Merge Conflicts")}: {conflicts.length}
+                </Text>
+              ) : null}
+              {!detailsOpen && (index.ahead ?? 0) > 0 ? <span>↑{index.ahead}</span> : null}
+              {!detailsOpen && (index.behind ?? 0) > 0 ? <span>↓{index.behind}</span> : null}
+            </Text>
           ) : null}
           {repository ? branchControl : null}
           {/* Fixed icon columns keep these actions aligned with the section
@@ -1455,15 +1449,16 @@ function ChangedFiles({
             title={t("Loading changes…")}
           />
         ) : files.length === 0 && conflicts.length === 0 ? (
-          <Text as="p" size="caption" tone="muted" className="px-3 py-2">
-            {index?.repository === false
-              ? ""
-              : index
-                ? diverged
+          index && index.repository !== false ? (
+            <EmptyState
+              size="inline"
+              description={
+                diverged
                   ? t("Diverged from {p0}", { p0: index.upstream ?? "upstream" })
                   : t("No uncommitted changes")
-                : ""}
-          </Text>
+              }
+            />
+          ) : null
         ) : (
           <>
             {conflicts.length > 0 ? (

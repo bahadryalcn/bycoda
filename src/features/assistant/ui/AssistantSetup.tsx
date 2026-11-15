@@ -62,16 +62,16 @@ const labels = [
   "First rules",
   "Review",
 ];
-/** One short line per step, saying what the step decides and what it changes. Indexed by step. */
+/** A line per step only when it states a consequence the title does not. Indexed by step. */
 const intros = [
-  "Name how the assistant appears and how it addresses you.",
-  "The language for replies and spoken responses.",
+  "",
+  "",
   "Choose a speech provider and confirm it responds before you continue.",
   "Choose a voice and confirm it plays before you continue.",
   "The microphone opens only when you start this test.",
-  "How the assistant sounds and how often it uses your name.",
+  "",
   "Choose how freely it may work. Jobs use your default worker model; change models and permissions later in Settings.",
-  "Choose when it may reach out and when it stays quiet.",
+  "",
   "Each line is saved as a rule when setup finishes.",
   "Check these choices. Start saves them to the Host.",
 ];
@@ -363,14 +363,7 @@ export function AssistantSetup({
   return (
     <Modal
       title={draft ? t(labels[step]) : t("Set up")}
-      context={
-        draft ? (
-          <span className={styles.context}>
-            <span>{t("Set up")}</span>
-            <span>{t("Step {p0} of {p1}", { p0: index + 1, p1: steps.length })}</span>
-          </span>
-        ) : undefined
-      }
+      context={draft ? <span className={styles.context}>{t("Set up")}</span> : undefined}
       onClose={() => {
         if (!pending) onClose();
       }}
@@ -431,15 +424,17 @@ export function AssistantSetup({
               aria-label={t("Step {p0} of {p1}", { p0: index + 1, p1: steps.length })}
             />
             <div className={styles.content}>
-              <Text
-                as="p"
-                size="secondary"
-                tone="secondary"
-                leading="normal"
-                className={styles.intro}
-              >
-                {t(intros[step])}
-              </Text>
+              {intros[step] ? (
+                <Text
+                  as="p"
+                  size="secondary"
+                  tone="secondary"
+                  leading="normal"
+                  className={styles.intro}
+                >
+                  {t(intros[step])}
+                </Text>
+              ) : null}
               {step === 0 && (
                 <Button
                   type="button"

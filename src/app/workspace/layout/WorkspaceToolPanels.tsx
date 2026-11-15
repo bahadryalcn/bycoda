@@ -576,6 +576,7 @@ function WorkspaceToolPanelsComponent({
           <InboxView
             key={pullRequestsOnly ? "pullRequests" : "inbox"}
             pullRequestsOnly={pullRequestsOnly}
+            onPullRequestsOnlyChange={setPullRequestsOnly}
             onOpenProject={pickProject}
             cwd={sidebarCwd}
             recents={visibleRecents}

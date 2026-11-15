@@ -97,19 +97,6 @@
   min-width: 0;
 }
 
-.command-cards {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.75rem;
-}
-
-.command-card {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
 .command-card-icon {
   display: inline-flex;
   flex: none;
@@ -117,29 +104,6 @@
   justify-content: center;
   inline-size: 1.75rem;
   block-size: 1.75rem;
-}
-
-.command-card-body {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 0.125rem;
-  min-width: 0;
-}
-
-.command-card-label,
-.command-card-note {
-}
-
-.command-card-note {
-}
-
-.command-card-value {
-  font-variant-numeric: tabular-nums;
-}
-
-.command-card-body > [role="meter"] {
-  margin-block-start: 0.25rem;
 }
 
 /* A framed side panel: header row (title and trailing controls), hairline, body. */
@@ -219,10 +183,6 @@
 @media (max-width: 800px) {
   .command-layout {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .command-cards {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

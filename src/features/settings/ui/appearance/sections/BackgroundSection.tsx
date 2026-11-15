@@ -361,7 +361,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
                   className="shrink-0"
                   onClick={remove}
                   disabled={busy}
-                  variant="danger"
+                  tone="danger"
                   loading={appearance.chatBackgroundOperation === "remove"}
                   loadingLabel={t("Loading…")}
                   stableWidth

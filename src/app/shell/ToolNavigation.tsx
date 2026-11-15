@@ -1,3 +1,4 @@
+import { Badge } from "../../shared/ui/Badge";
 import { Alert } from "../../shared/ui/Alert";
 import {
   Activity,
@@ -250,7 +251,14 @@ export function ToolNavigation() {
                 <Icon className="icon-sm shrink-0" aria-hidden />
                 <span>{label(tool)}</span>
                 {tool === "servers" && sshReviews.intents.length ? (
-                  <span aria-label={t("Pending SSH reviews")}>{sshReviews.intents.length}</span>
+                  <Badge
+                    variant="count"
+                    size="xs"
+                    tone="warning"
+                    aria-label={t("Pending SSH reviews")}
+                  >
+                    {sshReviews.intents.length}
+                  </Badge>
                 ) : null}
               </Tab>
             );

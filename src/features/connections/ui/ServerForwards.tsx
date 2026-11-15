@@ -100,7 +100,7 @@ export function ServerForwards({
           <EmptyState
             size="inline"
             kind="filtered"
-            description={t("No matching forwarding rules.")}
+            description={t("No matching forwarding rules")}
             onReset={() => setSearch("")}
           />
         ) : null}

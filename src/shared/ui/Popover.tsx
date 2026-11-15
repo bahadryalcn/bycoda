@@ -1,10 +1,5 @@
 import { NativePopupHost, PopupBackdrop } from "./NativePopupHost";
-/**
- * Shared frame and host context for content inside an existing OS popup window.
- * @group overlay
- * @use Native popup roots whose caller owns window creation, fitting and dismissal.
- * @avoid Anchored content in the current window: Popover.
- */
+// Public alias of the NativePopupHost component; the catalog entry lives on its definition.
 export { NativePopover } from "./NativePopupHost";
 import {
   useCallback,

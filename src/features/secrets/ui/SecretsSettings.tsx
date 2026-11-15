@@ -4,6 +4,7 @@ import { formatArchiveDate } from "../../../shared/i18n/format";
 import { Button } from "../../../shared/ui/Button";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { Text } from "../../../shared/ui/Text";
 import { useRemoteMachines } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import { Group, Row, SettingsFeedback } from "../../settings/public/settingsControls";
@@ -95,14 +96,16 @@ function OwnerSecretsInventory({ hostId }: { hostId: string }) {
               descriptionVisible
               description={[
                 secret.purpose,
-                t("Saved {p0}", { p0: formatArchiveDate(secret.createdAt) }),
                 secret.expiresAt === null
-                  ? t("Never expires")
+                  ? ""
                   : t("Expires {p0}", { p0: formatArchiveDate(secret.expiresAt) }),
               ]
                 .filter(Boolean)
                 .join(" · ")}
             >
+              <Text size="caption" tone="muted">
+                {formatArchiveDate(secret.createdAt)}
+              </Text>
               <Button
                 size="sm"
                 variant="ghost"

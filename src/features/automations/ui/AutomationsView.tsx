@@ -591,7 +591,7 @@ function AutomationsContent({
           ) : null}
           {showAssistant ? (
             <Button
-              variant="secondary"
+              variant="ghost"
               aria-label={t("AI assistant")}
               aria-haspopup="dialog"
               startIcon={<Sparkles className="icon-sm" strokeWidth={1.75} />}
@@ -864,7 +864,7 @@ function AutomationCard({
       selected={active}
       before={
         <ToggleSwitch
-          label={`${automation.enabled ? "Pause" : "Enable"} ${automation.name}`}
+          label={t(automation.enabled ? "Pause {p0}" : "Enable {p0}", { p0: automation.name })}
           on={automation.enabled}
           onChange={onToggle}
           busy={pending}
@@ -933,17 +933,13 @@ function AutomationPicker({
           <Heading size="page">
             {firstUse ? t("Create your first automation") : t("New automation")}
           </Heading>
-          <Text as="p" size="secondary" tone="muted" className="mt-1.5">
-            {t("Choose how to start. You can edit everything before saving.")}
-          </Text>
         </header>
         <div className="automation-start mt-5" role="group" aria-label={t("Start")}>
           <Button
             type="button"
             onClick={onBlank}
             variant="item"
-            layout="stacked"
-            {...surfaceAttributes({ frame: "card", radius: "card" }, "automation-start-option")}
+            className="automation-start-option"
           >
             <span className="flex gap-3">
               <Text size="inherit" tone="muted" className="grid size-7 shrink-0 place-items-center">
@@ -953,9 +949,6 @@ function AutomationPicker({
                 <Text size="secondary" tone="neutral" weight="medium" className="block">
                   {t("Start from scratch")}
                 </Text>
-                <Text size="caption" tone="muted" leading="snug" className="mt-1 block">
-                  {t("Write your own instructions and choose a trigger.")}
-                </Text>
               </span>
             </span>
           </Button>
@@ -964,9 +957,8 @@ function AutomationPicker({
               type="button"
               onClick={onAssistant}
               variant="item"
-              layout="stacked"
               aria-haspopup="dialog"
-              {...surfaceAttributes({ frame: "card", radius: "card" }, "automation-start-option")}
+              className="automation-start-option"
             >
               <span className="flex gap-3">
                 <Text
@@ -979,11 +971,6 @@ function AutomationPicker({
                 <span className="min-w-0">
                   <Text size="secondary" tone="neutral" weight="medium" className="block">
                     {t("AI assistant")}
-                  </Text>
-                  <Text size="caption" tone="muted" leading="snug" className="mt-1 block">
-                    {t(
-                      "Continue in a full AI session with automation tools and approval controls.",
-                    )}
                   </Text>
                 </span>
               </span>

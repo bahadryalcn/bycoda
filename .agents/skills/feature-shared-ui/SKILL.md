@@ -29,20 +29,33 @@ Any JSX under `src/app` or `src/features`, and any change in `src/shared/ui/`. F
 - Actions use `Button` (or ActionHost inline actions); no screen-specific button styling.
 - Semantic tokens only; no literal colors, font sizes, radii or z-index; preserve density settings.
 - One overlay stack: Popover, Modal, Sheet, Tooltip and the menus; no own focus trap or Escape handler.
-- Tooltips never repeat a visible label; omit redundant content at its source. They add a shortcut, detail or reason. Shared Tooltip renders explicit content unchanged; use OverflowTooltip only to recover clipped or responsively hidden text.
+- Tooltips never repeat a visible label (`tooltip-repeats-label` catches the literal case); omit redundant content at its source. They add a shortcut, detail or reason. Shared Tooltip renders explicit content unchanged; use OverflowTooltip only to recover clipped or responsively hidden text.
+- A settings `Group` is already a framed card: no `Group` or card `Surface` inside it and no `Group` inside a card (`nested-surface`). Compose screens from the archetypes in DESIGN.md, not new containers.
 - Feature code places things and never chooses how they look: no type, surface, state, control size, truncation, motion or scrollbar styling in `src/features` or `src/app`, and an inline style carries custom properties only. Layout stays free. Read [appearance ownership](references/appearance-ownership.md) before writing feature CSS or classes.
 - Bespoke product surfaces (chat composer editor, transcript, terminal, code editor, appearance scene previews) may keep a custom element when no shared component can carry the behavior. Mark that one line with `// ui-drift-ignore: <rule> -- <why>` on the line above (in JSX `{/* ... */}`); everything around it still uses shared components.
+
+## Container states
+
+- List/picker: `EmptyState size="inline" context="list"`, no decorative icon; inline `LoadingText` or `Skeleton`; `FailureState size="inline"` with retry.
+- Panel/group: `EmptyState context="panel"`, title + one action; `LoadingText layout="fill"` or skeleton; `FailureState context="panel"` with promise-returning `onRetry`.
+- Page: `context="page"`; fill `LoadingText` or lazy `SurfaceLoading`. Replace content, keep header.
+- States are exclusive; Retry follows failure. Keep refresh data; errors use `InlineError`. Filtered empty: `kind="filtered"` + `onReset`. No duplicate header actions; explanations use info.
+
+## UI rounds
+
+Start from DESIGN.md "Review checklist" and `references/decisions.md`; route each finding to a token, shared component default, shared composition, drift rule or a local fix, in that order. End the round by promoting each recurring finding one level up (or recording why not) and writing any reversed rule into DESIGN.md and `decisions.md` in the same change; round folders under `temp/local/` hold evidence only.
 
 ## Focused checks
 
 - `pnpm check:ui-catalog`: every shared component has metadata and the generated catalog is current.
 - `pnpm check:ui-drift`: raw tags, deprecated imports, double Modal padding, token drift and appearance ownership (ratchet).
+- Visual acceptance: `node scripts/checks/ui-acceptance-matrix.mjs --list` and `--out temp/verification/<id>/matrix` capture every archetype in light and dark at 1280 and 800 px (see `docs/reference/testing.md`).
 - Run focused tests for the changed component and representative consumers; take light and dark screenshots of affected surfaces when the UI visibly changes.
 
 ## References
 
 - [Appearance ownership](references/appearance-ownership.md): what feature code may not style, the rule for each, and the review item for empty, loading and failure states.
-- [Decision provenance](references/decisions.md): owner decisions behind the shared UI rules.
+- [Decision provenance](references/decisions.md): the one file for owner UI decisions, including shell and workbench.
 - [Product design language](../../../docs/reference/DESIGN.md) for new patterns and T2 work.
 - [UI contracts](../../../docs/reference/ui-design-system.md) for tokens, feedback and field contracts.
 - [Arc integration](../../../docs/reference/arc-ui.md) for installing or adapting Arc registry items.

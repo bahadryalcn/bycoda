@@ -25,7 +25,7 @@ import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as technicalI18n from "../../shared/i18n/technical";
-import { InlineMessage } from "../../shared/ui/InlineError";
+import { DeviceNotices } from "./ui/DeviceNotices";
 import { LoadingText } from "../../shared/ui/LoadingText";
 import { Button } from "../../shared/ui/Button";
 import { Disclosure } from "../../shared/ui/Disclosure";
@@ -1253,65 +1253,34 @@ function DevicePanelSurface({
             )}
             {!device && optionsButton("bottom")}
           </DeviceBar>
-          {actionCompleted && (
-            <InlineMessage
-              tone="warning"
-              action={{
-                label: t("Refresh frame"),
-                pending: operation === "capture",
-                disabled: unavailable("capture", canViewDevice && !annotating),
-                onClick: refreshFrame,
-              }}
-            >
-              <strong>{t("Action completed")} </strong>
-              {t("The screen could not be refreshed. Refresh the frame; do not repeat the action.")}
-            </InlineMessage>
-          )}
-          {toolbarReason && (
-            <Text
-              as="p"
-              size="caption"
-              tone="secondary"
-              leading="inherit"
-              {...surfaceAttributes({ frame: "pane", edge: "block-end" }, "device-panel-reason")}
-            >
-              {toolbarReason}
-            </Text>
-          )}
-          {control && !status.agentInstalled && (
-            <Text
-              as="div"
-              size="caption"
-              tone="inherit"
-              leading="inherit"
-              {...surfaceAttributes(
-                { frame: "pane", edge: "block-end" },
-                "device-panel-setup-control",
-              )}
-            >
-              <span>{t("Run setup with control enabled to install the control tools.")}</span>
-              <Button
-                variant="primary"
-                loading={operation === "setupControl"}
-                disabled={unavailable("setupControl", sdkAvailable)}
-                onClick={() => void execute("setupControl", () => api.setup(true), setStatus)}
-              >
-                {t("Set up device control")}
-              </Button>
-            </Text>
-          )}
+          <DeviceNotices
+            actionCompleted={!!actionCompleted}
+            refreshFrame={{
+              pending: operation === "capture",
+              disabled: unavailable("capture", canViewDevice && !annotating),
+              onClick: refreshFrame,
+            }}
+            setupControl={
+              control && !status.agentInstalled
+                ? {
+                    pending: operation === "setupControl",
+                    disabled: unavailable("setupControl", sdkAvailable),
+                    onClick: () => void execute("setupControl", () => api.setup(true), setStatus),
+                  }
+                : undefined
+            }
+            notice={
+              deviceNotice && {
+                error: deviceNotice.error,
+                display: readableDeviceError(deviceNotice.text) ?? deviceNotice.text,
+                onDismiss: () => setDeviceNotice(undefined),
+              }
+            }
+            reason={toolbarReason || undefined}
+          />
           {operation === "press" || operation === "swipe" ? (
             <Progress compact tone="neutral" aria-label={t("Working on the host…")} />
           ) : null}
-          {deviceNotice && (
-            <InlineMessage
-              tone={deviceNotice.error ? "danger" : "info"}
-              className="shrink-0"
-              action={{ label: t("Dismiss"), onClick: () => setDeviceNotice(undefined) }}
-            >
-              {readableDeviceError(deviceNotice.text) ?? deviceNotice.text}
-            </InlineMessage>
-          )}
           <div
             {...surfaceAttributes({ variant: "canvas" }, "device-panel-stage")}
             data-rail={device ? true : undefined}
@@ -1981,25 +1950,13 @@ function DevicePanelSurface({
                 onChange={(event) => setApp(event.target.value)}
               />
               {device?.platform === "ios" ? (
-                <Text
-                  as="p"
-                  size="caption"
-                  tone="inherit"
-                  leading="inherit"
-                  className="host-tool-muted"
-                >
+                <Text as="p" size="caption" tone="secondary" leading="inherit">
                   {t(
                     "iOS: enter the app name or bundle ID. Open the app before interacting with it.",
                   )}
                 </Text>
               ) : device?.platform === "android" ? (
-                <Text
-                  as="p"
-                  size="caption"
-                  tone="inherit"
-                  leading="inherit"
-                  className="host-tool-muted"
-                >
+                <Text as="p" size="caption" tone="secondary" leading="inherit">
                   {t("Android: enter Settings or an app package ID.")}
                 </Text>
               ) : null}
@@ -2023,13 +1980,7 @@ function DevicePanelSurface({
                 onChange={(event) => setText(event.target.value)}
               />
               {windowsAndroid && !textError ? (
-                <Text
-                  as="p"
-                  size="caption"
-                  tone="inherit"
-                  leading="inherit"
-                  className="host-tool-muted"
-                >
+                <Text as="p" size="caption" tone="secondary" leading="inherit">
                   {t("Android text input from Windows supports printable ASCII characters only.")}
                 </Text>
               ) : null}
@@ -2131,13 +2082,7 @@ function DevicePanelSurface({
                   ))}
                 </div>
               )}
-              <Text
-                as="p"
-                size="caption"
-                tone="inherit"
-                leading="inherit"
-                className="host-tool-muted"
-              >
+              <Text as="p" size="caption" tone="secondary" leading="inherit">
                 {t(
                   "Android: click the screen to press at that pixel. iOS: use logical point coordinates from the accessibility snapshot.",
                 )}

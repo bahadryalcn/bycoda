@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
-import type { ComponentProps, Dispatch, SetStateAction } from "react";
+import type { ComponentProps } from "react";
 import type { Session } from "../../../features/sessions/model/session";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
 import { canOpenTerminalIn } from "../../../features/projects/model/recents";
@@ -29,9 +29,6 @@ export interface WorkspaceFooterProps {
   automationsViewOpen: boolean;
   settingsOpen: boolean;
   settingsSection: SettingsSectionId;
-  pullRequestsOnly: boolean;
-  setPullRequestsOnly: Dispatch<SetStateAction<boolean>>;
-  onOpenInbox: () => void;
   openSettings: WorkspaceNoticesProps["openSettings"];
   // Usage and project terminal
   active: Session | undefined;
@@ -63,9 +60,6 @@ function WorkspaceFooterComponent({
   automationsViewOpen,
   settingsOpen,
   settingsSection,
-  pullRequestsOnly,
-  setPullRequestsOnly,
-  onOpenInbox,
   openSettings,
   active,
   projectCwd,
@@ -130,23 +124,6 @@ function WorkspaceFooterComponent({
           (settingsOpen
             ? settingsSection === "providers" || settingsSection === "usage"
             : !searchViewOpen && !notesViewOpen && !serversViewOpen && !automationsViewOpen)
-        }
-        onHiddenGroups={() => openSettings("groupLock")}
-        onPullRequests={() => {
-          onOpenInbox();
-          setPullRequestsOnly(true);
-        }}
-        onUsage={() => openSettings("usage", "provider-usage")}
-        active={
-          settingsOpen
-            ? settingsSection === "usage"
-              ? "usage"
-              : settingsSection === "groupLock"
-                ? "hiddenGroups"
-                : undefined
-            : inboxViewOpen && pullRequestsOnly
-              ? "pullRequests"
-              : undefined
         }
       />
       <div className="flex shrink-0 items-center gap-1">

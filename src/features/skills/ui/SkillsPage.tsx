@@ -4,7 +4,7 @@ import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { SkillActionsMenu } from "./SkillActionsMenu";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { SkillsLibraryToolbar } from "./SkillsLibraryToolbar";
 import { useSkillGroups } from "../index";
 import { SkillGroupsList } from "./SkillGroupsList";
 import { SkillGroupDialogs, type GroupEdit } from "./SkillGroupDialogs";
@@ -897,51 +897,35 @@ export function SkillsPage({
             </Button>
           </div>
           {header ? null : filterField}
-          <Segmented
-            label={t("Show skills")}
-            value={listFilter}
-            options={[
-              { value: "all", label: t("All") },
-              { value: "enabled", label: t("Enabled") },
-              { value: "off", label: t("Off") },
-              ...(machines.length ? [{ value: "missing" as const, label: t("Missing") }] : []),
-            ]}
-            onChange={setListFilter}
+          <SkillsLibraryToolbar
+            view={groupView.view}
+            onView={groupView.setView}
+            filter={listFilter}
+            onFilter={setListFilter}
+            showMissing={machines.length > 0}
+            busy={busy}
+            onNewSkill={() => setCreating(true)}
+            onDiscover={() => setShowRecommended(true)}
+            onNewGroup={() => setGroupEdit({ kind: "create", skillNames: [] })}
+            onFolders={() => setAdvancedOpen(true)}
           />
-          <Text as="div" size="caption" tone="secondary" leading="inherit" className={styles.count}>
-            <Button variant="secondary" size="sm" disabled={busy} onClick={() => setCreating(true)}>
-              {t("New skill")}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setShowRecommended(true)}>
-              {t("Discover skills")}
-            </Button>
-          </Text>
         </header>
-        <div className="flex flex-col gap-2 p-2">
-          <SegmentedControl
-            label={t("Skill view")}
-            size="sm"
-            value={groupView.view}
-            onValueChange={groupView.setView}
-            options={[
-              { value: "all", label: t("All skills") },
-              { value: "groups", label: t("Groups") },
-            ]}
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => setGroupEdit({ kind: "create", skillNames: [] })}>
-              {t("New group")}
-            </Button>
-            <AutoGroupDialog
-              cwd={cwd}
-              skills={entries.map((entry) => ({
-                name: entry.name,
-                description: entry.primary.skill.description,
-              }))}
-            />
+        {groupView.view === "groups" || groupError ? (
+          <div className="flex flex-col gap-2 px-2 pt-2">
+            {groupView.view === "groups" ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <AutoGroupDialog
+                  cwd={cwd}
+                  skills={entries.map((entry) => ({
+                    name: entry.name,
+                    description: entry.primary.skill.description,
+                  }))}
+                />
+              </div>
+            ) : null}
+            {groupError ? <Alert tone="danger">{groupError}</Alert> : null}
           </div>
-          {groupError ? <Alert tone="danger">{groupError}</Alert> : null}
-        </div>
+        ) : null}
         <SkillList
           groupedContent={
             groupView.view === "groups" ? (
@@ -989,11 +973,6 @@ export function SkillsPage({
               />
             ) : null)}
         </SkillList>
-        <footer className={styles.libraryFooter}>
-          <Button variant="ghost" size="sm" onClick={() => setAdvancedOpen(true)}>
-            {t("Advanced: skill controls and folders")}
-          </Button>
-        </footer>
       </section>
       {advancedOpen ? <SkillAdvancedDialog onClose={() => setAdvancedOpen(false)} /> : null}
       <div className={styles.workspace}>

@@ -1,10 +1,8 @@
 import { retainedTransactionValue, useRetainedTransaction } from "../../model/retainedTransaction";
 import { t, useLocale } from "../../../../shared/i18n";
 import type { ModelRoutingState } from "../../../../shared/model/host-contracts/model-routing";
-import { Button } from "../../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../../shared/ui/InlineError";
-import { Text } from "../../../../shared/ui/Text";
-import { Group } from "../../../settings/public/settingsControls";
+import { Group, SettingsFeedback } from "../../../settings/public/settingsControls";
 import { useModelRouting } from "../../model/modelRoutingClient";
 import {
   effectiveRoleChoice,
@@ -31,17 +29,18 @@ export function ModelRolesSettings({ machineId, supported, onOpenOrder }: ModelR
   useLocale();
   const routing = useModelRouting(machineId, supported);
   if (!routing.supported || !machineId)
-    return <Text as="p">{t("Model routing is not available on this Host.")}</Text>;
+    return (
+      <SettingsFeedback state="error">
+        {t("Model routing is not available on this Host.")}
+      </SettingsFeedback>
+    );
   if (!routing.state)
     return routing.error ? (
-      <InlineError>
-        {t("Model routing could not be loaded.")}{" "}
-        <Button size="sm" variant="link" onClick={() => void routing.refetch()}>
-          {t("Try again")}
-        </Button>
-      </InlineError>
+      <SettingsFeedback state="error" action={{ label: t("Retry"), onClick: routing.refetch }}>
+        {t("Model routing could not be loaded.")}
+      </SettingsFeedback>
     ) : (
-      <Text as="p">{t("Loading model routing…")}</Text>
+      <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
     );
   return (
     <RolesEditor

@@ -133,11 +133,9 @@ it("disables only the preference with a pending write and retains local retry fe
       }),
   );
   await act(async () => root.render(createElement(GroupLockSettings, { controls })));
-  const relock = container.querySelector<HTMLButtonElement>(
-    '[aria-label^="Lock groups again when"]',
-  )!;
+  const relock = container.querySelector<HTMLButtonElement>('[aria-label="Lock on startup"]')!;
   const together = container.querySelector<HTMLButtonElement>(
-    '[aria-label="Unlocking one group unlocks all"]',
+    '[aria-label="Unlock groups together"]',
   )!;
   const idle = container.querySelector<HTMLSelectElement>(
     '[aria-label="Auto-lock after inactivity"]',

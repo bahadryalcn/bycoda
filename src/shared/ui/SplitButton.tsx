@@ -97,12 +97,7 @@ export function SplitButton({
   }, [open, blocked, menuSurface]);
   // Solid actions separate with a gap, outlined ones share a border, quiet ones need no seam.
   const hierarchy = buttonProps.variant ?? "secondary";
-  const seam =
-    hierarchy === "primary"
-      ? "gap"
-      : hierarchy === "secondary" || hierarchy === "danger"
-        ? "shared"
-        : "none";
+  const seam = hierarchy === "primary" ? "gap" : hierarchy === "secondary" ? "shared" : "none";
   return (
     <div
       ref={groupRef}

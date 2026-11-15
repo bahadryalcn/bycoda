@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
 const keep = ["account_lifetime"];
 
 vi.mock("../../../platform/tauri/openExternal", () => ({ openExternal: vi.fn() }));
-vi.mock("./AccountPrivacy", () => ({ AccountPrivacy: () => null }));
 vi.mock("../hooks/useAccountData", () => ({
   useDataSummary: () => ({
     isPending: false,

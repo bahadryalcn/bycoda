@@ -1,7 +1,7 @@
 import { Text } from "../../../../shared/ui/Text";
 import { useState } from "react";
 import type { AssistantJob } from "../../../../shared/model/host-contracts/assistant";
-import { formatNumber, t } from "../../../../shared/i18n";
+import { t } from "../../../../shared/i18n";
 import {
   ActionHost,
   actionContentAttributes,
@@ -77,7 +77,7 @@ function JobStatusMark({ job }: { job: AssistantJob }) {
   );
 }
 
-/** One row: status mark, title and project, steps meter with tokens, latest activity, and actions. Used by Jobs and Today. */
+/** One row: status mark, title and project, one status and steps line (a meter only while running), and actions. Used by Jobs and Today. */
 export function JobRow({
   onReviewTasks,
   onEdit,
@@ -110,11 +110,8 @@ export function JobRow({
   const isFinished = finished(job);
   const { done, total } = job.progress;
   const canToggle = !isFinished && !job.awaitingOwnerRestart && !job.pendingTaskDeletion;
-  const caption = [
-    jobStatusLabel(job),
-    total > 0 ? `${done}/${total}` : "",
-    job.tokens > 0 ? t("{p0} tokens", { p0: formatNumber(job.tokens) }) : "",
-  ].filter(Boolean);
+  const caption = [jobStatusLabel(job), total > 0 ? `${done}/${total}` : ""].filter(Boolean);
+  const running = job.status === "running";
   return (
     <ActionHost className={styles.row} selected={selected}>
       <Checkbox
@@ -161,7 +158,7 @@ export function JobRow({
           leading="inherit"
           className={styles.progressLine}
         >
-          {total > 0 && (
+          {running && total > 0 && (
             <Progress
               compact
               aria-label={t("Progress")}
@@ -173,18 +170,6 @@ export function JobRow({
           )}
           <span>{caption.join(" · ")}</span>
         </Text>
-        {job.summary && (
-          <Text
-            as="p"
-            size="caption"
-            tone="secondary"
-            leading="inherit"
-            truncate
-            className={styles.caption}
-          >
-            {job.summary}
-          </Text>
-        )}
         {job.dispatchState === "unknown" && (
           <InlineError>
             {t("Dispatch status unknown. Check the linked epic before retrying.")}

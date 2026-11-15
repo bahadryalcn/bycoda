@@ -430,9 +430,12 @@ describe("settings pages", () => {
     );
     localStorage.setItem("bycoda.showExcludedFiles", "true");
     await render("appearance");
-    const reset = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-      (node) => node.getAttribute("aria-label") === "Reset all appearance settings",
-    )!;
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="About this page"]')!.click(),
+    );
+    const reset = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((node) => node.textContent?.trim() === "Reset all appearance settings")!;
     await act(async () => reset.click());
     // Page-level restore is confirmed first; the dialog's confirm button runs the reset.
     const confirmReset = Array.from(
@@ -661,9 +664,12 @@ describe("settings pages", () => {
     await render("chat");
     await render("appearance");
     expect(fontTrigger().textContent).toContain("Verdana");
-    const reset = Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
-      (node) => node.getAttribute("aria-label") === "Reset all appearance settings",
-    )!;
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="About this page"]')!.click(),
+    );
+    const reset = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((node) => node.textContent?.trim() === "Reset all appearance settings")!;
     await act(async () => reset.click());
     // Page-level restore is confirmed first; the dialog's confirm button runs the reset.
     const confirmReset = Array.from(
@@ -1622,8 +1628,11 @@ describe("settings pages", () => {
     await render(section);
     if (section === "skills") {
       await act(async () =>
-        [...container.querySelectorAll<HTMLButtonElement>("button")]
-          .find((button) => button.textContent === "Advanced: skill controls and folders")!
+        container.querySelector<HTMLButtonElement>('button[aria-label="More"]')!.click(),
+      );
+      await act(async () =>
+        [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
+          .find((item) => item.textContent?.trim() === "Skill folders")!
           .click(),
       );
     }

@@ -1,3 +1,4 @@
+import { Tooltip } from "../../../shared/ui/Tooltip";
 import {
   actionContentAttributes,
   actionContentScopeAttributes,
@@ -59,7 +60,7 @@ import {
   recentOpenedFiles,
   subscribeProjectFiles,
 } from "../../files/model/fileIndex";
-import { pathKey, prettyCwd } from "../../../shared/lib/paths";
+import { pathKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
@@ -160,7 +161,6 @@ export function SearchView({
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const [scope, setScope] = useRetainedState<SearchScope>(`${stateKey}:scope`, "all");
   const listId = useId();
-  const scopeId = useId();
   const [selection, setSelection] = useRetainedState<{
     context: string;
     id: string | null;
@@ -518,17 +518,6 @@ export function SearchView({
   const empty = !trimmed;
   const indexing = pendingIndex > 0 && (scope === "all" || chatMode);
   const noResults = !empty && rowCount === 0 && !loading && !error && !conversationError;
-  const projectScope = looksLikeProject(cwd)
-    ? `${projectDisplayName(cwd)} · ${prettyCwd(cwd)}`
-    : t("No project folder");
-  const scopeCopy =
-    scope === "files"
-      ? `${t("Files")}: ${projectScope}`
-      : scope === "projects"
-        ? t("Recent projects")
-        : chatMode
-          ? `${t(filters.scope === "everywhere" ? "Everywhere" : filters.scope === "group" ? "This group" : "This project")}${filters.scope === "everywhere" ? "" : ` · ${projectDisplayName(cwd)}`}`
-          : `${t("Files")}: ${projectScope} · ${t("Sessions")}: ${t("Everywhere")} · ${t("Recent projects")}`;
   const limitNotice =
     !empty && (truncated || (!chatMode && grouped.omitted > 0)) ? (
       <InfoPopover label={t("Search result limits")}>
@@ -607,7 +596,6 @@ export function SearchView({
                 aria-activedescendant={
                   resultsCurrent && !empty && rowCount > 0 ? optionId(active) : undefined
                 }
-                aria-describedby={scopeId}
                 spellCheck={false}
                 autoComplete="off"
                 autoCorrect="off"
@@ -632,6 +620,12 @@ export function SearchView({
               }))}
             />
           </div>
+          {scope === "files" || (chatMode && filters.scope !== "everywhere") ? (
+            <Text size="caption" tone="secondary" truncate>
+              {projectDisplayName(cwd)}
+            </Text>
+          ) : null}
+          {limitNotice}
           {chatMode ? (
             <ChatFilterBar
               filters={chatFilters}
@@ -641,19 +635,6 @@ export function SearchView({
           ) : null}
         </div>
       </div>
-
-      <Text
-        as="div"
-        size="caption"
-        tone="muted"
-        leading="inherit"
-        className="app-search-scope-summary"
-      >
-        <Text as="p" size="inherit" tone="inherit" leading="inherit" truncate id={scopeId}>
-          {scopeCopy}
-        </Text>
-        {limitNotice}
-      </Text>
 
       {!empty && (error || conversationError) ? (
         <Alert tone="danger" className="mx-2 mt-2 max-h-40 shrink-0 overflow-auto break-words">
@@ -702,11 +683,7 @@ export function SearchView({
           </LoadingText>
         ) : null}
         {empty ? (
-          <EmptyState
-            context="panel"
-            icon={<Search className="icon-md" />}
-            description={t("Find files, conversations, messages, and projects.")}
-          />
+          <EmptyState context="panel" icon={<Search className="icon-md" />} />
         ) : noResults ? (
           <>
             <EmptyState
@@ -889,103 +866,92 @@ function ResultList({
                 className="flex items-center gap-2 px-2.5 pb-1 pt-2"
               >
                 <span>{heading}</span>
-                <span className="tabular-nums">
-                  {count.shown} {t("shown")}
-                  {count.omitted > 0 ? ` · ${count.omitted} ${t("more loaded matches")}` : ""}
-                </span>
+                <span className="tabular-nums">{count.shown}</span>
               </Text>
             ) : null}
-            <ListRow
-              active={highlighted}
-              aria-selected={highlighted}
-              {...actionContentScopeAttributes()}
-              className="app-search-result"
-              id={`${listId}-option-${index}`}
-              ref={highlighted ? activeRef : undefined}
-              role="option"
-              tabIndex={-1}
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => onRowEnter(index)}
-              onClick={() => onOpen(hit)}
-            >
-              <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
-                {row.icon}
-              </span>
-              <span className="app-search-result-copy">
-                <Text
-                  as="span"
-                  size="inherit"
-                  tone="inherit"
-                  weight="medium"
-                  leading="inherit"
-                  truncate
-                  {...actionContentAttributes(
-                    { phase: "always", reveal: "wrap" },
-                    "app-search-result-title",
-                  )}
-                >
-                  {row.title}
-                </Text>
-                {row.preview ? (
+            <Tooltip label={fullIdentity}>
+              <ListRow
+                active={highlighted}
+                aria-selected={highlighted}
+                {...actionContentScopeAttributes()}
+                className="app-search-result"
+                id={`${listId}-option-${index}`}
+                ref={highlighted ? activeRef : undefined}
+                role="option"
+                tabIndex={-1}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => onRowEnter(index)}
+                onClick={() => onOpen(hit)}
+              >
+                <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">
+                  {row.icon}
+                </span>
+                <span className="app-search-result-copy">
                   <Text
+                    as="span"
                     size="inherit"
-                    tone="secondary"
+                    tone="inherit"
+                    weight="medium"
                     leading="inherit"
-                    {...actionContentAttributes({
-                      phase: "always",
-                      reveal: "preview",
-                    })}
-                    {...motionAttributes(
-                      { transition: "size", duration: "standard" },
-                      actionContentAttributes(
-                        { phase: "always", reveal: "preview" },
-                        "app-search-result-preview",
-                      ).className,
+                    truncate
+                    {...actionContentAttributes(
+                      { phase: "always", reveal: "wrap" },
+                      "app-search-result-title",
                     )}
                   >
-                    {row.preview}
+                    {row.title}
                   </Text>
-                ) : null}
-                <Text
-                  size="caption"
-                  tone="secondary"
-                  leading="inherit"
-                  truncate
-                  {...actionContentAttributes(
-                    { phase: "always", reveal: "wrap" },
-                    "app-search-result-meta",
-                  )}
-                >
-                  {row.meta}
-                </Text>
-                {highlighted ? (
+                  {row.preview ? (
+                    <Text
+                      size="inherit"
+                      tone="secondary"
+                      leading="inherit"
+                      {...actionContentAttributes({
+                        phase: "always",
+                        reveal: "preview",
+                      })}
+                      {...motionAttributes(
+                        { transition: "size", duration: "standard" },
+                        actionContentAttributes(
+                          { phase: "always", reveal: "preview" },
+                          "app-search-result-preview",
+                        ).className,
+                      )}
+                    >
+                      {row.preview}
+                    </Text>
+                  ) : null}
                   <Text
                     size="caption"
                     tone="secondary"
                     leading="inherit"
-                    className="app-search-result-identity"
+                    truncate
+                    {...actionContentAttributes(
+                      { phase: "always", reveal: "wrap" },
+                      "app-search-result-meta",
+                    )}
                   >
-                    {fullIdentity}
+                    {row.meta}
                   </Text>
-                ) : null}
-              </span>
-              <Text
-                size="caption"
-                tone="secondary"
-                leading="inherit"
-                className="app-search-result-kind sr-only"
-              >
-                {t(
-                  hit.kind === "conversation"
-                    ? "Session"
-                    : hit.kind === "message"
-                      ? "Message"
-                      : hit.kind === "project"
-                        ? "Project"
-                        : "File",
-                )}
-              </Text>
-            </ListRow>
+                </span>
+                <Text
+                  size="caption"
+                  tone="secondary"
+                  leading="inherit"
+                  className="app-search-result-kind sr-only"
+                >
+                  {t(
+                    hit.kind === "conversation"
+                      ? "Session"
+                      : hit.kind === "message"
+                        ? "Message"
+                        : hit.kind === "project"
+                          ? "Project"
+                          : "File",
+                  )}
+                </Text>
+              </ListRow>
+            </Tooltip>
           </div>
         );
       })}

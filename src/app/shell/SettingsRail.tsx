@@ -14,7 +14,10 @@ import {
   Folder,
   GitBranch,
   Inbox,
-  Globe,
+  Wrench,
+  Settings,
+  Shield,
+  CheckList,
   Internet,
   Keyboard,
   KeyRound,
@@ -42,15 +45,15 @@ import {
 } from "../../features/settings/model/settings";
 
 export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = {
-  tools: SlidersHorizontal,
+  tools: Wrench,
   browser: MonitorSmartphone,
   devices: Smartphone,
   logs: ListBullet,
   devServers: Server,
-  general: SlidersHorizontal,
-  policies: Lock,
+  general: Settings,
+  policies: CheckList,
   notifications: CircleDot,
-  permissions: Lock,
+  permissions: Shield,
   workspace: Folder,
   connections: Internet,
   appearance: Palette,
@@ -63,7 +66,7 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = 
   models: Brain,
   work: Briefcase,
   crews: UsersRound,
-  mcp: Globe,
+  mcp: SlidersHorizontal,
   skills: Sparkles,
   inbox: Inbox,
   integrations: Link2,
@@ -97,6 +100,9 @@ export function SettingsNav({ section: requestedSection, onSelect, onClose }: Pr
 
   return (
     <>
+      <div className="shrink-0 p-2">
+        <NavRow label={t("Back")} icon={ArrowLeft} onClick={onClose} />
+      </div>
       <div
         ref={lockOverscroll}
         aria-label={t("Settings")}
@@ -142,7 +148,6 @@ export function SettingsNav({ section: requestedSection, onSelect, onClose }: Pr
         ))}
       </div>
       <div className="flex shrink-0 flex-col gap-0 p-2">
-        <NavRow label={t("Back")} icon={ArrowLeft} onClick={onClose} />
         <AccountRailRow active={section === "account"} onSelect={() => onSelect("account")} />
       </div>
     </>

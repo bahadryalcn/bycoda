@@ -4,7 +4,6 @@ import { testedSources } from "../model/routingEditor";
 import { automaticSources, sameSource } from "../model/presentation";
 import type { ReactNode } from "react";
 import { t } from "../../../shared/i18n";
-import { Heading } from "../../../shared/ui/Heading";
 import { SourceKindIcon } from "./SourceIcon";
 import type { DecisionModelsState } from "../hooks/useDecisionModels";
 import type { DecisionSource, SourceTestResult } from "../model/decisionTypes";
@@ -57,7 +56,6 @@ export function SourcesList({
         <div className="flex min-w-0 items-center gap-3">
           <SourceKindIcon kind="local" modelPath="model" />
           <div className="flex min-w-0 flex-col gap-1">
-            <Heading size="item">{t("Add a decision model")}</Heading>
             <EmptyState
               size="inline"
               kind="empty"

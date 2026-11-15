@@ -1,7 +1,6 @@
 import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { surfaceAttributes } from "../../../shared/ui/Surface";
 import { EmptyState } from "../../../shared/ui/EmptyState";
-import { Tooltip } from "../../../shared/ui/Tooltip";
 import { Text } from "../../../shared/ui/Text";
 import { Code } from "../../../shared/ui/Code";
 import { Alert } from "../../../shared/ui/Alert";
@@ -171,11 +170,11 @@ export function OnboardingAgents({
       <div className="onboarding-provider-heading">
         <div className="onboarding-heading">
           <Heading size="page" level={3}>
-            {t("Connect your agents")}
+            {t("Agents")}
           </Heading>
-          <Text as="p" size="inherit" tone="muted" leading="normal">
+          <InfoPopover>
             {t("Use the providers found on this computer, or add one from another location.")}
-          </Text>
+          </InfoPopover>
         </div>
         <Button
           iconOnly
@@ -331,15 +330,16 @@ export function OnboardingAgents({
                 </div>
                 <div className="onboarding-agent-controls">
                   <span className="onboarding-agent-primary">{primary}</span>
-                  <Tooltip label={t("Show in picker")} asChild>
-                    <span className="onboarding-agent-visibility">
-                      <Switch
-                        aria-label={t("Use {p0}", { p0: title })}
-                        checked={visible}
-                        onCheckedChange={(next) => savePickerProviderVisible(provider, next)}
-                      />
-                    </span>
-                  </Tooltip>
+                  <span className="onboarding-agent-visibility">
+                    <Text size="micro" tone="muted" leading="inherit">
+                      {t("In picker")}
+                    </Text>
+                    <Switch
+                      aria-label={t("Use {p0}", { p0: title })}
+                      checked={visible}
+                      onCheckedChange={(next) => savePickerProviderVisible(provider, next)}
+                    />
+                  </span>
                   <span className="onboarding-agent-more">
                     {hasMore ? (
                       <AgentMore label={t("More options for {p0}", { p0: title })}>

@@ -4,10 +4,9 @@ import { useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { isImeComposition } from "../../../shared/lib/keyboard";
-import { MOD } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { TextareaField } from "../../../shared/ui/TextareaField";
+import { PromptField } from "../../../shared/ui/PromptField";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { replyToThread } from "../model/messagingApi";
 import type { MessageThread, ThreadMessage } from "../model/messagingTypes";
@@ -28,7 +27,7 @@ function destinationHint(thread: MessageThread, replyAddress: string | null): st
 }
 
 /**
- * Reply editor for one thread. Sending is always an explicit press or Ctrl/Cmd+Enter;
+ * Reply editor for one thread. Sending is an explicit press or Enter (Shift+Enter breaks a line);
  * the draft lives outside the component so switching threads keeps it, and a failed send
  * keeps the text and retries with the same request id.
  */
@@ -73,12 +72,7 @@ export function MessageReplyComposer({
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (
-      event.key !== "Enter" ||
-      !(event.metaKey || event.ctrlKey) ||
-      isImeComposition(event.nativeEvent)
-    )
-      return;
+    if (event.key !== "Enter" || event.shiftKey || isImeComposition(event.nativeEvent)) return;
     event.preventDefault();
     send().catch((cause: unknown) => console.error("Reply send failed:", cause));
   };
@@ -97,45 +91,43 @@ export function MessageReplyComposer({
         "flex shrink-0 flex-col gap-1.5 px-4 py-2",
       )}
     >
-      <TextareaField
-        hideLabel
+      <PromptField
         label={t("Reply")}
         ref={field}
         minRows={2}
         maxRows={8}
-        autosize
         value={draft}
         // Read-only rather than disabled while sending, so focus stays in the field.
         readOnly={sending}
-        placeholder={t("Write a reply ({p0}↩ to send)", { p0: MOD })}
+        placeholder={t("Write a reply")}
         onChange={(event) => {
           setDraft(event.target.value);
           writeReplyDraftBody(key, event.target.value);
         }}
         onKeyDown={onKeyDown}
-        fieldClassName="w-full"
+        toolbarLeading={
+          hint ? (
+            <OverflowTooltip label={hint}>
+              <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
+                {hint}
+              </Text>
+            </OverflowTooltip>
+          ) : null
+        }
+        toolbarTrailing={
+          <Button
+            variant="primary"
+            size="sm"
+            type="submit"
+            disabled={!body}
+            loading={sending}
+            loadingLabel={t("Sending…")}
+            className="shrink-0"
+          >
+            {t("Send")}
+          </Button>
+        }
       />
-      <div className="flex min-w-0 items-center justify-end gap-2">
-        {hint ? (
-          <OverflowTooltip label={hint}>
-            <Text size="caption" tone="secondary" truncate className="min-w-0 flex-1">
-              {hint}
-            </Text>
-          </OverflowTooltip>
-        ) : null}
-        <Button
-          variant="primary"
-          size="sm"
-          type="submit"
-          disabled={!body}
-          loading={sending}
-          loadingLabel={t("Sending…")}
-          shortcut="Mod+Enter"
-          className="shrink-0"
-        >
-          {t("Send")}
-        </Button>
-      </div>
       {error ? <InlineError>{error}</InlineError> : null}
     </form>
   );

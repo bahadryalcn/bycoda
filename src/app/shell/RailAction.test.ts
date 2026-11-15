@@ -42,3 +42,23 @@ it("opens Inbox context actions from the keyboard without navigating", () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("keeps the icon leading when a count is present", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    act(() =>
+      root.render(
+        createElement(RailAction, { label: "Inbox", icon: Inbox, badge: 7, onClick: vi.fn() }),
+      ),
+    );
+    const button = container.querySelector("button")!;
+    expect(button.firstElementChild?.tagName.toLowerCase()).toBe("svg");
+    expect(button.textContent).toContain("Inbox7");
+    expect(button.querySelector("svg")?.classList.contains("ml-4")).toBe(false);
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
