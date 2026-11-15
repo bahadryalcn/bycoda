@@ -238,16 +238,38 @@ function drain(): Promise<void> {
       const { previous, next } = writes[0];
       try {
         await writeBindingEvidence(previous, next);
+        writes.shift();
       } catch (error) {
         failure ??= { error };
+        await resetAfterFailedWrite(next.shellId);
       }
-      writes.shift();
     }
     if (failure) throw failure.error;
   })().finally(() => {
     saving = undefined;
   });
   return saving;
+}
+
+/** Every queued write for this owner was based on the failed one, and the
+ * versioned store would refuse each of them. Drop them and project the stored
+ * owner, so the next save is checked against the version that really exists. */
+async function resetAfterFailedWrite(shellId: string): Promise<void> {
+  for (let index = writes.length - 1; index >= 0; index -= 1)
+    if (writes[index].next.shellId === shellId) writes.splice(index, 1);
+  let stored: StoredBindingEvidence | undefined;
+  try {
+    stored = await readBindingEvidence(shellId);
+  } catch {
+    // An unreadable store keeps the failed projection; the next flush re-reads.
+    return;
+  }
+  // A save published while the store was read is based on the failed write too.
+  for (let index = writes.length - 1; index >= 0; index -= 1)
+    if (writes[index].next.shellId === shellId) writes.splice(index, 1);
+  if (stored) canonical.set(shellId, stored);
+  else canonical.delete(shellId);
+  bindingsChanged();
 }
 
 /** True when the legacy key already holds `raw`; an unreadable store counts as different so the write still runs and reports its own error. */

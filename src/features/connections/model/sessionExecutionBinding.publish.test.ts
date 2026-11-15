@@ -81,6 +81,29 @@ it("settles a failed owner write and keeps publishing the ones after it", async 
   expect(database.writeBindingEvidence).toHaveBeenCalledTimes(2);
 });
 
+it("rebases the next owner save on the stored version after a failed write", async () => {
+  // The store compares the expected row like the versioned native store does.
+  database.writeBindingEvidence.mockImplementation(
+    async (previous: unknown, next: { shellId: string }) => {
+      if (previous !== database.rows.get(next.shellId)) throw new Error("changed elsewhere");
+      database.rows.set(next.shellId, next);
+    },
+  );
+  const storage = await import("./sessionExecutionBinding");
+  await storage.hydrateHostSessionBindings();
+  const shell = { ...newSession("codex", "/repo"), title: "Base" };
+  storage.saveHostSessionBinding(shell, binding);
+  await storage.flushHostSessionBindings();
+  database.writeBindingEvidence.mockRejectedValueOnce(new Error("disk full"));
+  storage.saveHostSessionBinding({ ...shell, title: "Renamed" }, binding);
+  await vi.waitFor(() => expect(storage.hostSessionBindingsPending()).toBe(false));
+  // A streamed save repeats the same record without any flush in between.
+  storage.saveHostSessionBinding({ ...shell, title: "Renamed" }, binding);
+  await vi.waitFor(() => expect(storage.hostSessionBindingsPending()).toBe(false));
+  const stored = database.rows.get(shell.id) as { raw: string };
+  expect(JSON.parse(stored.raw).shell.title).toBe("Renamed");
+});
+
 it("coalesces owner writes queued behind one in flight to the latest", async () => {
   const storage = await import("./sessionExecutionBinding");
   await storage.hydrateHostSessionBindings();
