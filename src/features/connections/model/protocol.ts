@@ -170,6 +170,7 @@ export type HostModelCatalog = {
       "codex" | "claude" | "grok",
       {
         isDefault?: boolean;
+        status?: "ready" | "signed-out" | "disabled" | "unknown";
         id: string;
         label: string;
         color?: string;

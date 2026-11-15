@@ -31,7 +31,19 @@ import {
   readProviderAccountStyles,
 } from "../providers/provider-account-styles";
 import { readDisabledModels } from "../providers/disabled-models";
+import { providerAuthStatus } from "../providers/provider-auth";
+import {
+  createProviderAccountStatusCache,
+  withProviderAccountStatus,
+} from "../providers/provider-account-status";
 import type { ServerBindings } from "./bindings";
+import { resolveBinary } from "./support";
+
+/** One Host-wide cache: every catalog read shares the last known sign-in results. */
+const accountStatuses = createProviderAccountStatusCache({
+  probe: async (provider, id) =>
+    providerAuthStatus(provider, (await resolveBinary[provider]()).path, id),
+});
 export function createNativeRuntime(
   dependencies: Pick<
     ServerBindings,
@@ -101,11 +113,14 @@ export function createNativeRuntime(
   });
   const modelsService = createModelsService({
     read: dependencies.models,
-    accounts: async () =>
-      applyProviderAccountStyles(
-        await hostProviderAccounts(),
-        await readProviderAccountStyles(dependencies.engine.store).catch(() => ({})),
-      ),
+    accounts: async () => {
+      const inventory = await hostProviderAccounts();
+      const [styles, statuses] = await Promise.all([
+        readProviderAccountStyles(dependencies.engine.store).catch(() => ({})),
+        accountStatuses.read(inventory),
+      ]);
+      return withProviderAccountStatus(applyProviderAccountStyles(inventory, styles), statuses);
+    },
     providers: dependencies.providers,
     disabledModels: () => readDisabledModels(dependencies.engine.store),
   });

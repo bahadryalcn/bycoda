@@ -242,8 +242,9 @@ function DockBody({
     setExpandedState(next);
   };
   const lockList = useLockOverscroll<HTMLDivElement>();
-  // Children the transcript already shows as cards stay in the count, not in the list.
-  const listed = dock.agents.filter((agent) => !agent.inline);
+  // Children the transcript shows as cards are listed too: the list is the one place that
+  // gathers every run, and the composer's subagent control steps aside while it shows.
+  const listed = dock.agents;
   const hasAgents = listed.length > 0;
   const open = expanded && hasAgents;
   const listId = `activity-dock-agents-${sessionId}`;
@@ -258,6 +259,7 @@ function DockBody({
       tone="inherit"
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
+      data-dock-subagents={dock.agents.some((agent) => agent.kind === "agent") ? "" : undefined}
       {...surfaceAttributes(
         { radius: "card", variant: "activity-dock" },
         `activity-dock mb-1.5 overflow-hidden  font-sans ${
@@ -344,10 +346,6 @@ function DockBody({
                 />
               </Button>
             </>
-          ) : dock.agents.length > 0 && counts ? (
-            <Text as="span" size="inherit" tone="secondary" className="shrink-0 tabular-nums">
-              {counts}
-            </Text>
           ) : null}
         </div>
       </Text>

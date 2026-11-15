@@ -30,7 +30,7 @@ import { TurnNotReadyError } from "../../../../integrations/harness/core/types";
 import { QueueDeferredError } from "../../../../features/connections/model/sharedQueue";
 import { clearDeliveryProgress } from "../../../../features/sessions/model/deliveryProgress";
 import { type SubmissionAcceptance } from "../../../model/submissionAcceptance";
-import { userTurnCards } from "../../helpers/sessionHelpers";
+import { queuedRowAuthor, userTurnCards } from "../../helpers/sessionHelpers";
 import { DeliveryUnknownError } from "../../../../shared/lib/deliveryUnknown";
 import { trackLateSettlement } from "../../../../features/sessions/model/deliveryReview";
 import { markSharedProviderSend } from "../../../../features/connections/model/useSharedLocalQueues";
@@ -330,7 +330,10 @@ export function steerBusySubmit(
     }
     dismissNoticesForContinuedSession(sessionId);
     const visible = displayAttachments(attachments);
-    const cards = userTurnCards(noteCard);
+    const cards = {
+      ...userTurnCards(noteCard),
+      ...queuedRowAuthor(current, options?.queuedMessageId),
+    };
     const nextSessions = sessionsRef.current.map((s) => {
       if (s.id !== sessionId) return s;
       let next: Session = {

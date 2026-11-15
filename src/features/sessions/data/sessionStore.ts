@@ -228,7 +228,8 @@ function persistableMeta(session: Session): Omit<SessionUpsertPayload, "blocks">
   const linkedWorkItem = sanitizeLinkedWorkItem(session.linkedWorkItem);
   const rewindHistory = sanitizeRewindHistory(session.rewindHistory);
   // Host provenance (`managedBy`, block `author`) is never sent: native storage
-  // keeps an accepted stamp and rejects any stamp it did not already store.
+  // keeps an accepted stamp and rejects any stamp it did not already store. The one
+  // exception is a delegation notice's stamp on a new block (see `sanitizeBlock`).
   return {
     id: session.id,
     cwd: normalizeProjectPath(session.cwd),
@@ -1934,8 +1935,10 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
     role: block.role,
     text: block.text,
   };
-  const author = options?.hydrate && block.role === "user" && sessionMessageAuthor(block.author);
-  if (author) next.author = author;
+  // A delegation stamp marks a notice as not owner input; native storage accepts it on a new
+  // block. Every other stamp is Host-written and only read back.
+  const author = block.role === "user" && sessionMessageAuthor(block.author);
+  if (author && (options?.hydrate || author.kind === "delegation")) next.author = author;
   if (block.attachments?.length) {
     next.attachments = block.attachments.map(persistableAttachment);
   }

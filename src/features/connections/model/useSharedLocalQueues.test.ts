@@ -988,3 +988,58 @@ it("gives the lease back when the conversation leaves the window", async () => {
   });
   expect(released).toEqual([1]);
 });
+
+it("reads a notice the Host queued for an idle conversation it first did not store", async () => {
+  const known = mocks.request.getMockImplementation()!;
+  sessionsRef.current = [
+    { ...sessionsRef.current[0], queuedMessages: undefined, queueStatus: undefined },
+  ];
+  mocks.request.mockRejectedValue(
+    new Error("Host rejected request: Session not found on this machine"),
+  );
+  await mount();
+  expect(localClient).toBeUndefined();
+  mocks.request.mockImplementation(known);
+  const notice = {
+    ...row("agent_message_1", "Subagent completion"),
+    author: {
+      kind: "delegation" as const,
+      runId: "r",
+      title: "Child",
+      reason: "completion" as const,
+    },
+  };
+  queue = { messages: [notice], revision: 3, status: "active" };
+  await wake();
+  expect(sessionsRef.current[0].queuedMessages).toEqual([notice]);
+});
+
+it("finds a Host notice on the safety pass when the wake for an unshared idle conversation was missed", async () => {
+  const known = mocks.request.getMockImplementation()!;
+  sessionsRef.current = [
+    { ...sessionsRef.current[0], queuedMessages: undefined, queueStatus: undefined },
+  ];
+  mocks.request.mockRejectedValue(
+    new Error("Host rejected request: Session not found on this machine"),
+  );
+  await mount();
+  expect(localClient).toBeUndefined();
+  mocks.request.mockImplementation(known);
+  const notice = {
+    ...row("agent_message_2", "Subagent completion"),
+    author: {
+      kind: "delegation" as const,
+      runId: "r",
+      title: "Child",
+      reason: "completion" as const,
+    },
+  };
+  queue = { messages: [notice], revision: 1, status: "active" };
+  await act(async () => {
+    for (let elapsed = 0; elapsed < 125_000; elapsed += 5_000) {
+      vi.advanceTimersByTime(5_000);
+      for (let i = 0; i < 20; i++) await flushTurn();
+    }
+  });
+  expect(sessionsRef.current[0].queuedMessages).toEqual([notice]);
+});

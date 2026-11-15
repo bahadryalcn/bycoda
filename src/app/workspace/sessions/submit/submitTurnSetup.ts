@@ -55,7 +55,7 @@ import {
   beginSessionPerformanceTrace,
   recordPerformanceEvent,
 } from "../../../../shared/lib/performanceTrace";
-import { userTurnCards, withPlanBuildTarget } from "../../helpers/sessionHelpers";
+import { queuedRowAuthor, userTurnCards, withPlanBuildTarget } from "../../helpers/sessionHelpers";
 import { flushSync } from "react-dom";
 
 export function prepareSubmittedTurn(
@@ -167,6 +167,7 @@ export function prepareSubmittedTurn(
     ...(options?.appRequestId ? { appRequestId: options.appRequestId } : {}),
     // The orchestrator writes these turns, not the user; hide them.
     ...(options?.managed ? { internal: true } : {}),
+    ...queuedRowAuthor(current, options?.queuedMessageId),
   };
   const live = isLiveHarness(current.harness);
   const queuedHandoff = live ? pendingHandoff(current) : null;
