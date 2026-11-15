@@ -251,6 +251,13 @@ export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" 
     | import("../../../shared/model/host-contracts/delegation").DelegationParent
     | null;
   issue?: "retrying" | "failed";
+  /** Authenticated local widget details; push transport must never copy question text. */
+  widgetContext?: {
+    questionPrompt?: string;
+    completedAt?: number;
+    startedAt?: number;
+    failureCategory?: "auth_expired" | "rate_limited" | "crashed" | "stopped" | "failed";
+  };
   issueTurnId?: string;
   issueMessage?: string;
   id: string;

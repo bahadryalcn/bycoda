@@ -121,11 +121,7 @@ export async function linkedInApplyImageAlt(
       "Alternatif metin",
     ]);
   await openEditor();
-  const field = await unique(
-    ctx,
-    "dialog[open] textarea",
-    "alt-field",
-  );
+  const field = await unique(ctx, "dialog[open] textarea", "alt-field");
   await ctx.verifyIdentity();
   await ctx.page.fill(field, description);
   const value = await ctx.page.evaluate<string>(
@@ -142,11 +138,7 @@ export async function linkedInApplyImageAlt(
   ]);
   // Reopen the editor to distinguish a saved description from an input echo.
   await openEditor();
-  const savedField = await unique(
-    ctx,
-    "dialog[open] textarea",
-    "alt-readback",
-  );
+  const savedField = await unique(ctx, "dialog[open] textarea", "alt-readback");
   const saved = await ctx.page.evaluate<string>(
     `String(document.querySelector(${json(savedField)})?.value??'')`,
   );
@@ -217,7 +209,11 @@ export async function linkedInPublishDocument(
     HTMLInputElement.prototype.click=function(){if(this.type==='file'){if(!this.isConnected)document.body.appendChild(this);return;}return click.call(this);};
   })()`,
   );
-  await click(ctx, 'dialog[open] [data-view-name="media-document-share-select-file"]', "document-select");
+  await click(
+    ctx,
+    'dialog[open] [data-view-name="media-document-share-select-file"]',
+    "document-select",
+  );
   const upload = await unique(
     ctx,
     'input[type="file"][accept*="pdf"]',

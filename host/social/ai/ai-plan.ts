@@ -55,7 +55,7 @@ export function aiCommandPrompt(input: {
 }): string {
   return [
     'Turn the owner\'s request into a short plan of Social operations. You have no authority to send, publish or approve anything; the Host decides what runs. Return JSON only: {"steps":[{"action":"...","input":{},"summary":"..."}]}.',
-    `Use only these action names: ${JSON.stringify(AI_PLAN_ACTIONS)}. Give each step an input object that matches the action. Use accountId values only from the accounts list. At most ${AI_PLAN_MAX_STEPS} steps; if the request cannot be planned from these operations, return {"steps":[]}.`,
+    `Use only these action names: ${JSON.stringify(AI_PLAN_ACTIONS)}. Give each step an input object that matches the action. Use accountId values only from the accounts list. If the project lacks an account its work needs, plan accounts.request (projectId, platform, reason): it only asks the owner. At most ${AI_PLAN_MAX_STEPS} steps; if the request cannot be planned from these operations, return {"steps":[]}.`,
     "summary is one plain sentence for the owner, without message bodies or secrets.",
     `Accounts: ${JSON.stringify(input.accounts)}`,
     `Project: ${JSON.stringify(input.projectId ?? "")}`,

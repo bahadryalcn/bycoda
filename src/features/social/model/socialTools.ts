@@ -6,6 +6,7 @@
 export const SOCIAL_TOOLS = [
   "policy.get",
   "accounts.list",
+  "accounts.request",
   "capabilities.get",
   "campaigns.create",
   "campaigns.preview",

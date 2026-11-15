@@ -60,7 +60,8 @@ export const BROWSER_PLATFORM_OPERATIONS: Record<
   // No WhatsApp chat-sender reader is wired (dm_senders), so audience.collect is not offered here.
   whatsapp: ["inbox.read", "message.reply", "message.start", "poll", "media"],
   telegram: ["inbox.read", "message.reply", "message.start", "poll", "media"],
-  reddit: [], // Browser chat is deferred (owner D4); the official API adapter is the Reddit path.
+  // Member web session: posts, comments and inbox replies. Reddit chat and private messages stay API-only.
+  reddit: ["publish", "comments.read", "comment", "reply", "poll"],
 };
 
 export function browserScopes(platform: Exclude<SocialPlatform, "x">): string[] {

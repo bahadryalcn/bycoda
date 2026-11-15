@@ -170,9 +170,11 @@ describe("capability table shape", () => {
     }
   });
 
-  it("keeps the Reddit browser connection unsupported while its API rows follow the Reddit table", () => {
+  it("offers Reddit browser posts, comments and polling but no chat, while its API rows follow the Reddit table", () => {
     for (const item of accountCapabilities(browserAccount("reddit")))
-      expect(item.status, item.operation).toBe("unsupported");
+      expect(item.status === "available", item.operation).toBe(
+        ["publish", "comments.read", "comment", "reply", "poll"].includes(item.operation),
+      );
     const api = accountCapabilities(apiAccount("reddit"));
     expect(row(api, "analytics")).toMatchObject({
       status: "unsupported",

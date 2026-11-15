@@ -25,6 +25,8 @@ import {
   type ConnectionMethod,
 } from "./connectOptions";
 import { EmailAccountDialog } from "./EmailAccountDialog";
+import { SignupAccountDialog } from "./SignupAccountDialog";
+import { canCreateAccount } from "./signupModel";
 import { PlatformIcon } from "../common/PlatformIcon";
 import { useAccountWrite } from "./useAccountWrite";
 import "./accounts.css";
@@ -76,7 +78,7 @@ export function ConnectAccountDialog({
   onCreated,
 }: ConnectAccountDialogProps) {
   const formId = useId();
-  const [kind, setKind] = useState<"account" | "email">("account");
+  const [kind, setKind] = useState<"account" | "email" | "signup">("account");
   const [platform, setPlatform] = useState<SocialPlatform>("x");
   const [method, setMethod] = useState<ConnectionMethod>(() => defaultConnectionMethod("x"));
   const [accountType, setAccountType] = useState(
@@ -90,6 +92,19 @@ export function ConnectAccountDialog({
 
   if (kind === "email")
     return <EmailAccountDialog client={client} onClose={onClose} onCreated={onCreated} />;
+
+  if (kind === "signup")
+    return (
+      <SignupAccountDialog
+        client={client}
+        platform={platform}
+        accountType={accountType}
+        initialName={name}
+        projectIds={picked}
+        onClose={() => setKind("account")}
+        onCreated={onCreated}
+      />
+    );
 
   const types = accountTypesFor(platform, method);
   const choosePlatform = (next: SocialPlatform) => {
@@ -204,6 +219,11 @@ export function ConnectAccountDialog({
             />
           ))}
         </FieldGroup>
+        {canCreateAccount(platform, method) ? (
+          <Button variant="link" size="sm" onClick={() => setKind("signup")}>
+            {t("Create a new {p0} account instead", { p0: SOCIAL_PLATFORM_NAMES[platform] })}
+          </Button>
+        ) : null}
         <Button variant="link" size="sm" onClick={() => setKind("email")}>
           {t("Add an email account instead")}
         </Button>

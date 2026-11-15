@@ -1013,9 +1013,10 @@ export class SocialService implements SocialServiceApi {
     return account;
   }
   async project(principal: SocialPrincipal, projectId: string) {
-    await this.store.project(projectId);
+    const project = await this.store.project(projectId);
     if (principal.kind !== "owner" && principal.projectId !== projectId)
       throw new Error("Private social data belongs to another project.");
+    return project;
   }
   private async accessibleThread(principal: SocialPrincipal, id: string): Promise<SocialThread> {
     const thread = await this.get<SocialThread>("thread", id);

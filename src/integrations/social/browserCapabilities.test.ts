@@ -88,8 +88,7 @@ describe("browser connection capability contracts", () => {
       }),
     ).toContain("5–60");
   });
-  // reddit has no browser recipe (owner decision D4); its API rows are covered in capabilities/reddit.test.ts.
-  it.each(SOCIAL_PLATFORMS.filter((platform) => platform !== "x" && platform !== "reddit"))(
+  it.each(SOCIAL_PLATFORMS.filter((platform) => platform !== "x"))(
     "connects %s without official API scopes while preserving missing-operation state",
     (platform) => {
       const capabilities = accountCapabilities(account(platform));

@@ -2,7 +2,7 @@ import { NOT_YET, r, type OperationRequirements, type PlatformCapabilities } fro
 
 /**
  * Reddit Data API rows (OAuth web app, duration=permanent). Browser rows are empty: the browser recipe
- * declares no operations because Reddit chat is deferred. Scope names come from the OAuth definition.
+ * covers posts, comments, replies and inbox polling; Reddit chat and private messages stay API-only. Scope names come from the OAuth definition.
  */
 export function redditCapabilities(): PlatformCapabilities {
   const api: OperationRequirements = {

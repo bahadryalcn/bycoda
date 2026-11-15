@@ -130,6 +130,7 @@ let xProfileFixture = {
 const pageProfileFixtures = new Map<string, typeof xProfileFixture>();
 const finalRegistrationReviews = new Map<string, SocialRegistrationReview>();
 const telegramChannelReviews = new Map<string, SocialTelegramChannelReview>();
+if (new URLSearchParams(location.search).has("signup-create")) browserWrites = true;
 if (telegramChannelFixture) {
   browserWrites = true;
   configured = true;
@@ -643,6 +644,10 @@ Object.assign(window, {
   socialFixtureCalls: calls,
   socialFixtureState: () => structuredClone(snapshot),
   socialFixtureWorkflowState: () => structuredClone(browserWorkflows),
+  socialFixtureCloseSignupWindow: () => {
+    for (const workflow of browserWorkflows)
+      if (workflow.intent === "signup") workflow.status = "window_closed";
+  },
   socialFixtureChangeFinalRegistration: () => {
     const workflow = browserWorkflows.find((item) => item.id === "fixture-final-workflow");
     if (workflow) workflow.updatedAt++;

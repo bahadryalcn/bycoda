@@ -9,8 +9,10 @@ The mobile app is a separate nested repository under mobile/. Inspect its own ru
 
 ## Source starts
 
+- `mobile/index.ts` registers headless widget push work before Expo Router.
 - `mobile/AGENTS.md`
 - `mobile/app/`
+- `mobile/src/features/widgets/model/snapshot.ts`, `mobile/src/features/push/widget-background-task.ts`
 - `mobile/src/features/workspace/`
 - `mobile/src/remote/host-transport.ts`, `mobile/src/remote/ws-connection.ts`
 - `mobile/src/state/host-runtime.ts`, `mobile/src/state/queries.ts`

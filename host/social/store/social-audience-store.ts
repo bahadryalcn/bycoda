@@ -21,6 +21,7 @@ import type {
   Suppression,
 } from "../../../src/features/social/model/outreach";
 import type { AiAction, AutonomyPolicy } from "../../../src/features/social/model/autonomy";
+import type { SocialAccountRequest } from "../../../src/features/social/model/accountRequests";
 import type { InboxStatusRecord } from "../inbox/inbox-types";
 
 /** Generic `social_records` kinds. Person and list have dedicated typed methods below. */
@@ -31,7 +32,8 @@ export type AudienceRecordKind =
   | "sequence"
   | "email-account"
   | "autonomy"
-  | "inbox-status";
+  | "inbox-status"
+  | "account-request";
 
 export type AudienceRecordValue = {
   person: SocialPerson;
@@ -41,6 +43,7 @@ export type AudienceRecordValue = {
   "email-account": EmailAccount;
   autonomy: AutonomyPolicy;
   "inbox-status": InboxStatusRecord;
+  "account-request": SocialAccountRequest;
 };
 
 export type Page<T> = { items: T[]; next?: string };

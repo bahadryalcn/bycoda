@@ -18,7 +18,9 @@ it("keeps renderer capability declarations aligned with the installed host recip
   }
 });
 
-it("declares no operations for the Reddit placeholder recipe", () => {
+it("offers no Reddit message or chat operation in the browser", () => {
   const reddit = SOCIAL_BROWSER_RECIPES.find((recipe) => recipe.platform === "reddit");
-  expect(reddit?.operations).toEqual([]);
+  expect(reddit?.operations).not.toContain("message.reply");
+  expect(reddit?.operations).not.toContain("message.start");
+  expect(reddit?.operations).not.toContain("inbox.read");
 });

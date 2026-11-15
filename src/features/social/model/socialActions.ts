@@ -40,6 +40,7 @@ export const SOCIAL_READ_ACTIONS = [
   "browser.needsHuman.list",
   "browser.settings.get",
   "browser.recipeSuggestions.list",
+  "accounts.requests.list",
 ] as const;
 export type SocialReadAction = (typeof SOCIAL_READ_ACTIONS)[number];
 

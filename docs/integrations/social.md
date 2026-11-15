@@ -121,7 +121,7 @@ continue to apply.
 | Snapchat  | Public Profile API: encrypted Spotlight MP4 upload with exact Spotlight ID tracking until LIVE, health check.                                                                                                                                               | Member chat text replies in existing chats; Public Profile uploader for Spotlight or 24-hour Story video. Current Story acceptance lacks a durable Snap ID and is held for review.                           | Public Story through the API, Marketing API, Creative Kit, metrics, Story interactions, API audience collection.                                                                          |
 | WhatsApp  | Business Cloud API: signed incoming text, text or one image/video reply within the 24-hour window, delivery receipts. Business-initiated free text is refused before I/O.                                                                                   | Personal Web session: bounded visible direct chats, text and one image or video per send. Audience collection from chat senders is not offered (no sender reader is wired).                                  | Templates and interactive messages (exported, not reachable from jobs), catalog, Status and Channels, group messages, bulk messaging for personal accounts, auto-reply, quality webhooks. |
 | Telegram  | Bot token: bounded text polling, text and one image or video send, webhook parser, bot-sender collection. Channel: administrator bot publishing with receipts.                                                                                              | Personal Web session: direct chats only, stable cursor, text and one image or video per send.                                                                                                                | Polls, inline buttons, edit and pin (functions only, no host path), webhook route, moderation, MTProto, stories, channel settings.                                                        |
-| Reddit    | Script or web app OAuth, text and link posts to one subreddit per item, subreddit rules and required flair, comments and replies, inbox polling, private message start and reply, keyword search, own-post commenters, delete.                              | No browser recipe (`browser.no_recipe`).                                                                                                                                                                     | Image, video and gallery posts; edit; account commenters; moderation and chat; upvote and save.                                                                                           |
+| Reddit    | Script or web app OAuth, text and link posts to one subreddit per item, subreddit rules and required flair, comments and replies, inbox polling, private message start and reply, keyword search, own-post commenters, delete.                              | Member web session: text and link posts to one subreddit (flair when required), comments, replies, inbox poll of comment replies and username mentions. Chat and private messages are not offered.           | Image, video and gallery posts; edit; account commenters; moderation and chat; upvote and save.                                                                                           |
 
 Which operations are free depends on each platform's current pricing, which this document
 does not verify. The rule is fixed in the Host: the free official API is the default driver,
@@ -150,10 +150,9 @@ permission or turns on external sending.
 Access and refresh tokens stay in a host-only vault. Its key is protected by Windows
 DPAPI (CurrentUser), macOS Keychain or Linux Secret Service. There is no plaintext
 fallback. A locked or missing key preserves existing credentials and fails the
-operation. Renewal runs for X, YouTube, TikTok and Snapchat with a valid refresh token,
+operation. Renewal runs for X, YouTube, TikTok, Snapchat, LinkedIn and Reddit with a valid refresh token,
 without changing scopes. Instagram Login exchanges its short-lived token for a
-long-lived token and renews it near expiry. LinkedIn and Facebook token refresh and
-Reddit refresh are present in source but not all are scheduled by the Host (see Open
+long-lived token and renews it near expiry. Facebook has no refresh hook (see Open
 questions). Expired, revoked or scope-changed connections require reconnection.
 
 #### X
@@ -321,14 +320,28 @@ Contracts: [OAuth](https://developers.google.com/youtube/v3/guides/auth/server-s
 #### Reddit
 
 - OAuth is a Reddit script or web app. The identity call uses `oauth.reddit.com/api/v1/me`.
-  The host allowlist must include Reddit before runtime use; without it the connection is
-  denied. Renewal is present, but Reddit is not yet in the host's due-refresh list.
+  `oauth.reddit.com` is in the adapter's host allowlist, and the Host's due-refresh sweep
+  renews the one-hour access token with the permanent refresh token. Since November 2025
+  Reddit approves new API clients individually (Responsible Builder Policy); existing
+  clients keep working.
 - One subreddit per post item. Flair is required when the subreddit requires it, and the
   flair ID is sent. Text fits 300 characters (title), 10000 (body), 40000 (self text) and
   2048 (link). Images, video and gallery are not supported.
 - Inbox polling reads `/message/inbox` with a `before` cursor and 100 items. Backlog beyond
   100 is an open limit. Private message start needs a subject (default "Message"). The
   adapter does not reconcile an uncertain start.
+- Browser recipe (member web session, API first; used where no API connection exists): identity from
+  `/api/me.json` with the page session, stored as `web:reddit:t2_<id>` so it never equals an API id.
+  Text and link posts go to one subreddit; a required flair the job does not name is refused before
+  submit. Comments and replies target a known `t3_`/`t1_` thing. Every send keeps the identity
+  check before and after, `markSubmitted` before the click, and reports delivery only from a
+  recognized create response plus a persisted readback (author, title, text); otherwise it is
+  uncertain and goes to review, never resent. Poll reads `/message/inbox.json` (comment replies and
+  username mentions, up to 300 items) with a millisecond cursor; an unfinished window keeps the
+  old cursor and reports partial coverage. Private messages and chat are not implemented. A login,
+  captcha or checkpoint page raises NEEDS_HUMAN. Live Reddit blocks headless automation, so the
+  selectors and request shapes were written from known page structure and are unverified until
+  the owner's first Reddit session.
 - Keyword capture uses search with a `r/<subreddit>` prefix. Subreddit capture as a
   separate source is not implemented.
 
@@ -514,6 +527,21 @@ a conversation or a session tool.
 - Final LinkedIn Page creation uses owner-only review and submit methods, with a two-minute
   review bound to the observed administrator, fields and terms. Unknown results keep a
   durable hold and are never resubmitted automatically.
+- Reddit signup opens `https://www.reddit.com/register/` in the account's dedicated profile
+  and fills only the owner-supplied email (email step) and username (credentials step),
+  reading the fields through open shadow roots. The owner completes Continue and the User
+  Agreement, the email verification code, the password and the reCAPTCHA ("Prove your
+  humanity") in the platform window; those screens are reported, never typed or clicked.
+  Automated profiles are often challenged before the form appears, and the step layout is
+  a documented fixture, not an observed account creation. Reddit has only a signup route
+  until its browser recipe has operations; login, inbox and publish stay unavailable.
+- X signup opens `https://x.com/i/flow/signup` and fills only the owner-supplied display name,
+  email and birthdate (name/email inputs and the three birthdate selects) on the profile
+  step, never overwriting an owner choice. The initial Create account choice, the
+  phone/email toggle, Next, terms, the Arkose "Authenticate" challenge, the verification
+  code, the password and suspicious-login screens stay with the owner and are only reported.
+  x.com returns HTTP 403 to headless automation, so the form layout is a documented fixture
+  and unverified live.
 - Generic signup is not brand provisioning. A Facebook signup does not create a Page; a
   Google account does not create a YouTube channel; an Instagram API connection needs a
   professional account.
@@ -665,10 +693,8 @@ They are not verified as fixed.
   confirmed removed in every path.
 - **Bot token storage (Telegram).** The token module is vault-first. The dispatcher still
   reads the host environment value.
-- **Token refresh coverage.** LinkedIn, Facebook and Reddit refresh code exists, but these
-  platforms are not all in the Host's due-refresh list.
-- **Reddit allowlist and refresh wiring.** Reddit runs only after its host allowlist entry is
-  configured, and refresh is not scheduled.
+- **Token refresh coverage.** Facebook has no refresh hook, so its API tokens are not renewed
+  by the Host's due-refresh sweep. LinkedIn and Reddit refresh are scheduled.
 - **Session-agent and AI program activation.** The autonomous program dispatch path is in
   source. End-to-end use with an autonomous account is not verified.
 

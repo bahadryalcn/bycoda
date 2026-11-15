@@ -11,8 +11,9 @@ import type { BrowserRecipeContext } from "./social-browser-recipe";
 /**
  * Connection invitations for a member browser connection. Not dispatched by the job system:
  * no SocialOperation exists for them yet, so a caller (audience action module or the layered
- * driver) invokes these exports directly. Invitation note limit and every selector are fixture-based
- * and not verified against live LinkedIn.
+ * driver) invokes these exports directly. Selectors were checked against the live 2026-11 profile page
+ * (Connect link, visible degree); the invitation dialog, the pending state and the accept card were
+ * not observable without sending and are unverified.
  */
 const LI = "https://www.linkedin.com";
 export const LINKEDIN_INVITE_NOTE_LIMIT = 300;
@@ -145,8 +146,15 @@ export async function linkedInSendConnectionRequest(
     }
   }
   await click(ctx, connect, "connect");
-  await click(ctx, 'dialog[open] button,[role="dialog"] button', "invite-note", ["Add a note", "Not ekle"]);
-  const field = await control(ctx, 'dialog[open] textarea,[role="dialog"] textarea', "invite-note-field");
+  await click(ctx, 'dialog[open] button,[role="dialog"] button', "invite-note", [
+    "Add a note",
+    "Not ekle",
+  ]);
+  const field = await control(
+    ctx,
+    'dialog[open] textarea,[role="dialog"] textarea',
+    "invite-note-field",
+  );
   await ctx.verifyIdentity();
   await ctx.page.fill(field, note);
   const send = await control(ctx, 'dialog[open] button,[role="dialog"] button', "invite-send", [
