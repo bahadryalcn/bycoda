@@ -7,7 +7,9 @@ import { writeFileAtomic } from "../storage/atomic-write";
 import { tunnelExecutable } from "./tunnel-providers";
 
 export const CLOUDFLARED_VERSION = "2026.1.2";
-// Official release checksums: github.com/cloudflare/cloudflared/releases/tag/2026.1.2.
+// SHA-256 of each downloaded asset as GitHub reports it (release asset `digest`) for
+// github.com/cloudflare/cloudflared/releases/tag/2026.1.2. The release notes list the
+// macOS binary inside the .tgz, not the archive this code verifies.
 const RELEASES: Record<string, [string, string]> = {
   "win32-x64": [
     "cloudflared-windows-amd64.exe",
@@ -27,11 +29,11 @@ const RELEASES: Record<string, [string, string]> = {
   ],
   "darwin-x64": [
     "cloudflared-darwin-amd64.tgz",
-    "f7726beb912ad3314e11f95719f8b303502e8e4932b810732ba9ef2330bd0848",
+    "70c30348b7e91858b60bae9a94604393dfc4b64fd552ac48be3ed4f5086525a9",
   ],
   "darwin-arm64": [
     "cloudflared-darwin-arm64.tgz",
-    "f450d90e86129dac1fab1f35ee185eb02b0e23bef3e3dcfb0ce45c48fad70390",
+    "7fcfde35e5b34effedea8347f7456f9f8f771d43bb6b528fec329b0c8831841a",
   ],
 };
 
