@@ -123,7 +123,7 @@ impl NativeDeviceChannel {
             state
                 .native_device_ws
                 .capture_device(
-                    NativeRoute::new(
+                    account_routes::native_route(
                         &selection.machine.id,
                         &selection.machine.environment_id,
                         &selection.endpoint,

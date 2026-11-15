@@ -8,6 +8,7 @@ import {
   type MobilePairingStatus,
   type MobilePairingRedemption as MobilePairingCredential,
 } from "../../src/integrations/mobile-pairing";
+import { hostProof, matchesHostProof } from "./host-proof";
 
 export type {
   MobilePairingTicket as MobilePairingCreated,
@@ -26,6 +27,8 @@ const INVALID_TICKET = "Mobile pairing ticket is invalid or expired. Create a ne
 export type MobilePairingStore = {
   environmentId: string;
   hasDeviceHash: (hash: string) => boolean | Promise<boolean>;
+  deviceProofKeys?: () => Promise<string[]>;
+  proofOrigins?: () => Promise<string[]>;
   issueDevice: (
     name: string,
   ) => { id: string; token: string } | Promise<{ id: string; token: string }>;
@@ -248,8 +251,47 @@ export class MobilePairing {
     return { ...credential };
   }
 
+  /** Additive desktop preflight. The phone's ticket/redeem protocol is unchanged. */
+  private async prove(input: Record<string, unknown>): Promise<{ proof: string }> {
+    const { kind, nonce, proof, environmentId, origin } = input;
+    if (
+      (kind !== "pairing" && kind !== "device") ||
+      typeof nonce !== "string" ||
+      !/^[a-f0-9]{64}$/.test(nonce) ||
+      environmentId !== this.store.environmentId ||
+      typeof origin !== "string" ||
+      origin.length > 2048 ||
+      this.closed
+    )
+      throw new MobilePairingError("Invalid Host proof challenge.", 403);
+    // Bind to a Host-owned route: otherwise a fake endpoint can relay the nonce
+    // to the real Host and steal the ticket after forwarding its answer.
+    if (!((await this.store.proofOrigins?.()) ?? []).includes(origin))
+      throw new MobilePairingError("Host proof route refused.", 403);
+    await this.prune();
+    const keys =
+      kind === "pairing"
+        ? [...this.pairings.values()]
+            .filter((entry) => entry.state !== "cancelled")
+            .map((entry) => entry.ticketHash)
+        : ((await this.store.deviceProofKeys?.()) ?? []);
+    let matched: string | undefined;
+    for (const key of keys) {
+      if (matchesHostProof(hostProof(key, kind, "request", nonce, environmentId, origin), proof))
+        matched = key;
+    }
+    if (
+      !matched ||
+      this.closed ||
+      (kind === "device" && !(await this.store.hasDeviceHash(matched)))
+    )
+      throw new MobilePairingError("Host proof refused.", 403);
+    return { proof: hostProof(matched, kind, "response", nonce, environmentId, origin) };
+  }
+
   async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
-    if (request.url !== "/mobile/pairing/redeem") return false;
+    const proving = request.url === "/.well-known/bycoda-host/proof";
+    if (!proving && request.url !== "/mobile/pairing/redeem") return false;
     response.setHeader("Content-Type", "application/json");
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
@@ -270,7 +312,11 @@ export class MobilePairing {
         throw new MobilePairingError("Mobile pairing request is too large.", 413);
       }
       const input = await this.readBody(request);
-      response.end(JSON.stringify({ result: await this.enqueueClaim(input) }));
+      response.end(
+        JSON.stringify({
+          result: proving ? await this.prove(input) : await this.enqueueClaim(input),
+        }),
+      );
     } catch (error) {
       if (!response.destroyed)
         response.writeHead(error instanceof MobilePairingError ? error.httpStatus : 400).end(

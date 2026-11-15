@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { isMachineEnabled } from "./machineEnabled";
 import { recordHostConnection } from "../../diagnostics";
 import {
   classifyRemoteError,
@@ -176,6 +177,7 @@ function recover(environmentId: string): void {
  * seconds. Loads the user triggers themselves skip this check. */
 export function remotePollDue(cwd: string): boolean {
   const environmentId = environmentOf(cwd);
+  if (environmentId && !isMachineEnabled(environmentId)) return false;
   const state = environmentId ? unreachable.get(environmentId) : undefined;
   return !state || Date.now() - state.at >= unreachablePollDelay(state.count);
 }

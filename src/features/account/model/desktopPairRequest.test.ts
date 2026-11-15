@@ -26,6 +26,34 @@ function fakeApi(statuses: Status[]) {
 }
 
 describe("requestDesktopPair", () => {
+  it("cancellation wins over a failed pending status read", async () => {
+    const { api } = fakeApi([]);
+    let reject!: (error: Error) => void;
+    api.getPairRequest.mockImplementation(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    const request = await requestDesktopPair(TARGET, { api: api as never, deviceId: "me-1" });
+    request.cancel();
+    reject(new Error("offline"));
+    await expect(request.outcome).resolves.toEqual({ state: "cancelled" });
+  });
+  it("drops a sealed reply received after cancellation", async () => {
+    const { api } = fakeApi([]);
+    let reply!: (value: Status) => void;
+    api.getPairRequest.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          reply = resolve;
+        }),
+    );
+    const request = await requestDesktopPair(TARGET, { api: api as never, deviceId: "me-1" });
+    request.cancel();
+    reply({ state: "sealed", desktopPublicKey: "invalid", sealed: "invalid" });
+    await expect(request.outcome).resolves.toEqual({ state: "cancelled" });
+  });
   it("sends a fresh key, shows the code the target computes and opens the sealed ticket", async () => {
     const { api, created } = fakeApi([]);
     const request = await requestDesktopPair(TARGET, {

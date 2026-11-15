@@ -44,6 +44,7 @@ export type AccountPairDeps = {
   /** This computer's display name, shown on the other computer's host as the new device. */
   deviceName: string;
   randomBytes?: PairRandomBytes;
+  signal?: AbortSignal;
 };
 
 /**
@@ -60,8 +61,16 @@ export async function startAccountDesktopPair(
     environmentId: plan.environmentId,
   });
   const redeem = deps.redeem ?? redeemAccountPair;
+  let cancelled = deps.signal?.aborted ?? false;
+  const cancel = () => {
+    cancelled = true;
+    request.cancel();
+  };
+  deps.signal?.addEventListener("abort", cancel, { once: true });
+  if (cancelled) request.cancel();
   async function finish(): Promise<AccountPairResult> {
     const outcome = await request.outcome;
+    if (cancelled) return { state: "cancelled" };
     if (outcome.state !== "sealed") return outcome;
     let ticket: string;
     try {
@@ -75,6 +84,7 @@ export async function startAccountDesktopPair(
     const claim = await (
       deps.randomBytes ?? ((size) => crypto.getRandomValues(new Uint8Array(size)))
     )(32);
+    if (cancelled) return { state: "cancelled" };
     try {
       const machine = await redeem({
         name: plan.name,
@@ -84,15 +94,22 @@ export async function startAccountDesktopPair(
         claimId: bytesToBase64Url(claim),
         deviceName: deps.deviceName,
       });
+      if (cancelled) return { state: "cancelled" };
       return { state: "connected", machine };
     } catch {
+      if (cancelled) return { state: "cancelled" };
       return { state: "failed", reason: "connection" };
     }
   }
   return {
     code: request.code,
     expiresAt: request.expiresAt,
-    result: finish(),
-    cancel: request.cancel,
+    result: finish()
+      .catch((error): AccountPairResult => {
+        if (cancelled) return { state: "cancelled" };
+        throw error;
+      })
+      .finally(() => deps.signal?.removeEventListener("abort", cancel)),
+    cancel,
   };
 }

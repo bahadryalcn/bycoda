@@ -94,7 +94,7 @@ pub(crate) fn note_account_route(environment_id: &str, endpoint: Option<&str>) {
     guard.push((environment_id.to_string(), endpoint.map(str::to_string)));
 }
 
-fn account_in_use(environment_id: &str) -> Option<String> {
+pub(crate) fn account_in_use(environment_id: &str) -> Option<String> {
     let guard = ACCOUNT_IN_USE
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
@@ -141,7 +141,7 @@ pub(crate) fn account_endpoints(environment_id: &str) -> Vec<String> {
     })
 }
 
-/// Called only after credential-free identity preflight and saved-route fencing.
+/// Called only after credential-free possession proof and saved-route fencing.
 pub(crate) fn learn_account_endpoint(environment_id: &str, endpoint: String) -> bool {
     with_store(|store| {
         let entry = store
@@ -157,7 +157,11 @@ pub(crate) fn learn_account_endpoint(environment_id: &str, endpoint: String) -> 
     })
 }
 
-pub(crate) fn verify_account_endpoint(endpoint: &str, environment_id: &str) -> Result<(), String> {
+pub(crate) fn verify_account_endpoint(
+    endpoint: &str,
+    environment_id: &str,
+    token: &str,
+) -> Result<(), String> {
     let origin = account_tunnel(endpoint).ok_or("Invalid account tunnel route")?;
     let response = ureq::AgentBuilder::new()
         .redirects(0)
@@ -171,7 +175,19 @@ pub(crate) fn verify_account_endpoint(endpoint: &str, environment_id: &str) -> R
     if descriptor.get("environmentId").and_then(Value::as_str) != Some(environment_id) {
         return Err("Host identity changed".into());
     }
-    Ok(())
+    crate::remote::host_proof::verify(&origin, environment_id, token, "device")
+}
+
+pub(crate) fn retire_account_endpoint(environment_id: &str, endpoint: &str) {
+    with_store(|store| {
+        if let Some(entry) = store.machines.get_mut(&format!("account:{environment_id}")) {
+            entry.account_endpoints.retain(|known| known != endpoint);
+            persist(store);
+        }
+    });
+    if account_in_use(environment_id).as_deref() == Some(endpoint) {
+        note_account_route(environment_id, None);
+    }
 }
 
 fn with_store<T>(action: impl FnOnce(&mut Store) -> T) -> T {

@@ -690,6 +690,7 @@ pub fn run() {
             remote::remote_machine_update,
             remote_routes::remote_machine_routes,
             remote::account_routes::remote_learn_account_routes,
+            remote::account_routes::remote_set_disabled_machines,
             remote::account_pairing::remote_pair_account,
             remote_routes::remote_machine_route_settings,
             remote_routes::remote_machine_route_check,

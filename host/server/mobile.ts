@@ -4,6 +4,7 @@ import { McpHttp } from "../mcp/mcp-http";
 import { createMobileAccessService } from "../mobile/mobile-access";
 import { MobileLanAccess } from "../mobile/mobile-lan";
 import { MobilePairing } from "../mobile/mobile-pairing";
+import { createMobileRoutes } from "../mobile/mobile-routes";
 import { MobileTlsAuthority } from "../security/mobile-tls";
 import { ExternalTunnels } from "../tunnels/tunnels";
 import type { ServerBindings } from "./bindings";
@@ -32,6 +33,22 @@ export function createMobileRuntime(
       !!(await dependencies.engine.store.db
         .prepare("SELECT id FROM devices WHERE hash=?")
         .get(hash)),
+    deviceProofKeys: async () =>
+      (await dependencies.engine.store.db.prepare("SELECT hash FROM devices").all()).map((device) =>
+        String(device.hash),
+      ),
+    proofOrigins: async () => {
+      const address = dependencies.server.address();
+      const local =
+        address && typeof address !== "string"
+          ? [
+              `http://127.0.0.1:${address.port}`,
+              `http://localhost:${address.port}`,
+              `http://[::1]:${address.port}`,
+            ]
+          : [];
+      return [...local, ...(await proofRoutes()).map((route) => route.endpoint)];
+    },
     issueDevice: async (name) => await dependencies.engine.store.issueDevice(name),
     transaction: async (action) => await dependencies.engine.store.transaction(action),
   });
@@ -71,6 +88,11 @@ export function createMobileRuntime(
         return `http://127.0.0.1:${address.port}`;
       },
     );
+  const proofRoutes = createMobileRoutes({
+    lan: () => mobileLan.status(),
+    tailscale: () => mobileAccess.status(),
+    tunnel: () => tunnels.publicHostUrl(),
+  });
   async function mcpBridgeMetadata(scope: "conversation" | "runtime-logs" | "social") {
     const address = dependencies.server.address();
     const local = address && typeof address !== "string" && address.address === "127.0.0.1";

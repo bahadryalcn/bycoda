@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 import {
   isMachineEnabled,
   loadDisabledMachines,
   setMachineEnabled,
   subscribeDisabledMachines,
 } from "./machineEnabled";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => undefined) }));
 
 beforeEach(() => localStorage.clear());
 
@@ -38,4 +40,15 @@ it("reads a damaged list as everything on", () => {
   expect(loadDisabledMachines()).toEqual([]);
   localStorage.setItem("bycoda.disabledMachines", '{"a":1}');
   expect(loadDisabledMachines()).toEqual([]);
+});
+
+it("synchronizes disabled environments to native transport admission", async () => {
+  setMachineEnabled("env-native", false);
+  await Promise.resolve();
+  expect(invoke).toHaveBeenLastCalledWith("remote_set_disabled_machines", {
+    environmentIds: ["env-native"],
+  });
+  setMachineEnabled("env-native", true);
+  await Promise.resolve();
+  expect(invoke).toHaveBeenLastCalledWith("remote_set_disabled_machines", { environmentIds: [] });
 });
