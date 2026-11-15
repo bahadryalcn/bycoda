@@ -25,6 +25,19 @@ const MAX_RETRY_INTERVAL: Duration = Duration::from_secs(60 * 60);
 /// well above a slow database open.
 pub(crate) const HOST_BOOT_GRACE: Duration = Duration::from_secs(120);
 const HOST_STARTING: &str = "The host is starting.";
+const OTHER_INSTALL: &str = "Another host update is being installed.";
+/// Another installer usually finishes within a minute; checking again soon clears
+/// the notice right after it does instead of up to a full retry interval later.
+const OTHER_INSTALL_POLL: Duration = Duration::from_secs(15);
+
+/// When to look again after deferring for `reason`.
+fn deferred_retry(reason: &str) -> Duration {
+    match reason {
+        HOST_STARTING => HOST_BOOT_GRACE,
+        OTHER_INSTALL => OTHER_INSTALL_POLL,
+        _ => RETRY_INTERVAL,
+    }
+}
 
 #[derive(Default, Deserialize, Serialize)]
 struct RetryState {
@@ -126,7 +139,7 @@ fn plan(
     starting: bool,
 ) -> Plan {
     if job_pending {
-        return Plan::Deferred("Another host update is being installed.");
+        return Plan::Deferred(OTHER_INSTALL);
     }
     if starting {
         return Plan::Deferred(HOST_STARTING);
@@ -835,12 +848,12 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
         if owner_approved {
             record(BundledHostStatus {
                 state: "deferred".into(),
-                message: Some("Another host update is being installed.".into()),
+                message: Some(OTHER_INSTALL.into()),
                 bundled: Some(bundled),
                 installed: installed_version(&base),
             });
         }
-        return Some(RETRY_INTERVAL);
+        return Some(deferred_retry(OTHER_INSTALL));
     };
     let lock = std::sync::Arc::new(lock);
     let installed = installed_version(&base);
@@ -877,12 +890,7 @@ fn ensure_once(app: &AppHandle, owner_approved: bool) -> Option<Duration> {
         }
         Plan::Deferred(reason) => {
             record(status("deferred", Some(reason.into())));
-            // A starting host is either ready or overdue once its boot grace has passed.
-            Some(if reason == HOST_STARTING {
-                HOST_BOOT_GRACE
-            } else {
-                RETRY_INTERVAL
-            })
+            Some(deferred_retry(reason))
         }
         Plan::Install | Plan::Upgrade | Plan::Repair => {
             let retry_path = base.join("bundled-host-retry.json");
@@ -1000,6 +1008,22 @@ pub async fn local_host_bundle_update(app: AppHandle) -> Result<Option<BundledHo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn another_install_is_rechecked_soon_so_its_notice_clears() {
+        // The notice stayed up to an hour after the other installer had finished.
+        assert_eq!(deferred_retry(OTHER_INSTALL), OTHER_INSTALL_POLL);
+        assert!(OTHER_INSTALL_POLL < RETRY_INTERVAL);
+        assert_eq!(deferred_retry(HOST_STARTING), HOST_BOOT_GRACE);
+        assert_eq!(
+            deferred_retry("The host update waits until running sessions finish."),
+            RETRY_INTERVAL
+        );
+        assert!(matches!(
+            plan(Some("0.7.8"), "0.7.9", Ok(false), true, true, false),
+            Plan::Deferred(OTHER_INSTALL)
+        ));
+    }
 
     #[test]
     fn installer_completion_requires_the_expected_live_release() {

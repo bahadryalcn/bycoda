@@ -112,16 +112,23 @@ function button(label: string): HTMLButtonElement {
 }
 
 describe("UsageProviderChip", () => {
-  it("retains Pi-owned details while linking onward to provider usage", async () => {
-    const onShowUsage = vi.fn();
+  it("keeps the details header to an icon-only refresh without a provider-usage link", async () => {
+    const onRefresh = vi.fn(async () => {});
     act(() =>
-      root.render(createElement(UsageProviderChip, { limits: codexLimits(), now, onShowUsage })),
+      root.render(
+        createElement(UsageProviderChip, {
+          limits: codexLimits(),
+          now,
+          onRefresh,
+        }),
+      ),
     );
     await act(async () => button("Codex usage details").click());
-    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
-    await act(async () => button("Provider usage").click());
-    expect(onShowUsage).toHaveBeenCalledOnce();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.textContent).not.toContain("Provider usage");
+    expect(dialog.textContent).not.toContain("Refresh usage");
+    await act(async () => button("Refresh usage").click());
+    expect(onRefresh).toHaveBeenCalledOnce();
   });
 
   it("keeps an unknown Claude quota distinct from zero capacity", async () => {
@@ -151,7 +158,10 @@ describe("UsageProviderChip", () => {
         ...codexLimits(),
         provider,
         resetCredits: null,
-        weekly: { ...codexLimits().weekly!, usedPercent: provider === "claude" ? 13 : 27 },
+        weekly: {
+          ...codexLimits().weekly!,
+          usedPercent: provider === "claude" ? 13 : 27,
+        },
       });
     }
     act(() =>
@@ -316,7 +326,9 @@ describe("UsageProviderChip", () => {
     await act(async () => button("Claude Code usage details").click());
     expect(invoke).not.toHaveBeenCalledWith("fetch_claude_usage", expect.anything());
     await act(async () => button("work").click());
-    expect(invoke).toHaveBeenCalledWith("fetch_claude_usage", { accountId: "account-work" });
+    expect(invoke).toHaveBeenCalledWith("fetch_claude_usage", {
+      accountId: "account-work",
+    });
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       "Claude sign-in expired",
     );
@@ -680,7 +692,13 @@ describe("UsageProviderChip", () => {
       title: "Full reset",
     }));
     act(() =>
-      root.render(createElement(UsageProviderChip, { limits, now, onConsumeReset: vi.fn() })),
+      root.render(
+        createElement(UsageProviderChip, {
+          limits,
+          now,
+          onConsumeReset: vi.fn(),
+        }),
+      ),
     );
 
     await act(async () => button("Codex usage details").click());

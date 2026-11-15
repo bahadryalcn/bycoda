@@ -598,3 +598,17 @@ it("retains Native library proof in summary and hides it after revocation", asyn
   valid = false;
   expect(await f.current()).toMatchObject({ summary: "", summaryState: { status: "blocked" } });
 });
+it("lists threads in a snapshot without summary text, so the read needs no open Room", async () => {
+  const f = await fixture({ project: true, visible: async () => true, qualified: true });
+  await f.fill();
+  await f.summary().drain();
+  expect((await f.current()).summary).not.toBe("");
+  const response = await f.request({ op: "snapshot" });
+  const listed = response.snapshot!.threads.find((thread) => thread.id === f.thread.id)!;
+  expect(listed.summary).toBe("");
+  expect(listed.summaryProof).toBeUndefined();
+  const effect = vi.fn(async () => "sent");
+  await expect(f.service.withResponseDisclosure(response, {} as never, effect)).resolves.toBe(
+    "sent",
+  );
+});

@@ -47,7 +47,6 @@ import {
   saveUsageDisplayAccount,
   useUsageDisplayAccount,
 } from "../../features/providers/model/usageDisplayAccount";
-import { openSettingsSection } from "../../features/settings/public/settingsLink";
 import { WORKSPACE_REFRESH_EVENT } from "./WorkspaceControls";
 import { PiUsage } from "./PiUsage";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
@@ -327,7 +326,6 @@ export function UsageFooter({
           <>
             {wantClaude ? (
               <UsageProviderChip
-                onShowUsage={() => openSettingsSection("usage")}
                 limits={claude}
                 usageOnly
                 now={now}
@@ -347,7 +345,6 @@ export function UsageFooter({
             ) : null}
             {wantCodex ? (
               <UsageProviderChip
-                onShowUsage={() => openSettingsSection("usage")}
                 limits={codex}
                 usageOnly
                 now={now}
@@ -368,7 +365,6 @@ export function UsageFooter({
             ) : null}
             {showOpencodeChip ? (
               <UsageProviderChip
-                onShowUsage={() => openSettingsSection("usage")}
                 limits={opencode}
                 now={now}
                 project={project}
@@ -378,7 +374,6 @@ export function UsageFooter({
             ) : null}
             {showGrokChip ? (
               <UsageProviderChip
-                onShowUsage={() => openSettingsSection("usage")}
                 limits={grok}
                 now={now}
                 project={project}

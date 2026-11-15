@@ -17,18 +17,17 @@ export function UsageRefreshButton({
   const t = useT();
   if (!onRefresh) return null;
   return (
-    <div className="mb-2 flex justify-end">
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label={t("Refresh usage")}
-        loading={refreshing}
-        disabled={disabled}
-        onClick={() => void onRefresh(accountId)}
-      >
-        <RefreshCw className="icon-sm" aria-hidden />
-        {t("Refresh usage")}
-      </Button>
-    </div>
+    <Button
+      variant="ghost"
+      size="sm"
+      iconOnly
+      label={t("Refresh usage")}
+      className="ms-auto shrink-0"
+      loading={refreshing}
+      disabled={disabled}
+      onClick={() => void onRefresh(accountId)}
+    >
+      <RefreshCw className="icon-sm" aria-hidden />
+    </Button>
   );
 }

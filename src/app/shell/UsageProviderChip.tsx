@@ -108,7 +108,6 @@ type UsageProviderChipProps = {
   onSelectUsageAccount?: (accountId: string) => void;
   onAddAccount?: (label: string) => Promise<ProviderAccount>;
   onManageAccounts?: () => void;
-  onShowUsage?: () => void;
   onConsumeReset?: (creditId?: string) => Promise<CodexRateLimitResetOutcome>;
   onReconnect?: () => Promise<void>;
   onRefresh?: (accountId?: string) => Promise<void>;
@@ -212,7 +211,6 @@ function UsageProviderDetails({
   onSelectUsageAccount,
   onAddAccount,
   onManageAccounts,
-  onShowUsage,
   onConsumeReset,
   onReconnect,
   onRefresh,
@@ -337,51 +335,47 @@ function UsageProviderDetails({
       className={`overflow-y-auto ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
     >
       <Text as="div" size="inherit" tone="primary">
-        {onShowUsage ? (
-          <Button
-            variant="link"
-            size="sm"
-            onClick={() => {
-              close();
-              onShowUsage();
-            }}
-          >
-            {t("Provider usage")}
-          </Button>
-        ) : null}
-        <UsageRefreshButton
-          accountId={detailAccountId}
-          onRefresh={onRefresh}
-          refreshing={refreshing}
-          disabled={resetAction === "using" || reconnectState === "running"}
-        />
-        {canBrowseUsage ? (
-          <div role="group" aria-label={t("Accounts")} className="mbe-2 flex flex-wrap gap-1">
-            {accounts.map((account) => (
-              <Button
-                key={account.id}
-                variant="tab"
-                aria-pressed={account.id === detailAccountId}
-                tooltip={account.label}
-                tooltipWhen="overflow"
-                className="min-w-0 max-w-full gap-1.5"
-                onClick={() => {
-                  setResetAction("idle");
-                  setActiveResetKey(null);
-                  setResetError(null);
-                  setReconnectState("idle");
-                  setReconnectError(null);
-                  if (onSelectUsageAccount) onSelectUsageAccount(account.id);
-                  else setUsageAccountId(account.id);
-                }}
-                disabled={resetAction === "using" || reconnectState === "running"}
+        {canBrowseUsage || onRefresh ? (
+          <div className="mbe-2 flex items-start gap-1">
+            {canBrowseUsage ? (
+              <div
+                role="group"
+                aria-label={t("Accounts")}
+                className="flex min-w-0 flex-1 flex-wrap gap-1"
               >
-                <AccountColorDot account={account} className="size-1.5" />
-                <Text size="inherit" tone="inherit" truncate className="min-w-0">
-                  {account.label}
-                </Text>
-              </Button>
-            ))}
+                {accounts.map((account) => (
+                  <Button
+                    key={account.id}
+                    variant="tab"
+                    aria-pressed={account.id === detailAccountId}
+                    tooltip={account.label}
+                    tooltipWhen="overflow"
+                    className="min-w-0 max-w-full gap-1.5"
+                    onClick={() => {
+                      setResetAction("idle");
+                      setActiveResetKey(null);
+                      setResetError(null);
+                      setReconnectState("idle");
+                      setReconnectError(null);
+                      if (onSelectUsageAccount) onSelectUsageAccount(account.id);
+                      else setUsageAccountId(account.id);
+                    }}
+                    disabled={resetAction === "using" || reconnectState === "running"}
+                  >
+                    <AccountColorDot account={account} className="size-1.5" />
+                    <Text size="inherit" tone="inherit" truncate className="min-w-0">
+                      {account.label}
+                    </Text>
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+            <UsageRefreshButton
+              accountId={detailAccountId}
+              onRefresh={onRefresh}
+              refreshing={refreshing}
+              disabled={resetAction === "using" || reconnectState === "running"}
+            />
           </div>
         ) : null}
         {accountView === "accounts" ? (

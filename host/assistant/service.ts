@@ -3102,8 +3102,14 @@ export class HostAssistant {
         if (response.thread)
           response.thread = await this.threadSummaries.projection(response.thread);
         if (response.snapshot)
+          // Summary text is disclosed per thread (threads.open/messages) under that Room's
+          // source; listing it here made every snapshot need each summarized Room open.
           response.snapshot.threads = await Promise.all(
-            response.snapshot.threads.map((thread) => this.threadSummaries.projection(thread)),
+            response.snapshot.threads.map(async (thread) => {
+              const { summaryProof: _proof, ...listed } =
+                await this.threadSummaries.projection(thread);
+              return { ...listed, summary: "" };
+            }),
           );
         if (response.message) await this.threadSummaries.record(response.message.id);
         if (response.message)

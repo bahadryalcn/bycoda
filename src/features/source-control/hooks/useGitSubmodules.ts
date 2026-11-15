@@ -67,6 +67,8 @@ export function useGitSubmodules(
                 (previous.key === key ? previous.modules[root] : undefined);
               if (known) modules[root] = known;
               error = String(result.reason);
+              // The panel shows only a summary; the log keeps which checkout failed and why.
+              console.warn("[source-control] repository discovery failed", root, error);
             }
           });
           return { key, modules, error };
